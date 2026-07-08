@@ -1,0 +1,48 @@
+{
+  "name": "pi-traffic-workspace",
+  "version": "0.1.0",
+  "description": "交通 Agent 浏览器工作台，基于 Pi Tau Web Server 管理多路 Pi RPC 会话",
+  "keywords": [
+    "pi",
+    "coding-agent",
+    "web-ui",
+    "rpc",
+    "standalone",
+    "traffic"
+  ],
+  "author": "deflating",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/milanglacier/pi-tau-web-server.git"
+  },
+  "bin": {
+    "pi-traffic-workspace": "./bin/tau.js"
+  },
+  "files": [
+    "bin",
+    "public",
+    "src",
+    "tsconfig.json",
+    "tsconfig.server.json",
+    "tsconfig.public.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.public.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.public.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "npm run build && node --test"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/node": "^26.0.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^6.0.3"
+  }
+}
