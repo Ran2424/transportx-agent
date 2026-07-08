@@ -1,0 +1,28 @@
+{
+  "name": "Pi Traffic Workspace",
+  "short_name": "交通工作台",
+  "description": "面向交通分析的 Pi 多会话浏览器工作台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f3ef",
+  "theme_color": "#f5f3ef",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icons/tau-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/tau-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/tau-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

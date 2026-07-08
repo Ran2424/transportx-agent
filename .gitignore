@@ -1,0 +1,22 @@
+node_modules/
+.npm-cache/
+.tsbuildinfo/
+*.tsbuildinfo
+
+# TypeScript build output
+/bin/*.js
+/bin/*.js.map
+/bin/*.d.ts
+/public/*.js
+/public/*.js.map
+/public/*.d.ts
+
+.DS_Store
+.idea
+.claude/settings.local.json
+.claude/custom-github-flow.md
+
+# Pi session exports
+pi-session-*.html
+references/pi-development-guide.md
+.tags
