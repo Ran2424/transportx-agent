@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="交通工作台">
-  <meta name="theme-color" content="#f5f3ef">
+  <meta name="theme-color" content="#f7faff">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -131,20 +131,26 @@
       </div>
     </div>
 
-    <!-- File Browser (right sidebar) -->
+    <!-- Workspace Browser (right sidebar) -->
     <div class="file-sidebar collapsed" id="file-sidebar">
       <div class="file-sidebar-header">
-        <span class="file-sidebar-title" id="file-sidebar-title">文件</span>
-        <button class="icon-btn" id="file-sidebar-up" title="上一级目录">
+        <span class="file-sidebar-title" id="file-sidebar-title">工作区</span>
+        <button class="icon-btn file-sidebar-file-action" id="file-sidebar-up" title="上一级目录">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
         </button>
-        <button class="icon-btn" id="file-sidebar-finder" title="在文件管理器中打开">
+        <button class="icon-btn file-sidebar-file-action" id="file-sidebar-finder" title="在文件管理器中打开">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
         </button>
         <button class="icon-btn" id="file-sidebar-close" title="关闭" aria-label="关闭文件浏览器"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
+      <div class="file-sidebar-tabs" id="file-sidebar-tabs">
+        <button class="file-sidebar-tab active" type="button" data-resource-view="files">文件</button>
+        <button class="file-sidebar-tab" type="button" data-resource-view="skills">技能</button>
+        <button class="file-sidebar-tab" type="button" data-resource-view="tools">工具</button>
+      </div>
       <div class="file-sidebar-path" id="file-sidebar-path" title=""></div>
       <div class="file-list" id="file-list"></div>
+      <div class="resource-list hidden" id="resource-list"></div>
     </div>
   </div>
 
@@ -226,7 +232,7 @@
       <label class="new-live-session-label" for="new-live-session-name">会话名称</label>
       <input class="new-live-session-input" id="new-live-session-name" type="text" placeholder="例如：早高峰拥堵分析" autocomplete="off" required>
       <input id="new-live-session-cwd" type="hidden">
-      <p class="new-live-session-help" id="new-live-session-cwd-preview">目录默认使用当前目录。</p>
+      <p class="new-live-session-help" id="new-live-session-cwd-preview">任务目录：/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/scenario</p>
       <label class="new-live-session-label" for="new-live-session-model">模型</label>
       <select class="new-live-session-input" id="new-live-session-model">
         <option value="">使用 Pi 默认模型</option>

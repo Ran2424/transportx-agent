@@ -20,6 +20,9 @@ import type { AppEvent, AppMessage, ExtensionUIRequest, LiveInstance, LiveSessio
 
 type SessionHistoryEntry = { type?: string; message?: AppMessage };
 
+type DurationCacheEntry = { durationMs: number; updatedAt: number };
+type DurationCache = Record<string, DurationCacheEntry>;
+
 type LiveSessionSnapshotData = {
   sessionId?: string;
   sessionFile?: string | null;
@@ -31,6 +34,9 @@ type LiveSessionSnapshotData = {
 };
 
 type RpcEventDetail = { sessionId?: string; event?: AppEvent };
+type ResourceView = 'files' | 'skills' | 'tools';
+type SessionResourceSkill = { name?: string; description?: string; path?: string; scope?: string };
+type SessionResourceTool = { name?: string; label?: string; description?: string; usedCount?: number; lastPreview?: string; source?: string };
 
 // Initialize components
 const wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
@@ -163,6 +169,8 @@ const launcherPanel = setupLauncherPanel({
 // State tracking
 let currentStreamingElement: HTMLElement | null = null;
 let currentStreamingText = '';
+let currentThinkingStartedAt: number | null = null;
+let currentThinkingEndedAt: number | null = null;
 let sessionTotalCost = 0;
 let lastInputTokens = 0;
 let contextWindowSize = 0;  // fetched from model info
@@ -183,13 +191,111 @@ let hasRestoredInitialLiveSession = false;
 let pendingExtensionUIRequests: ExtensionUIRequest[] = []; // background session UI requests waiting for that Tau tab to be selected
 dialogHandler.onIdle = () => processQueuedExtensionUIRequest();
 
+const TOOL_DURATION_CACHE_KEY = 'tau-tool-duration-cache-v1';
+const THINKING_DURATION_CACHE_KEY = 'tau-thinking-duration-cache-v1';
+const TOOL_DURATION_CACHE_LIMIT = 1200;
+
+function readDurationCache(cacheKey: string): DurationCache {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed as DurationCache : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDurationCache(cacheKey: string, cache: DurationCache) {
+  const entries = Object.entries(cache)
+    .filter(([, entry]) => Number.isFinite(entry?.durationMs) && Number.isFinite(entry?.updatedAt))
+    .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+    .slice(0, TOOL_DURATION_CACHE_LIMIT);
+  localStorage.setItem(cacheKey, JSON.stringify(Object.fromEntries(entries)));
+}
+
+function toolDurationScopes(sessionId: string | null = activeLiveSessionId) {
+  const scopes: string[] = [];
+  const sessionFile = sessionId === activeLiveSessionId
+    ? activeLiveSessionFile
+    : liveSessions.find((s) => s.id === sessionId)?.sessionFile || null;
+  if (sessionFile) scopes.push(`file:${sessionFile}`);
+  if (sessionId) scopes.push(`id:${sessionId}`);
+  return scopes;
+}
+
+function rememberToolDuration(toolCallId: string, durationMs: number, sessionId: string | null = activeLiveSessionId) {
+  if (!toolCallId || !Number.isFinite(durationMs) || durationMs < 0) return;
+  const scopes = toolDurationScopes(sessionId);
+  if (scopes.length === 0) return;
+  const cache = readDurationCache(TOOL_DURATION_CACHE_KEY);
+  const updatedAt = Date.now();
+  for (const scope of scopes) {
+    cache[`${scope}::${toolCallId}`] = { durationMs, updatedAt };
+  }
+  writeDurationCache(TOOL_DURATION_CACHE_KEY, cache);
+}
+
+function getRememberedToolDuration(toolCallId: string, sessionId: string | null = activeLiveSessionId) {
+  if (!toolCallId) return undefined;
+  const cache = readDurationCache(TOOL_DURATION_CACHE_KEY);
+  for (const scope of toolDurationScopes(sessionId)) {
+    const entry = cache[`${scope}::${toolCallId}`];
+    if (entry && Number.isFinite(entry.durationMs)) return entry.durationMs;
+  }
+  return undefined;
+}
+
+function stableHash(text: string) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function thinkingDurationIdentity(message: AppMessage) {
+  if (message.id) return `id:${message.id}`;
+  return `hash:${stableHash(`${message.role || ''}\n${getMessageText(message)}\n${getMessageThinking(message)}`)}`;
+}
+
+function rememberThinkingDuration(message: AppMessage, blockIndex: number, durationMs: number, sessionId: string | null = activeLiveSessionId) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return;
+  const scopes = toolDurationScopes(sessionId);
+  if (scopes.length === 0) return;
+  const cache = readDurationCache(THINKING_DURATION_CACHE_KEY);
+  const identity = thinkingDurationIdentity(message);
+  const updatedAt = Date.now();
+  for (const scope of scopes) {
+    cache[`${scope}::${identity}::${blockIndex}`] = { durationMs, updatedAt };
+  }
+  writeDurationCache(THINKING_DURATION_CACHE_KEY, cache);
+}
+
+function getRememberedThinkingDuration(message: AppMessage, blockIndex: number, sessionId: string | null = activeLiveSessionId) {
+  const cache = readDurationCache(THINKING_DURATION_CACHE_KEY);
+  const identity = thinkingDurationIdentity(message);
+  for (const scope of toolDurationScopes(sessionId)) {
+    const entry = cache[`${scope}::${identity}::${blockIndex}`];
+    if (entry && Number.isFinite(entry.durationMs)) return entry.durationMs;
+  }
+  return undefined;
+}
+
+function syncSidebarLiveSessions() {
+  sidebar.setLiveSessions(liveSessions);
+  updateLiveSessionIndicators();
+}
+
 // File browser
 const fileSidebar = document.getElementById('file-sidebar')!;
 const fileSidebarToggle = document.getElementById('file-sidebar-toggle')!;
 const fileSidebarClose = document.getElementById('file-sidebar-close')!;
 const fileSidebarUp = document.getElementById('file-sidebar-up')!;
 const fileList = document.getElementById('file-list')!;
+const resourceList = document.getElementById('resource-list')!;
 const fileSidebarPath = document.getElementById('file-sidebar-path')!;
+const fileSidebarTabs = document.getElementById('file-sidebar-tabs')!;
+const fileSidebarFileActions = Array.from(document.querySelectorAll<HTMLElement>('.file-sidebar-file-action'));
+let activeResourceView = (localStorage.getItem('tau-resource-sidebar-view') as ResourceView) || 'files';
 const fileBrowser = new FileBrowser(fileList, fileSidebarPath, messageInput, (filePath) => {
   const name = filePath.split(/[/\\]/).pop() || filePath;
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -197,11 +303,124 @@ const fileBrowser = new FileBrowser(fileList, fileSidebarPath, messageInput, (fi
   renderAttachmentPreviews();
 }, () => (viewingActiveSession && liveSessions.some(s => s.id === activeLiveSessionId) ? activeLiveSessionId : null));
 
+function loadCurrentSidebarView() {
+  if (activeResourceView === 'files') {
+    fileBrowser.load();
+  } else {
+    loadSessionResources(activeResourceView);
+  }
+}
+
+function refreshResourceViewIfVisible(view?: ResourceView) {
+  if (fileSidebar.classList.contains('collapsed')) return;
+  if (activeResourceView === 'files') return;
+  if (view && activeResourceView !== view) return;
+  loadSessionResources(activeResourceView);
+}
+
+function setResourceView(view: ResourceView) {
+  activeResourceView = view;
+  localStorage.setItem('tau-resource-sidebar-view', view);
+  fileSidebarTabs.querySelectorAll<HTMLButtonElement>('.file-sidebar-tab').forEach((button) => {
+    button.classList.toggle('active', button.dataset.resourceView === view);
+  });
+  const showingFiles = view === 'files';
+  fileList.classList.toggle('hidden', !showingFiles);
+  resourceList.classList.toggle('hidden', showingFiles);
+  fileSidebarPath.classList.toggle('hidden', !showingFiles);
+  fileSidebarFileActions.forEach((el) => el.classList.toggle('hidden', !showingFiles));
+  if (!fileSidebar.classList.contains('collapsed')) loadCurrentSidebarView();
+}
+
+fileSidebarTabs.querySelectorAll<HTMLButtonElement>('.file-sidebar-tab').forEach((button) => {
+  button.addEventListener('click', () => setResourceView((button.dataset.resourceView as ResourceView) || 'files'));
+});
+
+async function loadSessionResources(view: ResourceView = activeResourceView) {
+  const sessionId = viewingActiveSession && activeLiveSessionId ? activeLiveSessionId : null;
+  resourceList.innerHTML = '<div class="resource-loading">正在加载...</div>';
+  if (!sessionId) {
+    resourceList.innerHTML = '<div class="resource-loading">请选择一个交通任务</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/session-resources?sessionId=${encodeURIComponent(sessionId)}`);
+    const data = await res.json();
+    if (view !== activeResourceView) return;
+    if (!res.ok || data.error) {
+      resourceList.innerHTML = `<div class="resource-loading">${escapeHtml(data.error || '加载失败')}</div>`;
+      return;
+    }
+    if (view === 'skills') renderSkills(data.skills || [], data.commandsError || '');
+    else renderTools(data.tools || []);
+  } catch {
+    resourceList.innerHTML = '<div class="resource-loading">加载失败</div>';
+  }
+}
+
+function renderSkills(skills: SessionResourceSkill[], commandsError = '') {
+  if (!skills.length) {
+    resourceList.innerHTML = `<div class="resource-loading">${commandsError ? '技能加载失败' : '当前会话没有可见技能'}</div>`;
+    return;
+  }
+  resourceList.innerHTML = skills.map((skill) => {
+    const name = String(skill.name || '');
+    const path = String(skill.path || '');
+    const scope = scopeLabel(skill.scope);
+    return `
+      <div class="resource-item" title="${escapeHtml(path || name)}">
+        <span class="resource-icon skill">技</span>
+        <span class="resource-main">
+          <span class="resource-title">/${escapeHtml(name)}</span>
+          ${skill.description ? `<span class="resource-desc">${escapeHtml(skill.description)}</span>` : ''}
+          ${path ? `<span class="resource-path">${escapeHtml(path)}</span>` : ''}
+        </span>
+        ${scope ? `<span class="resource-badge">${escapeHtml(scope)}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTools(tools: SessionResourceTool[]) {
+  if (!tools.length) {
+    resourceList.innerHTML = '<div class="resource-loading">当前会话没有可见工具</div>';
+    return;
+  }
+  resourceList.innerHTML = tools.map((tool) => {
+    const name = String(tool.name || '');
+    const label = String(tool.label || name);
+    const usedCount = Number(tool.usedCount || 0);
+    const preview = String(tool.lastPreview || '');
+    return `
+      <div class="resource-item" title="${escapeHtml(preview || tool.description || name)}">
+        <span class="resource-icon tool">工</span>
+        <span class="resource-main">
+          <span class="resource-title">${escapeHtml(label)}<span class="resource-code">${escapeHtml(name)}</span></span>
+          ${tool.description ? `<span class="resource-desc">${escapeHtml(tool.description)}</span>` : ''}
+          ${preview ? `<span class="resource-path">${escapeHtml(truncateMiddle(preview, 48))}</span>` : ''}
+        </span>
+        <span class="resource-badge">${usedCount > 0 ? `${usedCount} 次` : '内置'}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function scopeLabel(scope?: string) {
+  const labels: Record<string, string> = { user: '用户', project: '项目', temporary: '临时' };
+  return labels[String(scope || '')] || String(scope || '');
+}
+
+function truncateMiddle(text: string, maxLength: number) {
+  if (text.length <= maxLength) return text;
+  const start = Math.max(10, Math.floor(maxLength * 0.4));
+  const end = Math.max(14, maxLength - start - 1);
+  return `${text.slice(0, start)}…${text.slice(text.length - end)}`;
+}
+
 fileSidebarToggle.addEventListener('click', () => {
   const isCollapsed = fileSidebar.classList.toggle('collapsed');
-  if (!isCollapsed && !fileBrowser.currentPath) {
-    fileBrowser.load(); // Load session cwd
-  }
+  if (!isCollapsed) loadCurrentSidebarView();
   localStorage.setItem('tau-file-sidebar', isCollapsed ? 'closed' : 'open');
 });
 
@@ -233,9 +452,10 @@ document.getElementById('file-sidebar-finder')!.addEventListener('click', () => 
 });
 
 // Restore file sidebar state
+setResourceView(activeResourceView);
 if (localStorage.getItem('tau-file-sidebar') === 'open') {
   fileSidebar.classList.remove('collapsed');
-  fileBrowser.load();
+  loadCurrentSidebarView();
 }
 
 
@@ -334,6 +554,7 @@ wsClient.addEventListener('rpcEvent', (e: Event) => {
       if (event.type === 'session_name' && event.name) session.sessionName = event.name;
       if ((event.message as AppMessage)?.usage) session.contextUsage = { ...(session.contextUsage || {}), usage: (event.message as AppMessage).usage };
       renderLiveTabs();
+      syncSidebarLiveSessions();
     }
     if (sessionId !== activeLiveSessionId || !viewingActiveSession) {
       if (event.type === 'extension_ui_request') queueExtensionUIRequest(event, sessionId);
@@ -401,12 +622,13 @@ const newLiveSessionCwd = document.getElementById('new-live-session-cwd') as HTM
 const newLiveSessionCwdPreview = document.getElementById('new-live-session-cwd-preview');
 const newLiveSessionModel = document.getElementById('new-live-session-model') as HTMLSelectElement;
 const newLiveSessionSubmit = document.getElementById('new-live-session-submit') as HTMLButtonElement;
+const DEFAULT_TASK_CWD = '/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/scenario';
 
 function setLiveSessions(sessions: LiveSession[]) {
   liveSessions = sessions || [];
   liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
   renderLiveTabs();
-  updateLiveSessionIndicators();
+  syncSidebarLiveSessions();
 }
 
 function handleLiveSessionClosed(closedId: string) {
@@ -447,7 +669,7 @@ function handleLiveSessionClosed(closedId: string) {
   }
   liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
   renderLiveTabs();
-  updateLiveSessionIndicators();
+  syncSidebarLiveSessions();
 }
 
 function upsertLiveSession(session: LiveSession) {
@@ -464,7 +686,7 @@ function upsertLiveSession(session: LiveSession) {
   }
   liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
   if (shouldRenderTabs) renderLiveTabs();
-  updateLiveSessionIndicators();
+  syncSidebarLiveSessions();
 }
 
 function getMostRecentLiveSession() {
@@ -561,6 +783,7 @@ async function selectLiveSession(id: string) {
   localStorage.setItem('tau-active-live-session-id', id);
   viewingActiveSession = true;
   activeLiveSessionFile = session.sessionFile || null;
+  sidebar.setActive(session.sessionFile || null, session.id);
   renderLiveTabs();
   renderQueuedMessages();
   applyActiveSessionMetadata(session);
@@ -583,7 +806,10 @@ async function selectLiveSession(id: string) {
     messageRenderer.renderError((e instanceof Error ? e.message : '') || '加载任务快照失败');
     return;
   }
-  if (!fileSidebar.classList.contains('collapsed')) fileBrowser.load();
+  if (!fileSidebar.classList.contains('collapsed')) {
+    fileBrowser.currentPath = null;
+    loadCurrentSidebarView();
+  }
   updateLiveSessionInputState();
   processQueuedExtensionUIRequest(id);
   flushQueue();
@@ -616,7 +842,7 @@ async function closeLiveSession(id: string) {
 }
 
 function currentNewSessionCwd() {
-  return liveSessions.find(s => s.id === activeLiveSessionId)?.cwd || '';
+  return DEFAULT_TASK_CWD;
 }
 
 function modelOptionValue(model: ModelRecord | string) {
@@ -747,7 +973,7 @@ function handleRPCEvent(event: AppEvent, sessionId: string | null = null) {
       handleMessageUpdate(event);
       break;
     case 'message_end':
-      handleMessageEnd(event.message as AppMessage);
+      handleMessageEnd(event.message as AppMessage, sessionId);
       break;
     case 'tool_execution_start':
       handleToolExecutionStart(event);
@@ -756,7 +982,7 @@ function handleRPCEvent(event: AppEvent, sessionId: string | null = null) {
       handleToolExecutionUpdate(event);
       break;
     case 'tool_execution_end':
-      handleToolExecutionEnd(event);
+      handleToolExecutionEnd(event, sessionId);
       break;
     case 'auto_compaction_start':
       handleCompactionStart();
@@ -839,6 +1065,8 @@ function handleMessageStart(message: AppMessage) {
   if (message.role === 'assistant') {
     currentStreamingText = '';
     currentStreamingThinking = '';
+    currentThinkingStartedAt = null;
+    currentThinkingEndedAt = null;
     currentStreamingElement = messageRenderer.renderAssistantMessage(
       { content: '' },
       true
@@ -881,13 +1109,26 @@ function handleMessageUpdate(event: AppEvent) {
     if (!currentStreamingElement) {
       currentStreamingElement = messageRenderer.renderAssistantMessage({ content: '' }, true);
     }
+    if (currentThinkingStartedAt === null) {
+      currentThinkingStartedAt = Date.now();
+      currentThinkingEndedAt = null;
+    }
     currentStreamingThinking += assistantMessageEvent.delta;
     if (currentStreamingElement) {
-      messageRenderer.updateStreamingThinking(currentStreamingElement, currentStreamingThinking);
+      const thinkingDuration = (currentThinkingEndedAt || Date.now()) - currentThinkingStartedAt;
+      messageRenderer.updateStreamingThinking(currentStreamingElement, currentStreamingThinking, thinkingDuration);
     }
   } else if (assistantMessageEvent.type === 'text_delta') {
     if (!currentStreamingElement) {
       currentStreamingElement = messageRenderer.renderAssistantMessage({ content: '' }, true);
+    }
+    if (currentThinkingStartedAt !== null && currentThinkingEndedAt === null) {
+      currentThinkingEndedAt = Date.now();
+      messageRenderer.updateStreamingThinking(
+        currentStreamingElement,
+        currentStreamingThinking,
+        currentThinkingEndedAt - currentThinkingStartedAt
+      );
     }
     currentStreamingText += assistantMessageEvent.delta;
     if (currentStreamingElement) {
@@ -899,7 +1140,7 @@ function handleMessageUpdate(event: AppEvent) {
   }
 }
 
-function handleMessageEnd(message: AppMessage) {
+function handleMessageEnd(message: AppMessage, sessionId: string | null = activeLiveSessionId) {
   if (!currentStreamingElement && message?.role === 'assistant') {
     messageRenderer.renderAssistantMessage(message, false, true);
   }
@@ -916,17 +1157,32 @@ function handleMessageEnd(message: AppMessage) {
       }
       if (finalThinking && finalThinking.length >= currentStreamingThinking.length) {
         currentStreamingThinking = finalThinking;
-        messageRenderer.updateStreamingThinking(currentStreamingElement, currentStreamingThinking);
+        messageRenderer.updateStreamingThinking(
+          currentStreamingElement,
+          currentStreamingThinking,
+          currentThinkingStartedAt !== null
+            ? (currentThinkingEndedAt !== null ? currentThinkingEndedAt - currentThinkingStartedAt : Date.now() - currentThinkingStartedAt)
+            : undefined
+        );
       }
     }
 
     // Pass usage info for cost display
     const usage = message?.usage || null;
     // Pass thinking content so finalize can render the thinking block
-    messageRenderer.finalizeStreamingMessage(currentStreamingElement, usage, currentStreamingThinking);
+    if (currentThinkingStartedAt !== null && currentThinkingEndedAt === null) currentThinkingEndedAt = Date.now();
+    const thinkingDuration = currentThinkingStartedAt !== null && currentThinkingEndedAt !== null
+      ? currentThinkingEndedAt - currentThinkingStartedAt
+      : undefined;
+    if (message?.role === 'assistant' && currentStreamingThinking && thinkingDuration !== undefined) {
+      rememberThinkingDuration(message, 0, thinkingDuration, sessionId);
+    }
+    messageRenderer.finalizeStreamingMessage(currentStreamingElement, usage, currentStreamingThinking, thinkingDuration);
     currentStreamingElement = null;
     currentStreamingThinking = '';
     currentStreamingText = '';
+    currentThinkingStartedAt = null;
+    currentThinkingEndedAt = null;
 
     // Track session cost and tokens
     if (usage?.cost?.total) {
@@ -944,43 +1200,56 @@ function handleMessageEnd(message: AppMessage) {
 function handleToolExecutionStart(event: AppEvent) {
   const { toolCallId, toolName, args } = event;
   if (!toolCallId) return;
+  const startedAt = Date.now();
 
   state.addToolExecution(toolCallId, {
     toolName,
     args,
     status: 'pending',
+    startedAt,
+    durationMs: 0,
   });
 
   const exec = state.getToolExecution(toolCallId);
   if (exec) toolCardRenderer.createToolCard(exec as ToolExecution);
+  refreshResourceViewIfVisible('tools');
 }
 
 function handleToolExecutionUpdate(event: AppEvent) {
   const { toolCallId, partialResult } = event;
   if (!toolCallId) return;
   const output = formatToolOutput(partialResult);
+  const exec = state.getToolExecution(toolCallId);
+  const startedAt = Number(exec?.startedAt || 0);
 
   state.updateToolExecution(toolCallId, {
     status: 'streaming',
     output,
+    ...(startedAt > 0 ? { durationMs: Date.now() - startedAt } : {}),
   });
 
-  const exec = state.getToolExecution(toolCallId);
-  if (exec) toolCardRenderer.updateToolCard(exec as ToolExecution);
+  const updatedExec = state.getToolExecution(toolCallId);
+  if (updatedExec) toolCardRenderer.updateToolCard(updatedExec as ToolExecution);
 }
 
-function handleToolExecutionEnd(event: AppEvent) {
+function handleToolExecutionEnd(event: AppEvent, sessionId: string | null = activeLiveSessionId) {
   const { toolCallId, result, isError } = event;
   if (!toolCallId) return;
   const output = formatToolOutput(result);
+  const exec = state.getToolExecution(toolCallId);
+  const startedAt = Number(exec?.startedAt || 0);
+  const durationMs = startedAt > 0 ? Date.now() - startedAt : undefined;
+  if (durationMs !== undefined) rememberToolDuration(toolCallId, durationMs, sessionId);
 
   state.updateToolExecution(toolCallId, {
     status: isError ? 'error' : 'complete',
     output,
     isError,
+    ...(durationMs !== undefined ? { durationMs } : {}),
   });
 
-  toolCardRenderer.finalizeToolCard(toolCallId, result as ToolResult, isError ?? false);
+  toolCardRenderer.finalizeToolCard(toolCallId, result as ToolResult, isError ?? false, durationMs);
+  refreshResourceViewIfVisible('tools');
 }
 
 function hasPendingExtensionUIRequest(sessionId: string) {
@@ -1558,12 +1827,13 @@ async function newSession() {
 }
 
 async function handleSessionSelect(session: SidebarSession | null, project: SidebarProject | null) {
-  if (session) sidebar.setActive(session.filePath);
+  if (session) sidebar.setActive(session.filePath, session.liveSessionId);
   sessionTotalCost = 0;
   lastInputTokens = 0;
   lastUsage = null;
   updateContextPill();
-  if (session) await switchSession(session.filePath, session, project);
+  if (session?.liveSessionId) await selectLiveSession(session.liveSessionId);
+  else if (session) await switchSession(session.filePath, session, project);
 
   // Close sidebar on mobile after selecting
   if (isMobile()) {
@@ -1650,6 +1920,7 @@ function applyLiveSessionSnapshot(data: LiveSessionSnapshotData) {
 
   // Track the active session
   activeLiveSessionFile = data.sessionFile || data.session?.sessionFile || null;
+  if (activeLiveSessionId) sidebar.setActive(activeLiveSessionFile, activeLiveSessionId);
   viewingActiveSession = !!activeLiveSessionId;
   state.setStreaming(!!data.isStreaming);
   showTypingIndicator(!!data.isStreaming);
@@ -1693,11 +1964,14 @@ function applyLiveSessionSnapshot(data: LiveSessionSnapshotData) {
 // Mark all live sessions in the sidebar with a green dot
 function updateLiveSessionIndicators() {
   const liveFiles = new Set(liveInstances.map(i => i.sessionFile));
+  const liveIds = new Set(liveSessions.map(s => s.id));
   // Also include the current active live session
   if (activeLiveSessionFile) liveFiles.add(activeLiveSessionFile);
 
   document.querySelectorAll('.session-item').forEach(el => {
-    el.classList.toggle('has-live-session', liveFiles.has(el.dataset.filePath));
+    const hasLiveFile = !!el.dataset.filePath && liveFiles.has(el.dataset.filePath);
+    const hasLiveId = !!el.dataset.liveSessionId && liveIds.has(el.dataset.liveSessionId);
+    el.classList.toggle('has-live-session', hasLiveFile || hasLiveId);
   });
 }
 
@@ -1784,8 +2058,14 @@ function renderSessionHistory(entries: SessionHistoryEntry[]) {
 
       // Build content blocks for rendering
       const contentBlocks = [];
+      let thinkingIndex = 0;
       for (const block of (msg.content as MessageContentBlock[]) || []) {
-        if (block.type === 'text' || block.type === 'thinking') {
+        if (block.type === 'thinking') {
+          contentBlocks.push({
+            ...block,
+            durationMs: getRememberedThinkingDuration(msg, thinkingIndex++),
+          });
+        } else if (block.type === 'text') {
           contentBlocks.push(block);
         }
       }
@@ -1820,6 +2100,7 @@ function renderSessionHistory(entries: SessionHistoryEntry[]) {
           toolCallId: tc.id,
           toolName: tc.name,
           args: tc.arguments || {},
+          durationMs: getRememberedToolDuration(String(tc.id || '')),
         });
         console.log(`[History] Tool card created: ${tc.name}`, card?.offsetHeight, card?.innerHTML?.substring(0, 100));
       }

@@ -22,9 +22,9 @@ export const themes = {
     vars: {},
   },
   clean: {
-    name: 'Clean',
+    name: 'Codex',
     dark: false,
-    colors: ['#ffffff', '#0580c4', '#007aff', '#5ac8fa'],
+    colors: ['#f7faff', '#2563eb', '#0ea5e9', '#60a5fa'],
     vars: {},
   },
   terracotta: {
@@ -55,10 +55,10 @@ export function getCurrentTheme(): ThemeId {
   const saved = localStorage.getItem('tau-theme');
   // Migrate old values
   if (saved === 'dark') return 'night';
-  if (saved === 'light') return 'terracotta';
+  if (saved === 'light') return 'clean';
   if (saved && saved in themes) return saved as ThemeId;
   // Auto-detect from OS
-  if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'terracotta';
+  if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'clean';
   return 'night';
 }
 
@@ -67,7 +67,7 @@ if (!localStorage.getItem('tau-theme')) {
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
     if (!localStorage.getItem('tau-theme')) {
       const root = document.documentElement;
-      root.setAttribute('data-theme', e.matches ? 'terracotta' : 'night');
+      root.setAttribute('data-theme', e.matches ? 'clean' : 'night');
     }
   });
 }

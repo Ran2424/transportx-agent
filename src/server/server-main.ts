@@ -276,7 +276,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   if (cmd === 'live_session_snapshot_request') return { type: 'live_session_snapshot', sessionId: session.id, ...session.snapshot() };
   if (cmd === 'set_auto_compaction') return success({ enabled: !!command.enabled });
 
-  const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'extension_ui_response']);
+  const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response']);
   if (!native.has(cmd ?? '')) return error(`Unknown command: ${cmd}`);
 
   // `set_thinking_level` is forwarded to pi but pi's response carries no
@@ -438,6 +438,14 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
       const dirPath = resolveLiveSessionPath(session, explicitPath || session.cwd);
       return serveFileList(res, dirPath);
     } catch (e) { return json(res, errorStatus(e), { error: errorMessage(e) }); }
+  }
+  if (cleanPath === '/api/session-resources' && req.method === 'GET') {
+    const sessionId = parsed.searchParams.get('sessionId');
+    if (!sessionId) return json(res, 400, { error: 'No live session selected' });
+    const session = liveManager.get(sessionId);
+    if (!session) return json(res, 404, { error: 'Live session not found' });
+    serveSessionResources(res, session).catch((e) => json(res, 500, { error: errorMessage(e) }));
+    return;
   }
   if (cleanPath === '/api/file/preview' && req.method === 'GET') {
     const sessionId = parsed.searchParams.get('sessionId');
@@ -666,6 +674,13 @@ function serveSessionFile(res: ServerResponse, dirName: string, file: string) {
 }
 
 const IGNORED_NAMES = new Set(['node_modules', '.git', '__pycache__', '.DS_Store', '.Trash', '.next', '.nuxt', 'dist', 'build', '.cache', '.turbo', 'venv', '.venv', 'env', '.env.local', '.pi', 'coverage', '.nyc_output', '.parcel-cache']);
+const DEFAULT_TOOLS: Record<string, { label: string; description: string }> = {
+  read: { label: '读取', description: '读取文件内容' },
+  bash: { label: '命令', description: '执行终端命令' },
+  edit: { label: '编辑', description: '修改已有文件' },
+  write: { label: '创建', description: '创建或覆盖文件' },
+};
+
 function serveFileList(res: ServerResponse, dirPath: string) {
   try {
     dirPath = path.resolve(expandHome(dirPath));
@@ -683,6 +698,94 @@ function serveFileList(res: ServerResponse, dirPath: string) {
     items.sort((a, b) => a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name));
     json(res, 200, { path: dirPath, items });
   } catch (e) { json(res, 500, { error: errorMessage(e) }); }
+}
+
+async function serveSessionResources(res: ServerResponse, session: PiRpcSession) {
+  let commands: JsonRecord[] = [];
+  let commandsError = '';
+  try {
+    const resp = await session.send({ type: 'get_commands' }, { timeoutMs: 5000 });
+    const data = (resp.data || resp.result || resp) as JsonRecord;
+    const rawCommands = Array.isArray(data.commands) ? data.commands : [];
+    commands = rawCommands.filter((item): item is JsonRecord => !!item && typeof item === 'object');
+  } catch (e) {
+    commandsError = errorMessage(e);
+  }
+
+  const skills = commands
+    .filter((command) => command.source === 'skill')
+    .map((command) => ({
+      name: String(command.name || ''),
+      description: typeof command.description === 'string' ? command.description : '',
+      path: resourcePath(command),
+      scope: resourceScope(command),
+    }))
+    .filter((command) => command.name);
+
+  json(res, 200, {
+    skills,
+    tools: collectSessionTools(session.entries),
+    toolsComplete: false,
+    commandsError: commandsError || undefined,
+  });
+}
+
+function resourcePath(command: JsonRecord) {
+  const sourceInfo = command.sourceInfo;
+  if (sourceInfo && typeof sourceInfo === 'object' && 'path' in sourceInfo && typeof sourceInfo.path === 'string') return sourceInfo.path;
+  return typeof command.path === 'string' ? command.path : '';
+}
+
+function resourceScope(command: JsonRecord) {
+  const sourceInfo = command.sourceInfo;
+  if (sourceInfo && typeof sourceInfo === 'object' && 'scope' in sourceInfo && typeof sourceInfo.scope === 'string') return sourceInfo.scope;
+  return typeof command.location === 'string' ? command.location : '';
+}
+
+function collectSessionTools(entries: JsonRecord[]) {
+  const byName = new Map<string, { name: string; label: string; description: string; usedCount: number; lastPreview: string; source: string }>();
+  for (const [name, meta] of Object.entries(DEFAULT_TOOLS)) {
+    byName.set(name, { name, label: meta.label, description: meta.description, usedCount: 0, lastPreview: '', source: 'builtin' });
+  }
+
+  for (const entry of entries) {
+    if (entry.type !== 'message') continue;
+    const message = entry.message as JsonRecord | undefined;
+    if (!message || message.role !== 'assistant' || !Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (!block || typeof block !== 'object') continue;
+      const toolCall = block as JsonRecord;
+      if (toolCall.type !== 'toolCall') continue;
+      const name = String(toolCall.name || '').trim();
+      if (!name) continue;
+      const known = byName.get(name) || {
+        name,
+        label: DEFAULT_TOOLS[name]?.label || name,
+        description: '会话中出现过的工具调用',
+        usedCount: 0,
+        lastPreview: '',
+        source: 'observed',
+      };
+      known.usedCount += 1;
+      known.lastPreview = previewToolArgs(toolCall.arguments);
+      byName.set(name, known);
+    }
+  }
+
+  return Array.from(byName.values()).sort((a, b) => {
+    if (a.usedCount !== b.usedCount) return b.usedCount - a.usedCount;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function previewToolArgs(args: unknown) {
+  if (!args || typeof args !== 'object') return '';
+  const record = args as JsonRecord;
+  for (const key of ['path', 'command', 'query', 'url']) {
+    if (typeof record[key] === 'string' && record[key]) return String(record[key]);
+  }
+  const value = Object.values(record).find((item) => typeof item === 'string' && item);
+  return typeof value === 'string' ? value : '';
 }
 
 function serveFilePreview(res: ServerResponse, filePath: string) {
