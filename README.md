@@ -33,6 +33,12 @@ pi --mode rpc child session N
   - 工具
 - 默认新建任务目录指向 `scenario/`，适合作为后续交通 demo 的工作目录。
 
+## 产品示意图
+
+![Pi Traffic Workspace overview](docs/images/traffic-workspace-overview.png)
+
+![Thinking and tool cards](docs/images/traffic-workspace-tools.png)
+
 ## 快速开始
 
 ```bash
