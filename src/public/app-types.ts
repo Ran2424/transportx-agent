@@ -55,6 +55,7 @@ export type MessageContentBlock = {
   id?: string;
   name?: string;
   arguments?: Record<string, unknown>;
+  durationMs?: number;
 };
 
 export type AppMessage = {

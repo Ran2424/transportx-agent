@@ -11,6 +11,8 @@ export type ToolExecution = {
   status?: string;
   output?: string;
   isError?: boolean;
+  startedAt?: number;
+  durationMs?: number;
 };
 
 type ToolResultBlock = {
@@ -37,24 +39,25 @@ export class ToolCardRenderer {
     const { toolCallId, toolName, args, status } = toolExecution;
 
     const card = document.createElement('div');
-    card.className = 'tool-card';
-    card.dataset.toolCallId = String(toolCallId || '');
-
-    const argsPreview = this.getArgsPreview(String(toolName || ''), args);
-    const argsJson = this.formatJson(args);
     const isExpanded = (status === 'streaming' || status === 'pending');
+    card.className = `tool-card${isExpanded ? ' expanded' : ''}`;
+    card.dataset.toolCallId = String(toolCallId || '');
+    if (toolExecution.startedAt) card.dataset.startedAt = String(toolExecution.startedAt);
 
+    const argsPreview = this.getArgsPreviewInfo(String(toolName || ''), args);
+    const argsJson = this.formatJson(args);
     const isEdit = (toolName === 'edit' || toolName === 'Edit') && args && (args.oldText || args.old_text) && (args.newText || args.new_text);
 
     card.innerHTML = `
-      <div class="tool-card-header" onclick="this.parentElement.querySelector('.tool-card-body').classList.toggle('expanded'); this.querySelector('.tool-card-chevron').classList.toggle('expanded')">
+      <div class="tool-card-header" onclick="this.parentElement.classList.toggle('expanded'); this.parentElement.querySelector('.tool-card-body').classList.toggle('expanded'); this.querySelector('.tool-card-chevron').classList.toggle('expanded')">
         <div class="tool-header-left">
           <span class="tool-card-chevron${isExpanded ? ' expanded' : ''}"><svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M2 1l4 3-4 3z"/></svg></span>
-          <span class="tool-name">${this.escapeHtml(toolName || '')}</span>
-          ${argsPreview ? `<span class="tool-args-preview">${this.escapeHtml(argsPreview)}</span>` : ''}
+          <span class="tool-name">${this.escapeHtml(this.displayToolName(toolName))}</span>
+          ${argsPreview ? `<span class="tool-args-preview" title="${this.escapeHtml(argsPreview.title)}">${this.escapeHtml(argsPreview.text)}</span>` : ''}
         </div>
         <div class="tool-header-right">
           <button class="tool-action-btn copy-output-btn" title="复制输出" onclick="event.stopPropagation(); var t=this.closest('.tool-card').querySelector('.tool-output'); if(!t||!t.textContent.trim())return; var s=t.textContent,b=this; (navigator.clipboard?navigator.clipboard.writeText(s):new Promise(function(r){var a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;left:-9999px';document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);r()})).then(function(){b.classList.add('copied');setTimeout(function(){b.classList.remove('copied')},1500)})"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+          <div class="tool-duration">${this.durationLabel(toolExecution.durationMs)}</div>
           <div class="tool-status ${status}">${this.statusLabel(status)}</div>
         </div>
       </div>
@@ -93,11 +96,13 @@ export class ToolCardRenderer {
       statusElement.className = `tool-status ${toolExecution.status}`;
       statusElement.textContent = this.statusLabel(toolExecution.status);
     }
+    this.updateDuration(card, toolExecution.durationMs);
 
     // Auto-expand when streaming
     if (toolExecution.status === 'streaming') {
       const body = card.querySelector('.tool-card-body');
       const chevron = card.querySelector('.tool-card-chevron');
+      card.classList.add('expanded');
       if (body) body.classList.add('expanded');
       if (chevron) chevron.classList.add('expanded');
     }
@@ -110,7 +115,7 @@ export class ToolCardRenderer {
     }
   }
 
-  finalizeToolCard(toolCallId: string, result: ToolResult, isError: boolean) {
+  finalizeToolCard(toolCallId: string, result: ToolResult, isError: boolean, durationMs?: number) {
     const card = this.toolCards.get(toolCallId);
     if (!card) return;
 
@@ -121,6 +126,8 @@ export class ToolCardRenderer {
       statusElement.className = `tool-status ${status}`;
       statusElement.textContent = this.statusLabel(status);
     }
+    const startedAt = Number(card.dataset.startedAt || 0);
+    this.updateDuration(card, durationMs ?? (startedAt > 0 ? Date.now() - startedAt : undefined));
 
     // Update output with final result
     const outputElement = card.querySelector('.tool-output');
@@ -133,6 +140,7 @@ export class ToolCardRenderer {
     if (!isError) {
       const body = card.querySelector('.tool-card-body');
       const chevron = card.querySelector('.tool-card-chevron');
+      card.classList.remove('expanded');
       if (body) body.classList.remove('expanded');
       if (chevron) chevron.classList.remove('expanded');
     }
@@ -147,6 +155,7 @@ export class ToolCardRenderer {
     const card = document.createElement('div');
     card.className = 'tool-card';
     card.dataset.toolCallId = String(toolCallId || '');
+    if (toolExecution.startedAt) card.dataset.startedAt = String(toolExecution.startedAt);
 
     // Header
     const header = document.createElement('div');
@@ -162,14 +171,15 @@ export class ToolCardRenderer {
 
     const name = document.createElement('span');
     name.className = 'tool-name';
-    name.textContent = String(toolName || '');
+    name.textContent = this.displayToolName(toolName);
     headerLeft.appendChild(name);
 
-    const preview = this.getArgsPreview(String(toolName || ''), args);
+    const preview = this.getArgsPreviewInfo(String(toolName || ''), args);
     if (preview) {
       const previewEl = document.createElement('span');
       previewEl.className = 'tool-args-preview';
-      previewEl.textContent = preview;
+      previewEl.textContent = preview.text;
+      previewEl.title = preview.title;
       headerLeft.appendChild(previewEl);
     }
 
@@ -198,6 +208,11 @@ export class ToolCardRenderer {
     });
     headerRight.appendChild(copyBtn);
 
+    const duration = document.createElement('div');
+    duration.className = 'tool-duration';
+    duration.textContent = this.durationLabel(toolExecution.durationMs);
+    headerRight.appendChild(duration);
+
     const status = document.createElement('div');
     status.className = 'tool-status complete';
     status.textContent = this.statusLabel('complete');
@@ -207,6 +222,7 @@ export class ToolCardRenderer {
 
     // Toggle expand on click
     header.addEventListener('click', () => {
+      card.classList.toggle('expanded');
       body.classList.toggle('expanded');
       chevron.classList.toggle('expanded');
     });
@@ -243,6 +259,13 @@ export class ToolCardRenderer {
     return card;
   }
 
+  updateDuration(card: HTMLElement, durationMs?: number) {
+    const el = card.querySelector<HTMLElement>('.tool-duration');
+    if (!el) return;
+    el.textContent = this.durationLabel(durationMs);
+    el.classList.toggle('empty', durationMs === undefined || durationMs < 0);
+  }
+
   /**
    * Add result to a history card (stays collapsed)
    */
@@ -265,22 +288,43 @@ export class ToolCardRenderer {
   }
 
   /** Compact preview for the header line */
-  getArgsPreview(toolName: string, args?: ToolArgs) {
-    if (!args || Object.keys(args).length === 0) return '';
+  getArgsPreviewInfo(toolName: string, args?: ToolArgs) {
+    if (!args || Object.keys(args).length === 0) return null;
 
     // Show the most relevant arg inline
-    if (args.path) return String(args.path);
-    if (args.command) return String(args.command).substring(0, 80);
-    if (args.query) return String(args.query).substring(0, 60);
-    if (args.url) return String(args.url);
+    if (args.path) return this.previewText(String(args.path), 72);
+    if (args.command) return this.previewText(String(args.command), 82);
+    if (args.query) return this.previewText(String(args.query), 64);
+    if (args.url) return this.previewText(String(args.url), 72);
 
     // Fallback: first string value
     for (const val of Object.values(args)) {
       if (typeof val === 'string' && val.length > 0) {
-        return val.substring(0, 60);
+        return this.previewText(val, 64);
       }
     }
-    return '';
+    return null;
+  }
+
+  previewText(text: string, maxLength: number) {
+    return {
+      text: this.middleTruncate(text, maxLength),
+      title: text,
+    };
+  }
+
+  middleTruncate(text: string, maxLength: number) {
+    if (text.length <= maxLength) return text;
+    const keepStart = Math.max(12, Math.floor(maxLength * 0.34));
+    const keepEnd = Math.max(18, maxLength - keepStart - 1);
+    return `${text.slice(0, keepStart)}…${text.slice(text.length - keepEnd)}`;
+  }
+
+  durationLabel(durationMs?: number) {
+    if (durationMs === undefined || durationMs < 0) return '';
+    if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`;
+    if (durationMs < 10000) return `${(durationMs / 1000).toFixed(1)}s`;
+    return `${Math.round(durationMs / 1000)}s`;
   }
 
   formatJson(obj?: ToolArgs) {
@@ -301,6 +345,17 @@ export class ToolCardRenderer {
       error: '出错',
     };
     return labels[String(status || '')] || String(status || '');
+  }
+
+  displayToolName(toolName?: string) {
+    const labels: Record<string, string> = {
+      read: '读取',
+      bash: '命令',
+      edit: '编辑',
+      write: '创建',
+    };
+    const key = String(toolName || '').toLowerCase();
+    return labels[key] || String(toolName || '');
   }
 
   /** Render a simple inline diff for Edit tool */
@@ -366,6 +421,7 @@ export class ToolCardRenderer {
 
   expandAll() {
     this.toolCards.forEach(card => {
+      card.classList.add('expanded');
       card.querySelector('.tool-card-body')?.classList.add('expanded');
       card.querySelector('.tool-card-chevron')?.classList.add('expanded');
     });
@@ -373,6 +429,7 @@ export class ToolCardRenderer {
 
   collapseAll() {
     this.toolCards.forEach(card => {
+      card.classList.remove('expanded');
       card.querySelector('.tool-card-body')?.classList.remove('expanded');
       card.querySelector('.tool-card-chevron')?.classList.remove('expanded');
     });

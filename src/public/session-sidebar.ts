@@ -4,6 +4,7 @@
 
 export type SidebarSession = {
   filePath?: string;
+  liveSessionId?: string;
   file?: string;
   name?: string | null;
   firstMessage?: string | null;
@@ -13,6 +14,16 @@ export type SidebarSession = {
   live?: boolean;
   tmux?: boolean;
   [key: string]: unknown;
+};
+
+export type SidebarLiveSession = {
+  id?: string;
+  cwd?: string;
+  sessionFile?: string | null;
+  sessionName?: string | null;
+  createdAt?: string;
+  lastActiveAt?: string;
+  live?: boolean;
 };
 
 export type SidebarProject = {
@@ -31,7 +42,9 @@ export class SessionSidebar {
   container: HTMLElement;
   onSessionSelect: (session: SidebarSession | null, project: SidebarProject | null) => void;
   activeSessionFile: string | null;
+  activeLiveSessionId: string | null;
   projects: SidebarProject[];
+  liveSessions: SidebarLiveSession[];
   collapsedProjects: Set<string | undefined>;
   searchQuery: string;
   favourites: string[];
@@ -43,7 +56,9 @@ export class SessionSidebar {
     this.container = container;
     this.onSessionSelect = onSessionSelect;
     this.activeSessionFile = null;
+    this.activeLiveSessionId = null;
     this.projects = [];
+    this.liveSessions = [];
     this.collapsedProjects = new Set();
     this.searchQuery = '';
     this.favourites = JSON.parse(localStorage.getItem('tau-favourites') || '[]');
@@ -91,6 +106,11 @@ export class SessionSidebar {
       console.error('[Sidebar] Failed to load sessions:', error);
       this.container.innerHTML = '<div class="session-loading">会话加载失败</div>';
     }
+  }
+
+  setLiveSessions(sessions: SidebarLiveSession[]) {
+    this.liveSessions = sessions || [];
+    this.render();
   }
 
   setSearchQuery(query: string) {
@@ -235,15 +255,19 @@ export class SessionSidebar {
     });
   }
 
-  setActive(filePath?: string | null) {
+  setActive(filePath?: string | null, liveSessionId?: string | null) {
     this.activeSessionFile = filePath ?? null;
+    this.activeLiveSessionId = liveSessionId ?? null;
     this.container.querySelectorAll('.session-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.filePath === filePath);
+      const matchesFile = !!filePath && el.dataset.filePath === filePath;
+      const matchesLive = !!liveSessionId && el.dataset.liveSessionId === liveSessionId;
+      el.classList.toggle('active', matchesFile || matchesLive);
     });
   }
 
   clearActive() {
     this.activeSessionFile = null;
+    this.activeLiveSessionId = null;
     this.container.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
   }
 
@@ -388,9 +412,10 @@ export class SessionSidebar {
   buildSessionItem(session: SidebarSession, project: SidebarProject) {
     const item = document.createElement('div');
     item.className = 'session-item';
-    item.dataset.filePath = session.filePath;
+    if (session.filePath) item.dataset.filePath = session.filePath;
+    if (session.liveSessionId) item.dataset.liveSessionId = session.liveSessionId;
 
-    if (session.filePath === this.activeSessionFile) {
+    if ((session.filePath && session.filePath === this.activeSessionFile) || (session.liveSessionId && session.liveSessionId === this.activeLiveSessionId)) {
       item.classList.add('active');
     }
 
@@ -409,18 +434,41 @@ export class SessionSidebar {
     `;
 
     item.addEventListener('click', () => this.onSessionSelect(session, project));
-    item.addEventListener('contextmenu', (e) => this.showContextMenu(e, session, project, item));
+    if (session.filePath) item.addEventListener('contextmenu', (e) => this.showContextMenu(e, session, project, item));
 
     return item;
   }
 
   render() {
-    if (this.projects.length === 0) {
+    const liveSessions = this.visibleLiveSessions();
+    if (this.projects.length === 0 && liveSessions.length === 0) {
       this.container.innerHTML = '<div class="session-loading">暂无会话</div>';
       return;
     }
 
     this.container.innerHTML = '';
+
+    if (liveSessions.length > 0) {
+      const liveGroup = document.createElement('div');
+      liveGroup.className = 'project-group live-sessions-group';
+
+      const header = document.createElement('div');
+      header.className = 'project-header';
+      header.innerHTML = `
+        <span class="chevron">●</span>
+        <span>运行中</span>
+        <span class="project-count">${liveSessions.length}</span>
+      `;
+      liveGroup.appendChild(header);
+
+      const sessionsDiv = document.createElement('div');
+      sessionsDiv.className = 'project-sessions';
+      for (const live of liveSessions) {
+        sessionsDiv.appendChild(this.buildSessionItem(this.liveToSidebarSession(live), { path: live.cwd || '', dirName: 'running' }));
+      }
+      liveGroup.appendChild(sessionsDiv);
+      this.container.appendChild(liveGroup);
+    }
 
     // Favourites section — collect from all projects
     const favSessions = [];
@@ -492,6 +540,30 @@ export class SessionSidebar {
     }
 
     if (this.searchQuery) this.applySearch();
+  }
+
+  visibleLiveSessions() {
+    const historicalFiles = new Set<string>();
+    for (const project of this.projects) {
+      for (const session of project.sessions || []) {
+        if (session.filePath) historicalFiles.add(session.filePath);
+      }
+    }
+    return this.liveSessions.filter(s => s.id && (!s.sessionFile || !historicalFiles.has(s.sessionFile)));
+  }
+
+  liveToSidebarSession(session: SidebarLiveSession): SidebarSession {
+    return {
+      liveSessionId: session.id,
+      filePath: session.sessionFile || undefined,
+      name: session.sessionName || this.basename(session.cwd || '') || '新会话',
+      timestamp: session.lastActiveAt || session.createdAt,
+      live: true,
+    };
+  }
+
+  basename(p: string) {
+    return (p || '').split(/[/\\]/).filter(Boolean).pop() || p || '';
   }
 
   formatTime(isoTimestamp?: string) {
