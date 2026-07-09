@@ -2187,6 +2187,11 @@ body.hide-thinking .thinking-block { display: none !important; }
 .tool-card-chevron.expanded { transform: rotate(90deg); }
 
 .tool-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 28px;
   font-weight: 600;
   color: var(--tool-accent-text);
   font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
@@ -2196,6 +2201,8 @@ body.hide-thinking .thinking-block { display: none !important; }
   border: 1px solid color-mix(in srgb, var(--tool-accent) 16%, transparent);
   border-radius: 5px;
   background: color-mix(in srgb, var(--tool-accent) 7%, transparent);
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 :root[data-theme="clean"] .tool-name {
