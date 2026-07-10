@@ -774,9 +774,9 @@ function restoreActiveLiveSession() {
   }
 }
 
-async function selectLiveSession(id: string) {
+async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFailure?: boolean } = {}) {
   const session = liveSessions.find(s => s.id === id);
-  if (!session) return;
+  if (!session) return false;
   suspendCurrentDialogForTabSwitch(id);
   launcherPanel.hide();
   activeLiveSessionId = id;
@@ -798,13 +798,31 @@ async function selectLiveSession(id: string) {
     const res = await fetch(`/api/live-sessions/${encodeURIComponent(id)}/snapshot`);
     const data = await res.json();
     if (!res.ok || data.error) {
-      handleLiveSessionClosed(id);
+      if (!options.keepCurrentMessagesOnFailure) handleLiveSessionClosed(id);
       throw new Error(data.error || '交通任务不存在');
     }
     applyLiveSessionSnapshot({ ...data, sessionId: id });
   } catch (e) {
-    messageRenderer.renderError((e instanceof Error ? e.message : '') || '加载任务快照失败');
-    return;
+    if (options.keepCurrentMessagesOnFailure) {
+      liveSessions = liveSessions.filter(s => s.id !== id);
+      liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
+      if (activeLiveSessionId === id) {
+        activeLiveSessionId = null;
+        localStorage.removeItem('tau-active-live-session-id');
+        activeLiveSessionFile = null;
+      }
+      viewingActiveSession = false;
+      state.reset();
+      showTypingIndicator(false);
+      renderLiveTabs();
+      syncSidebarLiveSessions();
+      updateLiveSessionInputState();
+      updateUI();
+      messageRenderer.renderSystemMessage('已打开历史记录；后台会话暂未恢复，当前不能继续提问。');
+    } else {
+      messageRenderer.renderError((e instanceof Error ? e.message : '') || '加载任务快照失败');
+    }
+    return false;
   }
   if (!fileSidebar.classList.contains('collapsed')) {
     fileBrowser.currentPath = null;
@@ -813,6 +831,7 @@ async function selectLiveSession(id: string) {
   updateLiveSessionInputState();
   processQueuedExtensionUIRequest(id);
   flushQueue();
+  return true;
 }
 
 function applyActiveSessionMetadata(session: LiveSession) {
@@ -1842,6 +1861,25 @@ async function handleSessionSelect(session: SidebarSession | null, project: Side
   }
 }
 
+async function renderHistoricalSession(sessionFile: string) {
+  try {
+    const res = await fetch(`/api/session-history?filePath=${encodeURIComponent(sessionFile)}`);
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '历史记录加载失败');
+    messageRenderer.clear();
+    toolCardRenderer.clear();
+    sessionTotalCost = 0;
+    lastInputTokens = 0;
+    lastUsage = null;
+    renderSessionHistory(data.entries || []);
+    return true;
+  } catch (e) {
+    messageRenderer.clear();
+    messageRenderer.renderError((e instanceof Error ? e.message : '') || '历史记录加载失败');
+    return false;
+  }
+}
+
 async function switchSession(sessionFile: string | null | undefined, session: SidebarSession | null = null, project: SidebarProject | null = null) {
   try {
     // Clear any streaming state from previous session to prevent bleed
@@ -1860,13 +1898,17 @@ async function switchSession(sessionFile: string | null | undefined, session: Si
     // selectLiveSession() will load the resumed tab snapshot with the same
     // historical entries after the backend has attached to the session file.
     if (sessionFile) {
+      const hasHistoricalView = await renderHistoricalSession(sessionFile);
+      viewingActiveSession = false;
+      updateLiveSessionInputState();
+      updateUI();
+
       const live = liveSessions.find(s => s.sessionFile === sessionFile);
       if (live) {
-        await selectLiveSession(live.id);
+        await selectLiveSession(live.id, { keepCurrentMessagesOnFailure: hasHistoricalView });
         return;
       }
       // No live tab yet — ask the server to resume this session.
-      messageRenderer.renderSystemMessage('正在恢复会话...');
       try {
         const resumeBody: Record<string, unknown> = { filePath: sessionFile };
         if (project?.path) resumeBody.cwd = project.path;
@@ -1887,14 +1929,18 @@ async function switchSession(sessionFile: string | null | undefined, session: Si
         // If the server found an existing live tab (reused), just focus it.
         if (data.reused && data.session) {
           upsertLiveSession(data.session);
-          await selectLiveSession(data.session.id);
+          await selectLiveSession(data.session.id, { keepCurrentMessagesOnFailure: hasHistoricalView });
           return;
         }
         upsertLiveSession(data.session);
-        await selectLiveSession(data.session.id);
+        await selectLiveSession(data.session.id, { keepCurrentMessagesOnFailure: hasHistoricalView });
       } catch (e) {
-        messageRenderer.clear();
-        messageRenderer.renderError('恢复会话失败');
+        if (hasHistoricalView) {
+          messageRenderer.renderSystemMessage('已打开历史记录；后台会话暂未恢复，当前不能继续提问。');
+        } else {
+          messageRenderer.clear();
+          messageRenderer.renderError('恢复会话失败');
+        }
         viewingActiveSession = false;
         updateLiveSessionInputState();
         updateUI();

@@ -483,6 +483,15 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
     }).catch((e) => json(res, 400, { error: errorMessage(e) }));
     return;
   }
+  if (cleanPath === '/api/session-history' && req.method === 'GET') {
+    const filePath = parsed.searchParams.get('filePath') || '';
+    try {
+      const sessionFile = resolveSessionFile(filePath);
+      return json(res, 200, { entries: readSessionEntries(sessionFile) });
+    } catch (e) {
+      return json(res, errorStatus(e), { error: errorMessage(e) });
+    }
+  }
   const sessionMatch = cleanPath.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
   if (sessionMatch && req.method === 'GET') return serveSessionFile(res, sessionMatch[1], sessionMatch[2]);
 
