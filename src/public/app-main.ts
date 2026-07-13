@@ -47,7 +47,7 @@ const state = new StateManager();
 // of <body>). A missing element means the page is structurally broken, so we
 // assert non-null at the query site rather than guarding every usage.
 const messageRenderer = new MessageRenderer(document.getElementById('messages')!);
-const toolCardRenderer = new ToolCardRenderer(document.getElementById('messages')!);
+const toolCardRenderer = new ToolCardRenderer(document.getElementById('messages')!, { getSessionId: () => activeLiveSessionId });
 const dialogHandler = new DialogHandler(document.getElementById('dialog-container')!, wsClient, () => activeLiveSessionId);
 
 // Session sidebar

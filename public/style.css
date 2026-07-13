@@ -31,7 +31,7 @@ select:focus-visible {
 
   /* Sizing */
   --sidebar-width: 272px;
-  --activity-collapsed-width: 320px;
+  --activity-collapsed-width: 448px;
 
   /* Motion */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -1905,7 +1905,6 @@ code {
    Thinking Blocks — subtle glass accordion
    ═══════════════════════════════════════════════════════ */
 
-.thinking-block,
 .tool-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1918,29 +1917,26 @@ code {
 }
 
 .thinking-block {
-  background: var(--thinking-bg);
-  border-color: transparent;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   box-shadow: none;
   padding: 0;
-  margin: 1px 0;
+  margin: 2px 0 4px;
   font-size: 13px;
-  color: var(--text-secondary);
-  width: min(640px, 60vw);
-  max-width: min(640px, 60vw);
+  color: var(--text-dim);
+  width: min(900px, 72vw);
+  max-width: min(900px, 72vw);
+  overflow: visible;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
-.thinking-block:not(.expanded),
 .tool-card:not(.expanded) {
   width: min(var(--activity-collapsed-width), 100%);
   max-width: min(var(--activity-collapsed-width), 100%);
 }
 
-.thinking-block:not(.expanded) {
-  border-color: var(--border);
-  background: var(--tool-bg);
-}
-
-:root[data-theme="clean"] .thinking-block,
 :root[data-theme="clean"] .tool-card {
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   border-color: #dbe6f3;
@@ -1948,24 +1944,13 @@ code {
 }
 
 :root[data-theme="clean"] .thinking-block {
-  background: #f6f8fb;
-  border-color: transparent;
+  background: transparent;
+  border: none;
   box-shadow: none;
 }
 
-:root[data-theme="clean"] .thinking-block:not(.expanded) {
-  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
-  border-color: #d6e5f5;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.035);
-}
-
-.thinking-block:hover {
-  border-color: var(--border-hover);
-}
-
 :root[data-theme="clean"] .thinking-block:hover {
-  background: #f2f6fb;
-  border-color: transparent;
+  background: transparent;
   box-shadow: none;
 }
 
@@ -1974,15 +1959,29 @@ code {
   align-items: center;
   gap: 7px;
   min-height: 30px;
-  padding: 5px 10px;
+  padding: 2px 0;
+  border: 1px solid transparent;
+  border-radius: 0;
   cursor: pointer;
   user-select: none;
   font-size: 12px;
   color: var(--text-dim);
-  transition: background var(--duration) var(--ease);
+  transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
 }
 
-.thinking-toggle:hover { background: var(--bg-glass-hover); }
+.thinking-toggle:hover { background: transparent; }
+
+.thinking-block.expanded .thinking-toggle {
+  width: auto;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+:root[data-theme="clean"] .thinking-block.expanded .thinking-toggle {
+  background: transparent;
+  border-color: transparent;
+}
 
 .thinking-label {
   color: var(--thinking-accent-text);
@@ -2097,12 +2096,12 @@ code {
 .thinking-toggle.expanded .chevron { transform: rotate(90deg); }
 
 .thinking-content {
-  display: none;
-  padding: 8px 11px 11px;
+  display: block;
+  padding: 8px 0 0;
   white-space: pre-wrap;
-  border-top: 1px solid rgba(138, 151, 170, 0.12);
-  font-size: 12px;
-  line-height: 1.65;
+  border-top: none;
+  font-size: 13px;
+  line-height: 1.7;
   color: var(--text-dim);
 }
 
@@ -2218,7 +2217,7 @@ body.hide-thinking .thinking-block { display: none !important; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: min(280px, 30vw);
+  max-width: min(392px, 42vw);
 }
 
 :root[data-theme="clean"] .tool-args-preview {
@@ -2387,6 +2386,64 @@ body.hide-thinking .thinking-block { display: none !important; }
 .tool-output::-webkit-scrollbar { width: 4px; height: 4px; }
 .tool-output::-webkit-scrollbar-track { background: transparent; }
 .tool-output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.tool-image-previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 210px));
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="clean"] .tool-image-previews,
+:root[data-theme="terracotta"] .tool-image-previews,
+:root[data-theme="sage"] .tool-image-previews {
+  background: rgba(248, 250, 252, 0.54);
+}
+
+.tool-image-preview {
+  display: block;
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease), transform var(--duration) var(--ease);
+}
+
+.tool-image-preview:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.tool-image-preview img {
+  display: block;
+  width: 100%;
+  height: 128px;
+  object-fit: contain;
+  background:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.12) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.12) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.tool-image-caption {
+  display: block;
+  padding: 7px 9px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-top: 1px solid var(--border);
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-size: 10px;
+  line-height: 1.2;
+}
 
 /* Diff view for Edit tool */
 .tool-diff {

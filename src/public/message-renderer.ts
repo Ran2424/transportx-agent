@@ -149,39 +149,18 @@ export class MessageRenderer {
     return div;
   }
 
-  renderThinkingBlock(thinking?: string, durationMs?: number, expanded = true) {
-    const id = 'thinking-' + Math.random().toString(36).slice(2, 8);
-    const expandedClass = expanded ? ' expanded' : '';
-    return `<div class="thinking-block${expandedClass}">
-<div class="thinking-toggle${expandedClass}" onclick="var p=this.parentElement,c=document.getElementById('${id}');c.classList.toggle('expanded');this.classList.toggle('expanded');p.classList.toggle('expanded')">
-	<span class="chevron"><svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M2 1l4 3-4 3z"/></svg></span>
-		<span class="thinking-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/><path d="M6.5 9h11"/><path d="M7 13h10"/></svg> 思考</span>
-		<span class="thinking-header-right">
-		  <button class="thinking-copy-btn" type="button" title="复制思考" aria-label="复制思考"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
-		  <span class="thinking-duration">${this.durationLabel(durationMs)}</span>
-		  <span class="thinking-status complete" aria-label="思考完成"></span>
-		</span>
-	</div>
-	<div class="thinking-content${expandedClass}" id="${id}">${this.escapeHtml(thinking)}</div>
-	</div>`;
+  renderThinkingBlock(thinking?: string, _durationMs?: number, _expanded = true) {
+    return `<div class="thinking-block"><div class="thinking-content">${this.escapeHtml(thinking)}</div></div>`;
   }
 
-  updateStreamingThinking(messageElement: HTMLElement, thinking: string, durationMs?: number) {
+  updateStreamingThinking(messageElement: HTMLElement, thinking: string, _durationMs?: number) {
     let thinkingDiv = messageElement.querySelector('.streaming-thinking');
     if (!thinkingDiv) {
       const contentDiv = messageElement.querySelector('.message-content');
       if (!contentDiv) return;
       thinkingDiv = document.createElement('div');
-      thinkingDiv.className = 'thinking-block streaming-thinking expanded';
-      thinkingDiv.innerHTML = `
-        <div class="thinking-toggle expanded" onclick="var p=this.parentElement,c=this.nextElementSibling;c.classList.toggle('expanded');this.classList.toggle('expanded');p.classList.toggle('expanded')">
-          <span class="chevron"><svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M2 1l4 3-4 3z"/></svg></span>
-          <span class="thinking-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/><path d="M6.5 9h11"/><path d="M7 13h10"/></svg> 思考</span>
-          <span class="thinking-header-right">
-            <span class="thinking-duration"></span>
-          </span>
-        </div>
-        <div class="thinking-content expanded"></div>`;
+      thinkingDiv.className = 'thinking-block streaming-thinking';
+      thinkingDiv.innerHTML = '<div class="thinking-content"></div>';
       contentDiv.prepend(thinkingDiv);
     }
     const contentEl = thinkingDiv.querySelector('.thinking-content');
@@ -189,8 +168,6 @@ export class MessageRenderer {
       contentEl.textContent = thinking;
       this.scrollToBottom();
     }
-    const durationEl = thinkingDiv.querySelector<HTMLElement>('.thinking-duration');
-    if (durationEl) durationEl.textContent = this.durationLabel(durationMs);
   }
 
   updateStreamingMessage(messageElement: HTMLElement, content: string) {
