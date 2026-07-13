@@ -41,9 +41,12 @@
       <div class="header">
         <div class="header-left">
           <button class="sidebar-toggle" id="sidebar-toggle" title="展开/收起侧栏" aria-label="展开/收起侧栏"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-          <button class="model-input" id="model-input" type="button"
+          <button class="model-select-trigger" id="model-input" type="button"
                   title="选择本任务使用的模型与思考级别"
-                  aria-label="选择模型与思考级别"><span class="model-input-label" id="model-input-label">模型</span></button>
+                  aria-label="选择模型与思考级别">
+            <span class="model-input-label" id="model-input-label">模型</span>
+            <span class="model-select-chevron" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+          </button>
         </div>
         <div class="header-right">
           <div class="stats-anchor">
@@ -211,9 +214,24 @@
       <button class="model-picker-close" id="model-picker-close" type="button" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="model-picker-body">
-      <input class="model-picker-input" id="model-picker-input" type="text" placeholder="provider/model:thinking" autocomplete="off" spellcheck="false">
-      <div class="model-picker-message" id="model-picker-message">输入 provider 或模型名称；可选 :off|minimal|low|medium|high|xhigh</div>
-      <div class="model-list" id="model-picker-list" role="listbox" aria-label="可用模型"></div>
+      <div class="model-picker-controls">
+        <label class="model-picker-field" for="model-picker-select">
+          <span>模型</span>
+          <select class="model-picker-select" id="model-picker-select"></select>
+        </label>
+        <label class="model-picker-field" for="model-thinking-select">
+          <span>思考级别</span>
+          <select class="model-picker-select" id="model-thinking-select">
+            <option value="off">关闭</option>
+            <option value="minimal">极简</option>
+            <option value="low">低</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+            <option value="xhigh">极高</option>
+          </select>
+        </label>
+      </div>
+      <div class="model-picker-message" id="model-picker-message">从 Pi 已有模型列表中选择；思考级别单独设置。</div>
     </div>
     <div class="model-picker-actions">
       <button type="button" class="secondary-btn" id="model-picker-cancel">取消</button>

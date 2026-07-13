@@ -1091,13 +1091,14 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* Model button — prominent in header */
-.model-input {
+/* Model selector — prominent in header */
+.model-input,
+.model-select-trigger {
   appearance: none;
   background: var(--bg-glass);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 4px 10px;
+  padding: 4px 8px 4px 10px;
   font-size: 12px;
   font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
   color: var(--text-primary);
@@ -1109,32 +1110,49 @@ body {
   cursor: pointer;
   overflow: hidden;
   text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* The label span is the text container: ellipsized on desktop, a swipeable
    scroll container on mobile (buttons themselves are unreliable scrollers). */
 .model-input-label {
   display: block;
+  min-width: 0;
+  flex: 1 1 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.model-input:hover {
+.model-select-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.model-input:hover,
+.model-select-trigger:hover {
   background: var(--bg-glass-hover);
   border-color: var(--border-hover);
 }
 
-.model-input:focus-visible {
+.model-input:focus-visible,
+.model-select-trigger:focus-visible {
   border-color: var(--accent);
 }
 
-.model-input:disabled {
+.model-input:disabled,
+.model-select-trigger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.model-input.invalid {
+.model-input.invalid,
+.model-select-trigger.invalid {
   border-color: var(--error);
 }
 
@@ -3030,9 +3048,26 @@ body.hide-thinking .thinking-block { display: none !important; }
   min-height: 0;
 }
 
+.model-picker-controls {
+  display: grid;
+  gap: 12px;
+  padding: 14px 14px 8px;
+}
+
+.model-picker-field {
+  display: grid;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.model-picker-select,
 .model-picker-input {
-  margin: 12px 12px 6px;
-  padding: 9px 10px;
+  appearance: none;
+  width: 100%;
+  padding: 9px 34px 9px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-glass);
@@ -3042,17 +3077,26 @@ body.hide-thinking .thinking-block { display: none !important; }
   outline: none;
 }
 
+.model-picker-select {
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.model-picker-select:focus,
 .model-picker-input:focus {
   border-color: var(--accent);
 }
 
+.model-picker-select.invalid,
 .model-picker-input.invalid {
   border-color: var(--error);
 }
 
 .model-picker-message {
   min-height: 18px;
-  padding: 0 14px 6px;
+  padding: 0 14px 10px;
   color: var(--text-dim);
   font-size: 11px;
   line-height: 1.35;
@@ -3683,7 +3727,8 @@ body.hide-thinking .thinking-block { display: none !important; }
 
   /* Let the model input use all remaining header space on small screens
      so the full provider/model:thinking string stays visible. */
-  .model-input {
+  .model-input,
+  .model-select-trigger {
     flex: 1 1 0;
     min-width: 0;
     max-width: none;

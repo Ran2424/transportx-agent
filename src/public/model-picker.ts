@@ -21,7 +21,7 @@ type ModelPickerOptions = {
 };
 
 export function setupModelPicker(options: ModelPickerOptions) {
-  const { getActiveLiveSessionId, isViewingActiveSession, rpcCommand, flashStatusError, escapeHtml, setContextWindowSize, updateContextPill } = options;
+  const { getActiveLiveSessionId, isViewingActiveSession, rpcCommand, flashStatusError, setContextWindowSize, updateContextPill } = options;
 
 // ═══════════════════════════════════════
 // Model Picker
@@ -35,20 +35,17 @@ const modelInput = document.getElementById('model-input')!;
 const modelInputLabel = document.getElementById('model-input-label')!;
 const modelPickerOverlay = document.getElementById('model-picker-overlay')!;
 const modelPicker = document.getElementById('model-picker')!;
-const modelPickerInput = document.getElementById('model-picker-input')!;
-const modelPickerList = document.getElementById('model-picker-list')!;
+const modelPickerSelect = document.getElementById('model-picker-select') as HTMLSelectElement;
+const modelThinkingSelect = document.getElementById('model-thinking-select') as HTMLSelectElement;
 const modelPickerMessage = document.getElementById('model-picker-message')!;
 const modelPickerClose = document.getElementById('model-picker-close')!;
 const modelPickerCancel = document.getElementById('model-picker-cancel')!;
 const modelPickerSave = document.getElementById('model-picker-save')!;
 const VALID_THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
-const MODEL_PICKER_HELP = '输入 provider 或模型名称；可选 :off|minimal|low|medium|high|xhigh';
+const MODEL_PICKER_HELP = '从 Pi 已有模型列表中选择；思考级别单独设置。';
 let currentModelId: ModelRecord | string = '';
 let availableModels: Array<ModelRecord | string> = [];
 let currentThinkingLevel = 'off';
-let modelPickerMatches: ModelRecord[] = [];
-let modelPickerActiveIndex = -1;
-let modelPickerJustSelected = false;
 
 function modelDisplayString() {
   if (!currentModelId) return '';
@@ -156,177 +153,91 @@ function modelRef(model: { provider?: string; id?: string }) {
   return `${model.provider}/${model.id}`;
 }
 
-function fuzzyCharsEquivalent(a: string, b: string) {
-  if (a === b) return true;
-  const groups = ['o0', 'i1l', 's5', 'b8', 'g9', 'z2'];
-  return groups.some((group) => group.includes(a) && group.includes(b));
-}
-
-function fuzzyMatch(query: string, text: string) {
-  const q = String(query || '').toLowerCase();
-  const t = String(text || '').toLowerCase();
-  if (!q) return { score: 0 };
-  if (!t) return null;
-  const compactQ = q.replace(/[\W_]+/g, '');
-  const compactT = t.replace(/[\W_]+/g, '');
-  if (compactQ && compactT.includes(compactQ)) {
-    return { score: 1200 - compactT.indexOf(compactQ) };
-  }
-
-  let qi = 0;
-  let lastMatch = -1;
-  let score = 0;
-  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
-    const qc = q[qi];
-    const tc = t[ti];
-    const direct = qc === tc;
-    const swap = fuzzyCharsEquivalent(qc, tc);
-    if (!direct && !swap) continue;
-    score += direct ? 20 : 8;
-    if (ti === 0 || /[\s/_:.-]/.test(t[ti - 1])) score += 12;
-    if (lastMatch === ti - 1) score += 18;
-    if (lastMatch !== -1) score -= Math.max(0, ti - lastMatch - 1);
-    lastMatch = ti;
-    qi++;
-  }
-  if (qi !== q.length) return null;
-  if (t === q) score += 500;
-  if (t.startsWith(q)) score += 250;
-  return { score };
-}
-
-function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => string) {
-  const tokens = String(query || '').trim().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return items.map((item, index) => ({ item, score: -index }));
-  const scored: { item: T; score: number }[] = [];
-  items.forEach((item, index) => {
-    const text = getText(item);
-    let total = 0;
-    for (const token of tokens) {
-      const match = fuzzyMatch(token, text);
-      if (!match) return;
-      total += match.score;
-    }
-    scored.push({ item, score: total - index * 0.01 });
-  });
-  return scored.sort((a, b) => b.score - a.score);
-}
-
-function validThinkingSuffix(raw: string) {
-  const text = String(raw || '').trim();
-  const colonIdx = text.lastIndexOf(':');
-  if (colonIdx === -1) return '';
-  const candidate = text.slice(colonIdx + 1).toLowerCase();
-  return VALID_THINKING_LEVELS.has(candidate) ? `:${candidate}` : '';
-}
-
 function setModelPickerMessage(message = MODEL_PICKER_HELP, isError = false) {
   modelPickerMessage.textContent = message;
   modelPickerMessage.classList.toggle('error', isError);
-  modelPickerInput.classList.toggle('invalid', isError);
+  modelPickerSelect.classList.toggle('invalid', isError);
 }
 
-function updateModelPickerActiveItem() {
-  modelPickerList.querySelectorAll('.model-item').forEach((item, index) => {
-    const active = index === modelPickerActiveIndex;
-    item.classList.toggle('active', active);
-    item.setAttribute('aria-selected', active ? 'true' : 'false');
-  });
+function currentModelRef() {
+  if (!currentModelId) return '';
+  if (typeof currentModelId === 'object') return modelRef(currentModelId);
+  const str = String(currentModelId);
+  return str.includes('/') ? str : '';
 }
 
-function renderModelPickerSuggestions() {
-  const raw = modelPickerInput.value || '';
-  modelPickerSave.disabled = !raw.trim();
-  modelPickerList.innerHTML = '';
-  modelPickerJustSelected = false;
-  if (raw.includes(':')) {
-    modelPickerMatches = [];
-    modelPickerActiveIndex = -1;
-    setModelPickerMessage(MODEL_PICKER_HELP, false);
-    return;
-  }
+function modelOptionLabel(model: NormalizedModel) {
+  const meta = [
+    model.contextWindow ? `上下文 ${model.contextWindow}` : '',
+    model.maxOutput ? `输出 ${model.maxOutput}` : '',
+    model.thinking === true ? '思考' : '',
+    model.images === true ? '图像' : '',
+  ].filter(Boolean).join(' · ');
+  return meta ? `${model.provider}/${model.id}  ·  ${meta}` : `${model.provider}/${model.id}`;
+}
 
+function populateModelSelect() {
   const models = normalizedAvailableModels();
-  const query = raw.trim();
-  modelPickerMatches = fuzzyFilter(models, query, (model) => `${model.id} ${model.provider}`).slice(0, 50).map((m) => m.item);
-  if (modelPickerActiveIndex >= modelPickerMatches.length) modelPickerActiveIndex = modelPickerMatches.length - 1;
-  if (modelPickerActiveIndex < 0 && modelPickerMatches.length) modelPickerActiveIndex = 0;
+  const selected = modelPickerSelect.value || currentModelRef();
+  const seen = new Set<string>();
+  modelPickerSelect.innerHTML = '';
 
-  if (!modelPickerMatches.length) {
-    const empty = document.createElement('div');
-    empty.className = 'model-item-context';
-    empty.textContent = models.length ? '没有匹配的模型。仍可手动保存 provider/model。' : '暂无模型列表。仍可手动保存 provider/model。';
-    empty.style.padding = '10px 12px';
-    modelPickerList.appendChild(empty);
+  for (const model of models) {
+    const ref = modelRef(model);
+    if (!ref || seen.has(ref)) continue;
+    seen.add(ref);
+    const option = document.createElement('option');
+    option.value = ref;
+    option.textContent = modelOptionLabel(model);
+    modelPickerSelect.appendChild(option);
+  }
+
+  if (selected && !seen.has(selected)) {
+    const option = document.createElement('option');
+    option.value = selected;
+    option.textContent = `${selected}  ·  当前模型`;
+    modelPickerSelect.insertBefore(option, modelPickerSelect.firstChild);
+  }
+
+  if (modelPickerSelect.options.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = '暂无可用模型';
+    modelPickerSelect.appendChild(option);
+    modelPickerSave.disabled = true;
+    modelPickerSelect.disabled = true;
+    setModelPickerMessage('模型列表加载失败或为空，请稍后重试。', true);
     return;
   }
 
-  modelPickerMatches.forEach((model, index) => {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = `model-item${index === modelPickerActiveIndex ? ' active' : ''}`;
-    item.setAttribute('role', 'option');
-    item.setAttribute('aria-selected', index === modelPickerActiveIndex ? 'true' : 'false');
-    const meta = [
-      model.contextWindow || model.context,
-      model.maxOutput ? `输出 ${model.maxOutput}` : '',
-      model.thinking === true ? '思考' : '',
-      model.images === true ? '图像' : '',
-    ].filter(Boolean).join(' · ');
-    item.innerHTML = `
-      <span class="model-item-name">${escapeHtml(model.id || '')}<span class="model-item-provider">${escapeHtml(model.provider || '')}</span></span>
-      <span class="model-item-context">${escapeHtml(meta)}</span>
-    `;
-    item.addEventListener('mouseenter', () => {
-      modelPickerActiveIndex = index;
-      updateModelPickerActiveItem();
-    });
-    item.addEventListener('click', () => selectModelSuggestion(index));
-    modelPickerList.appendChild(item);
-  });
-}
-
-function selectModelSuggestion(index: number) {
-  const model = modelPickerMatches[index];
-  if (!model) return;
-  const suffix = validThinkingSuffix(modelPickerInput.value);
-  modelPickerInput.value = `${modelRef(model)}${suffix}`;
-  modelPickerInput.focus();
-  modelPickerInput.setSelectionRange(modelPickerInput.value.length, modelPickerInput.value.length);
-  modelPickerMatches = [];
-  modelPickerActiveIndex = -1;
-  modelPickerList.innerHTML = '';
-  modelPickerSave.disabled = false;
-  modelPickerJustSelected = true;
+  modelPickerSelect.disabled = false;
+  modelPickerSelect.value = selected && Array.from(modelPickerSelect.options).some(option => option.value === selected)
+    ? selected
+    : modelPickerSelect.options[0].value;
+  modelThinkingSelect.value = VALID_THINKING_LEVELS.has(currentThinkingLevel) ? currentThinkingLevel : 'off';
+  modelPickerSave.disabled = !modelPickerSelect.value;
+  setModelPickerMessage(MODEL_PICKER_HELP, false);
 }
 
 function openModelPicker() {
   // The model button is disabled by updateLiveSessionInputState when there is no
   // active live session, so this handler is only reachable via click when a
   // session exists.
-  modelPickerInput.value = modelDisplayString();
-  modelPickerActiveIndex = -1;
-  modelPickerJustSelected = false;
   setModelPickerMessage(MODEL_PICKER_HELP, false);
-  renderModelPickerSuggestions();
+  populateModelSelect();
   modelPicker.classList.remove('hidden');
   modelPickerOverlay.classList.remove('hidden');
   requestAnimationFrame(() => {
-    modelPickerInput.focus();
-    modelPickerInput.select();
+    modelPickerSelect.focus();
   });
   fetchModelInfo().then(() => {
-    if (!modelPicker.classList.contains('hidden')) renderModelPickerSuggestions();
+    if (!modelPicker.classList.contains('hidden')) populateModelSelect();
   }).catch(() => {});
 }
 
 function closeModelPicker() {
   modelPicker.classList.add('hidden');
   modelPickerOverlay.classList.add('hidden');
-  modelPickerMatches = [];
-  modelPickerActiveIndex = -1;
-  modelPickerJustSelected = false;
-  modelPickerList.innerHTML = '';
   setModelPickerMessage(MODEL_PICKER_HELP, false);
 }
 
@@ -387,12 +298,18 @@ async function applyModelSpec(rawSpec: string) {
 }
 
 async function saveModelPicker() {
-  const result = await applyModelSpec(modelPickerInput.value);
+  const selectedModel = modelPickerSelect.value;
+  if (!selectedModel) {
+    setModelPickerMessage('请先选择一个模型。', true);
+    modelPickerSelect.focus();
+    return;
+  }
+  const result = await applyModelSpec(`${selectedModel}:${modelThinkingSelect.value || 'off'}`);
   if (result.success) {
     closeModelPicker();
   } else {
     setModelPickerMessage(result.error || '更新模型失败', true);
-    modelPickerInput.focus();
+    modelPickerSelect.focus();
   }
 }
 
@@ -401,47 +318,18 @@ modelPickerOverlay.addEventListener('click', closeModelPicker);
 modelPickerClose.addEventListener('click', closeModelPicker);
 modelPickerCancel.addEventListener('click', closeModelPicker);
 modelPickerSave.addEventListener('click', saveModelPicker);
-modelPickerInput.addEventListener('input', () => {
-  modelPickerActiveIndex = -1;
-  modelPickerJustSelected = false;
-  setModelPickerMessage(MODEL_PICKER_HELP, false);
-  renderModelPickerSuggestions();
-});
-modelPickerInput.addEventListener('keydown', (e) => {
+modelPickerSelect.addEventListener('change', () => setModelPickerMessage(MODEL_PICKER_HELP, false));
+modelThinkingSelect.addEventListener('change', () => setModelPickerMessage(MODEL_PICKER_HELP, false));
+modelPicker.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     e.preventDefault();
     e.stopPropagation();
     closeModelPicker();
     return;
   }
-  if (e.key === 'ArrowDown') {
+  if (e.key === 'Enter' && e.target !== modelPickerSelect && e.target !== modelThinkingSelect) {
     e.preventDefault();
-    if (modelPickerMatches.length) {
-      modelPickerActiveIndex = (modelPickerActiveIndex + 1) % modelPickerMatches.length;
-      renderModelPickerSuggestions();
-    }
-    return;
-  }
-  if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    if (modelPickerMatches.length) {
-      modelPickerActiveIndex = (modelPickerActiveIndex - 1 + modelPickerMatches.length) % modelPickerMatches.length;
-      renderModelPickerSuggestions();
-    }
-    return;
-  }
-  if (e.key === 'Tab' && modelPickerMatches.length && modelPickerActiveIndex >= 0) {
-    e.preventDefault();
-    selectModelSuggestion(modelPickerActiveIndex);
-    return;
-  }
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    if (!modelPickerJustSelected && modelPickerMatches.length && modelPickerActiveIndex >= 0) {
-      selectModelSuggestion(modelPickerActiveIndex);
-    } else {
-      saveModelPicker();
-    }
+    saveModelPicker();
   }
 });
 
