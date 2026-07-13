@@ -26,13 +26,23 @@ export type ToolResult = {
   [key: string]: unknown;
 };
 
+type ToolCardOptions = {
+  getSessionId?: () => string | null;
+};
+
+const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
+const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|ico)$/i;
+const MAX_IMAGE_PREVIEWS = 3;
+
 export class ToolCardRenderer {
   container: HTMLElement;
   toolCards: Map<string, HTMLElement>;
+  getSessionId: () => string | null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: ToolCardOptions = {}) {
     this.container = container;
     this.toolCards = new Map(); // toolCallId -> element
+    this.getSessionId = options.getSessionId || (() => null);
   }
 
   createToolCard(toolExecution: ToolExecution) {
@@ -42,6 +52,8 @@ export class ToolCardRenderer {
     const isExpanded = (status === 'streaming' || status === 'pending');
     card.className = `tool-card${isExpanded ? ' expanded' : ''}`;
     card.dataset.toolCallId = String(toolCallId || '');
+    card.dataset.toolName = String(toolName || '');
+    this.storeArgs(card, args);
     if (toolExecution.startedAt) card.dataset.startedAt = String(toolExecution.startedAt);
 
     const argsPreview = this.getArgsPreviewInfo(String(toolName || ''), args);
@@ -111,6 +123,7 @@ export class ToolCardRenderer {
     const outputElement = card.querySelector('.tool-output');
     if (outputElement && toolExecution.output) {
       outputElement.textContent = toolExecution.output;
+      this.renderImagePreviews(card, toolExecution.output);
       this.scrollToBottom();
     }
   }
@@ -134,6 +147,7 @@ export class ToolCardRenderer {
     if (outputElement && result) {
       const output = this.formatResult(result);
       outputElement.textContent = output;
+      this.renderImagePreviews(card, output);
     }
 
     // Collapse completed cards (less noise)
@@ -155,6 +169,8 @@ export class ToolCardRenderer {
     const card = document.createElement('div');
     card.className = 'tool-card';
     card.dataset.toolCallId = String(toolCallId || '');
+    card.dataset.toolName = String(toolName || '');
+    this.storeArgs(card, args);
     if (toolExecution.startedAt) card.dataset.startedAt = String(toolExecution.startedAt);
 
     // Header
@@ -283,7 +299,9 @@ export class ToolCardRenderer {
 
     const outputElement = card.querySelector('.tool-output');
     if (outputElement && result) {
-      outputElement.textContent = this.formatResult(result);
+      const output = this.formatResult(result);
+      outputElement.textContent = output;
+      this.renderImagePreviews(card, output);
     }
   }
 
@@ -398,6 +416,113 @@ export class ToolCardRenderer {
     }
 
     return JSON.stringify(result, null, 2);
+  }
+
+  renderImagePreviews(card: HTMLElement, output: string) {
+    const wrapper = card.querySelector('.tool-output-wrapper') || card.querySelector('.tool-card-body');
+    if (!wrapper) return;
+
+    wrapper.querySelector('.tool-image-previews')?.remove();
+
+    const sessionId = this.getSessionId();
+    if (!sessionId) return;
+
+    const args = this.readStoredArgs(card);
+    const paths = this.collectImagePaths(output, args);
+    if (paths.length === 0) return;
+
+    const list = document.createElement('div');
+    list.className = 'tool-image-previews';
+
+    for (const imagePath of paths.slice(0, MAX_IMAGE_PREVIEWS)) {
+      const params = new URLSearchParams({ sessionId, path: imagePath });
+      const url = `/api/file/preview?${params.toString()}`;
+      const link = document.createElement('a');
+      link.className = 'tool-image-preview';
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.title = imagePath;
+
+      const img = document.createElement('img');
+      img.src = url;
+      img.loading = 'lazy';
+      img.alt = `工具图片预览：${this.basename(imagePath)}`;
+      img.onerror = () => {
+        link.remove();
+        if (!list.children.length) list.remove();
+      };
+
+      const caption = document.createElement('span');
+      caption.className = 'tool-image-caption';
+      caption.textContent = this.basename(imagePath);
+
+      link.appendChild(img);
+      link.appendChild(caption);
+      list.appendChild(link);
+    }
+
+    wrapper.appendChild(list);
+  }
+
+  collectImagePaths(output: string, args?: ToolArgs) {
+    const paths: string[] = [];
+    const seen = new Set<string>();
+    const visitText = (text: string) => {
+      IMAGE_PATH_RE.lastIndex = 0;
+      for (const match of text.matchAll(IMAGE_PATH_RE)) {
+        this.addImagePath(paths, seen, match[1]);
+      }
+    };
+
+    visitText(output || '');
+    for (const value of this.argStrings(args)) visitText(value);
+
+    return paths;
+  }
+
+  addImagePath(paths: string[], seen: Set<string>, rawPath: string) {
+    const imagePath = this.cleanImagePath(rawPath);
+    if (!imagePath || !IMAGE_EXT_RE.test(imagePath) || seen.has(imagePath)) return;
+    seen.add(imagePath);
+    paths.push(imagePath);
+  }
+
+  cleanImagePath(rawPath: string) {
+    return String(rawPath || '')
+      .trim()
+      .replace(/^[`'"\[(（]+/, '')
+      .replace(/[`'",，。；;:)）\]]+$/, '');
+  }
+
+  argStrings(value: unknown): string[] {
+    if (!value) return [];
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap((item) => this.argStrings(item));
+    if (typeof value === 'object') return Object.values(value as Record<string, unknown>).flatMap((item) => this.argStrings(item));
+    return [];
+  }
+
+  storeArgs(card: HTMLElement, args?: ToolArgs) {
+    if (!args) return;
+    try {
+      card.dataset.toolArgs = JSON.stringify(args);
+    } catch {
+      delete card.dataset.toolArgs;
+    }
+  }
+
+  readStoredArgs(card: HTMLElement): ToolArgs | undefined {
+    if (!card.dataset.toolArgs) return undefined;
+    try {
+      return JSON.parse(card.dataset.toolArgs) as ToolArgs;
+    } catch {
+      return undefined;
+    }
+  }
+
+  basename(filePath: string) {
+    return this.cleanImagePath(filePath).split('/').pop() || filePath;
   }
 
   escapeHtml(text: unknown) {
