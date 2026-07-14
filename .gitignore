@@ -20,3 +20,7 @@ node_modules/
 pi-session-*.html
 references/pi-development-guide.md
 .tags
+
+# Local agent/runtime workspaces
+.agents/
+scenario/
