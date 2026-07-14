@@ -5,7 +5,7 @@
 import { WebSocketClient } from './websocket-client.js';
 import { StateManager } from './state.js';
 import { MessageRenderer } from './message-renderer.js';
-import { ToolCardRenderer, type ToolExecution, type ToolResult } from './tool-card.js';
+import { ToolCardRenderer, formatToolResultText, type ToolExecution, type ToolResult } from './tool-card.js';
 import { DialogHandler, type DialogRequest } from './dialogs.js';
 import { SessionSidebar, type SidebarProject, type SidebarSession } from './session-sidebar.js';
 import { themes, applyTheme, getCurrentTheme } from './themes.js';
@@ -153,7 +153,7 @@ const launcherPanel = setupLauncherPanel({
       const res = await fetch('/api/live-sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: projectPath, model: '' }),
+        body: JSON.stringify({ cwd: currentNewSessionCwd(), name: basename(projectPath || '任务'), model: '' }),
       });
       const data = await res.json();
       if (data.session) {
@@ -864,6 +864,13 @@ function currentNewSessionCwd() {
   return DEFAULT_TASK_CWD;
 }
 
+function updateNewSessionCwdPreview() {
+  if (!newLiveSessionCwdPreview) return;
+  const cwd = currentNewSessionCwd();
+  const name = newLiveSessionName.value.trim() || '会话名称';
+  newLiveSessionCwdPreview.textContent = `将在 ${cwd} 下创建新目录：时间-${name}`;
+}
+
 function modelOptionValue(model: ModelRecord | string) {
   if (typeof model === 'string') return model;
   const provider = model?.provider || '';
@@ -927,9 +934,7 @@ function openNewLiveSessionModal() {
   newLiveSessionName.value = '';
   const cwd = currentNewSessionCwd();
   newLiveSessionCwd.value = cwd;
-  if (newLiveSessionCwdPreview) {
-    newLiveSessionCwdPreview.textContent = cwd ? `任务目录：${cwd}` : '任务目录：当前服务启动目录';
-  }
+  updateNewSessionCwdPreview();
   loadModelOptions();
   requestAnimationFrame(() => newLiveSessionName?.focus());
 }
@@ -943,6 +948,7 @@ liveTabAddBtn?.addEventListener('click', openNewLiveSessionModal);
 document.getElementById('new-live-session-close')?.addEventListener('click', closeNewLiveSessionModal);
 document.getElementById('new-live-session-cancel')?.addEventListener('click', closeNewLiveSessionModal);
 newLiveSessionOverlay?.addEventListener('click', closeNewLiveSessionModal);
+newLiveSessionName?.addEventListener('input', updateNewSessionCwdPreview);
 newLiveSessionForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = newLiveSessionName.value.trim();
@@ -1330,19 +1336,7 @@ function handleExtensionUIRequest(event: AppEvent, sessionId: string | null = nu
 }
 
 function formatToolOutput(result: unknown) {
-  if (!result) return '';
-
-  const r = result as { content?: MessageContentBlock[] };
-  if (r.content && Array.isArray(r.content)) {
-    return r.content
-      .map((block) => {
-        if (block.type === 'text') return block.text;
-        return JSON.stringify(block);
-      })
-      .join('\n');
-  }
-
-  return JSON.stringify(result, null, 2);
+  return formatToolResultText(result);
 }
 
 // ═══════════════════════════════════════

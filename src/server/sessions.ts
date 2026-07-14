@@ -42,6 +42,50 @@ export function isGenericSessionName(name: unknown) {
   return normalized === 'chat' || normalized === 'new chat' || normalized === 'untitled' || normalized === 'untitled chat' || normalized === 'session';
 }
 
+function pad2(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function timestampForDirectory(date = new Date()) {
+  return [
+    date.getFullYear(),
+    pad2(date.getMonth() + 1),
+    pad2(date.getDate()),
+  ].join('') + '-' + [
+    pad2(date.getHours()),
+    pad2(date.getMinutes()),
+    pad2(date.getSeconds()),
+  ].join('');
+}
+
+function safeDirectoryName(name: unknown) {
+  const cleaned = String(name || 'untitled')
+    .normalize('NFKC')
+    .trim()
+    .replace(/[\\/:*?"<>|\x00-\x1F]+/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/^\.+$/, 'untitled')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return cleaned || 'untitled';
+}
+
+function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
+  const parent = path.resolve(expandHome(parentCwd || path.join(process.cwd(), 'scenario')));
+  fs.mkdirSync(parent, { recursive: true });
+
+  const prefix = `${timestampForDirectory()}-${safeDirectoryName(sessionName)}`;
+  for (let i = 1; i <= 999; i++) {
+    const name = i === 1 ? prefix : `${prefix}-${i}`;
+    const candidate = path.join(parent, name);
+    if (fs.existsSync(candidate)) continue;
+    fs.mkdirSync(candidate);
+    return candidate;
+  }
+
+  throw new Error(`Cannot create unique task directory in ${parent}`);
+}
+
 export class PiRpcSession {
   manager: LiveSessionManager;
   id: string;
@@ -395,7 +439,7 @@ export class LiveSessionManager {
   hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
   async create({ cwd, model, sessionName }: { cwd?: string; model?: string; sessionName?: string | null }) {
-    const resolved = path.resolve(expandHome(cwd || process.cwd()));
+    const resolved = createSessionWorkingDirectory(cwd, sessionName);
     const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), sessionName });
     await session.start();
     this.sessions.set(session.id, session);
