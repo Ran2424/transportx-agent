@@ -18,6 +18,8 @@ export type ToolExecution = {
 type ToolResultBlock = {
   type?: string;
   text?: string;
+  source?: { media_type?: string; data?: string };
+  media_type?: string;
   [key: string]: unknown;
 };
 
@@ -33,6 +35,68 @@ type ToolCardOptions = {
 const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|ico)$/i;
 const MAX_IMAGE_PREVIEWS = 3;
+const MAX_TOOL_OUTPUT_CHARS = 6000;
+const MAX_TOOL_FIELD_CHARS = 1200;
+const ENCODED_IMAGE_RE = /^data:image\/[a-z0-9.+-]+;base64,/i;
+const BASE64ISH_RE = /^[A-Za-z0-9+/=\s]+$/;
+
+export function formatToolResultText(result: unknown) {
+  if (!result) return '';
+
+  const r = result as ToolResult;
+  if (r.content && Array.isArray(r.content)) {
+    return limitToolOutput(r.content.map(formatToolResultBlock).join('\n'));
+  }
+
+  return limitToolOutput(safeToolStringify(result));
+}
+
+function formatToolResultBlock(block: ToolResultBlock) {
+  if (!block) return '';
+  if (block.type === 'text') return sanitizeToolText(block.text || '');
+  if (block.type === 'image') {
+    const mediaType = block.source?.media_type || block.media_type || 'image';
+    return `[图片内容已省略：${mediaType}]`;
+  }
+  return safeToolStringify(block);
+}
+
+function sanitizeToolText(text: string) {
+  const raw = String(text || '');
+  if (isEncodedImagePayload(raw)) return `[图片/二进制内容已省略：${raw.length.toLocaleString()} 字符]`;
+  if (raw.length <= MAX_TOOL_FIELD_CHARS) return raw;
+  return `${raw.slice(0, MAX_TOOL_FIELD_CHARS)}\n\n[输出过长，已截断 ${raw.length.toLocaleString()} 字符，避免页面卡顿]`;
+}
+
+function isEncodedImagePayload(value: string) {
+  const text = String(value || '').trim();
+  if (text.length < 2048) return false;
+  if (ENCODED_IMAGE_RE.test(text)) return true;
+  const compact = text.replace(/\s+/g, '');
+  return compact.length > 2048 && BASE64ISH_RE.test(compact);
+}
+
+function safeToolStringify(value: unknown) {
+  const seen = new WeakSet<object>();
+  try {
+    return JSON.stringify(value, (_key, val) => {
+      if (typeof val === 'string') return sanitizeToolText(val);
+      if (val && typeof val === 'object') {
+        if (seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      return val;
+    }, 2);
+  } catch {
+    return sanitizeToolText(String(value));
+  }
+}
+
+function limitToolOutput(text: string) {
+  const raw = String(text || '');
+  if (raw.length <= MAX_TOOL_OUTPUT_CHARS) return raw;
+  return `${raw.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n\n[工具输出过长，已截断 ${raw.length.toLocaleString()} 字符]`;
+}
 
 export class ToolCardRenderer {
   container: HTMLElement;
@@ -404,18 +468,7 @@ export class ToolCardRenderer {
   }
 
   formatResult(result: ToolResult) {
-    if (!result) return '';
-
-    if (result.content && Array.isArray(result.content)) {
-      return result.content
-        .map((block) => {
-          if (block.type === 'text') return block.text;
-          return JSON.stringify(block);
-        })
-        .join('\n');
-    }
-
-    return JSON.stringify(result, null, 2);
+    return formatToolResultText(result);
   }
 
   renderImagePreviews(card: HTMLElement, output: string) {
