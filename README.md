@@ -141,6 +141,7 @@ public/
 docs/
   ARCHITECTURE.md      # 系统边界、依赖方向、目录与资产规则
   REACT_UI_MIGRATION_PLAN.md # React UI 迁移评估与实施路线
+  TASK_MODE_INTERACTION_PLAN.md # Pi 任务模式、交互工具与 Web 适配计划
   PROJECT_HANDOFF.md   # 给下一位 Agent 和人类开发者的交接说明
   GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md
 ```
@@ -204,17 +205,32 @@ public/geo-runtime.*
 
 `default`/`light`/`dark` 使用 Runtime 白名单内的 OpenFreeMap 矢量底图，需要网络；`none` 保留项目自带的纯色离线底图。Web 制图层会自动为业务线路增加 casing、为点位增加交互 halo，并让底图地名保留在交通线网上方。
 
-## 后续路线
+## 后续计划（Todo）
 
-建议按这个顺序继续推进：
+近期：
 
-1. 增加交通任务模板，例如早高峰拥堵排行、异常路段诊断、区域运行态势、交通运行日报。
-2. 增加交通 Prompt / Skill，先规范分析口径和输出结构。
-3. 增加 mock traffic tools，先跑通工具调用和业务结果链路。
-4. 增加交通结果卡片，让结构化结果不只依赖 Markdown。
-5. 再接真实交通数据库或外部 API。
+- [ ] 开发 `pi-task-mode` Extension，为 Pi 增加按会话启用的任务模式。
+- [ ] 实现 `tau_task` 工具，以结构化快照创建、修订和更新任务步骤。
+- [ ] 实现 `tau_ask_user` 工具，通过 Pi RPC 支持确认、单选、短文本和长文本交互。
+- [ ] 实现 Web TaskCard、等待用户状态、会话隔离以及 live/history/resume 恢复。
+- [ ] 将 Pi Extension 加载改成可配置 Registry，同时保留 GIS 默认扩展。
+- [ ] 为任务模式补充 RPC、取消、超时、断线重连和浏览器回归测试。
 
-更详细的交接、坑点和下一步建议请看 [PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md)。
+中期：
+
+- [ ] 按 [React UI 迁移方案](./docs/REACT_UI_MIGRATION_PLAN.md) 建立 Vite、React、shadcn/ui、Radix 和 Motion 基座。
+- [ ] 增加交通 Prompt / Skill，规范分析口径和结构化输出。
+- [ ] 增加 mock traffic tools，跑通工具调用和业务结果链路。
+- [ ] 增加交通结果卡片，让结构化结果不只依赖 Markdown。
+- [ ] 增加 GIS filter/图例、格式转换、矢量瓦片、栅格、时序和地图到 Agent 的反向联动。
+
+远期：
+
+- [ ] 接入真实交通数据库或外部 API。
+- [ ] 增加早高峰拥堵排行、异常路段诊断、区域运行态势和交通运行日报等任务模板。
+- [ ] 在出现并行 DAG、后台运行或断点恢复需求后，评估 Taskflow Adapter；不开发流程编辑器。
+
+任务模式的协议、交互闭环和分阶段验收见 [Pi 任务模式与 Web 人机交互实施方案](./docs/TASK_MODE_INTERACTION_PLAN.md)。更详细的交接、坑点和下一步建议请看 [PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md)。
 
 ## 与上游的关系
 
