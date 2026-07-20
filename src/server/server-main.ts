@@ -20,10 +20,11 @@ import type { Stats, Dirent } from 'node:fs';
 import type { Socket } from 'node:net';
 import type { WebSocket as WsType } from 'ws';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { ARGS, AUTH_CONFIGURED, HOST, MIME_TYPES, PI_AGENT_DIR, PORT, SESSIONS_DIR, STATIC_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_DIR, PORT, SESSIONS_DIR, STATIC_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
+import { handleGeoResourceRoute } from './geo-resources.js';
 
 type TauWs = WsType & { isAlive?: boolean };
 
@@ -410,6 +411,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
     }).catch((e) => json(res, 400, { error: errorMessage(e) }));
     return;
   }
+  if (handleGeoResourceRoute(req, res, cleanPath, { getSession: (sessionId) => liveManager.get(sessionId) })) return;
   const liveMatch = cleanPath.match(/^\/api\/live-sessions\/([^/]+)(?:\/snapshot)?$/);
   if (liveMatch) {
     let id;
@@ -1075,6 +1077,7 @@ module.exports = {
   startCli,
   SESSIONS_DIR,
   PI_AGENT_DIR,
+  GEO_EXTENSION_PATH,
   checkAuth,
   SESSION_COOKIE_NAME,
   _setAuthForTest,

@@ -27,3 +27,5 @@ interface Element {
   style: CSSStyleDeclaration;
   value: string;
 }
+
+declare module '*.css';

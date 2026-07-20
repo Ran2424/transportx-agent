@@ -65,7 +65,10 @@ export type AppMessage = {
   usage?: UsageRecord;
   images?: PendingImage[];
   toolCallId?: string;
+  toolName?: string;
+  details?: unknown;
   isError?: boolean;
+  timestamp?: number;
 };
 
 export type AppEvent = {

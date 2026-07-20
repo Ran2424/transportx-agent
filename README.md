@@ -31,6 +31,9 @@ pi --mode rpc child session N
   - 文件
   - 技能
   - 工具
+  - 地图
+- 内置 Pi GIS Extension，Agent 可发布会话内 GeoJSON，并在 Web 端展示声明式交互地图。
+- 地图支持点、线、面、文字图层，常量/分类/分段/连续编码，安全 Popup、图层显隐和选中高亮。
 - 默认新建任务目录指向 `scenario/`，适合作为后续交通 demo 的工作目录。
 
 ## 产品示意图
@@ -85,7 +88,28 @@ rtk npm run build
 rtk node bin/tau.js --host 127.0.0.1 --port 3000
 ```
 
+启动后可检查服务状态：
+
+```bash
+curl -s http://127.0.0.1:3000/api/health
+```
+
+### 启动权限说明
+
+服务不仅要监听本地端口，还会调用本机的 `pi` 命令，并读写 `~/.pi/agent/` 下的配置、信任记录和锁文件。因此应在具有当前用户正常文件权限的终端中启动。
+
+如果通过 Codex 或其他带文件系统沙箱的执行环境启动，需要明确选择“在沙箱外运行”或授予正常系统权限。否则 Web 页面和健康接口可能可以打开，但 Pi 子进程会因为无法创建锁文件而退出，常见报错为：
+
+```text
+EPERM: operation not permitted, mkdir '~/.pi/agent/settings.json.lock'
+EPERM: operation not permitted, mkdir '~/.pi/agent/trust.json.lock'
+```
+
+遇到这类报错时，应停止受限进程并以正常权限重新启动，不要使用 `sudo`，也不要修改 `~/.pi` 的文件归属。开发服务可以用 `Ctrl-C` 停止。
+
 ## 项目结构
+
+项目采用“Agent Web 平台 + GIS 功能模块”的单仓库模块化架构。完整边界、依赖方向和资产规则见 [架构与目录治理](./docs/ARCHITECTURE.md)，文档入口见 [docs/README.md](./docs/README.md)。
 
 ```text
 src/server/
@@ -93,20 +117,32 @@ src/server/
   sessions.ts          # Pi RPC 子进程和 live session 生命周期管理
   config.ts            # 端口、host、session 目录、静态资源目录
   model-utils.ts       # 模型列表与 provider/model 解析
+  geo-resources.ts     # 会话隔离的 GeoJSON 资源读取、缓存和边界校验
 
 src/public/
-  app-main.ts          # 浏览器主状态、会话切换、WebSocket 事件、右侧面板协调
+  app-main.ts          # 平台组合入口、会话状态与 WebSocket 事件接线
   message-renderer.ts  # 消息、Markdown、思考卡片、复制逻辑
   tool-card.ts         # 工具调用卡片、中文工具名、耗时、折叠/展开
   session-sidebar.ts   # 左侧会话列表与 live session 同步
   file-browser.ts      # 右侧文件树和拖拽插入路径
   model-picker.ts      # 模型和 thinking level 选择
+  workspace/           # 右侧工作区壳层与功能视图端口
+  features/            # Web 功能注册表及 GIS 等垂直功能适配器
+  visualization/       # 声明式可视化协议、会话状态与 MapLibre Runtime
+
+extensions/
+  pi-geo-visualization/ # 随 Pi 会话自动加载的 GIS Extension
 
 public/
   index.html           # 页面骨架
   style.css            # 全局样式
+  geo-runtime.*        # 构建生成的 MapLibre 懒加载 bundle
 
-PROJECT_HANDOFF.md     # 给下一位 Agent 和人类开发者的交接说明
+docs/
+  ARCHITECTURE.md      # 系统边界、依赖方向、目录与资产规则
+  REACT_UI_MIGRATION_PLAN.md # React UI 迁移评估与实施路线
+  PROJECT_HANDOFF.md   # 给下一位 Agent 和人类开发者的交接说明
+  GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md
 ```
 
 ## 构建产物说明
@@ -116,6 +152,8 @@ TypeScript 源码会编译到：
 ```text
 bin/*.js
 public/*.js
+public/visualization/*.js
+public/geo-runtime.*
 ```
 
 这些文件被 `.gitignore` 忽略。修改 `src/` 后需要运行 `npm run build`，本地启动时才会看到最新逻辑。
@@ -131,7 +169,9 @@ public/*.js
 - 左侧侧栏与运行中会话同步。
 - 思考卡片、工具卡片、消息渲染、代码块折叠和整体 UI 美化。
 - 右侧面板增加 `文件 / 技能 / 工具` 切换。
-- 新增项目交接文档 `PROJECT_HANDOFF.md`。
+- 增加 `地图` 工作区、内置 Pi GIS Extension、GeoJSON 资源发布和 MapLibre Web 渲染闭环。
+- 可视化快照随工具结果进入会话历史，支持 live snapshot、历史查看和 resume 恢复。
+- 建立架构、GIS 技术方案和项目交接文档。
 
 尚未完成：
 
@@ -139,6 +179,7 @@ public/*.js
 - 交通专用 Prompt / Skill。
 - `traffic.*` 业务工具。
 - 交通结果卡片。
+- GIS filter/图例、通用格式转换、矢量瓦片、栅格、时序和地图到 Agent 的反向联动。
 - Pi 完整工具清单的原生 RPC 暴露。
 
 ## 技能与工具查看
@@ -152,6 +193,17 @@ public/*.js
 
 注意：Pi 扩展 API 中存在 `pi.getActiveTools()` 和 `pi.getAllTools()`，但当前 Pi RPC 没有原生 `get_tools`。如果后续要展示完整注册工具列表，需要增加 Pi 扩展桥接或扩展 RPC。
 
+## GIS 地图工作流
+
+每个 Pi 会话都会自动加载包内的 GIS Extension，并获得两个声明式工具：
+
+- `publish_geodata`：校验并发布任务目录内的 `.geojson`/`.json` 文件，返回稳定的会话资源 ID。
+- `present_visualization`：创建、更新、聚焦、选择或清除地图 Scene；工具结果不包含可执行 JavaScript、HTML 或 MapLibre 原生表达式。
+
+少量数据可以直接使用 `geojson-inline`；较大数据应先发布，再以 `geojson-resource` 引用。Web 端从工具卡进入右侧“地图”工作区，资源只允许从对应 live session 的任务目录读取。完整协议、边界和后续阶段见 [GIS Web 展示模块技术方案](./docs/GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md)。
+
+`default`/`light`/`dark` 使用 Runtime 白名单内的 OpenFreeMap 矢量底图，需要网络；`none` 保留项目自带的纯色离线底图。Web 制图层会自动为业务线路增加 casing、为点位增加交互 halo，并让底图地名保留在交通线网上方。
+
 ## 后续路线
 
 建议按这个顺序继续推进：
@@ -162,7 +214,7 @@ public/*.js
 4. 增加交通结果卡片，让结构化结果不只依赖 Markdown。
 5. 再接真实交通数据库或外部 API。
 
-更详细的交接、坑点和下一步建议请看 [PROJECT_HANDOFF.md](./PROJECT_HANDOFF.md)。
+更详细的交接、坑点和下一步建议请看 [PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md)。
 
 ## 与上游的关系
 

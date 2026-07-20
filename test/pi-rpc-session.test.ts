@@ -112,6 +112,25 @@ test('assistant message_end records usage but never overwrites model identity', 
   assert.deepEqual(session.contextUsage.usage, usage);
 });
 
+test('toolResult message_end preserves structured visualization details in the session snapshot', () => {
+  const { session } = makeSession();
+  const visualization = {
+    protocol: 'pi-visualization', version: '1.0', kind: 'geo', visualizationId: 'city_map', revision: 1,
+  };
+  session.handleEvent({
+    type: 'message_end',
+    message: {
+      role: 'toolResult',
+      toolCallId: 'call_map',
+      toolName: 'present_visualization',
+      content: [{ type: 'text', text: 'Map updated' }],
+      details: { visualization },
+      isError: false,
+    },
+  });
+  assert.deepEqual(session.snapshot().entries[0].message.details.visualization, visualization);
+});
+
 test('handleResponse resolves a pending send command and updates state', async () => {
   const { session } = makeSession();
   // stub a child with a writable stdin that accepts the write
@@ -391,6 +410,10 @@ test('start() passes --session <file> to spawned pi when sessionFile is set', as
   const args = spawnArgs[0].args;
   assert.ok(args.includes('--mode'));
   assert.ok(args.includes('rpc'));
+  assert.ok(args.includes('--extension'));
+  const extensionPath = args[args.indexOf('--extension') + 1];
+  assert.match(extensionPath, /extensions[/\\]pi-geo-visualization[/\\]index\.ts$/);
+  assert.equal(require('node:fs').existsSync(extensionPath), true);
   assert.ok(args.includes('--session'));
   const sessionIdx = args.indexOf('--session');
   assert.ok(sessionIdx >= 0);
