@@ -88,7 +88,28 @@ rtk npm run build
 rtk node bin/tau.js --host 127.0.0.1 --port 3000
 ```
 
+启动后可检查服务状态：
+
+```bash
+curl -s http://127.0.0.1:3000/api/health
+```
+
+### 启动权限说明
+
+服务不仅要监听本地端口，还会调用本机的 `pi` 命令，并读写 `~/.pi/agent/` 下的配置、信任记录和锁文件。因此应在具有当前用户正常文件权限的终端中启动。
+
+如果通过 Codex 或其他带文件系统沙箱的执行环境启动，需要明确选择“在沙箱外运行”或授予正常系统权限。否则 Web 页面和健康接口可能可以打开，但 Pi 子进程会因为无法创建锁文件而退出，常见报错为：
+
+```text
+EPERM: operation not permitted, mkdir '~/.pi/agent/settings.json.lock'
+EPERM: operation not permitted, mkdir '~/.pi/agent/trust.json.lock'
+```
+
+遇到这类报错时，应停止受限进程并以正常权限重新启动，不要使用 `sudo`，也不要修改 `~/.pi` 的文件归属。开发服务可以用 `Ctrl-C` 停止。
+
 ## 项目结构
+
+项目采用“Agent Web 平台 + GIS 功能模块”的单仓库模块化架构。完整边界、依赖方向和资产规则见 [架构与目录治理](./docs/ARCHITECTURE.md)，文档入口见 [docs/README.md](./docs/README.md)。
 
 ```text
 src/server/
@@ -99,13 +120,15 @@ src/server/
   geo-resources.ts     # 会话隔离的 GeoJSON 资源读取、缓存和边界校验
 
 src/public/
-  app-main.ts          # 浏览器主状态、会话切换、WebSocket 事件、右侧面板协调
+  app-main.ts          # 平台组合入口、会话状态与 WebSocket 事件接线
   message-renderer.ts  # 消息、Markdown、思考卡片、复制逻辑
   tool-card.ts         # 工具调用卡片、中文工具名、耗时、折叠/展开
   session-sidebar.ts   # 左侧会话列表与 live session 同步
   file-browser.ts      # 右侧文件树和拖拽插入路径
   model-picker.ts      # 模型和 thinking level 选择
-  visualization/      # 可视化协议、会话状态与 MapLibre Runtime
+  workspace/           # 右侧工作区壳层与功能视图端口
+  features/            # Web 功能注册表及 GIS 等垂直功能适配器
+  visualization/       # 声明式可视化协议、会话状态与 MapLibre Runtime
 
 extensions/
   pi-geo-visualization/ # 随 Pi 会话自动加载的 GIS Extension
@@ -115,7 +138,11 @@ public/
   style.css            # 全局样式
   geo-runtime.*        # 构建生成的 MapLibre 懒加载 bundle
 
-PROJECT_HANDOFF.md     # 给下一位 Agent 和人类开发者的交接说明
+docs/
+  ARCHITECTURE.md      # 系统边界、依赖方向、目录与资产规则
+  REACT_UI_MIGRATION_PLAN.md # React UI 迁移评估与实施路线
+  PROJECT_HANDOFF.md   # 给下一位 Agent 和人类开发者的交接说明
+  GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md
 ```
 
 ## 构建产物说明
@@ -144,7 +171,7 @@ public/geo-runtime.*
 - 右侧面板增加 `文件 / 技能 / 工具` 切换。
 - 增加 `地图` 工作区、内置 Pi GIS Extension、GeoJSON 资源发布和 MapLibre Web 渲染闭环。
 - 可视化快照随工具结果进入会话历史，支持 live snapshot、历史查看和 resume 恢复。
-- 新增项目交接文档 `PROJECT_HANDOFF.md`。
+- 建立架构、GIS 技术方案和项目交接文档。
 
 尚未完成：
 
@@ -187,7 +214,7 @@ public/geo-runtime.*
 4. 增加交通结果卡片，让结构化结果不只依赖 Markdown。
 5. 再接真实交通数据库或外部 API。
 
-更详细的交接、坑点和下一步建议请看 [PROJECT_HANDOFF.md](./PROJECT_HANDOFF.md)。
+更详细的交接、坑点和下一步建议请看 [PROJECT_HANDOFF.md](./docs/PROJECT_HANDOFF.md)。
 
 ## 与上游的关系
 

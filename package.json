@@ -14,7 +14,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/milanglacier/pi-tau-web-server.git"
+    "url": "https://github.com/Ran2424/pi-traffic-workspace.git"
   },
   "bin": {
     "pi-traffic-workspace": "./bin/tau.js"
@@ -23,7 +23,7 @@
     "bin",
     "public",
     "extensions",
-    "docs/GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md",
+    "docs/*.md",
     "src",
     "tsconfig.json",
     "tsconfig.server.json",
@@ -31,10 +31,16 @@
     "tsconfig.extensions.json"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.public.json && npm run build:geo",
+    "build": "npm run build:server && npm run build:web && npm run build:geo",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:web": "tsc -p tsconfig.public.json",
     "build:geo": "esbuild src/public/visualization/geo/geo-runtime-entry.ts --bundle --format=esm --target=es2022 --outfile=public/geo-runtime.js",
     "prepare": "npm run build",
-    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.public.json --noEmit && tsc -p tsconfig.extensions.json --noEmit && tsc -p tsconfig.test.json",
+    "typecheck": "npm run typecheck:server && npm run typecheck:web && npm run typecheck:extensions && npm run typecheck:test",
+    "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
+    "typecheck:web": "tsc -p tsconfig.public.json --noEmit",
+    "typecheck:extensions": "tsc -p tsconfig.extensions.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "npm run build && node --test"
   },
   "dependencies": {

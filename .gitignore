@@ -10,7 +10,9 @@ node_modules/
 /public/*.js
 /public/*.js.map
 /public/*.d.ts
+/public/features/
 /public/visualization/
+/public/workspace/
 /public/geo-runtime.css
 
 .DS_Store
@@ -26,3 +28,4 @@ references/pi-development-guide.md
 # Local agent/runtime workspaces
 .agents/
 scenario/
+.tau/

@@ -9,13 +9,15 @@ import { ToolCardRenderer, formatToolResultText, type ToolExecution, type ToolRe
 import { DialogHandler, type DialogRequest } from './dialogs.js';
 import { SessionSidebar, type SidebarProject, type SidebarSession } from './session-sidebar.js';
 import { themes, applyTheme, getCurrentTheme } from './themes.js';
-import { FileBrowser, getFileIcon } from './file-browser.js';
+import { getFileIcon } from './file-browser.js';
 import { setupLauncherPanel } from './launcher-panel.js';
 import { setupModelPicker } from './model-picker.js';
 import { setupVoiceInput } from './voice-input.js';
 import { setupCommandPalette } from './command-palette.js';
 import { setupSessionStatsCard, type SessionStats } from './session-stats-card.js';
-import { VisualizationHost } from './visualization/visualization-host.js';
+import { WorkspaceController } from './workspace/workspace-controller.js';
+import { FeatureRegistry } from './features/feature-registry.js';
+import { GeoFeature } from './features/geo/geo-feature.js';
 
 import type { AppEvent, AppMessage, ExtensionUIRequest, LiveInstance, LiveSession, MessageContentBlock, ModelRecord, PendingFilePath, PendingImage, QueuedCommand, RpcCommand, UsageRecord } from './app-types.js';
 
@@ -35,9 +37,6 @@ type LiveSessionSnapshotData = {
 };
 
 type RpcEventDetail = { sessionId?: string; event?: AppEvent };
-type ResourceView = 'files' | 'skills' | 'tools' | 'visualizations';
-type SessionResourceSkill = { name?: string; description?: string; path?: string; scope?: string };
-type SessionResourceTool = { name?: string; label?: string; description?: string; usedCount?: number; lastPreview?: string; source?: string };
 
 // Initialize components
 const wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
@@ -188,7 +187,6 @@ let hasReceivedInitialServerState = false;
 let liveInstances: LiveInstance[] = []; // Sidebar live indicators derived from backend live sessions
 let liveSessions: LiveSession[] = [];
 let activeLiveSessionId = localStorage.getItem('tau-active-live-session-id') || null;
-let currentVisualizationSessionKey: string | null = null;
 let hasRestoredInitialLiveSession = false;
 let pendingExtensionUIRequests: ExtensionUIRequest[] = []; // background session UI requests waiting for that Tau tab to be selected
 dialogHandler.onIdle = () => processQueuedExtensionUIRequest();
@@ -287,204 +285,34 @@ function syncSidebarLiveSessions() {
   updateLiveSessionIndicators();
 }
 
-// File browser
-const fileSidebar = document.getElementById('file-sidebar')!;
-const fileSidebarToggle = document.getElementById('file-sidebar-toggle')!;
-const fileSidebarClose = document.getElementById('file-sidebar-close')!;
-const fileSidebarUp = document.getElementById('file-sidebar-up')!;
-const fileList = document.getElementById('file-list')!;
-const resourceList = document.getElementById('resource-list')!;
-const geoPanel = document.getElementById('geo-panel')!;
-const fileSidebarPath = document.getElementById('file-sidebar-path')!;
-const fileSidebarTabs = document.getElementById('file-sidebar-tabs')!;
-const fileSidebarFileActions = Array.from(document.querySelectorAll<HTMLElement>('.file-sidebar-file-action'));
-let activeResourceView = (localStorage.getItem('tau-resource-sidebar-view') as ResourceView) || 'files';
-const visualizationHost = new VisualizationHost({
-  panel: geoPanel,
-  map: document.getElementById('geo-map')!,
-  empty: document.getElementById('geo-empty')!,
-  title: document.getElementById('geo-panel-title')!,
-  status: document.getElementById('geo-panel-status')!,
-  select: document.getElementById('geo-visualization-select') as HTMLSelectElement,
-  layers: document.getElementById('geo-layer-list')!,
-  metadata: document.getElementById('geo-metadata')!,
-}, () => {
-  setResourceView('visualizations');
-  fileSidebar.classList.remove('collapsed');
-  localStorage.setItem('tau-file-sidebar', 'open');
-  requestAnimationFrame(() => visualizationHost.resize());
+// Right workspace and cross-boundary Web features
+const workspaceController = new WorkspaceController({
+  elements: {
+    sidebar: document.getElementById('file-sidebar')!,
+    toggle: document.getElementById('file-sidebar-toggle')!,
+    close: document.getElementById('file-sidebar-close')!,
+    up: document.getElementById('file-sidebar-up')!,
+    tabs: document.getElementById('file-sidebar-tabs')!,
+    fileList: document.getElementById('file-list')!,
+    resourceList: document.getElementById('resource-list')!,
+    path: document.getElementById('file-sidebar-path')!,
+    finder: document.getElementById('file-sidebar-finder')!,
+    fileActions: Array.from(document.querySelectorAll<HTMLElement>('.file-sidebar-file-action')),
+  },
+  messageInput,
+  onFileSelected(filePath) {
+    const name = filePath.split(/[/\\]/).pop() || filePath;
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    pendingFilePaths.push({ path: filePath, name, ext, sessionId: activeLiveSessionId });
+    renderAttachmentPreviews();
+  },
+  getSessionId: () => viewingActiveSession && liveSessions.some((session) => session.id === activeLiveSessionId)
+    ? activeLiveSessionId
+    : null,
 });
-const fileBrowser = new FileBrowser(fileList, fileSidebarPath, messageInput, (filePath) => {
-  const name = filePath.split(/[/\\]/).pop() || filePath;
-  const ext = name.split('.').pop()?.toLowerCase() || '';
-  pendingFilePaths.push({ path: filePath, name, ext, sessionId: activeLiveSessionId });
-  renderAttachmentPreviews();
-}, () => (viewingActiveSession && liveSessions.some(s => s.id === activeLiveSessionId) ? activeLiveSessionId : null));
-
-function loadCurrentSidebarView() {
-  if (activeResourceView === 'files') {
-    fileBrowser.load();
-  } else if (activeResourceView === 'visualizations') {
-    void visualizationHost.render();
-  } else {
-    loadSessionResources(activeResourceView);
-  }
-}
-
-function refreshResourceViewIfVisible(view?: ResourceView) {
-  if (fileSidebar.classList.contains('collapsed')) return;
-  if (activeResourceView === 'files') return;
-  if (view && activeResourceView !== view) return;
-  loadSessionResources(activeResourceView);
-}
-
-function setResourceView(view: ResourceView) {
-  activeResourceView = view;
-  localStorage.setItem('tau-resource-sidebar-view', view);
-  fileSidebarTabs.querySelectorAll<HTMLButtonElement>('.file-sidebar-tab').forEach((button) => {
-    button.classList.toggle('active', button.dataset.resourceView === view);
-  });
-  const showingFiles = view === 'files';
-  const showingVisualizations = view === 'visualizations';
-  fileList.classList.toggle('hidden', !showingFiles);
-  resourceList.classList.toggle('hidden', showingFiles || showingVisualizations);
-  geoPanel.classList.toggle('hidden', !showingVisualizations);
-  fileSidebarPath.classList.toggle('hidden', !showingFiles);
-  fileSidebarFileActions.forEach((el) => el.classList.toggle('hidden', !showingFiles));
-  fileSidebar.classList.toggle('visualization-mode', showingVisualizations);
-  if (!fileSidebar.classList.contains('collapsed')) loadCurrentSidebarView();
-}
-
-fileSidebarTabs.querySelectorAll<HTMLButtonElement>('.file-sidebar-tab').forEach((button) => {
-  button.addEventListener('click', () => setResourceView((button.dataset.resourceView as ResourceView) || 'files'));
-});
-
-async function loadSessionResources(view: ResourceView = activeResourceView) {
-  const sessionId = viewingActiveSession && activeLiveSessionId ? activeLiveSessionId : null;
-  resourceList.innerHTML = '<div class="resource-loading">正在加载...</div>';
-  if (!sessionId) {
-    resourceList.innerHTML = '<div class="resource-loading">请选择一个交通任务</div>';
-    return;
-  }
-
-  try {
-    const res = await fetch(`/api/session-resources?sessionId=${encodeURIComponent(sessionId)}`);
-    const data = await res.json();
-    if (view !== activeResourceView) return;
-    if (!res.ok || data.error) {
-      resourceList.innerHTML = `<div class="resource-loading">${escapeHtml(data.error || '加载失败')}</div>`;
-      return;
-    }
-    if (view === 'skills') renderSkills(data.skills || [], data.commandsError || '');
-    else renderTools(data.tools || []);
-  } catch {
-    resourceList.innerHTML = '<div class="resource-loading">加载失败</div>';
-  }
-}
-
-function renderSkills(skills: SessionResourceSkill[], commandsError = '') {
-  if (!skills.length) {
-    resourceList.innerHTML = `<div class="resource-loading">${commandsError ? '技能加载失败' : '当前会话没有可见技能'}</div>`;
-    return;
-  }
-  resourceList.innerHTML = skills.map((skill) => {
-    const name = String(skill.name || '');
-    const path = String(skill.path || '');
-    const scope = scopeLabel(skill.scope);
-    return `
-      <div class="resource-item" title="${escapeHtml(path || name)}">
-        <span class="resource-icon skill">技</span>
-        <span class="resource-main">
-          <span class="resource-title">/${escapeHtml(name)}</span>
-          ${skill.description ? `<span class="resource-desc">${escapeHtml(skill.description)}</span>` : ''}
-          ${path ? `<span class="resource-path">${escapeHtml(path)}</span>` : ''}
-        </span>
-        ${scope ? `<span class="resource-badge">${escapeHtml(scope)}</span>` : ''}
-      </div>
-    `;
-  }).join('');
-}
-
-function renderTools(tools: SessionResourceTool[]) {
-  if (!tools.length) {
-    resourceList.innerHTML = '<div class="resource-loading">当前会话没有可见工具</div>';
-    return;
-  }
-  resourceList.innerHTML = tools.map((tool) => {
-    const name = String(tool.name || '');
-    const label = String(tool.label || name);
-    const usedCount = Number(tool.usedCount || 0);
-    const preview = String(tool.lastPreview || '');
-    return `
-      <div class="resource-item" title="${escapeHtml(preview || tool.description || name)}">
-        <span class="resource-icon tool">工</span>
-        <span class="resource-main">
-          <span class="resource-title">${escapeHtml(label)}<span class="resource-code">${escapeHtml(name)}</span></span>
-          ${tool.description ? `<span class="resource-desc">${escapeHtml(tool.description)}</span>` : ''}
-          ${preview ? `<span class="resource-path">${escapeHtml(truncateMiddle(preview, 48))}</span>` : ''}
-        </span>
-        <span class="resource-badge">${usedCount > 0 ? `${usedCount} 次` : '内置'}</span>
-      </div>
-    `;
-  }).join('');
-}
-
-function scopeLabel(scope?: string) {
-  const labels: Record<string, string> = { user: '用户', project: '项目', temporary: '临时' };
-  return labels[String(scope || '')] || String(scope || '');
-}
-
-function truncateMiddle(text: string, maxLength: number) {
-  if (text.length <= maxLength) return text;
-  const start = Math.max(10, Math.floor(maxLength * 0.4));
-  const end = Math.max(14, maxLength - start - 1);
-  return `${text.slice(0, start)}…${text.slice(text.length - end)}`;
-}
-
-fileSidebarToggle.addEventListener('click', () => {
-  const isCollapsed = fileSidebar.classList.toggle('collapsed');
-  if (!isCollapsed) loadCurrentSidebarView();
-  localStorage.setItem('tau-file-sidebar', isCollapsed ? 'closed' : 'open');
-});
-
-fileSidebarClose.addEventListener('click', () => {
-  fileSidebar.classList.add('collapsed');
-  localStorage.setItem('tau-file-sidebar', 'closed');
-});
-
-document.addEventListener('tau:open-visualization', (event) => {
-  const visualizationId = (event as CustomEvent<{ visualizationId?: string }>).detail?.visualizationId;
-  if (visualizationId) visualizationHost.openVisualization(visualizationId);
-});
-
-fileSidebarUp.addEventListener('click', () => {
-  const parent = fileBrowser.getParentPath();
-  if (parent) fileBrowser.load(parent);
-});
-
-fetch('/api/health').then(r => r.json()).then(data => {
-  const names: Record<string, string> = { win32: 'Explorer', darwin: 'Finder', linux: '文件管理器' };
-  const name = names[data.platform] || '文件管理器';
-  document.getElementById('file-sidebar-finder')!.title = `在 ${name} 中打开`;
-}).catch(() => {});
-
-document.getElementById('file-sidebar-finder')!.addEventListener('click', () => {
-  const sessionId = viewingActiveSession && activeLiveSessionId ? activeLiveSessionId : null;
-  if (fileBrowser.currentPath && sessionId) {
-    fetch('/api/open', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filePath: fileBrowser.currentPath, sessionId }),
-    });
-  }
-});
-
-// Restore file sidebar state
-setResourceView(activeResourceView);
-if (localStorage.getItem('tau-file-sidebar') === 'open') {
-  fileSidebar.classList.remove('collapsed');
-  loadCurrentSidebarView();
-}
+const featureRegistry = new FeatureRegistry(workspaceController);
+featureRegistry.register(new GeoFeature({ onRequestOpen: () => workspaceController.openView('visualizations') }));
+workspaceController.start();
 
 
 // ═══════════════════════════════════════
@@ -608,8 +436,7 @@ wsClient.addEventListener('stateUpdate', (e: Event) => {
   } else {
     if (activeLiveSessionId && !liveSessions.some(s => s.id === activeLiveSessionId)) {
       activeLiveSessionId = null;
-      currentVisualizationSessionKey = null;
-      visualizationHost.setSession(null, null);
+      featureRegistry.setSession(null, null);
       localStorage.removeItem('tau-active-live-session-id');
       renderQueuedMessages();
       renderLiveTabs();
@@ -687,8 +514,7 @@ function handleLiveSessionClosed(closedId: string) {
       const next = getMostRecentLiveSession();
       if (next) selectLiveSession(next.id);
       else {
-        currentVisualizationSessionKey = null;
-        visualizationHost.setSession(null, null);
+        featureRegistry.setSession(null, null);
         viewingActiveSession = false;
         messageRenderer.renderWelcome();
         updateLiveSessionInputState();
@@ -796,8 +622,7 @@ function restoreActiveLiveSession() {
     selectLiveSession(next.id);
   } else {
     activeLiveSessionId = null;
-    currentVisualizationSessionKey = null;
-    visualizationHost.setSession(null, null);
+    featureRegistry.setSession(null, null);
     viewingActiveSession = false;
     activeLiveSessionFile = null;
     localStorage.removeItem('tau-active-live-session-id');
@@ -811,13 +636,11 @@ function restoreActiveLiveSession() {
 async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFailure?: boolean } = {}) {
   const session = liveSessions.find(s => s.id === id);
   if (!session) return false;
-  const previousVisualizationSessionKey = currentVisualizationSessionKey;
+  const previousFeatureSession = featureRegistry.sessionContext;
   suspendCurrentDialogForTabSwitch(id);
   launcherPanel.hide();
   activeLiveSessionId = id;
-  currentVisualizationSessionKey = id;
-  visualizationHost.resetSession(id);
-  visualizationHost.setSession(id, id);
+  featureRegistry.setSession(id, id, true);
   localStorage.setItem('tau-active-live-session-id', id);
   viewingActiveSession = true;
   activeLiveSessionFile = session.sessionFile || null;
@@ -846,8 +669,7 @@ async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFai
       liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
       if (activeLiveSessionId === id) {
         activeLiveSessionId = null;
-        currentVisualizationSessionKey = previousVisualizationSessionKey;
-        visualizationHost.setSession(previousVisualizationSessionKey, null);
+        featureRegistry.setSession(previousFeatureSession.sessionKey, previousFeatureSession.resourceSessionId);
         localStorage.removeItem('tau-active-live-session-id');
         activeLiveSessionFile = null;
       }
@@ -864,10 +686,7 @@ async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFai
     }
     return false;
   }
-  if (!fileSidebar.classList.contains('collapsed')) {
-    fileBrowser.currentPath = null;
-    loadCurrentSidebarView();
-  }
+  workspaceController.refreshForSessionChange();
   updateLiveSessionInputState();
   processQueuedExtensionUIRequest(id);
   flushQueue();
@@ -1206,8 +1025,8 @@ function handleMessageUpdate(event: AppEvent) {
 }
 
 function handleMessageEnd(message: AppMessage, sessionId: string | null = activeLiveSessionId) {
-  if (message?.role === 'toolResult' && sessionId && message.toolName === 'present_visualization') {
-    handleVisualizationToolResult(sessionId, { content: message.content, details: message.details }, message.toolCallId || '', false);
+  if (message?.role === 'toolResult' && sessionId) {
+    handleFeatureToolResult(sessionId, message.toolName, { content: message.content, details: message.details }, message.toolCallId || '', false);
   }
   if (!currentStreamingElement && message?.role === 'assistant') {
     messageRenderer.renderAssistantMessage(message, false, true);
@@ -1280,7 +1099,7 @@ function handleToolExecutionStart(event: AppEvent) {
 
   const exec = state.getToolExecution(toolCallId);
   if (exec) toolCardRenderer.createToolCard(exec as ToolExecution);
-  refreshResourceViewIfVisible('tools');
+  workspaceController.refreshResourceViewIfVisible('tools');
 }
 
 function handleToolExecutionUpdate(event: AppEvent) {
@@ -1317,21 +1136,22 @@ function handleToolExecutionEnd(event: AppEvent, sessionId: string | null = acti
   });
 
   toolCardRenderer.finalizeToolCard(toolCallId, result as ToolResult, isError ?? false, durationMs);
-  if (!isError && sessionId && (event.toolName || exec?.toolName) === 'present_visualization') {
-    handleVisualizationToolResult(sessionId, result, toolCallId, true);
+  if (!isError && sessionId) {
+    const toolName = event.toolName || (typeof exec?.toolName === 'string' ? exec.toolName : undefined);
+    handleFeatureToolResult(sessionId, toolName, result, toolCallId, true);
   }
-  refreshResourceViewIfVisible('tools');
+  workspaceController.refreshResourceViewIfVisible('tools');
 }
 
-function handleVisualizationToolResult(sessionKey: string, result: unknown, toolCallId: string, autoOpen: boolean) {
-  const envelope = visualizationHost.acceptToolResult(sessionKey, result, autoOpen);
-  if (!envelope?.scene) return;
+function handleFeatureToolResult(sessionKey: string, toolName: string | undefined, result: unknown, toolCallId: string, autoOpen: boolean) {
+  const featureResult = featureRegistry.handleToolResult({ sessionKey, toolName, result, autoOpen });
+  if (!featureResult) return;
   toolCardRenderer.setVisualizationSummary(toolCallId, {
-    id: envelope.visualizationId,
-    title: envelope.summary.title,
-    revision: envelope.revision,
-    layers: envelope.scene.layers.length,
-    sources: envelope.scene.sources.length,
+    id: featureResult.id,
+    title: featureResult.title,
+    revision: featureResult.revision,
+    layers: featureResult.layers,
+    sources: featureResult.sources,
   });
 }
 
@@ -1915,9 +1735,7 @@ async function handleSessionSelect(session: SidebarSession | null, project: Side
 
 async function renderHistoricalSession(sessionFile: string) {
   try {
-    currentVisualizationSessionKey = `history:${sessionFile}`;
-    visualizationHost.resetSession(currentVisualizationSessionKey);
-    visualizationHost.setSession(currentVisualizationSessionKey, null);
+    featureRegistry.setSession(`history:${sessionFile}`, null, true);
     const res = await fetch(`/api/session-history?filePath=${encodeURIComponent(sessionFile)}`);
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || '历史记录加载失败');
@@ -2212,9 +2030,10 @@ function renderSessionHistory(entries: SessionHistoryEntry[]) {
         { content: (msg.content as MessageContentBlock[]) || [], details: msg.details },
         msg.isError ?? false
       );
-      if (currentVisualizationSessionKey && msg.toolName === 'present_visualization') {
-        handleVisualizationToolResult(
-          currentVisualizationSessionKey,
+      if (featureRegistry.sessionKey) {
+        handleFeatureToolResult(
+          featureRegistry.sessionKey,
+          msg.toolName,
           { content: msg.content, details: msg.details },
           msg.toolCallId || '',
           false
