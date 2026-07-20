@@ -155,7 +155,7 @@ function makeFakeChild() {
   return child;
 }
 
-test('create() resolves cwd, stores the session, and broadcasts live_session_created', async (t: TestContext) => {
+test('create() creates an isolated task directory, stores the session, and broadcasts live_session_created', async (t: TestContext) => {
   // Mock the startup setTimeouts in start() so the test does not wait on
   // wall-clock time for the 100ms startup grace.
   t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -174,7 +174,9 @@ test('create() resolves cwd, stores the session, and broadcasts live_session_cre
   const session = await createP;
 
   assert.equal(mgr.get(session.id), session);
-  assert.equal(session.cwd, path.resolve(cwd));
+  assert.equal(path.dirname(session.cwd), path.resolve(cwd));
+  assert.match(path.basename(session.cwd), /^\d{8}-\d{6}-早高峰分析(?:-\d+)?$/);
+  assert.equal(fs.statSync(session.cwd).isDirectory(), true);
   assert.equal(session.modelSpec, 'openai/gpt-5.5');
   assert.equal(session.sessionName, '早高峰分析');
   assert.equal(session.pid, 12345);

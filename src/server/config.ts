@@ -49,6 +49,7 @@ export const AUTH_CONFIGURED = !!(TAU_SETTINGS.user && TAU_SETTINGS.pass);
 export const PORT = TAU_SETTINGS.port;
 export const HOST = TAU_SETTINGS.host;
 export const STATIC_DIR = process.env.TAU_STATIC_DIR || findPublicDir();
+export const GEO_EXTENSION_PATH = process.env.TAU_GEO_EXTENSION_PATH || findGeoExtensionPath();
 
 function findPublicDir() {
   const candidates: string[] = [];
@@ -66,6 +67,18 @@ function findPublicDir() {
   add(path.join(process.cwd(), 'node_modules', 'pi-traffic-workspace', 'public'));
   add(path.join(process.cwd(), 'node_modules', 'pi-tau-web-server', 'public'));
   return candidates.find((c) => fs.existsSync(path.join(c, 'index.html'))) || candidates[0];
+}
+
+function findGeoExtensionPath() {
+  const candidates: string[] = [];
+  const add = (p: string) => candidates.push(path.resolve(p));
+  add(path.join(__dirname, '..', 'extensions', 'pi-geo-visualization', 'index.ts'));
+  add(path.join(process.cwd(), 'extensions', 'pi-geo-visualization', 'index.ts'));
+  try {
+    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
+    add(path.join(path.dirname(pkgPath), 'extensions', 'pi-geo-visualization', 'index.ts'));
+  } catch {}
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
 }
 
 export const MIME_TYPES = {

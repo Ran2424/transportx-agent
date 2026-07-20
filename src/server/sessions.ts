@@ -5,7 +5,7 @@ const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, PendingCommand, RpcCommand, RpcResponse } from './types.js';
-import { expandHome } from './config.js';
+import { expandHome, GEO_EXTENSION_PATH } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
@@ -71,8 +71,15 @@ function safeDirectoryName(name: unknown) {
 }
 
 function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
+  const explicitParent = Boolean(parentCwd);
   const parent = path.resolve(expandHome(parentCwd || path.join(process.cwd(), 'scenario')));
-  fs.mkdirSync(parent, { recursive: true });
+  if (explicitParent) {
+    if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
+      throw new Error(`Directory not found: ${parent}`);
+    }
+  } else {
+    fs.mkdirSync(parent, { recursive: true });
+  }
 
   const prefix = `${timestampForDirectory()}-${safeDirectoryName(sessionName)}`;
   for (let i = 1; i <= 999; i++) {
@@ -171,6 +178,8 @@ export class PiRpcSession {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
     const args = ['--mode', 'rpc'];
+    if (!fs.existsSync(GEO_EXTENSION_PATH)) throw new Error(`GIS extension not found: ${GEO_EXTENSION_PATH}`);
+    args.push('--extension', GEO_EXTENSION_PATH);
     if (this.sessionFile) args.push('--session', this.sessionFile);
     if (this.modelSpec) args.push('--model', this.modelSpec);
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;

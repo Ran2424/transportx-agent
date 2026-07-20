@@ -15,6 +15,7 @@ import { setupModelPicker } from './model-picker.js';
 import { setupVoiceInput } from './voice-input.js';
 import { setupCommandPalette } from './command-palette.js';
 import { setupSessionStatsCard, type SessionStats } from './session-stats-card.js';
+import { VisualizationHost } from './visualization/visualization-host.js';
 
 import type { AppEvent, AppMessage, ExtensionUIRequest, LiveInstance, LiveSession, MessageContentBlock, ModelRecord, PendingFilePath, PendingImage, QueuedCommand, RpcCommand, UsageRecord } from './app-types.js';
 
@@ -34,7 +35,7 @@ type LiveSessionSnapshotData = {
 };
 
 type RpcEventDetail = { sessionId?: string; event?: AppEvent };
-type ResourceView = 'files' | 'skills' | 'tools';
+type ResourceView = 'files' | 'skills' | 'tools' | 'visualizations';
 type SessionResourceSkill = { name?: string; description?: string; path?: string; scope?: string };
 type SessionResourceTool = { name?: string; label?: string; description?: string; usedCount?: number; lastPreview?: string; source?: string };
 
@@ -187,6 +188,7 @@ let hasReceivedInitialServerState = false;
 let liveInstances: LiveInstance[] = []; // Sidebar live indicators derived from backend live sessions
 let liveSessions: LiveSession[] = [];
 let activeLiveSessionId = localStorage.getItem('tau-active-live-session-id') || null;
+let currentVisualizationSessionKey: string | null = null;
 let hasRestoredInitialLiveSession = false;
 let pendingExtensionUIRequests: ExtensionUIRequest[] = []; // background session UI requests waiting for that Tau tab to be selected
 dialogHandler.onIdle = () => processQueuedExtensionUIRequest();
@@ -292,10 +294,26 @@ const fileSidebarClose = document.getElementById('file-sidebar-close')!;
 const fileSidebarUp = document.getElementById('file-sidebar-up')!;
 const fileList = document.getElementById('file-list')!;
 const resourceList = document.getElementById('resource-list')!;
+const geoPanel = document.getElementById('geo-panel')!;
 const fileSidebarPath = document.getElementById('file-sidebar-path')!;
 const fileSidebarTabs = document.getElementById('file-sidebar-tabs')!;
 const fileSidebarFileActions = Array.from(document.querySelectorAll<HTMLElement>('.file-sidebar-file-action'));
 let activeResourceView = (localStorage.getItem('tau-resource-sidebar-view') as ResourceView) || 'files';
+const visualizationHost = new VisualizationHost({
+  panel: geoPanel,
+  map: document.getElementById('geo-map')!,
+  empty: document.getElementById('geo-empty')!,
+  title: document.getElementById('geo-panel-title')!,
+  status: document.getElementById('geo-panel-status')!,
+  select: document.getElementById('geo-visualization-select') as HTMLSelectElement,
+  layers: document.getElementById('geo-layer-list')!,
+  metadata: document.getElementById('geo-metadata')!,
+}, () => {
+  setResourceView('visualizations');
+  fileSidebar.classList.remove('collapsed');
+  localStorage.setItem('tau-file-sidebar', 'open');
+  requestAnimationFrame(() => visualizationHost.resize());
+});
 const fileBrowser = new FileBrowser(fileList, fileSidebarPath, messageInput, (filePath) => {
   const name = filePath.split(/[/\\]/).pop() || filePath;
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -306,6 +324,8 @@ const fileBrowser = new FileBrowser(fileList, fileSidebarPath, messageInput, (fi
 function loadCurrentSidebarView() {
   if (activeResourceView === 'files') {
     fileBrowser.load();
+  } else if (activeResourceView === 'visualizations') {
+    void visualizationHost.render();
   } else {
     loadSessionResources(activeResourceView);
   }
@@ -325,10 +345,13 @@ function setResourceView(view: ResourceView) {
     button.classList.toggle('active', button.dataset.resourceView === view);
   });
   const showingFiles = view === 'files';
+  const showingVisualizations = view === 'visualizations';
   fileList.classList.toggle('hidden', !showingFiles);
-  resourceList.classList.toggle('hidden', showingFiles);
+  resourceList.classList.toggle('hidden', showingFiles || showingVisualizations);
+  geoPanel.classList.toggle('hidden', !showingVisualizations);
   fileSidebarPath.classList.toggle('hidden', !showingFiles);
   fileSidebarFileActions.forEach((el) => el.classList.toggle('hidden', !showingFiles));
+  fileSidebar.classList.toggle('visualization-mode', showingVisualizations);
   if (!fileSidebar.classList.contains('collapsed')) loadCurrentSidebarView();
 }
 
@@ -427,6 +450,11 @@ fileSidebarToggle.addEventListener('click', () => {
 fileSidebarClose.addEventListener('click', () => {
   fileSidebar.classList.add('collapsed');
   localStorage.setItem('tau-file-sidebar', 'closed');
+});
+
+document.addEventListener('tau:open-visualization', (event) => {
+  const visualizationId = (event as CustomEvent<{ visualizationId?: string }>).detail?.visualizationId;
+  if (visualizationId) visualizationHost.openVisualization(visualizationId);
 });
 
 fileSidebarUp.addEventListener('click', () => {
@@ -580,6 +608,8 @@ wsClient.addEventListener('stateUpdate', (e: Event) => {
   } else {
     if (activeLiveSessionId && !liveSessions.some(s => s.id === activeLiveSessionId)) {
       activeLiveSessionId = null;
+      currentVisualizationSessionKey = null;
+      visualizationHost.setSession(null, null);
       localStorage.removeItem('tau-active-live-session-id');
       renderQueuedMessages();
       renderLiveTabs();
@@ -657,6 +687,8 @@ function handleLiveSessionClosed(closedId: string) {
       const next = getMostRecentLiveSession();
       if (next) selectLiveSession(next.id);
       else {
+        currentVisualizationSessionKey = null;
+        visualizationHost.setSession(null, null);
         viewingActiveSession = false;
         messageRenderer.renderWelcome();
         updateLiveSessionInputState();
@@ -764,6 +796,8 @@ function restoreActiveLiveSession() {
     selectLiveSession(next.id);
   } else {
     activeLiveSessionId = null;
+    currentVisualizationSessionKey = null;
+    visualizationHost.setSession(null, null);
     viewingActiveSession = false;
     activeLiveSessionFile = null;
     localStorage.removeItem('tau-active-live-session-id');
@@ -777,9 +811,13 @@ function restoreActiveLiveSession() {
 async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFailure?: boolean } = {}) {
   const session = liveSessions.find(s => s.id === id);
   if (!session) return false;
+  const previousVisualizationSessionKey = currentVisualizationSessionKey;
   suspendCurrentDialogForTabSwitch(id);
   launcherPanel.hide();
   activeLiveSessionId = id;
+  currentVisualizationSessionKey = id;
+  visualizationHost.resetSession(id);
+  visualizationHost.setSession(id, id);
   localStorage.setItem('tau-active-live-session-id', id);
   viewingActiveSession = true;
   activeLiveSessionFile = session.sessionFile || null;
@@ -808,6 +846,8 @@ async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFai
       liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
       if (activeLiveSessionId === id) {
         activeLiveSessionId = null;
+        currentVisualizationSessionKey = previousVisualizationSessionKey;
+        visualizationHost.setSession(previousVisualizationSessionKey, null);
         localStorage.removeItem('tau-active-live-session-id');
         activeLiveSessionFile = null;
       }
@@ -1166,6 +1206,9 @@ function handleMessageUpdate(event: AppEvent) {
 }
 
 function handleMessageEnd(message: AppMessage, sessionId: string | null = activeLiveSessionId) {
+  if (message?.role === 'toolResult' && sessionId && message.toolName === 'present_visualization') {
+    handleVisualizationToolResult(sessionId, { content: message.content, details: message.details }, message.toolCallId || '', false);
+  }
   if (!currentStreamingElement && message?.role === 'assistant') {
     messageRenderer.renderAssistantMessage(message, false, true);
   }
@@ -1274,7 +1317,22 @@ function handleToolExecutionEnd(event: AppEvent, sessionId: string | null = acti
   });
 
   toolCardRenderer.finalizeToolCard(toolCallId, result as ToolResult, isError ?? false, durationMs);
+  if (!isError && sessionId && (event.toolName || exec?.toolName) === 'present_visualization') {
+    handleVisualizationToolResult(sessionId, result, toolCallId, true);
+  }
   refreshResourceViewIfVisible('tools');
+}
+
+function handleVisualizationToolResult(sessionKey: string, result: unknown, toolCallId: string, autoOpen: boolean) {
+  const envelope = visualizationHost.acceptToolResult(sessionKey, result, autoOpen);
+  if (!envelope?.scene) return;
+  toolCardRenderer.setVisualizationSummary(toolCallId, {
+    id: envelope.visualizationId,
+    title: envelope.summary.title,
+    revision: envelope.revision,
+    layers: envelope.scene.layers.length,
+    sources: envelope.scene.sources.length,
+  });
 }
 
 function hasPendingExtensionUIRequest(sessionId: string) {
@@ -1857,6 +1915,9 @@ async function handleSessionSelect(session: SidebarSession | null, project: Side
 
 async function renderHistoricalSession(sessionFile: string) {
   try {
+    currentVisualizationSessionKey = `history:${sessionFile}`;
+    visualizationHost.resetSession(currentVisualizationSessionKey);
+    visualizationHost.setSession(currentVisualizationSessionKey, null);
     const res = await fetch(`/api/session-history?filePath=${encodeURIComponent(sessionFile)}`);
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || '历史记录加载失败');
@@ -2148,9 +2209,17 @@ function renderSessionHistory(entries: SessionHistoryEntry[]) {
       toolResultCount++;
       toolCardRenderer.addHistoryResult(
         msg.toolCallId ?? '',
-        { content: (msg.content as MessageContentBlock[]) || [] },
+        { content: (msg.content as MessageContentBlock[]) || [], details: msg.details },
         msg.isError ?? false
       );
+      if (currentVisualizationSessionKey && msg.toolName === 'present_visualization') {
+        handleVisualizationToolResult(
+          currentVisualizationSessionKey,
+          { content: msg.content, details: msg.details },
+          msg.toolCallId || '',
+          false
+        );
+      }
     }
   }
 

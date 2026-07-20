@@ -150,10 +150,30 @@
         <button class="file-sidebar-tab active" type="button" data-resource-view="files">文件</button>
         <button class="file-sidebar-tab" type="button" data-resource-view="skills">技能</button>
         <button class="file-sidebar-tab" type="button" data-resource-view="tools">工具</button>
+        <button class="file-sidebar-tab" type="button" data-resource-view="visualizations">地图</button>
       </div>
       <div class="file-sidebar-path" id="file-sidebar-path" title=""></div>
       <div class="file-list" id="file-list"></div>
       <div class="resource-list hidden" id="resource-list"></div>
+      <div class="geo-panel hidden" id="geo-panel">
+        <div class="geo-panel-heading">
+          <div>
+            <div class="geo-panel-title" id="geo-panel-title">GIS 可视化</div>
+            <div class="geo-panel-status" id="geo-panel-status">当前任务还没有地图</div>
+          </div>
+          <select class="geo-visualization-select" id="geo-visualization-select" aria-label="选择地图"></select>
+        </div>
+        <div class="geo-map-shell">
+          <div class="geo-empty" id="geo-empty">
+            <span class="geo-empty-mark">◇</span>
+            <strong>等待空间结果</strong>
+            <span>Agent 生成地图后会在这里持续展示。</span>
+          </div>
+          <div class="geo-map hidden" id="geo-map"></div>
+        </div>
+        <div class="geo-layer-list" id="geo-layer-list"></div>
+        <div class="geo-metadata" id="geo-metadata"></div>
+      </div>
     </div>
   </div>
 
