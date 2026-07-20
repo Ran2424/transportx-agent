@@ -25,6 +25,7 @@ type ToolResultBlock = {
 
 export type ToolResult = {
   content?: ToolResultBlock[];
+  details?: unknown;
   [key: string]: unknown;
 };
 
@@ -222,6 +223,28 @@ export class ToolCardRenderer {
       if (body) body.classList.remove('expanded');
       if (chevron) chevron.classList.remove('expanded');
     }
+  }
+
+  setVisualizationSummary(toolCallId: string, summary: { id: string; title: string; revision: number; layers: number; sources: number }) {
+    const card = this.toolCards.get(toolCallId);
+    if (!card) return;
+    const body = card.querySelector<HTMLElement>('.tool-card-body');
+    if (!body) return;
+    card.classList.add('has-visualization');
+    card.querySelector('.tool-visualization-summary')?.remove();
+    const panel = document.createElement('div');
+    panel.className = 'tool-visualization-summary';
+    const text = document.createElement('span');
+    text.textContent = `${summary.title} · ${summary.layers} 个图层 · ${summary.sources} 个数据源 · revision ${summary.revision}`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '打开地图';
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      document.dispatchEvent(new CustomEvent('tau:open-visualization', { detail: { visualizationId: summary.id } }));
+    });
+    panel.append(text, button);
+    body.prepend(panel);
   }
 
   /**

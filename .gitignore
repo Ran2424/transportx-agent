@@ -10,6 +10,8 @@ node_modules/
 /public/*.js
 /public/*.js.map
 /public/*.d.ts
+/public/visualization/
+/public/geo-runtime.css
 
 .DS_Store
 .idea

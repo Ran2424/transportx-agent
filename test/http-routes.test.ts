@@ -118,6 +118,43 @@ test('GET /api/live-sessions lists managed sessions', async () => {
   assert.equal(body.sessions[0].id, 'tau_1');
 });
 
+test('GET geo resource serves session-scoped GeoJSON with ETag revalidation', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-resource-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const sha256 = 'a'.repeat(64);
+  const resourceId = `geo_${sha256.slice(0, 24)}`;
+  const dir = path.join(cwd, '.tau', 'geo-resources', resourceId);
+  fs.mkdirSync(dir, { recursive: true });
+  const geojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
+  fs.writeFileSync(path.join(dir, 'data.geojson'), geojson);
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256, bytes: Buffer.byteLength(geojson), featureCount: 0 }));
+  const session = fakeSession('tau_geo');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+
+  const url = `${base}/api/live-sessions/${session.id}/geo-resources/${resourceId}/data`;
+  const res = await fetch(url);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') || '', /^application\/geo\+json/);
+  assert.equal(res.headers.get('etag'), `"${sha256}"`);
+  assert.deepEqual(await jsonBody(res), { type: 'FeatureCollection', features: [] });
+
+  const cached = await fetch(url, { headers: { 'If-None-Match': `"${sha256}"` } });
+  assert.equal(cached.status, 304);
+});
+
+test('GET geo resource rejects malformed ids and cross-session misses', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-invalid-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const session = fakeSession('tau_geo_invalid');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  const malformed = await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/..%2Fsecret/data`);
+  assert.equal(malformed.status, 400);
+  const missing = await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/geo_${'b'.repeat(24)}/data`);
+  assert.equal(missing.status, 404);
+});
+
 test('POST /api/live-sessions defaults to the server cwd when cwd is omitted', async (t: TestContext) => {
   const child = makeFakeChild();
   _setSpawnPiForTest(() => child);
@@ -129,7 +166,10 @@ test('POST /api/live-sessions defaults to the server cwd when cwd is omitted', a
   });
   assert.equal(res.status, 200);
   const body = await jsonBody(res);
-  assert.equal(body.session.cwd, process.cwd());
+  const scenarioRoot = path.join(process.cwd(), 'scenario');
+  assert.equal(path.dirname(body.session.cwd), scenarioRoot);
+  assert.match(path.basename(body.session.cwd), /^\d{8}-\d{6}-untitled(?:-\d+)?$/);
+  t.after(() => fs.rmSync(body.session.cwd, { recursive: true, force: true }));
 });
 
 test('GET /api/live-sessions/:id/snapshot returns 404 for missing session', async () => {
@@ -477,7 +517,9 @@ test('POST /api/live-sessions creates a live session and returns 200', async (t:
   assert.equal(res.status, 200);
   const body = await jsonBody(res);
   assert.equal(body.session.id.startsWith('tau_'), true);
-  assert.equal(body.session.cwd, path.resolve(cwd));
+  assert.equal(path.dirname(body.session.cwd), path.resolve(cwd));
+  assert.match(path.basename(body.session.cwd), /^\d{8}-\d{6}-早高峰分析(?:-\d+)?$/);
+  assert.equal(fs.statSync(body.session.cwd).isDirectory(), true);
   assert.equal(body.session.modelSpec, 'openai/gpt-5.5');
   assert.equal(body.session.sessionName, '早高峰分析');
   // end the fake stdin so start()'s 250ms get_session_stats probe rejects

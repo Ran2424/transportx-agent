@@ -31,6 +31,9 @@ pi --mode rpc child session N
   - 文件
   - 技能
   - 工具
+  - 地图
+- 内置 Pi GIS Extension，Agent 可发布会话内 GeoJSON，并在 Web 端展示声明式交互地图。
+- 地图支持点、线、面、文字图层，常量/分类/分段/连续编码，安全 Popup、图层显隐和选中高亮。
 - 默认新建任务目录指向 `scenario/`，适合作为后续交通 demo 的工作目录。
 
 ## 产品示意图
@@ -93,6 +96,7 @@ src/server/
   sessions.ts          # Pi RPC 子进程和 live session 生命周期管理
   config.ts            # 端口、host、session 目录、静态资源目录
   model-utils.ts       # 模型列表与 provider/model 解析
+  geo-resources.ts     # 会话隔离的 GeoJSON 资源读取、缓存和边界校验
 
 src/public/
   app-main.ts          # 浏览器主状态、会话切换、WebSocket 事件、右侧面板协调
@@ -101,10 +105,15 @@ src/public/
   session-sidebar.ts   # 左侧会话列表与 live session 同步
   file-browser.ts      # 右侧文件树和拖拽插入路径
   model-picker.ts      # 模型和 thinking level 选择
+  visualization/      # 可视化协议、会话状态与 MapLibre Runtime
+
+extensions/
+  pi-geo-visualization/ # 随 Pi 会话自动加载的 GIS Extension
 
 public/
   index.html           # 页面骨架
   style.css            # 全局样式
+  geo-runtime.*        # 构建生成的 MapLibre 懒加载 bundle
 
 PROJECT_HANDOFF.md     # 给下一位 Agent 和人类开发者的交接说明
 ```
@@ -116,6 +125,8 @@ TypeScript 源码会编译到：
 ```text
 bin/*.js
 public/*.js
+public/visualization/*.js
+public/geo-runtime.*
 ```
 
 这些文件被 `.gitignore` 忽略。修改 `src/` 后需要运行 `npm run build`，本地启动时才会看到最新逻辑。
@@ -131,6 +142,8 @@ public/*.js
 - 左侧侧栏与运行中会话同步。
 - 思考卡片、工具卡片、消息渲染、代码块折叠和整体 UI 美化。
 - 右侧面板增加 `文件 / 技能 / 工具` 切换。
+- 增加 `地图` 工作区、内置 Pi GIS Extension、GeoJSON 资源发布和 MapLibre Web 渲染闭环。
+- 可视化快照随工具结果进入会话历史，支持 live snapshot、历史查看和 resume 恢复。
 - 新增项目交接文档 `PROJECT_HANDOFF.md`。
 
 尚未完成：
@@ -139,6 +152,7 @@ public/*.js
 - 交通专用 Prompt / Skill。
 - `traffic.*` 业务工具。
 - 交通结果卡片。
+- GIS filter/图例、通用格式转换、矢量瓦片、栅格、时序和地图到 Agent 的反向联动。
 - Pi 完整工具清单的原生 RPC 暴露。
 
 ## 技能与工具查看
@@ -151,6 +165,17 @@ public/*.js
 - 当前会话中已经出现过的工具调用统计
 
 注意：Pi 扩展 API 中存在 `pi.getActiveTools()` 和 `pi.getAllTools()`，但当前 Pi RPC 没有原生 `get_tools`。如果后续要展示完整注册工具列表，需要增加 Pi 扩展桥接或扩展 RPC。
+
+## GIS 地图工作流
+
+每个 Pi 会话都会自动加载包内的 GIS Extension，并获得两个声明式工具：
+
+- `publish_geodata`：校验并发布任务目录内的 `.geojson`/`.json` 文件，返回稳定的会话资源 ID。
+- `present_visualization`：创建、更新、聚焦、选择或清除地图 Scene；工具结果不包含可执行 JavaScript、HTML 或 MapLibre 原生表达式。
+
+少量数据可以直接使用 `geojson-inline`；较大数据应先发布，再以 `geojson-resource` 引用。Web 端从工具卡进入右侧“地图”工作区，资源只允许从对应 live session 的任务目录读取。完整协议、边界和后续阶段见 [GIS Web 展示模块技术方案](./docs/GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md)。
+
+`default`/`light`/`dark` 使用 Runtime 白名单内的 OpenFreeMap 矢量底图，需要网络；`none` 保留项目自带的纯色离线底图。Web 制图层会自动为业务线路增加 casing、为点位增加交互 halo，并让底图地名保留在交通线网上方。
 
 ## 后续路线
 
