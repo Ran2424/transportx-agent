@@ -1,4 +1,4 @@
-# Mobile Optimisations
+# 移动端适配说明
 
 Everything customised for mobile (≤768px) compared to the desktop experience.
 

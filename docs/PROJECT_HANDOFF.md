@@ -1,8 +1,10 @@
 # Pi Traffic Workspace 项目交接说明
 
-更新时间：2026-07-09
+更新时间：2026-07-20
 
 这份文档给下一位 Agent 和人类开发者快速接手用。它说明项目是什么、怎么跑、主要代码在哪里、最近改了什么，以及继续开发时最容易踩到的坑。
+
+系统边界、依赖方向和目录治理规则以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准；GIS 的详细契约与演进路线见 [GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md](./GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md)。
 
 ## 一句话概览
 
@@ -20,7 +22,7 @@ pi --mode rpc child sessions
 
 ## 当前定位
 
-项目目前主要是“交通工作台壳子 + Pi 多会话 Web UI”。它已经做了中文化和 UI 美化，但还没有接入真实交通业务能力。
+项目目前由“Pi 多会话 Agent Web 工作台 + GIS 可视化模块”组成。GIS 已形成从 Agent 工具、会话资源、协议快照到 MapLibre Web 渲染的闭环；真实交通数据库和交通业务工具仍未接入。
 
 已经有：
 
@@ -29,6 +31,7 @@ pi --mode rpc child sessions
 - 顶部 live tabs、模型选择器、上下文统计、设置面板、命令面板。
 - 消息渲染、思考卡片、工具调用卡片、代码块折叠。
 - 右侧工作区面板，可以切换查看 `文件 / 技能 / 工具`。
+- 右侧地图工作区、声明式 GeoScene、GeoJSON 会话资源与 MapLibre 渲染。
 - 默认新建任务目录指向 `scenario`：`/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/scenario`。
 
 还没有：
@@ -36,6 +39,7 @@ pi --mode rpc child sessions
 - 真实交通数据库接入。
 - 交通专用 Prompt / Skill / Tool。
 - 交通业务结果卡片。
+- GIS filter、矢量瓦片、栅格、时序与地图到 Agent 的反向联动。
 - 完整的 Pi `getAllTools()` RPC 桥接。当前工具页展示的是内置工具和会话中已观察到的工具调用。
 
 ## 运行方式
@@ -109,7 +113,7 @@ src/server/
   types.ts             # server 侧共享类型
 
 src/public/
-  app-main.ts          # 浏览器主状态、WebSocket 事件、会话切换、右侧面板协调
+  app-main.ts          # 平台组合入口、WebSocket 事件和会话生命周期接线
   message-renderer.ts  # 用户/助手消息、Markdown、思考卡片、复制逻辑
   tool-card.ts         # 工具调用卡片、中文工具名、耗时、折叠/展开
   session-sidebar.ts   # 左侧会话列表、历史会话和 live session 混合展示
@@ -117,6 +121,9 @@ src/public/
   model-picker.ts      # 模型和 thinking level 选择
   session-stats-card.ts# 上下文统计卡片
   themes.ts            # 主题定义
+  workspace/           # 右侧工作区切换、文件/资源视图和扩展视图端口
+  features/            # WebFeature 注册表与 GIS 平台适配器
+  visualization/       # 声明式 Scene、会话存储与 MapLibre Runtime
 
 public/
   index.html           # 页面静态骨架
