@@ -4,6 +4,7 @@ const path = require('node:path');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 type GeoResourceSession = { cwd: string };
+type GeoResourceRouteDeps = { getSession(sessionId: string): GeoResourceSession | null | undefined };
 type GeoResourceManifest = {
   resourceId?: string;
   sha256?: string;
@@ -12,6 +13,7 @@ type GeoResourceManifest = {
 };
 
 const RESOURCE_ID_RE = /^geo_[a-f0-9]{16,64}$/;
+const GEO_RESOURCE_ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/geo-resources\/([^/]+)\/(manifest|data)$/;
 
 function sendJson(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
@@ -21,6 +23,32 @@ function sendJson(res: ServerResponse, status: number, data: unknown) {
 function within(root: string, target: string) {
   const relative = path.relative(path.resolve(root), path.resolve(target));
   return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+export function handleGeoResourceRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cleanPath: string,
+  deps: GeoResourceRouteDeps,
+) {
+  const match = cleanPath.match(GEO_RESOURCE_ROUTE_RE);
+  if (!match || req.method !== 'GET') return false;
+  let sessionId: string;
+  let resourceId: string;
+  try {
+    sessionId = decodeURIComponent(match[1]);
+    resourceId = decodeURIComponent(match[2]);
+  } catch {
+    sendJson(res, 400, { error: 'Malformed geo resource URL' });
+    return true;
+  }
+  const session = deps.getSession(sessionId);
+  if (!session) {
+    sendJson(res, 404, { error: 'Live session not found' });
+    return true;
+  }
+  serveGeoResource(req, res, session, resourceId, match[3] as 'manifest' | 'data');
+  return true;
 }
 
 export function serveGeoResource(req: IncomingMessage, res: ServerResponse, session: GeoResourceSession, resourceId: string, part: 'manifest' | 'data') {

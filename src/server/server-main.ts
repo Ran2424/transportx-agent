@@ -24,7 +24,7 @@ import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_D
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
-import { serveGeoResource } from './geo-resources.js';
+import { handleGeoResourceRoute } from './geo-resources.js';
 
 type TauWs = WsType & { isAlive?: boolean };
 
@@ -411,20 +411,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
     }).catch((e) => json(res, 400, { error: errorMessage(e) }));
     return;
   }
-  const geoResourceMatch = cleanPath.match(/^\/api\/live-sessions\/([^/]+)\/geo-resources\/([^/]+)\/(manifest|data)$/);
-  if (geoResourceMatch && req.method === 'GET') {
-    let sessionId: string;
-    let resourceId: string;
-    try {
-      sessionId = decodeURIComponent(geoResourceMatch[1]);
-      resourceId = decodeURIComponent(geoResourceMatch[2]);
-    } catch {
-      return json(res, 400, { error: 'Malformed geo resource URL' });
-    }
-    const session = liveManager.get(sessionId);
-    if (!session) return json(res, 404, { error: 'Live session not found' });
-    return serveGeoResource(req, res, session, resourceId, geoResourceMatch[3] as 'manifest' | 'data');
-  }
+  if (handleGeoResourceRoute(req, res, cleanPath, { getSession: (sessionId) => liveManager.get(sessionId) })) return;
   const liveMatch = cleanPath.match(/^\/api\/live-sessions\/([^/]+)(?:\/snapshot)?$/);
   if (liveMatch) {
     let id;
