@@ -7,6 +7,7 @@
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统边界、依赖方向、目录与资产规则 | 模块职责或构建方式改变时 |
 | [GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md](./GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md) | GIS 协议、Runtime、安全与演进方案 | GIS 契约或能力阶段改变时 |
 | [REACT_UI_MIGRATION_PLAN.md](./REACT_UI_MIGRATION_PLAN.md) | React、shadcn/ui、Radix 与 Motion 迁移评估和实施路线 | UI 技术栈或迁移阶段改变时 |
+| [TASK_MODE_INTERACTION_PLAN.md](./TASK_MODE_INTERACTION_PLAN.md) | `tau_task`、`tau_ask_user` 与 Web 任务模式适配方案 | 任务状态、交互协议或实施阶段改变时 |
 | [PROJECT_HANDOFF.md](./PROJECT_HANDOFF.md) | 当前状态、运行方式、常见问题 | 每个里程碑完成后 |
 | [MOBILE.md](./MOBILE.md) | 移动端相对桌面端的适配差异 | 移动布局或交互改变时 |
 | [images/](./images/) | README 和工程文档使用的截图 | UI 发生明显变化时 |
