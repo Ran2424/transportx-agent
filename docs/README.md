@@ -4,6 +4,7 @@
 
 | 文档 | 用途 | 维护时机 |
 |---|---|---|
+| [CHANGELOG.md](./CHANGELOG.md) | 版本修改、验证结果与 GitHub 提交/推送记录 | 每次正式提交和推送时 |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统边界、依赖方向、目录与资产规则 | 模块职责或构建方式改变时 |
 | [GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md](./GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md) | GIS 协议、Runtime、安全与演进方案 | GIS 契约或能力阶段改变时 |
 | [REACT_UI_MIGRATION_PLAN.md](./REACT_UI_MIGRATION_PLAN.md) | React、shadcn/ui、Radix 与 Motion 迁移评估和实施路线 | UI 技术栈或迁移阶段改变时 |
@@ -18,3 +19,4 @@
 - GIS 的详细协议只在 GIS 技术方案中维护，README 仅保留使用入口。
 - 截图使用小写英文和连字符命名；过期截图直接替换，不保留多份 `final-v2` 文件。
 - 临时分析、会话文件、GeoJSON 发布缓存和编译产物不进入 `docs/`。
+- 每次正式 GitHub 提交都同步更新 `CHANGELOG.md`，记录版本号、主要修改、验证与推送目标。

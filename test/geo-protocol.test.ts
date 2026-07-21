@@ -28,12 +28,18 @@ function envelope(revision: number, value: ReturnType<typeof scene> | null) {
 test('GeoScene parser accepts the declarative subset and rejects unsafe or oversized input', async () => {
   const modulePath = '../src/public/visualization/geo/protocol.ts';
   const { parseGeoScene } = await import(modulePath);
-  assert.ok(parseGeoScene(scene()));
+  assert.equal(parseGeoScene(scene()).ok, true);
   const unsafe = scene({ layers: [{ id: 'points', sourceId: 'places', type: 'circle', encoding: { color: { mode: 'constant', value: 'url(https://example.com/x)' } } }] });
-  assert.equal(parseGeoScene(unsafe), null);
+  const unsafeResult = parseGeoScene(unsafe);
+  assert.equal(unsafeResult.ok, false);
+  assert.equal(unsafeResult.issues[0].path, 'scene.layers[0].encoding.color');
   const features = Array.from({ length: 1001 }, (_, id) => ({ type: 'Feature', id, properties: {}, geometry: { type: 'Point', coordinates: [121, 31] } }));
-  assert.equal(parseGeoScene(scene({ sources: [{ id: 'places', type: 'geojson-inline', data: { type: 'FeatureCollection', features } }] })), null);
-  assert.equal(parseGeoScene(scene({ selection: [{ sourceId: 'missing', featureIds: [1] }] })), null);
+  const oversizedResult = parseGeoScene(scene({ sources: [{ id: 'places', type: 'geojson-inline', data: { type: 'FeatureCollection', features } }] }));
+  assert.equal(oversizedResult.ok, false);
+  assert.equal(oversizedResult.issues[0].path, 'scene.sources[0].data.features');
+  const selectionResult = parseGeoScene(scene({ selection: [{ sourceId: 'missing', featureIds: [1] }] }));
+  assert.equal(selectionResult.ok, false);
+  assert.equal(selectionResult.issues[0].path, 'scene.selection[0].sourceId');
 });
 
 test('GeoScene parser accepts the styled light-basemap point and label composition', async () => {
@@ -59,7 +65,7 @@ test('GeoScene parser accepts the styled light-basemap point and label compositi
       },
     ],
   });
-  assert.ok(parseGeoScene(styled));
+  assert.equal(parseGeoScene(styled).ok, true);
 });
 
 test('visualization store keeps clear tombstones and ignores stale or duplicate revisions', async () => {

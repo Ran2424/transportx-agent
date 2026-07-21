@@ -19,6 +19,12 @@ export type FeatureToolResult = {
   revision: number;
   layers: number;
   sources: number;
+} | {
+  kind: 'task';
+  taskId: string;
+  title: string;
+  status: string;
+  revision: number;
 };
 
 export interface WebFeature {

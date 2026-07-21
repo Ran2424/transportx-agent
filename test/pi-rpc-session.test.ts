@@ -42,6 +42,28 @@ function makeSession(modelSpec = '') {
   return { session, manager };
 }
 
+test('renderProjectPrompt resolves known paths and rejects unknown placeholders', () => {
+  const { renderProjectPrompt } = require('../bin/sessions.js');
+  const rendered = renderProjectPrompt('任务={{TASK_WORKING_DIRECTORY}}\n项目={{PROJECT_ROOT}}', '/tmp/example-task');
+  assert.match(rendered, /任务=\/tmp\/example-task/);
+  assert.doesNotMatch(rendered, /\{\{/);
+  assert.throws(
+    () => renderProjectPrompt('{{UNKNOWN_PATH}}', '/tmp/example-task'),
+    /Unknown project prompt placeholders: \{\{UNKNOWN_PATH\}\}/,
+  );
+});
+
+test('project prompt injects safe Python, shell, and traffic query rules', () => {
+  const { renderProjectPrompt } = require('../bin/sessions.js');
+  const template = fs.readFileSync(path.join(process.cwd(), 'prompts', 'PI_SESSION_CONTEXT.md'), 'utf8');
+  const rendered = renderProjectPrompt(template, '/tmp/example-task');
+  assert.match(rendered, /miniconda3\/envs\/research\/bin\/python3\.10/);
+  assert.match(rendered, /set -euo pipefail/);
+  assert.match(rendered, /query_assets\.py/);
+  assert.match(rendered, /--describe database\.table/);
+  assert.doesNotMatch(rendered, /\{\{/);
+});
+
 test('agent_start/turn_start set isStreaming; agent_end/turn_end clear it', () => {
   const { session, manager } = makeSession();
   session.handleEvent({ type: 'turn_start' });
@@ -129,6 +151,13 @@ test('toolResult message_end preserves structured visualization details in the s
     },
   });
   assert.deepEqual(session.snapshot().entries[0].message.details.visualization, visualization);
+});
+
+test('entry_appended preserves custom extension state in the live snapshot', () => {
+  const { session } = makeSession();
+  const entry = { type: 'custom', customType: 'pi-task-mode', data: { enabled: true } };
+  session.handleEvent({ type: 'entry_appended', entry });
+  assert.deepEqual(session.snapshot().entries, [entry]);
 });
 
 test('handleResponse resolves a pending send command and updates state', async () => {
@@ -410,10 +439,29 @@ test('start() passes --session <file> to spawned pi when sessionFile is set', as
   const args = spawnArgs[0].args;
   assert.ok(args.includes('--mode'));
   assert.ok(args.includes('rpc'));
-  assert.ok(args.includes('--extension'));
-  const extensionPath = args[args.indexOf('--extension') + 1];
-  assert.match(extensionPath, /extensions[/\\]pi-geo-visualization[/\\]index\.ts$/);
-  assert.equal(require('node:fs').existsSync(extensionPath), true);
+  const extensionPaths = args
+    .map((arg: string, index: number) => arg === '--extension' ? args[index + 1] : null)
+    .filter((extensionPath: string | null): extensionPath is string => typeof extensionPath === 'string');
+  assert.equal(extensionPaths.length, 2);
+  assert.ok(extensionPaths.some((extensionPath: string) => /extensions[/\\]pi-geo-visualization[/\\]index\.ts$/.test(extensionPath)));
+  assert.ok(extensionPaths.some((extensionPath: string) => /extensions[/\\]pi-task-mode[/\\]index\.ts$/.test(extensionPath)));
+  assert.equal(extensionPaths.every((extensionPath: string) => require('node:fs').existsSync(extensionPath)), true);
+  const skillPaths = args
+    .map((arg: string, index: number) => arg === '--skill' ? args[index + 1] : null)
+    .filter((skillPath: string | null): skillPath is string => typeof skillPath === 'string');
+  assert.equal(skillPaths.length, 3);
+  assert.ok(skillPaths.some((skillPath: string) => /skills[/\\]geo-visualization-explanation[/\\]SKILL\.md$/.test(skillPath)));
+  assert.ok(skillPaths.some((skillPath: string) => /skills[/\\]plot-from-data[/\\]SKILL\.md$/.test(skillPath)));
+  assert.ok(skillPaths.some((skillPath: string) => /skills[/\\]shanghai-traffic-data-assets[/\\]SKILL\.md$/.test(skillPath)));
+  assert.equal(skillPaths.every((skillPath: string) => require('node:fs').existsSync(skillPath)), true);
+  assert.ok(args.includes('--append-system-prompt'));
+  const projectPrompt = args[args.indexOf('--append-system-prompt') + 1];
+  assert.match(projectPrompt, /当前任务工作目录：/);
+  assert.match(projectPrompt, /上海交通查询脚本目录：/);
+  assert.match(projectPrompt, /上海交通 SQLite 数据目录：/);
+  assert.match(projectPrompt, /PI_SESSION_CONTEXT\.md/);
+  assert.doesNotMatch(projectPrompt, /\{\{[A-Z0-9_]+\}\}/);
+  assert.ok(projectPrompt.includes(cwd));
   assert.ok(args.includes('--session'));
   const sessionIdx = args.indexOf('--session');
   assert.ok(sessionIdx >= 0);

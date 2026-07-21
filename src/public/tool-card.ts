@@ -401,6 +401,8 @@ export class ToolCardRenderer {
     if (args.command) return this.previewText(String(args.command), 82);
     if (args.query) return this.previewText(String(args.query), 64);
     if (args.url) return this.previewText(String(args.url), 72);
+    if (args.title) return this.previewText(String(args.title), 64);
+    if (args.action) return this.previewText(String(args.action), 64);
 
     // Fallback: first string value
     for (const val of Object.values(args)) {
@@ -458,6 +460,8 @@ export class ToolCardRenderer {
       bash: '命令',
       edit: '编辑',
       write: '创建',
+      tau_task: '任务状态',
+      tau_ask_user: '用户交互',
     };
     const key = String(toolName || '').toLowerCase();
     return labels[key] || String(toolName || '');

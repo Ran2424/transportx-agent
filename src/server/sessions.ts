@@ -5,7 +5,16 @@ const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, PendingCommand, RpcCommand, RpcResponse } from './types.js';
-import { expandHome, GEO_EXTENSION_PATH } from './config.js';
+import {
+  BUILTIN_EXTENSION_PATHS,
+  BUILTIN_SKILL_PATHS,
+  PROJECT_PROMPT_PATH,
+  PROJECT_ROOT,
+  PROJECT_SKILLS_DIR,
+  TRAFFIC_DATA_DIR,
+  TRAFFIC_TOOLS_DIR,
+  expandHome,
+} from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
@@ -32,6 +41,30 @@ type PiRpcMessage = PiRpcPayload & {
   result?: PiRpcPayload;
   message?: PiMessage;
 };
+
+const PROJECT_PROMPT_PLACEHOLDERS: Record<string, (cwd: string) => string> = {
+  PROJECT_ROOT: () => PROJECT_ROOT,
+  TASK_WORKING_DIRECTORY: (cwd) => cwd,
+  PROJECT_SKILLS_DIR: () => PROJECT_SKILLS_DIR,
+  TRAFFIC_TOOLS_DIR: () => TRAFFIC_TOOLS_DIR,
+  TRAFFIC_DATA_DIR: () => TRAFFIC_DATA_DIR,
+  PROJECT_PROMPT_PATH: () => PROJECT_PROMPT_PATH,
+};
+
+export function renderProjectPrompt(template: string, cwd: string) {
+  let rendered = template;
+  for (const [name, resolveValue] of Object.entries(PROJECT_PROMPT_PLACEHOLDERS)) {
+    rendered = rendered.replaceAll(`{{${name}}}`, resolveValue(cwd));
+  }
+  const unresolved = Array.from(new Set(rendered.match(/\{\{[A-Z0-9_]+\}\}/g) || []));
+  if (unresolved.length) throw new Error(`Unknown project prompt placeholders: ${unresolved.join(', ')}`);
+  return rendered.trim();
+}
+
+function loadProjectPrompt(cwd: string) {
+  if (!fs.existsSync(PROJECT_PROMPT_PATH)) throw new Error(`Project prompt not found: ${PROJECT_PROMPT_PATH}`);
+  return renderProjectPrompt(fs.readFileSync(PROJECT_PROMPT_PATH, 'utf8'), cwd);
+}
 
 export function makeId() {
   return `tau_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -178,8 +211,15 @@ export class PiRpcSession {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
     const args = ['--mode', 'rpc'];
-    if (!fs.existsSync(GEO_EXTENSION_PATH)) throw new Error(`GIS extension not found: ${GEO_EXTENSION_PATH}`);
-    args.push('--extension', GEO_EXTENSION_PATH);
+    for (const extensionPath of BUILTIN_EXTENSION_PATHS) {
+      if (!fs.existsSync(extensionPath)) throw new Error(`Built-in extension not found: ${extensionPath}`);
+      args.push('--extension', extensionPath);
+    }
+    for (const skillPath of BUILTIN_SKILL_PATHS) {
+      if (!fs.existsSync(skillPath)) throw new Error(`Built-in skill not found: ${skillPath}`);
+      args.push('--skill', skillPath);
+    }
+    args.push('--append-system-prompt', loadProjectPrompt(this.cwd));
     if (this.sessionFile) args.push('--session', this.sessionFile);
     if (this.modelSpec) args.push('--model', this.modelSpec);
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
@@ -330,6 +370,12 @@ export class PiRpcSession {
 
     if ((type === 'message_start' || type === 'message_end') && event.message) {
       this.trackMessage(event.message, type);
+    }
+    const appendedEntry = event.entry && typeof event.entry === 'object' && !Array.isArray(event.entry)
+      ? event.entry as JsonRecord
+      : null;
+    if (type === 'entry_appended' && appendedEntry?.type === 'custom') {
+      this.entries.push(appendedEntry);
     }
     // NOTE: the assistant `message_end` event carries `event.message.model` as
     // a bare id describing WHICH model produced that message, not a selection

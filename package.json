@@ -23,6 +23,8 @@
     "bin",
     "public",
     "extensions",
+    "skills",
+    "prompts",
     "docs/*.md",
     "src",
     "tsconfig.json",

@@ -1,8 +1,8 @@
 # Pi 任务模式与 Web 人机交互实施方案
 
-更新时间：2026-07-20
+更新时间：2026-07-21
 
-状态：建议实施，尚未开始开发
+状态：阶段 1 Agent Extension 与阶段 2 Web Adapter 已完成；阶段 3 可靠性加固待继续
 
 ## 1. 结论
 
@@ -16,6 +16,15 @@
 任务状态以工具结果的 `details` 为权威数据，通过现有 Pi RPC、Node Server 和 WebSocket 链路进入 Web；用户交互优先复用 Pi RPC 原生的 Extension UI 请求/响应协议。Web 不通过正则解析 Assistant 的自然语言来判断任务状态。
 
 Taskflow 可以作为未来复杂 DAG、并行子 Agent、恢复和增量重算的可选运行引擎，但不是这一阶段的前置依赖。
+
+当前实现进度：
+
+- 已实现 `pi-task-mode` Extension、`tau_task`、`tau_ask_user` 和 `/task on|off|status`。
+- 已实现结构化状态转换、branch/session 恢复和内置 Extension Registry。
+- 已通过 Extension 单元测试、TypeScript 检查和真实 Pi RPC 的加载/命令冒烟验证。
+- 已实现 Web 顶部任务模式开关、TaskCard、按会话/revision 去重的 TaskStore，以及 live/history/resume 恢复。
+- 已适配 `tool_execution_update` 的 `waiting_user` 快照，并升级 confirm/select/input/editor Dialog。
+- 第一版没有暴露 timeout 参数；Pi RPC 会把部分超时与取消解析为相同返回值，在定义可靠区分协议前统一按未批准/已取消处理。
 
 ## 2. 目标与非目标
 
@@ -186,6 +195,8 @@ interface TauTaskInput {
 | `revise` | 用户回答或执行发现改变后修订步骤 | taskId 匹配；已完成步骤默认保留 |
 | `update_step` | 设置 running/completed/blocked/failed/skipped | stepId 存在；状态转换合法 |
 | `finish` | 结束任务并记录最终摘要 | 所有未完成步骤有明确终态 |
+| `fail` | 工具、数据或系统错误导致任务无法继续 | taskId 匹配；运行中步骤转为 failed |
+| `cancel` | 用户明确取消当前任务 | taskId 匹配；运行中步骤转为 skipped |
 
 每次调用返回完整快照：
 
@@ -218,6 +229,8 @@ Extension 在 `before_agent_start` 中只对任务模式追加以下约束：
 计划发生实质变化时调用 tau_task.revise。
 缺少必要信息时调用 tau_ask_user，不得擅自猜测。
 全部完成后调用 tau_task.finish。
+工具或系统错误导致无法继续时调用 tau_task.fail；用户取消时调用 tau_task.cancel。
+Agent 结束前不得把任务留在 running 或 waiting_user。
 简单问答无需创建任务。
 ```
 
@@ -300,18 +313,18 @@ interface InteractionResultDetails {
 
 ## 8. 任务模式开启与持久化
 
-Web 输入区增加模式切换：
+Web 顶部增加模式切换：
 
 ```text
 [ 对话模式 ] [ 任务模式 ]
 ```
 
-建议链路：
+当前实现链路：
 
-1. Web 向 Node 发送应用级 `set_task_mode` 消息。
-2. Node 更新对应 live session 的 `mode`，只允许 `chat | task`。
-3. Node 通过 Extension command `/task on|off` 同步到 Pi；命令由 Pi 在 Agent loop 前处理，不作为普通问题交给模型。
-4. Extension 使用自定义 session entry 持久化模式，并在 `session_start` 时从当前 branch 恢复。
+1. Web 通过现有 `/api/rpc` 向当前 Pi 会话发送 `/task on|off` prompt；执行中禁止切换。
+2. 命令由 Extension 处理，不进入普通 Agent 回答。
+3. Extension 使用 `pi-task-mode` 自定义 session entry 持久化模式，并在 `session_start` 时从当前 branch 恢复。
+4. Web 订阅 live `entry_appended`，并在 snapshot/history 中读取最后一个模式 entry。
 5. `before_agent_start` 读取 Extension 状态，决定是否注入任务规则。
 
 在正式实现前需要用 RPC spike 验证 `/task on|off` 经 `prompt` 命令发送时的 ack、历史记录和 busy-session 行为。如果命令链路不满足无痕切换，再增加一个最小的 Extension bridge；不要把模式标记拼接进用户可见消息。
@@ -322,7 +335,7 @@ Web 输入区增加模式切换：
 
 ### 9.1 Feature 生命周期扩展
 
-当前 `WebFeature` 只处理最终工具结果。任务模式需要完整工具生命周期：
+`FeatureRegistry` 已改为可辨识结果联合类型。当前平台在 update 和 end 阶段把结构化结果分发给功能适配器；start 阶段仍由通用工具卡负责：
 
 ```ts
 interface WebFeature {
@@ -348,11 +361,11 @@ type FeatureResult =
 当前原生 TypeScript 阶段：
 
 ```text
-src/public/features/task-mode/
+src/public/features/task/
   task-mode-feature.ts      FeatureRegistry 接入点
-  task-store.ts             会话隔离的 TaskSnapshot 存储
-  task-panel.ts             步骤列表和当前状态
-  task-contract.ts          Web 端校验与归一化
+  session-task-store.ts     会话隔离的 TaskSnapshot 存储
+  task-card-renderer.ts     步骤列表和当前状态
+  task-protocol.ts          Web 端校验与归一化
 ```
 
 Extension：
@@ -401,14 +414,15 @@ src/server/task-mode.ts     mode 消息、session 关联和恢复
 `session_start` 遍历当前 branch：
 
 - 读取最新 `tau_task` tool result 的 `details.task`。
-- 读取最近的任务模式 session entry。
+- 读取最近的任务模式 session entry；该 entry 同时保存开关状态和最新任务快照。
 - 忽略 revision 更低或 schemaVersion 不支持的快照。
-- 如果任务在进程异常退出时仍是 `running/waiting_user`，恢复为 `interrupted`，不假装仍在运行。
+- 如果任务在进程异常退出时仍是 `running/waiting_user`，恢复为 `interrupted` 并立即持久化；运行中步骤转为 `blocked`，不假装仍在运行。
+- `agent_end` 负责兜底：Agent 遗漏 `finish/fail/cancel` 时，同样写入可恢复的 `interrupted` 快照。
 
 ### 10.2 Web 恢复
 
-- live snapshot：读取当前工具结果并订阅后续事件。
-- history：从历史 `toolResult.details.task` 重建最后快照，只读显示。
+- live snapshot：读取当前工具结果和任务模式自定义状态，并订阅后续事件。
+- history：合并历史 `toolResult.details.task` 与任务模式自定义状态，按 revision 重建最后快照，只读显示。
 - resume：先从历史重建，再接受新工具调用产生的更高 revision。
 - browser refresh：从 Node live session snapshot 恢复；不要只依赖页面内存。
 
@@ -473,7 +487,9 @@ Web 不把以下内容作为权威状态：
 
 ### 阶段 2：Web TaskCard
 
-- 扩展 FeatureRegistry 的 start/update/end 生命周期。
+状态：已完成
+
+- 在 update/end 阶段向 FeatureRegistry 分发结构化结果；start 保持通用工具卡生命周期。
 - 实现按 session 隔离的 TaskStore。
 - 实现 TaskCard、当前步骤、完成/失败状态和模式切换。
 - 复用现有 DialogHandler，增加任务来源信息和 waiting-user 状态。

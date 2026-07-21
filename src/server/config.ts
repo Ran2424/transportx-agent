@@ -3,6 +3,7 @@ const path = require('node:path');
 const os = require('node:os');
 
 import type { TauArgs, TauSettings, TauSettingsFile } from './types.js';
+import type { Dirent } from 'node:fs';
 
 export function parseArgs(argv: string[]): TauArgs {
   const out: TauArgs = {};
@@ -50,6 +51,15 @@ export const PORT = TAU_SETTINGS.port;
 export const HOST = TAU_SETTINGS.host;
 export const STATIC_DIR = process.env.TAU_STATIC_DIR || findPublicDir();
 export const GEO_EXTENSION_PATH = process.env.TAU_GEO_EXTENSION_PATH || findGeoExtensionPath();
+export const TASK_MODE_EXTENSION_PATH = process.env.TAU_TASK_MODE_EXTENSION_PATH || findTaskModeExtensionPath();
+export const BUILTIN_EXTENSION_PATHS = [GEO_EXTENSION_PATH, TASK_MODE_EXTENSION_PATH];
+export const PROJECT_SKILLS_DIR = process.env.TAU_SKILLS_DIR || findProjectSkillsDir();
+export const BUILTIN_SKILL_PATHS = findSkillPaths(PROJECT_SKILLS_DIR);
+export const PROJECT_ROOT = path.dirname(PROJECT_SKILLS_DIR);
+export const TRAFFIC_SKILL_DIR = path.join(PROJECT_SKILLS_DIR, 'shanghai-traffic-data-assets');
+export const TRAFFIC_TOOLS_DIR = path.join(TRAFFIC_SKILL_DIR, 'scripts');
+export const TRAFFIC_DATA_DIR = path.join(TRAFFIC_SKILL_DIR, 'assets', 'databases');
+export const PROJECT_PROMPT_PATH = path.resolve(process.env.TAU_PROJECT_PROMPT_PATH || path.join(PROJECT_ROOT, 'prompts', 'PI_SESSION_CONTEXT.md'));
 
 function findPublicDir() {
   const candidates: string[] = [];
@@ -79,6 +89,41 @@ function findGeoExtensionPath() {
     add(path.join(path.dirname(pkgPath), 'extensions', 'pi-geo-visualization', 'index.ts'));
   } catch {}
   return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function findTaskModeExtensionPath() {
+  const candidates: string[] = [];
+  const add = (p: string) => candidates.push(path.resolve(p));
+  add(path.join(__dirname, '..', 'extensions', 'pi-task-mode', 'index.ts'));
+  add(path.join(process.cwd(), 'extensions', 'pi-task-mode', 'index.ts'));
+  try {
+    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
+    add(path.join(path.dirname(pkgPath), 'extensions', 'pi-task-mode', 'index.ts'));
+  } catch {}
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function findProjectSkillsDir() {
+  const candidates: string[] = [];
+  const add = (p: string) => candidates.push(path.resolve(p));
+  add(path.join(__dirname, '..', 'skills'));
+  add(path.join(process.cwd(), 'skills'));
+  try {
+    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
+    add(path.join(path.dirname(pkgPath), 'skills'));
+  } catch {}
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function findSkillPaths(skillsDir: string) {
+  try {
+    return fs.readdirSync(skillsDir, { withFileTypes: true })
+      .filter((entry: Dirent) => entry.isDirectory() && fs.existsSync(path.join(skillsDir, entry.name, 'SKILL.md')))
+      .map((entry: Dirent) => path.join(skillsDir, entry.name, 'SKILL.md'))
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 export const MIME_TYPES = {

@@ -18,10 +18,16 @@ import { setupSessionStatsCard, type SessionStats } from './session-stats-card.j
 import { WorkspaceController } from './workspace/workspace-controller.js';
 import { FeatureRegistry } from './features/feature-registry.js';
 import { GeoFeature } from './features/geo/geo-feature.js';
+import { TaskModeFeature } from './features/task/task-mode-feature.js';
 
 import type { AppEvent, AppMessage, ExtensionUIRequest, LiveInstance, LiveSession, MessageContentBlock, ModelRecord, PendingFilePath, PendingImage, QueuedCommand, RpcCommand, UsageRecord } from './app-types.js';
 
-type SessionHistoryEntry = { type?: string; message?: AppMessage };
+type SessionHistoryEntry = {
+  type?: string;
+  message?: AppMessage;
+  customType?: string;
+  data?: unknown;
+};
 
 type DurationCacheEntry = { durationMs: number; updatedAt: number };
 type DurationCache = Record<string, DurationCacheEntry>;
@@ -312,6 +318,23 @@ const workspaceController = new WorkspaceController({
 });
 const featureRegistry = new FeatureRegistry(workspaceController);
 featureRegistry.register(new GeoFeature({ onRequestOpen: () => workspaceController.openView('visualizations') }));
+const taskModeFeature = new TaskModeFeature({
+  container: document.getElementById('task-board-content')!,
+  toggle: document.getElementById('task-mode-toggle') as HTMLButtonElement,
+  panel: document.getElementById('task-board')!,
+  panelToggle: document.getElementById('task-panel-toggle') as HTMLButtonElement,
+  panelClose: document.getElementById('task-board-close') as HTMLButtonElement,
+  dragHandle: document.getElementById('task-board-drag-handle')!,
+  async onModeChange(enabled) {
+    if (state.isStreaming) {
+      setStatusMessage('请等待当前回复结束后再切换任务模式', '已连接', 3000);
+      return false;
+    }
+    const response = await rpcCommand({ type: 'prompt', message: `/task ${enabled ? 'on' : 'off'}` }, '正在切换任务模式...');
+    return !!response?.success;
+  },
+});
+featureRegistry.register(taskModeFeature);
 workspaceController.start();
 
 
@@ -863,7 +886,7 @@ function handleRPCEvent(event: AppEvent, sessionId: string | null = null) {
       handleToolExecutionStart(event);
       break;
     case 'tool_execution_update':
-      handleToolExecutionUpdate(event);
+      handleToolExecutionUpdate(event, sessionId);
       break;
     case 'tool_execution_end':
       handleToolExecutionEnd(event, sessionId);
@@ -876,6 +899,9 @@ function handleRPCEvent(event: AppEvent, sessionId: string | null = null) {
       break;
     case 'extension_ui_request':
       handleExtensionUIRequest(event, sessionId);
+      break;
+    case 'entry_appended':
+      taskModeFeature.handleEntry(event.entry);
       break;
     case 'extension_error':
       messageRenderer.renderError(`扩展错误：${event.error}`);
@@ -1102,7 +1128,7 @@ function handleToolExecutionStart(event: AppEvent) {
   workspaceController.refreshResourceViewIfVisible('tools');
 }
 
-function handleToolExecutionUpdate(event: AppEvent) {
+function handleToolExecutionUpdate(event: AppEvent, sessionId: string | null = activeLiveSessionId) {
   const { toolCallId, partialResult } = event;
   if (!toolCallId) return;
   const output = formatToolOutput(partialResult);
@@ -1117,6 +1143,10 @@ function handleToolExecutionUpdate(event: AppEvent) {
 
   const updatedExec = state.getToolExecution(toolCallId);
   if (updatedExec) toolCardRenderer.updateToolCard(updatedExec as ToolExecution);
+  if (sessionId) {
+    const toolName = typeof exec?.toolName === 'string' ? exec.toolName : event.toolName;
+    handleFeatureToolResult(sessionId, toolName, partialResult, toolCallId, false);
+  }
 }
 
 function handleToolExecutionEnd(event: AppEvent, sessionId: string | null = activeLiveSessionId) {
@@ -1145,7 +1175,7 @@ function handleToolExecutionEnd(event: AppEvent, sessionId: string | null = acti
 
 function handleFeatureToolResult(sessionKey: string, toolName: string | undefined, result: unknown, toolCallId: string, autoOpen: boolean) {
   const featureResult = featureRegistry.handleToolResult({ sessionKey, toolName, result, autoOpen });
-  if (!featureResult) return;
+  if (!featureResult || featureResult.kind !== 'visualization') return;
   toolCardRenderer.setVisualizationSummary(toolCallId, {
     id: featureResult.id,
     title: featureResult.title,
@@ -1945,6 +1975,7 @@ function updateLiveSessionInputState() {
 function renderSessionHistory(entries: SessionHistoryEntry[]) {
   console.log(`[History] Rendering ${entries.length} entries`);
   let userCount = 0, assistantCount = 0, toolCardCount = 0, toolResultCount = 0;
+  taskModeFeature.restoreModeFromEntries(entries);
 
   for (const entry of entries) {
     if (entry.type !== 'message') continue;

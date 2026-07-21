@@ -54,6 +54,16 @@ export type GeoSceneSnapshot = {
   metadata: { title: string; description?: string; warnings?: string[] };
 };
 
+export type ValidationIssue = {
+  path: string;
+  code: string;
+  message: string;
+};
+
+export type ValidationResult<T> =
+  | { ok: true; value: T; issues: [] }
+  | { ok: false; value: null; issues: ValidationIssue[] };
+
 export type VisualizationEnvelope = {
   protocol: 'pi-visualization';
   version: '1.0';
@@ -191,58 +201,94 @@ function parseVisualValue(value: unknown, channel: string): GeoVisualValue | nul
   return null;
 }
 
-export function parseGeoScene(value: unknown): GeoSceneSnapshot | null {
+function valid<T>(value: T): ValidationResult<T> {
+  return { ok: true, value, issues: [] };
+}
+
+function invalid(path: string, code: string, message: string): ValidationResult<never> {
+  return { ok: false, value: null, issues: [{ path, code, message }] };
+}
+
+export function parseGeoScene(value: unknown): ValidationResult<GeoSceneSnapshot> {
   const input = record(value);
-  if (!input || !Array.isArray(input.sources) || !Array.isArray(input.layers) || input.sources.length > 32 || input.layers.length > 64) return null;
+  if (!input) return invalid('scene', 'invalid_type', 'Scene must be an object.');
+  if (!Array.isArray(input.sources)) return invalid('scene.sources', 'invalid_type', 'Sources must be an array.');
+  if (input.sources.length > 32) return invalid('scene.sources', 'too_many_items', 'A scene can contain at most 32 sources.');
+  if (!Array.isArray(input.layers)) return invalid('scene.layers', 'invalid_type', 'Layers must be an array.');
+  if (input.layers.length > 64) return invalid('scene.layers', 'too_many_items', 'A scene can contain at most 64 layers.');
   const view = parseView(input.view);
+  if (!view) return invalid('scene.view', 'invalid_view', 'Use a valid bounds or camera view.');
   const basemap = record(input.basemap);
+  if (!basemap || !['default', 'light', 'dark', 'none'].includes(String(basemap.id))) {
+    return invalid('scene.basemap.id', 'invalid_basemap', 'Basemap id must be default, light, dark, or none.');
+  }
   const metadata = record(input.metadata);
-  if (!view || !basemap || !['default', 'light', 'dark', 'none'].includes(String(basemap.id)) || !metadata || !text(metadata.title, 160)) return null;
+  if (!metadata) return invalid('scene.metadata', 'invalid_type', 'Metadata must be an object.');
+  if (!text(metadata.title, 160)) return invalid('scene.metadata.title', 'invalid_title', 'Metadata title is required and must be at most 160 characters.');
 
   const sources: GeoSource[] = [];
   const sourceIds = new Set<string>();
-  for (const item of input.sources) {
+  for (let index = 0; index < input.sources.length; index++) {
+    const item = input.sources[index];
+    const sourcePath = `scene.sources[${index}]`;
     const source = record(item);
-    if (!source || !text(source.id, 64) || !SOURCE_ID_RE.test(source.id) || sourceIds.has(source.id)) return null;
+    if (!source) return invalid(sourcePath, 'invalid_type', 'Source must be an object.');
+    if (!text(source.id, 64) || !SOURCE_ID_RE.test(source.id)) return invalid(`${sourcePath}.id`, 'invalid_id', 'Source id must start with a letter and contain only letters, numbers, underscores, or hyphens.');
+    if (sourceIds.has(source.id)) return invalid(`${sourcePath}.id`, 'duplicate_id', `Duplicate source id: ${source.id}.`);
     sourceIds.add(source.id);
     const idField = source.idField === undefined ? undefined : source.idField;
-    if (idField !== undefined && !text(idField, 100)) return null;
+    if (idField !== undefined && !text(idField, 100)) return invalid(`${sourcePath}.idField`, 'invalid_id_field', 'idField must be a non-empty string of at most 100 characters.');
     if (source.type === 'geojson-inline' && isFeatureCollection(source.data)) {
-      if (source.data.features.length > MAX_INLINE_FEATURES || new TextEncoder().encode(JSON.stringify(source.data)).byteLength > MAX_INLINE_BYTES) return null;
+      if (source.data.features.length > MAX_INLINE_FEATURES) return invalid(`${sourcePath}.data.features`, 'too_many_features', `Inline GeoJSON can contain at most ${MAX_INLINE_FEATURES} features.`);
+      if (new TextEncoder().encode(JSON.stringify(source.data)).byteLength > MAX_INLINE_BYTES) return invalid(`${sourcePath}.data`, 'inline_data_too_large', `Inline GeoJSON can contain at most ${MAX_INLINE_BYTES} bytes.`);
       sources.push({ id: source.id, type: source.type, data: source.data, ...(idField ? { idField } : {}) });
     } else if (source.type === 'geojson-resource' && text(source.resourceId, 80) && RESOURCE_ID_RE.test(source.resourceId)) {
       sources.push({ id: source.id, type: source.type, resourceId: source.resourceId, ...(idField ? { idField } : {}) });
-    } else return null;
+    } else if (source.type === 'geojson-inline') {
+      return invalid(`${sourcePath}.data`, 'invalid_geojson', 'Inline source data must be a valid GeoJSON FeatureCollection.');
+    } else if (source.type === 'geojson-resource') {
+      return invalid(`${sourcePath}.resourceId`, 'invalid_resource_id', 'Resource id must be a published geo_* identifier.');
+    } else {
+      return invalid(`${sourcePath}.type`, 'invalid_source_type', 'Source type must be geojson-inline or geojson-resource.');
+    }
   }
 
   const layers: GeoLayer[] = [];
   const layerIds = new Set<string>();
-  for (const item of input.layers) {
+  for (let index = 0; index < input.layers.length; index++) {
+    const item = input.layers[index];
+    const layerPath = `scene.layers[${index}]`;
     const layer = record(item);
-    if (!layer || !text(layer.id, 64) || !SOURCE_ID_RE.test(layer.id) || layerIds.has(layer.id) || !text(layer.sourceId, 64) || !sourceIds.has(layer.sourceId)) return null;
-    if (!['circle', 'line', 'fill', 'label'].includes(String(layer.type))) return null;
+    if (!layer) return invalid(layerPath, 'invalid_type', 'Layer must be an object.');
+    if (!text(layer.id, 64) || !SOURCE_ID_RE.test(layer.id)) return invalid(`${layerPath}.id`, 'invalid_id', 'Layer id must start with a letter and contain only letters, numbers, underscores, or hyphens.');
+    if (layerIds.has(layer.id)) return invalid(`${layerPath}.id`, 'duplicate_id', `Duplicate layer id: ${layer.id}.`);
+    if (!text(layer.sourceId, 64)) return invalid(`${layerPath}.sourceId`, 'invalid_source_id', 'Layer sourceId is required.');
+    if (!sourceIds.has(layer.sourceId)) return invalid(`${layerPath}.sourceId`, 'unknown_source', `Source not found: ${layer.sourceId}.`);
+    if (!['circle', 'line', 'fill', 'label'].includes(String(layer.type))) return invalid(`${layerPath}.type`, 'invalid_layer_type', 'Layer type must be circle, line, fill, or label.');
     const layerType = layer.type as GeoLayer['type'];
     const encoding = record(layer.encoding);
-    if (!encoding) return null;
+    if (!encoding) return invalid(`${layerPath}.encoding`, 'invalid_type', 'Layer encoding must be an object.');
     const parsedEncoding: Record<string, GeoVisualValue> = {};
     for (const [channel, channelValue] of Object.entries(encoding)) {
-      if (!LAYER_CHANNELS[layerType].has(channel)) return null;
+      if (!LAYER_CHANNELS[layerType].has(channel)) return invalid(`${layerPath}.encoding.${channel}`, 'unsupported_channel', `${channel} is not supported by ${layerType} layers.`);
       const parsed = parseVisualValue(channelValue, channel);
-      if (!parsed) return null;
+      if (!parsed) return invalid(`${layerPath}.encoding.${channel}`, 'invalid_visual_value', `Invalid ${channel} value. Check mode, field, output type, stop order, and channel limits.`);
       parsedEncoding[channel] = parsed;
     }
-    if (layerType === 'label' && !parsedEncoding.textField) return null;
+    if (layerType === 'label' && !parsedEncoding.textField) return invalid(`${layerPath}.encoding.textField`, 'missing_text_field', 'Label layers require textField.');
     const title = layer.title === undefined ? undefined : layer.title;
-    if (title !== undefined && !text(title, 120)) return null;
-    if (layer.minZoom !== undefined && (!finite(layer.minZoom) || layer.minZoom < 0 || layer.minZoom > 24)) return null;
-    if (layer.maxZoom !== undefined && (!finite(layer.maxZoom) || layer.maxZoom < 0 || layer.maxZoom > 24)) return null;
-    if (finite(layer.minZoom) && finite(layer.maxZoom) && layer.minZoom > layer.maxZoom) return null;
+    if (title !== undefined && !text(title, 120)) return invalid(`${layerPath}.title`, 'invalid_title', 'Layer title must be a non-empty string of at most 120 characters.');
+    if (layer.minZoom !== undefined && (!finite(layer.minZoom) || layer.minZoom < 0 || layer.minZoom > 24)) return invalid(`${layerPath}.minZoom`, 'invalid_zoom', 'minZoom must be between 0 and 24.');
+    if (layer.maxZoom !== undefined && (!finite(layer.maxZoom) || layer.maxZoom < 0 || layer.maxZoom > 24)) return invalid(`${layerPath}.maxZoom`, 'invalid_zoom', 'maxZoom must be between 0 and 24.');
+    if (finite(layer.minZoom) && finite(layer.maxZoom) && layer.minZoom > layer.maxZoom) return invalid(`${layerPath}.minZoom`, 'invalid_zoom_range', 'minZoom cannot be greater than maxZoom.');
     let popup: GeoLayer['popup'];
     if (layer.popup !== undefined) {
       const popupInput = record(layer.popup);
-      if (!popupInput || !Array.isArray(popupInput.fields) || popupInput.fields.length > 12) return null;
+      if (!popupInput || !Array.isArray(popupInput.fields)) return invalid(`${layerPath}.popup.fields`, 'invalid_type', 'Popup fields must be an array.');
+      if (popupInput.fields.length > 12) return invalid(`${layerPath}.popup.fields`, 'too_many_items', 'A popup can contain at most 12 fields.');
       const fields = popupInput.fields.map(record);
-      if (!fields.every((field) => field && text(field.field, 100) && text(field.label, 100) && (field.format === undefined || ['text', 'integer', 'decimal', 'percent'].includes(String(field.format))))) return null;
+      const invalidFieldIndex = fields.findIndex((field) => !field || !text(field.field, 100) || !text(field.label, 100) || (field.format !== undefined && !['text', 'integer', 'decimal', 'percent'].includes(String(field.format))));
+      if (invalidFieldIndex >= 0) return invalid(`${layerPath}.popup.fields[${invalidFieldIndex}]`, 'invalid_popup_field', 'Popup field requires field and label; format may be text, integer, decimal, or percent.');
       popup = { fields: popupInput.fields as NonNullable<GeoLayer['popup']>['fields'] };
     }
     layers.push({
@@ -267,24 +313,33 @@ export function parseGeoScene(value: unknown): GeoSceneSnapshot | null {
   if (input.controls !== undefined) {
     const controlsInput = record(input.controls);
     const allowed = new Set(['navigation', 'fullscreen', 'layerSwitcher', 'legend', 'fitToData']);
-    if (!controlsInput || Object.entries(controlsInput).some(([key, value]) => !allowed.has(key) || typeof value !== 'boolean')) return null;
+    if (!controlsInput) return invalid('scene.controls', 'invalid_type', 'Controls must be an object.');
+    const invalidControl = Object.entries(controlsInput).find(([key, controlValue]) => !allowed.has(key) || typeof controlValue !== 'boolean');
+    if (invalidControl) return invalid(`scene.controls.${invalidControl[0]}`, 'invalid_control', 'Control values must be booleans and use a supported control name.');
     controls = controlsInput as GeoSceneSnapshot['controls'];
   }
   let selection: GeoSceneSnapshot['selection'];
   if (input.selection !== undefined) {
-    if (!Array.isArray(input.selection) || input.selection.length > 32) return null;
+    if (!Array.isArray(input.selection)) return invalid('scene.selection', 'invalid_type', 'Selection must be an array.');
+    if (input.selection.length > 32) return invalid('scene.selection', 'too_many_items', 'Selection can contain at most 32 entries.');
     const parsedSelection: NonNullable<GeoSceneSnapshot['selection']> = [];
-    for (const item of input.selection) {
+    for (let index = 0; index < input.selection.length; index++) {
+      const item = input.selection[index];
+      const selectionPath = `scene.selection[${index}]`;
       const selected = record(item);
-      if (!selected || !text(selected.sourceId, 64) || !sourceIds.has(selected.sourceId) || !Array.isArray(selected.featureIds) || selected.featureIds.length > 5_000) return null;
-      if (!selected.featureIds.every((id) => typeof id === 'string' || finite(id))) return null;
+      if (!selected) return invalid(selectionPath, 'invalid_type', 'Selection entry must be an object.');
+      if (!text(selected.sourceId, 64) || !sourceIds.has(selected.sourceId)) return invalid(`${selectionPath}.sourceId`, 'unknown_source', 'Selection sourceId must reference an existing source.');
+      if (!Array.isArray(selected.featureIds)) return invalid(`${selectionPath}.featureIds`, 'invalid_type', 'featureIds must be an array.');
+      if (selected.featureIds.length > 5_000) return invalid(`${selectionPath}.featureIds`, 'too_many_items', 'A selection entry can contain at most 5,000 feature ids.');
+      if (!selected.featureIds.every((id) => typeof id === 'string' || finite(id))) return invalid(`${selectionPath}.featureIds`, 'invalid_feature_id', 'Feature ids must be strings or finite numbers.');
       const layerId = selected.layerId === undefined ? undefined : selected.layerId;
-      if (layerId !== undefined && (!text(layerId, 64) || !layerIds.has(layerId) || layers.find((layer) => layer.id === layerId)?.sourceId !== selected.sourceId)) return null;
+      if (layerId !== undefined && (!text(layerId, 64) || !layerIds.has(layerId))) return invalid(`${selectionPath}.layerId`, 'unknown_layer', 'Selection layerId must reference an existing layer.');
+      if (layerId !== undefined && layers.find((layer) => layer.id === layerId)?.sourceId !== selected.sourceId) return invalid(`${selectionPath}.layerId`, 'source_mismatch', 'Selected layer must use the selected source.');
       parsedSelection.push({ sourceId: selected.sourceId, ...(layerId ? { layerId } : {}), featureIds: selected.featureIds as Array<string | number> });
     }
     selection = parsedSelection;
   }
-  return {
+  return valid({
     view,
     basemap: { id: basemap.id as GeoSceneSnapshot['basemap']['id'] },
     sources,
@@ -292,7 +347,7 @@ export function parseGeoScene(value: unknown): GeoSceneSnapshot | null {
     ...(controls ? { controls } : {}),
     ...(selection ? { selection } : {}),
     metadata: { title: metadata.title, ...(description ? { description } : {}), ...(warnings ? { warnings } : {}) },
-  };
+  });
 }
 
 export function parseVisualizationEnvelope(value: unknown): VisualizationEnvelope | null {
@@ -302,9 +357,10 @@ export function parseVisualizationEnvelope(value: unknown): VisualizationEnvelop
   if (!['replace', 'patch', 'focus', 'select', 'clear'].includes(String(input.operation))) return null;
   const summary = record(input.summary);
   if (!summary || !text(summary.title, 160) || !text(input.generatedAt, 64)) return null;
-  const scene = input.scene === null ? null : parseGeoScene(input.scene);
-  if (input.operation !== 'clear' && !scene) return null;
+  const sceneResult = input.scene === null ? null : parseGeoScene(input.scene);
+  if (input.operation !== 'clear' && (!sceneResult || !sceneResult.ok)) return null;
   if (input.operation === 'clear' && input.scene !== null) return null;
+  const scene = sceneResult?.ok ? sceneResult.value : null;
   return {
     protocol: 'pi-visualization',
     version: '1.0',

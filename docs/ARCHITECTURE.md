@@ -1,17 +1,18 @@
 # Pi Traffic Workspace 架构与目录治理
 
-更新时间：2026-07-20
+更新时间：2026-07-21
 
 ## 1. 架构决策
 
 项目维持单仓库、单 npm 包和单 Web 服务，采用 **模块化单体 + 垂直功能切片 + Ports/Adapters**，而不是现在拆成两个仓库或两个应用。
 
-两个主要工作域是：
+当前主要工作域是：
 
 1. **Agent Web 平台**：管理 Pi RPC 子进程、会话、历史、消息、工具卡片、文件和工作区 UI。
 2. **GIS 可视化模块**：通过 Pi Extension 生成受控 GeoScene，经会话和资源接口传到浏览器，再由 MapLibre 渲染。
+3. **任务交互模块**：通过 Pi Extension 维护结构化任务状态并请求用户输入，由 Web 恢复 TaskCard、模式状态和交互 Dialog。
 
-GIS 是第一个跨边界功能切片。它依赖平台提供的会话、工具结果和右侧工作区；平台核心不应依赖 MapLibre 或交通领域语义。后续每项能力都按同一结构落地：
+GIS 是第一个跨边界功能切片，任务交互是第二个。它们都依赖平台提供的会话和工具结果；平台核心不应依赖 MapLibre、任务状态或交通领域语义。后续每项能力都按同一结构落地：
 
 ```text
 功能切片
@@ -38,24 +39,30 @@ Browser Agent Web UI
   ├─ app-main（平台组合入口）
   ├─ WorkspaceController（右侧工作区壳层）
   └─ FeatureRegistry
-       └─ GeoFeature（GIS Web Adapter）
-            └─ VisualizationHost
-                 └─ MapLibreGeoRuntime
-              ▲
-              │ VisualizationEnvelope / GeoScene
+       ├─ GeoFeature（GIS Web Adapter）
+       │    └─ VisualizationHost
+       │         └─ MapLibreGeoRuntime
+       └─ TaskModeFeature（任务 Web Adapter）
+            ├─ SessionTaskStore
+            └─ TaskCardRenderer
+                    ▲
+                    │ WebSocket：toolResult.details / Extension UI
 Node Web Server
   ├─ HTTP + WebSocket + RPC 路由
   ├─ LiveSessionManager
   └─ Session-scoped Geo Resource API
-              ▲
-              │ JSONL RPC / toolResult.details
+                    ▲
+                    │ JSONL RPC
 Pi Agent Child
-  └─ pi-geo-visualization Extension
-       ├─ publish_geodata
-       └─ present_visualization
+  ├─ pi-geo-visualization Extension
+  │    ├─ publish_geodata
+  │    └─ present_visualization
+  └─ pi-task-mode Extension
+       ├─ tau_task
+       └─ tau_ask_user
 ```
 
-GeoScene 是跨边界的共享契约。它必须保持声明式、可验证且不携带 JavaScript、HTML、CSS、任意 URL 或 MapLibre 原生表达式。
+GeoScene 是跨边界的共享契约。它必须保持声明式、可验证且不携带 JavaScript、HTML、CSS、任意 URL 或 MapLibre 原生表达式。Agent 侧不直接构造该契约，而是调用 `present_visualization` 的命令式参数；Extension 负责组装、字段级验证并生成完整快照。
 
 ## 3. 当前目录职责
 
@@ -78,6 +85,11 @@ src/
     features/                     Web 垂直功能适配器
       feature-registry.ts         功能注册和会话/工具结果生命周期分发
       geo/geo-feature.ts          GIS 对平台的唯一组合入口
+      task/                       任务模式 Web Adapter
+        task-mode-feature.ts      模式开关、会话与工具结果接线
+        task-protocol.ts          TaskSnapshot Web 校验
+        session-task-store.ts     按会话和 revision 去重
+        task-card-renderer.ts     消息流 TaskCard
     visualization/               通用声明式可视化子系统
       visualization-host.ts      Scene 存储、地图视图与 Runtime 桥接
       session-visualization-store.ts
@@ -87,6 +99,15 @@ src/
 
 extensions/
   pi-geo-visualization/           Agent 侧 GIS 工具适配器
+  pi-task-mode/                   Agent 侧任务状态与用户交互适配器
+
+skills/                           项目拥有、随 Web 会话显式加载的 Pi Skill
+  geo-visualization-explanation/  Geo 工具工作流与制图约束
+  plot-from-data/                 静态科研绘图模板
+  shanghai-traffic-data-assets/   上海交通数据、查询脚本与治理说明
+
+prompts/
+  PI_SESSION_CONTEXT.md           Pi 子进程追加系统提示模板；会话启动时替换目录占位符
 
 public/                           Web 发布目录
   index.html                      手写静态入口
@@ -149,6 +170,9 @@ interface WebFeature {
 | Agent Web 消息与工作区 | `src/public/*.ts`、`src/public/workspace/`、`public/index.html`、`public/style.css` | 浏览器验收及相关 Node 测试 |
 | GeoScene 契约 | `src/public/visualization/geo/protocol.ts` | `test/geo-protocol.test.ts` |
 | Agent GIS 工具 | `extensions/pi-geo-visualization/` | `test/geo-extension.test.ts` |
+| Agent 任务模式工具 | `extensions/pi-task-mode/` | `test/task-mode-extension.test.ts` |
+| Pi 项目 Skill | `skills/`、`src/server/config.ts`、`src/server/sessions.ts` | `pi-rpc-session` + Skill validator |
+| 任务模式 Web Adapter | `src/public/features/task/` | `test/task-mode-web.test.ts` |
 | GIS 会话资源 | `src/server/geo-resources.ts`、服务端路由接入点 | `test/http-routes.test.ts` |
 | GIS 平台接入 | `src/public/features/geo/geo-feature.ts` | `test/feature-registry.test.ts` + 浏览器验收 |
 | 地图 Scene 与渲染 | `src/public/visualization/`、GIS 样式区 | 协议测试 + 真实浏览器视觉验收 |
@@ -160,6 +184,7 @@ interface WebFeature {
 ### 跟踪到 Git
 
 - TypeScript 源码、Extension 源码和测试。
+- `skills/` 内的 `SKILL.md`、参考文档、查询/绘图脚本和 UI 元数据。
 - `public/index.html`、`public/style.css`、`public/icons/` 等静态源资产。
 - `docs/` 内的长期文档和正在使用的截图。
 - package、TypeScript 和容器配置。
@@ -168,6 +193,7 @@ interface WebFeature {
 
 - `bin/*.js`、`public/*.js`、`public/visualization/`、`public/geo-runtime.*` 等构建产物。
 - `scenario/`、`.tau/`、Pi session HTML 和本地 Agent 配置。
+- `skills/shanghai-traffic-data-assets/assets/databases/` 下的本地 SQLite 数据；它们由 Skill 自身的 `.gitignore` 排除，不进入主仓库。
 - 临时 GeoJSON、性能日志、浏览器截图和一次性分析输出。
 
 源码变更后的标准验证顺序：

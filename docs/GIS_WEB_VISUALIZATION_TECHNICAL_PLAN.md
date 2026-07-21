@@ -212,21 +212,22 @@ Browser
 
 #### `present_visualization`
 
-作用：新建、替换或更新当前会话的地理可视化 Scene。
+作用：通过命令式参数新建或更新当前会话的地理可视化，由 Extension 内部组装完整 Scene。
 
-操作类型：
+Agent 可调用的命令：
 
-- `replace`：提交一份完整 Scene，原子替换同 ID 的 Scene。
-- `patch`：使用受限、有类型的 upsert/remove 集合局部更新。
-- `focus`：仅更新视角。
-- `select`：更新按 source/layer/feature ID 表达的高亮集合。
-- `clear`：删除指定 Scene，或清空其选中状态。
+- `create_map`、`add_layer`：使用已发布的 `resourceId` 创建地图或增加图层。
+- `set_constant`、`set_step`、`set_continuous`、`set_categorical`：更新单个视觉通道。
+- `set_popup`、`set_controls`、`set_metadata`、`set_visibility`：更新独立展示能力。
+- `set_camera`、`fit_bounds`、`select`、`clear`：更新视角、选择或清除地图。
+
+Agent 不提交 `scene`、`sources`、`layers` 或 `encoding` 对象。内部的 VisualizationEnvelope 仍使用 `replace`、`patch`、`focus`、`select`、`clear` 表达 Web 端状态变化，保证历史会话兼容。
 
 工具内部负责：
 
 1. 用 TypeBox 工具参数 schema 校验输入。
 2. 在扩展内存中对 Scene 副本执行操作。
-3. 校验更新后的完整 Scene，成功后才提交，禁止半更新。
+3. 使用返回 `ValidationResult` 的共享解析器校验完整 Scene；失败时返回字段路径、错误代码和说明，成功后才提交，禁止半更新。
 4. 由扩展分配单调 `revision`，不信任 Agent 提供的版本号。
 5. 在 `details.visualization` 中返回完整规范化 Snapshot；`content` 只返回短文本摘要给模型和工具卡。
 

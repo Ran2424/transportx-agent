@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import {
@@ -8,63 +9,31 @@ import {
   parseGeoScene,
   parseVisualizationEnvelope,
   type GeoJsonFeatureCollection,
+  type GeoLayer,
   type GeoSceneSnapshot,
   type GeoSource,
+  type GeoVisualValue,
   type GeoView,
   type VisualizationEnvelope,
 } from '../../src/public/visualization/geo/protocol.ts';
 
 type SceneState = { revision: number; scene: GeoSceneSnapshot | null };
-type GeoPatch = {
-  view?: GeoView;
-  basemap?: GeoSceneSnapshot['basemap'];
-  upsertSources?: GeoSource[];
-  removeSourceIds?: string[];
-  upsertLayers?: GeoSceneSnapshot['layers'];
-  removeLayerIds?: string[];
-  controls?: GeoSceneSnapshot['controls'];
-  selection?: GeoSceneSnapshot['selection'];
-  metadata?: Partial<GeoSceneSnapshot['metadata']>;
-};
+type PresentCommand = { command: string; visualizationId: string; [key: string]: any };
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
-
-const VisualValueSchema = Type.Union([
-  Type.Object({ mode: Type.Literal('constant'), value: Type.Union([Type.String(), Type.Number(), Type.Array(Type.Number())]) }),
-  Type.Object({
-    mode: Type.Literal('categorical'), field: Type.String(),
-    categories: Type.Array(Type.Object({ value: Type.Union([Type.String(), Type.Number(), Type.Boolean()]), output: Type.Union([Type.String(), Type.Number()]) })),
-    fallback: Type.Union([Type.String(), Type.Number()]),
-  }),
-  Type.Object({
-    mode: Type.Literal('step'), field: Type.String(), default: Type.Union([Type.String(), Type.Number()]),
-    stops: Type.Array(Type.Object({ value: Type.Number(), output: Type.Union([Type.String(), Type.Number()]) })),
-  }),
-  Type.Object({
-    mode: Type.Literal('continuous'), field: Type.String(),
-    stops: Type.Array(Type.Object({ value: Type.Number(), output: Type.Union([Type.String(), Type.Number()]) })),
-  }),
-]);
-
-const GeoViewSchema = Type.Union([
-  Type.Object({ mode: Type.Literal('bounds'), bounds: Type.Tuple([Type.Number(), Type.Number(), Type.Number(), Type.Number()]), padding: Type.Optional(Type.Number()) }),
-  Type.Object({ mode: Type.Literal('camera'), center: Type.Tuple([Type.Number(), Type.Number()]), zoom: Type.Number() }),
-]);
+const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
+const EXTENSION_RUNTIME_ID = 'pi-geo-visualization-command-v2';
+const PROJECT_ROOT = path.resolve(EXTENSION_DIR, '..', '..');
+const PROJECT_SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
+const TRAFFIC_SKILL_DIR = path.join(PROJECT_SKILLS_DIR, 'shanghai-traffic-data-assets');
+const TRAFFIC_TOOLS_DIR = path.join(TRAFFIC_SKILL_DIR, 'scripts');
+const TRAFFIC_DATA_DIR = path.join(TRAFFIC_SKILL_DIR, 'assets', 'databases');
 
 const BasemapIdSchema = Type.Union(
   [Type.Literal('default'), Type.Literal('light'), Type.Literal('dark'), Type.Literal('none')],
   { description: 'Use light/default for most maps, dark for high-contrast dashboards, and none only for an intentionally blank or offline canvas' },
 );
-
-const GeoSourceSchema = Type.Union([
-  Type.Object({
-    id: Type.String(), type: Type.Literal('geojson-inline'),
-    data: Type.Any({ description: 'RFC 7946 GeoJSON FeatureCollection object, not a JSON string' }),
-    idField: Type.Optional(Type.String()),
-  }),
-  Type.Object({ id: Type.String(), type: Type.Literal('geojson-resource'), resourceId: Type.String(), idField: Type.Optional(Type.String()) }),
-]);
 
 const PopupSchema = Type.Object({
   fields: Type.Array(Type.Object({
@@ -73,82 +42,84 @@ const PopupSchema = Type.Object({
   })),
 });
 
-const GeoLayerFields = {
-  id: Type.String(),
-  sourceId: Type.String({ description: 'ID of an entry in scene.sources' }),
-  title: Type.Optional(Type.String()),
+const VisualizationIdSchema = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' });
+const ItemIdSchema = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' });
+const ResourceIdSchema = Type.String({ pattern: '^geo_[a-f0-9]{16,64}$' });
+const LayerTypeSchema = Type.Union([Type.Literal('circle'), Type.Literal('line'), Type.Literal('fill'), Type.Literal('label')]);
+const ChannelSchema = Type.Union([
+  Type.Literal('color'), Type.Literal('radius'), Type.Literal('opacity'), Type.Literal('strokeColor'),
+  Type.Literal('strokeWidth'), Type.Literal('width'), Type.Literal('dash'), Type.Literal('outlineColor'),
+  Type.Literal('textField'), Type.Literal('size'), Type.Literal('haloColor'), Type.Literal('haloWidth'),
+]);
+// Pi runs TypeBox Value.Convert before execute(). Keep Number before String so
+// numeric style values are not coerced to strings by the first union branch.
+const VisualOutputSchema = Type.Union([Type.Number(), Type.String(), Type.Array(Type.Number())]);
+const NumericStopSchema = Type.Object({ value: Type.Number(), output: Type.Union([Type.Number(), Type.String()]) });
+const CategorySchema = Type.Object({
+  value: Type.Union([Type.Number(), Type.String(), Type.Boolean()]),
+  output: Type.Union([Type.Number(), Type.String()]),
+});
+
+const PresentVisualizationCommandSchema = Type.Object({
+  command: Type.Union([
+    Type.Literal('create_map'), Type.Literal('add_layer'), Type.Literal('set_constant'), Type.Literal('set_step'),
+    Type.Literal('set_continuous'), Type.Literal('set_categorical'), Type.Literal('set_popup'),
+    Type.Literal('set_controls'), Type.Literal('set_metadata'), Type.Literal('set_camera'),
+    Type.Literal('fit_bounds'), Type.Literal('set_visibility'), Type.Literal('select'), Type.Literal('clear'),
+  ], { description: 'Map command. create_map requires title, resourceId, and layerType. Styling commands require layerId and channel.' }),
+  visualizationId: VisualizationIdSchema,
+  title: Type.Optional(Type.String({ description: 'Map title for create_map, or replacement title for set_metadata.' })),
+  description: Type.Optional(Type.String()),
+  warnings: Type.Optional(Type.Array(Type.String())),
+  resourceId: Type.Optional(ResourceIdSchema),
+  sourceId: Type.Optional(ItemIdSchema),
+  idField: Type.Optional(Type.String()),
+  layerId: Type.Optional(ItemIdSchema),
+  layerType: Type.Optional(LayerTypeSchema),
+  layerTitle: Type.Optional(Type.String()),
+  color: Type.Optional(Type.String()),
+  textField: Type.Optional(Type.String()),
+  basemap: Type.Optional(BasemapIdSchema),
   visible: Type.Optional(Type.Boolean()),
-  minZoom: Type.Optional(Type.Number()),
-  maxZoom: Type.Optional(Type.Number()),
-  popup: Type.Optional(PopupSchema),
+  channel: Type.Optional(ChannelSchema),
+  value: Type.Optional(VisualOutputSchema),
+  field: Type.Optional(Type.String()),
+  defaultValue: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+  stops: Type.Optional(Type.Array(NumericStopSchema, { minItems: 2, maxItems: 16 })),
+  categories: Type.Optional(Type.Array(CategorySchema, { minItems: 1, maxItems: 64 })),
+  fallback: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+  fields: Type.Optional(PopupSchema.properties.fields),
+  navigation: Type.Optional(Type.Boolean()),
+  fullscreen: Type.Optional(Type.Boolean()),
+  layerSwitcher: Type.Optional(Type.Boolean()),
+  legend: Type.Optional(Type.Boolean()),
+  fitToData: Type.Optional(Type.Boolean()),
+  center: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+  zoom: Type.Optional(Type.Number()),
+  bounds: Type.Optional(Type.Tuple([Type.Number(), Type.Number(), Type.Number(), Type.Number()])),
+  padding: Type.Optional(Type.Number()),
+  featureIds: Type.Optional(Type.Array(Type.Union([Type.Number(), Type.String()]), { maxItems: 5000 })),
+}, { description: 'Flat command parameters. Do not pass a scene JSON object.' });
+
+const COMMAND_REQUIRED_PARAMS: Record<string, string[]> = {
+  create_map: ['title', 'resourceId', 'layerType'],
+  add_layer: ['sourceId', 'layerId', 'layerType'],
+  set_constant: ['layerId', 'channel', 'value'],
+  set_step: ['layerId', 'channel', 'field', 'defaultValue', 'stops'],
+  set_continuous: ['layerId', 'channel', 'field', 'stops'],
+  set_categorical: ['layerId', 'channel', 'field', 'categories', 'fallback'],
+  set_popup: ['layerId', 'fields'],
+  set_camera: ['center', 'zoom'],
+  fit_bounds: ['bounds'],
+  set_visibility: ['layerId', 'visible'],
+  select: ['sourceId', 'featureIds'],
 };
 
-const GeoLayerSchema = Type.Union([
-  Type.Object({
-    ...GeoLayerFields,
-    type: Type.Literal('circle'),
-    encoding: Type.Object({
-      color: Type.Optional(VisualValueSchema), radius: Type.Optional(VisualValueSchema), opacity: Type.Optional(VisualValueSchema),
-      strokeColor: Type.Optional(VisualValueSchema), strokeWidth: Type.Optional(VisualValueSchema),
-    }, { description: 'Circle channels use these exact unprefixed names.' }),
-  }),
-  Type.Object({
-    ...GeoLayerFields,
-    type: Type.Literal('line'),
-    encoding: Type.Object({
-      color: Type.Optional(VisualValueSchema), width: Type.Optional(VisualValueSchema),
-      opacity: Type.Optional(VisualValueSchema), dash: Type.Optional(VisualValueSchema),
-    }),
-  }),
-  Type.Object({
-    ...GeoLayerFields,
-    type: Type.Literal('fill'),
-    encoding: Type.Object({
-      color: Type.Optional(VisualValueSchema), opacity: Type.Optional(VisualValueSchema), outlineColor: Type.Optional(VisualValueSchema),
-    }),
-  }),
-  Type.Object({
-    ...GeoLayerFields,
-    type: Type.Literal('label'),
-    encoding: Type.Object({
-      textField: VisualValueSchema,
-      color: Type.Optional(VisualValueSchema), size: Type.Optional(VisualValueSchema),
-      haloColor: Type.Optional(VisualValueSchema), haloWidth: Type.Optional(VisualValueSchema),
-    }, { description: 'For a property label, set textField to {mode:"constant",value:"propertyName"}.' }),
-  }),
-]);
-
-const ControlsSchema = Type.Object({
-  navigation: Type.Optional(Type.Boolean()), fullscreen: Type.Optional(Type.Boolean()),
-  layerSwitcher: Type.Optional(Type.Boolean()), legend: Type.Optional(Type.Boolean()), fitToData: Type.Optional(Type.Boolean()),
-});
-
-const SelectionSchema = Type.Array(Type.Object({
-  sourceId: Type.String(), layerId: Type.Optional(Type.String()),
-  featureIds: Type.Array(Type.Union([Type.String(), Type.Number()])),
-}));
-
-const GeoSceneSchema = Type.Object({
-  view: GeoViewSchema,
-  basemap: Type.Object({ id: BasemapIdSchema }),
-  sources: Type.Array(GeoSourceSchema),
-  layers: Type.Array(GeoLayerSchema),
-  controls: Type.Optional(ControlsSchema),
-  selection: Type.Optional(SelectionSchema),
-  metadata: Type.Object({ title: Type.String(), description: Type.Optional(Type.String()), warnings: Type.Optional(Type.Array(Type.String())) }),
-}, { description: 'Declarative 2D GeoScene. Use sourceId and encoding mode objects; never use MapLibre source/paint/layout properties.' });
-
-const GeoPatchSchema = Type.Object({
-  view: Type.Optional(GeoViewSchema),
-  basemap: Type.Optional(Type.Object({ id: BasemapIdSchema })),
-  upsertSources: Type.Optional(Type.Array(GeoSourceSchema)),
-  removeSourceIds: Type.Optional(Type.Array(Type.String())),
-  upsertLayers: Type.Optional(Type.Array(GeoLayerSchema)),
-  removeLayerIds: Type.Optional(Type.Array(Type.String())),
-  controls: Type.Optional(ControlsSchema),
-  selection: Type.Optional(SelectionSchema),
-  metadata: Type.Optional(Type.Object({ title: Type.Optional(Type.String()), description: Type.Optional(Type.String()), warnings: Type.Optional(Type.Array(Type.String())) })),
-});
+function assertCommandParams(params: PresentCommand) {
+  const required = COMMAND_REQUIRED_PARAMS[params.command] || [];
+  const missing = required.filter((name) => params[name] === undefined || params[name] === null || params[name] === '');
+  if (missing.length) throw new Error(`Missing parameters for command ${params.command}: ${missing.join(', ')}`);
+}
 
 function isWithin(root: string, target: string) {
   const relative = path.relative(path.resolve(root), path.resolve(target));
@@ -165,24 +136,26 @@ function walkCoordinates(value: unknown, visitor: (lng: number, lat: number) => 
 }
 
 function inspectGeoJson(data: GeoJsonFeatureCollection, idField?: string) {
-  if (data.features.length > MAX_FEATURES) throw new Error(`GeoJSON feature count exceeds ${MAX_FEATURES}`);
+  if (data.features.length > MAX_FEATURES) {
+    throw new Error(`GeoJSON has ${data.features.length} features; the limit is ${MAX_FEATURES}. Aggregate, simplify, or split the data before publication.`);
+  }
   const types = new Set<string>();
   const ids = new Set<string>();
   const bounds: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const feature of data.features) {
+  for (const [featureIndex, feature] of data.features.entries()) {
     const geometry = feature.geometry;
     if (!geometry) continue;
     types.add(geometry.type);
     if (idField) {
       const value = feature.properties?.[idField];
-      if (typeof value !== 'string' && typeof value !== 'number') throw new Error(`Feature is missing idField: ${idField}`);
+      if (typeof value !== 'string' && typeof value !== 'number') throw new Error(`features[${featureIndex}].properties.${idField} is missing or is not a string/number`);
       const key = String(value);
-      if (ids.has(key)) throw new Error(`Duplicate idField value: ${key}`);
+      if (ids.has(key)) throw new Error(`features[${featureIndex}].properties.${idField} duplicates id value: ${key}`);
       ids.add(key);
     }
     const visit = (lng: number, lat: number) => {
       if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
-        throw new Error('GeoJSON coordinates must use WGS84 longitude/latitude');
+        throw new Error(`features[${featureIndex}] contains coordinates outside WGS84 longitude/latitude ranges`);
       }
       bounds[0] = Math.min(bounds[0], lng);
       bounds[1] = Math.min(bounds[1], lat);
@@ -203,6 +176,85 @@ function resourceDirectory(cwd: string, resourceId: string) {
   return path.join(cwd, '.tau', 'geo-resources', resourceId);
 }
 
+function readResourceManifest(cwd: string, resourceId: string) {
+  const manifestPath = path.join(resourceDirectory(cwd, resourceId), 'manifest.json');
+  if (!fs.existsSync(manifestPath)) throw new Error(`Geo resource not found: ${resourceId}`);
+  return JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+    resourceId: string;
+    bounds?: [number, number, number, number] | null;
+    idField?: string;
+  };
+}
+
+function viewForBounds(bounds: [number, number, number, number] | null | undefined): GeoView {
+  if (!bounds) return { mode: 'bounds', bounds: [-180, -85, 180, 85], padding: 24 };
+  let [west, south, east, north] = bounds;
+  const lngPadding = west === east ? 0.01 : 0;
+  const latPadding = south === north ? 0.01 : 0;
+  west = Math.max(-180, west - lngPadding);
+  east = Math.min(180, east + lngPadding);
+  south = Math.max(-90, south - latPadding);
+  north = Math.min(90, north + latPadding);
+  return { mode: 'bounds', bounds: [west, south, east, north], padding: 24 };
+}
+
+function initialLayer(params: PresentCommand, sourceId: string, layerId: string): GeoLayer {
+  const encoding: Record<string, GeoVisualValue> = {};
+  if (params.layerType === 'label') {
+    if (params.textField) encoding.textField = { mode: 'constant', value: params.textField };
+    encoding.color = { mode: 'constant', value: params.color || '#172033' };
+  } else {
+    encoding.color = { mode: 'constant', value: params.color || '#2563eb' };
+  }
+  return {
+    id: layerId,
+    sourceId,
+    type: params.layerType,
+    encoding,
+    ...(params.layerTitle ? { title: params.layerTitle } : {}),
+    ...(typeof params.visible === 'boolean' ? { visible: params.visible } : {}),
+  };
+}
+
+function requireCurrentScene(current: SceneState | undefined, visualizationId: string) {
+  if (!current?.scene) throw new Error(`Visualization not found: ${visualizationId}`);
+  return current.scene;
+}
+
+function validationError(prefix: string, result: ReturnType<typeof parseGeoScene>) {
+  const detail = result.issues.map((issue) => `${issue.path} [${issue.code}]: ${issue.message}`).join('\n');
+  return new Error(`${prefix}\n${detail}`);
+}
+
+function validatedScene(value: unknown, prefix: string) {
+  const result = parseGeoScene(value);
+  if (!result.ok) throw validationError(prefix, result);
+  return result.value;
+}
+
+function styleCommandKey(params: PresentCommand) {
+  if (!['set_constant', 'set_step', 'set_continuous', 'set_categorical'].includes(params.command)) return null;
+  return [params.visualizationId, params.command, params.layerId, params.channel].join('|');
+}
+
+function styleCommandDiagnostic(params: PresentCommand) {
+  if (params.command === 'set_constant') return `value=${JSON.stringify(params.value)} type=${typeof params.value}`;
+  if (params.command === 'set_categorical') {
+    const outputs = Array.isArray(params.categories) ? params.categories.map((item: { output?: unknown }) => `${JSON.stringify(item.output)}:${typeof item.output}`) : [];
+    return `outputs=[${outputs.join(', ')}] fallback=${JSON.stringify(params.fallback)}:${typeof params.fallback}`;
+  }
+  const outputs = Array.isArray(params.stops) ? params.stops.map((stop: { output?: unknown }) => `${JSON.stringify(stop.output)}:${typeof stop.output}`) : [];
+  return `outputs=[${outputs.join(', ')}]${params.command === 'set_step' ? ` default=${JSON.stringify(params.defaultValue)}:${typeof params.defaultValue}` : ''}`;
+}
+
+function updateLayer(scene: GeoSceneSnapshot, layerId: string, updater: (layer: GeoLayer) => GeoLayer) {
+  const index = scene.layers.findIndex((layer) => layer.id === layerId);
+  if (index < 0) throw new Error(`Layer not found: ${layerId}`);
+  const layers = scene.layers.slice();
+  layers[index] = updater(layers[index]);
+  return { ...scene, layers };
+}
+
 function assertSceneResources(cwd: string, scene: GeoSceneSnapshot) {
   for (const source of scene.sources) {
     if (source.type !== 'geojson-resource') continue;
@@ -211,27 +263,9 @@ function assertSceneResources(cwd: string, scene: GeoSceneSnapshot) {
   }
 }
 
-function applyPatch(scene: GeoSceneSnapshot, patch: GeoPatch): GeoSceneSnapshot {
-  const sources = new Map(scene.sources.map((source) => [source.id, source]));
-  const layers = new Map(scene.layers.map((layer) => [layer.id, layer]));
-  for (const source of patch.upsertSources || []) sources.set(source.id, source);
-  for (const id of patch.removeSourceIds || []) sources.delete(id);
-  for (const layer of patch.upsertLayers || []) layers.set(layer.id, layer);
-  for (const id of patch.removeLayerIds || []) layers.delete(id);
-  return {
-    ...scene,
-    ...(patch.view ? { view: patch.view } : {}),
-    ...(patch.basemap ? { basemap: patch.basemap } : {}),
-    sources: Array.from(sources.values()),
-    layers: Array.from(layers.values()),
-    ...(patch.controls ? { controls: patch.controls } : {}),
-    ...(patch.selection ? { selection: patch.selection } : {}),
-    metadata: { ...scene.metadata, ...(patch.metadata || {}) },
-  };
-}
-
 export default function geoVisualizationExtension(pi: ExtensionAPI) {
   const scenes = new Map<string, SceneState>();
+  const failedValidations = new Map<string, { count: number; message: string }>();
 
   const restore = (ctx: ExtensionContext) => {
     scenes.clear();
@@ -254,7 +288,13 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
     label: 'Publish GeoJSON',
     description: 'Publish a GeoJSON file from the current task as a session-scoped web map resource.',
     promptSnippet: 'Publish GeoJSON files for use in interactive maps',
-    promptGuidelines: ['Use publish_geodata before present_visualization when the GeoJSON is larger than a small inline feature collection.'],
+    promptGuidelines: [
+      'Read the geo-visualization-explanation skill before first using publish_geodata or present_visualization for a map task.',
+      'Write generated GeoJSON in the current task working directory, then call publish_geodata with a path relative to that directory.',
+      `Project skills directory: ${PROJECT_SKILLS_DIR}`,
+      `Shanghai traffic query tools directory: ${TRAFFIC_TOOLS_DIR}`,
+      `Shanghai traffic SQLite data directory: ${TRAFFIC_DATA_DIR}`,
+    ],
     parameters: Type.Object({
       path: Type.String({ description: 'GeoJSON path inside the current task directory' }),
       title: Type.Optional(Type.String()),
@@ -302,48 +342,139 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'present_visualization',
     label: 'Present Map',
-    description: 'Create or update a declarative interactive 2D map in the Tau web workspace.',
-    promptSnippet: 'Present GeoJSON sources as an interactive web map',
+    description: 'Create or update an interactive 2D map with command-style parameters. The tool builds and validates GeoScene internally; do not write a scene JSON object.',
+    promptSnippet: 'Build interactive maps with create_map, add_layer, styling, popup, control, view, selection, and clear commands',
     promptGuidelines: [
-      'Use present_visualization for spatial results that benefit from an interactive map.',
-      'present_visualization accepts declarative GeoScene data only; never generate JavaScript, HTML, CSS, or MapLibre expressions.',
-      'A scene view must include mode, basemap must be an {id} object, every layer uses sourceId, and every encoding channel uses a {mode,...} VisualValue object.',
-      'Prefer basemap {id:"light"} or {id:"default"}; use {id:"none"} only when a blank offline canvas is intentional.',
-      'Give GeoJSON features stable top-level ids or set source.idField so hover and selection feedback works reliably.',
-      'For a small point set, add a separate label layer using textField {mode:"constant",value:"name"} (or another property name), plus a white halo; avoid labels for dense point clouds.',
-      'Circle encoding keys are exactly color, radius, opacity, strokeColor, and strokeWidth; never prefix them with circle.',
-      'The v1 scene has no filter channel, so put lines, ordinary points, and highlighted places in separate sources when they need different layers or styling.',
-      'Use clear layer titles, restrained line widths, popup fields for details, and a bounds view with padding so the initial composition fits the data.',
+      'Read the geo-visualization-explanation skill before first using publish_geodata or present_visualization for a map task.',
+      'Always call publish_geodata first, then pass its resourceId to command=create_map; never hand-write sources, layers, encoding, view, or metadata JSON.',
+      'After create_map succeeds, change one concern per command: add_layer, set_constant/set_step/set_continuous/set_categorical, set_popup, set_controls, set_metadata, or set_camera/fit_bounds.',
+      'Use the channel names color, radius, opacity, strokeColor, strokeWidth, width, dash, outlineColor, textField, size, haloColor, and haloWidth exactly as declared by the command schema.',
+      'Reuse the current visualizationId when the user asks to add or overlay content. If the same styling target fails validation twice, preserve the last successful map and stop retrying that command.',
+      `Project root: ${PROJECT_ROOT}`,
+      `Project skills directory: ${PROJECT_SKILLS_DIR}`,
+      `Shanghai traffic query tools directory: ${TRAFFIC_TOOLS_DIR}`,
+      `Shanghai traffic SQLite data directory: ${TRAFFIC_DATA_DIR}`,
     ],
-    parameters: Type.Object({
-      visualizationId: Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' }),
-      operation: Type.Union([
-        Type.Literal('replace'),
-        Type.Literal('patch'),
-        Type.Literal('focus'),
-        Type.Literal('select'),
-        Type.Literal('clear'),
-      ]),
-      scene: Type.Optional(GeoSceneSchema),
-      patch: Type.Optional(GeoPatchSchema),
-      view: Type.Optional(GeoViewSchema),
-      selection: Type.Optional(SelectionSchema),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    parameters: PresentVisualizationCommandSchema,
+    async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
+      const params = rawParams as PresentCommand;
+      assertCommandParams(params);
       const current = scenes.get(params.visualizationId);
       let scene: GeoSceneSnapshot | null = null;
-      if (params.operation === 'replace') {
-        scene = parseGeoScene(params.scene);
-        if (!scene) throw new Error('Invalid GeoScene for replace');
-      } else if (params.operation === 'clear') {
+      let operation: VisualizationEnvelope['operation'] = 'patch';
+
+      if (params.command === 'create_map') {
+        const manifest = readResourceManifest(ctx.cwd, params.resourceId);
+        const sourceId = params.sourceId || 'data';
+        const layerId = params.layerId || 'layer';
+        const source: GeoSource = {
+          id: sourceId,
+          type: 'geojson-resource',
+          resourceId: params.resourceId,
+          ...(params.idField || manifest.idField ? { idField: params.idField || manifest.idField } : {}),
+        };
+        scene = validatedScene({
+          view: viewForBounds(manifest.bounds),
+          basemap: { id: params.basemap || 'light' },
+          sources: [source],
+          layers: [initialLayer(params, sourceId, layerId)],
+          metadata: {
+            title: params.title,
+            ...(params.description ? { description: params.description } : {}),
+            ...(params.warnings ? { warnings: params.warnings } : {}),
+          },
+        }, 'Map creation failed validation:');
+        operation = 'replace';
+      } else if (params.command === 'clear') {
         scene = null;
+        operation = 'clear';
       } else {
-        if (!current?.scene) throw new Error(`Visualization not found: ${params.visualizationId}`);
-        if (params.operation === 'patch') scene = parseGeoScene(applyPatch(current.scene, (params.patch || {}) as GeoPatch));
-        if (params.operation === 'focus') scene = parseGeoScene({ ...current.scene, view: params.view });
-        if (params.operation === 'select') scene = parseGeoScene({ ...current.scene, selection: params.selection || [] });
-        if (!scene) throw new Error(`Invalid GeoScene after ${params.operation}`);
+        const base = requireCurrentScene(current, params.visualizationId);
+        let candidate: unknown = base;
+
+        if (params.command === 'add_layer') {
+          const sources = new Map(base.sources.map((source) => [source.id, source]));
+          if (params.resourceId) {
+            const manifest = readResourceManifest(ctx.cwd, params.resourceId);
+            sources.set(params.sourceId, {
+              id: params.sourceId,
+              type: 'geojson-resource',
+              resourceId: params.resourceId,
+              ...(params.idField || manifest.idField ? { idField: params.idField || manifest.idField } : {}),
+            });
+          } else if (!sources.has(params.sourceId)) {
+            throw new Error(`Source not found: ${params.sourceId}. Provide resourceId when adding a new source.`);
+          }
+          const layers = new Map(base.layers.map((layer) => [layer.id, layer]));
+          layers.set(params.layerId, initialLayer(params, params.sourceId, params.layerId));
+          candidate = { ...base, sources: Array.from(sources.values()), layers: Array.from(layers.values()) };
+        } else if (['set_constant', 'set_step', 'set_continuous', 'set_categorical'].includes(params.command)) {
+          let value: GeoVisualValue;
+          if (params.command === 'set_constant') value = { mode: 'constant', value: params.value };
+          else if (params.command === 'set_step') value = { mode: 'step', field: params.field, default: params.defaultValue, stops: params.stops };
+          else if (params.command === 'set_continuous') value = { mode: 'continuous', field: params.field, stops: params.stops };
+          else value = { mode: 'categorical', field: params.field, categories: params.categories, fallback: params.fallback };
+          candidate = updateLayer(base, params.layerId, (layer) => ({
+            ...layer,
+            encoding: { ...layer.encoding, [params.channel]: value },
+          }));
+        } else if (params.command === 'set_popup') {
+          candidate = updateLayer(base, params.layerId, (layer) => ({ ...layer, popup: { fields: params.fields } }));
+        } else if (params.command === 'set_controls') {
+          const controls = { ...base.controls } as Record<string, boolean>;
+          for (const key of ['navigation', 'fullscreen', 'layerSwitcher', 'legend', 'fitToData']) {
+            if (typeof params[key] === 'boolean') controls[key] = params[key];
+          }
+          candidate = { ...base, controls };
+        } else if (params.command === 'set_metadata') {
+          candidate = {
+            ...base,
+            metadata: {
+              ...base.metadata,
+              ...(params.title !== undefined ? { title: params.title } : {}),
+              ...(params.description !== undefined ? { description: params.description } : {}),
+              ...(params.warnings !== undefined ? { warnings: params.warnings } : {}),
+            },
+          };
+        } else if (params.command === 'set_camera') {
+          candidate = { ...base, view: { mode: 'camera', center: params.center, zoom: params.zoom } };
+          operation = 'focus';
+        } else if (params.command === 'fit_bounds') {
+          candidate = { ...base, view: { mode: 'bounds', bounds: params.bounds, ...(params.padding === undefined ? {} : { padding: params.padding }) } };
+          operation = 'focus';
+        } else if (params.command === 'set_visibility') {
+          candidate = updateLayer(base, params.layerId, (layer) => ({ ...layer, visible: params.visible }));
+        } else if (params.command === 'select') {
+          candidate = {
+            ...base,
+            selection: [{
+              sourceId: params.sourceId,
+              ...(params.layerId ? { layerId: params.layerId } : {}),
+              featureIds: params.featureIds,
+            }],
+          };
+          operation = 'select';
+        } else {
+          throw new Error(`Unsupported map command: ${params.command}`);
+        }
+        const failureKey = styleCommandKey(params);
+        try {
+          scene = validatedScene(candidate, `Map command ${params.command} failed validation:`);
+          if (failureKey) failedValidations.delete(failureKey);
+        } catch (error) {
+          if (!failureKey) throw error;
+          const message = error instanceof Error ? error.message : String(error);
+          const previous = failedValidations.get(failureKey);
+          const count = previous?.message === message ? previous.count + 1 : 1;
+          failedValidations.set(failureKey, { count, message });
+          const diagnostic = `Runtime ${EXTENSION_RUNTIME_ID} loaded from ${fileURLToPath(import.meta.url)}; received ${styleCommandDiagnostic(params)}.`;
+          if (count >= 2) {
+            throw new Error(`${message}\n${diagnostic}\nThis styling target has failed ${count} times with the same validation error. Stop retrying it and preserve the last successful map.`);
+          }
+          throw new Error(`${message}\n${diagnostic}`);
+        }
       }
+
       if (scene) assertSceneResources(ctx.cwd, scene);
       const revision = (current?.revision || 0) + 1;
       const title = scene?.metadata.title || current?.scene?.metadata.title || params.visualizationId;
@@ -353,7 +484,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
         kind: 'geo',
         visualizationId: params.visualizationId,
         revision,
-        operation: params.operation,
+        operation,
         scene,
         summary: { title },
         generatedAt: new Date().toISOString(),
