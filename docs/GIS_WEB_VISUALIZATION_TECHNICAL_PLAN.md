@@ -1,8 +1,10 @@
-# GIS Web 展示模块：架构与技术实施方案
+# GIS Web 展示模块：技术设计与实施路线
 
-> 状态：基础版本已实现（阶段 0 完成，阶段 1 核心闭环完成）  
+> 状态：基础闭环已实现；阶段 1 的自动图例、显式 fit-to-data、完整错误降级和浏览器验收尚未全部完成
 > 面向项目：`pi-tau-traffic`  
 > 文档目标：将通用 GIS 可视化能力嵌入现有 Pi RPC + Tau Web 工作台，作为后续实现、测试和验收的基线。
+
+> 校对说明：本文包含已实现协议和未来路线。当前事实以第 1.1 节及 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准；后文出现的 GeoFilter、自动图例、历史资源直读、增量 MapLibre diff 等属于目标设计，不能当作现有能力。
 
 ## 1. 结论先行
 
@@ -39,7 +41,7 @@ GeoMapRuntime → MapLibre GL JS
 - 数据范围：只支持 RFC 7946 GeoJSON，并要求 WGS 84 / `OGC:CRS84` 经度、纬度坐标顺序。
 - 图层范围：`circle`、`line`、`fill`、文本 `label`。
 - 样式范围：常量样式、分类映射、分段映射和连续数值映射。
-- 交互范围：缩放/平移、图层显隐、图例、安全 Popup、高亮、`fitBounds`。
+- 交互范围：缩放/平移、图层显隐、安全 Popup、hover/selection 高亮，以及通过 Scene bounds 执行 `fitBounds`；自动图例和独立 fit-to-data 按钮尚未实现。
 - 会话状态：每次可视化操作返回完整的规范化 Scene Snapshot，会话恢复时取同一 `visualizationId` 的最后一份快照。
 - 建设边界：首期不直接解析 SHP，不开放任意外部 URL，不实现时序动画、编辑绘制、栅格、3D 或地图到 Agent 的反向联动。
 
@@ -49,14 +51,14 @@ GeoMapRuntime → MapLibre GL JS
 
 | 模块 | 已实现 |
 |---|---|
-| Pi Extension | 会话自动加载；`publish_geodata`；`present_visualization` 的 replace/patch/focus/select/clear；revision 与分支历史恢复 |
+| Pi Extension | 会话自动加载；`publish_geodata`；命令式 `present_visualization`；replace/patch/focus/select/clear Envelope；revision 与分支恢复 |
 | 通用协议 | `VisualizationEnvelope`、`GeoSceneSnapshot`、内联/资源 GeoJSON、点线面文字图层、受控视觉编码与运行时校验 |
 | 资源服务 | 任务 cwd 内发布、resource ID、manifest、会话隔离路由、realpath 边界、大小限制、ETag/304 |
-| Web | 工具结果识别、会话级快照存储、工具卡摘要、“地图”工作区、MapLibre 懒加载、图层显隐、Popup、selection 与 bounds/camera |
+| Web | FeatureRegistry 工具结果识别、会话级快照存储、工具卡摘要、“地图”工作区、MapLibre 懒加载、图层显隐、Popup、hover/selection 与 bounds/camera |
 | 恢复 | live event、最终 toolResult、live snapshot、历史 JSONL 与 resume 均使用同一份规范化快照；clear 使用 revision 墓碑防止旧事件复活 |
 | 工程 | MapLibre 独立 bundle、扩展类型检查、协议/扩展/资源/会话测试、npm 单包发布清单 |
 
-“基础版本”不等于本文阶段 1 的全部增强项已完成。当前尚未实现：GeoFilter DSL、自动图例、显式 fit-to-data 按钮、hover、日期格式 Popup、外部底图配置，以及 SHP/GeoPackage/MVT/栅格/时序等阶段 2–4 能力。它们继续按本文后续路线推进，不在本次基础闭环中伪装成已交付能力。
+“基础版本”不等于本文阶段 1 的全部增强项已完成。当前已经实现基于稳定 feature ID 的 hover；尚未实现 GeoFilter DSL、自动图例、显式 fit-to-data 按钮、日期格式 Popup、外部底图配置、只读历史资源路由，以及 SHP/GeoPackage/MVT/栅格/时序等阶段 2–4 能力。
 
 ## 2. 前提、假设与非目标
 
@@ -67,9 +69,9 @@ GeoMapRuntime → MapLibre GL JS
 - `src/server/sessions.ts` 管理多个 `pi --mode rpc` 子进程，并把 Pi 事件广播给浏览器。
 - `src/server/server-main.ts` 提供 HTTP API、WebSocket、会话快照、文件浏览和静态资源服务。
 - `src/public/app-main.ts` 负责会话切换、实时事件、历史回放与右侧工作区。
-- `src/public/tool-card.ts` 当前把工具输出当作文本或图片预览，不识别结构化可视化结果。
+- `ToolExecutionController` 会把 update/end 和历史 toolResult 交给 `FeatureRegistry`；`GeoFeature` 识别结构化可视化结果，并由工具卡显示地图摘要。
 - Pi RPC 的 `tool_execution_end.result.details` 会在实时事件中出现；最终 `toolResult` 消息也会将 `details` 写入会话 JSONL。
-- 现有前端恢复路径会遍历 `toolResult`，但目前仅将 `content` 交给工具卡，丢弃了 `details`。
+- 前端恢复路径会遍历 `toolResult`，同时保留 `content` 与 `details`，按 visualizationId/revision 重建 Scene Store。
 - 前端使用 `tsc` 生成未打包的 ES Modules。浏览器无法直接解析 npm 裸导入 `maplibre-gl`，因此 GIS Runtime 需要独立 bundle 产物。
 - 每个新任务在 `scenario/<timestamp-name>/` 中拥有独立 cwd，Pi 子进程不会自动从仓库根目录的 `.pi/extensions` 发现项目扩展。
 
@@ -105,8 +107,8 @@ GeoMapRuntime → MapLibre GL JS
 地图面板由上到下包含：
 
 1. 场景标题、状态和可视化切换器。
-2. 地图画布，右上角只保留缩放、回到数据范围和全屏。
-3. 可折叠图层/图例区，不与 Popup 抢占地图中心空间。
+2. 地图画布，当前提供缩放、比例尺和可选全屏；“回到数据范围”尚无独立按钮。
+3. 图层显隐列表；自动图例尚未实现。
 4. 数据来源、时间、简化/抽样警告等可解释性元数据。
 
 视觉方向延续现有白色/淡蓝工作台，但地图区采用“城市制图控制台”的功能性风格：中性浅灰底图、清晰图层层级、少量高饱和强调色、可读的数字和图例，不使用装饰性动画干扰空间判读。
@@ -124,9 +126,11 @@ GeoMapRuntime → MapLibre GL JS
 
 ### 3.3 移动端
 
-窄屏不维持三栏。可视化面板以全屏图层覆盖对话，顶部显示返回对话按钮。地图面板在移动端的最小高度为可视视口高度，图例以底部 sheet 呈现。
+窄屏不维持三栏。存在地图时，工作区以全屏覆盖层显示，并通过工作区开关返回对话。当前图层列表仍位于面板普通布局中，没有独立的底部 sheet 图例。
 
 ### 3.4 无数据、加载与错误状态
+
+当前已实现“无地图”提示和地图加载错误状态。下列骨架屏、单图层资源降级、下载入口属于目标设计，尚未全部落地：
 
 - 未选会话：“请先选择一个任务”。
 - 当前会话无地图：说明 Agent 可以通过 GIS 工具生成地图。
@@ -152,19 +156,14 @@ PiRpcSession
         │
         ▼
 Browser
-├─ VisualizationResultRouter
+├─ FeatureRegistry
+│    └─ GeoFeature
 ├─ SessionVisualizationStore
 └─ VisualizationHost
-      └─ GeoMapRuntime
-            ├─ SceneReducer
-            ├─ ResourceLoader
-            ├─ StyleCompiler
-            ├─ InteractionController
-            ├─ LegendRenderer
-            └─ MapLibreAdapter
+      └─ MapLibreGeoRuntime
 ```
 
-首期不做通用插件注册中心。`VisualizationHost` 只识别 `kind: "geo"`，但保留 `kind` 字段。等真正增加 `chart` 或 `table` 时，再将这个分支提取为 `PluginRegistry`，避免为单一实现预建抽象层。
+项目已经有通用 `FeatureRegistry`，目前注册 GIS 与 Task Mode 两个 WebFeature。`VisualizationHost` 仍只处理 `kind: "geo"`；等出现 chart/table 的真实共享需求时，再抽取可视化 Runtime Registry。
 
 ## 5. 三层契约
 
@@ -191,7 +190,7 @@ Browser
 - 解析后的真实路径必须在 Pi 会话 cwd 之内。
 - 仅接受 `.geojson` 或内容为 GeoJSON 的 `.json`。
 - 校验 `FeatureCollection`、几何类型、坐标有限值、经纬度范围和 `idField` 唯一性。
-- 计算 `sha256`、字节数、feature 数、geometry types、bounds 和属性 schema。
+- 计算 `sha256`、字节数、feature 数、geometry types 和 bounds；当前 manifest 不生成属性 schema。
 - 将稳定副本写入 `.tau/geo-resources/<resourceId>/data.geojson`，并同步写入 `manifest.json`。
 - 对原文件的后续修改不影响已发布资源。内容 hash 相同时可重用已有资源。
 
@@ -199,7 +198,7 @@ Browser
 
 ```json
 {
-  "resourceId": "geo_01J...",
+  "resourceId": "geo_0123456789abcdef01234567",
   "format": "geojson",
   "geometryTypes": ["Polygon", "MultiPolygon"],
   "featureCount": 16,
@@ -266,14 +265,14 @@ type VisualizationEnvelope = {
 
 ```ts
 interface GeoMapRuntime {
-  mount(container: HTMLElement): Promise<void>;
-  replace(scene: GeoSceneSnapshot): Promise<void>;
+  replace(scene: GeoSceneSnapshot, sessionId: string | null): Promise<void>;
+  setLayerVisibility(layerId: string, visible: boolean): void;
   resize(): void;
   destroy(): void;
 }
 ```
 
-由于 Envelope 已经携带最终 Snapshot，Runtime 无需实现公开 `patch/focus/select` 方法；`VisualizationHost` 将新快照交给 `replace`，Runtime 内部再比较新旧 Scene，采用最小 MapLibre 变更。这保持外部状态模型简单，同时避免每次都销毁地图实例。
+由于 Envelope 已经携带最终 Snapshot，Runtime 无需实现公开 `patch/focus/select` 方法。当前 `replace` 为保证正确性会销毁并重建 MapLibre 实例；“比较新旧 Scene 并做最小变更”尚未实现，是后续性能优化项。
 
 ## 6. GeoScene v1 协议
 
@@ -285,8 +284,6 @@ type GeoSceneSnapshot = {
   basemap: BasemapRef;
   sources: GeoSource[];
   layers: GeoLayer[];
-  legends?: GeoLegend[];
-  interactions?: GeoInteractions;
   controls?: GeoControls;
   selection?: GeoSelection[];
   metadata: GeoMetadata;
@@ -304,13 +301,13 @@ v1 固定为 2D Web Mercator 显示，输入数据坐标为 WGS 84 经纬度。`
 或：
 
 ```json
-{ "mode": "camera", "center": [121.47, 31.23], "zoom": 10, "bearing": 0, "pitch": 0 }
+{ "mode": "camera", "center": [121.47, 31.23], "zoom": 10 }
 ```
 
 约束：
 
 - `padding` 限制在 0–128 px。
-- v1 的 `bearing` 固定或规范化为 0，`pitch` 固定或规范化为 0，避免交通主题图产生无意义透视。
+- 当前协议不接受 `bearing` 或 `pitch`，MapLibre Runtime 同时关闭拖拽旋转和倾斜。
 - bounds 必须是 `[west, south, east, north]`，不在 v1 处理跨日期变更线范围。
 
 ### 6.3 Basemap
@@ -367,15 +364,16 @@ type GeoLayer = {
   visible?: boolean;
   minZoom?: number;
   maxZoom?: number;
-  filter?: GeoFilter;
   encoding: GeoEncoding;
   popup?: { fields: PopupField[] };
 };
 ```
 
+共享协议和 Runtime 支持两类 source，但当前 `present_visualization` 命令只会创建 `geojson-resource`；Agent 的标准路径仍然是先调用 `publish_geodata`。`geojson-inline` 主要用于协议 fixture 和兼容性。
+
 数组顺序就是图层顺序，后出现的 layer 在上方。不再额外增加 `zIndex`，避免两套排序信息冲突。
 
-`filter` 只允许以下受控 DSL：
+以下 GeoFilter DSL 是后续设计，当前 `GeoLayer` 类型和解析器尚未包含 `filter` 字段：
 
 ```ts
 type GeoFilter =
@@ -410,7 +408,6 @@ type VisualValue<T> =
       mode: "continuous";
       field: string;
       stops: Array<{ value: number; output: T }>;
-      clamp?: boolean;
     };
 ```
 
@@ -428,7 +425,7 @@ type VisualValue<T> =
 - `categorical` 编译为受控 `match`。
 - `step` 编译为受控 `step`，stops 必须严格递增。
 - `continuous` 编译为线性 `interpolate`，仅允许数字、颜色和大小输出。
-- 字段不存在、类型不匹配或值为 null 时使用 fallback，并将统计警告写入面板元数据。
+- categorical 使用 `fallback`，step 使用 `default`；continuous 当前没有显式缺失值 fallback，也不会自动生成统计 warning。
 - 颜色经严格颜色 parser 校验，不将任意 CSS 字符串传入 DOM。
 
 MapLibre 的数据表达式可支持 `match`、`step`和 `interpolate`，但协议只开放上述受限子集，保持可验证性和跨引擎语义。
@@ -441,16 +438,15 @@ Popup 不接受 HTML template：
 type PopupField = {
   field: string;
   label: string;
-  format?: "text" | "integer" | "decimal" | "percent" | "datetime";
-  digits?: number;
+  format?: "text" | "integer" | "decimal" | "percent";
 };
 ```
 
 前端使用 DOM `textContent` 构建 Popup，不使用属性值拼接 `innerHTML`。
 
-图例原则上由 Runtime 根据 encoding 自动生成。仅当业务名称、单位或顺序无法推断时，Scene 才提供 `legends` 覆盖元数据，不重复提供颜色 stop。
+自动图例尚未实现。当前工作区只显示图层名称、类型、显隐开关和常量/分类颜色样本；未来可根据 encoding 生成图例。
 
-v1 controls：
+协议当前接受以下 controls：
 
 ```ts
 type GeoControls = {
@@ -461,6 +457,8 @@ type GeoControls = {
   fitToData?: boolean;
 };
 ```
+
+Runtime 当前实际消费 `navigation` 和 `fullscreen`；图层列表由 Host 始终渲染，`layerSwitcher`、`legend`、`fitToData` 仍是保留字段，尚未形成完整行为。
 
 选中状态引用稳定 ID：
 
@@ -474,22 +472,23 @@ type GeoSelection = {
 
 MapLibre Runtime 通过 `feature-state` 实现 hover/select，选中颜色和宽度由项目统一主题控制，Agent 不可构造一套看不清原始值的高亮样式。
 
+当前 selection 按 sourceId 设置 feature-state；Envelope 中可携带的 layerId 尚未被 Runtime 用于限定单个图层。
+
 ### 6.8 Metadata
 
 ```ts
 type GeoMetadata = {
   title: string;
   description?: string;
-  provenance?: Array<{ label: string; value: string }>;
-  timeRange?: { start?: string; end?: string };
-  units?: Record<string, string>;
   warnings?: string[];
 };
 ```
 
-元数据是必要的解释层，不是装饰字段。凡数据经抽样、简化、分级或缺失值过滤，都应出现在 `warnings`。
+当前协议只实现 title、description 和 warnings。provenance、timeRange、units 属于后续扩展；凡数据经抽样、简化、分级或缺失值过滤，现阶段应写入 `warnings`。
 
 ## 7. Patch 语义与一致性
+
+本节的 `GeoScenePatch` 是早期目标设计，当前 Agent 接口不接受该对象，也没有 remove source/layer 命令。现有实现使用扁平命令在 Extension 内生成候选 Scene、执行完整校验，再返回带完整 Snapshot 的 Envelope；`operation: patch` 只是审计语义。
 
 不采用任意 RFC 6902 JSON Patch，而使用类型化 patch：
 
@@ -547,7 +546,7 @@ type SessionVisualizationStore = Map<
 - 最终 `toolResult message_end`：再次接收权威结果，相同 revision 幂等覆盖。
 - 加载会话 snapshot 或历史 JSONL：清空该 session Store，遍历当前分支中的 `toolResult`，保留每个 ID 的最高 revision。
 - 切换会话：展示该会话上次打开的 visualization；若无偏好，展示 revision 最新者。
-- 历史只读会话：地图可浏览，但“询问 Agent”、绘制、筛选回写等会改变 Pi 状态的操作不可用。
+- 历史只读会话：可以恢复 Scene 元数据和图层快照；内联 GeoJSON 可渲染，但资源型 GeoJSON 当前缺少历史资源路由，必须 resume 成 live session 后才能加载数据。
 
 `localStorage` 只保存面板开关、宽度和每会话最后打开的 visualizationId，不作为 Scene 真值源。
 
@@ -566,14 +565,13 @@ type SessionVisualizationStore = Map<
 
 ```text
 .tau/
-├─ geo-resources/
-│  └─ <resourceId>/
-│     ├─ manifest.json
-│     └─ data.geojson
-└─ visualizations/        # 仅作调试导出/备用，不是会话真值源
+└─ geo-resources/
+   └─ <resourceId>/
+      ├─ manifest.json
+      └─ data.geojson
 ```
 
-`.tau/` 不在右侧普通文件树中默认展开，但资源元数据可在地图面板中查看。
+`.tau/` 会被普通文件树的隐藏目录规则过滤。当前地图面板展示 Scene metadata，不读取或展示完整 resource manifest。
 
 ### 9.2 服务端路由
 
@@ -584,10 +582,10 @@ GET /api/live-sessions/:sessionId/geo-resources/:resourceId/data
 
 不让客户端传入文件路径。服务端按以下顺序解析：
 
-1. `sessionId` 必须对应存在的 live session，或使用受验证的历史 session file + cwd 读取模式。
+1. `sessionId` 必须对应存在的 live session；历史 session file + cwd 读取模式尚未实现。
 2. `resourceId` 必须匹配固定格式，不允许斜杠、点号或 URL 编码逃逸。
 3. 资源真实路径必须仍位于该会话 cwd 的 `.tau/geo-resources` 之内。
-4. manifest 与数据 hash 不一致时拒绝提供数据。
+4. 当前读取时校验 manifest resourceId、SHA-256 字段格式和文件字节数；尚未重新计算数据文件 hash，因此“内容被等长篡改”还不能被检测。
 
 HTTP 要求：
 
@@ -609,7 +607,7 @@ HTTP 要求：
 | v1 GeoJSON Resource | 20 MiB 且 50,000 features | 发布失败，建议简化/切片 |
 | Popup 字段 | 每图层 12 个 | schema 校验失败 |
 | Scene | 32 sources / 64 layers | schema 校验失败 |
-| 一次 selection | 5,000 feature IDs | 要求用 filter 或聚合表达 |
+| 一次 selection | 5,000 feature IDs | 要求减少选择集、预聚合或拆分展示；GeoFilter 实现后再考虑服务端/客户端过滤 |
 
 这些不是 GIS 理论上限，而是首期防止模型误用和浏览器失去响应的可配置阀值。超出后进入 MVT/PMTiles/deck.gl 路径，不通过不断抬高 GeoJSON 上限解决。
 
@@ -617,15 +615,12 @@ HTTP 要求：
 
 ### 10.1 位置与加载
 
-建议作为项目内置扩展：
+当前项目内置扩展实际结构：
 
 ```text
 extensions/pi-geo-visualization/
 ├─ index.ts
-├─ schemas.ts
-├─ scene-state.ts
-├─ publish-geodata.ts
-└─ present-visualization.ts
+└─ package.json
 ```
 
 `package.json.files` 增加 `extensions`。`PiRpcSession.start()` 启动 Pi 时显式追加：
@@ -636,7 +631,7 @@ extensions/pi-geo-visualization/
 
 路径由服务端从安装包位置解析，不从 session cwd 拼接，也不需要把扩展复制到每个 `scenario` 目录。
 
-增加一个显式服务端配置开关，用于开发和故障隔离，但产品默认开启。启动时扩展文件不存在应直接拒绝创建会话，而不是创建一个没有 GIS 工具的静默降级会话。
+服务端当前通过 `TAU_GEO_EXTENSION_PATH` 支持替换扩展路径，但没有独立的启停开关。扩展文件不存在时创建 Pi session 会失败，不会静默创建一个缺少 GIS 工具的会话。
 
 ### 10.2 扩展状态
 
@@ -666,34 +661,24 @@ Scene 只放在 `details`，不放入文本 `content`。这样前端可以读取
 
 ## 11. 前端实施方案
 
-### 11.1 建议文件
+### 11.1 当前文件与后续拆分
 
 ```text
 src/public/visualization/
 ├─ visualization-host.ts
-├─ visualization-result-router.ts
 ├─ session-visualization-store.ts
 └─ geo/
-   ├─ types.ts
-   ├─ validate.ts
-   ├─ geo-panel.ts
-   ├─ geo-map-runtime.ts
-   ├─ geo-runtime-entry.ts
-   ├─ resource-loader.ts
-   ├─ style-compiler.ts
-   ├─ interaction-controller.ts
-   └─ legend-renderer.ts
+   ├─ protocol.ts
+   └─ geo-runtime-entry.ts
 ```
 
 职责边界：
 
-- `visualization-result-router`：仅识别工具结果、校验 Envelope 顶层标识，路由到 Host。
+- `GeoFeature`：识别工具结果、校验 Envelope 顶层标识并路由到 Host。
 - `session-visualization-store`：处理 session 隔离、revision、clear、最后打开项。
 - `visualization-host`：面板生命周期、会话切换、错误边界、懒加载 Runtime。
 - `validate`：把所有来自 Agent/JSONL 的对象当作不可信数据，执行运行时验证。
-- `geo-map-runtime`：管理一个 MapLibre Map 实例和 Scene diff，不负责会话。
-- `style-compiler`：仅将受控视觉编码编译为 MapLibre style/filter expressions。
-- `interaction-controller`：绑定/解绑图层事件，管理 hover/select/Popup，防止 replace 后重复监听。
+- `geo-runtime-entry`：当前同时管理 MapLibre 实例、样式编译和 hover/select/Popup；出现第二个调用方或单元边界后再拆分。
 
 ### 11.2 构建策略
 
@@ -707,26 +692,26 @@ public/geo-runtime.js
 public/geo-runtime.css
 ```
 
-`VisualizationHost` 第一次真正打开地图时才执行 `import('./geo-runtime.js')`。这避免 MapLibre 显著增加每次首屏对话加载。
+`VisualizationHost` 第一次真正打开地图时才动态导入构建后的 `public/geo-runtime.js`。这避免 MapLibre 显著增加每次首屏对话加载。
 
 建议脚本：
 
 ```json
 {
   "build:server": "tsc -p tsconfig.server.json",
-  "build:public": "tsc -p tsconfig.public.json",
+  "build:web": "tsc -p tsconfig.public.json",
   "build:geo": "esbuild src/public/visualization/geo/geo-runtime-entry.ts --bundle --format=esm --target=es2022 --outfile=public/geo-runtime.js",
-  "build": "npm run build:server && npm run build:public && npm run build:geo"
+  "build": "npm run build:server && npm run build:web && npm run build:geo"
 }
 ```
 
-实施时将 MapLibre 锁定到经测试的精确版本，不通过 CDN/unpkg 动态获取运行时脚本。如 esbuild 对 CSS 生成独立文件，由 Host 在加载 Runtime 时幂等插入 `<link>`。
+当前 `package.json` 使用 `maplibre-gl ^5.24.0`，lockfile 固定实际安装版本，运行时不通过 CDN/unpkg 获取脚本。正式生产发布前可再把声明改为精确版本；esbuild 生成独立 CSS，由 Host 幂等插入 `<link>`。
 
 ### 11.3 MapLibre 实例策略
 
 每个浏览器页面只维持一个活跃 MapLibre Map 实例：
 
-- 会话或 visualization 切换时，使用新 Scene 替换 sources/layers，不同时保留多个 WebGL context。
+- 会话、visualization 或 Scene revision 切换时，当前实现销毁旧 Map 后重建，确保不同时保留多个 WebGL context。
 - 面板关闭只隐藏，打开时调用 `resize()`。
 - 页面卸载或 Runtime 错误重置时调用 `map.remove()`。
 - 底图 style 变化会清除自定义 source/layer，Runtime 必须等待新 style 完成后重放 Scene，并用世代号忽略迟到的旧加载任务。
@@ -735,18 +720,17 @@ public/geo-runtime.css
 
 `src/public/app-main.ts` 需要三个精确接入点：
 
-1. `handleToolExecutionEnd`：工具卡 finalize 之前或之后，将完整 `result` 交给 `VisualizationResultRouter`。
-2. `renderHistory`：遇到 `msg.role === "toolResult"` 时，将 `msg.details`、`msg.toolName`、`msg.toolCallId` 一起交给 Router，不再只传 `content`。
+1. `ToolExecutionController.update/end`：将完整 result 交给 `FeatureRegistry`。
+2. `ToolExecutionController.restoreToolResult`：历史 `toolResult` 将 content、details、toolName、toolCallId 一起交给 Registry。
 3. 会话切换/快照更新：在渲染新历史前重置该 session Store，在遍历完后一次性激活最终 Scene，避免回放期间连续重绘地图。
 
 `AppMessage`、`ToolResult`、`PiMessage` 类型补充 `toolName`、`details`、`timestamp`。现有服务端已将原始对象保存与转发，不需要为了 Scene 再创造一套 WebSocket 消息类型。
 
 ## 12. 服务端改动边界
 
-新增两个小模块：
+当前服务端 GIS 路由集中在一个小模块：
 
 ```text
-src/server/geo-extension.ts    # 解析内置 Pi Extension 路径、生成启动参数
 src/server/geo-resources.ts    # manifest/data 路由与边界校验
 ```
 
@@ -772,7 +756,7 @@ src/server/geo-resources.ts    # manifest/data 路由与边界校验
 
 必须落实：
 
-- 前后端各自校验 Envelope/Scene，不依赖另一端“已经校验”。
+- Pi Extension 与 Web 端各自校验 Envelope/Scene，不依赖另一端“已经校验”；Node Server 当前不解析 Scene，只负责传输和资源授权。
 - Popup、图例、标题和错误信息使用 DOM 文本节点，禁止属性值进入 `innerHTML`。
 - v1 只读同源 session resource；外部底图只允许服务端配置白名单。
 - 不支持 `javascript:`、`data:` 作为 source/style URL，不支持 Agent 自定义 sprite/glyph URL。
@@ -784,20 +768,22 @@ src/server/geo-resources.ts    # manifest/data 路由与边界校验
 
 MapLibre 使用 Web Worker/WebGL。上线前需根据锁定的 MapLibre 版本验证 CSP，至少明确 `script-src`、`worker-src`、`connect-src`、`img-src`和 `style-src`。不为了“让地图能跑”直接使用宽泛 `*` 或不受控 `unsafe-eval`。
 
-## 14. 性能与可观测性
+## 14. 性能与可观测性目标
+
+本节是目标状态，不代表当前实现已经具备全部优化和指标。现状中已落地懒加载、单实例、资源独立 HTTP 加载、Scene 更新时销毁旧 Map 和 `ResizeObserver`；`setData` 差量更新、结构化性能日志、WebGL 诊断和可见性节流仍待实现。
 
 ### 14.1 性能策略
 
 - MapLibre bundle 懒加载，不影响不使用 GIS 的会话。
 - 一页一个 MapLibre 实例，避免多 WebGL context。
 - 资源独立 HTTP 加载，不进 WebSocket/JSONL。
-- 小更新对相同 GeoJSON source 使用 `setData`/差量更新能力，但先以正确性为主；只在 source 具有稳定 feature ID 时考虑真正 diff update。
-- 大量图层事件监听在 Scene replace 前成对解绑，防止重复触发和内存泄漏。
-- 只在面板可见且尺寸变化时调用 `resize`，使用 `ResizeObserver` 合并频繁更新。
+- 当前任何 Scene 更新都会重建 Map；对相同 GeoJSON source 使用 `setData`/差量更新是未来性能优化，只在 source 具有稳定 feature ID 时考虑。
+- 当前通过 Scene replace 时调用 `map.remove()` 统一销毁旧 Map 及其监听；如果未来改为复用 Map 实例，必须显式成对解绑图层事件。
+- 当前 `VisualizationHost` 使用 `ResizeObserver` 调用 `resize`，但尚未增加面板可见性判断或节流。
 
 ### 14.2 运行指标
 
-开发日志和错误记录至少包含：
+未来的结构化开发日志和错误记录应至少包含：
 
 - sessionId（脱敏/截断显示）、visualizationId、revision、toolCallId。
 - Scene 校验耗时、资源下载耗时、字节数、feature 数。
@@ -806,12 +792,14 @@ MapLibre 使用 Web Worker/WebGL。上线前需根据锁定的 MapLibre 版本�
 
 前端用户可见错误保持简短，详细 schema 路径和堆栈只进开发日志，防止泄漏本地路径和数据内容。
 
-## 15. 测试策略
+## 15. 目标测试策略与当前覆盖
+
+以下是完整目标矩阵，不代表每一项已经自动化。当前已有 Geo 协议、Extension、HTTP 资源路由、FeatureRegistry 和会话 Store 测试；真实 Chrome smoke 只覆盖页面连接与新建会话，尚未实际创建地图。
 
 ### 15.1 协议与编译单元测试
 
-- 合法/非法 Envelope、Scene、source、layer、filter、encoding。
-- 重复 ID、引用不存在 source、无效 layer order、不递增 stops。
+- 合法/非法 Envelope、Scene、source、layer 和 encoding；filter 尚未进入协议，因此当前没有 filter 单测。
+- 重复 ID、引用不存在 source和不递增 stops；当前协议没有独立 layerOrder 字段。
 - 颜色、数字范围、字符串和数组长度限制。
 - 视觉编码到 MapLibre `match/step/interpolate` 的精确输出。
 - Popup 值含 HTML/script 时仅作文本显示。
@@ -828,12 +816,12 @@ MapLibre 使用 Web Worker/WebGL。上线前需根据锁定的 MapLibre 版本�
 ### 15.3 Server 测试
 
 - Pi 子进程启动参数确实包含内置 extension，新建和 resume 一致。
-- 资源路由的会话隔离、路径遍历、恶意 URL 编码、丢失 manifest、hash 不一致。
+- 资源路由的会话隔离、路径遍历、恶意 URL 编码、丢失 manifest 和 bytes 不一致；重新计算 hash 的完整性测试应在服务端实现该能力后增加。
 - `Content-Type`、`ETag`、`If-None-Match`、`nosniff` 与缓存头。
 - WebSocket 仍原样转发 `result.details`，snapshot 保留 `toolResult.details`。
 - 非 GIS 会话的现有 API 和快照测试无回归。
 
-### 15.4 前端集成与手工验收
+### 15.4 前端集成与手工验收目标
 
 至少准备四份 fixture：点、线、面、混合非法数据。
 
@@ -862,6 +850,8 @@ MapLibre 使用 Web Worker/WebGL。上线前需根据锁定的 MapLibre 版本�
 
 ### 阶段 0：协议贯通实验
 
+状态：核心链路已完成；fork/compact 的真实 Pi 探针仍未形成独立自动化测试。
+
 目标：不接 MapLibre，先证明 `toolResult.details → WebSocket/JSONL → 前端恢复` 链路。
 
 交付：
@@ -875,6 +865,8 @@ MapLibre 使用 Web Worker/WebGL。上线前需根据锁定的 MapLibre 版本�
 
 ### 阶段 1：可用的 2D 矢量地图
 
+状态：核心闭环已完成，但尚未满足本节全部退出条件。
+
 目标：完成本文档定义的 v1 闭环。
 
 交付：
@@ -882,7 +874,7 @@ MapLibre 使用 Web Worker/WebGL。上线前需根据锁定的 MapLibre 版本�
 - `publish_geodata` + Resource Store/API。
 - `present_visualization` 全部 v1 操作。
 - MapLibre 懒加载 Runtime。
-- 点/线/面/文字、图例、Popup、图层开关、fit bounds、高亮。
+- 已交付点/线/面/文字、Popup、图层开关、基于 Scene bounds 的 fitBounds 和高亮；自动图例与显式 fit-to-data 按钮待补。
 - 桌面右侧面板与移动全屏面板。
 - 会话恢复、资源错误和安全边界测试。
 
@@ -923,21 +915,20 @@ PMTiles 客户端可通过 MapLibre 的 protocol 扩展读取单文件 tile arch
 - `get_visualization_context`：按需返回当前地图状态，不自动注入每次 prompt。
 - “询问 Agent”显式入口，将当前选中作为一次性 follow-up context。
 
-## 17. 建议改动清单
+## 17. 阶段 0–1 实际改动范围
 
-阶段 0–1 预计触及文件：
+阶段 0–1 实际主要落在以下文件；早期计划中的 `geo-extension.ts`、`geo-session-restore.test.ts` 等并未创建：
 
 ```text
 package.json
 package-lock.json
-tsconfig.public.json                 # 如地图类型检查需要小幅调整
+tsconfig.public.json
 public/index.html
 public/style.css
 
-src/server/config.ts                 # GIS extension/basemap/resource 配置
-src/server/sessions.ts               # Pi 启动参数 + toolResult 类型
-src/server/server-main.ts            # 资源路由接入
-src/server/geo-extension.ts
+src/server/config.ts
+src/server/sessions.ts
+src/server/server-main.ts
 src/server/geo-resources.ts
 
 src/public/app-types.ts
@@ -948,17 +939,16 @@ src/public/visualization/**
 extensions/pi-geo-visualization/**
 
 test/geo-extension.test.ts
-test/geo-resources.test.ts
 test/geo-protocol.test.ts
-test/geo-session-restore.test.ts
-test/fixtures/geo/**
+test/http-routes.test.ts
+test/feature-registry.test.ts
 ```
 
 实施时不顺手重构现有会话、文件浏览或工具卡逻辑。只有当当前 `file-sidebar` 命名确实阻碍可视化面板接入时，才将其最小改名为 `workspace-sidebar`，并在同一次改动中完成所有引用。
 
-## 18. 阶段 1 验收标准
+## 18. 阶段 1 目标验收标准
 
-只有以下条件全部满足，才视为 GIS Web 展示模块 v1 完成：
+只有以下条件全部满足，才视为完整阶段 1 完成。当前基础版本尚未满足自动图例、显式 fit-to-data、只读历史资源渲染、分层资源错误降级和完整浏览器手工验收，因此不能把“核心闭环完成”等同于本节全部通过：
 
 - Pi 新建与恢复会话均可调用 `publish_geodata` 和 `present_visualization`。
 - Agent 只输出声明式协议，无 JavaScript/HTML/CSS/MapLibre 原生 expression 执行通道。
@@ -984,17 +974,17 @@ test/fixtures/geo/**
 | 首期数据 | WGS 84 GeoJSON，内联或 session resource |
 | 地图容器 | 右侧持久可视化工作区 |
 | 会话恢复 | 每次工具结果保存完整最终 Snapshot |
-| 局部更新 | 类型化 patch，扩展原子应用后返回完整 Snapshot |
+| 局部更新 | 扁平命令参数，扩展原子应用后返回完整 Snapshot；Envelope 保留 patch/focus/select 审计语义 |
 | 前端依赖 | 独立懒加载 bundle，不全面迁移现有构建链 |
 | 大数据 | 后续 MVT/PMTiles/deck.gl，不无限抬高 GeoJSON 阈值 |
 | 外部 URL | v1 禁止 Agent 任意提供，底图由配置白名单解析 |
 
-### 19.2 阶段 0 必须用代码验证
+### 19.2 已验证与仍待验证
 
-- Pi RPC 实际 `toolResult.details` 在 live、snapshot、resume、fork、compact 各路径中的完整性。
-- Pi 是否在当前安装方式下稳定加载安装包内的 TypeScript extension；如发布环境不安全，将 extension 增加独立编译产物，不改变协议。
-- MapLibre bundle + Worker 在当前静态服务、Service Worker 和未来 CSP 下的加载行为。
-- 现有历史条目是否均携带恢复 Geo Resource 所需的 cwd；如不足，先补齐受验证的历史 resource route 上下文。
+- 已通过单元/集成测试验证 toolResult.details 的 live、history Snapshot 和 resume 恢复；fork/compact 仍缺真实 Pi 自动化探针。
+- 已通过真实 Pi RPC 冒烟验证安装包内 TypeScript Extension 可加载；发布形态变化后仍需复验。
+- 已通过真实 Chrome smoke 验证页面和会话创建，但该 smoke 尚未创建地图，MapLibre Worker、Service Worker 与未来 CSP 仍需独立浏览器测试。
+- 历史条目可恢复 Scene，但当前 Geo Resource API 只接受 live sessionId；只读历史资源上下文尚未补齐。
 
 ## 20. 技术参考
 

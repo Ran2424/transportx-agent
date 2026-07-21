@@ -2,13 +2,15 @@
 
 更新时间：2026-07-21
 
-状态：阶段 1 Agent Extension 与阶段 2 Web Adapter 已完成；阶段 3 可靠性加固待继续
+状态：Agent Extension、Web Adapter、版本化状态恢复和基础冒烟测试已完成；pending interaction 断线恢复、超时区分和完整浏览器任务回归仍待实现
+
+校对说明：本文同时保留设计理由和后续路线。关于当前已经交付的能力，以“当前实现”段落和 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准；带“建议”“阶段 3/4”或“待实现”的内容不能当作现有功能。
 
 ## 1. 结论
 
 本项目当前需要的不是完整流程编辑器，而是一种轻量、可观察、可中断的 **Pi 任务模式**：Pi 在处理复杂问题前先拆分步骤，执行过程中持续更新状态；遇到信息不足、需要确认或需要用户选择时，暂停当前工具调用，由 Web 收集回答，再把结构化结果交还给 Pi 继续执行。
 
-第一版建议自行开发一个内置 `pi-task-mode` Extension，并提供两个 Agent 工具：
+当前版本已经自行实现内置 `pi-task-mode` Extension，并提供两个 Agent 工具：
 
 - `tau_task`：创建、调整和更新任务步骤。
 - `tau_ask_user`：发起确认、单选、短文本或长文本交互。
@@ -21,7 +23,7 @@ Taskflow 可以作为未来复杂 DAG、并行子 Agent、恢复和增量重算�
 
 - 已实现 `pi-task-mode` Extension、`tau_task`、`tau_ask_user` 和 `/task on|off|status`。
 - 已实现结构化状态转换、branch/session 恢复和内置 Extension Registry。
-- 已通过 Extension 单元测试、TypeScript 检查和真实 Pi RPC 的加载/命令冒烟验证。
+- 已通过 Extension 单元测试、TypeScript 检查和真实 Pi RPC 的 Extension 加载、工具清单与 `/task on` 冒烟验证；真实冒烟尚未覆盖四类 Dialog 的完整往返。
 - 已实现 Web 顶部任务模式开关、TaskCard、按会话/revision 去重的 TaskStore，以及 live/history/resume 恢复。
 - 已适配 `tool_execution_update` 的 `waiting_user` 快照，并升级 confirm/select/input/editor Dialog。
 - 第一版没有暴露 timeout 参数；Pi RPC 会把部分超时与取消解析为相同返回值，在定义可靠区分协议前统一按未批准/已取消处理。
@@ -57,11 +59,11 @@ Taskflow 可以作为未来复杂 DAG、并行子 Agent、恢复和增量重算�
 - Web 已处理 `tool_execution_start`、`tool_execution_update` 和 `tool_execution_end`。
 - Web 已实现 `extension_ui_request` / `extension_ui_response`，并支持 `select`、`confirm`、`input`、`editor` 和 `notify`。
 - 后台会话的 Extension Dialog 已有排队和切换恢复机制。
-- `FeatureRegistry` 当前只在工具结束时分发结果，返回类型仍偏向 GIS visualization。
-- Pi 子进程当前固定加载 GIS Extension，尚未形成通用 Extension Registry。
-- 工具结果的最终 `details` 可以进入 Pi 会话历史；浏览器端的增量状态目前主要用于工具卡片文本。
+- `ToolExecutionController` 在工具 update 和 end 阶段把结构化结果交给 `FeatureRegistry`；Registry 的返回值已是 GIS/task 可辨识联合类型。
+- Pi 子进程通过 `BUILTIN_EXTENSION_PATHS` 固定加载 GIS、Task Mode 和 Pi Web Bridge 三个内置 Extension；当前是项目级内置列表，不是运行时插件市场。
+- 工具结果的最终 `details` 会进入 Pi 会话历史；浏览器端也会消费 update 中的 `details.task` 以显示 `waiting_user`。
 
-因此，本功能不需要重新设计通信底座，但需要把 Extension 加载、Feature 生命周期和结构化工具状态进一步通用化。
+因此，本功能没有重做通信底座。Extension 加载与结构化工具结果分发已经完成第一轮通用化，剩余工作主要是断线后的 pending interaction 恢复和更完整的浏览器回归。
 
 ## 4. 总体架构
 
@@ -69,7 +71,7 @@ Taskflow 可以作为未来复杂 DAG、并行子 Agent、恢复和增量重算�
 Web Task Mode Toggle
         │
         ▼
-Node Live Session（保存 session mode）
+Node Live Session（转发 RPC 与统一 Snapshot）
         │
         ▼
 pi-task-mode Extension
@@ -87,9 +89,9 @@ Node Server / WebSocket
         │
         ▼
 TaskModeFeature
-  ├─ TaskStore
-  ├─ TaskPanel
-  └─ Interaction Dialog Queue
+  ├─ SessionTaskStore
+  ├─ 可拖动 Task Board + TaskCardRenderer
+  └─ ExtensionUIController Dialog Queue
 ```
 
 职责边界：
@@ -97,7 +99,7 @@ TaskModeFeature
 | 模块 | 职责 |
 |---|---|
 | `pi-task-mode` Extension | 约束 Pi 行为、维护当前任务、调用用户交互、返回结构化结果 |
-| Node Server | 管理会话模式、转发 RPC、关联 session/tool/request、恢复待处理状态 |
+| Node Server | 管理 Pi 子进程、转发 RPC、统一会话 Snapshot；当前不持久化 pending Dialog |
 | Web TaskModeFeature | 消费任务快照、显示步骤、呈现交互、提交用户回答 |
 | Assistant 文本 | 解释过程和最终结论，不承担任务状态协议 |
 
@@ -135,7 +137,6 @@ interface TaskStepSnapshot {
 interface TaskSnapshot {
   schemaVersion: 1;
   taskId: string;
-  sessionId?: string;
   title: string;
   status: TaskStatus;
   revision: number;
@@ -160,14 +161,16 @@ interface TaskSnapshot {
 
 ### 6.1 工具职责
 
-`tau_task` 是 Agent 主动修改任务计划和步骤的唯一工具入口。`tau_ask_user` 只允许在 Extension 内部临时把当前任务切换为 `waiting_user`，回答后恢复为 `running`，不能改写步骤内容。第一版为 `tau_task` 提供四个 action：
+`tau_task` 是 Agent 主动修改任务计划和步骤的唯一工具入口。`tau_ask_user` 只允许在 Extension 内部临时把当前任务切换为 `waiting_user`，回答后恢复先前的 planning/running 语义，不能改写步骤内容。当前 `tau_task` 提供六个 action：
 
 ```ts
 type TauTaskAction =
   | 'start'
   | 'revise'
   | 'update_step'
-  | 'finish';
+  | 'finish'
+  | 'fail'
+  | 'cancel';
 ```
 
 建议输入：
@@ -296,8 +299,9 @@ interface InteractionResultDetails {
   kind: 'tau-interaction';
   interactionId: string;
   interactionKind: InteractionKind;
-  status: 'answered' | 'cancelled' | 'timed_out';
+  status: 'answered' | 'cancelled';
   value?: string | boolean;
+  task?: TaskSnapshot;
 }
 ```
 
@@ -306,17 +310,17 @@ interface InteractionResultDetails {
 安全规则：
 
 - 关闭窗口是 `cancelled`，不是空回答，也不是批准。
-- timeout 是 `timed_out`，不能使用自动批准作为默认值。
+- 当前工具没有 timeout 参数，也不会产生 `timed_out`；Pi RPC 无法可靠区分的超时/取消统一按 `cancelled` 处理，绝不自动批准。
 - `required: true` 被取消后，Agent 应停止相关步骤或重新解释为什么必须回答。
 - 选择项由 Extension 生成稳定 value，Web 展示 label；第一版可在 Extension 内完成 label/value 映射。
 - 同一会话最多一个 pending interaction。
 
 ## 8. 任务模式开启与持久化
 
-Web 顶部增加模式切换：
+Web 顶部使用一个按会话生效的“任务”切换按钮；active 表示任务模式开启，而不是两个独立的分段按钮：
 
 ```text
-[ 对话模式 ] [ 任务模式 ]
+[ 任务 ]  inactive = 对话模式 / active = 任务模式
 ```
 
 当前实现链路：
@@ -327,7 +331,7 @@ Web 顶部增加模式切换：
 4. Web 订阅 live `entry_appended`，并在 snapshot/history 中读取最后一个模式 entry。
 5. `before_agent_start` 读取 Extension 状态，决定是否注入任务规则。
 
-在正式实现前需要用 RPC spike 验证 `/task on|off` 经 `prompt` 命令发送时的 ack、历史记录和 busy-session 行为。如果命令链路不满足无痕切换，再增加一个最小的 Extension bridge；不要把模式标记拼接进用户可见消息。
+该命令链路已经通过单元测试和真实 Pi RPC `/task on` 冒烟验证。Web 在 streaming 时禁止切换；模式状态由 Extension 写入 versioned `pi-task-mode` custom entry，不拼接进用户可见消息。
 
 任务模式默认按会话保存，不作为全局默认。resume 后沿用原模式，新建会话默认 `chat`，用户可以主动选择 `task`。
 
@@ -335,20 +339,18 @@ Web 顶部增加模式切换：
 
 ### 9.1 Feature 生命周期扩展
 
-`FeatureRegistry` 已改为可辨识结果联合类型。当前平台在 update 和 end 阶段把结构化结果分发给功能适配器；start 阶段仍由通用工具卡负责：
+`FeatureRegistry` 已使用可辨识结果联合类型。当前平台在 update 和 end 阶段统一调用 `handleToolResult`；start 阶段仍由通用工具卡负责：
 
 ```ts
 interface WebFeature {
   readonly id: string;
   readonly workspaceView?: WorkspaceView;
   setSession(context: FeatureSessionContext, reset: boolean): void;
-  handleToolStart?(context: FeatureToolEventContext): void;
-  handleToolUpdate?(context: FeatureToolEventContext): void;
-  handleToolEnd?(context: FeatureToolEventContext): FeatureResult | null;
+  handleToolResult(context: FeatureToolResultContext): FeatureResult | null;
 }
 ```
 
-`FeatureResult` 应改成可辨识联合类型，避免继续把 GIS 字段作为所有功能的返回结构：
+`FeatureResult` 当前已经是可辨识联合类型：
 
 ```ts
 type FeatureResult =
@@ -386,7 +388,7 @@ src/server/task-mode.ts     mode 消息、session 关联和恢复
 
 ### 9.3 UI 形态
 
-第一版把任务摘要放在聊天区顶部或消息流中的固定 TaskCard，不新增完整右侧工作区：
+当前 UI 使用独立、可隐藏和可拖动的任务信息板，不占用文件/GIS 工作区，也不依赖消息流滚动位置：
 
 ```text
 分析上海体育场周边交通
@@ -399,13 +401,13 @@ src/server/task-mode.ts     mode 消息、session 关联和恢复
 当前：正在分析地铁站覆盖范围
 ```
 
-交互继续使用现有全局 Dialog，但需要：
+交互继续使用现有全局 Dialog。当前已经具备后台会话排队和切换恢复；以下仍是可靠性边界：
 
 - 显示来源会话和当前任务/步骤。
 - 后台会话出现问题时，在 live tab 上显示等待标记。
 - 切换回对应会话后恢复未回答 Dialog。
-- WebSocket 重连后重新呈现仍有效的 pending request。
-- 同一请求只能提交一次，重复 response 由服务端拒绝或忽略。
+- WebSocket 重连后重新呈现仍有效的 pending request：尚未实现，当前请求只存在于 Pi 工具调用和浏览器队列内。
+- 同一请求只能提交一次；浏览器队列会按 request ID 去重，但服务端对过期/重复 response 的显式拒绝仍需补测。
 
 ## 10. 状态恢复
 
@@ -415,7 +417,7 @@ src/server/task-mode.ts     mode 消息、session 关联和恢复
 
 - 读取最新 `tau_task` tool result 的 `details.task`。
 - 读取最近的任务模式 session entry；该 entry 同时保存开关状态和最新任务快照。
-- 忽略 revision 更低或 schemaVersion 不支持的快照。
+- Task Web Store 按 `taskId + revision` 忽略旧快照；mode entry 兼容 versioned v1 与旧版未版本化记录，不支持的版本当前会被忽略。
 - 如果任务在进程异常退出时仍是 `running/waiting_user`，恢复为 `interrupted` 并立即持久化；运行中步骤转为 `blocked`，不假装仍在运行。
 - `agent_end` 负责兜底：Agent 遗漏 `finish/fail/cancel` 时，同样写入可恢复的 `interrupted` 快照。
 
@@ -442,7 +444,7 @@ src/server/task-mode.ts     mode 消息、session 关联和恢复
 宿主 Pi 再决定继续、修订计划或停止
 ```
 
-第一版不允许子 Agent 直接打开 Web Dialog。这样可以避免并行问题争抢焦点、回答错配、会话取消后残留请求，以及子进程无法访问宿主 UI 协议的问题。
+当前通过 `promptGuidelines` 约束子 Agent 不直接调用 `tau_ask_user`，但工具层没有可验证的“宿主/子 Agent 身份”字段，因此这是一条行为约束，不是运行时强制授权。宿主集中交互仍用于避免并行问题争抢焦点、回答错配和残留请求。
 
 如果未来接入 Taskflow，Taskflow Adapter 应将 phase 状态映射为同一个 `TaskSnapshot`；需要用户输入的 phase 先暂停并上报宿主，由宿主统一调用 `tau_ask_user`。
 
@@ -468,6 +470,8 @@ Web 不把以下内容作为权威状态：
 
 ### 阶段 0：RPC 与行为验证
 
+状态：部分完成。工具/命令注册、`/task on` 和 Extension 加载已有真实 Pi RPC 冒烟；四类 Dialog、timeout 和后台切换尚无完整真实 RPC fixture。
+
 - 编写最小 Extension，验证两个工具在 `pi --mode rpc` 中可注册和调用。
 - 验证 `/task on|off` 命令的无痕切换、busy session 和 resume 行为。
 - 验证 select/confirm/input/editor 的取消、timeout 和后台会话切换。
@@ -477,10 +481,12 @@ Web 不把以下内容作为权威状态：
 
 ### 阶段 1：Extension 与契约
 
+状态：已完成（timeout 独立语义除外，当前按 cancelled 处理）。
+
 - 实现 `TaskSnapshot` 校验和状态转换。
 - 实现 `tau_task`、`tau_ask_user` 和 `/task` command。
 - 实现 branch/session 状态恢复。
-- 为非法 action、重复 ID、非法状态回退、取消和 timeout 编写测试。
+- 为非法 action、重复 ID、非法状态回退和取消编写测试；timeout 待协议可区分后补充。
 - 将 Pi 子进程 Extension 加载改成可配置 Registry，同时保留 GIS 默认扩展。
 
 验收：Extension 单测通过；TUI 与 RPC 均可使用标准交互方法；RPC 不调用 `ctx.ui.custom()`。
@@ -499,11 +505,13 @@ Web 不把以下内容作为权威状态：
 
 ### 阶段 3：健壮性与体验
 
+状态：部分完成。会话隔离队列、取消语义、移动布局和 reduced-motion 样式已存在；断线恢复与过期 response 仍未完成。
+
 - 增加 WebSocket 重连后的 pending interaction 恢复。
 - 增加重复 response 幂等和过期 request 拒绝。
 - 增加键盘、焦点、移动端和 reduced-motion 验收。
 - 增加一个 GIS 任务模式端到端样例。
-- 更新 ARCHITECTURE、PROJECT_HANDOFF 和截图。
+- 更新 ARCHITECTURE 和截图；不再维护已移除的重复交接文档。
 
 验收：取消、超时、断线、resume、切换会话和 Agent abort 都有明确终态。
 
@@ -522,8 +530,8 @@ Web 不把以下内容作为权威状态：
 
 | 层级 | 必测内容 |
 |---|---|
-| Extension 单元测试 | start/revise/update/finish、状态转换、恢复、取消、timeout |
-| RPC 集成测试 | tool 生命周期、四类 Dialog、response 关联、abort |
+| Extension 单元测试 | 已覆盖 start/revise/update/finish/fail/cancel、状态转换、恢复和取消；timeout 尚未独立建模 |
+| RPC 集成测试 | 当前覆盖加载、工具 Manifest 和 `/task on`；四类 Dialog、response 关联和 abort 待补 |
 | Feature 测试 | schema/revision、session 隔离、非法 details 忽略 |
 | 浏览器测试 | 模式切换、TaskCard、焦点、后台等待标记、会话切换 |
 | 恢复测试 | live snapshot、history、resume、浏览器刷新、Pi 子进程重启 |
@@ -548,20 +556,20 @@ Web 不把以下内容作为权威状态：
 
 任务模式协议、Extension 和服务端链路不依赖 React，可以先实施。Web 端需要保持 controller/store 与视图分离：
 
-- 当前原生 TypeScript 使用 `TaskStore + TaskPanel`。
+- 当前原生 TypeScript 使用 `SessionTaskStore + TaskModeFeature + TaskCardRenderer`。
 - React 迁移后只替换为 `TaskStore + TaskCard React Component`。
 - RPC event、TaskSnapshot、Extension 和测试 fixture 保持不变。
 
 如果 React 阶段 1 已经开始，TaskCard 可以作为第一个垂直业务组件进入 React；否则不应为了一个 TaskCard 提前启动全量 React 重写。完整 UI 迁移边界见 [React UI 迁移评估与实施方案](./REACT_UI_MIGRATION_PLAN.md)。
 
-## 17. 实施前决策
+## 17. 已落实的实施决策
 
-开始编码前需要确认：
+以下决策已经落实到当前实现：
 
 - 第一版任务模式按会话启用，而不是全局默认。
 - 第一版只支持 confirm/select/input/editor，不实现复杂多选。
 - 用户取消不会自动批准或自动采用默认值。
-- 只有宿主 Pi 可以调用用户交互工具。
+- 用户交互应由宿主 Pi 统一发起；当前依赖 promptGuidelines，尚无运行时身份校验。
 - Taskflow 不作为第一版依赖。
 - 任务状态只信任结构化工具结果，不解析 Assistant 自然语言。
 

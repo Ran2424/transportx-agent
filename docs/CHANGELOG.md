@@ -11,6 +11,28 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v1.24 — 文档事实校对与 React Web Adapter 路线定稿
+
+- 日期：2026-07-21
+- GitHub 操作：提交并推送到 `origin/main`
+- 提交主题：`docs: finalize React web adapter migration plan`
+
+主要修改：
+
+- 精简 README，使其聚焦产品能力、运行逻辑、启动方式和权限注意事项；总体架构统一由 `docs/ARCHITECTURE.md` 维护。
+- 合并并移除重复的文档索引、移动端说明和项目交接文档，避免多份架构说明长期漂移。
+- 依据当前源码、测试和运行链路对文档做事实校对，区分 GIS、Task、状态管理和浏览器测试中“已经实现”“部分实现”和“未来计划”的能力边界。
+- 记录新会话默认任务目录仍硬编码为本机绝对路径、只读历史资源地图不能直接加载等真实限制。
+- 将 React 方案确定为 Agent Workspace 的 Web Adapter 改造：先建立 Browser Application Kernel，再按 Vite、Contract、React Shell、Conversation、Feature UI 和 legacy 删除的顺序实施。
+- 明确 Event Normalizer、Command Ports、分域 Store、Stable Snapshot + Live Overlay、Domain/UI 双层 Feature、MapLibre Runtime Port 和独立 Vite 产物等目标边界。
+- 修正 Geo Skill 中 `defaultValue`、resourceId、ID 校验和未实现 controls 的说明；补充绘图模板原始输出路径和交通治理脚本解释器注意事项。
+
+验证：
+
+- 24 份 Markdown 本地链接检查通过，外部官方参考可访问。
+- `git diff --check` 通过。
+- 版本同步测试通过。
+
 ## v1.23 — Pi 协议恢复、入口瘦身与 Web Bridge
 
 - 日期：2026-07-21
@@ -22,7 +44,7 @@
 - 将 Pi 开发依赖与运行时兼容范围对齐到 `0.80.10`，启动时检查实际 Pi 版本，避免开发 Schema 与运行时协议发生偏移。
 - 建立 branch-aware `SessionProjection`，按 JSONL 的 `parentId` 选择当前分支，并统一 live、history、resume 使用的 Snapshot 结构。
 - 提取类型化 Server Router 和独立 API 路由表，缩小 `server-main.ts` 的职责范围。
-- 建立 `AgentRuntime`、`RuntimeStore` 以及 Session、ToolExecution、ExtensionUI 三个控制单元；状态指示灯改为只消费 Store，不再自行判断 WebSocket。
+- 建立 `AgentRuntime`、`RuntimeStore` 以及 Session、ToolExecution、ExtensionUI 三个控制单元；状态指示灯的连接/streaming 基础状态改为消费 Store，不再自行读取 WebSocket（临时状态文字仍保留旧 DOM 更新方式）。
 - 新增 Pi Web Bridge，以带 `schemaVersion` 和 `revision` 的 Envelope 发布完整工具 Manifest、模型和 thinking 状态。
 - 为 Task Mode 状态增加版本与修订号，兼容旧会话恢复，并移除每次 prompt 后的宽泛 `get_state` 轮询。
 - 增加真实 Pi RPC 与 Chrome 浏览器冒烟测试脚本，并补充可随终端退出的一键启动脚本。

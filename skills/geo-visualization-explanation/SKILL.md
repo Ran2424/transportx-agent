@@ -17,7 +17,7 @@ Use the Tau Geo tools to publish session-scoped GeoJSON and present a declarativ
 
 1. Convert source coordinates to WGS84 longitude/latitude before visualization. Do not expect the tools to convert GCJ-02 or BD-09.
 2. Validate coordinate order and range: `[longitude, latitude]`, longitude within `[-180, 180]`, latitude within `[-90, 90]`.
-3. Give every feature a stable unique top-level `Feature.id`, or add a unique string/integer property and pass its name as `idField`.
+3. Give every feature a stable unique top-level `Feature.id`, or add a unique string/integer property and pass its name as `idField`. The publisher currently validates uniqueness only for an explicitly supplied `idField`; verify top-level `Feature.id` uniqueness yourself.
 4. Keep lines, ordinary points, highlighted POIs, and different thematic groups in separate sources when they require different styling; GeoScene v1 has no filter channel.
 5. Write generated GeoJSON inside the current task directory before calling `publish_geodata`.
 6. Before publication, verify the root type, feature count, file size, geometry types, coordinate range, and ID uniqueness. Keep the result below 50,000 features and 20 MiB; increase aggregation size before publishing when it exceeds either limit.
@@ -32,7 +32,7 @@ Do not rely on a DataFrame index becoming a GeoJSON property automatically.
 
 ## Publish data
 
-Call `publish_geodata` with the relative GeoJSON path, a clear title, and `idField` when using a property ID. Reuse the returned `resourceId` exactly in a `geojson-resource` source.
+Call `publish_geodata` with the relative GeoJSON path, a clear title, and `idField` when using a property ID. Pass the returned `resourceId` exactly to `present_visualization` with `command: "create_map"`; do not construct a source object yourself.
 
 If publication fails, fix the data instead of removing a meaningful `idField`:
 
@@ -50,7 +50,7 @@ Start with the resource returned by `publish_geodata` and one constant-style lay
   "command": "create_map",
   "visualizationId": "hotspot_map",
   "title": "热点分布",
-  "resourceId": "geo_REPLACE_ME",
+  "resourceId": "geo_0123456789abcdef01234567",
   "sourceId": "hotspots",
   "layerId": "hotspot_fill",
   "layerType": "fill",
@@ -59,12 +59,14 @@ Start with the resource returned by `publish_geodata` and one constant-style lay
 }
 ```
 
+The `resourceId` above only demonstrates the required lowercase-hex shape. Replace it with the exact ID returned by the current `publish_geodata` call.
+
 After `create_map` succeeds, add one concern per command in this order:
 
 1. `set_step`, `set_continuous`, `set_categorical`, or `set_constant` for one channel.
 2. `add_layer` for a second source/layer or reference POI layer.
 3. `set_popup` for details.
-4. `set_controls` for navigation, legend, layerSwitcher, fullscreen, or fitToData.
+4. `set_controls` only when changing navigation or fullscreen. The schema currently accepts `legend`, `layerSwitcher`, and `fitToData`, but the Web Runtime does not implement those flags; the layer list is rendered unconditionally and there is no automatic legend or fit-to-data button.
 5. `set_metadata` for descriptions and warnings.
 6. `set_camera` or `fit_bounds` only when the automatically derived resource extent is unsuitable.
 
@@ -75,7 +77,7 @@ Reuse the same `visualizationId` while refining the map. When the user says “a
 - Use color hex strings such as `#2563eb`, `#fff`, `#2563ebcc`, or `#fffc`. Do not use `rgb(...)`, `rgba(...)`, CSS variables, URLs, or named colors.
 - Use numeric opacity in `[0, 1]`.
 - Provide 2–16 strictly ascending numeric stops for `step` and `continuous`.
-- Include `default` for `step`; do not include it for `continuous`.
+- Include `defaultValue` for the `set_step` command; do not pass it to `set_continuous`.
 - Use only the channels supported by the layer type:
   - `circle`: `color`, `radius`, `opacity`, `strokeColor`, `strokeWidth`
   - `line`: `color`, `width`, `opacity`, `dash`
@@ -85,7 +87,7 @@ Reuse the same `visualizationId` while refining the map. When the user says “a
 
 ## Compose readable thematic maps
 
-- Default only one overlapping fill layer to `visible: true`; set alternatives to `visible: false` and enable `layerSwitcher`.
+- Default only one overlapping fill layer to `visible: true` and set alternatives to `visible: false`. The Web map always shows its current layer visibility list; do not rely on the reserved `layerSwitcher` flag.
 - Add a reference POI or label layer when the user needs to understand hotspot position relative to a venue or station.
 - Prefer clear layer titles and short popup fields.
 - Use a bounds view with padding when the source extent is known; use a camera view for a deliberate fixed composition.

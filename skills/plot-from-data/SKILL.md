@@ -8,7 +8,9 @@ description: |
 
 # Plot From Data
 
-Generate a paper-quality figure by picking a style template and filling it with user data. All outputs are `dpi=300` PNG.
+Generate a paper-quality figure by picking a style template and filling it with user data. The bundled templates save `dpi=300` PNG files after their output path is adapted to the current task.
+
+The scripts are imported templates, not directly runnable project commands: several still contain the original `/Users/bytedance/...` output path. Always copy the selected script into the current task directory and replace both its data section and output path before execution. Never edit or run the template in place.
 
 ## Available Styles
 
@@ -30,8 +32,8 @@ Generate a paper-quality figure by picking a style template and filling it with 
 1. 确认用户的图类型和数据
 2. 选择对应 style（如不确定，根据数据形状推断）
 3. 读取对应 references/<style_name>.md 获取精确参数
-4. 复制对应 scripts/<script>.py，替换数据区（脚本顶部有清晰注释标注数据区）
-5. 运行：python scripts/<script>.py
+4. 复制对应 `scripts/<script>.py` 到当前任务目录，替换数据区和 `savefig` 输出路径
+5. 使用项目提示词指定的 Python 解释器运行复制后的脚本；不要调用裸 `python`
 6. 检查输出，必要时微调颜色/标签/字号
 ```
 
