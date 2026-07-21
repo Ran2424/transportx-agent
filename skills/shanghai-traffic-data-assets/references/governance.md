@@ -30,7 +30,7 @@
 查询最近构建结果：
 
 ```bash
-python3 scripts/query_assets.py --sql "SELECT r.severity,q.* FROM catalog.meta_quality_result q JOIN catalog.meta_quality_rule r USING(rule_code) ORDER BY r.severity,q.rule_code"
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --sql "SELECT r.severity,q.* FROM catalog.meta_quality_result q JOIN catalog.meta_quality_rule r USING(rule_code) ORDER BY r.severity,q.rule_code"
 ```
 
 已知警告及精确数量统一维护在 `coverage.md`，不要把警告写成错误级失败。
@@ -55,7 +55,7 @@ python3 scripts/query_assets.py --sql "SELECT r.severity,q.* FROM catalog.meta_q
 
 ```bash
 SHANGHAI_TRAFFIC_PROJECT_ROOT=/absolute/source/project \
-python3 scripts/build_data_governance.py
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/build_data_governance.py"
 ```
 
 从治理库构建分域资产：
@@ -63,12 +63,12 @@ python3 scripts/build_data_governance.py
 ```bash
 SHANGHAI_TRAFFIC_SOURCE_DB=/absolute/source/project/data/traffic_governance.sqlite \
 SHANGHAI_TRAFFIC_SKILL_DIR=/absolute/skill/path \
-python3 scripts/build_agent_data_assets.py
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/build_agent_data_assets.py"
 ```
 
 重建后必须重新运行：
 
 ```bash
-python3 scripts/query_assets.py --list
-python3 scripts/query_assets.py --sql "SELECT * FROM catalog.meta_quality_result"
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --list
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --sql "SELECT * FROM catalog.meta_quality_result"
 ```
