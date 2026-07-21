@@ -22,6 +22,7 @@ export const ARGS = parseArgs(process.argv.slice(2));
 export const USER_HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
 export const PI_AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(USER_HOME, '.pi', 'agent');
 export const SESSIONS_DIR = process.env.PI_CODING_AGENT_SESSION_DIR || path.join(PI_AGENT_DIR, 'sessions');
+export const PI_COMMAND = process.env.TAU_PI_COMMAND || 'pi';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -52,7 +53,8 @@ export const HOST = TAU_SETTINGS.host;
 export const STATIC_DIR = process.env.TAU_STATIC_DIR || findPublicDir();
 export const GEO_EXTENSION_PATH = process.env.TAU_GEO_EXTENSION_PATH || findGeoExtensionPath();
 export const TASK_MODE_EXTENSION_PATH = process.env.TAU_TASK_MODE_EXTENSION_PATH || findTaskModeExtensionPath();
-export const BUILTIN_EXTENSION_PATHS = [GEO_EXTENSION_PATH, TASK_MODE_EXTENSION_PATH];
+export const WEB_BRIDGE_EXTENSION_PATH = process.env.TAU_WEB_BRIDGE_EXTENSION_PATH || findWebBridgeExtensionPath();
+export const BUILTIN_EXTENSION_PATHS = [GEO_EXTENSION_PATH, TASK_MODE_EXTENSION_PATH, WEB_BRIDGE_EXTENSION_PATH];
 export const PROJECT_SKILLS_DIR = process.env.TAU_SKILLS_DIR || findProjectSkillsDir();
 export const BUILTIN_SKILL_PATHS = findSkillPaths(PROJECT_SKILLS_DIR);
 export const PROJECT_ROOT = path.dirname(PROJECT_SKILLS_DIR);
@@ -99,6 +101,18 @@ function findTaskModeExtensionPath() {
   try {
     const pkgPath = require.resolve('pi-traffic-workspace/package.json');
     add(path.join(path.dirname(pkgPath), 'extensions', 'pi-task-mode', 'index.ts'));
+  } catch {}
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function findWebBridgeExtensionPath() {
+  const candidates: string[] = [];
+  const add = (p: string) => candidates.push(path.resolve(p));
+  add(path.join(__dirname, '..', 'extensions', 'pi-web-bridge', 'index.ts'));
+  add(path.join(process.cwd(), 'extensions', 'pi-web-bridge', 'index.ts'));
+  try {
+    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
+    add(path.join(path.dirname(pkgPath), 'extensions', 'pi-web-bridge', 'index.ts'));
   } catch {}
   return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
 }

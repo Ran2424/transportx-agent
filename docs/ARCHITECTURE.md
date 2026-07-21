@@ -36,7 +36,9 @@ GIS 是第一个跨边界功能切片，任务交互是第二个。它们都依�
 
 ```text
 Browser Agent Web UI
-  ├─ app-main（平台组合入口）
+  ├─ app-main（布局与平台组合入口）
+  ├─ AgentRuntime + RuntimeStore（连接与 streaming 单一状态源）
+  ├─ Session / ToolExecution / ExtensionUI Controllers
   ├─ WorkspaceController（右侧工作区壳层）
   └─ FeatureRegistry
        ├─ GeoFeature（GIS Web Adapter）
@@ -48,8 +50,9 @@ Browser Agent Web UI
                     ▲
                     │ WebSocket：toolResult.details / Extension UI
 Node Web Server
-  ├─ HTTP + WebSocket + RPC 路由
+  ├─ 类型化 HTTP Router + WebSocket / RPC 适配
   ├─ LiveSessionManager
+  ├─ branch-aware SessionProjection
   └─ Session-scoped Geo Resource API
                     ▲
                     │ JSONL RPC
@@ -60,6 +63,9 @@ Pi Agent Child
   └─ pi-task-mode Extension
        ├─ tau_task
        └─ tau_ask_user
+  └─ pi-web-bridge Extension
+       ├─ 完整 Tool Manifest
+       └─ model / thinking 状态 Envelope
 ```
 
 GeoScene 是跨边界的共享契约。它必须保持声明式、可验证且不携带 JavaScript、HTML、CSS、任意 URL 或 MapLibre 原生表达式。Agent 侧不直接构造该契约，而是调用 `present_visualization` 的命令式参数；Extension 负责组装、字段级验证并生成完整快照。
@@ -69,16 +75,23 @@ GeoScene 是跨边界的共享契约。它必须保持声明式、可验证且�
 ```text
 src/
   server/                         Agent Web 服务端核心
-    server-main.ts                HTTP、WebSocket、RPC 的组合入口；功能路由在适配器实现
+    server-main.ts                HTTP、WebSocket、RPC 的组合入口
+    router.ts                     类型化 method/path 路由器
+    api-routes.ts                 API 路由表与服务端端口
     sessions.ts                   Pi 子进程和 live session 生命周期
+    session-projection.ts         按 parentId 选择当前分支并生成统一 Snapshot
+    pi-runtime.ts                 Pi CLI 版本兼容检查
+    pi-web-bridge.ts              Bridge Envelope 校验与查询
     auth.ts                       浏览器会话认证
     config.ts                     环境、目录和扩展定位
     model-utils.ts                模型标识与列表解析
     geo-resources.ts              GIS 的服务端适配器
 
   public/                         浏览器端源码
-    app-main.ts                   应用组合入口与平台级会话事件接线
+    app-main.ts                   应用布局、组合入口与平台事件接线
     app-types.ts                  浏览器端平台类型
+    runtime/                      AgentRuntime 与 RuntimeStore
+    controllers/                  Session、ToolExecution、ExtensionUI 控制单元
     workspace/                    Web 工作区壳层
       workspace-controller.ts     文件/资源/功能视图切换与侧栏生命周期
       workspace-types.ts          功能可依赖的最小工作区端口
@@ -100,6 +113,7 @@ src/
 extensions/
   pi-geo-visualization/           Agent 侧 GIS 工具适配器
   pi-task-mode/                   Agent 侧任务状态与用户交互适配器
+  pi-web-bridge/                  Pi 到 Web 的工具、模型与思考状态桥接
 
 skills/                           项目拥有、随 Web 会话显式加载的 Pi Skill
   geo-visualization-explanation/  Geo 工具工作流与制图约束
@@ -201,6 +215,8 @@ interface WebFeature {
 ```bash
 rtk npm run typecheck
 rtk npm test
+rtk npm run test:pi-smoke
+rtk npm run test:browser-smoke
 ```
 
 `npm test` 会重新生成运行所需的服务端、浏览器端和 MapLibre bundle。不要手工修改编译后的 JavaScript。
@@ -224,13 +240,15 @@ rtk npm test
 - 建立 `WorkspaceController`、`FeatureRegistry` 与 `GeoFeature` 三层 Web 集成点。
 - 将 GIS 资源 URL 的识别、解码和会话查找移入 `geo-resources.ts`。
 
-### 阶段 B：继续瘦身组合入口
+### 阶段 B：组合入口第一轮瘦身（已完成）
 
-- 按独立职责逐步从 `app-main.ts` 提取附件、输入、会话视图 controller；每次只提取一个可独立验证的职责。
-- 按资源域继续从 `server-main.ts` 提取 route adapter；不进行一次性重写。
+- 已建立 AgentRuntime、RuntimeStore，以及 Session、ToolExecution、ExtensionUI 三个控制单元。
+- 状态指示灯只消费 RuntimeStore，不再读取 WebSocket 实例自行推断。
+- 已建立类型化 ServerRouter，并将 API 路由表移出 `server-main.ts`。
+- 后续仍可逐步提取附件和输入控制器，但不与 React 迁移绑在同一阶段。
 - 将 GIS CSS 从全局样式中抽为源码片段，并由构建流程合并；不直接增加运行时请求数量。
 
-### 阶段 C：构建系统升级（独立变更）
+### 阶段 C：React 与构建系统升级（下个阶段，独立变更）
 
 - 引入 Vite，将浏览器源码和发布目录分开，获得模块图、静态资产处理和 CSS code splitting。
 - 保留现有 Node 服务；Vite 只负责 Web build/dev，不与服务端框架迁移绑在一次改动里。

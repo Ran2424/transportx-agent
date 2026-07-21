@@ -102,5 +102,13 @@ export function parseTaskStateEntry(value: unknown) {
   const entry = record(value);
   const data = record(entry?.data);
   if (!entry || entry.type !== 'custom' || entry.customType !== 'pi-task-mode' || typeof data?.enabled !== 'boolean') return null;
-  return { enabled: data.enabled, task: parseTaskSnapshot(data.task) };
+  const versioned = data.schemaVersion === 1 && Number.isInteger(data.revision) && Number(data.revision) >= 1;
+  const legacy = data.schemaVersion === undefined && data.revision === undefined;
+  if (!versioned && !legacy) return null;
+  return {
+    schemaVersion: versioned ? 1 as const : 0 as const,
+    revision: versioned ? Number(data.revision) : 0,
+    enabled: data.enabled,
+    task: parseTaskSnapshot(data.task),
+  };
 }

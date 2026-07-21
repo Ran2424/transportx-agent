@@ -70,7 +70,7 @@ test('/task command persists mode and injects task instructions only when enable
   const beforeAgentStart = handlers.get('before_agent_start')!;
 
   await command.handler('on', ctx);
-  assert.deepEqual(entries.at(-1), { customType: 'pi-task-mode', data: { enabled: true } });
+  assert.deepEqual(entries.at(-1), { customType: 'pi-task-mode', data: { schemaVersion: 1, revision: 1, enabled: true } });
   assert.match(ctx.notifications.at(-1)?.message || '', /已开启/);
 
   const enabled = await beforeAgentStart({ systemPrompt: 'base prompt' }, ctx);
@@ -80,7 +80,7 @@ test('/task command persists mode and injects task instructions only when enable
   assert.match(enabled.systemPrompt, /tau_ask_user/);
 
   await command.handler('off', ctx);
-  assert.deepEqual(entries.at(-1), { customType: 'pi-task-mode', data: { enabled: false } });
+  assert.deepEqual(entries.at(-1), { customType: 'pi-task-mode', data: { schemaVersion: 1, revision: 2, enabled: false } });
   assert.equal(await beforeAgentStart({ systemPrompt: 'base prompt' }, ctx), undefined);
 });
 

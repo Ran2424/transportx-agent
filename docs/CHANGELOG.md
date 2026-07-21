@@ -5,10 +5,36 @@
 ## 维护规则
 
 - 版本从 `v1.10` 开始，每次正式提交递增 `0.01`，即 `v1.10`、`v1.11`、`v1.12`。
+- npm 使用三段式 SemVer：日志版本 `vX.Y` 对应 `package.json` 的 `X.Y.0`；例如 `v1.22` 对应 `1.22.0`。
 - 新版本写在最上方；一次版本原则上对应一次提交并推送到 `origin/main`。
 - 每条记录至少包含日期、GitHub 操作、主要修改和验证情况。
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
+
+## v1.23 — Pi 协议恢复、入口瘦身与 Web Bridge
+
+- 日期：2026-07-21
+- GitHub 操作：提交并推送到 `origin/main`
+- 提交主题：`refactor: align Pi runtime and Web bridge architecture`
+
+主要修改：
+
+- 将 Pi 开发依赖与运行时兼容范围对齐到 `0.80.10`，启动时检查实际 Pi 版本，避免开发 Schema 与运行时协议发生偏移。
+- 建立 branch-aware `SessionProjection`，按 JSONL 的 `parentId` 选择当前分支，并统一 live、history、resume 使用的 Snapshot 结构。
+- 提取类型化 Server Router 和独立 API 路由表，缩小 `server-main.ts` 的职责范围。
+- 建立 `AgentRuntime`、`RuntimeStore` 以及 Session、ToolExecution、ExtensionUI 三个控制单元；状态指示灯改为只消费 Store，不再自行判断 WebSocket。
+- 新增 Pi Web Bridge，以带 `schemaVersion` 和 `revision` 的 Envelope 发布完整工具 Manifest、模型和 thinking 状态。
+- 为 Task Mode 状态增加版本与修订号，兼容旧会话恢复，并移除每次 prompt 后的宽泛 `get_state` 轮询。
+- 增加真实 Pi RPC 与 Chrome 浏览器冒烟测试脚本，并补充可随终端退出的一键启动脚本。
+- 更新 README 与架构文档；React、Vite、shadcn/ui 迁移明确留到下一阶段。
+
+验证：
+
+- `npm test`：200 项测试，199 项通过、1 项真实 Pi RPC 测试按默认策略跳过。
+- `npm run test:pi-smoke` 通过。
+- `npm run test:browser-smoke` 通过，应用内浏览器检查无页面错误。
+- `npm run typecheck` 通过。
+- `git diff --check` 通过。
 
 ## v1.22 — 任务模式、项目级 Skill 与 GIS 稳定性修复
 

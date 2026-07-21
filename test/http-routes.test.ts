@@ -43,9 +43,11 @@ interface FakeHttpSession {
   sessionFile: string;
   sessionName: string | null;
   contextUsage: { tokens?: number; usage?: { input_tokens: number; output_tokens: number } } | null;
+  entries: Array<Record<string, unknown>>;
   metadata: () => { id: string; cwd: string; model: string; isStreaming: boolean; sessionFile: string };
-  snapshot: () => { session: { id: string }; entries: unknown[]; model: string; isStreaming: boolean; sessionFile: string };
+  snapshot: () => { schemaVersion: 1; session: { id: string }; entries: unknown[]; model: string; isStreaming: boolean; sessionFile: string };
   terminate: () => Promise<void>;
+  send: () => Promise<{ data: { commands: unknown[] } }>;
 }
 
 function fakeSession(id: string): FakeHttpSession {
@@ -59,9 +61,11 @@ function fakeSession(id: string): FakeHttpSession {
     sessionFile: `/tmp/${id}.jsonl`,
     sessionName: null,
     contextUsage: null,
+    entries: [],
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
-    snapshot: () => ({ session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
+    snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
+    send: async () => ({ data: { commands: [] } }),
   };
 }
 
@@ -222,6 +226,26 @@ test('GET /api/files without sessionId is rejected with 400', async () => {
   assert.match((await jsonBody(res)).error, /No live session selected/);
 });
 
+test('GET /api/session-resources returns the complete Pi tool manifest', async () => {
+  const session = fakeSession('tau_manifest');
+  session.entries.push({
+    type: 'custom', customType: 'pi-web-bridge',
+    data: {
+      schemaVersion: 1, revision: 1, model: { provider: 'openai', id: 'gpt-5.5' }, thinkingLevel: 'medium',
+      tools: [
+        { name: 'read', description: 'Read files', parameters: { type: 'object' }, active: true },
+        { name: 'tau_task', description: 'Track progress', parameters: { type: 'object' }, active: true },
+      ],
+    },
+  });
+  liveManager.sessions.set(session.id, session);
+  const res = await fetch(`${base}/api/session-resources?sessionId=${session.id}`);
+  assert.equal(res.status, 200);
+  const body = await jsonBody(res);
+  assert.equal(body.toolsComplete, true);
+  assert.deepEqual(body.tools.map((tool: { name: string }) => tool.name), ['read', 'tau_task']);
+});
+
 test('GET /api/file/preview without sessionId is rejected with 400', async () => {
   const res = await fetch(`${base}/api/file/preview?path=/x.png`);
   assert.equal(res.status, 400);
@@ -342,13 +366,35 @@ test('POST /api/sessions/switch is no longer a supported API', async () => {
   assert.equal(body.error, 'Not found');
 });
 
-test('GET /api/sessions/:project/:file streams the parsed session entries', async () => {
+test('GET /api/sessions/:project/:file returns the projected session snapshot', async () => {
   writeSessionFile([{ type: 'session', id: 's' }, { type: 'message', message: { role: 'user', content: 'hi' } }]);
   const res = await fetch(`${base}/api/sessions/--tmp--httpproj/s.jsonl`);
   assert.equal(res.status, 200);
   const body = await jsonBody(res);
-  assert.equal(body.entries.length, 2);
-  assert.equal(body.entries[0].type, 'session');
+  assert.equal(body.schemaVersion, 1);
+  assert.equal(body.entries.length, 1);
+  assert.equal(body.entries[0].type, 'message');
+});
+
+test('history and file snapshots select the same current parentId branch', async () => {
+  const rows = [
+    { type: 'session', id: 's', cwd: '/tmp' },
+    { type: 'message', id: 'root', parentId: null, message: { role: 'user', content: 'root' } },
+    { type: 'message', id: 'abandoned', parentId: 'root', message: { role: 'assistant', content: 'old answer' } },
+    { type: 'message', id: 'current', parentId: 'root', message: { role: 'assistant', content: 'current answer' } },
+  ];
+  writeSessionFile(rows);
+
+  const [historyRes, fileRes] = await Promise.all([
+    fetch(`${base}/api/session-history?filePath=${encodeURIComponent(SESSION_FILE)}`),
+    fetch(`${base}/api/sessions/--tmp--httpproj/s.jsonl`),
+  ]);
+  assert.equal(historyRes.status, 200);
+  assert.equal(fileRes.status, 200);
+  const history = await jsonBody(historyRes);
+  const file = await jsonBody(fileRes);
+  assert.deepEqual(history, file);
+  assert.deepEqual(history.entries.map((entry: { id?: string }) => entry.id), ['root', 'current']);
 });
 
 test('GET /api/sessions/:project/:file returns 404 for a missing file', async () => {
@@ -606,7 +652,8 @@ test('POST /api/live-sessions/resume exposes historical entries through the live
   assert.equal(snapshot.session.id, resumeBody.session.id);
   assert.equal(snapshot.session.sessionFile, path.resolve(sessionFile));
   assert.equal(snapshot.session.sessionName, 'Snapshot Chat');
-  assert.deepEqual(snapshot.entries, entries);
+  assert.equal(snapshot.schemaVersion, 1);
+  assert.deepEqual(snapshot.entries, entries.slice(1));
   child.stdin.end();
 });
 

@@ -76,7 +76,27 @@ TAU_PORT=3001 TAU_HOST=0.0.0.0 pi-traffic-workspace
 npm run build
 npm test
 npm run typecheck
+npm run test:pi-smoke
+npm run test:browser-smoke
 ```
+
+### 终端一键启动
+
+在项目根目录的正常用户终端中运行：
+
+```bash
+./start.sh
+```
+
+脚本会先构建项目，然后以前台进程启动服务，默认地址为 `http://127.0.0.1:3000`。服务由当前终端直接管理：按 `Ctrl-C` 或关闭该终端窗口都会同时终止服务，不会在后台留下守护进程。
+
+可以通过环境变量修改监听地址和端口，也可以把服务自身支持的参数追加到脚本后面：
+
+```bash
+TAU_HOST=0.0.0.0 TAU_PORT=3001 ./start.sh --open
+```
+
+首次使用前仍需执行一次 `npm install`。不要使用 `nohup`、在命令末尾添加 `&`，或把脚本交给后台进程管理器，否则服务将不再跟随当前终端窗口退出。
 
 在本项目的 Codex 工作流里，通常使用：
 
@@ -115,14 +135,20 @@ EPERM: operation not permitted, mkdir '~/.pi/agent/trust.json.lock'
 
 ```text
 src/server/
-  server-main.ts       # HTTP API、WebSocket、RPC 分发、文件与资源接口
+  server-main.ts       # HTTP、WebSocket 与 RPC 组合入口
+  router.ts            # 类型化 method/path 路由器
+  api-routes.ts        # API 路由表
   sessions.ts          # Pi RPC 子进程和 live session 生命周期管理
+  session-projection.ts # parentId 分支投影与统一 Snapshot
+  pi-web-bridge.ts     # Pi Web Bridge Envelope 校验
   config.ts            # 端口、host、session 目录、静态资源目录
   model-utils.ts       # 模型列表与 provider/model 解析
   geo-resources.ts     # 会话隔离的 GeoJSON 资源读取、缓存和边界校验
 
 src/public/
-  app-main.ts          # 平台组合入口、会话状态与 WebSocket 事件接线
+  app-main.ts          # 布局与平台组合入口
+  runtime/             # AgentRuntime 与 RuntimeStore
+  controllers/         # Session、ToolExecution、ExtensionUI 控制单元
   message-renderer.ts  # 消息、Markdown、思考卡片、复制逻辑
   tool-card.ts         # 工具调用卡片、中文工具名、耗时、折叠/展开
   session-sidebar.ts   # 左侧会话列表与 live session 同步
@@ -136,6 +162,7 @@ src/public/
 extensions/
   pi-geo-visualization/ # 随 Pi 会话自动加载的 GIS Extension
   pi-task-mode/         # 任务模式、结构化进度和用户交互 Extension
+  pi-web-bridge/        # 工具清单、模型和 thinking 状态桥接
 
 skills/
   geo-visualization-explanation/ # GeoJSON 发布、GeoScene 构建与调试手册
@@ -188,6 +215,9 @@ public/geo-runtime.*
 - Pi 子进程通过内置 Extension Registry 同时加载任务模式与 GIS Extension。
 - 全局 Pi Skill 已迁入仓库，并由服务端通过 `--skill` 显式加载到每个 Web 会话。
 - 增加任务模式 Web Adapter：模式开关、TaskCard、等待状态、交互 Dialog 和 live/history/resume 恢复。
+- live/history/resume 统一使用 branch-aware Session Snapshot，恢复时按 `parentId` 只选择当前分支。
+- 增加 Pi Web Bridge，Web 工具页可读取完整 Tool Manifest，模型和 thinking 变化通过版本化 Envelope 主动同步。
+- 提取类型化 Server Router、AgentRuntime 与三个 Web 控制单元，状态指示灯只消费 RuntimeStore。
 - 建立架构、GIS 技术方案和项目交接文档。
 
 尚未完成：
@@ -196,7 +226,6 @@ public/geo-runtime.*
 - `traffic.*` 业务工具。
 - 交通结果卡片。
 - GIS filter/图例、通用格式转换、矢量瓦片、栅格、时序和地图到 Agent 的反向联动。
-- Pi 完整工具清单的原生 RPC 暴露。
 
 ## 技能与工具查看
 
