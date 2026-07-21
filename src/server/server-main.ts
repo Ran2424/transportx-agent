@@ -20,11 +20,15 @@ import type { Stats, Dirent } from 'node:fs';
 import type { Socket } from 'node:net';
 import type { WebSocket as WsType } from 'ws';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_DIR, PORT, SESSIONS_DIR, STATIC_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PORT, SESSIONS_DIR, STATIC_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
+import { inspectPiRuntime } from './pi-runtime.js';
+import { SESSION_SNAPSHOT_SCHEMA_VERSION, readSessionBranch } from './session-projection.js';
+import { createApiRouter } from './api-routes.js';
+import { latestPiWebBridgeEnvelope } from './pi-web-bridge.js';
 
 type TauWs = WsType & { isAlive?: boolean };
 
@@ -184,20 +188,6 @@ function openUrl(url: string): Promise<void> {
   });
 }
 
-// Fire-and-forget: refresh session.model/thinkingLevel from pi's get_state.
-// Used after prompt/steer/follow_up acks so extension-driven model/thinking
-// changes (e.g. pi-session-model's /session-model) propagate to tau and all
-// clients. Silently skips on failure — the next user input or snapshot resyncs.
-async function refreshSessionModel(session: PiRpcSession | null | undefined) {
-  if (!session || session.terminating) return;
-  const resp = await session.send({ type: 'get_state' }, { timeoutMs: 5000 });
-  const data = (resp && (resp.data || resp.result || resp)) as RpcCommand;
-  if (!data) return;
-  if (data.model !== undefined) session.model = normalizeModel(data.model);
-  if (data.thinkingLevel) session.thinkingLevel = String(data.thinkingLevel);
-  liveManager.broadcastUpdated(session.id);
-}
-
 async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const id = command.id;
   const cmd = command.type;
@@ -250,7 +240,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       const args = ['--export', sf];
       if (command.outputPath) args.push(resolveExportOutputPath(command.outputPath, sf));
       const output = await new Promise<string>((resolve, reject) => {
-        execFile('pi', args, { cwd: session?.cwd || path.dirname(sf), timeout: 30000, encoding: 'utf8' }, (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => {
+        execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(sf), timeout: 30000, encoding: 'utf8' }, (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => {
           if (err) reject(new Error(stderr || err.message)); else resolve(stdout);
         });
       });
@@ -296,15 +286,6 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
     const resp = await session.send(command, { timeoutMs: cmd === 'prompt' ? 10000 : 60000 });
     if (isSetThinkingLevel && resp.success === false && prevThinkingLevel !== null) {
       session.thinkingLevel = prevThinkingLevel;
-    }
-    // Extension-driven model/thinking changes (e.g. the pi-session-model
-    // `/session-model` slash command) call pi.setModel/pi.setThinkingLevel
-    // inside a prompt/steer/follow_up. Those acks carry no model data and emit
-    // no runtime stream event, so tau would stay stale. Fire-and-forget a
-    // get_state refresh so tau and all clients learn the new model/level. Do
-    // NOT block this HTTP response — return the original ack first.
-    if (resp.success !== false && (cmd === 'prompt' || cmd === 'steer' || cmd === 'follow_up')) {
-      refreshSessionModel(session).catch(() => {});
     }
     return { ...resp, success: resp.success !== false };
   } catch (e) {
@@ -374,131 +355,36 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   }
   if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
 
-  const parsed = new URL(`http://localhost${req.url}`);
-  const cleanPath = parsed.pathname;
-
-  if (cleanPath === '/api/health') return json(res, 200, { status: 'ok', role: 'rpc-session-manager', liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform });
-  if (cleanPath === '/api/live-sessions' && req.method === 'GET') return json(res, 200, { sessions: liveManager.list() });
-  if (cleanPath === '/api/live-sessions' && req.method === 'POST') {
-    readBody(req).then(async (body) => {
-      try {
-        const name = typeof body.name === 'string' ? body.name.trim() : '';
-        const session = await liveManager.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null });
-        json(res, 200, { session: session.metadata() });
-      } catch (e) { json(res, 400, { error: errorMessage(e) }); }
-    }).catch((e) => json(res, 400, { error: errorMessage(e) }));
-    return;
-  }
-  if (cleanPath === '/api/live-sessions/resume' && req.method === 'POST') {
-    readBody(req).then(async (body) => {
-      if (!body.filePath || typeof body.filePath !== 'string') return json(res, 400, { error: 'filePath required' });
-      let resolvedFile: string;
-      try { resolvedFile = resolveSessionFile(body.filePath); } catch (e) { return json(res, 400, { error: errorMessage(e) }); }
-      const existing = liveManager.findBySessionFile(resolvedFile);
-      if (existing) return json(res, 200, { session: existing.metadata(), reused: true });
-      let cwd: string | null = normalizeSessionCwd(body.cwd);
-      if (!cwd) cwd = readSessionHeaderCwd(resolvedFile);
-      if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
-        return json(res, 400, { error: 'Cannot resume session because its project directory no longer exists' });
-      }
-      const entries = readSessionEntries(resolvedFile) as JsonRecord[];
-      const sessionName = deriveSessionNameFromEntries(entries);
-      const reusedPending = liveManager.hasPendingResume(resolvedFile);
-      try {
-        const session = await liveManager.resume({ sessionFile: resolvedFile, cwd, model: body.model || '', entries, sessionName });
-        json(res, 200, { session: session.metadata(), ...(reusedPending ? { reused: true } : {}) });
-      } catch (e) { json(res, 400, { error: errorMessage(e) }); }
-    }).catch((e) => json(res, 400, { error: errorMessage(e) }));
-    return;
-  }
-  if (handleGeoResourceRoute(req, res, cleanPath, { getSession: (sessionId) => liveManager.get(sessionId) })) return;
-  const liveMatch = cleanPath.match(/^\/api\/live-sessions\/([^/]+)(?:\/snapshot)?$/);
-  if (liveMatch) {
-    let id;
-    try {
-      id = decodeURIComponent(liveMatch[1]);
-    } catch {
-      return json(res, 400, { error: 'Malformed live session id' });
-    }
-    const session = liveManager.get(id);
-    if (!session) return json(res, 404, { error: 'Live session not found' });
-    const isSnapshotRoute = cleanPath.endsWith('/snapshot');
-    if (isSnapshotRoute && req.method === 'GET') return json(res, 200, session.snapshot());
-    if (!isSnapshotRoute && req.method === 'DELETE') { liveManager.delete(id, 'closed_by_user').then(() => json(res, 200, { success: true })); return; }
-  }
-
-  if (cleanPath === '/api/projects' && req.method === 'GET') return serveProjectsList(res);
-  if (cleanPath === '/api/sessions' && req.method === 'GET') return serveSessionsList(res);
-  if (cleanPath.startsWith('/api/search') && req.method === 'GET') return serveSearch(res, parsed.searchParams.get('q') || '');
-  if ((cleanPath === '/api/files') && req.method === 'GET') {
-    const explicitPath = parsed.searchParams.get('path');
-    const sessionId = parsed.searchParams.get('sessionId');
-    if (!sessionId) return json(res, 400, { error: 'No live session selected' });
-    const session = liveManager.get(sessionId);
-    if (!session) return json(res, 404, { error: 'Live session not found' });
-    try {
-      const dirPath = resolveLiveSessionPath(session, explicitPath || session.cwd);
-      return serveFileList(res, dirPath);
-    } catch (e) { return json(res, errorStatus(e), { error: errorMessage(e) }); }
-  }
-  if (cleanPath === '/api/session-resources' && req.method === 'GET') {
-    const sessionId = parsed.searchParams.get('sessionId');
-    if (!sessionId) return json(res, 400, { error: 'No live session selected' });
-    const session = liveManager.get(sessionId);
-    if (!session) return json(res, 404, { error: 'Live session not found' });
-    serveSessionResources(res, session).catch((e) => json(res, 500, { error: errorMessage(e) }));
-    return;
-  }
-  if (cleanPath === '/api/file/preview' && req.method === 'GET') {
-    const sessionId = parsed.searchParams.get('sessionId');
-    if (!sessionId) return json(res, 400, { error: 'No live session selected' });
-    const session = liveManager.get(sessionId);
-    if (!session) return json(res, 404, { error: 'Live session not found' });
-    try {
-      const filePath = resolveLiveSessionPath(session, parsed.searchParams.get('path'));
-      return serveFilePreview(res, filePath);
-    } catch (e) { return json(res, errorStatus(e), { error: errorMessage(e) }); }
-  }
-  if (cleanPath === '/api/open' && req.method === 'POST') {
-    readBody(req).then((body) => {
-      try {
-        const filePath = resolveOpenPath(body);
-        return openNative(filePath)
-          .then(() => json(res, 200, { ok: true }))
-          .catch((e) => json(res, 500, { error: errorMessage(e) }));
-      } catch (e) {
-        return json(res, errorStatus(e), { error: errorMessage(e) });
-      }
-    }).catch((e) => json(res, 400, { error: errorMessage(e) }));
-    return;
-  }
-  if (cleanPath === '/api/rpc' && req.method === 'POST') {
-    readBody(req).then((body) => handleRpcCommand(body).then((resp) => json(res, 200, resp))).catch((e) => json(res, 400, { error: errorMessage(e) }));
-    return;
-  }
-  if (cleanPath === '/api/sessions/delete' && req.method === 'POST') {
-    readBody(req).then((body) => {
-      if (!body.filePath || typeof body.filePath !== 'string') return json(res, 400, { error: 'filePath required' });
-      const sessionFile = resolveSessionFile(body.filePath);
-      fs.unlinkSync(sessionFile);
-      json(res, 200, { success: true });
-    }).catch((e) => json(res, 400, { error: errorMessage(e) }));
-    return;
-  }
-  if (cleanPath === '/api/session-history' && req.method === 'GET') {
-    const filePath = parsed.searchParams.get('filePath') || '';
-    try {
-      const sessionFile = resolveSessionFile(filePath);
-      return json(res, 200, { entries: readSessionEntries(sessionFile) });
-    } catch (e) {
-      return json(res, errorStatus(e), { error: errorMessage(e) });
-    }
-  }
-  const sessionMatch = cleanPath.match(/^\/api\/sessions\/([^/]+)\/([^/]+)$/);
-  if (sessionMatch && req.method === 'GET') return serveSessionFile(res, sessionMatch[1], sessionMatch[2]);
-
-  json(res, 404, { error: 'Not found' });
+  const parsed = new URL(`http://localhost${req.url || urlPath}`);
+  if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (sessionId) => liveManager.get(sessionId) })) return;
+  if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
+
+const apiRouter = createApiRouter({
+  sessions: liveManager,
+  snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION,
+  health: () => ({ status: 'ok', role: 'rpc-session-manager', liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }),
+  json,
+  errorMessage,
+  errorStatus,
+  readBody,
+  resolveSessionFile,
+  sessionCwd: normalizeSessionCwd,
+  readSessionHeaderCwd,
+  readSessionEntries,
+  deriveSessionName: deriveSessionNameFromEntries,
+  serveProjects: serveProjectsList,
+  serveSessions: serveSessionsList,
+  serveSearch,
+  resolveLivePath: resolveLiveSessionPath,
+  serveFiles: serveFileList,
+  serveResources: serveSessionResources,
+  servePreview: serveFilePreview,
+  resolveOpen: resolveOpenPath,
+  openNative,
+  handleRpc: handleRpcCommand,
+  serveSessionFile,
+});
 
 function liveFilesSet() {
   return new Set(liveManager.list().map((s) => s.sessionFile).filter(Boolean));
@@ -509,15 +395,7 @@ function normalizeSessionCwd(cwd: unknown) {
 }
 
 function readSessionEntries(filePath: string): unknown[] {
-  const entries: unknown[] = [];
-  try {
-    const text = fs.readFileSync(filePath, 'utf8');
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      try { entries.push(JSON.parse(line)); } catch { /* skip malformed lines */ }
-    }
-  } catch { /* file may not exist yet */ }
-  return entries;
+  return readSessionBranch(filePath);
 }
 
 function deriveSessionNameFromEntries(entries: JsonRecord[]) {
@@ -672,16 +550,7 @@ async function parseSessionFile(filePath: string) {
 function serveSessionFile(res: ServerResponse, dirName: string, file: string) {
   const filePath = path.join(SESSIONS_DIR, dirName, file);
   if (!fs.existsSync(filePath)) return json(res, 404, { error: 'Session not found' });
-  const entries: unknown[] = [];
-  const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-  let buffer = '';
-  stream.on('data', (chunk: string) => {
-    buffer += chunk;
-    const lines = buffer.split('\n'); buffer = lines.pop() || '';
-    for (const line of lines) if (line.trim()) { try { entries.push(JSON.parse(line)); } catch {} }
-  });
-  stream.on('end', () => { if (buffer.trim()) { try { entries.push(JSON.parse(buffer)); } catch {} } json(res, 200, { entries }); });
-  stream.on('error', (e: Error) => json(res, 500, { error: e.message }));
+  return json(res, 200, { schemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, entries: readSessionEntries(filePath) });
 }
 
 const IGNORED_NAMES = new Set(['node_modules', '.git', '__pycache__', '.DS_Store', '.Trash', '.next', '.nuxt', 'dist', 'build', '.cache', '.turbo', 'venv', '.venv', 'env', '.env.local', '.pi', 'coverage', '.nyc_output', '.parcel-cache']);
@@ -733,10 +602,28 @@ async function serveSessionResources(res: ServerResponse, session: PiRpcSession)
     }))
     .filter((command) => command.name);
 
+  const observedTools = collectSessionTools(session.entries);
+  const observedByName = new Map(observedTools.map((tool) => [tool.name, tool]));
+  const bridge = latestPiWebBridgeEnvelope(session.entries);
+  const tools = bridge ? bridge.tools.map((tool) => {
+    const observed = observedByName.get(tool.name);
+    return {
+      name: tool.name,
+      label: tool.name,
+      description: tool.description,
+      usedCount: observed?.usedCount || 0,
+      lastPreview: observed?.lastPreview || '',
+      source: tool.sourceInfo || 'pi-manifest',
+      active: tool.active,
+      parameters: tool.parameters,
+      promptGuidelines: tool.promptGuidelines,
+    };
+  }) : observedTools;
+
   json(res, 200, {
     skills,
-    tools: collectSessionTools(session.entries),
-    toolsComplete: false,
+    tools,
+    toolsComplete: !!bridge,
     commandsError: commandsError || undefined,
   });
 }
@@ -1020,6 +907,8 @@ async function shutdown(signal: string) {
   setTimeout(() => process.exit(0), 2500).unref();
 }
 function startCli() {
+  const piRuntime = inspectPiRuntime(PI_COMMAND);
+  console.log(`[Tau] Pi runtime: ${piRuntime.command} ${piRuntime.version}`);
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('exit', () => {

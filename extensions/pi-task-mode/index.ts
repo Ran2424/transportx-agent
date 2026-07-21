@@ -17,6 +17,7 @@ import {
 } from './task-state.ts';
 
 const STATE_ENTRY = 'pi-task-mode';
+const STATE_SCHEMA_VERSION = 1 as const;
 const TASK_INSTRUCTIONS = `当前会话处于任务模式。
 
 任务模式开启时，凡涉及分析的请求，必须先调用 tau_task 并使用 action="start" 创建 2–8 个简短步骤。
@@ -109,17 +110,28 @@ export default function taskModeExtension(pi: ExtensionAPI) {
   let modeEnabled = false;
   let currentTask: TaskSnapshot | null = null;
   let interactionPending = false;
+  let stateRevision = 0;
 
   const persistState = () => {
-    pi.appendEntry(STATE_ENTRY, { enabled: modeEnabled, ...(currentTask ? { task: currentTask } : {}) });
+    stateRevision += 1;
+    pi.appendEntry(STATE_ENTRY, {
+      schemaVersion: STATE_SCHEMA_VERSION,
+      revision: stateRevision,
+      enabled: modeEnabled,
+      ...(currentTask ? { task: currentTask } : {}),
+    });
   };
 
   const restore = (ctx: ExtensionContext) => {
     modeEnabled = false;
     currentTask = null;
+    stateRevision = 0;
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type === 'custom' && entry.customType === STATE_ENTRY) {
-        const data = entry.data as { enabled?: unknown; task?: unknown } | undefined;
+        const data = entry.data as { schemaVersion?: unknown; revision?: unknown; enabled?: unknown; task?: unknown } | undefined;
+        if (data?.schemaVersion === STATE_SCHEMA_VERSION && Number.isInteger(data.revision) && Number(data.revision) > stateRevision) {
+          stateRevision = Number(data.revision);
+        }
         if (typeof data?.enabled === 'boolean') modeEnabled = data.enabled;
         const task = parseTaskSnapshot(data?.task);
         if (task) currentTask = task;

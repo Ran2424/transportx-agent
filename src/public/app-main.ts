@@ -2,11 +2,10 @@
  * Main App - Ties everything together
  */
 
-import { WebSocketClient } from './websocket-client.js';
 import { StateManager } from './state.js';
 import { MessageRenderer } from './message-renderer.js';
-import { ToolCardRenderer, formatToolResultText, type ToolExecution, type ToolResult } from './tool-card.js';
-import { DialogHandler, type DialogRequest } from './dialogs.js';
+import { ToolCardRenderer, formatToolResultText } from './tool-card.js';
+import { DialogHandler } from './dialogs.js';
 import { SessionSidebar, type SidebarProject, type SidebarSession } from './session-sidebar.js';
 import { themes, applyTheme, getCurrentTheme } from './themes.js';
 import { getFileIcon } from './file-browser.js';
@@ -19,34 +18,27 @@ import { WorkspaceController } from './workspace/workspace-controller.js';
 import { FeatureRegistry } from './features/feature-registry.js';
 import { GeoFeature } from './features/geo/geo-feature.js';
 import { TaskModeFeature } from './features/task/task-mode-feature.js';
+import { AgentRuntime } from './runtime/agent-runtime.js';
+import { SessionController } from './controllers/session-controller.js';
+import { ToolExecutionController } from './controllers/tool-execution-controller.js';
+import { ExtensionUIController } from './controllers/extension-ui-controller.js';
 
-import type { AppEvent, AppMessage, ExtensionUIRequest, LiveInstance, LiveSession, MessageContentBlock, ModelRecord, PendingFilePath, PendingImage, QueuedCommand, RpcCommand, UsageRecord } from './app-types.js';
+import type { AppEvent, AppMessage, LiveInstance, LiveSession, MessageContentBlock, ModelRecord, PendingFilePath, PendingImage, QueuedCommand, RpcCommand, SessionEntry, SessionSnapshot, UsageRecord } from './app-types.js';
 
-type SessionHistoryEntry = {
-  type?: string;
-  message?: AppMessage;
-  customType?: string;
-  data?: unknown;
-};
+type SessionHistoryEntry = SessionEntry;
 
 type DurationCacheEntry = { durationMs: number; updatedAt: number };
 type DurationCache = Record<string, DurationCacheEntry>;
 
-type LiveSessionSnapshotData = {
-  sessionId?: string;
-  sessionFile?: string | null;
-  session?: { sessionFile?: string | null };
-  isStreaming?: boolean;
-  model?: ModelRecord | null;
-  thinkingLevel?: string;
-  entries?: SessionHistoryEntry[];
-};
+type LiveSessionSnapshotData = Partial<SessionSnapshot> & { entries?: SessionHistoryEntry[] };
 
 type RpcEventDetail = { sessionId?: string; event?: AppEvent };
 
 // Initialize components
 const wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
-const wsClient = new WebSocketClient(wsUrl);
+const agentRuntime = new AgentRuntime(wsUrl);
+const wsClient = agentRuntime.transport;
+const runtimeStore = agentRuntime.store;
 const state = new StateManager();
 // All element lookups below query the app's static index.html shell, which is
 // present before this module runs (the script is a deferred module at the end
@@ -84,9 +76,10 @@ let statusFlashTimer: ReturnType<typeof setTimeout> | null = null;
 // Only touches the indicator class (not statusText), so callers can set the
 // accompanying text themselves.
 function restoreStatusIndicator() {
-  const open = wsClient.ws?.readyState === WebSocket.OPEN;
+  const { connection, isStreaming } = runtimeStore.snapshot;
+  const open = connection === 'connected';
   statusIndicator.className = `status-indicator ${
-    open && state.isStreaming ? 'streaming' : (open ? 'connected' : 'disconnected')
+    open && isStreaming ? 'streaming' : (open ? 'connected' : 'disconnected')
   }`;
 }
 // Set a transient statusText message and schedule its restore. Cancels any
@@ -132,9 +125,10 @@ function flashStatusError(msg: string, ms = 3000) {
   statusFlashTimer = setTimeout(() => {
     statusFlashTimer = null;
     restoreStatusIndicator();
-    const open = wsClient.ws?.readyState === WebSocket.OPEN;
+    const { connection, isStreaming } = runtimeStore.snapshot;
+    const open = connection === 'connected';
     // Preserve an in-progress stream: restore the streaming text too.
-    statusText.textContent = (open && state.isStreaming) ? '处理中...'
+    statusText.textContent = (open && isStreaming) ? '处理中...'
       : (open ? '已连接' : '已断开');
   }, ms);
 }
@@ -191,11 +185,11 @@ let activeLiveSessionFile: string | null = null; // The active live session file
 let viewingActiveSession = false; // Whether we're viewing a live backend Tau tab or historical read-only session
 let hasReceivedInitialServerState = false;
 let liveInstances: LiveInstance[] = []; // Sidebar live indicators derived from backend live sessions
-let liveSessions: LiveSession[] = [];
+const sessionController = new SessionController();
+const liveSessions = sessionController.sessions;
 let activeLiveSessionId = localStorage.getItem('tau-active-live-session-id') || null;
+sessionController.activate(activeLiveSessionId);
 let hasRestoredInitialLiveSession = false;
-let pendingExtensionUIRequests: ExtensionUIRequest[] = []; // background session UI requests waiting for that Tau tab to be selected
-dialogHandler.onIdle = () => processQueuedExtensionUIRequest();
 
 const TOOL_DURATION_CACHE_KEY = 'tau-tool-duration-cache-v1';
 const THINKING_DURATION_CACHE_KEY = 'tau-thinking-duration-cache-v1';
@@ -335,6 +329,21 @@ const taskModeFeature = new TaskModeFeature({
   },
 });
 featureRegistry.register(taskModeFeature);
+const toolExecutionController = new ToolExecutionController({
+  state,
+  renderer: toolCardRenderer,
+  features: featureRegistry,
+  workspace: workspaceController,
+  formatResult: formatToolResultText,
+  rememberDuration: rememberToolDuration,
+});
+const extensionUIController = new ExtensionUIController({
+  dialogs: dialogHandler,
+  activeSessionId: () => activeLiveSessionId,
+  isActiveSessionVisible: () => viewingActiveSession,
+  onChange: renderLiveTabs,
+});
+dialogHandler.onIdle = () => extensionUIController.process();
 workspaceController.start();
 
 
@@ -358,9 +367,9 @@ window.addEventListener('blur', () => {
 
 // Reconnect WebSocket when returning to the app (iOS suspends WS connections)
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && wsClient.ws?.readyState !== WebSocket.OPEN) {
+  if (document.visibilityState === 'visible' && runtimeStore.snapshot.connection !== 'connected') {
     console.log('[App] Returning to app, reconnecting...');
-    wsClient.forceReconnect();
+    agentRuntime.forceReconnect();
   }
 });
 
@@ -405,18 +414,12 @@ function showNewMessageBadge() {
 // ═══════════════════════════════════════
 
 wsClient.addEventListener('connected', () => {
-  updateConnectionStatus('connected');
   // Fetch model context window size for token % display
   setTimeout(fetchContextWindow, 1000);
 
 });
 
-wsClient.addEventListener('disconnected', () => {
-  updateConnectionStatus('disconnected');
-});
-
 wsClient.addEventListener('reconnectFailed', () => {
-  updateConnectionStatus('disconnected');
   messageRenderer.renderError('连接已断开，请刷新页面。');
 });
 
@@ -459,6 +462,8 @@ wsClient.addEventListener('stateUpdate', (e: Event) => {
   } else {
     if (activeLiveSessionId && !liveSessions.some(s => s.id === activeLiveSessionId)) {
       activeLiveSessionId = null;
+      sessionController.activate(null);
+      agentRuntime.activateSession(null);
       featureRegistry.setSession(null, null);
       localStorage.removeItem('tau-active-live-session-id');
       renderQueuedMessages();
@@ -505,7 +510,7 @@ const newLiveSessionSubmit = document.getElementById('new-live-session-submit') 
 const DEFAULT_TASK_CWD = '/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/scenario';
 
 function setLiveSessions(sessions: LiveSession[]) {
-  liveSessions = sessions || [];
+  sessionController.replace(sessions || []);
   liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
   renderLiveTabs();
   syncSidebarLiveSessions();
@@ -513,9 +518,9 @@ function setLiveSessions(sessions: LiveSession[]) {
 
 function handleLiveSessionClosed(closedId: string) {
   if (!closedId) return;
-  liveSessions = liveSessions.filter(s => s.id !== closedId);
+  sessionController.remove(closedId);
   messageQueue = messageQueue.filter(cmd => cmd.sessionId !== closedId);
-  pendingExtensionUIRequests = pendingExtensionUIRequests.filter(req => req.sessionId !== closedId);
+  extensionUIController.dropSession(closedId);
   if (dialogHandler.currentRequest?.sessionId === closedId) {
     dialogHandler.clearCurrentDialog();
     processQueuedExtensionUIRequest();
@@ -524,6 +529,8 @@ function handleLiveSessionClosed(closedId: string) {
   if (activeLiveSessionId === closedId) {
     const wasViewingActive = viewingActiveSession;
     activeLiveSessionId = null;
+    sessionController.activate(null);
+    agentRuntime.activateSession(null);
     localStorage.removeItem('tau-active-live-session-id');
     activeLiveSessionFile = null;
     currentStreamingElement = null;
@@ -559,10 +566,10 @@ function upsertLiveSession(session: LiveSession) {
   let shouldRenderTabs = false;
   if (idx >= 0) {
     const before = liveTabSignature(liveSessions[idx]);
-    liveSessions[idx] = { ...liveSessions[idx], ...session };
+    sessionController.upsert(session);
     shouldRenderTabs = before !== liveTabSignature(liveSessions[idx]);
   } else {
-    liveSessions.push(session);
+    sessionController.upsert(session);
     shouldRenderTabs = true;
   }
   liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
@@ -571,9 +578,7 @@ function upsertLiveSession(session: LiveSession) {
 }
 
 function getMostRecentLiveSession() {
-  return [...liveSessions].sort((a, b) =>
-    new Date(b.lastActiveAt || b.createdAt || 0).getTime() - new Date(a.lastActiveAt || a.createdAt || 0).getTime()
-  )[0] || null;
+  return sessionController.mostRecent();
 }
 
 function basename(p: string) {
@@ -645,6 +650,8 @@ function restoreActiveLiveSession() {
     selectLiveSession(next.id);
   } else {
     activeLiveSessionId = null;
+    sessionController.activate(null);
+    agentRuntime.activateSession(null);
     featureRegistry.setSession(null, null);
     viewingActiveSession = false;
     activeLiveSessionFile = null;
@@ -663,6 +670,8 @@ async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFai
   suspendCurrentDialogForTabSwitch(id);
   launcherPanel.hide();
   activeLiveSessionId = id;
+  sessionController.activate(id);
+  agentRuntime.activateSession(id, !!session.isStreaming);
   featureRegistry.setSession(id, id, true);
   localStorage.setItem('tau-active-live-session-id', id);
   viewingActiveSession = true;
@@ -688,10 +697,12 @@ async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFai
     applyLiveSessionSnapshot({ ...data, sessionId: id });
   } catch (e) {
     if (options.keepCurrentMessagesOnFailure) {
-      liveSessions = liveSessions.filter(s => s.id !== id);
+      sessionController.remove(id);
       liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
       if (activeLiveSessionId === id) {
         activeLiveSessionId = null;
+        sessionController.activate(null);
+        agentRuntime.activateSession(null);
         featureRegistry.setSession(previousFeatureSession.sessionKey, previousFeatureSession.resourceSessionId);
         localStorage.removeItem('tau-active-live-session-id');
         activeLiveSessionFile = null;
@@ -1051,9 +1062,7 @@ function handleMessageUpdate(event: AppEvent) {
 }
 
 function handleMessageEnd(message: AppMessage, sessionId: string | null = activeLiveSessionId) {
-  if (message?.role === 'toolResult' && sessionId) {
-    handleFeatureToolResult(sessionId, message.toolName, { content: message.content, details: message.details }, message.toolCallId || '', false);
-  }
+  toolExecutionController.restoreToolResult(message, sessionId);
   if (!currentStreamingElement && message?.role === 'assistant') {
     messageRenderer.renderAssistantMessage(message, false, true);
   }
@@ -1111,140 +1120,35 @@ function handleMessageEnd(message: AppMessage, sessionId: string | null = active
 }
 
 function handleToolExecutionStart(event: AppEvent) {
-  const { toolCallId, toolName, args } = event;
-  if (!toolCallId) return;
-  const startedAt = Date.now();
-
-  state.addToolExecution(toolCallId, {
-    toolName,
-    args,
-    status: 'pending',
-    startedAt,
-    durationMs: 0,
-  });
-
-  const exec = state.getToolExecution(toolCallId);
-  if (exec) toolCardRenderer.createToolCard(exec as ToolExecution);
-  workspaceController.refreshResourceViewIfVisible('tools');
+  toolExecutionController.start(event);
 }
 
 function handleToolExecutionUpdate(event: AppEvent, sessionId: string | null = activeLiveSessionId) {
-  const { toolCallId, partialResult } = event;
-  if (!toolCallId) return;
-  const output = formatToolOutput(partialResult);
-  const exec = state.getToolExecution(toolCallId);
-  const startedAt = Number(exec?.startedAt || 0);
-
-  state.updateToolExecution(toolCallId, {
-    status: 'streaming',
-    output,
-    ...(startedAt > 0 ? { durationMs: Date.now() - startedAt } : {}),
-  });
-
-  const updatedExec = state.getToolExecution(toolCallId);
-  if (updatedExec) toolCardRenderer.updateToolCard(updatedExec as ToolExecution);
-  if (sessionId) {
-    const toolName = typeof exec?.toolName === 'string' ? exec.toolName : event.toolName;
-    handleFeatureToolResult(sessionId, toolName, partialResult, toolCallId, false);
-  }
+  toolExecutionController.update(event, sessionId);
 }
 
 function handleToolExecutionEnd(event: AppEvent, sessionId: string | null = activeLiveSessionId) {
-  const { toolCallId, result, isError } = event;
-  if (!toolCallId) return;
-  const output = formatToolOutput(result);
-  const exec = state.getToolExecution(toolCallId);
-  const startedAt = Number(exec?.startedAt || 0);
-  const durationMs = startedAt > 0 ? Date.now() - startedAt : undefined;
-  if (durationMs !== undefined) rememberToolDuration(toolCallId, durationMs, sessionId);
-
-  state.updateToolExecution(toolCallId, {
-    status: isError ? 'error' : 'complete',
-    output,
-    isError,
-    ...(durationMs !== undefined ? { durationMs } : {}),
-  });
-
-  toolCardRenderer.finalizeToolCard(toolCallId, result as ToolResult, isError ?? false, durationMs);
-  if (!isError && sessionId) {
-    const toolName = event.toolName || (typeof exec?.toolName === 'string' ? exec.toolName : undefined);
-    handleFeatureToolResult(sessionId, toolName, result, toolCallId, true);
-  }
-  workspaceController.refreshResourceViewIfVisible('tools');
-}
-
-function handleFeatureToolResult(sessionKey: string, toolName: string | undefined, result: unknown, toolCallId: string, autoOpen: boolean) {
-  const featureResult = featureRegistry.handleToolResult({ sessionKey, toolName, result, autoOpen });
-  if (!featureResult || featureResult.kind !== 'visualization') return;
-  toolCardRenderer.setVisualizationSummary(toolCallId, {
-    id: featureResult.id,
-    title: featureResult.title,
-    revision: featureResult.revision,
-    layers: featureResult.layers,
-    sources: featureResult.sources,
-  });
+  toolExecutionController.end(event, sessionId);
 }
 
 function hasPendingExtensionUIRequest(sessionId: string) {
-  return pendingExtensionUIRequests.some(req => req.sessionId === sessionId);
+  return extensionUIController.hasPending(sessionId);
 }
 
 function queueExtensionUIRequest(event: AppEvent, sessionId: string) {
-  if (!sessionId) {
-    handleExtensionUIRequest(event, sessionId);
-    return;
-  }
-  if (!pendingExtensionUIRequests.some(req => req.sessionId === sessionId && req.event?.id === event.id)) {
-    pendingExtensionUIRequests.push({ sessionId, event });
-  }
-  renderLiveTabs();
+  extensionUIController.enqueue(event, sessionId);
 }
 
 function processQueuedExtensionUIRequest(sessionId = activeLiveSessionId) {
-  if (!sessionId || !viewingActiveSession || sessionId !== activeLiveSessionId || dialogHandler.currentRequest) return;
-  const idx = pendingExtensionUIRequests.findIndex(req => req.sessionId === sessionId);
-  if (idx === -1) return;
-  const [{ event }] = pendingExtensionUIRequests.splice(idx, 1);
-  renderLiveTabs();
-  handleExtensionUIRequest(event, sessionId);
+  extensionUIController.process(sessionId);
 }
 
 function suspendCurrentDialogForTabSwitch(nextSessionId: string) {
-  const current = dialogHandler.currentRequest;
-  if (!current?.sessionId || current.sessionId === nextSessionId) return;
-  const event = current.request;
-  if (event && !pendingExtensionUIRequests.some(req => req.sessionId === current.sessionId && req.event?.id === event.id)) {
-    pendingExtensionUIRequests.unshift({ sessionId: current.sessionId, event });
-  }
-  dialogHandler.clearCurrentDialog();
-  renderLiveTabs();
+  extensionUIController.suspendForSession(nextSessionId);
 }
 
 function handleExtensionUIRequest(event: AppEvent, sessionId: string | null = null) {
-  const request = (sessionId ? { ...event, sessionId } : event) as DialogRequest;
-  switch (event.method) {
-    case 'select':
-      dialogHandler.showSelect(request);
-      break;
-    case 'confirm':
-      dialogHandler.showConfirm(request);
-      break;
-    case 'input':
-      dialogHandler.showInput(request);
-      break;
-    case 'editor':
-      dialogHandler.showEditor(request);
-      break;
-    case 'notify':
-      dialogHandler.showNotification(request);
-      break;
-    default:
-      console.warn('[App] Unknown extension UI method:', event.method);
-  }
-}
-
-function formatToolOutput(result: unknown) {
-  return formatToolResultText(result);
+  extensionUIController.show(event, sessionId);
 }
 
 // ═══════════════════════════════════════
@@ -1554,7 +1458,7 @@ async function rpcCommand(cmd: RpcCommand, statusMsg = '') {
     const needsLiveSession = !cmd.sessionId && !cmd.filePath && !backendLocalCommands.has(cmd.type);
     if (needsLiveSession && (!viewingActiveSession || !activeLiveSessionId)) {
       const error = '请先选择一个正在运行的交通任务。';
-      setStatusMessage(error, wsClient.ws?.readyState === WebSocket.OPEN ? '已连接' : '已断开', 3000);
+      setStatusMessage(error, runtimeStore.snapshot.connection === 'connected' ? '已连接' : '已断开', 3000);
       return { type: 'response', command: cmd.type, success: false, error };
     }
     if (!cmd.sessionId && viewingActiveSession && activeLiveSessionId) cmd = { ...cmd, sessionId: activeLiveSessionId };
@@ -1872,6 +1776,7 @@ function applyLiveSessionSnapshot(data: LiveSessionSnapshotData) {
   if (activeLiveSessionId) sidebar.setActive(activeLiveSessionFile, activeLiveSessionId);
   viewingActiveSession = !!activeLiveSessionId;
   state.setStreaming(!!data.isStreaming);
+  agentRuntime.activateSession(activeLiveSessionId, !!data.isStreaming);
   showTypingIndicator(!!data.isStreaming);
   updateLiveSessionInputState();
   updateUI();
@@ -1937,6 +1842,7 @@ async function pollInstances() {
         handleLiveSessionClosed(wasActive);
       } else if (activeSession && viewingActiveSession) {
         state.setStreaming(!!activeSession.isStreaming);
+        agentRuntime.activateSession(activeSession.id, !!activeSession.isStreaming);
         showTypingIndicator(!!activeSession.isStreaming);
         applyActiveSessionMetadata(activeSession);
         updateLiveSessionInputState();
@@ -2062,13 +1968,7 @@ function renderSessionHistory(entries: SessionHistoryEntry[]) {
         msg.isError ?? false
       );
       if (featureRegistry.sessionKey) {
-        handleFeatureToolResult(
-          featureRegistry.sessionKey,
-          msg.toolName,
-          { content: msg.content, details: msg.details },
-          msg.toolCallId || '',
-          false
-        );
+        toolExecutionController.restoreToolResult(msg, featureRegistry.sessionKey);
       }
     }
   }
@@ -2164,11 +2064,14 @@ async function fetchContextWindow() {
 
 let tailscaleUrl = '';
 
-function updateConnectionStatus(status: string) {
+function updateConnectionStatus() {
+  if (statusFlashTimer !== null) return;
+  const { connection, isStreaming } = runtimeStore.snapshot;
+  const status = connection === 'connected' && isStreaming ? 'streaming' : connection;
   statusIndicator.className = `status-indicator ${status}`;
 
-  if (status === 'connected') {
-    statusText.textContent = tailscaleUrl ? '已连接 • TS' : '已连接';
+  if (connection === 'connected') {
+    statusText.textContent = isStreaming ? '处理中...' : (tailscaleUrl ? '已连接 • TS' : '已连接');
     statusText.title = tailscaleUrl || '';
     // Fetch tailscale info on first connect
     if (!tailscaleUrl) {
@@ -2180,9 +2083,7 @@ function updateConnectionStatus(status: string) {
         }
       }).catch(() => {});
     }
-  } else if (status === 'disconnected') {
-    statusText.textContent = '已断开';
-  }
+  } else statusText.textContent = connection === 'connecting' ? '连接中...' : '已断开';
 }
 
 function updateUI() {
@@ -2194,17 +2095,7 @@ function updateUI() {
   // re-derives the current connection/streaming state, so skipping here is
   // safe. Other UI updates below (input enabling, abort button, etc.) still
   // run normally.
-  if (statusFlashTimer === null) {
-    if (isStreaming) {
-      statusIndicator.classList.add('streaming');
-      statusIndicator.classList.remove('connected');
-      statusText.textContent = '处理中...';
-    } else {
-      statusIndicator.classList.remove('streaming');
-      statusIndicator.classList.add('connected');
-      statusText.textContent = '已连接';
-    }
-  }
+  updateConnectionStatus();
 
   messageInput.disabled = !hasLiveSession;
   sendBtn.disabled = !hasLiveSession;
@@ -2439,7 +2330,8 @@ if (isMobile()) {
   sidebarEl.classList.add('collapsed');
 }
 
-wsClient.connect();
+runtimeStore.subscribe(() => updateConnectionStatus());
+agentRuntime.connect();
 messageRenderer.renderWelcome();
 updateLiveSessionInputState();
 sidebar.loadSessions().then(() => {

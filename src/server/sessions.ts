@@ -8,6 +8,7 @@ import type { JsonRecord, LiveClient, ModelIdentity, PendingCommand, RpcCommand,
 import {
   BUILTIN_EXTENSION_PATHS,
   BUILTIN_SKILL_PATHS,
+  PI_COMMAND,
   PROJECT_PROMPT_PATH,
   PROJECT_ROOT,
   PROJECT_SKILLS_DIR,
@@ -16,6 +17,8 @@ import {
   expandHome,
 } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
+import { SessionProjection } from './session-projection.js';
+import { PI_WEB_BRIDGE_ENTRY, latestPiWebBridgeEnvelope, parsePiWebBridgeEnvelope } from './pi-web-bridge.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string }>;
@@ -136,7 +139,7 @@ export class PiRpcSession {
   createdAt: string;
   lastActiveAt: string;
   isStreaming: boolean;
-  entries: JsonRecord[];
+  projection: SessionProjection;
   model: ModelIdentity | null;
   thinkingLevel: string;
   sessionFile: string | null;
@@ -159,13 +162,12 @@ export class PiRpcSession {
     this.createdAt = new Date().toISOString();
     this.lastActiveAt = this.createdAt;
     this.isStreaming = false;
-    this.entries = [];
+    this.projection = new SessionProjection(opts.entries || []);
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
     this.thinkingLevel = parsed.level || 'off';
     this.sessionFile = opts.sessionFile || null;
     this.sessionName = opts.sessionName || null;
-    if (opts.entries && opts.entries.length) this.entries = opts.entries;
     this.contextUsage = null;
     this.pending = new Map();
     this.stdoutBuffer = '';
@@ -173,6 +175,7 @@ export class PiRpcSession {
     this.exitCode = null;
     this.titleSet = false;
     this.userMessages = [];
+    this.applyBridgeEnvelope(latestPiWebBridgeEnvelope(this.projection.entries));
   }
 
   metadata() {
@@ -195,8 +198,8 @@ export class PiRpcSession {
 
   snapshot() {
     return {
+      ...this.projection.snapshot(),
       session: this.metadata(),
-      entries: this.entries,
       model: this.model,
       thinkingLevel: this.thinkingLevel,
       isStreaming: this.isStreaming,
@@ -204,6 +207,10 @@ export class PiRpcSession {
       sessionName: this.sessionName,
       contextUsage: this.contextUsage,
     };
+  }
+
+  get entries() {
+    return this.projection.entries;
   }
 
   async start() {
@@ -223,7 +230,7 @@ export class PiRpcSession {
     if (this.sessionFile) args.push('--session', this.sessionFile);
     if (this.modelSpec) args.push('--model', this.modelSpec);
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
-    const child = spawnFn('pi', args, {
+    const child = spawnFn(PI_COMMAND, args, {
       cwd: this.cwd,
       env: { ...process.env, TAU_DISABLED: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -268,9 +275,12 @@ export class PiRpcSession {
       }, 100);
     });
 
-    // Give Pi a moment to enter RPC mode, then ask for stats. Do not fail session
-    // creation if this convenience command is unavailable.
+    // Give Pi a moment to enter RPC mode, then establish its canonical startup
+    // state once. This discovers the session file so the projection can ingest
+    // startup bridge entries; unlike the old implementation, prompts do not
+    // trigger repeated get_state polling.
     setTimeout(() => {
+      this.send({ type: 'get_state' }, { timeoutMs: 5000 }).catch(() => {});
       this.send({ type: 'get_session_stats' }, { timeoutMs: 5000 }).catch(() => {});
     }, 250);
   }
@@ -342,7 +352,10 @@ export class PiRpcSession {
   updateStateFromResponse(resp: PiRpcMessage) {
     const data: PiRpcPayload = resp.data || resp.result || resp;
     const command = resp.command || data.command;
-    if (data.sessionFile) this.sessionFile = data.sessionFile;
+    if (data.sessionFile) {
+      this.sessionFile = data.sessionFile;
+      this.reconcileProjection();
+    }
     if (data.sessionName) this.setSessionName(data.sessionName);
     if (data.contextUsage) this.contextUsage = data.contextUsage;
     if (data.model) this.model = normalizeModel(data.model);
@@ -375,7 +388,8 @@ export class PiRpcSession {
       ? event.entry as JsonRecord
       : null;
     if (type === 'entry_appended' && appendedEntry?.type === 'custom') {
-      this.entries.push(appendedEntry);
+      this.projection.append(appendedEntry);
+      if (appendedEntry.customType === PI_WEB_BRIDGE_ENTRY) this.applyBridgeEnvelope(parsePiWebBridgeEnvelope(appendedEntry.data));
     }
     // NOTE: the assistant `message_end` event carries `event.message.model` as
     // a bare id describing WHICH model produced that message, not a selection
@@ -385,19 +399,32 @@ export class PiRpcSession {
     if (type === 'message_end' && event.message?.role === 'assistant') {
       if (event.message.usage) this.contextUsage = { ...(this.contextUsage || {}), usage: event.message.usage };
     }
+    if (type === 'agent_end') this.reconcileProjection();
 
     this.manager.broadcast({ type: 'event', sessionId: this.id, event });
     this.manager.broadcastUpdated(this.id);
+  }
+
+  applyBridgeEnvelope(envelope: ReturnType<typeof parsePiWebBridgeEnvelope>) {
+    if (!envelope) return;
+    if (envelope.model) this.model = envelope.model;
+    this.thinkingLevel = envelope.thinkingLevel;
+  }
+
+  reconcileProjection() {
+    if (!this.projection.reconcile(this.sessionFile)) return false;
+    this.applyBridgeEnvelope(latestPiWebBridgeEnvelope(this.projection.entries));
+    return true;
   }
 
   trackMessage(message: PiMessage, eventType: string) {
     if (message.role === 'user' && eventType === 'message_start') {
       const text = this.messageText(message);
       if (text) this.userMessages.push(text.slice(0, 300));
-      this.entries.push({ type: 'message', message });
+      this.projection.appendMessage(message as JsonRecord);
       this.maybeTitle();
     } else if (message.role !== 'user' && eventType === 'message_end') {
-      this.entries.push({ type: 'message', message });
+      this.projection.appendMessage(message as JsonRecord);
     }
   }
 

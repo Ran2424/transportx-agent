@@ -11,6 +11,8 @@ node_modules/
 /public/*.js.map
 /public/*.d.ts
 /public/features/
+/public/controllers/
+/public/runtime/
 /public/visualization/
 /public/workspace/
 /public/geo-runtime.css

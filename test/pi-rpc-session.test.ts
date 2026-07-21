@@ -442,9 +442,10 @@ test('start() passes --session <file> to spawned pi when sessionFile is set', as
   const extensionPaths = args
     .map((arg: string, index: number) => arg === '--extension' ? args[index + 1] : null)
     .filter((extensionPath: string | null): extensionPath is string => typeof extensionPath === 'string');
-  assert.equal(extensionPaths.length, 2);
+  assert.equal(extensionPaths.length, 3);
   assert.ok(extensionPaths.some((extensionPath: string) => /extensions[/\\]pi-geo-visualization[/\\]index\.ts$/.test(extensionPath)));
   assert.ok(extensionPaths.some((extensionPath: string) => /extensions[/\\]pi-task-mode[/\\]index\.ts$/.test(extensionPath)));
+  assert.ok(extensionPaths.some((extensionPath: string) => /extensions[/\\]pi-web-bridge[/\\]index\.ts$/.test(extensionPath)));
   assert.equal(extensionPaths.every((extensionPath: string) => require('node:fs').existsSync(extensionPath)), true);
   const skillPaths = args
     .map((arg: string, index: number) => arg === '--skill' ? args[index + 1] : null)
@@ -470,48 +471,36 @@ test('start() passes --session <file> to spawned pi when sessionFile is set', as
   assert.equal(args[args.indexOf('--model') + 1], 'openai/gpt-4o');
 });
 
-test('extension-refresh: prompt ack triggers get_state refresh and broadcast', async () => {
+test('prompt ack does not poll get_state; bridge entries publish model and thinking changes', async () => {
   const { session, manager } = makeSession('openai/gpt-4o:off');
-  // Register this session in the liveManager so refreshSessionModel's
-  // broadcastUpdated path is exercised against a real manager.
   liveManager.sessions.set(session.id, session);
   try {
     session.child = { stdin: { writable: true, write: ((_d: string, cb?: (err?: Error | null) => void) => cb && cb()) as FakeWrite } };
-    // Track outbound command sequence: first prompt, then get_state.
     let calls: string[] = [];
     session.send = (command: RpcCommand, opts: RpcOpts) => {
       calls.push(command.type);
       const id = command.id || `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
-      if (command.type === 'prompt') {
-        return Promise.resolve({ type: 'response', id, success: true, data: {} });
-      }
-      if (command.type === 'get_state') {
-        // Simulate an extension having changed the model mid-prompt.
-        return Promise.resolve({
-          type: 'response', id, success: true,
-          data: { model: { provider: 'openai', id: 'gpt-4o-mini' }, thinkingLevel: 'high' },
-        });
-      }
       return Promise.resolve({ type: 'response', id, success: true, data: {} });
-    };
-    // Collect broadcastUpdated calls from the real liveManager.
-    const updatedIds: string[] = [];
-    const origBroadcast = liveManager.broadcast.bind(liveManager);
-    liveManager.broadcast = (msg: BroadcastMsg | null) => {
-      if (msg && msg.type === 'live_session_updated' && msg.session) updatedIds.push(msg.session.id);
-      origBroadcast(msg);
     };
     const resp = await handleRpcCommand({
       type: 'prompt', message: '/session-model openai/gpt-4o-mini:high', sessionId: session.id,
     });
     assert.equal(resp.success, true);
-    // Allow the fire-and-forget refresh to run.
-    await new Promise((r) => setImmediate(r));
-    await new Promise((r) => setImmediate(r));
-    assert.deepEqual(calls, ['prompt', 'get_state']);
+    assert.deepEqual(calls, ['prompt']);
+    session.handleEvent({
+      type: 'entry_appended',
+      entry: {
+        type: 'custom', customType: 'pi-web-bridge',
+        data: {
+          schemaVersion: 1, revision: 1,
+          model: { provider: 'openai', id: 'gpt-4o-mini' },
+          thinkingLevel: 'high',
+          tools: [{ name: 'read', description: 'Read', parameters: {}, active: true }],
+        },
+      },
+    });
     assert.deepEqual(session.model, { provider: 'openai', id: 'gpt-4o-mini' });
     assert.equal(session.thinkingLevel, 'high');
-    assert.ok(updatedIds.includes(session.id), 'expected a broadcastUpdated for the refreshed session');
   } finally {
     liveManager.sessions.delete(session.id);
   }

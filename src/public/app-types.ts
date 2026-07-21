@@ -71,6 +71,24 @@ export type AppMessage = {
   timestamp?: number;
 };
 
+export type SessionEntry = {
+  type?: string;
+  message?: AppMessage;
+  customType?: string;
+  data?: unknown;
+};
+
+export type SessionSnapshot = {
+  schemaVersion: 1;
+  entries: SessionEntry[];
+  sessionId?: string;
+  sessionFile?: string | null;
+  session?: LiveSession;
+  isStreaming?: boolean;
+  model?: ModelRecord | null;
+  thinkingLevel?: string;
+};
+
 export type AppEvent = {
   type?: string;
   sessionId?: string;
