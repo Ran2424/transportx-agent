@@ -1,0 +1,4 @@
+interface:
+  display_name: "Geo Visualization Explanation"
+  short_description: "指导 GeoJSON 发布、GeoScene 构建与交互地图调试"
+  default_prompt: "Use $geo-visualization-explanation to publish GeoJSON and build a valid interactive web map."

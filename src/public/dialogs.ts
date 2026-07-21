@@ -38,27 +38,46 @@ export class DialogHandler {
     this.cancelCurrentDialog(true);
 
     const { id, title, options, timeout, sessionId } = request;
+    const heading = this.splitDialogHeading(title, '请选择');
 
     const dialog = document.createElement('div');
-    dialog.className = 'dialog';
+    dialog.className = 'dialog dialog--choice';
     dialog.innerHTML = `
-      <div class="dialog-title">${this.escapeHtml(title || '请选择')}</div>
+      <div class="dialog-eyebrow"><span></span> PI 需要你的选择</div>
+      <div class="dialog-title">${this.escapeHtml(heading.title)}</div>
+      ${heading.message ? `<div class="dialog-message">${this.escapeHtml(heading.message)}</div>` : ''}
       <div class="dialog-options" id="dialog-options"></div>
       <div class="dialog-actions">
-        <button id="dialog-cancel">取消</button>
+        <button class="dialog-secondary" id="dialog-cancel">取消</button>
       </div>
     `;
 
     const optionsContainer = dialog.querySelector('#dialog-options')!;
     
     (options || []).forEach((option: string) => {
-      const optionDiv = document.createElement('div');
-      optionDiv.className = 'dialog-option';
-      optionDiv.textContent = option;
-      optionDiv.onclick = () => {
+      const optionButton = document.createElement('button');
+      optionButton.type = 'button';
+      optionButton.className = 'dialog-option';
+      const parsed = this.splitOption(option);
+      const label = document.createElement('span');
+      label.className = 'dialog-option-label';
+      label.textContent = parsed.label;
+      optionButton.appendChild(label);
+      if (parsed.description) {
+        const description = document.createElement('span');
+        description.className = 'dialog-option-description';
+        description.textContent = parsed.description;
+        optionButton.appendChild(description);
+      }
+      const arrow = document.createElement('span');
+      arrow.className = 'dialog-option-arrow';
+      arrow.setAttribute('aria-hidden', 'true');
+      arrow.textContent = '→';
+      optionButton.appendChild(arrow);
+      optionButton.onclick = () => {
         this.respond(id, { value: option }, sessionId);
       };
-      optionsContainer.appendChild(optionDiv);
+      optionsContainer.appendChild(optionButton);
     });
 
     dialog.querySelector('#dialog-cancel')!.onclick = () => {
@@ -74,13 +93,14 @@ export class DialogHandler {
     const { id, title, message, timeout, sessionId } = request;
 
     const dialog = document.createElement('div');
-    dialog.className = 'dialog';
+    dialog.className = 'dialog dialog--confirm';
     dialog.innerHTML = `
+      <div class="dialog-eyebrow"><span></span> PI 需要你的确认</div>
       <div class="dialog-title">${this.escapeHtml(title || '确认')}</div>
       ${message ? `<div class="dialog-message">${this.escapeHtml(message)}</div>` : ''}
       <div class="dialog-actions">
-        <button id="dialog-no">否</button>
-        <button id="dialog-yes">是</button>
+        <button class="dialog-secondary" id="dialog-no">否</button>
+        <button class="dialog-primary" id="dialog-yes">是</button>
       </div>
     `;
 
@@ -99,15 +119,18 @@ export class DialogHandler {
     this.cancelCurrentDialog(true);
 
     const { id, title, placeholder, timeout, sessionId } = request;
+    const heading = this.splitDialogHeading(title, '请输入信息');
 
     const dialog = document.createElement('div');
-    dialog.className = 'dialog';
+    dialog.className = 'dialog dialog--input';
     dialog.innerHTML = `
-      <div class="dialog-title">${this.escapeHtml(title || '输入')}</div>
+      <div class="dialog-eyebrow"><span></span> PI 正在等待</div>
+      <div class="dialog-title">${this.escapeHtml(heading.title)}</div>
+      ${heading.message ? `<div class="dialog-message">${this.escapeHtml(heading.message)}</div>` : ''}
       <input type="text" class="dialog-input" id="dialog-input" placeholder="${this.escapeHtml(placeholder || '')}" />
       <div class="dialog-actions">
-        <button id="dialog-cancel">取消</button>
-        <button id="dialog-submit">提交</button>
+        <button class="dialog-secondary" id="dialog-cancel">取消</button>
+        <button class="dialog-primary" id="dialog-submit">提交回答</button>
       </div>
     `;
 
@@ -138,15 +161,18 @@ export class DialogHandler {
     this.cancelCurrentDialog(true);
 
     const { id, title, prefill, timeout, sessionId } = request;
+    const heading = this.splitDialogHeading(title, '补充详细信息');
 
     const dialog = document.createElement('div');
-    dialog.className = 'dialog';
+    dialog.className = 'dialog dialog--editor';
     dialog.innerHTML = `
-      <div class="dialog-title">${this.escapeHtml(title || '编辑')}</div>
+      <div class="dialog-eyebrow"><span></span> PI 正在等待</div>
+      <div class="dialog-title">${this.escapeHtml(heading.title)}</div>
+      ${heading.message ? `<div class="dialog-message">${this.escapeHtml(heading.message)}</div>` : ''}
       <textarea class="dialog-textarea" id="dialog-textarea">${this.escapeHtml(prefill || '')}</textarea>
       <div class="dialog-actions">
-        <button id="dialog-cancel">取消</button>
-        <button id="dialog-save">保存</button>
+        <button class="dialog-secondary" id="dialog-cancel">取消</button>
+        <button class="dialog-primary" id="dialog-save">提交回答</button>
       </div>
     `;
 
@@ -241,6 +267,23 @@ export class DialogHandler {
       ...response
     });
     this.onIdle?.();
+  }
+
+  splitDialogHeading(value: string | undefined, fallback: string) {
+    const text = String(value || '').trim();
+    if (!text) return { title: fallback, message: '' };
+    const separator = text.indexOf(' — ');
+    if (separator < 0) return { title: text, message: '' };
+    return {
+      title: text.slice(0, separator).trim() || fallback,
+      message: text.slice(separator + 3).trim(),
+    };
+  }
+
+  splitOption(value: string) {
+    const separator = value.indexOf(' — ');
+    if (separator < 0) return { label: value, description: '' };
+    return { label: value.slice(0, separator), description: value.slice(separator + 3) };
   }
 
   escapeHtml(text: string) {

@@ -33,6 +33,8 @@ pi --mode rpc child session N
   - 工具
   - 地图
 - 内置 Pi GIS Extension，Agent 可发布会话内 GeoJSON，并在 Web 端展示声明式交互地图。
+- 内置 `pi-task-mode` Extension，通过 `tau_task` 维护结构化任务步骤，并通过 `tau_ask_user` 请求确认、单选或文本输入。
+- Web 顶部可按会话切换任务模式，聊天流中的 TaskCard 支持 live 更新、等待用户状态和历史恢复。
 - 地图支持点、线、面、文字图层，常量/分类/分段/连续编码，安全 Popup、图层显隐和选中高亮。
 - 默认新建任务目录指向 `scenario/`，适合作为后续交通 demo 的工作目录。
 
@@ -128,10 +130,20 @@ src/public/
   model-picker.ts      # 模型和 thinking level 选择
   workspace/           # 右侧工作区壳层与功能视图端口
   features/            # Web 功能注册表及 GIS 等垂直功能适配器
+    task/               # 任务协议、会话 Store、TaskCard 与模式开关
   visualization/       # 声明式可视化协议、会话状态与 MapLibre Runtime
 
 extensions/
   pi-geo-visualization/ # 随 Pi 会话自动加载的 GIS Extension
+  pi-task-mode/         # 任务模式、结构化进度和用户交互 Extension
+
+skills/
+  geo-visualization-explanation/ # GeoJSON 发布、GeoScene 构建与调试手册
+  plot-from-data/                # 静态科研绘图模板与脚本
+  shanghai-traffic-data-assets/  # 上海交通治理数据、查询脚本与本地资产
+
+prompts/
+  PI_SESSION_CONTEXT.md          # 每个 Pi Web 会话追加的项目级系统提示模板
 
 public/
   index.html           # 页面骨架
@@ -172,12 +184,15 @@ public/geo-runtime.*
 - 右侧面板增加 `文件 / 技能 / 工具` 切换。
 - 增加 `地图` 工作区、内置 Pi GIS Extension、GeoJSON 资源发布和 MapLibre Web 渲染闭环。
 - 可视化快照随工具结果进入会话历史，支持 live snapshot、历史查看和 resume 恢复。
+- 增加 `pi-task-mode` Extension、`tau_task`、`tau_ask_user`、`/task on|off|status` 和会话状态恢复。
+- Pi 子进程通过内置 Extension Registry 同时加载任务模式与 GIS Extension。
+- 全局 Pi Skill 已迁入仓库，并由服务端通过 `--skill` 显式加载到每个 Web 会话。
+- 增加任务模式 Web Adapter：模式开关、TaskCard、等待状态、交互 Dialog 和 live/history/resume 恢复。
 - 建立架构、GIS 技术方案和项目交接文档。
 
 尚未完成：
 
 - 真实交通数据接入。
-- 交通专用 Prompt / Skill。
 - `traffic.*` 业务工具。
 - 交通结果卡片。
 - GIS filter/图例、通用格式转换、矢量瓦片、栅格、时序和地图到 Agent 的反向联动。
@@ -185,7 +200,7 @@ public/geo-runtime.*
 
 ## 技能与工具查看
 
-右侧工作区面板里的 `技能` 来自 Pi 当前会话的 `get_commands` 结果，并筛选 `source === "skill"`。
+右侧工作区面板里的 `技能` 来自 Pi 当前会话的 `get_commands` 结果，并筛选 `source === "skill"`。项目级 Skill 位于 `skills/`，服务端显式传给每个 Pi 子进程，因此会话工作目录即使位于 `scenario/` 也能发现它们。
 
 `工具` 当前展示：
 
@@ -194,14 +209,35 @@ public/geo-runtime.*
 
 注意：Pi 扩展 API 中存在 `pi.getActiveTools()` 和 `pi.getAllTools()`，但当前 Pi RPC 没有原生 `get_tools`。如果后续要展示完整注册工具列表，需要增加 Pi 扩展桥接或扩展 RPC。
 
+## 项目提示词
+
+项目级提示词位于 [`prompts/PI_SESSION_CONTEXT.md`](./prompts/PI_SESSION_CONTEXT.md)。服务端在创建每个 Pi 会话时读取该文件并替换目录占位符，因此修改正文后只需新建会话即可生效，不需要修改 `sessions.ts`。支持的占位符包括：`PROJECT_ROOT`、`TASK_WORKING_DIRECTORY`、`PROJECT_SKILLS_DIR`、`TRAFFIC_TOOLS_DIR`、`TRAFFIC_DATA_DIR` 和 `PROJECT_PROMPT_PATH`；占位符写法为双花括号包裹名称。未知占位符会阻止会话启动并返回明确错误，避免静默注入错误路径。
+
+## Pi 任务模式
+
+每个 Pi 会话都会加载 `pi-task-mode` Extension。选择运行中的会话后，可以通过顶部“任务”开关按会话控制模式；也可以在 Web 输入框发送以下命令：
+
+```text
+/task on
+/task off
+/task status
+```
+
+开启后，Pi 会在复杂任务中使用：
+
+- `tau_task`：通过 `start/revise/update_step/finish/fail/cancel` 创建、修订、更新并终结 2–8 个结构化步骤；快照保存在工具结果 `details.task` 中。
+- `tau_ask_user`：通过现有 Pi RPC Extension UI 链路发起确认、单选、短文本和长文本交互。
+
+Web 会从结构化 `details.task` 渲染唯一 TaskCard，并按 revision 更新当前步骤、完成/失败/阻塞状态；等待回答时显示 `waiting_user`。Extension 还会把最新终态写入会话自定义状态，因此 Agent 遗漏 `finish/fail/cancel`、进程异常结束或恢复旧会话时，任务会自动落为 `interrupted`，刷新、历史查看和 resume 不会丢失任务卡。`tau_ask_user` 继续使用 Pi RPC 原生交互协议，Web 已适配确认、单选、短文本和长文本 Dialog。详细边界见 [Pi 任务模式与 Web 人机交互实施方案](./docs/TASK_MODE_INTERACTION_PLAN.md)。
+
 ## GIS 地图工作流
 
 每个 Pi 会话都会自动加载包内的 GIS Extension，并获得两个声明式工具：
 
 - `publish_geodata`：校验并发布任务目录内的 `.geojson`/`.json` 文件，返回稳定的会话资源 ID。
-- `present_visualization`：创建、更新、聚焦、选择或清除地图 Scene；工具结果不包含可执行 JavaScript、HTML 或 MapLibre 原生表达式。
+- `present_visualization`：接收 `create_map`、`add_layer`、`set_*`、`select`、`clear` 等命令式参数，由 Extension 内部构建并校验地图 Scene；Agent 不再手写完整 Scene JSON。
 
-少量数据可以直接使用 `geojson-inline`；较大数据应先发布，再以 `geojson-resource` 引用。Web 端从工具卡进入右侧“地图”工作区，资源只允许从对应 live session 的任务目录读取。完整协议、边界和后续阶段见 [GIS Web 展示模块技术方案](./docs/GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md)。
+地图数据统一先通过 `publish_geodata` 发布，再把返回的 `resourceId` 交给 `present_visualization`。新建会话的系统提示会明确当前任务目录、项目 Skills 目录、交通查询脚本目录和 SQLite 数据目录。Web 端从工具卡进入右侧“地图”工作区，资源只允许从对应 live session 的任务目录读取。完整协议、边界和后续阶段见 [GIS Web 展示模块技术方案](./docs/GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md)。
 
 `default`/`light`/`dark` 使用 Runtime 白名单内的 OpenFreeMap 矢量底图，需要网络；`none` 保留项目自带的纯色离线底图。Web 制图层会自动为业务线路增加 casing、为点位增加交互 halo，并让底图地名保留在交通线网上方。
 
@@ -209,12 +245,13 @@ public/geo-runtime.*
 
 近期：
 
-- [ ] 开发 `pi-task-mode` Extension，为 Pi 增加按会话启用的任务模式。
-- [ ] 实现 `tau_task` 工具，以结构化快照创建、修订和更新任务步骤。
-- [ ] 实现 `tau_ask_user` 工具，通过 Pi RPC 支持确认、单选、短文本和长文本交互。
-- [ ] 实现 Web TaskCard、等待用户状态、会话隔离以及 live/history/resume 恢复。
-- [ ] 将 Pi Extension 加载改成可配置 Registry，同时保留 GIS 默认扩展。
-- [ ] 为任务模式补充 RPC、取消、超时、断线重连和浏览器回归测试。
+- [x] 开发 `pi-task-mode` Extension，为 Pi 增加按会话启用的任务模式。
+- [x] 实现 `tau_task` 工具，以结构化快照创建、修订和更新任务步骤。
+- [x] 实现 `tau_ask_user` 工具，通过 Pi RPC 支持确认、单选、短文本和长文本交互。
+- [x] 实现 Web TaskCard、等待用户状态、会话隔离以及 live/history/resume 恢复。
+- [x] 将 Pi Extension 加载改成内置 Registry，同时保留 GIS 默认扩展。
+- [x] 为任务模式补充取消、失败、异常结束和恢复回归测试。
+- [ ] 为任务模式补充 RPC 超时、断线重连和浏览器回归测试。
 
 中期：
 

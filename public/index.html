@@ -47,6 +47,10 @@
             <span class="model-input-label" id="model-input-label">模型</span>
             <span class="model-select-chevron" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
           </button>
+          <button class="task-mode-toggle" id="task-mode-toggle" type="button" aria-pressed="false" disabled>
+            <span class="task-mode-toggle-dot" aria-hidden="true"></span>
+            <span class="task-mode-toggle-label">任务</span>
+          </button>
         </div>
         <div class="header-right">
           <div class="stats-anchor">
@@ -59,6 +63,9 @@
           </div>
           <button class="icon-btn" id="file-sidebar-toggle" title="文件" aria-label="打开/关闭文件浏览器">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          </button>
+          <button class="icon-btn task-panel-toggle" id="task-panel-toggle" title="打开任务面板" aria-label="打开任务面板" aria-controls="task-board" aria-expanded="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           </button>
           <button class="settings-btn" id="settings-btn" title="设置" aria-label="设置">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -132,6 +139,20 @@
           </div>
         </form>
       </div>
+
+      <!-- Floating task card -->
+      <aside class="task-board collapsed" id="task-board" aria-label="任务面板">
+        <div class="task-board-header" id="task-board-drag-handle" title="拖动调整任务卡位置">
+          <div>
+            <div class="task-board-title">任务进度</div>
+            <div class="task-board-description">随 Agent 执行持续更新</div>
+          </div>
+          <button class="icon-btn" id="task-board-close" title="关闭" aria-label="关闭任务面板">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="task-board-content" id="task-board-content"></div>
+      </aside>
     </div>
 
     <!-- Workspace Browser (right sidebar) -->
