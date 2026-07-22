@@ -1,4 +1,4 @@
-import { getVisualizationFromToolResult, type GeoSceneSnapshot, type VisualizationEnvelope } from './geo/protocol.js';
+import { getVisualizationFromToolResult, type GeoSceneSnapshot, type VisualizationEnvelope } from '../../contracts/geo.ts';
 import { SessionVisualizationStore } from './session-visualization-store.js';
 
 type GeoRuntime = {

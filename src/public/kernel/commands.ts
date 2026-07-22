@@ -7,7 +7,7 @@
 
 import type { LiveSession, PendingImage, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
-import { appError, toAppError, type AppError, type AppErrorCategory } from './errors.js';
+import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 
 export type HttpInit = { method?: string; body?: unknown };
 

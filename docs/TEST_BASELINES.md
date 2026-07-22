@@ -3,13 +3,14 @@
 本文档是「冻结事实和行为基线」的操作手册：基线覆盖清单、手工验收清单、如何重跑。
 对应迁移计划 `docs/REACT_UI_MIGRATION_PLAN.md` 第 9 节「阶段 0」。
 
-最近一次验证（2026-07-22）：`npm run test:browser-baseline` 的 11/11 场景通过；在 Node 24.2.0、Chrome 150、darwin/arm64 环境记录 500 delta streaming 约 675ms、200 条历史消息首次渲染约 50ms。截图基线生成 6 套主题 × 桌面/移动共 12 张；PNG 按规则忽略，仅保留 `manifest.json` 哈希清单。阶段 2 的 `npm run test:react-smoke` 也已通过。
+最近一次验证（2026-07-22）：`npm run test:browser-baseline` 的 11/11 场景通过；在 Node 24.2.0、Chrome 150、darwin/arm64 环境记录 500 delta streaming 约 675ms、200 条历史消息首次渲染约 50ms。截图基线生成 6 套主题 × 桌面/移动共 12 张；PNG 按规则忽略，仅保留 `manifest.json` 哈希清单。阶段 2 的 `npm run test:react-smoke` 与阶段 3 的共享 Contract 测试也已通过。
 
 ## 组成
 
 | 层 | 位置 | 跑法 |
 | --- | --- | --- |
 | 协议 fixture | `test/fixtures/**`（会话 JSONL / Pi 事件流 / Task·Geo·Bridge） | `npm test` 中的 `test/fixtures.test.ts` |
+| 共享 Contract fixture | `test/fixtures/contracts/{session,task,geo,bridge}.json` | `test/contracts.test.ts`：合法/非法版本、非法 revision、revision regression、Bridge capabilities |
 | fake-pi 线束 | `scripts/harness/fake-pi.mjs`、`scripts/harness/serve-with-fake-pi.mjs`、`scripts/harness/scenarios/baseline.json` | 被 browser-baseline 自动拉起，也可单独运行 |
 | 浏览器基线 | `scripts/browser-baseline.mjs` | `npm run test:browser-baseline` |
 | 性能基线 | `test/baselines/perf-baseline.json` | 随 browser-baseline 重新生成 |
@@ -61,6 +62,6 @@ node scripts/harness/serve-with-fake-pi.mjs --port 3009   # 单独起线束手�
 
 ## 修改协议时
 
-改了 `session-projection` / `task-protocol` / `geo/protocol` / `pi-web-bridge` / `app-main` 事件处理中的任何一个，
-必须同步更新 `test/fixtures/**` 对应文件与 `test/fixtures/README.md` 的校验点表，并确认
-`test/fixtures.test.ts` 与 `npm run test:browser-baseline` 全绿。
+改了 `src/contracts/**`、`session-projection`、task/geo/bridge 兼容层或 `app-main` 事件处理中的任何一个，
+必须同步更新 `test/fixtures/contracts/**`（以及受影响的阶段 0 fixture）、`test/fixtures/README.md` 的校验点表，并确认
+`test/contracts.test.ts`、`test/fixtures.test.ts` 与 `npm run test:browser-baseline` 全绿。

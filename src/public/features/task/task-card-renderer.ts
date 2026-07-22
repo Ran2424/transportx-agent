@@ -1,4 +1,4 @@
-import type { TaskSnapshot, TaskStatus, TaskStepSnapshot, TaskStepStatus } from './task-protocol.js';
+import type { TaskSnapshot, TaskStatus, TaskStepSnapshot, TaskStepStatus } from '../../../contracts/task.ts';
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   planning: '规划中',

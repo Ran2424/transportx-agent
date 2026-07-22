@@ -3,7 +3,7 @@
  * Low-frequency updates; components read this for status indicators.
  */
 
-import type { AppError } from '../errors.js';
+import type { AppError } from '../../../contracts/errors.ts';
 import { createStore, type Store, type StoreListener } from '../store.js';
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';

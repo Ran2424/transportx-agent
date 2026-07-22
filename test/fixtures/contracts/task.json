@@ -1,0 +1,40 @@
+{
+  "valid": {
+    "schemaVersion": 1,
+    "taskId": "task-contract-1",
+    "title": "Contract task",
+    "status": "running",
+    "revision": 2,
+    "steps": [
+      { "id": "collect", "title": "Collect", "status": "completed", "completedAt": 10 },
+      { "id": "analyze", "title": "Analyze", "status": "running", "startedAt": 11 }
+    ],
+    "activeStepId": "analyze",
+    "createdAt": 1,
+    "updatedAt": 11
+  },
+  "invalidVersion": {
+    "schemaVersion": 2,
+    "taskId": "task-contract-1",
+    "title": "Contract task",
+    "status": "running",
+    "revision": 2,
+    "steps": [],
+    "createdAt": 1,
+    "updatedAt": 11
+  },
+  "invalidRevision": {
+    "schemaVersion": 1,
+    "taskId": "task-contract-1",
+    "title": "Contract task",
+    "status": "planning",
+    "revision": 0,
+    "steps": [
+      { "id": "collect", "title": "Collect", "status": "pending" },
+      { "id": "analyze", "title": "Analyze", "status": "pending" }
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+  },
+  "staleRevision": 1
+}

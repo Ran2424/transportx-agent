@@ -19,7 +19,7 @@ import { GeoFeature } from './features/geo/geo-feature.js';
 import { TaskModeFeature } from './features/task/task-mode-feature.js';
 import { WebSocketClient } from './websocket-client.js';
 import { createAppKernel, type KernelUiEvent } from './kernel/app-kernel.js';
-import type { AppError } from './kernel/errors.js';
+import type { AppError } from '../contracts/errors.ts';
 import { messageText, messageThinking } from './kernel/stores/conversation-store.js';
 import { ToolExecutionController } from './controllers/tool-execution-controller.js';
 

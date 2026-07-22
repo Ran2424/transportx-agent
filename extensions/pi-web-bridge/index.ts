@@ -1,24 +1,14 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import {
+  BRIDGE_ENVELOPE_SCHEMA_VERSION,
+  PI_WEB_BRIDGE_ENTRY,
+  parsePiWebBridgeEnvelope,
+  runtimeCapabilities,
+  type ModelIdentity,
+  type PiToolManifestItem,
+} from '../../src/contracts/index.ts';
 
-const BRIDGE_ENTRY = 'pi-web-bridge';
-const SCHEMA_VERSION = 1 as const;
-
-type BridgeModel = { provider: string; id: string; name?: string; contextWindow?: number };
-type BridgeTool = {
-  name: string;
-  description: string;
-  parameters: unknown;
-  promptGuidelines?: string[];
-  sourceInfo?: unknown;
-  active: boolean;
-};
-type BridgeEnvelope = {
-  schemaVersion: 1;
-  revision: number;
-  model?: BridgeModel;
-  thinkingLevel: string;
-  tools: BridgeTool[];
-};
+type BridgeModel = ModelIdentity & { provider: string; id: string };
 
 function bridgeModel(model: ExtensionContext['model']): BridgeModel | undefined {
   if (!model || typeof model.provider !== 'string' || typeof model.id !== 'string') return undefined;
@@ -30,21 +20,13 @@ function bridgeModel(model: ExtensionContext['model']): BridgeModel | undefined 
   };
 }
 
-function parseEnvelope(value: unknown): BridgeEnvelope | null {
-  if (!value || typeof value !== 'object') return null;
-  const data = value as Record<string, unknown>;
-  if (data.schemaVersion !== SCHEMA_VERSION || !Number.isInteger(data.revision) || Number(data.revision) < 1) return null;
-  if (typeof data.thinkingLevel !== 'string' || !Array.isArray(data.tools)) return null;
-  return data as BridgeEnvelope;
-}
-
 export default function piWebBridge(pi: ExtensionAPI) {
   let revision = 0;
   let previousSignature = '';
 
   const collect = (ctx: ExtensionContext, modelOverride?: ExtensionContext['model'], thinkingOverride?: string) => {
     const active = new Set(pi.getActiveTools());
-    const tools = pi.getAllTools().map<BridgeTool>((tool) => ({
+    const tools = pi.getAllTools().map<PiToolManifestItem>((tool) => ({
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
@@ -53,9 +35,10 @@ export default function piWebBridge(pi: ExtensionAPI) {
       active: active.has(tool.name),
     }));
     return {
-      ...(bridgeModel(modelOverride || ctx.model) ? { model: bridgeModel(modelOverride || ctx.model) } : {}),
+      model: bridgeModel(modelOverride || ctx.model) || null,
       thinkingLevel: thinkingOverride || pi.getThinkingLevel(),
       tools,
+      capabilities: runtimeCapabilities(),
     };
   };
 
@@ -65,15 +48,15 @@ export default function piWebBridge(pi: ExtensionAPI) {
     if (signature === previousSignature) return;
     previousSignature = signature;
     revision += 1;
-    pi.appendEntry(BRIDGE_ENTRY, { schemaVersion: SCHEMA_VERSION, revision, ...state });
+    pi.appendEntry(PI_WEB_BRIDGE_ENTRY, { schemaVersion: BRIDGE_ENVELOPE_SCHEMA_VERSION, revision, ...state });
   };
 
   pi.on('session_start', async (_event, ctx) => {
     revision = 0;
     previousSignature = '';
     for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type !== 'custom' || entry.customType !== BRIDGE_ENTRY) continue;
-      const envelope = parseEnvelope(entry.data);
+      if (entry.type !== 'custom' || entry.customType !== PI_WEB_BRIDGE_ENTRY) continue;
+      const envelope = parsePiWebBridgeEnvelope(entry.data);
       if (!envelope || envelope.revision < revision) continue;
       revision = envelope.revision;
       const { schemaVersion: _schemaVersion, revision: _revision, ...state } = envelope;

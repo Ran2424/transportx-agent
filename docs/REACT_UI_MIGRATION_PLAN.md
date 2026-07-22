@@ -2,9 +2,9 @@
 
 更新时间：2026-07-22
 
-状态：阶段 0、阶段 1（Browser Application Kernel 与 legacy 接入）、阶段 2（Vite 基座）已完成；阶段 3（Contract 治理）尚未开始
+状态：阶段 0、阶段 1（Browser Application Kernel 与 legacy 接入）、阶段 2（Vite 基座）、阶段 3（Contract 治理）已完成
 
-本文确定 React Web Adapter 的改造方向，并记录截至当前的实施状态。阶段 0 已冻结 fixture、浏览器和性能基线；阶段 1 已建立 Browser Application Kernel 并让 legacy UI 消费 Kernel；阶段 2 已建立独立的 React/Vite 空壳和 `/react/` 静态入口。业务级 React UI 迁移与 Contract 治理仍属于后续阶段。当前运行事实仍以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
+本文确定 React Web Adapter 的改造方向，并记录截至当前的实施状态。阶段 0 已冻结 fixture、浏览器和性能基线；阶段 1 已建立 Browser Application Kernel 并让 legacy UI 消费 Kernel；阶段 2 已建立独立的 React/Vite 空壳和 `/react/` 静态入口；阶段 3 已完成项目自有协议集中治理。业务级 React UI 迁移仍属于后续阶段。当前运行事实仍以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
 
 ## 1. 最终决策
 
@@ -357,12 +357,15 @@ Contract
 ```text
 src/
   contracts/                    单包共享协议
-    common/
-    runtime/
-    session/
-    extension-ui/
-    task/
-    geo/
+    index.ts                    统一重导出
+    common.ts                   JSON / Model / Validation 原语
+    session.ts                  SessionSnapshot v1
+    task.ts                     TaskSnapshot v1
+    geo.ts                      GeoScene / Envelope 1.0
+    bridge.ts                   Bridge Envelope v1
+    capabilities.ts             RuntimeCapabilities
+    errors.ts                   AppError
+    diagnostic.ts, version.ts   结构化诊断与版本
 
   server/                       保持现有 Node Server
 
@@ -627,14 +630,22 @@ dist/web/     React/Vite 构建产物
 
 ### 阶段 3：Contract 治理
 
+> **状态：已完成（2026-07-22）**。协议权威已迁入 `src/contracts/`；旧路径仅保留兼容重导出。共享 fixture 与契约测试位于 `test/fixtures/contracts/`、`test/contracts.test.ts`。
+
 交付：
 
-- 项目自有协议迁入 `src/contracts/`。
-- unknown version/revision regression 的显式诊断。
-- Bridge capabilities 的最小版本声明。
-- Extension、Server、Web 共用协议 fixture。
+- Session、Task、Geo、Bridge、AppError、ModelIdentity 与共享验证原语迁入 `src/contracts/`。
+- unknown schema/version、非法 revision 与 revision regression 输出结构化 `ContractDiagnostic`。
+- Bridge Envelope 携带 RuntimeCapabilities 最小版本声明；Server 会话创建时建立初始 capabilities，并在不兼容时发布协议诊断。
+- Extension、Server、Web 直接消费相同 Contract 源码；旧 import 路径保留 re-export 兼容层。
+- TypeScript 发布布局生成 `bin/contracts/` 与 `public/contracts/`，构建产物不进入 Git。
 
-退出条件：Task、Geo、Bridge 和 SessionSnapshot 的合法/非法版本都有契约测试；不要求包装全部 Pi 原生 event。
+验证：
+
+- `test/contracts.test.ts` 覆盖 Task、Geo、Bridge、SessionSnapshot 的合法/非法版本，以及 Task/Geo/Bridge revision regression。
+- `npm run typecheck`、`npm test`、React smoke、legacy browser smoke/baseline 与 npm pack 验证。
+
+退出条件：Task、Geo、Bridge 和 SessionSnapshot 的合法/非法版本都有契约测试；不要求包装全部 Pi 原生 event。已满足。
 
 ### 阶段 4：React Shell 与低耦合平台 UI
 

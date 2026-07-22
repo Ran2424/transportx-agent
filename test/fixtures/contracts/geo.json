@@ -1,0 +1,55 @@
+{
+  "valid": {
+    "protocol": "pi-visualization",
+    "version": "1.0",
+    "kind": "geo",
+    "visualizationId": "contract_map",
+    "revision": 2,
+    "operation": "replace",
+    "scene": {
+      "view": { "mode": "camera", "center": [121.47, 31.23], "zoom": 10 },
+      "basemap": { "id": "light" },
+      "sources": [
+        {
+          "id": "places",
+          "type": "geojson-inline",
+          "data": {
+            "type": "FeatureCollection",
+            "features": [
+              { "type": "Feature", "id": 1, "properties": { "name": "Shanghai" }, "geometry": { "type": "Point", "coordinates": [121.47, 31.23] } }
+            ]
+          }
+        }
+      ],
+      "layers": [
+        { "id": "points", "sourceId": "places", "type": "circle", "encoding": { "color": { "mode": "constant", "value": "#2563eb" } } }
+      ],
+      "metadata": { "title": "Contract map" }
+    },
+    "summary": { "title": "Contract map" },
+    "generatedAt": "2026-07-22T00:00:00.000Z"
+  },
+  "invalidVersion": {
+    "protocol": "pi-visualization",
+    "version": "2.0",
+    "kind": "geo",
+    "visualizationId": "contract_map",
+    "revision": 2,
+    "operation": "clear",
+    "scene": null,
+    "summary": { "title": "Contract map" },
+    "generatedAt": "2026-07-22T00:00:00.000Z"
+  },
+  "invalidRevision": {
+    "protocol": "pi-visualization",
+    "version": "1.0",
+    "kind": "geo",
+    "visualizationId": "contract_map",
+    "revision": 0,
+    "operation": "clear",
+    "scene": null,
+    "summary": { "title": "Contract map" },
+    "generatedAt": "2026-07-22T00:00:00.000Z"
+  },
+  "staleRevision": 1
+}

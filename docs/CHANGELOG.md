@@ -11,6 +11,29 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v1.27 — Contract 治理与 RuntimeCapabilities
+
+- 日期：2026-07-22
+- GitHub 操作：提交到当前分支；本次未执行 push。
+- 提交主题：`refactor: centralize shared contracts`
+
+主要修改：
+
+- 建立 `src/contracts/` 单一协议权威，集中 SessionSnapshot、TaskSnapshot、GeoScene/VisualizationEnvelope、PiWebBridgeEnvelope、AppError、ModelIdentity 和共享验证原语。
+- Extension、Server、legacy Web 改为直接消费共享 Contract；原 task/geo/bridge/errors 路径保留 re-export 兼容层。
+- 为 unknown schema/version、非法 revision 与 revision regression 增加结构化 `ContractDiagnostic`；保留旧 `value | null` parser 作为兼容入口。
+- Bridge Envelope 增加 RuntimeCapabilities 最小声明，Server 在会话创建时建立初始 capabilities，并通过 metadata/协议错误暴露不兼容项。
+- 新增 `test/fixtures/contracts/` 与 `test/contracts.test.ts`，统一验证 Session、Task、Geo、Bridge 的合法/非法版本及 revision regression。
+- 构建新增共享 Contract 输出布局：`bin/contracts/`、`public/contracts/` 均为不入 Git 的运行产物，保持既有 `bin/*.js` 与 `public/*.js` 入口不变。
+- 将包版本更新为 `1.27.0`。
+
+验证：
+
+- `npm run typecheck` 通过。
+- `npm test`：240 项测试，239 项通过、1 项真实 Pi smoke 按默认策略跳过、0 项失败。
+- `npm run test:react-smoke`、`npm run test:browser-smoke`、`npm run test:browser-baseline` 通过。
+- `npm pack --dry-run` 验证 Contract 源码与运行产物进入发布清单，未包含未跟踪构建垃圾。
+
 ## v1.26 — React/Vite 基座与 legacy 独立入口
 
 - 日期：2026-07-22

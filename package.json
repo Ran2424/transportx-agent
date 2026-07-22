@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "1.26.0",
+  "version": "1.27.0",
   "description": "交通 Agent 浏览器工作台，基于 Pi Tau Web Server 管理多路 Pi RPC 会话",
   "keywords": [
     "pi",
@@ -28,6 +28,7 @@
     "docs/*.md",
     "src",
     "dist/web",
+    "scripts/postbuild-layout.mjs",
     "vite.config.ts",
     "tsconfig.json",
     "tsconfig.server.json",
@@ -37,8 +38,8 @@
   ],
   "scripts": {
     "build": "npm run build:server && npm run build:web && npm run build:react && npm run build:geo",
-    "build:server": "tsc -p tsconfig.server.json",
-    "build:web": "tsc -p tsconfig.public.json",
+    "build:server": "tsc -p tsconfig.server.json && node scripts/postbuild-layout.mjs server",
+    "build:web": "tsc -p tsconfig.public.json && node scripts/postbuild-layout.mjs public",
     "build:react": "vite build",
     "build:geo": "esbuild src/public/visualization/geo/geo-runtime-entry.ts --bundle --format=esm --target=es2022 --outfile=public/geo-runtime.js",
     "dev:web": "vite --config vite.config.ts",

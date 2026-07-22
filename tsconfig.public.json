@@ -3,13 +3,17 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "Bundler",
-    "rootDir": "src/public",
+    "rootDir": "src",
     "outDir": "public",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "declaration": false,
+    "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/public/**/*.ts"]
+  "include": [
+    "src/public/**/*.ts",
+    "src/contracts/**/*.ts"
+  ]
 }
