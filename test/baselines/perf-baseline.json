@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-07-22T07:10:18.527Z",
+  "environment": {
+    "node": "v24.2.0",
+    "platform": "darwin/arm64",
+    "chrome": "150.0.7871.128",
+    "webgl": true,
+    "viewport": "1440x900",
+    "headless": true
+  },
+  "measurements": {
+    "longStreaming": {
+      "deltas": 500,
+      "wallMs": 360,
+      "renderedChars": 846
+    },
+    "longHistoryFirstRender": {
+      "messages": 200,
+      "wallMs": 66
+    }
+  },
+  "notes": [
+    "只记录数字与环境，不设硬阈值；阈值在后续阶段确定。"
+  ]
+}

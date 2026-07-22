@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "1.24.0",
+  "version": "1.25.0",
   "description": "交通 Agent 浏览器工作台，基于 Pi Tau Web Server 管理多路 Pi RPC 会话",
   "keywords": [
     "pi",
@@ -45,7 +45,8 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "npm run build && node --test",
     "test:pi-smoke": "npm run build:server && TAU_RUN_PI_SMOKE=1 node --test test/pi-rpc-smoke.test.ts",
-    "test:browser-smoke": "npm run build && node scripts/browser-smoke.mjs"
+    "test:browser-smoke": "npm run build && node scripts/browser-smoke.mjs",
+    "test:browser-baseline": "npm run build && node scripts/browser-baseline.mjs"
   },
   "dependencies": {
     "typebox": "^1.3.6",

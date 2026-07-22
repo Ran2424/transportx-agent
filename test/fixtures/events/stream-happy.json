@@ -1,0 +1,83 @@
+{
+  "description": "一次完整 run 的 Pi RPC 事件序列（WS event 内层形状，见 src/public/app-main.ts handleRPCEvent）：agent_start → 用户消息回声 → assistant thinking/text delta → toolCall → 工具执行 → 第二条 assistant 消息 → turn_end/agent_end。形状为协议一致的合成事件，字段以真实 pi 0.80.x 会话为准。",
+  "sessionId": "tau_fixture_happy",
+  "events": [
+    { "type": "agent_start" },
+    { "type": "turn_start" },
+    {
+      "type": "message_start",
+      "message": { "role": "user", "content": [{ "type": "text", "text": "分析上海体育馆早高峰下车热点" }], "timestamp": 1784560805000 }
+    },
+    {
+      "type": "message_end",
+      "message": { "role": "user", "content": [{ "type": "text", "text": "分析上海体育馆早高峰下车热点" }], "timestamp": 1784560805000 }
+    },
+    {
+      "type": "message_start",
+      "message": { "role": "assistant", "content": [{ "type": "thinking", "thinking": "" }, { "type": "text", "text": "" }], "model": "k2p7" }
+    },
+    { "type": "message_update", "assistantMessageEvent": { "type": "thinking_delta", "delta": "先查询数据资产，" } },
+    { "type": "message_update", "assistantMessageEvent": { "type": "thinking_delta", "delta": "再聚合下车点。" } },
+    { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "我先查一下可用的交通数据表。" } },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          { "type": "thinking", "thinking": "先查询数据资产，再聚合下车点。", "thinkingSignature": "FIXTURE_SIGNATURE_H1" },
+          { "type": "text", "text": "我先查一下可用的交通数据表。" },
+          { "type": "toolCall", "id": "call_fixture_bash_1", "name": "bash", "arguments": { "command": "python3 query_assets.py --list" } }
+        ],
+        "api": "anthropic-messages",
+        "provider": "kimi-coding",
+        "model": "k2p7",
+        "usage": { "input": 1100, "output": 80, "cacheRead": 200, "cacheWrite": 0, "totalTokens": 1380, "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0 } },
+        "stopReason": "toolUse",
+        "timestamp": 1784560806000,
+        "responseId": "msg_fixture_h1"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call_fixture_bash_1",
+      "toolName": "bash",
+      "args": { "command": "python3 query_assets.py --list" }
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "call_fixture_bash_1",
+      "partialResult": { "content": [{ "type": "text", "text": "database_name | table_name\n--------------+" }] }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call_fixture_bash_1",
+      "toolName": "bash",
+      "result": { "content": [{ "type": "text", "text": "database_name | table_name\n--------------+-----------\nridehail      | fact_ridehail_event" }] },
+      "isError": false
+    },
+    {
+      "type": "message_start",
+      "message": { "role": "assistant", "content": [{ "type": "text", "text": "" }], "model": "k2p7" }
+    },
+    { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "查到了 ridehail.fact_ridehail_event，" } },
+    { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "下车热点集中在漕溪北路与中山南二路。" } },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          { "type": "text", "text": "查到了 ridehail.fact_ridehail_event，下车热点集中在漕溪北路与中山南二路。" }
+        ],
+        "api": "anthropic-messages",
+        "provider": "kimi-coding",
+        "model": "k2p7",
+        "usage": { "input": 1600, "output": 60, "cacheRead": 500, "cacheWrite": 0, "totalTokens": 2160, "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0.001 } },
+        "stopReason": "stop",
+        "timestamp": 1784560808000,
+        "responseId": "msg_fixture_h2"
+      }
+    },
+    { "type": "turn_end" },
+    { "type": "agent_end" }
+  ]
+}

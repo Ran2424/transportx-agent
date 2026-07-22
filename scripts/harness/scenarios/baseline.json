@@ -1,0 +1,46 @@
+{
+  "description": "browser-baseline 场景：按 prompt 子串匹配回放协议一致的事件序列。provenance：协议一致的合成事件，形状与 test/fixtures 一致并经 server 实际消费验证。",
+  "rules": [
+    {
+      "match": "基线-happy",
+      "steps": [
+        { "streamText": { "thinking": "用户在请求基线 happy path，直接给出结论。", "text": "上海早高峰分析结果：内环高架拥堵指数 1.8，漕溪北路与中山南二路为主要瓶颈。", "chunks": 16, "delayMs": 80 } }
+      ]
+    },
+    {
+      "match": "基线-abort",
+      "steps": [
+        { "streamText": { "text": "路段分析报告（长文）：第一段内环高架早高峰持续拥堵，车速低于15km/h；第二段南北高架北向南方向排队至共和新路；第三段延安高架西向东车流饱和；第四段中环线外圈事故多发；第五段逸仙高架货车占比高；第六段沪闵高架接莘庄立交常态缓行；第七段罗山高架施工占道；第八段华夏高架浦东机场方向早高峰提前；第九段五洲大道外环隧道拥堵；第十段军工路隧道排队。", "chunks": 80, "delayMs": 120 } }
+      ]
+    },
+    {
+      "match": "基线-task",
+      "steps": [
+        { "streamText": { "text": "我先和你确认分析范围。", "chunks": 4, "delayMs": 15 } },
+        { "ui": { "method": "select", "id": "ui_scope", "title": "选择分析范围", "options": ["只看工作日", "包含周末"], "timeout": 60000 } },
+        { "entryAppended": { "$fixture": "features/task-entries.json#stateEntry" } },
+        { "tool": { "name": "tau_task", "args": { "action": "update" }, "result": { "$fixture": "features/task-entries.json#toolResult" } } },
+        { "streamText": { "text": "任务面板已更新，继续执行查询步骤。", "chunks": 4, "delayMs": 15 } }
+      ]
+    },
+    {
+      "match": "基线-geo",
+      "steps": [
+        { "streamText": { "text": "正在生成下车热点地图。", "chunks": 4, "delayMs": 15 } },
+        { "tool": { "name": "present_visualization", "args": { "visualizationId": "dropoff_heatmap" }, "result": { "$fixture": "features/geo-tool-result.json#presentVisualizationResult" } } },
+        { "streamText": { "text": "地图已发布，可在右侧地图面板查看。", "chunks": 4, "delayMs": 15 } }
+      ]
+    },
+    {
+      "match": "基线-perf",
+      "steps": [
+        { "streamText": { "text": "路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。路段早高峰车速低于15km/h，拥堵指数1.8，排队长度约600米，建议错峰出行或改道漕宝路。", "chunks": 500, "delayMs": 0 } }
+      ]
+    }
+  ],
+  "fallback": {
+    "steps": [
+      { "streamText": { "text": "（fake-pi 默认回复：未匹配的 prompt）", "chunks": 4, "delayMs": 10 } }
+    ]
+  }
+}

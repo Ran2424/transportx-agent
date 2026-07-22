@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-07-22T07:10:09.437Z",
+  "note": "PNG 不入库（.gitignore），本清单记录哈希用于人工比对",
+  "files": [
+    {
+      "file": "clean-desktop.png",
+      "bytes": 168868,
+      "sha256": "785da040c2f06b60ad1555b74d31f281d3001f67476f2ddb53d9a9c5a808d970"
+    },
+    {
+      "file": "clean-mobile.png",
+      "bytes": 41273,
+      "sha256": "3d2ad2627ea79122a54939dc867abcaf3f6bd60968f9eaa92e1b3ff7abf72f60"
+    },
+    {
+      "file": "dawn-desktop.png",
+      "bytes": 119997,
+      "sha256": "f66b2769a8cc62d7e355747b850a810f0965e67fe02295781caf9eeeffae3f57"
+    },
+    {
+      "file": "dawn-mobile.png",
+      "bytes": 35687,
+      "sha256": "f4722a65ea2f4855b2ae0bf45a6df2047fefcca8798be4a86e22336a67b5a206"
+    },
+    {
+      "file": "midnight-desktop.png",
+      "bytes": 117407,
+      "sha256": "77f5ab8a5562c199f91776cdc80a0b8b2f77f2195e248f14dbeb2fccc5b7fe4c"
+    },
+    {
+      "file": "midnight-mobile.png",
+      "bytes": 37924,
+      "sha256": "a5d6d37423076dd0523ece0427dbdf1fdafaa5e2ad91f10884c140759e5e81fa"
+    },
+    {
+      "file": "night-desktop.png",
+      "bytes": 114525,
+      "sha256": "8d8331a8cb743541384e62c5db41163498e5074ff0e8f0addbef1a20c7a97cb1"
+    },
+    {
+      "file": "night-mobile.png",
+      "bytes": 28872,
+      "sha256": "2e645d184b31dcf18f32bf294e5120e5627457fd69883787d1cb009291b5f570"
+    },
+    {
+      "file": "sage-desktop.png",
+      "bytes": 471948,
+      "sha256": "f64d654242accca013f17562f9d4159889afd5773713e2be9507549707a7595f"
+    },
+    {
+      "file": "sage-mobile.png",
+      "bytes": 40755,
+      "sha256": "8377d289c9d870ed78d9bc8450c2ff940720cf19c27a4f9d34754e170a175f09"
+    },
+    {
+      "file": "terracotta-desktop.png",
+      "bytes": 480770,
+      "sha256": "abd77c334cf44cc1e9f40e1358a4709224591990f91e9d3f883ef115489b84f0"
+    },
+    {
+      "file": "terracotta-mobile.png",
+      "bytes": 42995,
+      "sha256": "241e61f0ce8e236a469d7af314799f6aae439060948a4bdc71687e2aa5612f84"
+    }
+  ]
+}

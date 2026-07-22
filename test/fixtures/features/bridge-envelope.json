@@ -1,0 +1,22 @@
+{
+  "description": "pi-web-bridge 扩展写入会话的 custom entry（entry_appended 事件的 entry 内层形状），其 data 可被 src/server/pi-web-bridge.ts 的 parsePiWebBridgeEnvelope 解析。",
+  "entry": {
+    "type": "custom",
+    "customType": "pi-web-bridge",
+    "data": {
+      "schemaVersion": 1,
+      "revision": 2,
+      "model": { "provider": "kimi-coding", "id": "k2p7", "contextWindow": 262144 },
+      "thinkingLevel": "high",
+      "tools": [
+        { "name": "read", "description": "读取文件内容", "parameters": { "type": "object" }, "active": true },
+        { "name": "bash", "description": "执行终端命令", "parameters": { "type": "object" }, "active": true },
+        { "name": "tau_task", "description": "任务模式状态管理", "parameters": { "type": "object" }, "promptGuidelines": ["长任务开始时创建计划"], "sourceInfo": { "source": "extension", "path": "extensions/pi-task-mode/index.ts" }, "active": true },
+        { "name": "present_visualization", "description": "发布 GIS 可视化", "parameters": { "type": "object" }, "sourceInfo": { "source": "extension", "path": "extensions/pi-geo-visualization/index.ts" }, "active": false }
+      ]
+    },
+    "id": "ee000001",
+    "parentId": null,
+    "timestamp": "2026-07-20T01:00:02.000Z"
+  }
+}

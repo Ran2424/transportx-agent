@@ -14,7 +14,6 @@ serviceWorker.addEventListener('install', (event: ExtendableEvent) => {
         '/style.css',
         '/app.js',
         '/app-main.js',
-        '/state.js',
         '/themes.js',
         '/markdown.js',
         '/message-renderer.js',

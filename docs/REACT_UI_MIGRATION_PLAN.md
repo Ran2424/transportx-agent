@@ -1,10 +1,10 @@
 # React Web Adapter 改造与实施方案
 
-更新时间：2026-07-21
+更新时间：2026-07-22
 
-状态：方向已确定，尚未开始实施
+状态：阶段 0、阶段 1（Browser Application Kernel 与 legacy 接入）已完成；阶段 2（Vite/React）尚未开始
 
-本文确定下一阶段的具体改造方向。它不是“把现有页面翻译成 React”，而是先稳定浏览器应用内核，再让 React 成为可替换的 Web Adapter。当前运行事实仍以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准；本文中的目标目录、接口和阶段表示未来实施约束，不代表仓库已经具备这些文件。
+本文确定 React Web Adapter 的改造方向，并记录截至当前的实施状态。阶段 0 已冻结 fixture、浏览器和性能基线；阶段 1 已建立 Browser Application Kernel，并让现有 legacy UI 消费 Kernel。React/Vite 及其后续 UI 迁移仍属于后续阶段。当前运行事实仍以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
 
 ## 1. 最终决策
 
@@ -75,11 +75,11 @@ Session、Runtime、Conversation、Tool Execution、Extension UI 和 Workspace �
 
 | 区域 | 当前规模 | 主要问题 |
 |---|---:|---|
-| 浏览器端 TypeScript | 约 8,400 行 / 37 个文件 | 原生 DOM、状态和事件接线混合 |
-| `src/public/app-main.ts` | 约 2,356 行 | 会话、输入、附件、状态和组合职责仍集中 |
+| 浏览器端 TypeScript | 约 9,400 行 / 45 个文件 | legacy DOM 与 Kernel 适配仍集中在组合入口；React UI 尚未迁移 |
+| `src/public/app-main.ts` | 约 2,207 行 | 会话、输入、附件和 DOM 组合职责仍集中，领域状态已移入 Kernel |
 | `public/style.css` | 约 4,969 行 | 六套主题、响应式和全部组件样式共存 |
 | `public/index.html` | 约 313 行 | 页面骨架、Overlay、Dialog 和工作区容器 |
-| `tool-card.ts` | 约 647 行 | 工具状态、Diff、图片和增量更新 |
+| `tool-card.ts` | 约 647 行 | 工具卡 DOM、Diff、图片和增量更新 |
 | `session-sidebar.ts` | 约 594 行 | history/live、搜索、分组和 DOM 生命周期 |
 | `message-renderer.ts` | 约 398 行 | Markdown、thinking 和流式消息 DOM |
 
@@ -98,11 +98,11 @@ React 的主要收益是组件所有权、状态订阅、Overlay/焦点管理和
 
 需要适配：
 
-- `WebSocketClient`：退回为纯 Transport，不向组件暴露原始 event。
-- `AgentRuntime`：增加 Event Normalizer、重连校正和 Store dispatch。
-- Session、ToolExecution、ExtensionUI Controller：改为不依赖 DOM 的应用服务。
-- FeatureRegistry：拆成 Domain Registry 与 UI Registry。
-- Task/Visualization Store：保留协议和恢复逻辑，改为可订阅 Store。
+- `WebSocketClient`：作为 transport adapter 保留；原始消息由 Kernel 的 Event Normalizer 归一化。
+- `src/public/kernel/`：负责 Event Normalizer、Command Ports、分域 Store、Snapshot/Live Overlay reconcile 和错误映射。
+- legacy `app-main.ts` 与 Tool/Extension UI 接线：消费 Kernel stores/commands；仅保留 DOM、计时和功能 Renderer 等视图副作用。
+- FeatureRegistry：继续作为 Domain Feature 与 Workspace/UI Feature 的组合边界。
+- Task/Visualization Store：保留协议和恢复逻辑，按现有功能切片提供可订阅状态。
 
 需要重写：
 
@@ -560,12 +560,17 @@ dist/web/     React/Vite 构建产物
 - Vite 不向 `public/` 输出，也不清空 legacy 资产。
 - React 入口在切换前不替换默认 `/`。
 - React 通过内部入口或显式配置验收，不长期维护两套产品行为。
-- React 成为默认入口后保留 legacy 回退一个稳定周期，再删除旧 Renderer、StateManager、HTML 和无引用 CSS。
+- React 成为默认入口后保留 legacy 回退一个稳定周期，再删除剩余 legacy Renderer、DOM 接线、HTML 和无引用 CSS。
 - npm 包必须包含实际运行需要的 `dist/web`、Extension、Skill、Prompt 和 Server 产物。
 
 ## 9. 分阶段实施与门槛
 
 ### 阶段 0：冻结事实和行为
+
+> **状态：已完成（2026-07-22）**。交付物与重跑方式见 `docs/TEST_BASELINES.md`；
+> fixture 在 `test/fixtures/**`（由 `test/fixtures.test.ts` 校验），浏览器/性能/截图基线为
+> `npm run test:browser-baseline`（`scripts/browser-baseline.mjs` + `scripts/harness/` fake-pi 线束）。
+> 注意：当前环境无真实 pi/API key，fixture 为协议一致的合成事件（provenance 见 `test/fixtures/README.md`）。
 
 交付：
 
@@ -579,16 +584,26 @@ dist/web/     React/Vite 构建产物
 
 ### 阶段 1：Browser Application Kernel
 
+> **状态：已完成（2026-07-22）**。Kernel 核心、回放测试和 legacy 接入均已在当前版本验收；实现与测试文件已进入本次提交。
+> 现有 legacy UI 仍保留一个 DOM-only 适配层，用于压缩提示、Task/Geo Renderer、工具卡和计时等视图副作用；这些内容不再维护第二套会话或 streaming 领域状态。
+
 交付：
 
-- Event Normalizer。
-- Agent/Session/Extension UI Command Ports。
-- 分域 Store 与 selector API。
-- Stable Snapshot + Live Overlay。
-- reconnect reconcile 和最小 AppError。
-- legacy UI 改为消费 Kernel，删除 streaming 双写。
+- Event Normalizer：统一处理 WebSocket signal、RPC event、Snapshot 和协议错误。
+- Agent、Session、Extension UI Command Ports。
+- Runtime、Session、Conversation、Tool Execution、Extension UI 分域 Store。
+- Stable Snapshot + Live Overlay，以及 message_end / agent_end / reconnect reconcile。
+- 可序列化 AppError 和未知消息、未知事件、非法 Snapshot version 的诊断。
+- legacy `app-main.ts` 改为消费 Kernel，删除旧 `StateManager`、`AgentRuntime`、Session/Extension UI 状态副本和 streaming 双写。
 
-退出条件：同一组 Snapshot + event fixture 能确定性重放出相同状态；状态指示灯、输入禁用、会话标签和消息流不再各自判断 streaming。
+验证：
+
+- `test/kernel-replay.test.ts`：确定性回放、迟到/重复 delta、abort、reconnect 和会话隔离。
+- `test/kernel-stores.test.ts`：Store、队列、Extension UI 和 streaming 派生状态。
+- `test/kernel-commands.test.ts`：Command Port、HTTP 错误映射和响应路由。
+- `npm run test:browser-baseline`：legacy UI 的 create/switch/streaming/abort/resume/Task/Geo 等 11 个场景全部通过。
+
+退出条件：同一组 Snapshot + event fixture 能确定性重放出相同状态；状态指示灯、输入禁用、会话标签和消息流均从 Kernel 的 canonical store 派生。已满足。
 
 ### 阶段 2：Vite 基座
 
@@ -652,7 +667,7 @@ Workspace Platform    -> Geo Workspace
 
 - React 成为默认入口。
 - 保留 legacy 回退一个稳定周期。
-- 删除旧 `app-main.ts` UI 接线、Renderer、StateManager、旧 HTML 容器和无引用 CSS。
+- 删除剩余 legacy `app-main.ts` DOM 接线、Renderer、旧 HTML 容器和无引用 CSS。
 - 更新 ARCHITECTURE、README、启动脚本、发布清单和截图。
 
 退出条件：完整 Node、Pi RPC、浏览器、移动端和 npm pack 验证通过；legacy 删除后没有双实现或构建死路径。
@@ -670,7 +685,7 @@ Workspace Platform    -> Geo Workspace
 | Browser E2E | 创建、resume、streaming、abort、Dialog、Task、Geo、移动端和主题 |
 | Real Pi Smoke | Pi 版本、Extension 加载、Bridge manifest 和关键 RPC 往返 |
 
-真实 Chrome smoke 当前只覆盖连接和新建会话，因此阶段 0 是强制门槛。
+真实 Chrome smoke 当前仍主要覆盖真实 Node Server 的连接和新建会话；阶段 0 的 `browser-baseline` 使用 fake-pi 线束覆盖完整的合成 streaming、Task 和 Geo 浏览器路径。真实 Pi RPC 协议冒烟需另行执行 `npm run test:pi-smoke`；该测试使用 offline 模式，不代表真实模型 API 的完整 prompt 流程。
 
 ## 11. 性能预算
 
@@ -789,14 +804,14 @@ React Component -> raw WebSocket / Pi JSONL
 
 ## 16. 开始实施前的检查清单
 
-- [ ] 阶段 0 的 fixture 和浏览器基线进入仓库。
+- [x] 阶段 0 的 fixture 和浏览器基线进入仓库。
 - [ ] 明确 legacy/react 静态入口和回退方式。
-- [ ] Event Normalizer、Command Port 和 Store 的最小接口通过设计审阅。
-- [ ] Snapshot 与 live overlay 的 reconcile 规则有测试样例。
+- [x] Event Normalizer、Command Port 和 Store 的最小接口已实现并通过测试。
+- [x] Snapshot 与 live overlay 的 reconcile 规则有回放测试样例。
 - [ ] `DEFAULT_TASK_CWD` 不再由 React 复制一份硬编码路径，而由服务端配置提供。
 - [ ] Vite 输出目录不会覆盖 `public/` 或 Extension/Skill/Prompt。
-- [ ] 六套主题和移动端关键页面有截图基线。
-- [ ] Task Dialog、Geo Workspace 和 resume 已进入浏览器验收范围。
+- [x] 六套主题和移动端关键页面有截图基线。
+- [x] Task Dialog、Geo Workspace 和 resume 已进入浏览器验收范围。
 - [ ] 每阶段都有清晰回退点，不依赖未完成的下一阶段。
 
 ## 17. 官方参考

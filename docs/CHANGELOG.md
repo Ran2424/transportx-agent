@@ -11,6 +11,30 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v1.25 — Browser Application Kernel 与 legacy Web 适配
+
+- 日期：2026-07-22
+- GitHub 操作：提交到 `feature/react-migration-kernel`；本次未执行 push。
+- 提交主题：`feat: land browser application kernel and legacy adapter`
+
+主要修改：
+
+- 建立 `src/public/kernel/`，包含 Event Normalizer、Command Ports、Dispatcher、Runtime/Session/Conversation/Tool/Extension UI Store、Snapshot + Live Overlay reconcile 和可序列化 AppError。
+- 将 legacy `src/public/app-main.ts` 改为消费 Kernel stores/commands，删除旧 StateManager、AgentRuntime、SessionController 和 ExtensionUIController 源文件，消除 streaming 领域状态双写。
+- 增加 `test/fixtures/**`、Kernel replay/store/command 测试，以及 fake-pi 浏览器基线 harness。
+- 固化 create/switch/resume/close、streaming、abort、Task Dialog、Geo Workspace、六套主题、移动端截图和性能基线。
+- 更新 React 迁移计划与总体架构文档，明确 Browser Kernel 已完成、React/Vite 仍为下一阶段。
+- 将包版本更新为 `1.25.0`。
+
+验证：
+
+- `npm run typecheck` 通过。
+- `npm test`：233 项测试，232 项通过、1 项按默认策略跳过、0 项失败。
+- `npm run test:pi-smoke`：真实 Pi `0.80.10` RPC 冒烟通过。
+- `npm run test:browser-smoke`：真实 Node Server + Chrome 冒烟通过。
+- `npm run test:browser-baseline`：11/11 场景通过。
+- `start.sh` 启动后 `/api/health` 返回 `status: ok`。
+
 ## v1.24 — 文档事实校对与 React Web Adapter 路线定稿
 
 - 日期：2026-07-21

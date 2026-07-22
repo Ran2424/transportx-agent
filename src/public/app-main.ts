@@ -2,10 +2,9 @@
  * Main App - Ties everything together
  */
 
-import { StateManager } from './state.js';
 import { MessageRenderer } from './message-renderer.js';
 import { ToolCardRenderer, formatToolResultText } from './tool-card.js';
-import { DialogHandler } from './dialogs.js';
+import { DialogHandler, type DialogRequest } from './dialogs.js';
 import { SessionSidebar, type SidebarProject, type SidebarSession } from './session-sidebar.js';
 import { themes, applyTheme, getCurrentTheme } from './themes.js';
 import { getFileIcon } from './file-browser.js';
@@ -18,35 +17,71 @@ import { WorkspaceController } from './workspace/workspace-controller.js';
 import { FeatureRegistry } from './features/feature-registry.js';
 import { GeoFeature } from './features/geo/geo-feature.js';
 import { TaskModeFeature } from './features/task/task-mode-feature.js';
-import { AgentRuntime } from './runtime/agent-runtime.js';
-import { SessionController } from './controllers/session-controller.js';
+import { WebSocketClient } from './websocket-client.js';
+import { createAppKernel, type KernelUiEvent } from './kernel/app-kernel.js';
+import type { AppError } from './kernel/errors.js';
+import { messageText, messageThinking } from './kernel/stores/conversation-store.js';
 import { ToolExecutionController } from './controllers/tool-execution-controller.js';
-import { ExtensionUIController } from './controllers/extension-ui-controller.js';
 
-import type { AppEvent, AppMessage, LiveInstance, LiveSession, MessageContentBlock, ModelRecord, PendingFilePath, PendingImage, QueuedCommand, RpcCommand, SessionEntry, SessionSnapshot, UsageRecord } from './app-types.js';
+import type { AppEvent, AppMessage, LiveInstance, LiveSession, MessageContentBlock, ModelRecord, PendingFilePath, PendingImage, RpcCommand, SessionEntry, SessionSnapshot, UsageRecord } from './app-types.js';
 
 type SessionHistoryEntry = SessionEntry;
 
 type DurationCacheEntry = { durationMs: number; updatedAt: number };
 type DurationCache = Record<string, DurationCacheEntry>;
 
-type LiveSessionSnapshotData = Partial<SessionSnapshot> & { entries?: SessionHistoryEntry[] };
-
-type RpcEventDetail = { sessionId?: string; event?: AppEvent };
-
 // Initialize components
 const wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
-const agentRuntime = new AgentRuntime(wsUrl);
-const wsClient = agentRuntime.transport;
-const runtimeStore = agentRuntime.store;
-const state = new StateManager();
+const wsClient = new WebSocketClient(wsUrl);
+// The kernel owns all application state (sessions, streaming, conversation,
+// tool executions, extension UI). app-main renders from its stores and
+// issues commands through its ports; nothing here judges streaming itself.
+const kernel = createAppKernel({
+  transport: wsClient,
+  http: (path, init) => fetch(path, {
+    method: init?.method,
+    headers: { 'Content-Type': 'application/json' },
+    body: init?.body ? JSON.stringify(init.body) : undefined,
+  }),
+});
+const { stores, commands, dispatch } = kernel;
+
+// Derived reads against the kernel stores — the single source of truth for
+// session list and per-session streaming state.
+function getLiveSessions(): LiveSession[] {
+  return stores.session.get().sessions;
+}
+
+function isSessionStreaming(sessionId: string | null): boolean {
+  return !!sessionId && !!stores.session.get().streamingBySession[sessionId];
+}
+
+function isActiveStreaming(): boolean {
+  return viewingActiveSession && isSessionStreaming(activeLiveSessionId);
+}
 // All element lookups below query the app's static index.html shell, which is
 // present before this module runs (the script is a deferred module at the end
 // of <body>). A missing element means the page is structurally broken, so we
 // assert non-null at the query site rather than guarding every usage.
 const messageRenderer = new MessageRenderer(document.getElementById('messages')!);
 const toolCardRenderer = new ToolCardRenderer(document.getElementById('messages')!, { getSessionId: () => activeLiveSessionId });
-const dialogHandler = new DialogHandler(document.getElementById('dialog-container')!, wsClient, () => activeLiveSessionId);
+// DialogHandler keeps its DOM behavior, but its responses go through the
+// kernel command port so the extensionUi store sees every resolution.
+const dialogHandler = new DialogHandler(document.getElementById('dialog-container')!, {
+  send(data: unknown) {
+    const message = data as { type?: string; id?: string; sessionId?: string | null } & Record<string, unknown>;
+    if (message?.type !== 'extension_ui_response') {
+      wsClient.send(data);
+      return;
+    }
+    const { type: _type, id, sessionId, ...response } = message;
+    void commands.extensionUi.respond({
+      sessionId: sessionId ?? null,
+      id,
+      response: Object.keys(response).length > 0 ? response : undefined,
+    });
+  },
+}, () => activeLiveSessionId);
 
 // Session sidebar
 const sidebar = new SessionSidebar(
@@ -76,10 +111,9 @@ let statusFlashTimer: ReturnType<typeof setTimeout> | null = null;
 // Only touches the indicator class (not statusText), so callers can set the
 // accompanying text themselves.
 function restoreStatusIndicator() {
-  const { connection, isStreaming } = runtimeStore.snapshot;
-  const open = connection === 'connected';
+  const connected = stores.runtime.get().connection === 'connected';
   statusIndicator.className = `status-indicator ${
-    open && isStreaming ? 'streaming' : (open ? 'connected' : 'disconnected')
+    connected && isActiveStreaming() ? 'streaming' : (connected ? 'connected' : 'disconnected')
   }`;
 }
 // Set a transient statusText message and schedule its restore. Cancels any
@@ -125,11 +159,10 @@ function flashStatusError(msg: string, ms = 3000) {
   statusFlashTimer = setTimeout(() => {
     statusFlashTimer = null;
     restoreStatusIndicator();
-    const { connection, isStreaming } = runtimeStore.snapshot;
-    const open = connection === 'connected';
+    const connected = stores.runtime.get().connection === 'connected';
     // Preserve an in-progress stream: restore the streaming text too.
-    statusText.textContent = (open && isStreaming) ? '处理中...'
-      : (open ? '已连接' : '已断开');
+    statusText.textContent = (connected && isActiveStreaming()) ? '处理中...'
+      : (connected ? '已连接' : '已断开');
   }, ms);
 }
 
@@ -150,27 +183,22 @@ const launcherPanel = setupLauncherPanel({
   messagesContainer,
   async createSession(projectPath) {
     try {
-      const res = await fetch('/api/live-sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd: currentNewSessionCwd(), name: basename(projectPath || '任务'), model: '' }),
-      });
-      const data = await res.json();
-      if (data.session) {
-        upsertLiveSession(data.session);
-        await selectLiveSession(data.session.id);
-      }
+      const session = await commands.session.create({ cwd: currentNewSessionCwd(), name: basename(projectPath || '任务'), model: '' });
+      dispatch({ type: 'session/created', session });
+      await selectLiveSession(session.id);
     } catch (e) {
       console.error('[Launcher] Failed to create Tau tab:', e);
     }
   },
 });
 
-// State tracking
-let currentStreamingElement: HTMLElement | null = null;
-let currentStreamingText = '';
-let currentThinkingStartedAt: number | null = null;
-let currentThinkingEndedAt: number | null = null;
+// View-local rendering state (DOM handles and wall-clock timing only — all
+// domain state lives in the kernel stores).
+let streamingElement: HTMLElement | null = null; // DOM handle of the in-flight assistant message
+let streamingThinkingStartedAt: number | null = null;
+let streamingThinkingEndedAt: number | null = null;
+let renderedEntryCount = 0; // snapshotEntries already rendered for the current view
+let optimisticPromptRendered = false;
 let sessionTotalCost = 0;
 let lastInputTokens = 0;
 let contextWindowSize = 0;  // fetched from model info
@@ -179,16 +207,12 @@ let hasFocus = true;
 let unreadCount = 0;
 let isScrolledUp = false;
 let hasNewWhileScrolled = false;
-let lastSentMessage: string | null = null; // Track to avoid duplicate rendering from backend echo events
 let lastUsage: UsageRecord | null = null; // Full usage object for context visualiser
 let activeLiveSessionFile: string | null = null; // The active live session file path
 let viewingActiveSession = false; // Whether we're viewing a live backend Tau tab or historical read-only session
 let hasReceivedInitialServerState = false;
 let liveInstances: LiveInstance[] = []; // Sidebar live indicators derived from backend live sessions
-const sessionController = new SessionController();
-const liveSessions = sessionController.sessions;
 let activeLiveSessionId = localStorage.getItem('tau-active-live-session-id') || null;
-sessionController.activate(activeLiveSessionId);
 let hasRestoredInitialLiveSession = false;
 
 const TOOL_DURATION_CACHE_KEY = 'tau-tool-duration-cache-v1';
@@ -216,7 +240,7 @@ function toolDurationScopes(sessionId: string | null = activeLiveSessionId) {
   const scopes: string[] = [];
   const sessionFile = sessionId === activeLiveSessionId
     ? activeLiveSessionFile
-    : liveSessions.find((s) => s.id === sessionId)?.sessionFile || null;
+    : getLiveSessions().find((s) => s.id === sessionId)?.sessionFile || null;
   if (sessionFile) scopes.push(`file:${sessionFile}`);
   if (sessionId) scopes.push(`id:${sessionId}`);
   return scopes;
@@ -254,7 +278,7 @@ function stableHash(text: string) {
 
 function thinkingDurationIdentity(message: AppMessage) {
   if (message.id) return `id:${message.id}`;
-  return `hash:${stableHash(`${message.role || ''}\n${getMessageText(message)}\n${getMessageThinking(message)}`)}`;
+  return `hash:${stableHash(`${message.role || ''}\n${messageText(message)}\n${messageThinking(message)}`)}`;
 }
 
 function rememberThinkingDuration(message: AppMessage, blockIndex: number, durationMs: number, sessionId: string | null = activeLiveSessionId) {
@@ -281,7 +305,7 @@ function getRememberedThinkingDuration(message: AppMessage, blockIndex: number, 
 }
 
 function syncSidebarLiveSessions() {
-  sidebar.setLiveSessions(liveSessions);
+  sidebar.setLiveSessions(getLiveSessions());
   updateLiveSessionIndicators();
 }
 
@@ -306,7 +330,7 @@ const workspaceController = new WorkspaceController({
     pendingFilePaths.push({ path: filePath, name, ext, sessionId: activeLiveSessionId });
     renderAttachmentPreviews();
   },
-  getSessionId: () => viewingActiveSession && liveSessions.some((session) => session.id === activeLiveSessionId)
+  getSessionId: () => viewingActiveSession && getLiveSessions().some((session) => session.id === activeLiveSessionId)
     ? activeLiveSessionId
     : null,
 });
@@ -320,7 +344,7 @@ const taskModeFeature = new TaskModeFeature({
   panelClose: document.getElementById('task-board-close') as HTMLButtonElement,
   dragHandle: document.getElementById('task-board-drag-handle')!,
   async onModeChange(enabled) {
-    if (state.isStreaming) {
+    if (isActiveStreaming()) {
       setStatusMessage('请等待当前回复结束后再切换任务模式', '已连接', 3000);
       return false;
     }
@@ -330,20 +354,13 @@ const taskModeFeature = new TaskModeFeature({
 });
 featureRegistry.register(taskModeFeature);
 const toolExecutionController = new ToolExecutionController({
-  state,
+  store: stores.toolExecution,
   renderer: toolCardRenderer,
   features: featureRegistry,
   workspace: workspaceController,
   formatResult: formatToolResultText,
   rememberDuration: rememberToolDuration,
 });
-const extensionUIController = new ExtensionUIController({
-  dialogs: dialogHandler,
-  activeSessionId: () => activeLiveSessionId,
-  isActiveSessionVisible: () => viewingActiveSession,
-  onChange: renderLiveTabs,
-});
-dialogHandler.onIdle = () => extensionUIController.process();
 workspaceController.start();
 
 
@@ -367,9 +384,9 @@ window.addEventListener('blur', () => {
 
 // Reconnect WebSocket when returning to the app (iOS suspends WS connections)
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && runtimeStore.snapshot.connection !== 'connected') {
+  if (document.visibilityState === 'visible' && stores.runtime.get().connection !== 'connected') {
     console.log('[App] Returning to app, reconnecting...');
-    agentRuntime.forceReconnect();
+    wsClient.forceReconnect();
   }
 });
 
@@ -423,75 +440,63 @@ wsClient.addEventListener('reconnectFailed', () => {
   messageRenderer.renderError('连接已断开，请刷新页面。');
 });
 
-wsClient.addEventListener('rpcEvent', (e: Event) => {
-  const detail = (e as CustomEvent<RpcEventDetail>).detail || {};
-  const event = (detail.event || detail) as AppEvent;
-  const sessionId = detail.sessionId;
-  if (sessionId) {
-    const session = liveSessions.find(s => s.id === sessionId);
-    if (session) {
-      session.lastActiveAt = new Date().toISOString();
-      if (event.type === 'agent_start' || event.type === 'turn_start') session.isStreaming = true;
-      if (event.type === 'agent_end' || event.type === 'turn_end') session.isStreaming = false;
-      if (event.type === 'session_name' && event.name) session.sessionName = event.name;
-      if ((event.message as AppMessage)?.usage) session.contextUsage = { ...(session.contextUsage || {}), usage: (event.message as AppMessage).usage };
-      renderLiveTabs();
-      syncSidebarLiveSessions();
-    }
-    if (sessionId !== activeLiveSessionId || !viewingActiveSession) {
-      if (event.type === 'extension_ui_request') queueExtensionUIRequest(event, sessionId);
-      return;
-    }
-  }
-  handleRPCEvent(event, sessionId);
-});
-
-wsClient.addEventListener('serverError', (e: Event) => {
-  messageRenderer.renderError((e as CustomEvent<{ message: string }>).detail.message);
-});
-
-wsClient.addEventListener('stateUpdate', (e: Event) => {
-  const detail = (e as CustomEvent<{ liveSessions?: LiveSession[] }>).detail;
+// First server state restores the saved (or most recent) live session; on
+// reconnect the same path re-hydrates the viewed session from a snapshot.
+function handleServerStateApplied() {
   const wasViewingLive = viewingActiveSession;
   const launcherVisible = launcherPanel.isVisible();
   hasReceivedInitialServerState = true;
-  setLiveSessions(detail.liveSessions || []);
   if (!hasRestoredInitialLiveSession || (wasViewingLive && !launcherVisible)) {
     hasRestoredInitialLiveSession = true;
     restoreActiveLiveSession();
   } else {
-    if (activeLiveSessionId && !liveSessions.some(s => s.id === activeLiveSessionId)) {
-      activeLiveSessionId = null;
-      sessionController.activate(null);
-      agentRuntime.activateSession(null);
-      featureRegistry.setSession(null, null);
-      localStorage.removeItem('tau-active-live-session-id');
-      renderQueuedMessages();
-      renderLiveTabs();
-    }
     updateLiveSessionInputState();
     updateLiveSessionIndicators();
   }
-});
+}
 
-wsClient.addEventListener('liveSessionCreated', (e: Event) => {
-  upsertLiveSession((e as CustomEvent<LiveSession>).detail);
-});
-
-wsClient.addEventListener('liveSessionUpdated', (e: Event) => {
-  const detail = (e as CustomEvent<LiveSession>).detail;
-  upsertLiveSession(detail);
-  if (detail?.id === activeLiveSessionId) applyActiveSessionMetadata(detail);
-});
-
-wsClient.addEventListener('liveSessionClosed', (e: Event) => {
-  handleLiveSessionClosed((e as CustomEvent<{ sessionId: string }>).detail.sessionId);
-});
-
-// Receive a full live-session state snapshot.
-wsClient.addEventListener('liveSessionSnapshot', (e: Event) => {
-  applyLiveSessionSnapshot((e as CustomEvent<LiveSessionSnapshotData>).detail);
-});
+// UI-only side effects of RPC events (compaction indicator, task-mode
+// entries, tool cards). State for these same events already lives in the
+// kernel stores (this fires after it was applied); nothing here writes state.
+function handleKernelRpcEvent(event: AppEvent, sessionId: string | null) {
+  // Keep tab recency ordering fresh (legacy touched LiveSession.lastActiveAt).
+  if (sessionId) {
+    dispatch({ type: 'session/updated', session: { id: sessionId, lastActiveAt: new Date().toISOString() } });
+  }
+  // Events for background sessions carry no active-view side effects; their
+  // state (streaming flag, extension UI queue) is already in the stores.
+  if (sessionId && (sessionId !== activeLiveSessionId || !viewingActiveSession)) return;
+  switch (event.type) {
+    case 'auto_compaction_start':
+      handleCompactionStart();
+      break;
+    case 'auto_compaction_end':
+      handleCompactionEnd(event);
+      break;
+    case 'extension_error':
+      messageRenderer.renderError(`扩展错误：${event.error}`);
+      break;
+    case 'entry_appended':
+      taskModeFeature.handleEntry(event.entry);
+      break;
+    case 'session_name':
+      // Auto-title: update sidebar with new session name
+      if (event.name) {
+        const activeItem = document.querySelector('.session-item.active .session-title');
+        if (activeItem) activeItem.textContent = event.name;
+      }
+      break;
+    case 'tool_execution_start':
+      toolExecutionController.start(event, sessionId ?? activeLiveSessionId);
+      break;
+    case 'tool_execution_update':
+      toolExecutionController.update(event, sessionId ?? activeLiveSessionId);
+      break;
+    case 'tool_execution_end':
+      toolExecutionController.end(event, sessionId ?? activeLiveSessionId);
+      break;
+  }
+}
 
 // ═══════════════════════════════════════
 // Live-session tabs
@@ -509,41 +514,29 @@ const newLiveSessionModel = document.getElementById('new-live-session-model') as
 const newLiveSessionSubmit = document.getElementById('new-live-session-submit') as HTMLButtonElement;
 const DEFAULT_TASK_CWD = '/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/scenario';
 
-function setLiveSessions(sessions: LiveSession[]) {
-  sessionController.replace(sessions || []);
-  liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
-  renderLiveTabs();
-  syncSidebarLiveSessions();
-}
-
 function handleLiveSessionClosed(closedId: string) {
   if (!closedId) return;
-  sessionController.remove(closedId);
-  messageQueue = messageQueue.filter(cmd => cmd.sessionId !== closedId);
-  extensionUIController.dropSession(closedId);
-  if (dialogHandler.currentRequest?.sessionId === closedId) {
-    dialogHandler.clearCurrentDialog();
-    processQueuedExtensionUIRequest();
-  }
-  renderQueuedMessages();
-  if (activeLiveSessionId === closedId) {
-    const wasViewingActive = viewingActiveSession;
+  const wasActive = activeLiveSessionId === closedId;
+  const wasViewingActive = wasActive && viewingActiveSession;
+  if (wasActive) {
+    // Clear before dispatching so the session-store watcher does not re-enter.
     activeLiveSessionId = null;
-    sessionController.activate(null);
-    agentRuntime.activateSession(null);
     localStorage.removeItem('tau-active-live-session-id');
     activeLiveSessionFile = null;
-    currentStreamingElement = null;
-    currentStreamingThinking = '';
-    currentStreamingText = '';
-    state.reset();
+  }
+  // The kernel drops the session's conversation/tool/extension-UI state
+  // (including any queued prompts) on session/closed.
+  dispatch({ type: 'session/closed', sessionId: closedId });
+  if (wasActive) {
+    resetConversationView();
     showTypingIndicator(false);
     if (wasViewingActive) {
       messageRenderer.clear();
       toolCardRenderer.clear();
       const next = getMostRecentLiveSession();
-      if (next) selectLiveSession(next.id);
-      else {
+      if (next) {
+        void selectLiveSession(next.id);
+      } else {
         featureRegistry.setSession(null, null);
         viewingActiveSession = false;
         messageRenderer.renderWelcome();
@@ -555,30 +548,14 @@ function handleLiveSessionClosed(closedId: string) {
       updateUI();
     }
   }
-  liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
   renderLiveTabs();
   syncSidebarLiveSessions();
 }
 
-function upsertLiveSession(session: LiveSession) {
-  if (!session) return;
-  const idx = liveSessions.findIndex(s => s.id === session.id);
-  let shouldRenderTabs = false;
-  if (idx >= 0) {
-    const before = liveTabSignature(liveSessions[idx]);
-    sessionController.upsert(session);
-    shouldRenderTabs = before !== liveTabSignature(liveSessions[idx]);
-  } else {
-    sessionController.upsert(session);
-    shouldRenderTabs = true;
-  }
-  liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
-  if (shouldRenderTabs) renderLiveTabs();
-  syncSidebarLiveSessions();
-}
-
 function getMostRecentLiveSession() {
-  return sessionController.mostRecent();
+  return [...getLiveSessions()].sort((a, b) =>
+    new Date(b.lastActiveAt || b.createdAt || 0).getTime() - new Date(a.lastActiveAt || a.createdAt || 0).getTime()
+  )[0] || null;
 }
 
 function basename(p: string) {
@@ -596,7 +573,7 @@ function liveTabSignature(session: LiveSession) {
     compactModelLabel(session),
     session.cwd || '',
     session.modelSpec || '',
-    session.isStreaming ? 'streaming' : 'idle',
+    isSessionStreaming(session.id) ? 'streaming' : 'idle',
     hasPendingExtensionUIRequest(session.id) ? 'ui' : '',
   ].join('\u001f');
 }
@@ -608,7 +585,7 @@ function renderLiveTabs() {
     if (tab.dataset.sessionId) existing.set(tab.dataset.sessionId, tab);
   });
   const seen = new Set<string>();
-  liveSessions.forEach((session, index) => {
+  getLiveSessions().forEach((session, index) => {
     let tab = existing.get(session.id);
     if (!tab) {
       tab = document.createElement('button');
@@ -624,7 +601,7 @@ function renderLiveTabs() {
     if (tab.dataset.signature !== signature) {
       tab.dataset.signature = signature;
       tab.innerHTML = `
-        ${session.isStreaming ? '<span class="live-tab-streaming-dot"></span>' : ''}
+        ${isSessionStreaming(session.id) ? '<span class="live-tab-streaming-dot"></span>' : ''}
         ${hasPendingExtensionUIRequest(session.id) ? '<span class="live-tab-ui-dot" title="等待响应">?</span>' : ''}
         <span class="live-tab-title">${escapeHtml(session.sessionName || basename(session.cwd || ''))}</span>
         <span class="live-tab-model">${escapeHtml(compactModelLabel(session))}</span>
@@ -644,34 +621,32 @@ function renderLiveTabs() {
 }
 
 function restoreActiveLiveSession() {
-  const saved = activeLiveSessionId && liveSessions.find(s => s.id === activeLiveSessionId);
+  const saved = activeLiveSessionId && getLiveSessions().find(s => s.id === activeLiveSessionId);
   const next = saved || getMostRecentLiveSession();
   if (next) {
-    selectLiveSession(next.id);
+    void selectLiveSession(next.id);
   } else {
     activeLiveSessionId = null;
-    sessionController.activate(null);
-    agentRuntime.activateSession(null);
     featureRegistry.setSession(null, null);
     viewingActiveSession = false;
     activeLiveSessionFile = null;
     localStorage.removeItem('tau-active-live-session-id');
-    state.reset();
-    renderQueuedMessages();
+    resetConversationView();
     renderLiveTabs();
     updateLiveSessionInputState();
+    updateUI();
   }
 }
 
 async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFailure?: boolean } = {}) {
-  const session = liveSessions.find(s => s.id === id);
+  const session = getLiveSessions().find(s => s.id === id);
   if (!session) return false;
   const previousFeatureSession = featureRegistry.sessionContext;
-  suspendCurrentDialogForTabSwitch(id);
   launcherPanel.hide();
   activeLiveSessionId = id;
-  sessionController.activate(id);
-  agentRuntime.activateSession(id, !!session.isStreaming);
+  // session/activated also suspends any open dialog belonging to another
+  // session and promotes a queued one for this tab (extensionUi store).
+  dispatch({ type: 'session/activated', sessionId: id });
   featureRegistry.setSession(id, id, true);
   localStorage.setItem('tau-active-live-session-id', id);
   viewingActiveSession = true;
@@ -680,35 +655,26 @@ async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFai
   renderLiveTabs();
   renderQueuedMessages();
   applyActiveSessionMetadata(session);
-  currentStreamingElement = null;
-  currentStreamingThinking = '';
-  currentStreamingText = '';
-  state.reset();
-  state.setStreaming(!!session.isStreaming);
+  resetConversationView();
   messageRenderer.clear();
   toolCardRenderer.clear();
   try {
-    const res = await fetch(`/api/live-sessions/${encodeURIComponent(id)}/snapshot`);
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      if (!options.keepCurrentMessagesOnFailure) handleLiveSessionClosed(id);
-      throw new Error(data.error || '交通任务不存在');
-    }
-    applyLiveSessionSnapshot({ ...data, sessionId: id });
+    const snapshot = await commands.session.loadSnapshot(id);
+    // Hydrate the kernel stores first; the view renders from them below.
+    dispatch({ type: 'session/snapshotReceived', sessionId: id, snapshot });
+    applySnapshotMetadata(snapshot);
+    renderFullConversation(id);
   } catch (e) {
     if (options.keepCurrentMessagesOnFailure) {
-      sessionController.remove(id);
-      liveInstances = liveSessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
+      dispatch({ type: 'session/closed', sessionId: id });
       if (activeLiveSessionId === id) {
         activeLiveSessionId = null;
-        sessionController.activate(null);
-        agentRuntime.activateSession(null);
         featureRegistry.setSession(previousFeatureSession.sessionKey, previousFeatureSession.resourceSessionId);
         localStorage.removeItem('tau-active-live-session-id');
         activeLiveSessionFile = null;
       }
       viewingActiveSession = false;
-      state.reset();
+      resetConversationView();
       showTypingIndicator(false);
       renderLiveTabs();
       syncSidebarLiveSessions();
@@ -716,14 +682,14 @@ async function selectLiveSession(id: string, options: { keepCurrentMessagesOnFai
       updateUI();
       messageRenderer.renderSystemMessage('已打开历史记录；后台会话暂未恢复，当前不能继续提问。');
     } else {
+      handleLiveSessionClosed(id);
       messageRenderer.renderError((e instanceof Error ? e.message : '') || '加载任务快照失败');
     }
     return false;
   }
   workspaceController.refreshForSessionChange();
   updateLiveSessionInputState();
-  processQueuedExtensionUIRequest(id);
-  flushQueue();
+  updateUI();
   return true;
 }
 
@@ -735,19 +701,20 @@ function applyActiveSessionMetadata(session: LiveSession) {
 }
 
 async function closeLiveSession(id: string) {
-  const session = liveSessions.find(s => s.id === id);
+  const session = getLiveSessions().find(s => s.id === id);
   if (!session) return;
-  const hasQueuedMessages = messageQueue.some(cmd => cmd.sessionId === id);
-  if (session.isStreaming || hasQueuedMessages) {
-    const reason = session.isStreaming && hasQueuedMessages
+  const streaming = isSessionStreaming(id);
+  const hasQueuedMessages = (stores.conversation.get().bySession[id]?.live.queued.length ?? 0) > 0;
+  if (streaming || hasQueuedMessages) {
+    const reason = streaming && hasQueuedMessages
       ? '这个交通任务正在执行，且还有排队未发送的消息。确定关闭任务、终止 Pi 会话并丢弃队列吗？'
-      : session.isStreaming
+      : streaming
         ? '这个交通任务正在执行。确定关闭任务并终止 Pi 会话吗？'
         : '这个交通任务还有排队未发送的消息。确定关闭并丢弃吗？';
     if (!confirm(reason)) return;
   }
   try {
-    await fetch(`/api/live-sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await commands.session.close(id);
   } catch (e) {
     messageRenderer.renderError('关闭任务失败');
   }
@@ -850,18 +817,12 @@ newLiveSessionForm?.addEventListener('submit', async (e) => {
   newLiveSessionSubmit.disabled = true;
   newLiveSessionSubmit.textContent = '正在启动...';
   try {
-    const res = await fetch('/api/live-sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cwd, name, model: newLiveSessionModel.value.trim() }),
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '创建任务失败');
-    upsertLiveSession(data.session);
+    const session = await commands.session.create({ cwd, name, model: newLiveSessionModel.value.trim() });
+    dispatch({ type: 'session/created', session });
     closeNewLiveSessionModal();
     newLiveSessionName.value = '';
     newLiveSessionModel.value = '';
-    await selectLiveSession(data.session.id);
+    await selectLiveSession(session.id);
   } catch (err) {
     messageRenderer.renderError((err instanceof Error ? err.message : '') || '创建任务失败');
   } finally {
@@ -871,60 +832,138 @@ newLiveSessionForm?.addEventListener('submit', async (e) => {
 });
 
 // ═══════════════════════════════════════
-// RPC event handlers
+// Live conversation view — renders the kernel conversation store
 // ═══════════════════════════════════════
 
-function handleRPCEvent(event: AppEvent, sessionId: string | null = null) {
-  switch (event.type) {
-    case 'agent_start':
-    case 'turn_start':
-      handleAgentStart();
-      break;
-    case 'agent_end':
-    case 'turn_end':
-      handleAgentEnd();
-      break;
-    case 'message_start':
-      handleMessageStart(event.message as AppMessage);
-      break;
-    case 'message_update':
-      handleMessageUpdate(event);
-      break;
-    case 'message_end':
-      handleMessageEnd(event.message as AppMessage, sessionId);
-      break;
-    case 'tool_execution_start':
-      handleToolExecutionStart(event);
-      break;
-    case 'tool_execution_update':
-      handleToolExecutionUpdate(event, sessionId);
-      break;
-    case 'tool_execution_end':
-      handleToolExecutionEnd(event, sessionId);
-      break;
-    case 'auto_compaction_start':
-      handleCompactionStart();
-      break;
-    case 'auto_compaction_end':
-      handleCompactionEnd(event);
-      break;
-    case 'extension_ui_request':
-      handleExtensionUIRequest(event, sessionId);
-      break;
-    case 'entry_appended':
-      taskModeFeature.handleEntry(event.entry);
-      break;
-    case 'extension_error':
-      messageRenderer.renderError(`扩展错误：${event.error}`);
-      break;
-    case 'session_name':
-      // Auto-title: update sidebar with new session name
-      if (event.name) {
-        const activeItem = document.querySelector('.session-item.active .session-title');
-        if (activeItem) activeItem.textContent = event.name;
-      }
-      break;
+// Reset view-local rendering bookkeeping on session switch/close.
+function resetConversationView() {
+  streamingElement = null;
+  streamingThinkingStartedAt = null;
+  streamingThinkingEndedAt = null;
+  renderedEntryCount = 0;
+  optimisticPromptRendered = false;
+}
+
+// Full re-render after a snapshot hydrate (session switch / restore).
+function renderFullConversation(sessionId: string) {
+  const conv = stores.conversation.get().bySession[sessionId];
+  messageRenderer.clear();
+  toolCardRenderer.clear();
+  sessionTotalCost = 0;
+  lastInputTokens = 0;
+  lastUsage = null;
+  resetConversationView();
+  const entries = conv?.snapshotEntries ?? [];
+  if (entries.length > 0) {
+    renderSessionHistory(entries);
+  } else {
+    messageRenderer.renderWelcome();
   }
+  renderedEntryCount = entries.length;
+  updateContextPill();
+  // A live session just loaded — fetch its authoritative stats from pi.
+  void sessionStatsCard.refresh();
+}
+
+// Render one newly appended store entry (message_end / echo / fold-over).
+function renderLiveEntry(entry: SessionEntry) {
+  if (entry.type !== 'message') return;
+  const message = entry.message;
+  if (!message) return;
+  if (message.role === 'user') {
+    const content = messageText(message);
+    if (content) messageRenderer.renderUserMessage({ content });
+    return;
+  }
+  if (message.role === 'assistant') {
+    if (streamingElement) finalizeStreamingEntry(message);
+    else messageRenderer.renderAssistantMessage(message, false, true);
+    return;
+  }
+  if (message.role === 'toolResult') {
+    toolExecutionController.restoreToolResult(message, activeLiveSessionId);
+  }
+}
+
+// The store already reconciled the authoritative message_end payload with
+// the locally streamed deltas; the view only re-renders what the store holds.
+function finalizeStreamingEntry(message: AppMessage) {
+  const element = streamingElement;
+  if (!element) return;
+  const finalText = messageText(message);
+  const finalThinking = messageThinking(message);
+  if (streamingThinkingStartedAt !== null && streamingThinkingEndedAt === null) streamingThinkingEndedAt = Date.now();
+  const thinkingDuration = streamingThinkingStartedAt !== null && streamingThinkingEndedAt !== null
+    ? streamingThinkingEndedAt - streamingThinkingStartedAt
+    : undefined;
+  if (finalText) messageRenderer.updateStreamingMessage(element, finalText);
+  if (finalThinking) messageRenderer.updateStreamingThinking(element, finalThinking, thinkingDuration);
+  if (finalThinking && thinkingDuration !== undefined) {
+    rememberThinkingDuration(message, 0, thinkingDuration, activeLiveSessionId);
+  }
+  messageRenderer.finalizeStreamingMessage(element, message.usage || null, finalThinking, thinkingDuration);
+  streamingElement = null;
+  streamingThinkingStartedAt = null;
+  streamingThinkingEndedAt = null;
+
+  // Track session cost and tokens
+  const usage = message.usage;
+  if (usage?.cost?.total) sessionTotalCost += usage.cost.total;
+  if (usage?.input) {
+    lastInputTokens = usage.input + (usage.cacheRead || 0);
+    lastUsage = usage;
+  }
+  updateContextPill();
+  showNewMessageBadge();
+}
+
+function ensureStreamingElement() {
+  if (!streamingElement) {
+    streamingElement = messageRenderer.renderAssistantMessage({ content: '' }, true);
+  }
+  return streamingElement;
+}
+
+// Overlay deltas live in the store; the view mirrors them into the DOM.
+function renderStreamingOverlay(live: { streamingText: string; streamingThinking: string }) {
+  if (live.streamingThinking) {
+    const element = ensureStreamingElement();
+    if (streamingThinkingStartedAt === null) {
+      streamingThinkingStartedAt = Date.now();
+      streamingThinkingEndedAt = null;
+    }
+    const thinkingDuration = (streamingThinkingEndedAt || Date.now()) - streamingThinkingStartedAt;
+    messageRenderer.updateStreamingThinking(element, live.streamingThinking, thinkingDuration);
+  }
+  if (live.streamingText) {
+    const element = ensureStreamingElement();
+    if (streamingThinkingStartedAt !== null && streamingThinkingEndedAt === null) {
+      streamingThinkingEndedAt = Date.now();
+      messageRenderer.updateStreamingThinking(element, live.streamingThinking, streamingThinkingEndedAt - streamingThinkingStartedAt);
+    }
+    messageRenderer.updateStreamingMessage(element, live.streamingText);
+  }
+}
+
+// Conversation store subscription: incremental entries, optimistic prompts,
+// the streaming overlay and the queued-message strip for the active view.
+function handleConversationChange() {
+  renderQueuedMessages();
+  if (!viewingActiveSession || !activeLiveSessionId) return;
+  const conv = stores.conversation.get().bySession[activeLiveSessionId];
+  if (!conv) return;
+  const entries = conv.snapshotEntries;
+  if (renderedEntryCount > entries.length) renderedEntryCount = 0;
+  for (let i = renderedEntryCount; i < entries.length; i++) renderLiveEntry(entries[i]);
+  renderedEntryCount = entries.length;
+  const optimistic = conv.live.optimisticPrompt;
+  if (optimistic && !optimisticPromptRendered) {
+    messageRenderer.renderUserMessage({ content: optimistic.message, images: optimistic.images });
+    optimisticPromptRendered = true;
+  } else if (!optimistic) {
+    optimisticPromptRendered = false;
+  }
+  renderStreamingOverlay(conv.live);
 }
 
 function handleCompactionStart() {
@@ -951,204 +990,42 @@ function handleCompactionEnd(event: AppEvent) {
   void sessionStatsCard.refresh();
 }
 
-function handleAgentStart() {
-  state.setStreaming(true);
-  showTypingIndicator(true);
-  updateUI();
-}
-
-function handleAgentEnd() {
-  const wasStreaming = state.isStreaming;
-  state.setStreaming(false);
-  showTypingIndicator(false);
-  currentStreamingElement = null;
-  currentStreamingText = '';
-  updateUI();
-
-  // A turn just finished — pull authoritative post-turn stats from pi so the
-  // context pill and stats card stop relying on incremental usage events.
-  // Guard with wasStreaming so paired turn_end/agent_end events do not
-  // double-fetch for the same completed turn.
-  if (wasStreaming) void sessionStatsCard.refresh();
-
-  // Notify via tab title if unfocused. Guard with wasStreaming so paired
-  // turn_end/agent_end events do not double-count the same completed turn.
-  if (wasStreaming && !hasFocus) {
-    unreadCount++;
-    document.title = `(${unreadCount}) ● ${originalTitle}`;
-
-  }
-}
-
-let currentStreamingThinking = '';
-
-function handleMessageStart(message: AppMessage) {
-  if (message.role === 'assistant') {
-    currentStreamingText = '';
-    currentStreamingThinking = '';
-    currentThinkingStartedAt = null;
-    currentThinkingEndedAt = null;
-    currentStreamingElement = messageRenderer.renderAssistantMessage(
-      { content: '' },
-      true
-    );
-  } else if (message.role === 'user') {
-    // User messages can echo back via backend events; only render if we did
-    // not just send this message ourselves.
-    if (!lastSentMessage || getMessageText(message) !== lastSentMessage) {
-      const content = getMessageText(message);
-      if (content) {
-        messageRenderer.renderUserMessage({ content });
-      }
-    }
-    lastSentMessage = null;
-  }
-}
-
-function getMessageText(message: AppMessage) {
-  if (typeof message.content === 'string') return message.content;
-  if (Array.isArray(message.content)) {
-    return message.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
-  }
-  return '';
-}
-
-function getMessageThinking(message: AppMessage) {
-  if (!Array.isArray(message?.content)) return '';
-  return message.content
-    .filter(b => b.type === 'thinking')
-    .map(b => b.thinking || b.text || '')
-    .filter(Boolean)
-    .join('\n');
-}
-
-function handleMessageUpdate(event: AppEvent) {
-  const { assistantMessageEvent } = event;
-  if (!assistantMessageEvent) return;
-
-  if (assistantMessageEvent.type === 'thinking_delta') {
-    if (!currentStreamingElement) {
-      currentStreamingElement = messageRenderer.renderAssistantMessage({ content: '' }, true);
-    }
-    if (currentThinkingStartedAt === null) {
-      currentThinkingStartedAt = Date.now();
-      currentThinkingEndedAt = null;
-    }
-    currentStreamingThinking += assistantMessageEvent.delta;
-    if (currentStreamingElement) {
-      const thinkingDuration = (currentThinkingEndedAt || Date.now()) - currentThinkingStartedAt;
-      messageRenderer.updateStreamingThinking(currentStreamingElement, currentStreamingThinking, thinkingDuration);
-    }
-  } else if (assistantMessageEvent.type === 'text_delta') {
-    if (!currentStreamingElement) {
-      currentStreamingElement = messageRenderer.renderAssistantMessage({ content: '' }, true);
-    }
-    if (currentThinkingStartedAt !== null && currentThinkingEndedAt === null) {
-      currentThinkingEndedAt = Date.now();
-      messageRenderer.updateStreamingThinking(
-        currentStreamingElement,
-        currentStreamingThinking,
-        currentThinkingEndedAt - currentThinkingStartedAt
-      );
-    }
-    currentStreamingText += assistantMessageEvent.delta;
-    if (currentStreamingElement) {
-      messageRenderer.updateStreamingMessage(
-        currentStreamingElement,
-        currentStreamingText
-      );
-    }
-  }
-}
-
-function handleMessageEnd(message: AppMessage, sessionId: string | null = activeLiveSessionId) {
-  toolExecutionController.restoreToolResult(message, sessionId);
-  if (!currentStreamingElement && message?.role === 'assistant') {
-    messageRenderer.renderAssistantMessage(message, false, true);
-  }
-  if (currentStreamingElement) {
-    // If this client attached mid-stream, local deltas may be incomplete. The
-    // message_end payload is authoritative, so refresh the streaming DOM from it
-    // before finalizing.
-    if (message?.role === 'assistant') {
-      const finalText = getMessageText(message);
-      const finalThinking = getMessageThinking(message);
-      if (finalText && finalText.length >= currentStreamingText.length) {
-        currentStreamingText = finalText;
-        messageRenderer.updateStreamingMessage(currentStreamingElement, currentStreamingText);
-      }
-      if (finalThinking && finalThinking.length >= currentStreamingThinking.length) {
-        currentStreamingThinking = finalThinking;
-        messageRenderer.updateStreamingThinking(
-          currentStreamingElement,
-          currentStreamingThinking,
-          currentThinkingStartedAt !== null
-            ? (currentThinkingEndedAt !== null ? currentThinkingEndedAt - currentThinkingStartedAt : Date.now() - currentThinkingStartedAt)
-            : undefined
-        );
-      }
-    }
-
-    // Pass usage info for cost display
-    const usage = message?.usage || null;
-    // Pass thinking content so finalize can render the thinking block
-    if (currentThinkingStartedAt !== null && currentThinkingEndedAt === null) currentThinkingEndedAt = Date.now();
-    const thinkingDuration = currentThinkingStartedAt !== null && currentThinkingEndedAt !== null
-      ? currentThinkingEndedAt - currentThinkingStartedAt
-      : undefined;
-    if (message?.role === 'assistant' && currentStreamingThinking && thinkingDuration !== undefined) {
-      rememberThinkingDuration(message, 0, thinkingDuration, sessionId);
-    }
-    messageRenderer.finalizeStreamingMessage(currentStreamingElement, usage, currentStreamingThinking, thinkingDuration);
-    currentStreamingElement = null;
-    currentStreamingThinking = '';
-    currentStreamingText = '';
-    currentThinkingStartedAt = null;
-    currentThinkingEndedAt = null;
-
-    // Track session cost and tokens
-    if (usage?.cost?.total) {
-      sessionTotalCost += usage.cost.total;
-    }
-    if (usage?.input) {
-      lastInputTokens = usage.input + (usage.cacheRead || 0);
-      lastUsage = usage;
-    }
-    updateContextPill();
-    showNewMessageBadge();
-  }
-}
-
-function handleToolExecutionStart(event: AppEvent) {
-  toolExecutionController.start(event);
-}
-
-function handleToolExecutionUpdate(event: AppEvent, sessionId: string | null = activeLiveSessionId) {
-  toolExecutionController.update(event, sessionId);
-}
-
-function handleToolExecutionEnd(event: AppEvent, sessionId: string | null = activeLiveSessionId) {
-  toolExecutionController.end(event, sessionId);
-}
+// ═══════════════════════════════════════
+// Extension UI dialogs — rendered from the kernel extensionUi store
+// ═══════════════════════════════════════
 
 function hasPendingExtensionUIRequest(sessionId: string) {
-  return extensionUIController.hasPending(sessionId);
+  return stores.extensionUi.get().queue.some((pending) => pending.sessionId === sessionId);
 }
 
-function queueExtensionUIRequest(event: AppEvent, sessionId: string) {
-  extensionUIController.enqueue(event, sessionId);
+function showExtensionUIDialog(sessionId: string | null, event: AppEvent) {
+  const request = (sessionId ? { ...event, sessionId } : event) as DialogRequest;
+  if (event.method === 'select') dialogHandler.showSelect(request);
+  else if (event.method === 'confirm') dialogHandler.showConfirm(request);
+  else if (event.method === 'input') dialogHandler.showInput(request);
+  else if (event.method === 'editor') dialogHandler.showEditor(request);
+  else if (event.method === 'notify') dialogHandler.showNotification(request);
+  else console.warn('[ExtensionUI] Unknown method:', event.method);
 }
 
-function processQueuedExtensionUIRequest(sessionId = activeLiveSessionId) {
-  extensionUIController.process(sessionId);
-}
-
-function suspendCurrentDialogForTabSwitch(nextSessionId: string) {
-  extensionUIController.suspendForSession(nextSessionId);
-}
-
-function handleExtensionUIRequest(event: AppEvent, sessionId: string | null = null) {
-  extensionUIController.show(event, sessionId);
+// Mirror the store's current request into the DOM. Background requests stay
+// queued (tab badge) and never take over the visible dialog; a request for
+// the active session only shows while the live view is actually visible.
+let shownDialogKey: string | null = null;
+function syncExtensionUIDialog() {
+  const { current } = stores.extensionUi.get();
+  const showable = current && (current.sessionId === null || (current.sessionId === activeLiveSessionId && viewingActiveSession));
+  if (!showable) {
+    if (shownDialogKey !== null) {
+      shownDialogKey = null;
+      dialogHandler.clearCurrentDialog();
+    }
+    return;
+  }
+  const key = `${current.sessionId ?? ''}:${current.request.id ?? ''}`;
+  if (key === shownDialogKey) return;
+  shownDialogKey = key;
+  showExtensionUIDialog(current.sessionId, current.request);
 }
 
 // ═══════════════════════════════════════
@@ -1348,8 +1225,6 @@ function renderAttachmentPreviews() {
 // Send message (with images)
 // ═══════════════════════════════════════
 
-let messageQueue: QueuedCommand[] = [];
-
 function sendMessage() {
   const message = messageInput.value.trim();
   if (!message && pendingImages.length === 0) return;
@@ -1357,12 +1232,11 @@ function sendMessage() {
   messageInput.value = '';
   messageInput.style.height = 'auto';
 
-  const cmd: QueuedCommand = { type: 'prompt', message: message || '（见附加图片）' };
-
+  let images: PendingImage[] | undefined;
   if (pendingImages.length > 0) {
-    cmd.images = pendingImages.map(img => {
+    images = pendingImages.map(img => {
       console.log(`[Tau] Sending image: mimeType=${img.mimeType}, dataLen=${img.data?.length}`);
-      return { type: 'image', data: img.data, mimeType: img.mimeType || 'image/png' };
+      return { type: 'image', data: img.data, mimeType: img.mimeType || 'image/png' } as PendingImage;
     });
     pendingImages = [];
   }
@@ -1376,32 +1250,28 @@ function sendMessage() {
     return;
   }
 
-  cmd.sessionId = activeLiveSessionId;
-
-  if (state.isStreaming) {
-    // Queue it for the current Tau tab only; do not let tab switches retarget it.
-    messageQueue.push(cmd);
-    lastSentMessage = message;
-    renderQueuedMessages();
-    return;
-  }
-
-  lastSentMessage = message;
-  messageRenderer.renderUserMessage({ content: message, images: cmd.images });
-  wsClient.send(cmd);
+  // The kernel renders an optimistic prompt immediately, or queues it while
+  // the session is streaming and flushes it when the run ends.
+  void commands.agent.sendPrompt({
+    sessionId: activeLiveSessionId,
+    message: message || '（见附加图片）',
+    images,
+  });
 }
 
 const queuedMessagesEl = document.getElementById('queued-messages')!;
 
 function renderQueuedMessages() {
   queuedMessagesEl.innerHTML = '';
-  if (messageQueue.length === 0) {
+  const queued = activeLiveSessionId
+    ? stores.conversation.get().bySession[activeLiveSessionId]?.live.queued ?? []
+    : [];
+  if (queued.length === 0) {
     queuedMessagesEl.classList.add('hidden');
     return;
   }
   queuedMessagesEl.classList.remove('hidden');
-  messageQueue.forEach((cmd, i) => {
-    if (cmd.sessionId !== activeLiveSessionId) return;
+  queued.forEach((cmd, i) => {
     const el = document.createElement('div');
     el.className = 'queued-msg';
     el.innerHTML = `
@@ -1410,12 +1280,12 @@ function renderQueuedMessages() {
       <button class="queued-msg-cancel" title="取消">×</button>
     `;
     el.querySelector('.queued-msg-cancel')?.addEventListener('click', () => {
-      messageQueue.splice(i, 1);
-      renderQueuedMessages();
+      if (activeLiveSessionId) {
+        dispatch({ type: 'conversation/queueItemRemoved', sessionId: activeLiveSessionId, index: i });
+      }
     });
     queuedMessagesEl.appendChild(el);
   });
-  queuedMessagesEl.classList.toggle('hidden', queuedMessagesEl.children.length === 0);
 }
 
 function escapeHtml(text: string) {
@@ -1424,21 +1294,9 @@ function escapeHtml(text: string) {
   return div.innerHTML;
 }
 
-function flushQueue() {
-  if (!activeLiveSessionId || state.isStreaming) return;
-  const idx = messageQueue.findIndex(cmd => cmd.sessionId === activeLiveSessionId);
-  if (idx >= 0) {
-    const [cmd] = messageQueue.splice(idx, 1);
-    lastSentMessage = cmd.message ?? null;
-    messageRenderer.renderUserMessage({ content: cmd.message, images: cmd.images });
-    renderQueuedMessages();
-    wsClient.send(cmd);
-  }
-}
-
 abortBtn.addEventListener('click', () => {
   if (!viewingActiveSession || !activeLiveSessionId) return;
-  wsClient.send({ type: 'abort', sessionId: activeLiveSessionId });
+  void commands.agent.abort(activeLiveSessionId);
   messageRenderer.renderError('已由用户中止');
   showTypingIndicator(false);
 });
@@ -1458,7 +1316,7 @@ async function rpcCommand(cmd: RpcCommand, statusMsg = '') {
     const needsLiveSession = !cmd.sessionId && !cmd.filePath && !backendLocalCommands.has(cmd.type);
     if (needsLiveSession && (!viewingActiveSession || !activeLiveSessionId)) {
       const error = '请先选择一个正在运行的交通任务。';
-      setStatusMessage(error, runtimeStore.snapshot.connection === 'connected' ? '已连接' : '已断开', 3000);
+      setStatusMessage(error, stores.runtime.get().connection === 'connected' ? '已连接' : '已断开', 3000);
       return { type: 'response', command: cmd.type, success: false, error };
     }
     if (!cmd.sessionId && viewingActiveSession && activeLiveSessionId) cmd = { ...cmd, sessionId: activeLiveSessionId };
@@ -1529,8 +1387,8 @@ document.addEventListener('keydown', (e) => {
     }
     if (commandPaletteController.closeIfOpen()) return;
 
-    if (state.isStreaming && viewingActiveSession && activeLiveSessionId) {
-      wsClient.send({ type: 'abort', sessionId: activeLiveSessionId });
+    if (isActiveStreaming() && activeLiveSessionId) {
+      void commands.agent.abort(activeLiveSessionId);
       messageRenderer.renderError('已由用户中止');
       showTypingIndicator(false);
     } else if (!sidebarEl.classList.contains('collapsed') && window.innerWidth <= 768) {
@@ -1670,15 +1528,13 @@ async function handleSessionSelect(session: SidebarSession | null, project: Side
 async function renderHistoricalSession(sessionFile: string) {
   try {
     featureRegistry.setSession(`history:${sessionFile}`, null, true);
-    const res = await fetch(`/api/session-history?filePath=${encodeURIComponent(sessionFile)}`);
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '历史记录加载失败');
+    const snapshot = await commands.session.loadHistory(sessionFile);
     messageRenderer.clear();
     toolCardRenderer.clear();
     sessionTotalCost = 0;
     lastInputTokens = 0;
     lastUsage = null;
-    renderSessionHistory(data.entries || []);
+    renderSessionHistory(snapshot.entries || []);
     return true;
   } catch (e) {
     messageRenderer.clear();
@@ -1689,13 +1545,10 @@ async function renderHistoricalSession(sessionFile: string) {
 
 async function switchSession(sessionFile: string | null | undefined, session: SidebarSession | null = null, project: SidebarProject | null = null) {
   try {
-    // Clear any streaming state from previous session to prevent bleed
-    currentStreamingElement = null;
-    currentStreamingThinking = '';
-    currentStreamingText = '';
+    // Clear any streaming view state from the previous session to prevent bleed
+    resetConversationView();
     viewingActiveSession = false;
-    
-    state.reset();
+
     showTypingIndicator(false);
     updateUI();
     messageRenderer.clear();
@@ -1710,43 +1563,25 @@ async function switchSession(sessionFile: string | null | undefined, session: Si
       updateLiveSessionInputState();
       updateUI();
 
-      const live = liveSessions.find(s => s.sessionFile === sessionFile);
+      const live = getLiveSessions().find(s => s.sessionFile === sessionFile);
       if (live) {
         await selectLiveSession(live.id, { keepCurrentMessagesOnFailure: hasHistoricalView });
         return;
       }
       // No live tab yet — ask the server to resume this session.
       try {
-        const resumeBody: Record<string, unknown> = { filePath: sessionFile };
-        if (project?.path) resumeBody.cwd = project.path;
-        const res = await fetch('/api/live-sessions/resume', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(resumeBody),
-        });
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          messageRenderer.clear();
-          messageRenderer.renderError(data.error || '恢复会话失败');
-          viewingActiveSession = false;
-          updateLiveSessionInputState();
-          updateUI();
-          return;
-        }
-        // If the server found an existing live tab (reused), just focus it.
-        if (data.reused && data.session) {
-          upsertLiveSession(data.session);
-          await selectLiveSession(data.session.id, { keepCurrentMessagesOnFailure: hasHistoricalView });
-          return;
-        }
-        upsertLiveSession(data.session);
-        await selectLiveSession(data.session.id, { keepCurrentMessagesOnFailure: hasHistoricalView });
+        const resumed = await commands.session.resume({ filePath: sessionFile, ...(project?.path ? { cwd: project.path } : {}) });
+        dispatch({ type: 'session/created', session: resumed });
+        await selectLiveSession(resumed.id, { keepCurrentMessagesOnFailure: hasHistoricalView });
       } catch (e) {
-        if (hasHistoricalView) {
+        // Server-rejected resume clears the history view; a network failure
+        // keeps it and only notes the missing backend.
+        const isNetworkError = (e as { code?: string })?.code === 'http_network_error';
+        if (hasHistoricalView && isNetworkError) {
           messageRenderer.renderSystemMessage('已打开历史记录；后台会话暂未恢复，当前不能继续提问。');
         } else {
           messageRenderer.clear();
-          messageRenderer.renderError('恢复会话失败');
+          messageRenderer.renderError((e instanceof Error ? e.message : '') || '恢复会话失败');
         }
         viewingActiveSession = false;
         updateLiveSessionInputState();
@@ -1766,59 +1601,28 @@ async function switchSession(sessionFile: string | null | undefined, session: Si
 // Live-session snapshot sync
 // ═══════════════════════════════════════
 
-function applyLiveSessionSnapshot(data: LiveSessionSnapshotData) {
-  console.log('[LiveSession] Received state snapshot:', data.entries?.length, 'entries');
-  if (data.sessionId && data.sessionId !== activeLiveSessionId) return;
-  hasReceivedInitialServerState = true;
-
-  // Track the active session
-  activeLiveSessionFile = data.sessionFile || data.session?.sessionFile || null;
+// Apply snapshot metadata that is view-only (model picker, context window,
+// active session file). Entries and streaming state went into the kernel
+// stores via session/snapshotReceived before this runs.
+function applySnapshotMetadata(snapshot: SessionSnapshot) {
+  activeLiveSessionFile = snapshot.sessionFile || snapshot.session?.sessionFile || null;
   if (activeLiveSessionId) sidebar.setActive(activeLiveSessionFile, activeLiveSessionId);
-  viewingActiveSession = !!activeLiveSessionId;
-  state.setStreaming(!!data.isStreaming);
-  agentRuntime.activateSession(activeLiveSessionId, !!data.isStreaming);
-  showTypingIndicator(!!data.isStreaming);
-  updateLiveSessionInputState();
-  updateUI();
-  updateLiveSessionIndicators();
 
   // Update model display — server is canonical, assign directly.
-  if (data.model !== undefined) {
-    if (data.model?.contextWindow) {
-      contextWindowSize = Number(data.model.contextWindow) || 0;
+  if (snapshot.model !== undefined) {
+    if (snapshot.model?.contextWindow) {
+      contextWindowSize = Number(snapshot.model.contextWindow) || 0;
     }
-    modelPickerController.setModelState(data.model || '', data.thinkingLevel || 'off');
-  } else if (data.thinkingLevel) {
-    modelPickerController.setThinkingLevel(data.thinkingLevel || 'off');
+    modelPickerController.setModelState(snapshot.model || '', snapshot.thinkingLevel || 'off');
+  } else if (snapshot.thinkingLevel) {
+    modelPickerController.setThinkingLevel(snapshot.thinkingLevel || 'off');
   }
-
-  // Clear and render message history. Reset streaming handles after the
-  // snapshot arrives because live deltas may have created a streaming element
-  // while the snapshot request was in flight; that element is about to be
-  // removed from the DOM.
-  currentStreamingElement = null;
-  currentStreamingThinking = '';
-  currentStreamingText = '';
-  messageRenderer.clear();
-  sessionTotalCost = 0;
-  lastInputTokens = 0;
-  lastUsage = null;
-
-  if (data.entries && data.entries.length > 0) {
-    renderSessionHistory(data.entries);
-  } else {
-    messageRenderer.renderWelcome();
-  }
-
-  updateContextPill();
-  // A live session just loaded — fetch its authoritative stats from pi.
-  void sessionStatsCard.refresh();
 }
 
 // Mark all live sessions in the sidebar with a green dot
 function updateLiveSessionIndicators() {
   const liveFiles = new Set(liveInstances.map(i => i.sessionFile));
-  const liveIds = new Set(liveSessions.map(s => s.id));
+  const liveIds = new Set(getLiveSessions().map(s => s.id));
   // Also include the current active live session
   if (activeLiveSessionFile) liveFiles.add(activeLiveSessionFile);
 
@@ -1829,26 +1633,13 @@ function updateLiveSessionIndicators() {
   });
 }
 
-// Refresh live-session list for sidebar indicators if WS missed an update
+// Refresh the live-session list for sidebar indicators if WS missed an
+// update. The store replaces its list; a vanished active session is handled
+// by the session-store subscription watcher.
 async function pollInstances() {
   try {
-    const res = await fetch('/api/live-sessions');
-    if (res.ok) {
-      const data = await res.json();
-      const wasActive = activeLiveSessionId;
-      setLiveSessions(data.sessions || []);
-      const activeSession = wasActive ? liveSessions.find(s => s.id === wasActive) : null;
-      if (wasActive && !activeSession) {
-        handleLiveSessionClosed(wasActive);
-      } else if (activeSession && viewingActiveSession) {
-        state.setStreaming(!!activeSession.isStreaming);
-        agentRuntime.activateSession(activeSession.id, !!activeSession.isStreaming);
-        showTypingIndicator(!!activeSession.isStreaming);
-        applyActiveSessionMetadata(activeSession);
-        updateLiveSessionInputState();
-        updateUI();
-      }
-    }
+    const sessions = await commands.session.list();
+    dispatch({ type: 'session/listReceived', sessions });
   } catch {}
 }
 
@@ -2066,12 +1857,13 @@ let tailscaleUrl = '';
 
 function updateConnectionStatus() {
   if (statusFlashTimer !== null) return;
-  const { connection, isStreaming } = runtimeStore.snapshot;
-  const status = connection === 'connected' && isStreaming ? 'streaming' : connection;
+  const connection = stores.runtime.get().connection;
+  const streaming = isActiveStreaming();
+  const status = connection === 'connected' && streaming ? 'streaming' : connection;
   statusIndicator.className = `status-indicator ${status}`;
 
   if (connection === 'connected') {
-    statusText.textContent = isStreaming ? '处理中...' : (tailscaleUrl ? '已连接 • TS' : '已连接');
+    statusText.textContent = streaming ? '处理中...' : (tailscaleUrl ? '已连接 • TS' : '已连接');
     statusText.title = tailscaleUrl || '';
     // Fetch tailscale info on first connect
     if (!tailscaleUrl) {
@@ -2088,7 +1880,7 @@ function updateConnectionStatus() {
 
 function updateUI() {
   const hasLiveSession = !!activeLiveSessionId && viewingActiveSession;
-  const isStreaming = state.isStreaming && hasLiveSession;
+  const streaming = isActiveStreaming();
 
   // Don't clobber an active red-dot error flash: it owns both the indicator
   // class and statusText for its full 3 s. The flash's restore callback
@@ -2096,27 +1888,19 @@ function updateUI() {
   // safe. Other UI updates below (input enabling, abort button, etc.) still
   // run normally.
   updateConnectionStatus();
+  showTypingIndicator(streaming);
 
   messageInput.disabled = !hasLiveSession;
   sendBtn.disabled = !hasLiveSession;
 
-  if (isStreaming) {
+  if (streaming) {
     abortBtn.classList.remove('hidden');
     sendBtn.classList.add('hidden');
   } else {
     abortBtn.classList.add('hidden');
     sendBtn.classList.remove('hidden');
-    if (hasLiveSession) flushQueue();
   }
 }
-
-// ═══════════════════════════════════════
-// WebSocket session switch handler
-// ═══════════════════════════════════════
-
-wsClient.addEventListener('sessionSwitch', () => {
-  console.log('[App] Session switched');
-});
 
 // ═══════════════════════════════════════
 // Theme / Settings
@@ -2330,8 +2114,75 @@ if (isMobile()) {
   sidebarEl.classList.add('collapsed');
 }
 
-runtimeStore.subscribe(() => updateConnectionStatus());
-agentRuntime.connect();
+// Kernel store subscriptions — all session/streaming UI derives from these.
+let lastKnownSessionIds = new Set<string>();
+let lastMetadataSession: LiveSession | null = null;
+let wasActiveStreaming = false;
+let lastRenderedServerError: AppError | null = null;
+
+stores.session.subscribe((sessionState) => {
+  liveInstances = sessionState.sessions.map(s => ({ sessionFile: s.sessionFile, cwd: s.cwd, port: location.port }));
+  const ids = new Set(sessionState.sessions.map(s => s.id));
+  // A live session vanished (closed remotely or dropped by a poll): run the
+  // same cleanup as the legacy liveSessionClosed handler.
+  const vanishedActiveId = activeLiveSessionId && !ids.has(activeLiveSessionId) && lastKnownSessionIds.has(activeLiveSessionId)
+    ? activeLiveSessionId
+    : null;
+  lastKnownSessionIds = ids;
+  if (vanishedActiveId) {
+    handleLiveSessionClosed(vanishedActiveId);
+    return;
+  }
+  const active = sessionState.sessions.find(s => s.id === activeLiveSessionId) || null;
+  if (active && active !== lastMetadataSession) {
+    lastMetadataSession = active;
+    applyActiveSessionMetadata(active);
+  }
+  // A finished run pulls authoritative post-turn stats from pi and notifies
+  // via the tab title when unfocused.
+  const nowStreaming = isActiveStreaming();
+  if (wasActiveStreaming && !nowStreaming) {
+    void sessionStatsCard.refresh();
+    if (!hasFocus) {
+      unreadCount++;
+      document.title = `(${unreadCount}) ● ${originalTitle}`;
+    }
+  }
+  wasActiveStreaming = nowStreaming;
+  renderLiveTabs();
+  syncSidebarLiveSessions();
+  updateLiveSessionInputState();
+  updateUI();
+});
+
+stores.runtime.subscribe((runtimeState) => {
+  updateConnectionStatus();
+  const error = runtimeState.lastError;
+  if (error && error !== lastRenderedServerError) {
+    lastRenderedServerError = error;
+    if (error.code === 'server_error') messageRenderer.renderError(error.message);
+  }
+});
+
+stores.conversation.subscribe(() => handleConversationChange());
+
+stores.extensionUi.subscribe(() => {
+  syncExtensionUIDialog();
+  renderLiveTabs();
+});
+
+// UI-only event side effects (compaction indicator, task entries, tool cards)
+// plus the first-state/reconnect session restore.
+kernel.onEvent((incoming: KernelUiEvent) => {
+  if (incoming.kind === 'state') {
+    handleServerStateApplied();
+  } else {
+    handleKernelRpcEvent(incoming.event, incoming.sessionId);
+  }
+});
+
+dispatch({ type: 'runtime/connecting' });
+wsClient.connect();
 messageRenderer.renderWelcome();
 updateLiveSessionInputState();
 sidebar.loadSessions().then(() => {

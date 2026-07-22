@@ -1,0 +1,35 @@
+{
+  "description": "重复/乱序 delta + message_end 权威纠偏场景（对应 app-main.ts:1064-1090）：流式过程中出现重复 delta 与迟到的旧 delta，message_end 携带的完整文本长度 >= 本地流式文本时以其为准覆盖；反之（本地文本更长）保留本地。此例中 message_end 全文更长，因此最终内容以 message_end 为准。",
+  "sessionId": "tau_fixture_dup",
+  "events": [
+    { "type": "agent_start" },
+    { "type": "turn_start" },
+    {
+      "type": "message_start",
+      "message": { "role": "assistant", "content": [{ "type": "text", "text": "" }], "model": "k2p7" }
+    },
+    { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "上海早" } },
+    { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "上海早" }, "_note": "重复 delta（重放）" },
+    { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "高峰" } },
+    { "type": "message_update", "assistantMessageEvent": { "type": "text_delta", "delta": "上海早" }, "_note": "乱序迟到的旧 delta" },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          { "type": "text", "text": "上海早高峰的主要特征是内环高架与南北高架交汇处持续拥堵，早高峰时段为 7:30-9:00。" }
+        ],
+        "api": "anthropic-messages",
+        "provider": "kimi-coding",
+        "model": "k2p7",
+        "usage": { "input": 700, "output": 55, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 755, "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0 } },
+        "stopReason": "stop",
+        "timestamp": 1784564700000,
+        "responseId": "msg_fixture_d1"
+      },
+      "_note": "权威全文（44 字符）>= 流式拼接结果，最终 DOM 以此为准"
+    },
+    { "type": "turn_end" },
+    { "type": "agent_end" }
+  ]
+}
