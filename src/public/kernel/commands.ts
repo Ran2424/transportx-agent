@@ -5,7 +5,7 @@
  * thrown; the kernel stores never see raw Error instances.
  */
 
-import type { LiveSession, PendingImage, SessionSnapshot } from '../app-types.js';
+import type { LiveSession, ModelRecord, PendingImage, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 
@@ -40,22 +40,69 @@ export type ExtensionUiResponseInput = {
   response?: Record<string, unknown>;
 };
 
+export type HistorySession = {
+  filePath?: string;
+  name?: string | null;
+  firstMessage?: string | null;
+  timestamp?: string;
+  sessionName?: string | null;
+  sessionTimestamp?: string;
+  live?: boolean;
+};
+
+export type HistoryProject = {
+  path?: string;
+  dirName?: string;
+  sessions?: HistorySession[];
+};
+
+export type HistorySearchResult = HistorySession & {
+  project?: string;
+  matches?: Array<{ snippet?: string }>;
+};
+
+export type WorkspaceFile = {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number | null;
+};
+
+export type AgentState = {
+  model?: ModelRecord | null;
+  thinkingLevel?: string;
+  autoCompactionEnabled?: boolean;
+};
+
 export type AgentCommands = {
   sendPrompt(input: SendPromptInput): Promise<void>;
   abort(sessionId: string): Promise<void>;
   steer(input: SteerInput): Promise<void>;
   followUp(input: FollowUpInput): Promise<void>;
+  compact(sessionId: string): Promise<void>;
+  setAutoCompaction(sessionId: string, enabled: boolean): Promise<void>;
+  getState(sessionId: string): Promise<AgentState>;
   setModel(input: SetModelInput): Promise<void>;
   setThinkingLevel(input: SetThinkingLevelInput): Promise<void>;
 };
 
 export type SessionCommands = {
   list(): Promise<LiveSession[]>;
+  listHistory(): Promise<HistoryProject[]>;
+  searchHistory(query: string): Promise<HistorySearchResult[]>;
   create(input: CreateSessionInput): Promise<LiveSession>;
   resume(input: ResumeSessionInput): Promise<LiveSession>;
   loadSnapshot(sessionId: string): Promise<SessionSnapshot>;
   loadHistory(filePath: string): Promise<SessionSnapshot>;
+  listFiles(sessionId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
   close(sessionId: string): Promise<void>;
+  deleteHistory(filePath: string): Promise<void>;
+};
+
+export type PlatformCommands = {
+  getAvailableModels(sessionId?: string | null): Promise<Array<ModelRecord | string>>;
+  getAuth(): Promise<{ configured: boolean; enabled: boolean }>;
+  setAuth(enabled: boolean): Promise<{ enabled: boolean }>;
 };
 
 export type ExtensionUiCommands = {
@@ -155,6 +202,19 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       deps.transport.send({ type: 'follow_up', sessionId, message });
     },
 
+    async compact(sessionId) {
+      await rpcCommand(deps.http, { type: 'compact', sessionId });
+    },
+
+    async setAutoCompaction(sessionId, enabled) {
+      await rpcCommand(deps.http, { type: 'set_auto_compaction', sessionId, enabled });
+    },
+
+    async getState(sessionId) {
+      const data = await rpcCommand(deps.http, { type: 'get_state', sessionId });
+      return ((data as { data?: AgentState }).data ?? {}) as AgentState;
+    },
+
     async setModel({ sessionId, model }) {
       await rpcCommand(deps.http, { type: 'set_model', sessionId, model });
     },
@@ -171,6 +231,17 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     async list() {
       const data = await httpJson(deps.http, '/api/live-sessions', undefined, context);
       return ((data as { sessions?: LiveSession[] })?.sessions ?? []) as LiveSession[];
+    },
+
+    async listHistory() {
+      const data = await httpJson(deps.http, '/api/sessions', undefined, context);
+      return ((data as { projects?: HistoryProject[] })?.projects ?? []) as HistoryProject[];
+    },
+
+    async searchHistory(query) {
+      if (query.trim().length < 2) return [];
+      const data = await httpJson(deps.http, `/api/search?q=${encodeURIComponent(query.trim())}`, undefined, context);
+      return ((data as { results?: HistorySearchResult[] })?.results ?? []) as HistorySearchResult[];
     },
 
     async create(input) {
@@ -193,8 +264,44 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       return data as SessionSnapshot;
     },
 
+    async listFiles(sessionId, path) {
+      const params = new URLSearchParams({ sessionId });
+      if (path) params.set('path', path);
+      const data = await httpJson(deps.http, `/api/files?${params}`, undefined, { ...context, sessionId });
+      return data as { path: string; items: WorkspaceFile[] };
+    },
+
     async close(sessionId) {
       await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, { ...context, sessionId });
+    },
+
+    async deleteHistory(filePath) {
+      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { filePath } }, context);
+    },
+  };
+}
+
+export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
+  return {
+    async getAvailableModels(sessionId) {
+      const data = await rpcCommand(deps.http, {
+        type: 'get_available_models',
+        ...(sessionId ? { sessionId } : {}),
+      });
+      return ((data as { data?: { models?: Array<ModelRecord | string> } }).data?.models ?? []);
+    },
+
+    async getAuth() {
+      const data = await rpcCommand(deps.http, { type: 'get_auth' });
+      return ((data as { data?: { configured?: boolean; enabled?: boolean } }).data ?? {
+        configured: false,
+        enabled: false,
+      }) as { configured: boolean; enabled: boolean };
+    },
+
+    async setAuth(enabled) {
+      const data = await rpcCommand(deps.http, { type: 'set_auth', enabled });
+      return ((data as { data?: { enabled?: boolean } }).data ?? { enabled }) as { enabled: boolean };
     },
   };
 }
@@ -216,6 +323,7 @@ export function createExtensionUiCommands(deps: CommandDeps): ExtensionUiCommand
 export type KernelCommands = {
   agent: AgentCommands;
   session: SessionCommands;
+  platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
 };
 
@@ -223,6 +331,7 @@ export function createCommands(deps: CommandDeps): KernelCommands {
   return {
     agent: createAgentCommands(deps),
     session: createSessionCommands(deps),
+    platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),
   };
 }

@@ -1,66 +1,66 @@
 {
-  "generatedAt": "2026-07-22T07:26:05.217Z",
+  "generatedAt": "2026-07-22T10:13:00.585Z",
   "note": "PNG 不入库（.gitignore），本清单记录哈希用于人工比对",
   "files": [
     {
       "file": "clean-desktop.png",
-      "bytes": 168965,
-      "sha256": "8970d481f01a6184374e95f0880ff5718f2d5d671f5c822894982f99eaa7506f"
+      "bytes": 159181,
+      "sha256": "43eff3641f12b92d3a5f87dde2865b698a9768306d05e2e987f515550e944b8a"
     },
     {
       "file": "clean-mobile.png",
-      "bytes": 41201,
-      "sha256": "05a4686ed9c698d9636bf80ef619b1feee1b9ad6c6f67800e36e98a610a0f2fa"
+      "bytes": 42190,
+      "sha256": "62254a96b03ad3aaee9b8cfc1e017f458b92720d10bb9ee32c871a17001fba5b"
     },
     {
       "file": "dawn-desktop.png",
-      "bytes": 120237,
-      "sha256": "624f6ced9c1d2af3632dabd91c4e4c4fb9e74a7fdee73a786c387efe59e5a939"
+      "bytes": 120173,
+      "sha256": "93a6b9a4cd6fd3556d27e38f4386652f0108d0fefb9dfdf97f3d36443b326d8d"
     },
     {
       "file": "dawn-mobile.png",
-      "bytes": 35663,
-      "sha256": "a0073d2f3ddcd059ca6284ea83ed0cc422e8e12508d280c3c31a9ee0ac9c2a63"
+      "bytes": 35053,
+      "sha256": "55222321d9077641bfe8475472e821b2645d84a7d03c7be6077ad3f17b422984"
     },
     {
       "file": "midnight-desktop.png",
-      "bytes": 117379,
-      "sha256": "d451ce8036c9dec73f8d54546798a99a829779c1ac64f7f6294f5894fc24c5d0"
+      "bytes": 103641,
+      "sha256": "ffece77ac723b14884d3e08936ef7e64e7d10e5b03a6c2bfc3227ec19275aead"
     },
     {
       "file": "midnight-mobile.png",
-      "bytes": 37924,
-      "sha256": "a5d6d37423076dd0523ece0427dbdf1fdafaa5e2ad91f10884c140759e5e81fa"
+      "bytes": 30743,
+      "sha256": "7fdd89554faec27989315e5a814c392d97c3b341c104c51187e06c645b341698"
     },
     {
       "file": "night-desktop.png",
-      "bytes": 112476,
-      "sha256": "9ef24d8d906121c3ee6ec07dc0d5e4928a5726fdcbf14306adfab883e6ae2c91"
+      "bytes": 107494,
+      "sha256": "136e592b9bfb7c5d40366208306c833e5ccfd8f944e4f8784d64c298d3a25dfb"
     },
     {
       "file": "night-mobile.png",
-      "bytes": 28320,
-      "sha256": "b6b5345e4068014b23b7fa5ee8e71280860508f873a2e6d708d17dfb0601c95a"
+      "bytes": 28921,
+      "sha256": "7e2c91497af4f29ca87e312f0d9dc959babda19bf49b7019f2b1a6228bf5f490"
     },
     {
       "file": "sage-desktop.png",
-      "bytes": 481829,
-      "sha256": "d478c202bb160815b8e4e9de5a730481651dbdbd186d9d4f0ccd4f1fda549ca4"
+      "bytes": 122764,
+      "sha256": "3f8269ce91b8cfe6dd7f88c2eaccfae0d47b085149ade0b054c61dc97640cf89"
     },
     {
       "file": "sage-mobile.png",
-      "bytes": 41392,
-      "sha256": "a548209cc17c56346cef5b582b1d553c90abedb316843431fc28fdf5a3f05463"
+      "bytes": 41604,
+      "sha256": "b09d73475f628d612a88b2726fca51b2572577768344d3da3105a8df5117d68e"
     },
     {
       "file": "terracotta-desktop.png",
-      "bytes": 132907,
-      "sha256": "a6783e8c969ba4131c3bbbc6fb2eb320fe2354a84d55bfd3bb0e28a3dc83550a"
+      "bytes": 123160,
+      "sha256": "cfb1f6fc175621c02d27f026e24250273ee0cd2297195015837f3e55ac31e7a3"
     },
     {
       "file": "terracotta-mobile.png",
-      "bytes": 51698,
-      "sha256": "12e4ae7409f76c3dc8c35873a0a3e74afd60057f366eab6b42a7d772f8a2e7c1"
+      "bytes": 43382,
+      "sha256": "6c98a0a8ae4904ec95a63aeaf64edbe0460eae496b64e59495a2d46815d5e5ae"
     }
   ]
 }

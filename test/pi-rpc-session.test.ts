@@ -64,18 +64,20 @@ test('project prompt injects safe Python, shell, and traffic query rules', () =>
   assert.doesNotMatch(rendered, /\{\{/);
 });
 
-test('agent_start/turn_start set isStreaming; agent_end/turn_end clear it', () => {
+test('agent events keep the session streaming through turns and retries until it settles', () => {
   const { session, manager } = makeSession();
   session.handleEvent({ type: 'turn_start' });
   assert.equal(session.isStreaming, true);
   session.handleEvent({ type: 'agent_start' });
   assert.equal(session.isStreaming, true);
   session.handleEvent({ type: 'turn_end' });
-  assert.equal(session.isStreaming, false);
-  session.handleEvent({ type: 'agent_end' });
+  assert.equal(session.isStreaming, true);
+  session.handleEvent({ type: 'agent_end', willRetry: true });
+  assert.equal(session.isStreaming, true);
+  session.handleEvent({ type: 'agent_settled' });
   assert.equal(session.isStreaming, false);
   // each event is broadcast
-  assert.equal(manager.broadcasts.length, 4);
+  assert.equal(manager.broadcasts.length, 5);
   for (const b of manager.broadcasts) {
     assert.equal(b.type, 'event');
     assert.equal(b.sessionId, session.id);

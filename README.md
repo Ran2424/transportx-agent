@@ -37,11 +37,12 @@
 - 文件
 - 技能
 - 工具
+- 任务
 - 地图
 
 新会话默认使用 `scenario/` 下的独立任务目录，适合存放一次分析产生的脚本、GeoJSON 和临时结果；这些本地运行资产默认不会提交到 Git。
 
-当前 Web 新建会话表单仍在 `src/public/app-main.ts` 中以绝对路径保存默认 `scenario/` 根目录。这在本仓库当前路径下可用；如果移动仓库或换机，需要先修改 `DEFAULT_TASK_CWD` 并重新构建。后续应改为由服务端配置下发。
+legacy 新建会话表单仍在 `src/public/app-main.ts` 中保留绝对 `DEFAULT_TASK_CWD`，并仅作为 `/legacy/` 回退路径保留一个稳定周期。React 默认入口的新建任务不发送硬编码 cwd，由服务端统一在当前仓库的 `scenario/` 根目录下创建任务，因此不受仓库移动影响。
 
 ## 功能运行逻辑
 
@@ -93,10 +94,16 @@ node bin/tau.js --host 127.0.0.1 --port 3001 --open
 curl -s http://127.0.0.1:3000/api/health
 ```
 
-当前阶段 React Web Adapter 基座保持独立入口，不替换默认 legacy 页面。构建后可以访问：
+React Web Adapter 已完成 Shell、会话、设置、命令、Extension Dialog、Conversation 与 Feature UI；Task Board 和 Geo Workspace 均从同一 Kernel 状态恢复。Geo Runtime 仅在打开有场景的地图页签时按需加载。React 已是默认入口：
 
 ```text
-http://127.0.0.1:3000/react/
+http://127.0.0.1:3000/
+```
+
+迁移期的 legacy 回退入口为：
+
+```text
+http://127.0.0.1:3000/legacy/
 ```
 
 开发时可单独启动 Vite React 入口（默认代理到 `127.0.0.1:3000`）：
@@ -118,8 +125,8 @@ npm run test:react-smoke
 
 - `npm test` 执行默认构建与测试集。
 - `test:pi-smoke` 会启动真实 Pi RPC 子进程。
-- `test:browser-smoke` 会启动真实 Chrome，验证 legacy 主要 Web 链路。
-- `test:react-smoke` 会启动真实 Node Server + Chrome，验证 `/react/` React 基座、主题、lazy chunk 和 legacy 回退。
+- `test:browser-smoke` 会启动真实 Chrome，验证 `/legacy/` 回退链路。
+- `test:react-smoke` 会启动真实 Node Server、fake Pi 与 Chrome，验证默认 `/` 的连接、双会话切换、Conversation、Task Board、按需 Geo Runtime、Extension Dialog、焦点/Esc/键盘、主题、移动布局和 `/legacy/` 回退。
 - TypeScript 生成的 `bin/*.js`、`public/*.js`、`public/geo-runtime.*` 和 Vite 生成的 `dist/web/` 是本地构建产物，不应手工修改或提交。
 
 ## 使用注意事项
@@ -166,7 +173,7 @@ EPERM: operation not permitted, mkdir '~/.pi/agent/trust.json.lock'
 
 后续重点：
 
-- 按既定方案迁移 React、Vite、shadcn/ui、Radix UI 和 Motion。
+- 在一个稳定发布周期后删除 `/legacy/` 回退及对应 DOM 源码/构建链路。
 - 增加交通 Prompt、业务工具和结构化交通结果卡片。
 - 扩展 GIS 图例、过滤、栅格、矢量瓦片、时序和地图到 Agent 的反向交互。
 - 接入真实交通数据库或外部 API，形成可复用的交通分析任务模板。

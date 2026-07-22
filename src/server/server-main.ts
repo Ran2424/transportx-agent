@@ -327,31 +327,54 @@ function serveStaticFromRoot(res: ServerResponse, staticRootValue: string, reque
 
 function serveReactStaticFile(res: ServerResponse, urlPath: string) {
   const pathname = urlPath.split('?')[0];
-  if (pathname === '/react') {
-    res.writeHead(302, { Location: '/react/' });
-    res.end();
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(pathname);
+  } catch {
+    res.writeHead(400);
+    res.end('Bad Request');
     return;
   }
-  const relativePath = pathname.slice('/react'.length) || '/';
-  // The React shell is currently a single page. Keep extension-bearing asset
-  // misses as 404s, but let future client-side routes fall back to index.html.
-  const requestPath = relativePath === '/' || !path.extname(relativePath)
-    ? '/index.html'
-    : relativePath;
+  // Validate before SPA fallback: otherwise a malformed or traversal path
+  // would be silently converted into index.html instead of rejected.
+  if (decodedPath.split('/').includes('..')) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+  // React owns the default single-page application. Asset misses remain 404s;
+  // extension-less paths intentionally resolve to its index for future routes.
+  const requestPath = decodedPath === '/' || !path.extname(decodedPath) ? '/index.html' : decodedPath;
   serveStaticFromRoot(res, REACT_STATIC_DIR, requestPath);
 }
 
+function serveLegacyStaticFile(res: ServerResponse, urlPath: string) {
+  const pathname = urlPath.split('?')[0];
+  if (pathname === '/legacy') {
+    res.writeHead(302, { Location: '/legacy/' });
+    res.end();
+    return;
+  }
+  const relativePath = pathname.slice('/legacy'.length) || '/';
+  serveStaticFromRoot(res, STATIC_DIR, relativePath === '/' ? '/index.html' : relativePath);
+}
+
 function serveStaticFile(req: IncomingMessage, res: ServerResponse) {
-  let urlPath = req.url || '/';
+  const urlPath = req.url || '/';
   const auth = checkAuth(req);
   if (authEnabled && !urlPath.startsWith('/api/health') && !auth.ok) return sendAuthRequired(res, req);
   maybeSetSessionCookie(req, res, auth);
   if (urlPath.startsWith('/api/')) return handleApiRoute(req, res, urlPath);
   const pathname = urlPath.split('?')[0];
-  if (pathname === '/react' || pathname.startsWith('/react/')) return serveReactStaticFile(res, urlPath);
-  urlPath = pathname;
-  if (urlPath === '/') urlPath = '/index.html';
-  serveStaticFromRoot(res, STATIC_DIR, urlPath);
+  // Keep /react as a short-lived compatibility redirect after the default
+  // switch, while /legacy is the explicit rollback route for one cycle.
+  if (pathname === '/react' || pathname.startsWith('/react/')) {
+    res.writeHead(302, { Location: '/' });
+    res.end();
+    return;
+  }
+  if (pathname === '/legacy' || pathname.startsWith('/legacy/')) return serveLegacyStaticFile(res, urlPath);
+  return serveReactStaticFile(res, urlPath);
 }
 
 function isAllowedApiOrigin(req: IncomingMessage) {
@@ -921,8 +944,8 @@ function listen(port: number, attemptsLeft = 10) {
   server.listen(port, HOST, () => {
     computeUrls(port);
     console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`);
-    console.log(`[Tau] Static assets: ${STATIC_DIR}`);
-    console.log(`[Tau] React shell: ${REACT_STATIC_DIR} (/react/)`);
+    console.log(`[Tau] React application: ${REACT_STATIC_DIR} (/)`);
+    console.log(`[Tau] Legacy fallback: ${STATIC_DIR} (/legacy/)`);
     if (ARGS.open) openUrl(lanUrl).catch(() => {});
   });
 }

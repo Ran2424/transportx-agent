@@ -237,6 +237,9 @@ async function runSteps(steps, promptMessage) {
       if (step.ui.title) request.title = step.ui.title;
       if (step.ui.message) request.message = step.ui.message;
       if (step.ui.options) request.options = step.ui.options;
+      if (step.ui.placeholder) request.placeholder = step.ui.placeholder;
+      if (step.ui.prefill) request.prefill = step.ui.prefill;
+      if (step.ui.notifyType) request.notifyType = step.ui.notifyType;
       if (step.ui.timeout) request.timeout = step.ui.timeout;
       emit(request);
       const response = await new Promise((resolve) => pendingUi.set(requestId, resolve));

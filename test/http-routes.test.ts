@@ -113,17 +113,13 @@ test('GET /api/health reports server health and live session count', async () =>
   assert.match(body.lanUrl, /^http:\/\/localhost:\d+$/);
 });
 
-test('GET /react/ serves the independent React shell without loading Geo runtime', async () => {
-  const redirect = await fetch(`${base}/react`, { redirect: 'manual' });
-  assert.equal(redirect.status, 302);
-  assert.equal(redirect.headers.get('location'), '/react/');
-
-  const res = await fetch(`${base}/react/`);
+test('GET / serves the default React application and /legacy/ remains an explicit fallback', async () => {
+  const res = await fetch(`${base}/`);
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type') || '', /^text\/html/);
   const html = await res.text();
-  assert.match(html, /Pi Traffic · React Web Adapter/);
-  assert.match(html, /\/react\/assets\//);
+  assert.match(html, /Pi Traffic Workspace/);
+  assert.match(html, /\/assets\//);
   assert.doesNotMatch(html, /geo-runtime\.js/);
 
   const assetPath = html.match(/src="([^\"]+\.js)"/)?.[1];
@@ -131,6 +127,16 @@ test('GET /react/ serves the independent React shell without loading Geo runtime
   const asset = await fetch(`${base}${assetPath}`);
   assert.equal(asset.status, 200);
   assert.match(asset.headers.get('content-type') || '', /javascript/);
+
+  const compatibility = await fetch(`${base}/react`, { redirect: 'manual' });
+  assert.equal(compatibility.status, 302);
+  assert.equal(compatibility.headers.get('location'), '/');
+  const legacyRedirect = await fetch(`${base}/legacy`, { redirect: 'manual' });
+  assert.equal(legacyRedirect.status, 302);
+  assert.equal(legacyRedirect.headers.get('location'), '/legacy/');
+  const legacy = await fetch(`${base}/legacy/`);
+  assert.equal(legacy.status, 200);
+  assert.match(await legacy.text(), /Pi Traffic Workspace/);
 });
 
 test('GET /api/live-sessions lists managed sessions', async () => {

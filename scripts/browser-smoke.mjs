@@ -60,7 +60,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}/legacy/`, { waitUntil: 'domcontentloaded' });
   await page.locator('#status-indicator.connected').waitFor({ timeout: 10_000 });
   await page.locator('#live-tab-add').click();
   await page.locator('#new-live-session-overlay:not(.hidden)').waitFor();
@@ -71,7 +71,7 @@ try {
   const title = await page.locator('.live-tab.active .live-tab-title').textContent();
   if (title?.trim() !== 'Browser Smoke') throw new Error(`Unexpected active session title: ${title}`);
   if (pageErrors.length) throw new Error(`Browser page errors:\n${pageErrors.join('\n')}`);
-  console.log(`Browser smoke passed: ${baseUrl}, active session “${title?.trim()}”`);
+  console.log(`Legacy fallback smoke passed: ${baseUrl}/legacy/, active session “${title?.trim()}”`);
 } finally {
   await browser?.close().catch(() => {});
   if (child.exitCode === null) child.kill('SIGTERM');

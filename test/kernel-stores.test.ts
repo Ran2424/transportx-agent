@@ -118,6 +118,19 @@ test('runtime/connecting marks the runtime store as connecting', async () => {
   assert.equal(kernel.stores.runtime.get().connection, 'connecting');
 });
 
+test('user echo replaces optimistic prompt without losing it before snapshot hydration', async () => {
+  const { kernel, emit } = await createKernel();
+  kernel.dispatch({ type: 'conversation/promptSent', sessionId: 's-1', message: '分析早高峰' });
+  emit({ type: 'event', sessionId: 's-1', event: {
+    type: 'message_start',
+    message: { role: 'user', content: [{ type: 'text', text: '分析早高峰' }] },
+  } });
+  const conversation = kernel.stores.conversation.get().bySession['s-1'];
+  assert.equal(conversation.live.optimisticPrompt, null);
+  assert.equal(conversation.snapshotEntries.length, 1);
+  assert.equal((conversation.snapshotEntries[0].message?.content as JsonRecord[])[0].text, '分析早高峰');
+});
+
 test('conversation/queueItemRemoved drops one queued prompt by index', async () => {
   const { kernel, emit } = await createKernel();
   emit({ type: 'event', sessionId: 's-1', event: { type: 'agent_start' } });
