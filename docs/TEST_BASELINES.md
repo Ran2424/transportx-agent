@@ -3,7 +3,7 @@
 本文档是「冻结事实和行为基线」的操作手册：基线覆盖清单、手工验收清单、如何重跑。
 对应迁移计划 `docs/REACT_UI_MIGRATION_PLAN.md` 第 9 节「阶段 0」。
 
-最近一次验证（2026-07-22）：`npm run test:browser-baseline` 的 11/11 场景通过；在 Node 24.2.0、Chrome 150、darwin/arm64 环境记录 500 delta streaming 约 360ms、200 条历史消息首次渲染约 66ms。截图基线生成 6 套主题 × 桌面/移动共 12 张；PNG 按规则忽略，仅保留 `manifest.json` 哈希清单。
+最近一次验证（2026-07-22）：`npm run test:browser-baseline` 的 11/11 场景通过；在 Node 24.2.0、Chrome 150、darwin/arm64 环境记录 500 delta streaming 约 675ms、200 条历史消息首次渲染约 50ms。截图基线生成 6 套主题 × 桌面/移动共 12 张；PNG 按规则忽略，仅保留 `manifest.json` 哈希清单。阶段 2 的 `npm run test:react-smoke` 也已通过。
 
 ## 组成
 
@@ -14,6 +14,7 @@
 | 浏览器基线 | `scripts/browser-baseline.mjs` | `npm run test:browser-baseline` |
 | 性能基线 | `test/baselines/perf-baseline.json` | 随 browser-baseline 重新生成 |
 | 截图基线 | `test/baselines/screenshots/*.png` + `manifest.json` | 随 browser-baseline 重新生成 |
+| React 基座 smoke | `scripts/react-smoke.mjs` | `npm run test:react-smoke` |
 
 Provenance：`npm run test:pi-smoke` 在当前环境可用（真实 pi 0.80.10 握手冒烟通过），但不覆盖完整
 prompt 流式事件流（需模型 API key）；因此所有 fixture 与 fake-pi 回放均为**协议一致的合成事件**，
@@ -51,6 +52,7 @@ prompt 流式事件流（需模型 API key）；因此所有 fixture 与 fake-pi
 
 ```bash
 npm test                        # 含 test/fixtures.test.ts（需先 build，npm test 会自动 build）
+npm run test:react-smoke         # build + 真实 Node Server + Chrome 验证 /react/ 基座
 npm run test:browser-baseline   # build + 起 fake-pi 线束 + Chrome 全量基线
 node scripts/harness/serve-with-fake-pi.mjs --port 3009   # 单独起线束手工调试（打印 TAU_FAKE_READY 后等待）
 ```

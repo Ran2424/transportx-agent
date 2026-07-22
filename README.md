@@ -93,6 +93,18 @@ node bin/tau.js --host 127.0.0.1 --port 3001 --open
 curl -s http://127.0.0.1:3000/api/health
 ```
 
+当前阶段 React Web Adapter 基座保持独立入口，不替换默认 legacy 页面。构建后可以访问：
+
+```text
+http://127.0.0.1:3000/react/
+```
+
+开发时可单独启动 Vite React 入口（默认代理到 `127.0.0.1:3000`）：
+
+```bash
+npm run dev:web
+```
+
 ## 开发与验证
 
 ```bash
@@ -101,12 +113,14 @@ npm run typecheck
 npm test
 npm run test:pi-smoke
 npm run test:browser-smoke
+npm run test:react-smoke
 ```
 
 - `npm test` 执行默认构建与测试集。
 - `test:pi-smoke` 会启动真实 Pi RPC 子进程。
-- `test:browser-smoke` 会启动真实 Chrome，验证主要 Web 链路。
-- TypeScript 生成的 `bin/*.js`、`public/*.js` 和 `public/geo-runtime.*` 是本地构建产物，不应手工修改或提交。
+- `test:browser-smoke` 会启动真实 Chrome，验证 legacy 主要 Web 链路。
+- `test:react-smoke` 会启动真实 Node Server + Chrome，验证 `/react/` React 基座、主题、lazy chunk 和 legacy 回退。
+- TypeScript 生成的 `bin/*.js`、`public/*.js`、`public/geo-runtime.*` 和 Vite 生成的 `dist/web/` 是本地构建产物，不应手工修改或提交。
 
 ## 使用注意事项
 

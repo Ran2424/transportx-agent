@@ -6,3 +6,10 @@ docs
 !public/index.html
 ROADMAP.md
 MOBILE.md
+
+# React/Vite source and production shell are intentionally included in the npm package.
+!src/web/
+!src/web/index.html
+!dist/
+!dist/web/
+!dist/web/index.html

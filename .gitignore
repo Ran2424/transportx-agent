@@ -16,6 +16,7 @@ node_modules/
 /public/visualization/
 /public/workspace/
 /public/kernel/
+/dist/
 /public/geo-runtime.css
 
 .DS_Store

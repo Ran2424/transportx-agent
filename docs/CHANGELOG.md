@@ -11,7 +11,33 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v1.26 — React/Vite 基座与 legacy 独立入口
+
+- 日期：2026-07-22
+- GitHub 操作：提交到 `feature/react-migration-kernel`；本次未执行 push。
+- 提交主题：`feat: add react vite foundation`
+
+主要修改：
+
+- 建立 `src/web/` React 入口和 `vite.config.ts`，生产产物输出到 `dist/web/`，不覆盖 legacy `public/`。
+- 引入 React 19、Vite 8、Tailwind CSS 4，以及 shadcn 风格的 Button/Card UI 基元。
+- 建立六套 React 主题 token、响应式空 Shell、`React.lazy` 动态模块和 `/react/` 独立静态入口。
+- Node Server 增加 `/react` → `/react/` 静态托管与 `TAU_REACT_STATIC_DIR` 覆盖能力；Vite 开发代理 `/api` 和 `/ws`。
+- 保持 legacy `/` 默认入口，并增加 React 基座 smoke、静态路由测试和 npm 发布清单验证。
+- 将包版本更新为 `1.26.0`。
+
+验证：
+
+- `npm run typecheck` 通过。
+- `npm test`：234 项测试，233 项通过、1 项按默认策略跳过、0 项失败。
+- `npm run test:react-smoke` 通过。
+- `npm run test:pi-smoke`：真实 Pi `0.80.10` RPC 冒烟通过。
+- `npm run test:browser-smoke` 通过。
+- `npm run test:browser-baseline`：11/11 场景通过。
+- `npm pack --dry-run` 包含 `dist/web`、`src/web`、`vite.config.ts` 和 `tsconfig.web.json`。
+
 ## v1.25 — Browser Application Kernel 与 legacy Web 适配
+
 
 - 日期：2026-07-22
 - GitHub 操作：提交到 `feature/react-migration-kernel`；本次未执行 push。

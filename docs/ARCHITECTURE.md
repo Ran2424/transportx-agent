@@ -39,6 +39,7 @@ GIS 是第一个跨边界功能切片，任务交互是第二个。它们都依�
 ```text
 Browser Agent Web UI
   ├─ app-main（legacy DOM 组合入口；未来由 React Web Adapter 替换）
+  ├─ React Web Adapter（独立 `/react/` Shell，当前阶段只提供基座）
   ├─ Browser Application Kernel
   │    ├─ Event Normalizer / Command Ports
   │    ├─ Runtime / Session / Conversation / Tool / Extension UI Stores
@@ -209,12 +210,18 @@ prompts/
   PI_SESSION_CONTEXT.md           Pi 子进程追加系统提示模板；会话启动时替换目录占位符
 
 public/                           Web 发布目录
-  index.html                      手写静态入口
-  style.css                       手写全局样式
+  index.html                      legacy 手写静态入口
+  style.css                       legacy 手写全局样式
   icons/                          手写/设计源静态资产
-  *.js, features/, visualization/,
-  workspace/                     编译产物，不跟踪
+  *.js, features/, visualization/ 编译产物，不跟踪
+  workspace/                      编译产物，不跟踪
   geo-runtime.*                  编译产物，不跟踪
+
+src/web/                          React/Vite 源入口与 Shell
+  index.html, main.tsx            独立 React 入口
+  app/, components/, views/       Shell、shadcn 风格基元和动态模块
+
+dist/web/                         Vite 生产产物，不跟踪
 
 test/                             Node 测试；文件名前缀对应模块
 docs/                             工程文档与截图资产
@@ -382,14 +389,16 @@ rtk npm run test:browser-smoke
 - 新增 fixture、Kernel replay/store/command 测试以及 fake-pi 浏览器基线；阶段 0/1 的实际验证记录见 `docs/TEST_BASELINES.md`。
 - 当前仍保留 legacy DOM 视图适配层；React/Vite 不属于本阶段。
 
-### 阶段 D：React 与构建系统升级（下个阶段，独立变更）
+### 阶段 D：React 与构建系统升级（已完成，2026-07-22）
 
-- 引入 Vite，将浏览器源码和发布目录分开，获得模块图、静态资产处理和 CSS code splitting。
-- 保留现有 Node 服务；Vite 只负责 Web build/dev，不与服务端框架迁移绑在一次改动里。
-- 迁移前先增加关键浏览器路径的自动化验收，避免构建系统变化掩盖行为回归。
-- React、shadcn/ui、Radix 和 Motion 的完整边界及分阶段计划见 [REACT_UI_MIGRATION_PLAN.md](./REACT_UI_MIGRATION_PLAN.md)。
+- 建立 `src/web/` React/Vite 独立入口，生产构建输出到 `dist/web/`，不清空或覆盖 legacy `public/`。
+- 引入 React 19、Vite 8、Tailwind CSS 4、shadcn 风格 UI 基元和六套 React 主题 token。
+- Node Server 新增 `/react` → `/react/` 静态入口；Vite dev server 代理 `/api` 与 `/ws`。
+- 用 `React.lazy` 验证 dynamic import 和独立 chunk；npm 发布清单包含 React 源码、Vite 配置和 `dist/web`。
+- 保持 legacy `/` 默认入口，React Shell 只作为独立基座验收，不复制 Kernel 状态。
+- `npm run test:react-smoke`、legacy browser smoke、browser baseline 和 `npm pack --dry-run` 均通过。
 
-### 阶段 E：共享契约包
+### 阶段 E：共享契约包（下个阶段）
 
 仅当出现第二个消费者时，将 GeoScene 协议提取为独立包；Extension、Web Runtime 和测试共同依赖该包。此前不引入 workspace 和包间版本管理。
 
@@ -409,8 +418,8 @@ rtk npm run test:browser-smoke
 ## 10. 框架选择结论
 
 - **现在采用的组织框架**：模块化单体、垂直功能切片、Ports/Adapters。它直接解决 Pi 与 Web 双端适配的耦合，同时不增加部署单元。
-- **Web UI 框架**：暂不迁移 React/Vue。当前风险来自职责和生命周期混在入口文件，不是 DOM 渲染能力不足；先稳定 Feature 与 Workspace 边界。
-- **Web 构建工具**：Vite 是下一阶段的合适选择，用于源码/发布目录分离、CSS 模块化和按需加载；应作为独立迁移完成。
+- **Web UI 框架**：React 已作为独立 Web Adapter 基座引入；当前业务 UI 仍由 legacy DOM 提供，后续按 Shell、Conversation、Feature UI 顺序迁移。
+- **Web 构建工具**：Vite 已负责 React 源码构建、`dist/web` 产物和开发代理；legacy TypeScript 构建继续使用现有 `tsc` 链路。
 - **Server 框架**：不立即迁移 Fastify。其插件封装和作用域依赖模型值得借鉴，但当前 raw Node 服务已有大量稳定路由，替换框架会把治理变成重写。
 - **Monorepo/workspaces**：当前不引入。只有共享契约产生第二个独立消费者或独立发布需求时才拆包。
 
@@ -420,7 +429,8 @@ rtk npm run test:browser-smoke
 
 - `npm run typecheck` 通过。
 - `npm test` 无失败；真实 Pi RPC 冒烟测试默认跳过，需另行执行 `npm run test:pi-smoke`。
+- `npm run test:react-smoke` 验证 `/react/` Shell、lazy chunk、主题 token、legacy 回退和非 Geo 页面不加载 MapLibre。
 - npm 发布清单仍包含 Extension、源码和 GIS 技术方案。
-- 编译产物、本地会话与 `.tau` 资源没有进入 Git。
+- 编译产物、本地会话与 `.tau` 资源没有进入 Git；`dist/web` 由 Vite 构建并通过 npm 发布清单提供。
 - Agent Web 的非地图会话不加载 MapLibre bundle。
 - GIS Scene Snapshot 可在 live、历史和 resume 路径恢复；资源型地图的实际数据渲染当前要求 live session，因此只读历史页不作为完整地图验收路径。

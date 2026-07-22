@@ -2,9 +2,9 @@
 
 更新时间：2026-07-22
 
-状态：阶段 0、阶段 1（Browser Application Kernel 与 legacy 接入）已完成；阶段 2（Vite/React）尚未开始
+状态：阶段 0、阶段 1（Browser Application Kernel 与 legacy 接入）、阶段 2（Vite 基座）已完成；阶段 3（Contract 治理）尚未开始
 
-本文确定 React Web Adapter 的改造方向，并记录截至当前的实施状态。阶段 0 已冻结 fixture、浏览器和性能基线；阶段 1 已建立 Browser Application Kernel，并让现有 legacy UI 消费 Kernel。React/Vite 及其后续 UI 迁移仍属于后续阶段。当前运行事实仍以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
+本文确定 React Web Adapter 的改造方向，并记录截至当前的实施状态。阶段 0 已冻结 fixture、浏览器和性能基线；阶段 1 已建立 Browser Application Kernel 并让 legacy UI 消费 Kernel；阶段 2 已建立独立的 React/Vite 空壳和 `/react/` 静态入口。业务级 React UI 迁移与 Contract 治理仍属于后续阶段。当前运行事实仍以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
 
 ## 1. 最终决策
 
@@ -75,7 +75,7 @@ Session、Runtime、Conversation、Tool Execution、Extension UI 和 Workspace �
 
 | 区域 | 当前规模 | 主要问题 |
 |---|---:|---|
-| 浏览器端 TypeScript | 约 9,400 行 / 45 个文件 | legacy DOM 与 Kernel 适配仍集中在组合入口；React UI 尚未迁移 |
+| 浏览器端 TypeScript | 约 9,400 行 / 45 个文件 | legacy DOM 与 Kernel 适配仍集中在组合入口；业务 React UI 尚未迁移 |
 | `src/public/app-main.ts` | 约 2,207 行 | 会话、输入、附件和 DOM 组合职责仍集中，领域状态已移入 Kernel |
 | `public/style.css` | 约 4,969 行 | 六套主题、响应式和全部组件样式共存 |
 | `public/index.html` | 约 313 行 | 页面骨架、Overlay、Dialog 和工作区容器 |
@@ -415,10 +415,6 @@ src/
       formatting/
       model-utils/
 
-web/
-  index.html
-  static/
-
 dist/web/                        Vite 产物，不跟踪
 extensions/
 skills/
@@ -426,6 +422,8 @@ prompts/
 test/
 docs/
 ```
+
+当前阶段 Vite 以 `src/web/` 作为 root；未来增加独立静态源资产时，再按职责拆出 `static/`。
 
 目录表示职责，不要求迁移第一天就建立所有空文件夹。只有出现实际文件时创建目录。
 
@@ -549,7 +547,7 @@ Geo Resource 已经证明“大数据走 session-scoped HTTP，小型结构化�
 
 ```text
 public/       当前 legacy 编译与静态目录
-web/          React/Vite 源入口和静态源资产
+src/web/      React/Vite 源入口和静态源资产
 dist/web/     React/Vite 构建产物
 ```
 
@@ -607,14 +605,25 @@ dist/web/     React/Vite 构建产物
 
 ### 阶段 2：Vite 基座
 
+> **状态：已完成（2026-07-22）**。Vite、React Shell、Tailwind token、shadcn 风格 UI 基元、独立 `/react/` 静态入口和 React smoke 已落地；legacy `/` 仍是默认入口。
+
 交付：
 
-- 独立 `web/` 源入口和 `dist/web/` 产物。
-- React、Tailwind、shadcn 和六套主题 token。
-- Node dev proxy/静态托管、dynamic import 和 npm 发布清单。
-- legacy/react 独立入口。
+- `src/web/` 独立源入口，Vite 生产产物输出到 `dist/web/`，不写入 legacy `public/`。
+- React 19、Tailwind CSS 4、shadcn 风格 Button/Card 基元和六套主题 token。
+- Node Server `/react` → `/react/` 静态入口，并支持 `TAU_REACT_STATIC_DIR` 覆盖发布目录。
+- `vite.config.ts` 开发服务器代理 `/api` 和 `/ws`；生产构建使用 `/react/` asset base。
+- `React.lazy` 动态加载 `adapter-note` chunk；npm package 清单包含 `dist/web`、Vite 配置和 React 源入口。
+- legacy `/` 与 React `/react/` 独立运行，不共同拥有 DOM subtree。
 
-退出条件：空 React Shell 可由现有 Node Server 提供；legacy 默认行为无回归；非 Geo 页面不加载 MapLibre。
+验证：
+
+- `npm test`：234 项测试，233 项通过、1 项默认跳过、0 项失败。
+- `npm run test:react-smoke`：React Shell、lazy chunk、主题 token、legacy 回退和 Geo 懒加载边界通过。
+- `npm run test:browser-smoke` 与 `npm run test:browser-baseline`：legacy 默认入口回归通过，后者 11/11 场景通过。
+- `npm pack --dry-run`：`dist/web/index.html`、assets、`src/web` 和 Vite 配置均进入发布清单。
+
+退出条件：空 React Shell 可由现有 Node Server 提供；legacy 默认行为无回归；非 Geo 页面不加载 MapLibre。已满足。
 
 ### 阶段 3：Contract 治理
 
@@ -683,9 +692,10 @@ Workspace Platform    -> Geo Workspace
 | Feature | Tool Result → Domain Action → Store → selector，不加载 React |
 | Component | 焦点、键盘、受控状态、空/错/加载状态和 reduced motion |
 | Browser E2E | 创建、resume、streaming、abort、Dialog、Task、Geo、移动端和主题 |
+| React Foundation Smoke | `/react/` Shell、lazy chunk、主题 token、legacy 回退和 Geo 懒加载 |
 | Real Pi Smoke | Pi 版本、Extension 加载、Bridge manifest 和关键 RPC 往返 |
 
-真实 Chrome smoke 当前仍主要覆盖真实 Node Server 的连接和新建会话；阶段 0 的 `browser-baseline` 使用 fake-pi 线束覆盖完整的合成 streaming、Task 和 Geo 浏览器路径。真实 Pi RPC 协议冒烟需另行执行 `npm run test:pi-smoke`；该测试使用 offline 模式，不代表真实模型 API 的完整 prompt 流程。
+真实 Chrome smoke 当前覆盖 legacy 连接/新建会话和独立 React `/react/` Shell；阶段 0 的 `browser-baseline` 使用 fake-pi 线束覆盖完整的合成 streaming、Task 和 Geo 浏览器路径。真实 Pi RPC 协议冒烟需另行执行 `npm run test:pi-smoke`；该测试使用 offline 模式，不代表真实模型 API 的完整 prompt 流程。
 
 ## 11. 性能预算
 
@@ -805,14 +815,15 @@ React Component -> raw WebSocket / Pi JSONL
 ## 16. 开始实施前的检查清单
 
 - [x] 阶段 0 的 fixture 和浏览器基线进入仓库。
-- [ ] 明确 legacy/react 静态入口和回退方式。
+- [x] 明确 legacy/react 静态入口和回退方式（legacy `/`、React `/react/`）。
 - [x] Event Normalizer、Command Port 和 Store 的最小接口已实现并通过测试。
 - [x] Snapshot 与 live overlay 的 reconcile 规则有回放测试样例。
 - [ ] `DEFAULT_TASK_CWD` 不再由 React 复制一份硬编码路径，而由服务端配置提供。
-- [ ] Vite 输出目录不会覆盖 `public/` 或 Extension/Skill/Prompt。
+- [x] Vite 输出目录不会覆盖 `public/` 或 Extension/Skill/Prompt。
 - [x] 六套主题和移动端关键页面有截图基线。
 - [x] Task Dialog、Geo Workspace 和 resume 已进入浏览器验收范围。
-- [ ] 每阶段都有清晰回退点，不依赖未完成的下一阶段。
+- [x] 阶段 2 React Shell 已通过 Node Server 静态路由和 Chrome smoke 验证。
+- [x] 每阶段都有独立回退点；React 当前不替换 legacy 默认入口。
 
 ## 17. 官方参考
 

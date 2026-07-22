@@ -113,6 +113,26 @@ test('GET /api/health reports server health and live session count', async () =>
   assert.match(body.lanUrl, /^http:\/\/localhost:\d+$/);
 });
 
+test('GET /react/ serves the independent React shell without loading Geo runtime', async () => {
+  const redirect = await fetch(`${base}/react`, { redirect: 'manual' });
+  assert.equal(redirect.status, 302);
+  assert.equal(redirect.headers.get('location'), '/react/');
+
+  const res = await fetch(`${base}/react/`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') || '', /^text\/html/);
+  const html = await res.text();
+  assert.match(html, /Pi Traffic · React Web Adapter/);
+  assert.match(html, /\/react\/assets\//);
+  assert.doesNotMatch(html, /geo-runtime\.js/);
+
+  const assetPath = html.match(/src="([^\"]+\.js)"/)?.[1];
+  assert.ok(assetPath);
+  const asset = await fetch(`${base}${assetPath}`);
+  assert.equal(asset.status, 200);
+  assert.match(asset.headers.get('content-type') || '', /javascript/);
+});
+
 test('GET /api/live-sessions lists managed sessions', async () => {
   liveManager.sessions.set('tau_1', fakeSession('tau_1'));
   const res = await fetch(`${base}/api/live-sessions`);

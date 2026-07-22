@@ -51,6 +51,7 @@ export const AUTH_CONFIGURED = !!(TAU_SETTINGS.user && TAU_SETTINGS.pass);
 export const PORT = TAU_SETTINGS.port;
 export const HOST = TAU_SETTINGS.host;
 export const STATIC_DIR = process.env.TAU_STATIC_DIR || findPublicDir();
+export const REACT_STATIC_DIR = process.env.TAU_REACT_STATIC_DIR || findReactWebDir();
 export const GEO_EXTENSION_PATH = process.env.TAU_GEO_EXTENSION_PATH || findGeoExtensionPath();
 export const TASK_MODE_EXTENSION_PATH = process.env.TAU_TASK_MODE_EXTENSION_PATH || findTaskModeExtensionPath();
 export const WEB_BRIDGE_EXTENSION_PATH = process.env.TAU_WEB_BRIDGE_EXTENSION_PATH || findWebBridgeExtensionPath();
@@ -79,6 +80,18 @@ function findPublicDir() {
   add(path.join(process.cwd(), 'node_modules', 'pi-traffic-workspace', 'public'));
   add(path.join(process.cwd(), 'node_modules', 'pi-tau-web-server', 'public'));
   return candidates.find((c) => fs.existsSync(path.join(c, 'index.html'))) || candidates[0];
+}
+
+function findReactWebDir() {
+  const candidates: string[] = [];
+  const add = (p: string) => candidates.push(path.resolve(p));
+  add(path.join(__dirname, '..', 'dist', 'web'));
+  add(path.join(process.cwd(), 'dist', 'web'));
+  try {
+    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
+    add(path.join(path.dirname(pkgPath), 'dist', 'web'));
+  } catch {}
+  return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'index.html'))) || candidates[0];
 }
 
 function findGeoExtensionPath() {
