@@ -1,0 +1,622 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Avenir Next", "Helvetica Neue", sans-serif;
+  --font-display: "Iowan Old Style", "Baskerville", Georgia, serif;
+}
+
+:root {
+  color-scheme: dark;
+  --react-bg: #0d1218;
+  --react-bg-soft: #111a21;
+  --react-panel: rgba(22, 32, 39, 0.76);
+  --react-panel-strong: #162129;
+  --react-text: #edf4f2;
+  --react-muted: #8ea5a5;
+  --react-dim: #5f7477;
+  --react-line: rgba(171, 211, 206, 0.16);
+  --react-line-strong: rgba(171, 211, 206, 0.3);
+  --react-accent: #9dd7d0;
+  --react-accent-strong: #d1fff4;
+  --react-accent-soft: rgba(157, 215, 208, 0.11);
+  --react-warm: #e8ad8e;
+  --react-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dawn"] {
+  --react-bg: #1a1720;
+  --react-bg-soft: #241d26;
+  --react-panel: rgba(47, 35, 42, 0.8);
+  --react-panel-strong: #33242d;
+  --react-text: #fff2e9;
+  --react-muted: #c2a9a3;
+  --react-dim: #88716f;
+  --react-line: rgba(242, 193, 170, 0.16);
+  --react-line-strong: rgba(242, 193, 170, 0.3);
+  --react-accent: #e8ad8e;
+  --react-accent-strong: #ffe0cc;
+  --react-accent-soft: rgba(232, 173, 142, 0.12);
+  --react-warm: #d7d68d;
+}
+
+:root[data-theme="midnight"] {
+  --react-bg: #05070c;
+  --react-bg-soft: #0a0f18;
+  --react-panel: rgba(12, 20, 32, 0.82);
+  --react-panel-strong: #0e1825;
+  --react-text: #edf3ff;
+  --react-muted: #8b9bb8;
+  --react-dim: #52617b;
+  --react-line: rgba(143, 184, 255, 0.16);
+  --react-line-strong: rgba(143, 184, 255, 0.32);
+  --react-accent: #8fb8ff;
+  --react-accent-strong: #dbe8ff;
+  --react-accent-soft: rgba(143, 184, 255, 0.11);
+  --react-warm: #bd9bff;
+}
+
+:root[data-theme="clean"] {
+  color-scheme: light;
+  --react-bg: #f3f7fb;
+  --react-bg-soft: #e9f0f6;
+  --react-panel: rgba(255, 255, 255, 0.78);
+  --react-panel-strong: #ffffff;
+  --react-text: #142433;
+  --react-muted: #5d7180;
+  --react-dim: #8ca0ad;
+  --react-line: rgba(20, 54, 74, 0.13);
+  --react-line-strong: rgba(20, 54, 74, 0.24);
+  --react-accent: #2463eb;
+  --react-accent-strong: #1749b8;
+  --react-accent-soft: rgba(36, 99, 235, 0.08);
+  --react-warm: #ca6848;
+  --react-shadow: 0 24px 80px rgba(35, 65, 95, 0.12);
+}
+
+:root[data-theme="terracotta"] {
+  color-scheme: light;
+  --react-bg: #f4f0ea;
+  --react-bg-soft: #ebe3d9;
+  --react-panel: rgba(255, 252, 247, 0.8);
+  --react-panel-strong: #fffaf4;
+  --react-text: #302522;
+  --react-muted: #78655d;
+  --react-dim: #a4948b;
+  --react-line: rgba(74, 42, 30, 0.14);
+  --react-line-strong: rgba(74, 42, 30, 0.26);
+  --react-accent: #b96d4c;
+  --react-accent-strong: #87472e;
+  --react-accent-soft: rgba(185, 109, 76, 0.1);
+  --react-warm: #62508c;
+  --react-shadow: 0 24px 80px rgba(99, 66, 45, 0.12);
+}
+
+:root[data-theme="sage"] {
+  color-scheme: light;
+  --react-bg: #eef1eb;
+  --react-bg-soft: #e2e9df;
+  --react-panel: rgba(250, 252, 247, 0.8);
+  --react-panel-strong: #fafff7;
+  --react-text: #263329;
+  --react-muted: #65766a;
+  --react-dim: #9aaa9c;
+  --react-line: rgba(44, 72, 49, 0.14);
+  --react-line-strong: rgba(44, 72, 49, 0.26);
+  --react-accent: #71845d;
+  --react-accent-strong: #4d633d;
+  --react-accent-soft: rgba(113, 132, 93, 0.1);
+  --react-warm: #775a9b;
+  --react-shadow: 0 24px 80px rgba(61, 88, 59, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+  background: var(--react-bg);
+  color: var(--react-text);
+  font-family: var(--font-sans);
+  transition: background-color 240ms ease, color 240ms ease;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--react-accent);
+  outline-offset: 4px;
+}
+
+.react-shell {
+  isolation: isolate;
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+  background:
+    radial-gradient(circle at 84% 4%, var(--react-accent-soft), transparent 32rem),
+    radial-gradient(circle at 12% 88%, rgba(232, 173, 142, 0.06), transparent 28rem),
+    var(--react-bg);
+}
+
+.react-grain {
+  inset: 0;
+  opacity: 0.06;
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+}
+
+.react-topbar {
+  align-items: center;
+  border-bottom: 1px solid var(--react-line);
+  display: flex;
+  justify-content: space-between;
+  margin: 0 auto;
+  max-width: 1500px;
+  padding: 24px clamp(22px, 5vw, 76px);
+}
+
+.react-brand {
+  align-items: center;
+  color: var(--react-text);
+  display: flex;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.react-brand-mark {
+  align-items: center;
+  background: var(--react-accent);
+  border-radius: 50%;
+  color: var(--react-bg);
+  display: inline-flex;
+  font-family: var(--font-display);
+  font-size: 23px;
+  height: 38px;
+  justify-content: center;
+  line-height: 1;
+  width: 38px;
+}
+
+.react-brand strong,
+.react-brand small {
+  display: block;
+  letter-spacing: 0.18em;
+}
+
+.react-brand strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.react-brand small {
+  color: var(--react-muted);
+  font-size: 8px;
+  margin-top: 4px;
+}
+
+.react-topbar-meta {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+}
+
+.react-version,
+.eyebrow,
+.signal-index {
+  color: var(--react-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.react-live-dot {
+  background: var(--react-accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 5px var(--react-accent-soft), 0 0 22px var(--react-accent);
+  display: block;
+  height: 7px;
+  width: 7px;
+}
+
+.react-shell-grid {
+  display: grid;
+  gap: clamp(34px, 6vw, 110px);
+  grid-template-columns: minmax(190px, 0.34fr) minmax(0, 1fr);
+  margin: 0 auto;
+  max-width: 1500px;
+  min-height: calc(100vh - 87px);
+  padding: clamp(48px, 8vw, 112px) clamp(22px, 5vw, 76px) 36px;
+}
+
+.react-rail {
+  border-right: 1px solid var(--react-line);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 590px;
+  padding: 10px clamp(24px, 4vw, 60px) 18px 0;
+}
+
+.react-route-card {
+  align-items: center;
+  background: var(--react-panel);
+  border: 1px solid var(--react-line);
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 13px 14px;
+}
+
+.react-route-method {
+  color: var(--react-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.react-route-card code {
+  color: var(--react-text);
+  font-size: 13px;
+}
+
+.react-rail-copy {
+  color: var(--react-muted);
+  font-size: 13px;
+  line-height: 1.75;
+  margin: 16px 0 0;
+}
+
+.react-rail-footer {
+  border-top: 1px solid var(--react-line);
+  padding-top: 20px;
+}
+
+.theme-switcher {
+  display: grid;
+  gap: 5px;
+  margin-top: 13px;
+}
+
+.theme-chip {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--react-muted);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 12px;
+  gap: 10px;
+  padding: 8px 9px;
+  text-align: left;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.theme-chip:hover,
+.theme-chip.is-active {
+  background: var(--react-accent-soft);
+  border-color: var(--react-line);
+  color: var(--react-text);
+}
+
+.theme-chip-swatch {
+  border: 2px solid color-mix(in srgb, var(--react-text) 18%, transparent);
+  border-radius: 50%;
+  height: 10px;
+  width: 10px;
+}
+
+.react-main {
+  max-width: 860px;
+  padding-bottom: 16px;
+}
+
+.react-hero {
+  animation: rise-in 600ms ease both;
+}
+
+.react-hero-kicker {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+}
+
+.react-kicker-rule {
+  background: var(--react-line-strong);
+  display: block;
+  height: 1px;
+  width: 52px;
+}
+
+.react-kicker-status {
+  color: var(--react-accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.react-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(48px, 7vw, 94px);
+  font-weight: 400;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+  margin: 32px 0 26px;
+  max-width: 840px;
+}
+
+.react-hero h1 em {
+  color: var(--react-accent);
+  font-style: normal;
+}
+
+.react-hero-copy {
+  color: var(--react-muted);
+  font-size: 16px;
+  line-height: 1.8;
+  max-width: 610px;
+}
+
+.react-hero-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 30px;
+}
+
+.ui-button {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 10px;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  min-height: 42px;
+  padding: 0 16px;
+  text-decoration: none;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.ui-button:hover {
+  transform: translateY(-1px);
+}
+
+.ui-button-primary {
+  background: var(--react-accent);
+  color: var(--react-bg);
+}
+
+.ui-button-primary:hover {
+  background: var(--react-accent-strong);
+}
+
+.ui-button-quiet {
+  background: var(--react-accent-soft);
+  border-color: var(--react-line);
+  color: var(--react-text);
+}
+
+.ui-button-quiet:hover,
+.ui-button-outline:hover {
+  background: var(--react-panel);
+  border-color: var(--react-line-strong);
+}
+
+.ui-button-outline {
+  background: transparent;
+  border-color: var(--react-line);
+  color: var(--react-text);
+}
+
+.react-signal-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: clamp(60px, 9vw, 110px);
+}
+
+.ui-card {
+  background: var(--react-panel);
+  border: 1px solid var(--react-line);
+  border-radius: 8px;
+  box-shadow: var(--react-shadow);
+}
+
+.ui-card-header {
+  padding: 22px 22px 20px;
+}
+
+.ui-card-title {
+  color: var(--react-text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 15px 0 9px;
+}
+
+.ui-card-description {
+  color: var(--react-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.signal-card {
+  min-height: 204px;
+  overflow: hidden;
+  position: relative;
+}
+
+.signal-card-accent {
+  background:
+    linear-gradient(135deg, var(--react-accent-soft), transparent 60%),
+    var(--react-panel);
+}
+
+.signal-index {
+  color: var(--react-accent);
+}
+
+.signal-mark {
+  bottom: 18px;
+  color: var(--react-accent);
+  font-family: var(--font-display);
+  font-size: 42px;
+  opacity: 0.7;
+  position: absolute;
+  right: 22px;
+}
+
+.signal-pulse {
+  bottom: 27px;
+  display: flex;
+  gap: 5px;
+  position: absolute;
+  right: 24px;
+}
+
+.signal-pulse span {
+  background: var(--react-accent);
+  border-radius: 50%;
+  height: 6px;
+  opacity: 0.7;
+  width: 6px;
+}
+
+.signal-pulse span:nth-child(2) { opacity: 0.45; }
+.signal-pulse span:nth-child(3) { opacity: 0.2; }
+
+.adapter-note {
+  animation: rise-in 650ms 120ms ease both;
+  border-top: 1px solid var(--react-line-strong);
+  margin-top: 34px;
+  padding-top: 20px;
+}
+
+.adapter-note-loading {
+  color: var(--react-muted);
+  font-size: 13px;
+}
+
+.adapter-note-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.adapter-note-line {
+  background: var(--react-accent);
+  height: 5px;
+  opacity: 0.7;
+  width: 5px;
+}
+
+.adapter-boundaries {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+.adapter-boundary {
+  display: flex;
+  gap: 11px;
+}
+
+.adapter-boundary-index {
+  color: var(--react-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding-top: 2px;
+}
+
+.adapter-boundary strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.adapter-boundary p {
+  color: var(--react-muted);
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 5px 0 0;
+}
+
+.react-footer {
+  border-top: 1px solid var(--react-line);
+  color: var(--react-dim);
+  display: flex;
+  font-size: 9px;
+  justify-content: space-between;
+  letter-spacing: 0.14em;
+  margin-top: 70px;
+  padding-top: 16px;
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 800px) {
+  .react-topbar { padding: 19px 22px; }
+  .react-version { display: none; }
+  .react-shell-grid {
+    display: block;
+    padding: 48px 22px 28px;
+  }
+  .react-rail {
+    border-bottom: 1px solid var(--react-line);
+    border-right: 0;
+    display: grid;
+    gap: 30px;
+    min-height: 0;
+    padding: 0 0 28px;
+  }
+  .react-rail-footer { border-top: 0; padding-top: 0; }
+  .theme-switcher { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .theme-chip { justify-content: center; padding: 8px 5px; }
+  .react-main { padding-top: 56px; }
+  .react-hero h1 { font-size: clamp(47px, 14vw, 76px); }
+  .react-signal-grid { grid-template-columns: 1fr; margin-top: 68px; }
+  .adapter-boundaries { grid-template-columns: 1fr; }
+  .adapter-boundary { border-bottom: 1px solid var(--react-line); padding-bottom: 12px; }
+  .adapter-boundary:last-child { border-bottom: 0; }
+  .react-footer { gap: 15px; line-height: 1.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

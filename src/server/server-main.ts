@@ -20,7 +20,7 @@ import type { Stats, Dirent } from 'node:fs';
 import type { Socket } from 'node:net';
 import type { WebSocket as WsType } from 'ws';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PORT, SESSIONS_DIR, STATIC_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PORT, REACT_STATIC_DIR, SESSIONS_DIR, STATIC_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
@@ -298,30 +298,60 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   }
 }
 
+function serveStaticFromRoot(res: ServerResponse, staticRootValue: string, requestPath: string) {
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(requestPath);
+  } catch {
+    res.writeHead(400);
+    res.end('Bad Request');
+    return;
+  }
+  const staticRoot = path.resolve(staticRootValue);
+  const filePath = path.resolve(path.join(staticRoot, decodedPath));
+  if (filePath !== staticRoot && !filePath.startsWith(staticRoot + path.sep)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+  fs.stat(filePath, (err: NodeJS.ErrnoException | null, stats: Stats) => {
+    if (err || !stats.isFile()) {
+      res.writeHead(404);
+      res.end('Not Found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': (MIME_TYPES as Record<string, string>)[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
+    fs.createReadStream(filePath).pipe(res);
+  });
+}
+
+function serveReactStaticFile(res: ServerResponse, urlPath: string) {
+  const pathname = urlPath.split('?')[0];
+  if (pathname === '/react') {
+    res.writeHead(302, { Location: '/react/' });
+    res.end();
+    return;
+  }
+  const relativePath = pathname.slice('/react'.length) || '/';
+  // The React shell is currently a single page. Keep extension-bearing asset
+  // misses as 404s, but let future client-side routes fall back to index.html.
+  const requestPath = relativePath === '/' || !path.extname(relativePath)
+    ? '/index.html'
+    : relativePath;
+  serveStaticFromRoot(res, REACT_STATIC_DIR, requestPath);
+}
+
 function serveStaticFile(req: IncomingMessage, res: ServerResponse) {
   let urlPath = req.url || '/';
   const auth = checkAuth(req);
   if (authEnabled && !urlPath.startsWith('/api/health') && !auth.ok) return sendAuthRequired(res, req);
   maybeSetSessionCookie(req, res, auth);
   if (urlPath.startsWith('/api/')) return handleApiRoute(req, res, urlPath);
-  urlPath = urlPath.split('?')[0];
+  const pathname = urlPath.split('?')[0];
+  if (pathname === '/react' || pathname.startsWith('/react/')) return serveReactStaticFile(res, urlPath);
+  urlPath = pathname;
   if (urlPath === '/') urlPath = '/index.html';
-  let decodedPath;
-  try {
-    decodedPath = decodeURIComponent(urlPath);
-  } catch {
-    res.writeHead(400);
-    res.end('Bad Request');
-    return;
-  }
-  const staticRoot = path.resolve(STATIC_DIR);
-  const filePath = path.resolve(path.join(staticRoot, decodedPath));
-  if (filePath !== staticRoot && !filePath.startsWith(staticRoot + path.sep)) { res.writeHead(403); res.end('Forbidden'); return; }
-  fs.stat(filePath, (err: NodeJS.ErrnoException | null, stats: Stats) => {
-    if (err || !stats.isFile()) { res.writeHead(404); res.end('Not Found'); return; }
-    res.writeHead(200, { 'Content-Type': (MIME_TYPES as Record<string, string>)[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
-    fs.createReadStream(filePath).pipe(res);
-  });
+  serveStaticFromRoot(res, STATIC_DIR, urlPath);
 }
 
 function isAllowedApiOrigin(req: IncomingMessage) {
@@ -892,6 +922,7 @@ function listen(port: number, attemptsLeft = 10) {
     computeUrls(port);
     console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`);
     console.log(`[Tau] Static assets: ${STATIC_DIR}`);
+    console.log(`[Tau] React shell: ${REACT_STATIC_DIR} (/react/)`);
     if (ARGS.open) openUrl(lanUrl).catch(() => {});
   });
 }
@@ -959,6 +990,7 @@ module.exports = {
   setCorsForAllowedOrigin,
   handleApiRoute,
   serveStaticFile,
+  serveReactStaticFile,
   server,
   wss,
   computeUrls,
