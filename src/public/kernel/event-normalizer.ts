@@ -8,7 +8,7 @@
 
 import type { AppEvent, AppMessage, LiveSession, SessionEntry, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
-import { appError, type AppError } from './errors.js';
+import { appError, type AppError } from '../../contracts/errors.ts';
 import type { TransportSignal } from './transport.js';
 
 type RawMessage = { type?: unknown; [key: string]: unknown };
@@ -181,6 +181,12 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         }
         const { type: _ignored, ...snapshot } = raw;
         return [{ type: 'session/snapshotReceived', sessionId, snapshot: snapshot as unknown as SessionSnapshot }];
+      }
+      case 'contract_diagnostic': {
+        const error = raw.error as AppError | undefined;
+        return error?.category === 'protocol'
+          ? [{ type: 'error/raised', error }]
+          : [protocolError('malformed_contract_diagnostic', 'Server contract diagnostic did not include a protocol AppError', raw.sessionId as string | undefined)];
       }
       case 'error':
         return [{

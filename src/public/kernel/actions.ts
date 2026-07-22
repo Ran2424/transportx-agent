@@ -13,7 +13,7 @@ import type {
   SessionEntry,
   SessionSnapshot,
 } from '../app-types.js';
-import type { AppError } from './errors.js';
+import type { AppError } from '../../contracts/errors.ts';
 
 export type ToolExecution = {
   toolCallId: string;

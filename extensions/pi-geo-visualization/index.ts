@@ -8,6 +8,7 @@ import {
   isFeatureCollection,
   parseGeoScene,
   parseVisualizationEnvelope,
+  formatSceneValidationErrors,
   type GeoJsonFeatureCollection,
   type GeoLayer,
   type GeoSceneSnapshot,
@@ -15,7 +16,7 @@ import {
   type GeoVisualValue,
   type GeoView,
   type VisualizationEnvelope,
-} from '../../src/public/visualization/geo/protocol.ts';
+} from '../../src/contracts/index.ts';
 
 type SceneState = { revision: number; scene: GeoSceneSnapshot | null };
 type PresentCommand = { command: string; visualizationId: string; [key: string]: any };
@@ -221,14 +222,9 @@ function requireCurrentScene(current: SceneState | undefined, visualizationId: s
   return current.scene;
 }
 
-function validationError(prefix: string, result: ReturnType<typeof parseGeoScene>) {
-  const detail = result.issues.map((issue) => `${issue.path} [${issue.code}]: ${issue.message}`).join('\n');
-  return new Error(`${prefix}\n${detail}`);
-}
-
 function validatedScene(value: unknown, prefix: string) {
   const result = parseGeoScene(value);
-  if (!result.ok) throw validationError(prefix, result);
+  if (!result.ok) throw new Error(formatSceneValidationErrors(prefix, result));
   return result.value;
 }
 

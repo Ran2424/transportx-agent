@@ -19,6 +19,10 @@
 | `features/task-entries.json` | pi-task-mode custom entry + tau_task/tau_ask_user toolResult | `src/public/features/task/task-protocol.ts`：`parseTaskStateEntry`（versioned 与 legacy 两种）、`parseTaskModeEntry`、`parseTaskToolResult`（`tau-task` 与 `tau-interaction`） |
 | `features/geo-tool-result.json` | present_visualization toolResult（真实 GIS smoke 会话同款形状） | `src/public/visualization/geo/protocol.ts`：`getVisualizationFromToolResult` 解析出 envelope，`parseGeoScene` 接受内联 GeoJSON scene |
 | `features/bridge-envelope.json` | pi-web-bridge custom entry（`entry_appended` 的 entry 内层） | `bin/pi-web-bridge.js` 的 `parsePiWebBridgeEnvelope`：schemaVersion/revision/model/thinkingLevel/tools |
+| `contracts/session.json` | SessionSnapshot v1 合法/非法 wire shape | `src/contracts/session.ts` 与 Server compatibility：合法 v1、unknown schemaVersion、非法 entries |
+| `contracts/task.json` | TaskSnapshot v1 与 revision 样例 | Extension/Web 共用 parser：合法/非法 schemaVersion、非法 revision、revision regression |
+| `contracts/geo.json` | VisualizationEnvelope 1.0 与最小 GeoScene | Extension/Web 共用 parser：合法/非法 version、非法 revision、revision regression |
+| `contracts/bridge.json` | PiWebBridgeEnvelope v1 + RuntimeCapabilities | Extension/Server 共用 parser：合法/非法 schemaVersion、capability version、revision regression |
 
 ## 如何再生成
 
@@ -27,7 +31,7 @@
    替换 `sessions/*.jsonl`；把 WS 侧抓到的 event 序列整理为 `events/*.json` 同款结构。
 2. 无真实 pi：用 `scripts/harness/fake-pi.mjs` 回放场景（`scripts/harness/scenarios/baseline.json`），
    其产出与本目录 fixture 同源同构；修改 fixture 后跑 `npm test`（`test/fixtures.test.ts` 会校验）。
-3. 修改任何协议代码（session-projection / task-protocol / geo protocol / pi-web-bridge / app-main 事件处理）后，
+3. 修改任何 `src/contracts/**`、session-projection、task/geo/bridge compatibility 或 app-main 事件处理后，
    必须同步更新对应 fixture 并在本表更新「协议校验点」。
 
 约定：JSONL 一行一条目、UTF-8、无尾随逗号；事件 fixture 是单个 JSON 对象

@@ -1,10 +1,20 @@
-export type JsonRecord = Record<string, unknown>;
+/**
+ * Server-only shared types. Protocol primitives are re-exported from
+ * `src/contracts/common.ts`; everything else here is server-internal (command
+ * frames, RPC plumbing, settings).
+ */
+import type { JsonRecord, ModelIdentity } from '../contracts/common.js';
+export type { JsonRecord, ModelIdentity } from '../contracts/common.js';
+
+export type ParsedModelSpec = { model: ModelIdentity | null; level: string | null };
+
 export type TauArgs = Record<string, string | boolean | undefined> & {
   open?: boolean;
   port?: string;
   host?: string;
   'projects-dir'?: string;
 };
+
 export type TauSettingsFile = {
   tau?: {
     port?: string | number;
@@ -17,6 +27,7 @@ export type TauSettingsFile = {
     [key: string]: unknown;
   };
 };
+
 export type TauSettings = {
   port: number;
   host: string;
@@ -26,13 +37,7 @@ export type TauSettings = {
   cookieSecret?: string;
   projectsDir: string;
 };
-export type ModelIdentity = {
-  provider?: string;
-  id?: string;
-  name?: string;
-  [key: string]: unknown;
-};
-export type ParsedModelSpec = { model: ModelIdentity | null; level: string | null };
+
 export type RpcCommand = {
   id?: string;
   type?: string;
@@ -48,13 +53,16 @@ export type RpcCommand = {
   enabled?: boolean;
   [key: string]: unknown;
 };
+
 export type RpcResponse = JsonRecord;
+
 export type PendingCommand = {
   resolve: (value: RpcResponse) => void;
   reject: (reason: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
   command?: string;
 };
+
 export type LiveClient = {
   readyState: number;
   send(payload: string): void;
@@ -63,6 +71,5 @@ export type LiveClient = {
   ping(): void;
   isAlive?: boolean;
 };
+
 export type StatusError = Error & { status?: number; stderr?: string };
-
-

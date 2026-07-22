@@ -1,0 +1,49 @@
+{
+  "valid": {
+    "schemaVersion": 1,
+    "revision": 2,
+    "model": { "provider": "openai", "id": "gpt-5.5", "name": "GPT 5.5" },
+    "thinkingLevel": "medium",
+    "tools": [
+      { "name": "read", "description": "Read a file", "parameters": { "type": "object" }, "active": true }
+    ],
+    "capabilities": {
+      "piVersion": "0.80.10",
+      "bridgeVersion": 1,
+      "taskEnvelopeVersion": 1,
+      "geoSceneVersion": "1.0",
+      "extensionUiKinds": ["select", "confirm", "input", "editor", "notify"],
+      "eventReplay": true
+    }
+  },
+  "invalidVersion": {
+    "schemaVersion": 2,
+    "revision": 2,
+    "model": null,
+    "thinkingLevel": "medium",
+    "tools": []
+  },
+  "invalidRevision": {
+    "schemaVersion": 1,
+    "revision": 0,
+    "model": null,
+    "thinkingLevel": "medium",
+    "tools": []
+  },
+  "invalidCapabilityVersion": {
+    "schemaVersion": 1,
+    "revision": 2,
+    "model": null,
+    "thinkingLevel": "medium",
+    "tools": [],
+    "capabilities": {
+      "piVersion": "0.80.10",
+      "bridgeVersion": 2,
+      "taskEnvelopeVersion": 1,
+      "geoSceneVersion": "1.0",
+      "extensionUiKinds": ["select", "confirm", "input", "editor", "notify"],
+      "eventReplay": true
+    }
+  },
+  "staleRevision": 1
+}

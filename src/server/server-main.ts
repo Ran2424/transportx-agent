@@ -26,9 +26,9 @@ import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, 
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { inspectPiRuntime } from './pi-runtime.js';
-import { SESSION_SNAPSHOT_SCHEMA_VERSION, readSessionBranch } from './session-projection.js';
+import { readSessionBranch } from './session-projection.js';
 import { createApiRouter } from './api-routes.js';
-import { latestPiWebBridgeEnvelope } from './pi-web-bridge.js';
+import { SESSION_SNAPSHOT_SCHEMA_VERSION, latestPiWebBridgeEnvelope } from '../contracts/index.js';
 
 type TauWs = WsType & { isAlive?: boolean };
 
@@ -939,6 +939,7 @@ async function shutdown(signal: string) {
 }
 function startCli() {
   const piRuntime = inspectPiRuntime(PI_COMMAND);
+  liveManager.setPiVersion(piRuntime.version);
   console.log(`[Tau] Pi runtime: ${piRuntime.command} ${piRuntime.version}`);
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));

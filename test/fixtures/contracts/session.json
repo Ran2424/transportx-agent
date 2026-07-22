@@ -1,0 +1,17 @@
+{
+  "valid": {
+    "schemaVersion": 1,
+    "entries": [
+      { "type": "message", "id": "root", "parentId": null, "message": { "role": "user", "content": "hello" } },
+      { "type": "message", "id": "leaf", "parentId": "root", "message": { "role": "assistant", "content": "hi" } }
+    ]
+  },
+  "invalidVersion": {
+    "schemaVersion": 2,
+    "entries": []
+  },
+  "invalidEntries": {
+    "schemaVersion": 1,
+    "entries": "not-an-array"
+  }
+}

@@ -1,7 +1,7 @@
 import type { WebFeature, FeatureSessionContext, FeatureToolResultContext } from '../feature-registry.js';
 import { SessionTaskStore } from './session-task-store.js';
 import { TaskCardRenderer } from './task-card-renderer.js';
-import { parseTaskStateEntry, parseTaskToolResult } from './task-protocol.js';
+import { parseTaskStateEntry, parseTaskToolResult } from '../../../contracts/task.ts';
 
 type TaskModeFeatureOptions = {
   container: HTMLElement;

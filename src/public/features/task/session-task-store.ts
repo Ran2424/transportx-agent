@@ -1,4 +1,4 @@
-import type { TaskSnapshot } from './task-protocol.js';
+import type { TaskSnapshot } from '../../../contracts/task.ts';
 
 export class SessionTaskStore {
   private sessions = new Map<string, Map<string, TaskSnapshot>>();

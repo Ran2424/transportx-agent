@@ -29,7 +29,7 @@ GIS 是第一个跨边界功能切片，任务交互是第二个。它们都依�
 
 只有满足以下任一条件时，才考虑 npm workspaces、独立包或独立部署：
 
-- GeoScene 协议出现第二个独立消费者。
+- 共享 Contract 出现第二个独立发布或仓库消费者。
 - GIS Runtime 需要独立版本和发布节奏。
 - Web 前端与服务端需要分别部署。
 - 单包构建或测试耗时已经造成明确工程问题。
@@ -92,13 +92,13 @@ Pi JSONL / live entries
 - 恢复时只选择当前分支，舍弃已经放弃的兄弟分支。
 - 旧会话中没有 `id` 的旁路记录继续按顺序保留，避免丢失历史扩展状态。
 - 内存 entries 是实时窗口与缓存，不得成为比 JSONL 更高优先级的事实来源。
-- Extension 自定义状态使用显式 Envelope。Task Web 解析器兼容旧版未版本化 mode entry；当前遇到不支持的版本会忽略，后续若增加协议版本，应补充可见诊断而不是静默降级。
+- Extension 自定义状态使用显式 Envelope。Task Web 解析器兼容旧版未版本化 mode entry；未知 schema/version 与 revision 回退由 `ContractDiagnostic` 显式报告，不再只能静默返回 `null`。
 
 ### 2.2 Pi Web Bridge 与工具结果分发
 
-`pi-web-bridge` 负责补足 Pi RPC 当前没有直接发布给 Web 的会话能力。Bridge Envelope 包含 `schemaVersion`、单调递增的 `revision`、完整 Tool Manifest、当前 model 和 thinking level。
+`pi-web-bridge` 负责补足 Pi RPC 当前没有直接发布给 Web 的会话能力。Bridge Envelope 包含 `schemaVersion`、单调递增的 `revision`、完整 Tool Manifest、当前 model/thinking level，以及 `RuntimeCapabilities` 最小声明（Pi、Bridge、Task、Geo 版本、Extension UI kinds、event replay）。
 
-服务端只校验、缓存并转发 Bridge 状态；Web 端从统一 Snapshot 和 live entry 中恢复，不在每次 prompt 后使用宽泛 `get_state` 轮询。工具执行结果进入 `ToolExecutionController` 后，再交给 `FeatureRegistry` 分发到任务或 GIS 等垂直功能，组合入口不判断具体工具名。
+服务端在会话构造时建立初始 capabilities，收到 Bridge 后校验并把不兼容项作为协议诊断发布；Web 端从统一 Snapshot 和 live entry 中恢复，不在每次 prompt 后使用宽泛 `get_state` 轮询。工具执行结果进入 `ToolExecutionController` 后，再交给 `FeatureRegistry` 分发到任务或 GIS 等垂直功能，组合入口不判断具体工具名。
 
 ### 2.3 任务模式运行链路
 
@@ -153,6 +153,17 @@ Web 模式开关 / /task command
 
 ```text
 src/
+  contracts/                      Extension、Server、Web 共用的项目协议权威
+    index.ts                      统一重导出入口
+    common.ts                     JSON/Model/Validation 共享原语
+    session.ts                    SessionSnapshot v1 与纯分支投影
+    task.ts                       TaskSnapshot v1、解析和状态变更
+    geo.ts                        GeoScene / VisualizationEnvelope 1.0
+    bridge.ts                     PiWebBridgeEnvelope v1 与 revision 诊断
+    capabilities.ts               RuntimeCapabilities 最小声明
+    errors.ts                     可序列化 AppError
+    diagnostic.ts, version.ts     结构化诊断与协议版本常量
+
   server/                         Agent Web 服务端核心
     server-main.ts                HTTP、WebSocket、RPC 的组合入口
     router.ts                     类型化 method/path 路由器
@@ -160,7 +171,7 @@ src/
     sessions.ts                   Pi 子进程和 live session 生命周期
     session-projection.ts         按 parentId 选择当前分支并生成统一 Snapshot
     pi-runtime.ts                 Pi CLI 版本兼容检查
-    pi-web-bridge.ts              Bridge Envelope 校验与查询
+    pi-web-bridge.ts              Bridge Contract 兼容重导出层
     auth.ts                       浏览器会话认证
     config.ts                     环境、目录和扩展定位
     model-utils.ts                模型标识与列表解析
@@ -186,14 +197,14 @@ src/
       geo/geo-feature.ts          GIS 对平台的唯一组合入口
       task/                       任务模式 Web Adapter
         task-mode-feature.ts      模式开关、会话与工具结果接线
-        task-protocol.ts          TaskSnapshot Web 校验
+        task-protocol.ts          Task Contract 兼容重导出层
         session-task-store.ts     按会话和 revision 去重
         task-card-renderer.ts     独立任务板内的 TaskCard 内容渲染
     visualization/               通用声明式可视化子系统
       visualization-host.ts      Scene 存储、地图视图与 Runtime 桥接
       session-visualization-store.ts
       geo/
-        protocol.ts               GeoScene 共享契约（当前物理位置）
+        protocol.ts               Geo Contract 兼容重导出层
         geo-runtime-entry.ts      MapLibre Runtime 唯一入口
 
 extensions/
@@ -214,6 +225,7 @@ public/                           Web 发布目录
   style.css                       legacy 手写全局样式
   icons/                          手写/设计源静态资产
   *.js, features/, visualization/ 编译产物，不跟踪
+  contracts/                      共享 Contract 浏览器编译产物，不跟踪
   workspace/                      编译产物，不跟踪
   geo-runtime.*                  编译产物，不跟踪
 
@@ -228,16 +240,17 @@ docs/                             工程文档与截图资产
 scenario/                         本地任务工作区，不跟踪
 ```
 
-`protocol.ts` 逻辑上属于共享契约，但暂时保留在浏览器输出路径内，因为当前前端采用 TypeScript 逐文件编译。为了目录形式强行迁移它，会连带改变发布路径和构建系统。等出现第二个 Runtime 或独立协议包需求时，再提取为 `packages/geo-protocol`。
+项目自有跨边界协议统一位于 `src/contracts/`，且不得导入 React、Node、DOM 或 MapLibre。旧 `task-protocol.ts`、Geo `protocol.ts`、`pi-web-bridge.ts` 与 Kernel errors 文件只保留重导出兼容层。TypeScript 以 `src/` 为共享编译根，发布后布局脚本恢复现有平面入口，并生成不入 Git 的 `bin/contracts/`、`public/contracts/`；项目仍是单仓库、单 npm 包。
 
 ## 4. 依赖方向
 
 允许的依赖：
 
 ```text
-server-main ───────> server core + feature route adapters
-app-main ──────────> platform controllers + FeatureRegistry
-FeatureRegistry ───> WorkspaceRegistration（最小端口）
+Extension / Server / Web ──> src/contracts（单向依赖）
+server-main ────────────────> server core + feature route adapters
+app-main ──────────────────> platform controllers + FeatureRegistry
+FeatureRegistry ───────────> WorkspaceRegistration（最小端口）
 GeoFeature ─────────> VisualizationHost
 VisualizationHost ─> GeoScene protocol + MapLibre runtime loader
 MapLibre runtime ───> GeoScene protocol + maplibre-gl
@@ -398,9 +411,12 @@ rtk npm run test:browser-smoke
 - 保持 legacy `/` 默认入口，React Shell 只作为独立基座验收，不复制 Kernel 状态。
 - `npm run test:react-smoke`、legacy browser smoke、browser baseline 和 `npm pack --dry-run` 均通过。
 
-### 阶段 E：共享契约包（下个阶段）
+### 阶段 E：Contract 治理（已完成，2026-07-22）
 
-仅当出现第二个消费者时，将 GeoScene 协议提取为独立包；Extension、Web Runtime 和测试共同依赖该包。此前不引入 workspace 和包间版本管理。
+- 项目自有 Session、Task、Geo、Bridge、AppError、ModelIdentity 与 RuntimeCapabilities 统一迁入 `src/contracts/`。
+- Extension、Server、legacy Web 共用同一协议源码；旧路径保留兼容重导出。
+- Task、Geo、Bridge、SessionSnapshot 的合法/非法版本、非法 revision 与 revision regression 使用共享 fixture 验证。
+- 保持单 npm 包，不建立 workspace，不包装全部 Pi 原生 event。只有出现独立发布消费者后，才评估提取 `packages/contracts`。
 
 ## 9. 新增跨边界功能的标准流程
 

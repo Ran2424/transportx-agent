@@ -7,9 +7,13 @@ node_modules/
 /bin/*.js
 /bin/*.js.map
 /bin/*.d.ts
+/bin/contracts/
+/bin/server/
 /public/*.js
 /public/*.js.map
 /public/*.d.ts
+/public/contracts/
+/public/public/
 /public/features/
 /public/controllers/
 /public/runtime/
@@ -33,6 +37,7 @@ references/pi-development-guide.md
 .agents/
 scenario/
 .tau/
+/logs/
 
 # 浏览器截图基线 PNG（体积大，只保留 manifest.json 哈希清单，见 docs/TEST_BASELINES.md）
 test/baselines/screenshots/*.png

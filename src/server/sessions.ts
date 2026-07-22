@@ -18,7 +18,21 @@ import {
 } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import { SessionProjection } from './session-projection.js';
-import { PI_WEB_BRIDGE_ENTRY, latestPiWebBridgeEnvelope, parsePiWebBridgeEnvelope } from './pi-web-bridge.js';
+import {
+  PI_WEB_BRIDGE_ENTRY,
+  PI_RUNTIME_MINIMUM,
+  acceptBridgeRevision,
+  appError,
+  latestPiWebBridgeEnvelopeStructured,
+  matchCapabilities,
+  parsePiWebBridgeEnvelopeStructured,
+  protocolError,
+  runtimeCapabilities,
+  type CapabilityMismatchReason,
+  type ContractDiagnostic,
+  type PiWebBridgeEnvelope,
+  type RuntimeCapabilities,
+} from '../contracts/index.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string }>;
@@ -151,8 +165,13 @@ export class PiRpcSession {
   exitCode: number | null;
   titleSet: boolean;
   userMessages: string[];
+  capabilities: RuntimeCapabilities;
+  capabilityMismatches: CapabilityMismatchReason[];
+  piVersion: string;
+  lastBridgeRevision: number | null;
+  contractDiagnostics: ContractDiagnostic[];
 
-  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null }) {
+  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string }) {
     this.manager = manager;
     this.id = opts.id || makeId();
     this.cwd = opts.cwd;
@@ -175,7 +194,12 @@ export class PiRpcSession {
     this.exitCode = null;
     this.titleSet = false;
     this.userMessages = [];
-    this.applyBridgeEnvelope(latestPiWebBridgeEnvelope(this.projection.entries));
+    this.piVersion = opts.piVersion || PI_RUNTIME_MINIMUM;
+    this.lastBridgeRevision = null;
+    this.capabilities = runtimeCapabilities(this.piVersion);
+    this.capabilityMismatches = [];
+    this.contractDiagnostics = [];
+    this.applyLatestBridgeEnvelope();
   }
 
   metadata() {
@@ -193,6 +217,12 @@ export class PiRpcSession {
       createdAt: this.createdAt,
       lastActiveAt: this.lastActiveAt,
       contextUsage: this.contextUsage,
+      capabilities: {
+        ...this.capabilities,
+        ok: this.capabilityMismatches.length === 0 && this.contractDiagnostics.length === 0,
+        mismatches: this.capabilityMismatches,
+        diagnostics: this.contractDiagnostics,
+      },
     };
   }
 
@@ -389,7 +419,7 @@ export class PiRpcSession {
       : null;
     if (type === 'entry_appended' && appendedEntry?.type === 'custom') {
       this.projection.append(appendedEntry);
-      if (appendedEntry.customType === PI_WEB_BRIDGE_ENTRY) this.applyBridgeEnvelope(parsePiWebBridgeEnvelope(appendedEntry.data));
+      if (appendedEntry.customType === PI_WEB_BRIDGE_ENTRY) this.applyBridgePayload(appendedEntry.data);
     }
     // NOTE: the assistant `message_end` event carries `event.message.model` as
     // a bare id describing WHICH model produced that message, not a selection
@@ -405,15 +435,60 @@ export class PiRpcSession {
     this.manager.broadcastUpdated(this.id);
   }
 
-  applyBridgeEnvelope(envelope: ReturnType<typeof parsePiWebBridgeEnvelope>) {
-    if (!envelope) return;
+  applyBridgePayload(value: unknown) {
+    const result = parsePiWebBridgeEnvelopeStructured(value);
+    if (!result.ok) {
+      this.contractDiagnostics = result.diagnostics;
+      this.manager.broadcastContractDiagnostic(this.id, result.diagnostics);
+      return;
+    }
+    this.applyBridgeEnvelope(result.value);
+  }
+
+  applyLatestBridgeEnvelope() {
+    const hasBridgeEntry = this.projection.entries.some((entry) => entry.type === 'custom' && entry.customType === PI_WEB_BRIDGE_ENTRY);
+    if (!hasBridgeEntry) {
+      this.refreshCapabilities(null);
+      return;
+    }
+    const result = latestPiWebBridgeEnvelopeStructured(this.projection.entries);
+    if (!result.ok) {
+      this.contractDiagnostics = result.diagnostics;
+      return;
+    }
+    this.applyBridgeEnvelope(result.value);
+  }
+
+  applyBridgeEnvelope(envelope: PiWebBridgeEnvelope) {
+    const verdict = acceptBridgeRevision(this.lastBridgeRevision, envelope);
+    if (!verdict.accepted) {
+      console.warn(`[Pi ${this.id}] ${verdict.diagnostic?.message ?? 'bridge revision regression ignored'}`);
+      return;
+    }
     if (envelope.model) this.model = envelope.model;
     this.thinkingLevel = envelope.thinkingLevel;
+    this.lastBridgeRevision = envelope.revision;
+    this.contractDiagnostics = [];
+    this.refreshCapabilities(envelope);
+  }
+
+  refreshCapabilities(envelope: PiWebBridgeEnvelope | null) {
+    if (!envelope) {
+      this.capabilityMismatches = [];
+      this.capabilities = runtimeCapabilities(this.piVersion);
+      return;
+    }
+    const match = matchCapabilities({ ...envelope.capabilities, piVersion: this.piVersion });
+    this.capabilities = match.capabilities;
+    this.capabilityMismatches = match.ok ? [] : match.mismatches;
+    if (this.capabilityMismatches.length) {
+      this.manager.broadcastCapabilityDiagnostic(this.id, this.capabilityMismatches);
+    }
   }
 
   reconcileProjection() {
     if (!this.projection.reconcile(this.sessionFile)) return false;
-    this.applyBridgeEnvelope(latestPiWebBridgeEnvelope(this.projection.entries));
+    this.applyLatestBridgeEnvelope();
     return true;
   }
 
@@ -493,13 +568,16 @@ export class LiveSessionManager {
   clients: Set<LiveClient>;
   pendingResumes: Map<string, Promise<PiRpcSession>>;
   terminatingResumes: Map<string, Promise<void>>;
+  piVersion: string;
 
   constructor() {
     this.sessions = new Map();
     this.clients = new Set();
     this.pendingResumes = new Map();
     this.terminatingResumes = new Map();
+    this.piVersion = PI_RUNTIME_MINIMUM;
   }
+  setPiVersion(version: string) { this.piVersion = version || PI_RUNTIME_MINIMUM; }
   addClient(ws: LiveClient) { this.clients.add(ws); }
   removeClient(ws: LiveClient) { this.clients.delete(ws); }
   broadcast(data: unknown) {
@@ -512,6 +590,30 @@ export class LiveSessionManager {
     const s = this.sessions.get(id);
     if (s) this.broadcast({ type: 'live_session_updated', session: s.metadata() });
   }
+  broadcastCapabilityDiagnostic(sessionId: string, mismatches: CapabilityMismatchReason[]) {
+    if (!mismatches.length) return;
+    const error = appError({
+      code: 'runtime_capability_drift',
+      category: 'protocol',
+      message: mismatches.map((m) => m.message).join('; '),
+      sessionId,
+      retryable: false,
+      diagnostics: {
+        count: mismatches.length,
+        firstCode: typeof mismatches[0]?.field === 'string' ? mismatches[0].field : 'unknown',
+      },
+    });
+    this.broadcast({ type: 'contract_diagnostic', sessionId, error, mismatches });
+  }
+  broadcastContractDiagnostic(sessionId: string, diagnostics: ContractDiagnostic[]) {
+    if (!diagnostics.length) return;
+    this.broadcast({
+      type: 'contract_diagnostic',
+      sessionId,
+      error: protocolError(diagnostics, sessionId),
+      diagnostics,
+    });
+  }
   list() { return Array.from(this.sessions.values()).map((s) => s.metadata()); }
   get(id: string) { return this.sessions.get(id); }
   findBySessionFile(sessionFile: string) {
@@ -522,7 +624,7 @@ export class LiveSessionManager {
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
   async create({ cwd, model, sessionName }: { cwd?: string; model?: string; sessionName?: string | null }) {
     const resolved = createSessionWorkingDirectory(cwd, sessionName);
-    const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), sessionName });
+    const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), sessionName, piVersion: this.piVersion });
     await session.start();
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
@@ -540,7 +642,7 @@ export class LiveSessionManager {
         if (terminating) await terminating.catch(() => {});
         const afterTerminationExisting = this.findBySessionFile(resolved);
         if (afterTerminationExisting) return afterTerminationExisting;
-        const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName });
+        const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion });
         await session.start();
         this.sessions.set(session.id, session);
         this.broadcast({ type: 'live_session_created', session: session.metadata() });

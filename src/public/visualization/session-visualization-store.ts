@@ -1,4 +1,4 @@
-import type { VisualizationEnvelope } from './geo/protocol.js';
+import type { VisualizationEnvelope } from '../../contracts/geo.ts';
 
 export class SessionVisualizationStore {
   private sessions = new Map<string, Map<string, VisualizationEnvelope>>();

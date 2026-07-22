@@ -1,3 +1,38 @@
+/**
+ * Browser-internal type bundle. The contract authority for `AppError`,
+ * `ModelIdentity`, task-mode/geo/bridge wire types and the SessionSnapshot
+ * *core* (schemaVersion + entries) is `src/contracts/`. This module keeps the
+ * Browser-internal extensions (live session metadata, MessageContentBlock
+ * union, Browser-targeted message shape).
+ *
+ * The pure protocol `SessionSnapshot` is importable from `../contracts/index.js`
+ * when only the wire shape is needed.
+ */
+import type { ContractDiagnostic } from '../contracts/diagnostic.js';
+import type { CapabilityMismatchReason, RuntimeCapabilities } from '../contracts/capabilities.js';
+
+export type SessionSnapshot = {
+  schemaVersion: 1;
+  entries: SessionEntry[];
+  sessionId?: string;
+  sessionFile?: string | null;
+  session?: LiveSession;
+  isStreaming?: boolean;
+  model?: ModelRecord | null;
+  thinkingLevel?: string;
+};
+
+export type SessionEntry = {
+  id?: string;
+  parentId?: string;
+  type?: string;
+  message?: AppMessage;
+  customType?: string;
+  data?: unknown;
+  diagnostics?: ContractDiagnostic[];
+  [key: string]: unknown;
+};
+
 export type ModelRecord = {
   provider?: string;
   id?: string;
@@ -28,6 +63,11 @@ export type LiveSession = {
   createdAt?: string;
   lastActiveAt?: string;
   contextUsage?: UsageRecord;
+  capabilities?: RuntimeCapabilities & {
+    ok: boolean;
+    mismatches: CapabilityMismatchReason[];
+    diagnostics?: ContractDiagnostic[];
+  };
 };
 
 export type LiveInstance = {
@@ -71,24 +111,6 @@ export type AppMessage = {
   timestamp?: number;
 };
 
-export type SessionEntry = {
-  type?: string;
-  message?: AppMessage;
-  customType?: string;
-  data?: unknown;
-};
-
-export type SessionSnapshot = {
-  schemaVersion: 1;
-  entries: SessionEntry[];
-  sessionId?: string;
-  sessionFile?: string | null;
-  session?: LiveSession;
-  isStreaming?: boolean;
-  model?: ModelRecord | null;
-  thinkingLevel?: string;
-};
-
 export type AppEvent = {
   type?: string;
   sessionId?: string;
@@ -116,3 +138,15 @@ export type PendingFilePath = { path: string; name: string; ext: string; session
 export type QueuedCommand = { type: string; message?: string; images?: PendingImage[]; sessionId?: string };
 export type ExtensionUIRequest = { sessionId: string; event: AppEvent };
 export type RpcCommand = { type: string; sessionId?: string; filePath?: string; [key: string]: unknown };
+
+/**
+ * The Server still emits the pure wire format
+ * (`{schemaVersion: 1, entries: SessionEntry[]}`) when callers hit
+ * `/api/sessions/{file}/entries`. Map it into the Browser-internal shape.
+ */
+export function asBrowserSessionSnapshot(snapshot: {
+  schemaVersion: 1;
+  entries: SessionEntry[];
+}): SessionSnapshot {
+  return { ...snapshot };
+}
