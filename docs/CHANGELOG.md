@@ -20,6 +20,9 @@
 主要修改：
 
 - 完成 React 工作台交互收敛：会话、任务、文件预览、地图、模型与设置采用一致的紧凑布局和主题。
+- 默认 `/` 切换为 React Vite 应用，`/legacy/` 保留为稳定期回退；SPA fallback 在路由前校验 URI 编码与路径穿越。
+- 对话区接入消息窗口、流式消息、思考过程、Markdown、工具卡、差异、图片附件和 Composer，并保持 Kernel Store 与 Command Port 的单向边界。
+- Task Board 与 Geo Workspace 从 Kernel 的对话和工具执行状态投影历史与实时功能状态；MapLibre Runtime 按激活地图页签动态加载，支持选择和图层显隐。
 - 修复 `agent_settled` RPC 事件、地图切换后需刷新才能渲染，以及地图弹层与文件预览的层级、加载问题。
 - 文件面板支持多文件独立预览、代码/表格/Markdown/图片渲染，以及拖拽、关闭和四角缩放。
 - 会话侧栏仅保留当前项目 `scenario/` 下的会话，取消项目与状态分组，并按最后活动时间倒序展示。
@@ -29,42 +32,6 @@
 
 - `npm run build` 通过。
 - `node --test`：246 项测试，245 项通过、1 项真实 Pi smoke 默认跳过、0 项失败。
-
-## 未发布 — React 默认入口
-
-主要修改：
-
-- 默认 `/` 切换为 React Vite 产物；`/react` 保留兼容重定向，legacy 静态应用固定在 `/legacy/` 作为稳定期回退。
-- 默认路由和 SPA fallback 在 fallback 前校验 URI 编码与路径穿越；路由测试覆盖默认入口、回退和兼容重定向。
-- React smoke 改测 `/`，legacy smoke 与 11/11 browser baseline 改测 `/legacy/`。
-
-验证：
-
-- `npm run typecheck`、`npm test`（241 通过、1 默认跳过）、`npm run test:react-smoke`、`npm run test:browser-smoke`、`npm run test:browser-baseline`（11/11）通过。
-
-## 未发布 — React Feature UI
-
-主要修改：
-
-- React Workspace 新增 Task Board 与 Geo Workspace；二者从 Kernel 的 Conversation/ToolExecution Store 投影历史和实时 Feature 状态，AppShell 不增加工具名判断。
-- Geo Runtime 维持命令式 MapLibre Adapter，并仅在激活的地图页签有 Scene 时经动态 chunk 加载；支持地图选择和图层显隐。
-- React Chrome smoke 新增 Task hydrate、Geo Runtime 懒加载及图层渲染验证。
-
-验证：
-
-- `npm run typecheck`、`npm run test:react-smoke`、`npm test` 通过。
-
-## 未发布 — React Conversation
-
-主要修改：
-
-- React `/react/` 接入 Message Window、Streaming Message、Thinking、Markdown、Tool Card、Diff、图片附件和 Composer；组件只消费 Conversation/ToolExecution Store 与 Command Port。
-- 修复 optimistic prompt 遇到权威 user echo 时被清空、但未写入稳定快照的缺陷。
-- React Chrome smoke 新增 Composer 流式消息与 Tool Card 验证。
-
-验证：
-
-- `npm run typecheck:react`、`npm run test:react-smoke` 通过。
 
 ## v1.28 — React Shell 与低耦合平台 UI
 
