@@ -1,6 +1,6 @@
 # Pi Traffic Workspace 架构与目录治理
 
-更新时间：2026-07-21
+更新时间：2026-07-22
 
 本文是项目唯一的总体架构基准，统一维护系统边界、运行时链路、目录职责、依赖方向、协议恢复和演进阶段。README 只保留产品功能、启动方式和使用注意事项，不再复制目录树或实现细节。
 
@@ -38,9 +38,12 @@ GIS 是第一个跨边界功能切片，任务交互是第二个。它们都依�
 
 ```text
 Browser Agent Web UI
-  ├─ app-main（布局与平台组合入口）
-  ├─ AgentRuntime + RuntimeStore（状态指示灯的连接/streaming 基准）
-  ├─ Session / ToolExecution / ExtensionUI Controllers
+  ├─ app-main（legacy DOM 组合入口；未来由 React Web Adapter 替换）
+  ├─ Browser Application Kernel
+  │    ├─ Event Normalizer / Command Ports
+  │    ├─ Runtime / Session / Conversation / Tool / Extension UI Stores
+  │    └─ Snapshot + Live Overlay reconcile
+  ├─ WebSocketClient（transport adapter）
   ├─ WorkspaceController（右侧工作区壳层）
   └─ FeatureRegistry
        ├─ GeoFeature（GIS Web Adapter）
@@ -82,7 +85,7 @@ Pi JSONL 是会话历史的事实来源。运行中事件只用于降低实时�
 Pi JSONL / live entries
   -> SessionProjection（按最后叶节点回溯 parentId）
   -> SessionSnapshot { schemaVersion, entries }
-  -> Web SessionController / FeatureRegistry
+  -> Browser Application Kernel（SessionStore / ConversationStore）与 FeatureRegistry
 ```
 
 - 恢复时只选择当前分支，舍弃已经放弃的兄弟分支。
@@ -163,10 +166,17 @@ src/
     geo-resources.ts              GIS 的服务端适配器
 
   public/                         浏览器端源码
-    app-main.ts                   应用布局、组合入口与平台事件接线
+    app-main.ts                   legacy DOM 布局、组合入口与 Kernel 事件接线
     app-types.ts                  浏览器端平台类型
-    runtime/                      AgentRuntime 与 RuntimeStore
-    controllers/                  Session、ToolExecution、ExtensionUI 控制单元
+    kernel/                       Browser Application Kernel
+      app-kernel.ts               transport、Normalizer、Dispatcher 与 UI 事件边界
+      actions.ts                  归一化 AppAction 类型
+      commands.ts                 Agent/Session/Extension UI Command Ports
+      event-normalizer.ts         原始 WebSocket 消息到 AppAction 的唯一归一化入口
+      dispatcher.ts               跨 Store action 分发
+      stores/                     Runtime、Session、Conversation、Tool、Extension UI Store
+    controllers/                  仍需 DOM 计时的工具卡视图控制器
+      tool-execution-controller.ts
     workspace/                    Web 工作区壳层
       workspace-controller.ts     文件/资源/功能视图切换与侧栏生命周期
       workspace-types.ts          功能可依赖的最小工作区端口
@@ -284,12 +294,14 @@ GIS GeoJSON 资源使用独立的 session-scoped route adapter。新增接口必
 
 ### 5.2 浏览器状态边界
 
-浏览器状态当前分为四类，不能混用：
+浏览器状态当前按职责分为六类，不能混用：
 
-1. `RuntimeStore`：状态指示灯使用的连接状态、当前 live session 和 streaming 基准。
-2. 旧 `StateManager` 与 `liveSessions` metadata：消息流、输入禁用和会话标签仍使用的 streaming 副本；这是 React/Store 迁移需要消除的过渡性双写。
-3. Session/Feature Store：由 Snapshot、Bridge 或工具结果恢复的会话事实。
-4. `localStorage`：主题、收藏、当前视图、任务板位置、地图选择和耗时展示等 UX 偏好。
+1. `RuntimeStore`：WebSocket 连接状态和最后一个可序列化 `AppError`。
+2. `SessionStore`：live session 列表、当前活动 session，以及每个 session 的 streaming 基准。
+3. `ConversationStore`：每个 session 的稳定 Snapshot entries、optimistic prompt、token/thinking live overlay 和排队消息。
+4. `ToolExecutionStore` 与 `ExtensionUiStore`：工具执行记录、Extension UI 当前请求和按 session 排队语义。
+5. Feature Store：Task、Geo 等垂直功能的协议投影和恢复状态。
+6. `localStorage`：主题、收藏、当前视图、任务板位置、地图选择和耗时展示等 UX 偏好。
 
 `localStorage` 不是会话事实来源。清空它可以丢失界面偏好和历史耗时缓存，但不能导致任务、消息、地图 Snapshot 或 Pi 模型状态损坏。
 
@@ -303,7 +315,7 @@ GIS GeoJSON 资源使用独立的 session-scoped route adapter。新增接口必
 - 普通资源侧栏在移动端隐藏；存在地图时，工作区使用全屏覆盖层。
 - 任务板适配窄屏宽度，消息、工具卡和思考卡使用完整可用宽度。
 - 移动端输入框使用 `16px` 字号避免 iOS 自动缩放；侧栏、设置和输入区等主要按钮设置了 `44px` 触控目标，任务模式等紧凑控件目前仍有例外。
-- 页面从后台恢复时由 `AgentRuntime` 重连，状态指示灯仍只消费 Store。
+- 页面从后台恢复时由 `WebSocketClient.forceReconnect()` 重新建立 transport；Kernel 重新接收 state/snapshot 并恢复浏览器投影，状态指示灯仍只消费 Store。
 - 保留 `prefers-reduced-motion`、`prefers-reduced-transparency` 和高对比度媒体查询。
 
 响应式样式的事实来源是 `public/style.css`，移动行为接线位于浏览器控制器或组合入口。不要再维护一份与实现逐项复制的移动端说明文档。
@@ -357,20 +369,27 @@ rtk npm run test:browser-smoke
 
 ### 阶段 B：组合入口第一轮瘦身（已完成）
 
-- 已建立 AgentRuntime、RuntimeStore，以及 Session、ToolExecution、ExtensionUI 三个控制单元。
-- 状态指示灯的连接/streaming 基础状态消费 RuntimeStore，不再读取 WebSocket 实例自行推断；临时成功/错误文字仍由 `app-main.ts` 直接更新 DOM。
+- 早期版本建立了 AgentRuntime、RuntimeStore，以及 Session、ToolExecution、ExtensionUI 三个控制单元；这些过渡边界已由后续 Browser Application Kernel 统一接管。
+- 状态指示灯的连接/streaming 基础状态曾消费 RuntimeStore，不再读取 WebSocket 实例自行推断；临时成功/错误文字仍由 `app-main.ts` 直接更新 DOM。
 - 已建立类型化 ServerRouter，并将 API 路由表移出 `server-main.ts`。
-- 后续仍可逐步提取附件和输入控制器，但不与 React 迁移绑在同一阶段。
-- GIS UI 样式目前仍在 `public/style.css`；CSS 分文件与构建合并尚未实施，留给 Vite/React 阶段处理。
+- GIS UI 样式目前仍在 `public/style.css`；CSS 分文件与构建合并留给 Vite/React 阶段处理。
 
-### 阶段 C：React 与构建系统升级（下个阶段，独立变更）
+### 阶段 C：Browser Application Kernel（已完成，2026-07-22）
+
+- 建立 `src/public/kernel/`：Event Normalizer、Dispatcher、Command Ports、Runtime/Session/Conversation/Tool/Extension UI Store。
+- 用 Stable Snapshot + Live Overlay 统一 live、history、resume 和 reconnect 的消息投影，处理迟到/重复 delta 与 abort。
+- `app-main.ts` 改为消费 Kernel stores/commands；旧 StateManager、AgentRuntime、SessionController 和 ExtensionUIController 源文件删除，streaming 领域状态不再双写。
+- 新增 fixture、Kernel replay/store/command 测试以及 fake-pi 浏览器基线；阶段 0/1 的实际验证记录见 `docs/TEST_BASELINES.md`。
+- 当前仍保留 legacy DOM 视图适配层；React/Vite 不属于本阶段。
+
+### 阶段 D：React 与构建系统升级（下个阶段，独立变更）
 
 - 引入 Vite，将浏览器源码和发布目录分开，获得模块图、静态资产处理和 CSS code splitting。
 - 保留现有 Node 服务；Vite 只负责 Web build/dev，不与服务端框架迁移绑在一次改动里。
 - 迁移前先增加关键浏览器路径的自动化验收，避免构建系统变化掩盖行为回归。
 - React、shadcn/ui、Radix 和 Motion 的完整边界及分阶段计划见 [REACT_UI_MIGRATION_PLAN.md](./REACT_UI_MIGRATION_PLAN.md)。
 
-### 阶段 D：共享契约包
+### 阶段 E：共享契约包
 
 仅当出现第二个消费者时，将 GeoScene 协议提取为独立包；Extension、Web Runtime 和测试共同依赖该包。此前不引入 workspace 和包间版本管理。
 

@@ -1,12 +1,21 @@
 import type { AppEvent, AppMessage } from '../app-types.js';
 import type { FeatureRegistry } from '../features/feature-registry.js';
-import type { StateManager } from '../state.js';
+import type { ToolExecutionStore } from '../kernel/stores/tool-execution-store.js';
 import type { ToolCardRenderer, ToolExecution, ToolResult } from '../tool-card.js';
 import type { WorkspaceController } from '../workspace/workspace-controller.js';
 
+/**
+ * Drives ToolCardRenderer and feature result routing from tool_execution_*
+ * events. The authoritative execution record lives in the kernel
+ * toolExecution store (populated by the event normalizer before this
+ * controller runs); only wall-clock timing (startedAt) stays local because
+ * durations are a view concern and must not enter the replayable store.
+ */
 export class ToolExecutionController {
+  private readonly startedAtByToolCall = new Map<string, number>();
+
   constructor(private readonly options: {
-    state: StateManager;
+    store: ToolExecutionStore;
     renderer: ToolCardRenderer;
     features: FeatureRegistry;
     workspace: WorkspaceController;
@@ -14,55 +23,58 @@ export class ToolExecutionController {
     rememberDuration: (toolCallId: string, durationMs: number, sessionId: string | null) => void;
   }) {}
 
-  start(event: AppEvent) {
-    const { toolCallId, toolName, args } = event;
+  private getExecution(sessionId: string | null, toolCallId: string) {
+    if (!sessionId) return undefined;
+    return this.options.store.get().bySession[sessionId]?.[toolCallId];
+  }
+
+  start(event: AppEvent, sessionId: string | null) {
+    const { toolCallId } = event;
     if (!toolCallId) return;
-    this.options.state.addToolExecution(toolCallId, {
-      toolName,
-      args,
+    const execution = this.getExecution(sessionId, toolCallId);
+    const startedAt = Date.now();
+    this.startedAtByToolCall.set(toolCallId, startedAt);
+    this.options.renderer.createToolCard({
+      toolCallId,
+      toolName: execution?.toolName ?? event.toolName,
+      args: execution?.args ?? event.args,
       status: 'pending',
-      startedAt: Date.now(),
+      startedAt,
       durationMs: 0,
-    });
-    const execution = this.options.state.getToolExecution(toolCallId);
-    if (execution) this.options.renderer.createToolCard(execution as ToolExecution);
+    } as ToolExecution);
     this.options.workspace.refreshResourceViewIfVisible('tools');
   }
 
   update(event: AppEvent, sessionId: string | null) {
-    const { toolCallId, partialResult } = event;
+    const { toolCallId } = event;
     if (!toolCallId) return;
-    const execution = this.options.state.getToolExecution(toolCallId);
-    const startedAt = Number(execution?.startedAt || 0);
-    this.options.state.updateToolExecution(toolCallId, {
+    const execution = this.getExecution(sessionId, toolCallId);
+    const startedAt = this.startedAtByToolCall.get(toolCallId) ?? 0;
+    const partialResult = execution?.partialResult ?? event.partialResult;
+    this.options.renderer.updateToolCard({
+      toolCallId,
       status: 'streaming',
       output: this.options.formatResult(partialResult),
       ...(startedAt > 0 ? { durationMs: Date.now() - startedAt } : {}),
-    });
-    const updated = this.options.state.getToolExecution(toolCallId);
-    if (updated) this.options.renderer.updateToolCard(updated as ToolExecution);
+    } as ToolExecution);
     if (sessionId) {
-      const toolName = typeof execution?.toolName === 'string' ? execution.toolName : event.toolName;
+      const toolName = execution?.toolName ?? event.toolName;
       this.forwardFeatureResult(sessionId, toolName, partialResult, toolCallId, false);
     }
   }
 
   end(event: AppEvent, sessionId: string | null) {
-    const { toolCallId, result, isError } = event;
+    const { toolCallId, isError } = event;
     if (!toolCallId) return;
-    const execution = this.options.state.getToolExecution(toolCallId);
-    const startedAt = Number(execution?.startedAt || 0);
+    const execution = this.getExecution(sessionId, toolCallId);
+    const startedAt = this.startedAtByToolCall.get(toolCallId) ?? 0;
+    this.startedAtByToolCall.delete(toolCallId);
     const durationMs = startedAt > 0 ? Date.now() - startedAt : undefined;
     if (durationMs !== undefined) this.options.rememberDuration(toolCallId, durationMs, sessionId);
-    this.options.state.updateToolExecution(toolCallId, {
-      status: isError ? 'error' : 'complete',
-      output: this.options.formatResult(result),
-      isError,
-      ...(durationMs !== undefined ? { durationMs } : {}),
-    });
+    const result = execution?.result ?? event.result;
     this.options.renderer.finalizeToolCard(toolCallId, result as ToolResult, !!isError, durationMs);
     if (!isError && sessionId) {
-      const toolName = event.toolName || (typeof execution?.toolName === 'string' ? execution.toolName : undefined);
+      const toolName = event.toolName ?? execution?.toolName;
       this.forwardFeatureResult(sessionId, toolName, result, toolCallId, true);
     }
     this.options.workspace.refreshResourceViewIfVisible('tools');

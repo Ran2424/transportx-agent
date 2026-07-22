@@ -1,0 +1,92 @@
+{
+  "description": "pi-task-mode 扩展的 custom entry 与 tau_task / tau_ask_user 工具结果形状，可被 src/public/features/task/task-protocol.ts 的 parseTaskStateEntry / parseTaskToolResult / parseTaskModeEntry 解析。",
+  "stateEntry": {
+    "type": "custom",
+    "customType": "pi-task-mode",
+    "data": {
+      "enabled": true,
+      "schemaVersion": 1,
+      "revision": 3,
+      "task": {
+        "schemaVersion": 1,
+        "taskId": "task_fixture_001",
+        "title": "分析上海体育馆早高峰下车热点",
+        "status": "running",
+        "revision": 3,
+        "steps": [
+          { "id": "discover", "title": "确认数据资产与表结构", "status": "completed", "summary": "已定位 ridehail.fact_ridehail_event", "startedAt": 1784560801000, "completedAt": 1784560806000 },
+          { "id": "query", "title": "查询上车点为上海体育馆的订单", "status": "running", "startedAt": 1784560807000 },
+          { "id": "aggregate", "title": "聚合下车点并生成热力数据", "status": "pending" }
+        ],
+        "activeStepId": "query",
+        "createdAt": 1784560800000,
+        "updatedAt": 1784560807000
+      }
+    },
+    "id": "dd000001",
+    "parentId": null,
+    "timestamp": "2026-07-20T01:00:07.000Z"
+  },
+  "legacyStateEntry": {
+    "type": "custom",
+    "customType": "pi-task-mode",
+    "data": { "enabled": true }
+  },
+  "disabledStateEntry": {
+    "type": "custom",
+    "customType": "pi-task-mode",
+    "data": { "enabled": false, "schemaVersion": 1, "revision": 4 }
+  },
+  "toolResult": {
+    "role": "toolResult",
+    "toolCallId": "tool_fixture_tau_task_1",
+    "toolName": "tau_task",
+    "content": [{ "type": "text", "text": "任务“分析上海体育馆早高峰下车热点”已更新到 revision 3。" }],
+    "details": {
+      "kind": "tau-task",
+      "task": {
+        "schemaVersion": 1,
+        "taskId": "task_fixture_001",
+        "title": "分析上海体育馆早高峰下车热点",
+        "status": "running",
+        "revision": 3,
+        "steps": [
+          { "id": "discover", "title": "确认数据资产与表结构", "status": "completed", "summary": "已定位 ridehail.fact_ridehail_event", "startedAt": 1784560801000, "completedAt": 1784560806000 },
+          { "id": "query", "title": "查询上车点为上海体育馆的订单", "status": "running", "startedAt": 1784560807000 },
+          { "id": "aggregate", "title": "聚合下车点并生成热力数据", "status": "pending" }
+        ],
+        "activeStepId": "query",
+        "createdAt": 1784560800000,
+        "updatedAt": 1784560807000
+      }
+    },
+    "isError": false,
+    "timestamp": 1784560807000
+  },
+  "interactionToolResult": {
+    "role": "toolResult",
+    "toolCallId": "tool_fixture_tau_ask_1",
+    "toolName": "tau_ask_user",
+    "content": [{ "type": "text", "text": "用户选择了“只看工作日”。" }],
+    "details": {
+      "kind": "tau-interaction",
+      "task": {
+        "schemaVersion": 1,
+        "taskId": "task_fixture_001",
+        "title": "分析上海体育馆早高峰下车热点",
+        "status": "waiting_user",
+        "revision": 4,
+        "steps": [
+          { "id": "discover", "title": "确认数据资产与表结构", "status": "completed", "startedAt": 1784560801000, "completedAt": 1784560806000 },
+          { "id": "query", "title": "查询上车点为上海体育馆的订单", "status": "running", "startedAt": 1784560807000 },
+          { "id": "aggregate", "title": "聚合下车点并生成热力数据", "status": "pending" }
+        ],
+        "activeStepId": "query",
+        "createdAt": 1784560800000,
+        "updatedAt": 1784560809000
+      }
+    },
+    "isError": false,
+    "timestamp": 1784560809000
+  }
+}

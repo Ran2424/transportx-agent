@@ -15,6 +15,7 @@ node_modules/
 /public/runtime/
 /public/visualization/
 /public/workspace/
+/public/kernel/
 /public/geo-runtime.css
 
 .DS_Store
@@ -31,3 +32,6 @@ references/pi-development-guide.md
 .agents/
 scenario/
 .tau/
+
+# 浏览器截图基线 PNG（体积大，只保留 manifest.json 哈希清单，见 docs/TEST_BASELINES.md）
+test/baselines/screenshots/*.png

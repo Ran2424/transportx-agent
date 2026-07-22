@@ -1,0 +1,69 @@
+{
+  "description": "pi-geo-visualization 扩展 present_visualization 工具结果（toolResult message 的 content + details.visualization envelope），可被 src/public/visualization/geo/protocol.ts 的 getVisualizationFromToolResult 解析。形状取自真实 GIS smoke 会话（2026-07-19），地名与坐标为合成值。",
+  "presentVisualizationResult": {
+    "role": "toolResult",
+    "toolCallId": "call_fixture_present_1",
+    "toolName": "present_visualization",
+    "content": [{ "type": "text", "text": "Map \"下车热点热力图\" updated (2 layers, revision 1)." }],
+    "details": {
+      "visualization": {
+        "protocol": "pi-visualization",
+        "version": "1.0",
+        "kind": "geo",
+        "visualizationId": "dropoff_heatmap",
+        "revision": 1,
+        "operation": "replace",
+        "scene": {
+          "view": { "mode": "bounds", "bounds": [121.42, 31.17, 121.46, 31.2], "padding": 40 },
+          "basemap": { "id": "default" },
+          "sources": [
+            {
+              "id": "dropoff_points",
+              "type": "geojson-inline",
+              "data": {
+                "type": "FeatureCollection",
+                "features": [
+                  { "type": "Feature", "properties": { "name": "漕溪北路", "orders": 42 }, "geometry": { "type": "Point", "coordinates": [121.4371, 31.1856] } },
+                  { "type": "Feature", "properties": { "name": "中山南二路", "orders": 35 }, "geometry": { "type": "Point", "coordinates": [121.4443, 31.1889] } },
+                  { "type": "Feature", "properties": { "name": "零陵路", "orders": 18 }, "geometry": { "type": "Point", "coordinates": [121.4405, 31.1802] } }
+                ]
+              },
+              "idField": "name"
+            }
+          ],
+          "layers": [
+            {
+              "id": "dropoff_circles",
+              "sourceId": "dropoff_points",
+              "type": "circle",
+              "title": "下车点",
+              "encoding": {
+                "color": { "mode": "constant", "value": "#e2552b" },
+                "radius": { "mode": "continuous", "field": "orders", "stops": [{ "value": 0, "output": 4 }, { "value": 50, "output": 16 }] },
+                "opacity": { "mode": "constant", "value": 0.85 }
+              },
+              "popup": { "fields": [{ "field": "name", "label": "地点", "format": "text" }, { "field": "orders", "label": "订单数", "format": "integer" }] }
+            },
+            {
+              "id": "dropoff_labels",
+              "sourceId": "dropoff_points",
+              "type": "label",
+              "title": "地点注记",
+              "encoding": {
+                "textField": { "mode": "constant", "value": "name" },
+                "color": { "mode": "constant", "value": "#333333" },
+                "size": { "mode": "constant", "value": 12 }
+              }
+            }
+          ],
+          "controls": { "navigation": true, "fullscreen": true, "layerSwitcher": false, "legend": true, "fitToData": true },
+          "metadata": { "title": "下车热点热力图", "description": "上海体育馆上车订单的主要下车区域（合成数据）。" }
+        },
+        "summary": { "title": "下车热点热力图", "description": "3 个下车热点，2 个图层。" },
+        "generatedAt": "2026-07-20T01:10:00.000Z"
+      }
+    },
+    "isError": false,
+    "timestamp": 1784561400000
+  }
+}
