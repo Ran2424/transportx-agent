@@ -116,7 +116,7 @@ async function main() {
   const requestedUrls = [];
   page.on('request', (request) => requestedUrls.push(request.url()));
 
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}/legacy/`, { waitUntil: 'domcontentloaded' });
   await waitConnected(page);
 
   // ── 核心场景：create / switch / streaming / abort / resume / close ──
@@ -307,7 +307,13 @@ async function main() {
     await page.locator('.live-tab', { hasText: '基线-A' }).click();
     const streamT0 = await page.evaluate(() => performance.now());
     await sendPrompt(page, '基线-perf');
-    await page.locator('.message-content.streaming').waitFor({ timeout: 10000 });
+    // With zero-delay fixture chunks, a fast browser may finish all 500
+    // deltas before Playwright observes the transient streaming node. Either
+    // state proves rendering started; waitStreamDone still verifies teardown.
+    await page.waitForFunction(() => {
+      if (document.querySelector('.message-content.streaming')) return true;
+      return Array.from(document.querySelectorAll('.message.assistant')).some((node) => node.textContent?.includes('路段早高峰'));
+    }, null, { timeout: 10000 });
     await waitStreamDone(page, 90000);
     const streamT1 = await page.evaluate(() => performance.now());
     const perfText = (await assistantTexts(page)).find((text) => text.includes('路段早高峰'));

@@ -201,6 +201,26 @@ test('unknown event/message types raise diagnosable errors without touching stor
   assert.equal(after, before);
 });
 
+test('server-broadcast RPC responses are ignored as command-port acknowledgements', async () => {
+  const { kernel, emit } = await createKernel();
+  emit({ type: 'event', sessionId: 's-1', event: { type: 'response', id: 'cmd-1', success: true } });
+  assert.equal(kernel.stores.runtime.get().lastError, null);
+  assert.deepEqual(kernel.stores.conversation.get().bySession, {});
+  assert.deepEqual(kernel.stores.toolExecution.get().bySession, {});
+});
+
+test('agent_settled is accepted and a retrying agent_end keeps the session busy', async () => {
+  const { kernel, emit } = await createKernel();
+  emit({ type: 'event', sessionId: 's-1', event: { type: 'agent_start' } });
+  emit({ type: 'event', sessionId: 's-1', event: { type: 'agent_end', willRetry: true } });
+  assert.equal(kernel.stores.session.get().streamingBySession['s-1'], true);
+  assert.equal(kernel.stores.runtime.get().lastError, null);
+
+  emit({ type: 'event', sessionId: 's-1', event: { type: 'agent_settled' } });
+  assert.equal(kernel.stores.session.get().streamingBySession['s-1'], false);
+  assert.equal(kernel.stores.runtime.get().lastError, null);
+});
+
 test('events for different sessions stay isolated', async () => {
   const { kernel, emit } = await createKernel();
   const ev = (sessionId: string, event: JsonRecord) => emit({ type: 'event', sessionId, event });

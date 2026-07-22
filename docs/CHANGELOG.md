@@ -11,6 +11,64 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## 未发布 — React 默认入口
+
+主要修改：
+
+- 默认 `/` 切换为 React Vite 产物；`/react` 保留兼容重定向，legacy 静态应用固定在 `/legacy/` 作为稳定期回退。
+- 默认路由和 SPA fallback 在 fallback 前校验 URI 编码与路径穿越；路由测试覆盖默认入口、回退和兼容重定向。
+- React smoke 改测 `/`，legacy smoke 与 11/11 browser baseline 改测 `/legacy/`。
+
+验证：
+
+- `npm run typecheck`、`npm test`（241 通过、1 默认跳过）、`npm run test:react-smoke`、`npm run test:browser-smoke`、`npm run test:browser-baseline`（11/11）通过。
+
+## 未发布 — React Feature UI
+
+主要修改：
+
+- React Workspace 新增 Task Board 与 Geo Workspace；二者从 Kernel 的 Conversation/ToolExecution Store 投影历史和实时 Feature 状态，AppShell 不增加工具名判断。
+- Geo Runtime 维持命令式 MapLibre Adapter，并仅在激活的地图页签有 Scene 时经动态 chunk 加载；支持地图选择和图层显隐。
+- React Chrome smoke 新增 Task hydrate、Geo Runtime 懒加载及图层渲染验证。
+
+验证：
+
+- `npm run typecheck`、`npm run test:react-smoke`、`npm test` 通过。
+
+## 未发布 — React Conversation
+
+主要修改：
+
+- React `/react/` 接入 Message Window、Streaming Message、Thinking、Markdown、Tool Card、Diff、图片附件和 Composer；组件只消费 Conversation/ToolExecution Store 与 Command Port。
+- 修复 optimistic prompt 遇到权威 user echo 时被清空、但未写入稳定快照的缺陷。
+- React Chrome smoke 新增 Composer 流式消息与 Tool Card 验证。
+
+验证：
+
+- `npm run typecheck:react`、`npm run test:react-smoke` 通过。
+
+## v1.28 — React Shell 与低耦合平台 UI
+
+- 日期：2026-07-22
+- GitHub 操作：提交到当前分支；本次未执行 push。
+- 提交主题：`feat: migrate react shell platform ui`
+
+主要修改：
+
+- `/react/` 通过 Composition Root 接入现有 `WebSocketClient + AppKernel`，并以 `useSyncExternalStore` 订阅 Runtime、Session 与 Extension UI Store。
+- 迁移 AppShell、Header/Agent Status、Settings、Model Picker、Command Palette、New Session、SessionSidebar、Live Tabs 和 Workspace Layout。
+- 引入 Radix Dialog，统一 Portal、焦点圈定/恢复、Esc 与键盘交互；Extension Dialog 覆盖 select、confirm、input、editor 和 notify，并保持按 session 排队语义。
+- 扩展 Kernel Command Ports，覆盖历史会话列表/搜索/删除、Agent 设置、模型目录与认证；React 平台组件不直接访问 fetch 或 WebSocket。
+- React 新建任务省略 cwd，由服务端统一创建 `scenario/时间-名称` 目录，不复制 legacy 的本机绝对路径。
+- 将 React smoke 升级为真实 Node Server + fake Pi + Chrome 的阶段 4 验收，覆盖双会话切换、Extension UI、主题、移动抽屉和 Geo 懒加载边界。
+- 将包版本更新为 `1.28.0`。
+
+验证：
+
+- `npm run typecheck` 通过；`npm test`：241 项测试，240 项通过、1 项真实 Pi smoke 默认跳过、0 项失败。
+- `npm run test:react-smoke`、`npm run test:browser-smoke` 通过；`npm run test:browser-baseline` 11/11 场景通过。
+- `npm audit --omit=dev` 为 0 漏洞；`npm pack --dry-run --ignore-scripts` 验证 React 源码、Radix 依赖声明与 `dist/web` 产物进入发布清单。
+
 ## v1.27 — Contract 治理与 RuntimeCapabilities
 
 - 日期：2026-07-22

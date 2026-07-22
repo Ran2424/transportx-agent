@@ -3,7 +3,7 @@
 本文档是「冻结事实和行为基线」的操作手册：基线覆盖清单、手工验收清单、如何重跑。
 对应迁移计划 `docs/REACT_UI_MIGRATION_PLAN.md` 第 9 节「阶段 0」。
 
-最近一次验证（2026-07-22）：`npm run test:browser-baseline` 的 11/11 场景通过；在 Node 24.2.0、Chrome 150、darwin/arm64 环境记录 500 delta streaming 约 675ms、200 条历史消息首次渲染约 50ms。截图基线生成 6 套主题 × 桌面/移动共 12 张；PNG 按规则忽略，仅保留 `manifest.json` 哈希清单。阶段 2 的 `npm run test:react-smoke` 与阶段 3 的共享 Contract 测试也已通过。
+最近一次验证（2026-07-22）：`npm run test:browser-baseline` 的 11/11 场景通过；在 Node 24.2.0、Chrome 150、darwin/arm64 环境记录 500 delta streaming 约 325ms、200 条历史消息首次渲染约 58ms。截图基线生成 6 套主题 × 桌面/移动共 12 张；PNG 按规则忽略，仅保留 `manifest.json` 哈希清单。阶段 7 的 `npm run test:react-smoke`（默认 React、Composer、Task Board、按需 Geo Runtime 与 legacy 回退）及共享 Contract 测试也已通过。
 
 ## 组成
 
@@ -15,13 +15,15 @@
 | 浏览器基线 | `scripts/browser-baseline.mjs` | `npm run test:browser-baseline` |
 | 性能基线 | `test/baselines/perf-baseline.json` | 随 browser-baseline 重新生成 |
 | 截图基线 | `test/baselines/screenshots/*.png` + `manifest.json` | 随 browser-baseline 重新生成 |
-| React 基座 smoke | `scripts/react-smoke.mjs` | `npm run test:react-smoke` |
+| React 阶段 7 smoke | `scripts/react-smoke.mjs` | `npm run test:react-smoke`：Node Server + fake Pi + Chrome，覆盖默认 `/`、Conversation、Task Board、Geo Runtime 按需加载、图层与 `/legacy/` 回退 |
 
 Provenance：`npm run test:pi-smoke` 在当前环境可用（真实 pi 0.80.10 握手冒烟通过），但不覆盖完整
 prompt 流式事件流（需模型 API key）；因此所有 fixture 与 fake-pi 回放均为**协议一致的合成事件**，
 字段形状逐一对照真实 pi 0.80.x 会话文件与 server/前端实际消费代码核验（详见 `test/fixtures/README.md`）。
 
 ## 浏览器基线覆盖清单（`scripts/browser-baseline.mjs`，11 个场景）
+
+这些稳定期回归场景显式访问 `/legacy/`；默认 React 的等价核心路径由 `test:react-smoke` 覆盖。
 
 1. **create**：通过 UI 模态框创建两个会话，标签标题正确。
 2. **switch**：点击标签切换活动会话。
@@ -53,7 +55,7 @@ prompt 流式事件流（需模型 API key）；因此所有 fixture 与 fake-pi
 
 ```bash
 npm test                        # 含 test/fixtures.test.ts（需先 build，npm test 会自动 build）
-npm run test:react-smoke         # build + 真实 Node Server + Chrome 验证 /react/ 基座
+npm run test:react-smoke         # build + Node Server + fake Pi + Chrome 验证默认 / 的阶段 7 UI 与 /legacy/ 回退
 npm run test:browser-baseline   # build + 起 fake-pi 线束 + Chrome 全量基线
 node scripts/harness/serve-with-fake-pi.mjs --port 3009   # 单独起线束手工调试（打印 TAU_FAKE_READY 后等待）
 ```

@@ -12,7 +12,7 @@ export default defineConfig(({ command }) => {
 
   return {
     root: path.join(projectRoot, 'src/web'),
-    base: command === 'serve' ? '/' : '/react/',
+    base: '/',
     plugins: [react(), tailwindcss()],
     server: {
       host: '127.0.0.1',

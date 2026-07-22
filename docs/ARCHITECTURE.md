@@ -38,8 +38,8 @@ GIS 是第一个跨边界功能切片，任务交互是第二个。它们都依�
 
 ```text
 Browser Agent Web UI
-  ├─ app-main（legacy DOM 组合入口；未来由 React Web Adapter 替换）
-  ├─ React Web Adapter（独立 `/react/` Shell，当前阶段只提供基座）
+  ├─ React Web Adapter（默认 `/`；Shell、Session、Dialog、Conversation、Task 与 Geo UI 已接入 Kernel）
+  ├─ app-main（legacy DOM 组合入口；仅 `/legacy/` 回退周期保留）
   ├─ Browser Application Kernel
   │    ├─ Event Normalizer / Command Ports
   │    ├─ Runtime / Session / Conversation / Tool / Extension UI Stores
@@ -147,7 +147,7 @@ Web 模式开关 / /task command
 
 未知占位符会阻止会话启动，避免静默注入错误路径。项目级 Skill 由服务端通过 `--skill` 显式加载，因此会话即使运行在 `scenario/` 内也能发现仓库 Skill。本地 SQLite、临时 GeoJSON 和任务输出不属于仓库源资产，必须继续由 `.gitignore` 隔离。
 
-当前还有一项可移植性债务：Web 新建会话表单的 `DEFAULT_TASK_CWD` 是 `app-main.ts` 内的本机绝对路径，而服务端默认目录由 `process.cwd()/scenario` 推导，两者尚未统一。仓库移动或换机时必须修改前端常量并重新构建；后续应由服务端向 Web 发布同一份默认工作目录配置。
+legacy 新建会话表单仍保留 `app-main.ts` 内的本机绝对 `DEFAULT_TASK_CWD`，这是待 legacy 删除时一并清理的兼容债务。React 新建任务不会复制该路径，也不发送 cwd；服务端统一以 `process.cwd()/scenario` 为默认根目录，并创建带时间戳的独立任务目录，因此 React 入口可随仓库位置迁移。
 
 ## 3. 当前目录职责
 
@@ -229,9 +229,11 @@ public/                           Web 发布目录
   workspace/                      编译产物，不跟踪
   geo-runtime.*                  编译产物，不跟踪
 
-src/web/                          React/Vite 源入口与 Shell
+src/web/                          React/Vite Web Adapter
   index.html, main.tsx            独立 React 入口
-  app/, components/, views/       Shell、shadcn 风格基元和动态模块
+  app/                            Composition Root、Providers、Store hooks 与 AppShell
+  platform/                       Session、Settings、Model、Command、Extension UI、Workspace 平台界面
+  components/, lib/               shadcn/Radix 风格基元、图标与纯格式化函数
 
 dist/web/                         Vite 生产产物，不跟踪
 
@@ -249,6 +251,7 @@ scenario/                         本地任务工作区，不跟踪
 ```text
 Extension / Server / Web ──> src/contracts（单向依赖）
 server-main ────────────────> server core + feature route adapters
+React Platform UI ─────────> Kernel Store selectors + Command Ports
 app-main ──────────────────> platform controllers + FeatureRegistry
 FeatureRegistry ───────────> WorkspaceRegistration（最小端口）
 GeoFeature ─────────> VisualizationHost
@@ -329,7 +332,7 @@ GIS GeoJSON 资源使用独立的 session-scoped route adapter。新增接口必
 
 ### 5.3 响应式与无障碍约束
 
-移动端断点为 `768px`，继续维护在同一 Web 应用内，不建立独立移动端入口：
+legacy 移动端断点为 `768px`，React Shell 采用 `860px` 抽屉断点；两者都在各自 Web 入口内响应式适配，不建立独立移动端应用：
 
 - 左侧会话栏改为带遮罩的 slide-over，并支持从屏幕左缘滑入。
 - 普通资源侧栏在移动端隐藏；存在地图时，工作区使用全屏覆盖层。
@@ -408,7 +411,7 @@ rtk npm run test:browser-smoke
 - 引入 React 19、Vite 8、Tailwind CSS 4、shadcn 风格 UI 基元和六套 React 主题 token。
 - Node Server 新增 `/react` → `/react/` 静态入口；Vite dev server 代理 `/api` 与 `/ws`。
 - 用 `React.lazy` 验证 dynamic import 和独立 chunk；npm 发布清单包含 React 源码、Vite 配置和 `dist/web`。
-- 保持 legacy `/` 默认入口，React Shell 只作为独立基座验收，不复制 Kernel 状态。
+- 保持 legacy `/` 默认入口；该阶段的 React Shell 只作为独立基座验收，不复制 Kernel 状态。
 - `npm run test:react-smoke`、legacy browser smoke、browser baseline 和 `npm pack --dry-run` 均通过。
 
 ### 阶段 E：Contract 治理（已完成，2026-07-22）
@@ -417,6 +420,20 @@ rtk npm run test:browser-smoke
 - Extension、Server、legacy Web 共用同一协议源码；旧路径保留兼容重导出。
 - Task、Geo、Bridge、SessionSnapshot 的合法/非法版本、非法 revision 与 revision regression 使用共享 fixture 验证。
 - 保持单 npm 包，不建立 workspace，不包装全部 Pi 原生 event。只有出现独立发布消费者后，才评估提取 `packages/contracts`。
+
+### 阶段 F：React Shell、Feature UI 与平台 UI（已完成，2026-07-22）
+
+- React 通过独立 Composition Root 复用 `WebSocketClient + AppKernel`，组件只订阅外部 Store、调用 Command Port。
+- 迁移 Header/Agent Status、Settings、Model Picker、Command Palette、New Session、Extension Dialog、SessionSidebar、Live Tabs 和 Workspace Layout。
+- Radix Dialog 统一处理 Portal、焦点圈定/恢复、Esc 与键盘交互；移动端侧栏和 Workspace 分别使用抽屉与全屏布局。
+- React smoke 使用真实 Node Server、fake Pi 和 Chrome 验证两任务切换、Extension UI、主题、移动端与 Geo 懒加载边界。
+- Conversation、Task Board 与 Geo Workspace 已迁移至 React；Geo Runtime 在有场景的地图页签中按需加载。
+
+### 阶段 G：React 默认入口（已完成，2026-07-22）
+
+- Node Server 默认在 `/` 提供 React SPA，`/react` 兼容重定向到 `/`。
+- legacy 静态目录只经 `/legacy/` 提供，用于一个稳定发布周期的回退；两套入口继续独占 DOM subtree。
+- React smoke 验证默认入口，legacy browser smoke 与 11/11 browser baseline 验证回退入口；静态路由测试覆盖回退、兼容重定向与安全拒绝。
 
 ## 9. 新增跨边界功能的标准流程
 
@@ -434,7 +451,7 @@ rtk npm run test:browser-smoke
 ## 10. 框架选择结论
 
 - **现在采用的组织框架**：模块化单体、垂直功能切片、Ports/Adapters。它直接解决 Pi 与 Web 双端适配的耦合，同时不增加部署单元。
-- **Web UI 框架**：React 已作为独立 Web Adapter 基座引入；当前业务 UI 仍由 legacy DOM 提供，后续按 Shell、Conversation、Feature UI 顺序迁移。
+- **Web UI 框架**：React 是默认 Web Adapter，已完成 Shell、低耦合平台 UI、Conversation 与 Task/Geo Feature UI；legacy DOM 仅作为 `/legacy/` 的限期回退实现。
 - **Web 构建工具**：Vite 已负责 React 源码构建、`dist/web` 产物和开发代理；legacy TypeScript 构建继续使用现有 `tsc` 链路。
 - **Server 框架**：不立即迁移 Fastify。其插件封装和作用域依赖模型值得借鉴，但当前 raw Node 服务已有大量稳定路由，替换框架会把治理变成重写。
 - **Monorepo/workspaces**：当前不引入。只有共享契约产生第二个独立消费者或独立发布需求时才拆包。
@@ -445,7 +462,7 @@ rtk npm run test:browser-smoke
 
 - `npm run typecheck` 通过。
 - `npm test` 无失败；真实 Pi RPC 冒烟测试默认跳过，需另行执行 `npm run test:pi-smoke`。
-- `npm run test:react-smoke` 验证 `/react/` Shell、lazy chunk、主题 token、legacy 回退和非 Geo 页面不加载 MapLibre。
+- `npm run test:react-smoke` 验证默认 `/` 连接、Session 创建/切换、Extension Dialog、焦点/Esc/键盘、主题、移动端布局、`/legacy/` 回退和非 Geo 页面不加载 MapLibre。
 - npm 发布清单仍包含 Extension、源码和 GIS 技术方案。
 - 编译产物、本地会话与 `.tau` 资源没有进入 Git；`dist/web` 由 Vite 构建并通过 npm 发布清单提供。
 - Agent Web 的非地图会话不加载 MapLibre bundle。

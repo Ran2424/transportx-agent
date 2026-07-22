@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T07:26:14.764Z",
+  "generatedAt": "2026-07-22T10:13:03.868Z",
   "environment": {
     "node": "v24.2.0",
     "platform": "darwin/arm64",
@@ -11,12 +11,12 @@
   "measurements": {
     "longStreaming": {
       "deltas": 500,
-      "wallMs": 675,
+      "wallMs": 325,
       "renderedChars": 846
     },
     "longHistoryFirstRender": {
       "messages": 200,
-      "wallMs": 50
+      "wallMs": 58
     }
   },
   "notes": [

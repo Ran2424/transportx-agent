@@ -63,6 +63,19 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       case 'agent_start':
         return [{ type: 'conversation/streamStarted', sessionId, runId: nextRunId(sessionId) }];
       case 'agent_end':
+        // agent_end closes one low-level run only. Pi may immediately retry
+        // it, compact and retry, or continue queued work; ending the overlay
+        // here in that case prematurely flushes prompts and duplicates UI
+        // error state. agent_settled below is the authoritative boundary.
+        if (event.willRetry === true) return [];
+        currentRunBySession.delete(sessionId);
+        return [{ type: 'conversation/streamEnded', sessionId }];
+      case 'agent_settled':
+        // Newer Pi versions emit this after all automatic retries,
+        // compaction retries and queued continuations have completed. It is
+        // normally preceded by a final agent_end, but also repairs a stream
+        // when a client attached after that event.
+        if (!currentRunBySession.has(sessionId)) return [];
         currentRunBySession.delete(sessionId);
         return [{ type: 'conversation/streamEnded', sessionId }];
       case 'turn_start':
@@ -117,6 +130,10 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         }];
       case 'auto_compaction_start':
       case 'auto_compaction_end':
+      case 'response':
+        // Pi command responses are resolved by the server-side command port.
+        // The server also broadcasts them for legacy clients; they are not
+        // conversation events and must not surface as protocol errors.
         return [];
       case 'entry_appended': {
         const entry = (event as { entry?: SessionEntry }).entry;

@@ -290,8 +290,14 @@ function escapeHtml(text: string) {
     .replace(/"/g, '&quot;');
 }
 
-// Global copy function for code blocks
-window.copyCode = function(btn) {
+// Global copy function for legacy code blocks.
+declare global {
+  interface Window {
+    copyCode?: (btn: HTMLElement) => void;
+  }
+}
+
+window.copyCode = function(btn: HTMLElement) {
   const wrapper = btn.closest('.code-block-wrapper');
   if (!wrapper) return;
   const codeBlock = wrapper.querySelector('code');

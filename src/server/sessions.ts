@@ -403,7 +403,10 @@ export class PiRpcSession {
     this.touch(false);
     const type = event.type;
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
-    if (type === 'agent_end' || type === 'turn_end') this.isStreaming = false;
+    // agent_end is only a single low-level run. Keep the live session marked
+    // busy while Pi is about to retry; agent_settled is the final boundary.
+    if (type === 'agent_end' && event.willRetry !== true) this.isStreaming = false;
+    if (type === 'agent_settled') this.isStreaming = false;
     if (event.contextUsage) this.contextUsage = event.contextUsage;
     if (event.sessionFile) this.sessionFile = event.sessionFile;
     if (type === 'session_name' && event.name) {

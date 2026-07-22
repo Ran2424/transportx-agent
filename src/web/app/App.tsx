@@ -1,142 +1,231 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { Button } from '../components/ui/button';
-import { Card, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-
-const AdapterNote = lazy(() => import('../views/adapter-note'));
-
-const themes = [
-  { id: 'night', label: 'Night', swatch: '#9dd7d0' },
-  { id: 'dawn', label: 'Dawn', swatch: '#e8ad8e' },
-  { id: 'midnight', label: 'Midnight', swatch: '#8fb8ff' },
-  { id: 'clean', label: 'Clean', swatch: '#2463eb' },
-  { id: 'terracotta', label: 'Terracotta', swatch: '#b96d4c' },
-  { id: 'sage', label: 'Sage', swatch: '#71845d' },
-] as const;
-
-type ThemeId = (typeof themes)[number]['id'];
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { HistoryProject, HistorySession } from '../../public/kernel/commands.js';
+import { useAppServices } from './AppProviders';
+import { AppShell } from './AppShell';
+import { useConversationState, useExtensionUiState, useRuntimeState, useSessionState, useToolExecutionState } from './store-hooks';
+import { Header } from '../components/shell/Header';
+import { CommandPalette, type CommandItem } from '../platform/commands/CommandPalette';
+import { ConversationStage } from '../platform/conversation/ConversationStage';
+import { ExtensionDialogLayer } from '../platform/extension-ui/ExtensionDialogLayer';
+import { ModelPickerDialog } from '../platform/model/ModelPickerDialog';
+import { NewSessionDialog } from '../platform/sessions/NewSessionDialog';
+import { LiveTabs } from '../platform/sessions/LiveTabs';
+import { SessionSidebar } from '../platform/sessions/SessionSidebar';
+import { SettingsDialog, themes, type ThemeId } from '../platform/settings/SettingsDialog';
+import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDock';
+import { projectVisualizations } from '../features/geo/geo-projection';
 
 function initialTheme(): ThemeId {
-  if (typeof window === 'undefined') return 'night';
   const saved = window.localStorage.getItem('tau-theme');
-  return themes.some((theme) => theme.id === saved) ? saved as ThemeId : 'night';
+  if (themes.some((theme) => theme.id === saved)) return saved as ThemeId;
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'clean' : 'night';
+}
+
+function mostRecentSessionId(sessions: ReturnType<typeof useSessionState>['sessions']) {
+  return [...sessions].sort((a, b) => new Date(b.lastActiveAt || b.createdAt || 0).getTime() - new Date(a.lastActiveAt || a.createdAt || 0).getTime())[0]?.id || null;
 }
 
 export function App() {
+  const { kernel, reconnect } = useAppServices();
+  const runtime = useRuntimeState();
+  const sessionState = useSessionState();
+  const extensionUi = useExtensionUiState();
+  const conversation = useConversationState();
+  const tools = useToolExecutionState();
   const [theme, setTheme] = useState<ThemeId>(initialTheme);
+  const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-thinking') !== 'false');
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
+  const [workspacePanel, setWorkspacePanel] = useState<'files' | 'tasks' | 'map' | null>(null);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [commandsOpen, setCommandsOpen] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [dismissedRuntimeError, setDismissedRuntimeError] = useState('');
+  const restoredRef = useRef(false);
+
+  const activeSession = sessionState.sessions.find((session) => session.id === sessionState.activeSessionId) || null;
+  const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
+  const visualizations = useMemo(() => activeSession ? projectVisualizations(
+    conversation.bySession[activeSession.id]?.snapshotEntries ?? [],
+    Object.values(tools.bySession[activeSession.id] ?? {}),
+  ) : [], [activeSession, conversation, tools]);
+  const visualizationKey = activeSession && visualizations.length
+    ? `${activeSession.id}:${visualizations.map((item) => `${item.visualizationId}:${item.revision}`).join(',')}`
+    : '';
+  const openedMapKey = useRef('');
+
+  useEffect(() => {
+    if (!visualizationKey || visualizationKey === openedMapKey.current) return;
+    openedMapKey.current = visualizationKey;
+    setWorkspacePanel('map');
+  }, [visualizationKey]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem('tau-theme', theme);
   }, [theme]);
 
+  useEffect(() => {
+    window.localStorage.setItem('tau-show-thinking', String(showThinking));
+  }, [showThinking]);
+
+  const refreshLiveSessions = useCallback(async () => {
+    try {
+      const sessions = await kernel.commands.session.list();
+      kernel.dispatch({ type: 'session/listReceived', sessions });
+    } catch (cause) {
+      setNotice((cause as { message?: string })?.message || '无法读取运行中的任务');
+    }
+  }, [kernel]);
+
+  useEffect(() => {
+    if (runtime.connection !== 'connected') return;
+    void refreshLiveSessions();
+    const timer = window.setInterval(() => void refreshLiveSessions(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [refreshLiveSessions, runtime.connection]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && kernel.stores.runtime.get().connection !== 'connected') reconnect();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [kernel, reconnect]);
+
+  const selectSession = useCallback(async (sessionId: string) => {
+    const session = kernel.stores.session.get().sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    kernel.dispatch({ type: 'session/activated', sessionId });
+    window.localStorage.setItem('tau-active-live-session-id', sessionId);
+    setSessionLoading(true);
+    setNotice('');
+    if (window.innerWidth <= 860) setSidebarOpen(false);
+    try {
+      const snapshot = await kernel.commands.session.loadSnapshot(sessionId);
+      kernel.dispatch({ type: 'session/snapshotReceived', sessionId, snapshot });
+    } catch (cause) {
+      setNotice((cause as { message?: string })?.message || '加载任务快照失败');
+    } finally {
+      setSessionLoading(false);
+    }
+  }, [kernel]);
+
+  useEffect(() => {
+    if (restoredRef.current || sessionState.sessions.length === 0) return;
+    restoredRef.current = true;
+    const saved = window.localStorage.getItem('tau-active-live-session-id');
+    const target = saved && sessionState.sessions.some((session) => session.id === saved) ? saved : mostRecentSessionId(sessionState.sessions);
+    if (target) void selectSession(target);
+  }, [selectSession, sessionState.sessions]);
+
+  async function selectHistory(session: HistorySession, project: HistoryProject) {
+    if (!session.filePath) return;
+    const live = kernel.stores.session.get().sessions.find((item) => item.sessionFile === session.filePath);
+    if (live) {
+      await selectSession(live.id);
+      return;
+    }
+    setSessionLoading(true);
+    setNotice('');
+    try {
+      const resumed = await kernel.commands.session.resume({ filePath: session.filePath, ...(project.path ? { cwd: project.path } : {}) });
+      kernel.dispatch({ type: 'session/created', session: resumed });
+      await selectSession(resumed.id);
+    } catch (cause) {
+      setNotice((cause as { message?: string })?.message || '恢复会话失败');
+    } finally {
+      setSessionLoading(false);
+    }
+  }
+
+  async function closeSession(sessionId: string) {
+    const isStreaming = !!kernel.stores.session.get().streamingBySession[sessionId];
+    if (isStreaming && !window.confirm('这个交通任务正在执行。确定关闭任务并终止 Pi 会话吗？')) return;
+    try {
+      await kernel.commands.session.close(sessionId);
+      kernel.dispatch({ type: 'session/closed', sessionId });
+      if (kernel.stores.session.get().activeSessionId === null) {
+        window.localStorage.removeItem('tau-active-live-session-id');
+        const next = mostRecentSessionId(kernel.stores.session.get().sessions);
+        if (next) await selectSession(next);
+      }
+    } catch (cause) {
+      setNotice((cause as { message?: string })?.message || '关闭任务失败');
+    }
+  }
+
+  const commandItems = useMemo<CommandItem[]>(() => [
+    { id: 'new', label: '新建交通任务', description: '启动独立 Pi RPC 会话', shortcut: '⌘N', action: () => setNewSessionOpen(true) },
+    { id: 'files', label: workspacePanel === 'files' ? '关闭文件栏' : '打开文件栏', description: '浏览当前任务的工作目录', shortcut: '⌘⇧W', action: () => setWorkspacePanel((value) => value === 'files' ? null : 'files') },
+    { id: 'tasks', label: workspacePanel === 'tasks' ? '关闭任务面板' : '打开任务面板', description: '查看当前任务的执行计划', action: () => setWorkspacePanel((value) => value === 'tasks' ? null : 'tasks') },
+    { id: 'map', label: workspacePanel === 'map' ? '关闭地图视图' : '打开地图视图', description: '聚焦当前任务的 GIS 可视化', action: () => setWorkspacePanel((value) => value === 'map' ? null : 'map') },
+    { id: 'model', label: '切换模型', description: activeSession ? '设置当前任务的模型与思考级别' : '需要先选择运行中的任务', disabled: !activeSession, action: () => setModelOpen(true) },
+    { id: 'compact', label: '压缩上下文', description: activeSession ? '请求 Pi 整理当前会话上下文' : '需要先选择运行中的任务', disabled: !activeSession, action: async () => {
+      if (!activeSession) return;
+      try { await kernel.commands.agent.compact(activeSession.id); setNotice('上下文压缩请求已完成'); }
+      catch (cause) { setNotice((cause as { message?: string })?.message || '压缩上下文失败'); }
+    } },
+    { id: 'settings', label: '工作台设置', description: '主题、Agent 与访问控制', shortcut: '⌘,', action: () => setSettingsOpen(true) },
+    { id: 'legacy', label: '打开 Legacy 工作台', description: '在迁移周期内返回稳定入口', action: () => { window.location.href = '/'; } },
+  ], [activeSession, kernel, workspacePanel]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const modifier = event.metaKey || event.ctrlKey;
+      if (modifier && event.key.toLocaleLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandsOpen(true);
+        return;
+      }
+      if (modifier && event.key.toLocaleLowerCase() === 'n') {
+        event.preventDefault();
+        setNewSessionOpen(true);
+        return;
+      }
+      if (modifier && event.key === ',') {
+        event.preventDefault();
+        setSettingsOpen(true);
+        return;
+      }
+      const hasOverlay = newSessionOpen || settingsOpen || modelOpen || commandsOpen || !!extensionUi.current;
+      if (event.key === 'Escape' && !hasOverlay) {
+        if (workspacePanel) {
+          setWorkspacePanel(null);
+        } else if (window.innerWidth <= 860 && sidebarOpen) {
+          setSidebarOpen(false);
+        } else if (activeSession && kernel.stores.session.isStreaming(activeSession.id)) {
+          void kernel.commands.agent.abort(activeSession.id);
+          setNotice('已请求中止当前任务');
+        }
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [activeSession, commandsOpen, extensionUi.current, kernel, modelOpen, newSessionOpen, settingsOpen, sidebarOpen, workspacePanel]);
+
+  const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
+  const runtimeErrorMessage = runtime.lastError?.message || '';
+  const runtimeNotice = notice || (runtimeErrorMessage !== dismissedRuntimeError ? runtimeErrorMessage : '');
+
   return (
-    <div className="react-shell" data-testid="react-shell">
-      <div className="react-grain" aria-hidden="true" />
-      <header className="react-topbar">
-        <a className="react-brand" href="/react/" aria-label="Pi Traffic React Web Adapter">
-          <span className="react-brand-mark">τ</span>
-          <span>
-            <strong>PI TRAFFIC</strong>
-            <small>WEB ADAPTER</small>
-          </span>
-        </a>
-        <div className="react-topbar-meta">
-          <span className="react-version">PHASE 02 / FOUNDATION</span>
-          <span className="react-live-dot" aria-label="React shell ready" />
-        </div>
-      </header>
-
-      <div className="react-shell-grid">
-        <aside className="react-rail">
-          <div>
-            <span className="eyebrow">CURRENT ENTRY</span>
-            <div className="react-route-card">
-              <span className="react-route-method">GET</span>
-              <code>/react/</code>
-            </div>
-            <p className="react-rail-copy">
-              独立的 React/Vite 入口。legacy 工作台继续保留在默认根路径。
-            </p>
-          </div>
-
-          <div className="react-rail-footer">
-            <span className="eyebrow">THEME TOKENS</span>
-            <div className="theme-switcher" data-testid="theme-switcher" role="group" aria-label="选择主题">
-              {themes.map((option) => (
-                <button
-                  className={`theme-chip${theme === option.id ? ' is-active' : ''}`}
-                  key={option.id}
-                  type="button"
-                  aria-pressed={theme === option.id}
-                  title={option.label}
-                  onClick={() => setTheme(option.id)}
-                >
-                  <span className="theme-chip-swatch" style={{ backgroundColor: option.swatch }} />
-                  <span>{option.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        <main className="react-main">
-          <section className="react-hero" aria-labelledby="react-hero-title">
-            <div className="react-hero-kicker">
-              <span className="eyebrow">TRAFFIC AGENT WORKSPACE</span>
-              <span className="react-kicker-rule" aria-hidden="true" />
-              <span className="react-kicker-status" data-testid="kernel-status">KERNEL BOUNDARY READY</span>
-            </div>
-            <h1 id="react-hero-title">
-              把交通分析，<em>变成一条</em><br />
-              可回放的工作流。
-            </h1>
-            <p className="react-hero-copy">
-              这是 React Web Adapter 的独立基座。它连接同一套 Node Server 与协议边界，
-              但不会抢占 legacy 页面，也不会在空壳阶段复制 Agent 状态。
-            </p>
-            <div className="react-hero-actions">
-              <a className="ui-button ui-button-primary" href="/" data-testid="legacy-link">
-                返回 legacy 工作台 <span aria-hidden="true">↗</span>
-              </a>
-              <Button variant="quiet" onClick={() => setTheme(theme === 'night' ? 'clean' : 'night')}>
-                切换明暗预设
-              </Button>
-            </div>
-          </section>
-
-          <section className="react-signal-grid" aria-label="阶段状态">
-            <Card className="signal-card signal-card-accent">
-              <CardHeader>
-                <span className="signal-index">01 / RUNTIME</span>
-                <CardTitle>同一台服务，两个入口</CardTitle>
-                <CardDescription>
-                  API、WebSocket 与 Pi RPC 边界保持不变；React 通过独立静态根接入。
-                </CardDescription>
-              </CardHeader>
-              <div className="signal-mark" aria-hidden="true">↗</div>
-            </Card>
-            <Card className="signal-card">
-              <CardHeader>
-                <span className="signal-index">02 / CONTRACT</span>
-                <CardTitle>Kernel 是唯一投影</CardTitle>
-                <CardDescription>
-                  未来组件只读取 selector、调用 command port，不直接碰 JSONL 或原始事件。
-                </CardDescription>
-              </CardHeader>
-              <div className="signal-pulse" aria-hidden="true"><span /><span /><span /></div>
-            </Card>
-          </section>
-
-          <Suspense fallback={<div className="adapter-note adapter-note-loading">加载适配边界…</div>}>
-            <AdapterNote />
-          </Suspense>
-
-          <footer className="react-footer">
-            <span>PI TRAFFIC WORKSPACE</span>
-            <span>LEGACY /react 共存策略已启用</span>
-          </footer>
-        </main>
-      </div>
-    </div>
+    <AppShell
+      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={workspacePanel === 'files'} taskOpen={workspacePanel === 'tasks'} mapOpen={workspacePanel === 'map'} onToggleSidebar={() => setSidebarOpen((value) => !value)} onToggleFiles={() => setWorkspacePanel((value) => value === 'files' ? null : 'files')} onToggleTasks={() => setWorkspacePanel((value) => value === 'tasks' ? null : 'tasks')} onToggleMap={() => setWorkspacePanel((value) => value === 'map' ? null : 'map')} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
+      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={() => setSidebarOpen(false)} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
+      tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
+      conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} />}
+      workspace={<WorkspaceDock open={workspacePanel === 'files'} session={activeSession} onClose={() => setWorkspacePanel(null)} />}
+      floats={<><WorkspaceFloat kind="tasks" open={workspacePanel === 'tasks'} session={activeSession} onClose={() => setWorkspacePanel(null)} /><WorkspaceFloat kind="map" open={workspacePanel === 'map'} session={activeSession} onClose={() => setWorkspacePanel(null)} /></>}
+      overlays={<>
+        <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} />
+        <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} />
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} session={activeSession} />
+        <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
+        <ExtensionDialogLayer pending={extensionUi.current} />
+        {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label="关闭状态通知" onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
+      </>}
+    />
   );
 }

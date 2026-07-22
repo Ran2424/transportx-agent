@@ -2,7 +2,7 @@
 
 更新时间：2026-07-22
 
-状态：阶段 0、阶段 1（Browser Application Kernel 与 legacy 接入）、阶段 2（Vite 基座）、阶段 3（Contract 治理）已完成
+状态：阶段 0～阶段 7（默认切换）已完成；React `/` 为默认入口，legacy `/legacy/` 保留一个稳定周期。
 
 本文确定 React Web Adapter 的改造方向，并记录截至当前的实施状态。阶段 0 已冻结 fixture、浏览器和性能基线；阶段 1 已建立 Browser Application Kernel 并让 legacy UI 消费 Kernel；阶段 2 已建立独立的 React/Vite 空壳和 `/react/` 静态入口；阶段 3 已完成项目自有协议集中治理。业务级 React UI 迁移仍属于后续阶段。当前运行事实仍以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
 
@@ -649,48 +649,67 @@ dist/web/     React/Vite 构建产物
 
 ### 阶段 4：React Shell 与低耦合平台 UI
 
-迁移顺序：
-
-1. AppShell、Header 和 Agent Status。
-2. Settings、Model Picker、Command Palette 和 New Session Dialog。
-3. Extension Dialog Layer。
-4. SessionSidebar、Live Tabs 和 Workspace Layout。
-
-退出条件：焦点、Esc、键盘导航、后台 Dialog、移动端 sidebar、主题和 session 切换达到现有行为对等。
-
-### 阶段 5：Conversation
-
-迁移：
-
-- Message Window 和 Streaming Message。
-- Thinking、Tool Card、Markdown、Diff 和图片。
-- Composer、附件、消息队列、abort/steer/follow-up。
-
-退出条件：live/history/resume 三条路径一致；token delta 不使稳定历史消息、SessionSidebar 和 Workspace 重渲染；长输出无明显卡顿。
-
-### 阶段 6：Feature UI
-
-顺序：
-
-```text
-Extension UI Platform -> Task Board
-Workspace Platform    -> Geo Workspace
-```
-
-迁移 Task Domain/UI 分层、Geo Domain/UI/Runtime Port，并用同一模式验证一个最小示例 Feature。
-
-退出条件：Task、Geo 可以独立 hydrate 和测试；AppShell 不识别 `tau_task`、`present_visualization` 或其他具体工具名。
-
-### 阶段 7：默认切换与删除 legacy
+> **状态：已完成（2026-07-22）**。React `/react/` 已接入同一 Browser Application Kernel；legacy `/` 仍是默认入口，Conversation 与 Feature UI 继续留在后续阶段。
 
 交付：
 
-- React 成为默认入口。
-- 保留 legacy 回退一个稳定周期。
-- 删除剩余 legacy `app-main.ts` DOM 接线、Renderer、旧 HTML 容器和无引用 CSS。
-- 更新 ARCHITECTURE、README、启动脚本、发布清单和截图。
+1. AppShell、Header、Agent Status，以及基于 `useSyncExternalStore` 的 Runtime/Session/Extension UI 订阅。
+2. Settings、Model Picker、Command Palette 和 New Session Dialog；新任务不再复制本机 cwd，省略 cwd 后由服务端统一创建 `scenario/时间-名称` 目录。
+3. 基于 Radix Dialog 的 Extension Dialog Layer，覆盖 `select`、`confirm`、`input`、`editor` 和 `notify`，保留按 session 排队与切换恢复语义。
+4. SessionSidebar、历史搜索/resume、Live Tabs 和响应式 Workspace Layout；移动端使用抽屉/全屏工作区。
+5. Kernel Command Ports 扩展历史会话、模型、Agent 设置和认证命令；React 组件不直接 `fetch()` 或访问 WebSocket。
 
-退出条件：完整 Node、Pi RPC、浏览器、移动端和 npm pack 验证通过；legacy 删除后没有双实现或构建死路径。
+验证：
+
+- `test/kernel-commands.test.ts` 覆盖新增 Agent、历史会话和平台命令端口。
+- `npm run test:react-smoke` 使用真实 Node Server + fake Pi + Chrome 验证连接、两任务创建/切换、Extension select、Dialog 焦点恢复、Esc、命令键盘路径、主题、移动侧栏/Workspace，以及非 Geo 页面不加载 MapLibre。
+- `npm run typecheck`、`npm test`、legacy browser smoke/baseline 与 npm pack 回归。
+
+退出条件：焦点、Esc、键盘导航、后台 Dialog、移动端 sidebar、主题和 session 切换达到现有行为对等。已满足。
+
+### 阶段 5：Conversation
+
+> **状态：已完成（2026-07-22）**。React Conversation 直接消费 ConversationStore 的 stable snapshot 与 live overlay，以及 ToolExecutionStore；legacy `/` 保持默认入口。
+
+交付：
+
+- Message Window、optimistic user echo 与 Streaming Message；历史 hydrate、live 与 resume 使用同一投影。
+- 可折叠 Thinking、Markdown、复制、图片附件/预览，以及 Tool Card 的参数、输出、Diff、状态与图片预览。
+- Composer 支持拖放/粘贴/选择图片、队列取消、流式 steer、follow-up 与 abort；所有发送操作只调用 Agent Command Port。
+- 思考过程偏好提升至 App 层并持久化，React Settings 与 Conversation 使用同一状态。
+
+验证：
+
+- `test/kernel-stores.test.ts` 覆盖 optimistic user echo 被权威 user event 替换时不丢失。
+- `npm run test:react-smoke` 使用真实 Node Server + fake Pi + Chrome 验证 Composer → Kernel → streaming、Tool Card 与既有平台路径。
+
+退出条件：live/history/resume 三条路径一致；token delta 不使稳定历史消息、SessionSidebar 和 Workspace 重渲染；长输出无明显卡顿。已满足。
+
+### 阶段 6：Feature UI
+
+> **状态：已完成（2026-07-22）**。React Task Board 与 Geo Workspace 从 Kernel 的 Conversation/ToolExecution Store 投影状态；legacy `/` 仍保留原 Feature 实现作为回退。
+
+交付：
+
+- Task Domain 投影统一处理历史 custom state、live `tau_task`/`tau_ask_user` 工具结果及 revision 选择；Task Board 不读取 RPC 或 WebSocket。
+- Geo Domain 投影统一处理历史与 live visualization envelope；Workspace 注册任务和地图页签，AppShell 不包含具体工具名判断。
+- Geo Workspace 仅在页签激活且有 Scene 时动态加载命令式 MapLibre Runtime，支持地图选择和图层显隐。
+- React Chrome smoke 覆盖 Task 从同一 Kernel 状态 hydrate、非 Geo 工作区不加载 Runtime、Geo 激活后按需加载 Runtime 与图层渲染。
+
+退出条件：Task、Geo 可以独立 hydrate 和测试；AppShell 不识别 `tau_task`、`present_visualization` 或其他具体工具名。已满足。
+
+### 阶段 7：默认切换与 legacy 回退
+
+> **状态：已完成（2026-07-22）**。React 已提供默认 `/`；legacy 移至显式 `/legacy/` 回退路径，并将在一个稳定发布周期后物理删除。
+
+交付：
+
+- Vite 生产资源使用根路径 asset base；Node Server 默认提供 React SPA，`/react` 兼容重定向到 `/`。
+- `/legacy/` 保留旧静态资产的隔离入口；legacy 浏览器 smoke 与阶段 0 的 11 个浏览器基线显式访问该路径。
+- 静态路由覆盖默认 React、legacy 回退、兼容重定向、非法 URL 和路径穿越；React/legacy 不共享 DOM subtree。
+- README、架构、测试基线和启动日志更新为默认入口与回退路径。
+
+退出条件：完整 Node、Pi RPC、浏览器、移动端和 npm pack 验证通过；legacy 删除后没有双实现或构建死路径。默认切换与回退验证已满足；物理删除须在稳定周期结束后单独提交，避免承诺回退又删除回退。
 
 ## 10. 测试体系
 
@@ -703,10 +722,10 @@ Workspace Platform    -> Geo Workspace
 | Feature | Tool Result → Domain Action → Store → selector，不加载 React |
 | Component | 焦点、键盘、受控状态、空/错/加载状态和 reduced motion |
 | Browser E2E | 创建、resume、streaming、abort、Dialog、Task、Geo、移动端和主题 |
-| React Foundation Smoke | `/react/` Shell、lazy chunk、主题 token、legacy 回退和 Geo 懒加载 |
+| React Platform Smoke | 默认 `/` 连接、双会话、Extension UI 五类请求、焦点/Esc/键盘、主题、移动布局、`/legacy/` 回退和 Geo 懒加载 |
 | Real Pi Smoke | Pi 版本、Extension 加载、Bridge manifest 和关键 RPC 往返 |
 
-真实 Chrome smoke 当前覆盖 legacy 连接/新建会话和独立 React `/react/` Shell；阶段 0 的 `browser-baseline` 使用 fake-pi 线束覆盖完整的合成 streaming、Task 和 Geo 浏览器路径。真实 Pi RPC 协议冒烟需另行执行 `npm run test:pi-smoke`；该测试使用 offline 模式，不代表真实模型 API 的完整 prompt 流程。
+真实 Chrome smoke 覆盖默认 React `/` 与 `/legacy/` 回退；阶段 0 的 `browser-baseline` 使用 fake-pi 线束在 `/legacy/` 覆盖完整的合成 streaming、Task 和 Geo 路径。真实 Pi RPC 协议冒烟需另行执行 `npm run test:pi-smoke`；该测试使用 offline 模式，不代表真实模型 API 的完整 prompt 流程。
 
 ## 11. 性能预算
 
@@ -826,15 +845,15 @@ React Component -> raw WebSocket / Pi JSONL
 ## 16. 开始实施前的检查清单
 
 - [x] 阶段 0 的 fixture 和浏览器基线进入仓库。
-- [x] 明确 legacy/react 静态入口和回退方式（legacy `/`、React `/react/`）。
+- [x] 明确默认/回退静态入口（React `/`、legacy `/legacy/`）。
 - [x] Event Normalizer、Command Port 和 Store 的最小接口已实现并通过测试。
 - [x] Snapshot 与 live overlay 的 reconcile 规则有回放测试样例。
-- [ ] `DEFAULT_TASK_CWD` 不再由 React 复制一份硬编码路径，而由服务端配置提供。
+- [x] React 新建任务不复制 `DEFAULT_TASK_CWD`；省略 cwd 并由服务端统一使用 `process.cwd()/scenario` 根目录。legacy 常量将在默认切换阶段随旧表单删除。
 - [x] Vite 输出目录不会覆盖 `public/` 或 Extension/Skill/Prompt。
 - [x] 六套主题和移动端关键页面有截图基线。
 - [x] Task Dialog、Geo Workspace 和 resume 已进入浏览器验收范围。
 - [x] 阶段 2 React Shell 已通过 Node Server 静态路由和 Chrome smoke 验证。
-- [x] 每阶段都有独立回退点；React 当前不替换 legacy 默认入口。
+- [x] 阶段 7 默认 React `/` 与 legacy `/legacy/` 回退均通过静态路由和 Chrome smoke 验证。
 
 ## 17. 官方参考
 

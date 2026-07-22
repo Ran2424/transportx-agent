@@ -139,9 +139,15 @@ export class ConversationStore {
       }
       if (message?.role === 'user') {
         const text = messageText(message);
-        // Echo of our own optimistic prompt: clear it instead of appending.
+        // Replace the optimistic prompt with the authoritative event. Keeping
+        // the event in the stable entries is essential until the next snapshot
+        // arrives; otherwise a fast user echo makes the prompt disappear.
         if (conv.live.optimisticPrompt && conv.live.optimisticPrompt.message === text) {
-          return { ...conv, live: { ...conv.live, optimisticPrompt: null } };
+          return {
+            ...conv,
+            snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message }),
+            live: { ...conv.live, optimisticPrompt: null },
+          };
         }
         return { ...conv, snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message }) };
       }

@@ -1,0 +1,91 @@
+import type { LiveSession } from '../../../public/app-types.js';
+import type { ConnectionState } from '../../../public/kernel/stores/runtime-store.js';
+import { Icon } from '../icons';
+import { modelReference } from '../../lib/formatting';
+
+type HeaderProps = {
+  connection: ConnectionState;
+  activeSession: LiveSession | null;
+  streaming: boolean;
+  sidebarOpen: boolean;
+  fileOpen: boolean;
+  taskOpen: boolean;
+  mapOpen: boolean;
+  onToggleSidebar(): void;
+  onToggleFiles(): void;
+  onToggleTasks(): void;
+  onToggleMap(): void;
+  onOpenModel(): void;
+  onOpenCommands(): void;
+  onOpenSettings(): void;
+};
+
+export function Header({
+  connection,
+  activeSession,
+  streaming,
+  sidebarOpen,
+  fileOpen,
+  taskOpen,
+  mapOpen,
+  onToggleSidebar,
+  onToggleFiles,
+  onToggleTasks,
+  onToggleMap,
+  onOpenModel,
+  onOpenCommands,
+  onOpenSettings,
+}: HeaderProps) {
+  const status = connection === 'connected' && streaming ? 'streaming' : connection;
+  const statusLabel = status === 'streaming' ? '处理中' : status === 'connected' ? '已连接' : status === 'connecting' ? '连接中' : '已断开';
+  const model = modelReference(activeSession?.model) || activeSession?.modelSpec || '选择模型';
+  const thinking = activeSession?.thinkingLevel || 'off';
+
+  return (
+    <header className="workspace-header">
+      <div className="workspace-header-left">
+        <button className="icon-button" type="button" aria-label="展开或收起会话侧栏" aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
+          <Icon name="menu" />
+        </button>
+        <button
+          className="model-trigger"
+          type="button"
+          disabled={!activeSession}
+          onClick={onOpenModel}
+          aria-label="选择模型与思考级别"
+        >
+          <span>{model}</span>
+          {activeSession ? <small>{thinking}</small> : null}
+          <Icon name="chevron" />
+        </button>
+      </div>
+
+      <a className="workspace-brand" href="/react/" aria-label="Pi Traffic 工作台">
+        <span className="workspace-brand-mark">τ</span>
+        <span><strong>PI TRAFFIC</strong><small>AGENT WORKSPACE</small></span>
+      </a>
+
+      <div className="workspace-header-right">
+        <div className="agent-status" data-testid="agent-status" data-state={status} title={`Agent ${statusLabel}`}>
+          <span className="agent-status-dot" />
+          <span>{statusLabel}</span>
+        </div>
+        <button className="icon-button header-command" type="button" aria-label="打开命令面板" onClick={onOpenCommands}>
+          <Icon name="command" /><kbd>⌘K</kbd>
+        </button>
+        <button className="icon-button" type="button" aria-label="打开或关闭文件栏" aria-pressed={fileOpen} onClick={onToggleFiles}>
+          <Icon name="workspace" />
+        </button>
+        <button className="icon-button" type="button" aria-label="打开或关闭任务面板" aria-pressed={taskOpen} onClick={onToggleTasks}>
+          <Icon name="task" />
+        </button>
+        <button className="icon-button" type="button" aria-label="打开或关闭地图视图" aria-pressed={mapOpen} onClick={onToggleMap}>
+          <Icon name="map" />
+        </button>
+        <button className="icon-button" type="button" aria-label="打开设置" onClick={onOpenSettings}>
+          <Icon name="settings" />
+        </button>
+      </div>
+    </header>
+  );
+}
