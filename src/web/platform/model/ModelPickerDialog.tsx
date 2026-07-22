@@ -78,7 +78,7 @@ export function ModelPickerDialog({ open, onOpenChange, session }: { open: boole
   if (model && !normalized.some((item) => item.reference === model)) normalized.unshift({ reference: model, label: `${model} — 当前模型` });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="模型与推理" eyebrow="AGENT PROFILE" description="切换只影响当前任务，不会改变其他并行会话。">
+    <Dialog open={open} onOpenChange={onOpenChange} title="模型与推理">
       <form className="form-stack" onSubmit={save}>
         <label className="field-label"><span>模型</span>
           <select autoFocus value={model} onChange={(event) => setModel(event.target.value)} disabled={loading || !session}>

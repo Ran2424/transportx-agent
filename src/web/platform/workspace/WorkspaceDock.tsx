@@ -6,6 +6,7 @@ import { Icon } from '../../components/icons';
 import { GeoWorkspace } from '../../features/geo/GeoWorkspace';
 import { TaskBoard } from '../../features/task/TaskBoard';
 import { basename } from '../../lib/formatting';
+import { FilePreview, filePresentation } from './FilePreview';
 
 function parentPath(path: string) {
   const separator = path.includes('\\') ? '\\' : '/';
@@ -23,8 +24,9 @@ function fileSize(bytes?: number | null) {
 }
 
 function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: WorkspaceFile): void }) {
-  return <button className={`workspace-file-row${item.isDirectory ? ' is-directory' : ''}`} type="button" onClick={() => onOpen(item)} title={item.path}>
-    <span aria-hidden="true">{item.isDirectory ? '⌁' : '·'}</span><strong>{item.name}</strong>{!item.isDirectory && fileSize(item.size) ? <small>{fileSize(item.size)}</small> : null}
+  const presentation = filePresentation(item);
+  return <button className={`workspace-file-row is-${presentation.kind}`} type="button" onClick={() => onOpen(item)} title={`${presentation.label}：${item.path}`}>
+    <span className="workspace-file-icon" aria-hidden="true"><Icon name={presentation.icon} /></span><strong>{item.name}</strong>{!item.isDirectory && fileSize(item.size) ? <small>{fileSize(item.size)}</small> : null}
   </button>;
 }
 
@@ -36,6 +38,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copiedPath, setCopiedPath] = useState('');
+  const [previewFiles, setPreviewFiles] = useState<WorkspaceFile[]>([]);
 
   const load = useCallback(async (nextPath?: string) => {
     if (!session) { setPath(''); setItems([]); return; }
@@ -52,9 +55,11 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
   }, [kernel, session]);
 
   useEffect(() => { if (open) void load(); }, [load, open]);
+  useEffect(() => { setPreviewFiles([]); }, [session?.id]);
 
   async function openFile(item: WorkspaceFile) {
     if (item.isDirectory) { await load(item.path); return; }
+    if (filePresentation(item).preview) { setPreviewFiles((current) => [...current.filter((file) => file.path !== item.path), item]); return; }
     await navigator.clipboard?.writeText(item.path);
     setCopiedPath(item.path);
     window.setTimeout(() => setCopiedPath((current) => current === item.path ? '' : current), 1_500);
@@ -62,7 +67,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
 
   return <aside className={`workspace-dock${open ? ' is-open' : ''}`} aria-label="文件栏" data-testid="workspace-dock">
     <div className="workspace-dock-header">
-      <div><span className="section-eyebrow">WORKSPACE / 01</span><strong>文件</strong></div>
+      <strong>文件</strong>
       <button className="icon-button" type="button" aria-label="关闭文件栏" onClick={onClose}><Icon name="close" /></button>
     </div>
     <div className="workspace-file-toolbar">
@@ -74,13 +79,14 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
       {!session ? <WorkspaceEmpty mark="01" title="等待任务上下文" description="选择一个运行中的任务后，可以浏览其工作目录。" /> : loading ? <p className="workspace-file-status">正在读取文件…</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty mark="01" title="目录为空" description="当前工作目录中没有可显示的文件。" /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">已复制路径：{basename(copiedPath)}</p> : null}</>}
     </div>
     <footer className="workspace-dock-footer"><span>SESSION SCOPED</span><span>{session?.id.slice(-8) || 'NO SESSION'}</span></footer>
+    {session ? previewFiles.map((file, index) => <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />) : null}
   </aside>;
 }
 
-export function WorkspaceFloat({ kind, open, session, onClose }: { kind: 'tasks' | 'map'; open: boolean; session: LiveSession | null; onClose(): void }) {
+export function WorkspaceFloat({ kind, open, session, fileOpen = false, onClose }: { kind: 'tasks' | 'map'; open: boolean; session: LiveSession | null; fileOpen?: boolean; onClose(): void }) {
   const map = kind === 'map';
-  return <aside className={`workspace-float workspace-float--${kind}${open ? ' is-open' : ''}`} aria-label={map ? '地图视图' : '任务面板'} data-testid={`workspace-float-${kind}`}>
-    <header className="workspace-float-header"><div><span className="section-eyebrow">{map ? 'MAP VIEW' : 'TASK VIEW'}</span><strong>{map ? '地图' : '任务'}</strong></div><button className="icon-button" type="button" aria-label={`关闭${map ? '地图视图' : '任务面板'}`} onClick={onClose}><Icon name="close" /></button></header>
+  return <aside className={`workspace-float workspace-float--${kind}${open ? ' is-open' : ''}${!map && fileOpen ? ' is-file-offset' : ''}`} aria-label={map ? '地图视图' : '任务面板'} data-testid={`workspace-float-${kind}`}>
+    <header className="workspace-float-header"><strong>{map ? '地图' : '任务'}</strong><button className="icon-button" type="button" aria-label={`关闭${map ? '地图视图' : '任务面板'}`} onClick={onClose}><Icon name="close" /></button></header>
     <div className="workspace-float-body">{map ? <GeoWorkspace session={session} active={open} /> : <TaskBoard session={session} />}</div>
   </aside>;
 }

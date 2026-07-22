@@ -3,8 +3,6 @@ import { useRef, type ComponentProps, type ReactNode } from 'react';
 
 type DialogProps = ComponentProps<typeof DialogPrimitive.Root> & {
   title: string;
-  description?: string;
-  eyebrow?: string;
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
@@ -12,8 +10,6 @@ type DialogProps = ComponentProps<typeof DialogPrimitive.Root> & {
 
 export function Dialog({
   title,
-  description,
-  eyebrow,
   children,
   footer,
   className = '',
@@ -41,13 +37,8 @@ export function Dialog({
           }}
         >
           <div className="dialog-heading">
-            <div>
-              {eyebrow ? <div className="dialog-eyebrow"><span />{eyebrow}</div> : null}
-              <DialogPrimitive.Title className="dialog-title">{title}</DialogPrimitive.Title>
-              <DialogPrimitive.Description className={description ? 'dialog-description' : 'sr-only'}>
-                {description || `${title}对话框`}
-              </DialogPrimitive.Description>
-            </div>
+            <DialogPrimitive.Title className="dialog-title">{title}</DialogPrimitive.Title>
+            <DialogPrimitive.Description className="sr-only">{title}对话框</DialogPrimitive.Description>
             <DialogPrimitive.Close className="icon-button dialog-close" aria-label="关闭">
               <span aria-hidden="true">×</span>
             </DialogPrimitive.Close>

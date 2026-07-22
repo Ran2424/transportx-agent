@@ -11,13 +11,10 @@ export function ConversationStage({ session, loading, onNewSession, showThinking
     return (
       <main className="conversation-stage">
         <section className="workspace-welcome">
-          <div className="welcome-index">00 / READY</div>
           <div className="welcome-mark">τ</div>
-          <span className="section-eyebrow">TRAFFIC AGENT WORKSPACE</span>
           <h1>从一个清晰的<br /><em>交通问题</em>开始。</h1>
-          <p>创建独立任务，或从左侧恢复已有会话。实时消息与 Composer 将在迁移阶段 5 接入同一 Kernel。</p>
           <Button onClick={onNewSession}>新建交通任务 <span aria-hidden="true">↗</span></Button>
-          <div className="welcome-boundaries"><span><i>01</i>独立 Pi RPC</span><span><i>02</i>可回放 JSONL</span><span><i>03</i>会话级工作区</span></div>
+          <div className="welcome-capabilities"><article><strong>交通问数</strong><span>路段 · 时段 · 需求</span></article><article><strong>地图分析</strong><span>空间关系 · 可视化</span></article><article><strong>报告生成</strong><span>结论 · 文件 · 交付</span></article></div>
         </section>
       </main>
     );

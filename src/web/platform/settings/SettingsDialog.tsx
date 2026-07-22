@@ -80,7 +80,7 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="设置" eyebrow="WORKSPACE PREFERENCES" description="外观偏好保存在当前浏览器；Agent 设置按会话隔离。" className="settings-dialog">
+    <Dialog open={open} onOpenChange={onOpenChange} title="设置" className="settings-dialog">
       <section className="settings-section">
         <h3>外观主题</h3>
         <div className="theme-grid" role="radiogroup" aria-label="外观主题">

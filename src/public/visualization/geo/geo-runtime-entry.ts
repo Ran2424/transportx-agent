@@ -209,11 +209,19 @@ class MapLibreGeoRuntime {
       if (!map.isStyleLoaded()) this.onError(event.error?.message || 'MapLibre error');
     });
     await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error('Map initialization timed out')), 10_000);
-      map.once('load', () => {
+      let settled = false;
+      const finish = (cause?: Error) => {
+        if (settled) return;
+        settled = true;
         window.clearTimeout(timeout);
-        resolve();
-      });
+        map.off('load', onLoad);
+        if (cause) reject(cause);
+        else resolve();
+      };
+      const onLoad = () => finish();
+      const timeout = window.setTimeout(() => finish(new Error('Map initialization timed out')), 10_000);
+      if (map.isStyleLoaded()) finish();
+      else map.once('load', onLoad);
     });
     if (this.map !== map) return;
     const sourceIds = new Map<string, string>();
@@ -288,12 +296,12 @@ class MapLibreGeoRuntime {
       root.className = 'geo-popup';
       const header = document.createElement('div');
       header.className = 'geo-popup-header';
-      const eyebrow = document.createElement('span');
-      eyebrow.textContent = '空间要素';
       const title = document.createElement('strong');
       title.textContent = layer.title || layer.id;
-      header.append(eyebrow, title);
+      header.append(title);
       root.appendChild(header);
+      const fields = document.createElement('div');
+      fields.className = 'geo-popup-fields';
       for (const field of layer.popup!.fields) {
         const row = document.createElement('div');
         row.className = 'geo-popup-row';
@@ -303,8 +311,9 @@ class MapLibreGeoRuntime {
         const raw = feature.properties?.[field.field];
         value.textContent = this.formatPopupValue(raw, field.format);
         row.append(label, value);
-        root.appendChild(row);
+        fields.appendChild(row);
       }
+      root.appendChild(fields);
       new maplibregl.Popup({ closeButton: true, maxWidth: '340px', offset: 10 }).setLngLat(event.lngLat).setDOMContent(root).addTo(map);
     });
   }

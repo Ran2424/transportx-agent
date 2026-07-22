@@ -45,6 +45,7 @@ export type HistorySession = {
   name?: string | null;
   firstMessage?: string | null;
   timestamp?: string;
+  mtime?: number;
   sessionName?: string | null;
   sessionTimestamp?: string;
   live?: boolean;
@@ -67,6 +68,8 @@ export type WorkspaceFile = {
   isDirectory: boolean;
   size?: number | null;
 };
+
+export type WorkspaceFileContent = { content: string; size: number; encoding?: 'utf8' | 'base64' };
 
 export type AgentState = {
   model?: ModelRecord | null;
@@ -95,6 +98,7 @@ export type SessionCommands = {
   loadSnapshot(sessionId: string): Promise<SessionSnapshot>;
   loadHistory(filePath: string): Promise<SessionSnapshot>;
   listFiles(sessionId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
+  readFileContent(sessionId: string, path: string): Promise<WorkspaceFileContent>;
   close(sessionId: string): Promise<void>;
   deleteHistory(filePath: string): Promise<void>;
 };
@@ -269,6 +273,12 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       if (path) params.set('path', path);
       const data = await httpJson(deps.http, `/api/files?${params}`, undefined, { ...context, sessionId });
       return data as { path: string; items: WorkspaceFile[] };
+    },
+
+    async readFileContent(sessionId, path) {
+      const params = new URLSearchParams({ sessionId, path });
+      const data = await httpJson(deps.http, `/api/file/content?${params}`, undefined, { ...context, sessionId });
+      return data as WorkspaceFileContent;
     },
 
     async close(sessionId) {

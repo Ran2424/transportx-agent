@@ -11,6 +11,8 @@ type HeaderProps = {
   fileOpen: boolean;
   taskOpen: boolean;
   mapOpen: boolean;
+  taskAvailable: boolean;
+  mapAvailable: boolean;
   onToggleSidebar(): void;
   onToggleFiles(): void;
   onToggleTasks(): void;
@@ -28,6 +30,8 @@ export function Header({
   fileOpen,
   taskOpen,
   mapOpen,
+  taskAvailable,
+  mapAvailable,
   onToggleSidebar,
   onToggleFiles,
   onToggleTasks,
@@ -76,10 +80,10 @@ export function Header({
         <button className="icon-button" type="button" aria-label="打开或关闭文件栏" aria-pressed={fileOpen} onClick={onToggleFiles}>
           <Icon name="workspace" />
         </button>
-        <button className="icon-button" type="button" aria-label="打开或关闭任务面板" aria-pressed={taskOpen} onClick={onToggleTasks}>
+        <button className="icon-button" type="button" aria-label="打开或关闭任务面板" aria-pressed={taskOpen} disabled={!taskAvailable} title={taskAvailable ? '打开任务面板' : '当前任务未开启任务模式'} onClick={onToggleTasks}>
           <Icon name="task" />
         </button>
-        <button className="icon-button" type="button" aria-label="打开或关闭地图视图" aria-pressed={mapOpen} onClick={onToggleMap}>
+        <button className="icon-button" type="button" aria-label="打开或关闭地图视图" aria-pressed={mapOpen} disabled={!mapAvailable} title={mapAvailable ? '打开地图视图' : '当前任务暂无地图结果'} onClick={onToggleMap}>
           <Icon name="map" />
         </button>
         <button className="icon-button" type="button" aria-label="打开设置" onClick={onOpenSettings}>

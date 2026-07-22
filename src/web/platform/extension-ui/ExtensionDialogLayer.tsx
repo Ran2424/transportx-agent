@@ -35,6 +35,7 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
   const method = request.method || '';
   const fallback = method === 'select' ? '请选择' : method === 'confirm' ? '请确认' : '请输入信息';
   const heading = splitHeading(request.title, fallback);
+  const message = request.message || heading.message;
   const [value, setValue] = useState(request.prefill || '');
   const resolvedRef = useRef(false);
 
@@ -86,11 +87,10 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
       open
       onOpenChange={(open) => { if (!open) void respond({ cancelled: true }); }}
       title={heading.title}
-      description={request.message || heading.message || undefined}
-      eyebrow={method === 'confirm' ? 'PI 需要你的确认' : method === 'select' ? 'PI 需要你的选择' : 'PI 正在等待'}
       className="extension-dialog"
       footer={footer}
     >
+      {message ? <p className="extension-prompt">{message}</p> : null}
       {method === 'select' ? (
         <div className="extension-options">
           {(request.options || []).map((option) => {
