@@ -278,6 +278,12 @@ test('GET /api/file/preview without sessionId is rejected with 400', async () =>
   assert.match((await jsonBody(res)).error, /No live session selected/);
 });
 
+test('GET /api/file/content without sessionId is rejected with 400', async () => {
+  const res = await fetch(`${base}/api/file/content?path=/x.md`);
+  assert.equal(res.status, 400);
+  assert.match((await jsonBody(res)).error, /No live session selected/);
+});
+
 test('malformed static URL returns 400 instead of crashing the server', async () => {
   const res = await fetch(`${base}/%E0%A4%A`);
   assert.equal(res.status, 400);
@@ -520,6 +526,20 @@ test('GET /api/files lists the directory for a live session', async () => {
   assert.equal(res.status, 200);
   const body = await jsonBody(res);
   assert.ok(body.items.some((i: { name: string }) => i.name === 'a.txt'));
+});
+
+test('GET /api/file/content returns a text file inside the session cwd', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-content-'));
+  const report = path.join(cwd, 'report.md');
+  fs.writeFileSync(report, '# Report\n\nTraffic analysis');
+  const s = fakeSession('tau_1');
+  s.cwd = cwd;
+  liveManager.sessions.set('tau_1', s);
+  const res = await fetch(`${base}/api/file/content?sessionId=tau_1&path=${encodeURIComponent(report)}`);
+  assert.equal(res.status, 200);
+  const body = await jsonBody(res);
+  assert.equal(body.content, '# Report\n\nTraffic analysis');
+  assert.equal(body.encoding, 'utf8');
 });
 
 test('GET /api/file/preview streams a previewable image inside the session cwd', async () => {

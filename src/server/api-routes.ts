@@ -23,6 +23,7 @@ type ApiRouteServices = {
   serveSearch(res: ServerResponse, query: string): void | Promise<void>;
   resolveLivePath(session: PiRpcSession, requestedPath?: string | null): string;
   serveFiles(res: ServerResponse, path: string): void;
+  serveFileContent(res: ServerResponse, path: string): void;
   serveResources(res: ServerResponse, session: PiRpcSession): Promise<void>;
   servePreview(res: ServerResponse, path: string): void;
   resolveOpen(body: RpcCommand): string;
@@ -85,6 +86,14 @@ export function createApiRouter(services: ApiRouteServices) {
       const session = deps.sessions.get(sessionId);
       if (!session) return deps.json(res, 404, { error: 'Live session not found' });
       try { deps.serveFiles(res, deps.resolveLivePath(session, url.searchParams.get('path') || session.cwd)); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .get('/api/file/content', ({ res, url, deps }) => {
+      const sessionId = url.searchParams.get('sessionId');
+      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
+      const session = deps.sessions.get(sessionId);
+      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
+      try { deps.serveFileContent(res, deps.resolveLivePath(session, url.searchParams.get('path'))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .get('/api/session-resources', async ({ res, url, deps }) => {

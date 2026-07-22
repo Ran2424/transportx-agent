@@ -431,6 +431,7 @@ const apiRouter = createApiRouter({
   serveSearch,
   resolveLivePath: resolveLiveSessionPath,
   serveFiles: serveFileList,
+  serveFileContent,
   serveResources: serveSessionResources,
   servePreview: serveFilePreview,
   resolveOpen: resolveOpenPath,
@@ -607,6 +608,7 @@ function serveSessionFile(res: ServerResponse, dirName: string, file: string) {
 }
 
 const IGNORED_NAMES = new Set(['node_modules', '.git', '__pycache__', '.DS_Store', '.Trash', '.next', '.nuxt', 'dist', 'build', '.cache', '.turbo', 'venv', '.venv', 'env', '.env.local', '.pi', 'coverage', '.nyc_output', '.parcel-cache']);
+const FILE_PREVIEW_MAX_BYTES = 1_000_000;
 const DEFAULT_TOOLS: Record<string, { label: string; description: string }> = {
   read: { label: '读取', description: '读取文件内容' },
   bash: { label: '命令', description: '执行终端命令' },
@@ -631,6 +633,19 @@ function serveFileList(res: ServerResponse, dirPath: string) {
     items.sort((a, b) => a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name));
     json(res, 200, { path: dirPath, items });
   } catch (e) { json(res, 500, { error: errorMessage(e) }); }
+}
+
+function serveFileContent(res: ServerResponse, filePath: string) {
+  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return json(res, 404, { error: 'File not found' });
+  const stat = fs.statSync(filePath);
+  if (stat.size > FILE_PREVIEW_MAX_BYTES) return json(res, 413, { error: `File is too large to preview (limit ${FILE_PREVIEW_MAX_BYTES} bytes)` });
+  try {
+    const buffer = fs.readFileSync(filePath);
+    const extension = path.extname(filePath).toLowerCase();
+    if (['.xlsx', '.xls', '.ods'].includes(extension)) return json(res, 200, { content: buffer.toString('base64'), encoding: 'base64', size: stat.size });
+    if (buffer.includes(0)) return json(res, 415, { error: 'Binary files cannot be previewed as text' });
+    json(res, 200, { content: buffer.toString('utf8'), encoding: 'utf8', size: stat.size });
+  } catch (error) { json(res, 500, { error: errorMessage(error) }); }
 }
 
 async function serveSessionResources(res: ServerResponse, session: PiRpcSession) {
@@ -741,7 +756,7 @@ function previewToolArgs(args: unknown) {
 
 function serveFilePreview(res: ServerResponse, filePath: string) {
   if (!filePath) return json(res, 400, { error: 'path required' });
-  const mimes: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon' };
+  const mimes: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon' };
   const mime = mimes[path.extname(filePath).toLowerCase().slice(1)];
   if (!mime) return json(res, 415, { error: 'Not a previewable image' });
   try {

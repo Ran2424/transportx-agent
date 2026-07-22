@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
 
-export function AppShell({ header, sidebar, tabs, conversation, workspace, floats, overlays }: {
+export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, mapOpen, overlays }: {
   header: ReactNode;
   sidebar: ReactNode;
   tabs: ReactNode;
   conversation: ReactNode;
   workspace: ReactNode;
-  floats: ReactNode;
+  taskFloat: ReactNode;
+  mapPanel: ReactNode;
+  mapOpen: boolean;
   overlays: ReactNode;
 }) {
   return (
@@ -15,10 +17,13 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, float
       {header}
       <div className="agent-shell-body">
         {sidebar}
-        <section className="agent-main-column">
-          {tabs}
-          {conversation}
-          {floats}
+        <section className={`agent-main-column${mapOpen ? ' is-map-focused' : ''}`}>
+          <section className="map-focus-panel">{mapPanel}</section>
+          <section className="conversation-pane">
+            {tabs}
+            {conversation}
+          </section>
+          {taskFloat}
         </section>
         {workspace}
       </div>

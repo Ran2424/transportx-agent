@@ -37,7 +37,7 @@ export function CommandPalette({ open, onOpenChange, commands }: { open: boolean
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="命令" eyebrow="QUICK CONTROL" description="输入关键词筛选，使用 ↑ ↓ 导航、Enter 执行。" className="command-dialog">
+    <Dialog open={open} onOpenChange={onOpenChange} title="命令" className="command-dialog">
       <label className="command-search">
         <Icon name="search" />
         <input

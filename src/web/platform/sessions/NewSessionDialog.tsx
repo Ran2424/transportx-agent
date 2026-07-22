@@ -66,8 +66,6 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
       open={open}
       onOpenChange={onOpenChange}
       title="新建交通任务"
-      eyebrow="NEW AGENT RUN"
-      description="服务端会在受管 scenario 根目录下创建独立、带时间戳的任务目录。"
       className="new-session-dialog"
       footer={null}
     >
