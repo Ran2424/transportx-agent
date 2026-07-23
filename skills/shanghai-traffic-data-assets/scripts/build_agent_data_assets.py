@@ -26,6 +26,9 @@ DB_DIR = SKILL_DIR / "assets" / "databases"
 DB_NAMES = ("common", "road", "metro", "bus", "ridehail")
 PYTHON = sys.executable
 BUILT_AT = datetime.now().replace(microsecond=0).isoformat()
+ASSET_VERSION = "3.0.0"
+CANONICAL_CRS = "EPSG:4326"
+CANONICAL_TIME_ZONE = "Asia/Shanghai"
 EPSG32651_TO_WGS84 = Transformer.from_crs("EPSG:32651", "EPSG:4326", always_xy=True)
 WGS84_TO_EPSG32651 = Transformer.from_crs("EPSG:4326", "EPSG:32651", always_xy=True)
 
@@ -188,6 +191,46 @@ def gcj_geojson_to_wgs84(value: object) -> str | None:
     return json.dumps(geometry, ensure_ascii=False, separators=(",", ":"))
 
 
+def bd09_to_wgs84(lon: object, lat: object) -> tuple[float, float] | None:
+    if lon is None or lat is None:
+        return None
+    x = float(lon) - 0.0065
+    y = float(lat) - 0.006
+    z = math.sqrt(x * x + y * y) - 0.00002 * math.sin(y * math.pi * 3000.0 / 180.0)
+    theta = math.atan2(y, x) - 0.000003 * math.cos(x * math.pi * 3000.0 / 180.0)
+    return gcj02_to_wgs84(z * math.cos(theta), z * math.sin(theta))
+
+
+def normalized_lon(lon: object, lat: object, source_crs_id: object) -> float | None:
+    if lon is None or lat is None:
+        return None
+    crs_id = int(source_crs_id or 0)
+    if crs_id == 1:
+        point = gcj02_to_wgs84(lon, lat)
+        return point[0] if point else None
+    if crs_id == 2:
+        return float(lon)
+    if crs_id == 3:
+        point = bd09_to_wgs84(lon, lat)
+        return point[0] if point else None
+    return float(lon)
+
+
+def normalized_lat(lon: object, lat: object, source_crs_id: object) -> float | None:
+    if lon is None or lat is None:
+        return None
+    crs_id = int(source_crs_id or 0)
+    if crs_id == 1:
+        point = gcj02_to_wgs84(lon, lat)
+        return point[1] if point else None
+    if crs_id == 2:
+        return float(lat)
+    if crs_id == 3:
+        point = bd09_to_wgs84(lon, lat)
+        return point[1] if point else None
+    return float(lat)
+
+
 def point_geometry_distance_m(lon: object, lat: object, geometry_json: object) -> float | None:
     if lon is None or lat is None or geometry_json is None:
         return None
@@ -225,6 +268,8 @@ def register_functions(conn: sqlite3.Connection) -> None:
     conn.create_function("gcj_wgs_lon", 2, gcj_wgs_lon, deterministic=True)
     conn.create_function("gcj_wgs_lat", 2, gcj_wgs_lat, deterministic=True)
     conn.create_function("gcj_geojson_to_wgs84", 1, gcj_geojson_to_wgs84, deterministic=True)
+    conn.create_function("normalized_lon", 3, normalized_lon, deterministic=True)
+    conn.create_function("normalized_lat", 3, normalized_lat, deterministic=True)
     conn.create_function("point_geometry_distance_m", 3, point_geometry_distance_m, deterministic=True)
     conn.create_function("metro_line_number", 1, metro_line_number, deterministic=True)
     conn.create_function("pipe_contains", 2, pipe_contains, deterministic=True)
@@ -1402,180 +1447,540 @@ def build_ridehail() -> None:
     conn = new_database("ridehail")
     conn.executescript(
         """
-        CREATE TABLE std_ridehail_event (
-            event_key INTEGER PRIMARY KEY,
-            source_dataset_code TEXT NOT NULL,
-            source_row_id INTEGER NOT NULL,
-            order_hash BLOB NOT NULL,
-            event_type TEXT NOT NULL CHECK (event_type IN ('PICKUP', 'DROPOFF')),
-            event_ts INTEGER NOT NULL,
-            date_key INTEGER NOT NULL,
-            minute_key INTEGER NOT NULL,
-            longitude REAL NOT NULL,
-            latitude REAL NOT NULL,
-            source_crs_id INTEGER NOT NULL,
-            is_deleted INTEGER NOT NULL,
-            duplicate_rank INTEGER NOT NULL,
-            is_canonical INTEGER NOT NULL,
-            quality_code INTEGER NOT NULL
-        ) STRICT;
-
-        WITH combined AS (
-            SELECT 'RHD' AS source_dataset_code, _source_row_id AS source_row_id, 订单号 AS order_id,
-                   'PICKUP' AS event_type, norm_datetime(上车时间) AS event_at,
+        CREATE TEMP TABLE departure AS
+        SELECT order_id, pickup_at, longitude, latitude, source_crs_id, is_deleted, source_rows
+        FROM (
+            SELECT 订单号 AS order_id, norm_datetime(上车时间) AS pickup_at,
                    车辆经度 AS longitude, 车辆维度 AS latitude,
                    "坐标加密标识，1：GCJ-02 测绘局标准,2：WGS84 GPS标准,3：BD-09 百度标准 ,4：CGCS2000 北斗标准 ,0：其他" AS source_crs_id,
-                   "逻辑删除，0有效；1无效" AS is_deleted
+                   "逻辑删除，0有效；1无效" AS is_deleted,
+                   COUNT(*) OVER (PARTITION BY 订单号) AS source_rows,
+                   ROW_NUMBER() OVER (PARTITION BY 订单号 ORDER BY _source_row_id) AS row_rank
             FROM src.raw_xuhui_ridehail_departure
-            UNION ALL
-            SELECT 'RHA', _source_row_id AS source_row_id, 订单号, 'DROPOFF', norm_datetime(下车时间),
-                   到达经度, 到达维度,
-                   "坐标加密标识，1：GCJ-02 测绘局标准2：WGS84 GPS标准3：BD-09 百度标准4：CGCS2000 北斗标准0：其他",
-                   "逻辑删除，0有效；1无效"
+        ) WHERE row_rank = 1;
+        CREATE UNIQUE INDEX idx_departure_order ON departure(order_id);
+
+        CREATE TEMP TABLE arrival AS
+        SELECT order_id, dropoff_at, longitude, latitude, source_crs_id, is_deleted, source_rows
+        FROM (
+            SELECT 订单号 AS order_id, norm_datetime(下车时间) AS dropoff_at,
+                   到达经度 AS longitude, 到达维度 AS latitude,
+                   "坐标加密标识，1：GCJ-02 测绘局标准2：WGS84 GPS标准3：BD-09 百度标准4：CGCS2000 北斗标准0：其他" AS source_crs_id,
+                   "逻辑删除，0有效；1无效" AS is_deleted,
+                   COUNT(*) OVER (PARTITION BY 订单号) AS source_rows,
+                   ROW_NUMBER() OVER (PARTITION BY 订单号 ORDER BY _source_row_id) AS row_rank
             FROM src.raw_xuhui_ridehail_arrival
-        ), ranked AS (
-            SELECT *, ROW_NUMBER() OVER (
-                PARTITION BY source_dataset_code, order_id ORDER BY source_row_id
-            ) AS duplicate_rank
-            FROM combined
-        )
-        INSERT INTO std_ridehail_event
-        SELECT CASE WHEN source_dataset_code = 'RHD' THEN source_row_id ELSE 1000000000 + source_row_id END,
-               source_dataset_code, source_row_id, sha256_blob(order_id), event_type,
-               CAST(strftime('%s', event_at) AS INTEGER), date_key(event_at), minute_of_day(event_at),
-               longitude, latitude, source_crs_id, is_deleted, duplicate_rank,
-               CASE WHEN duplicate_rank = 1 THEN 1 ELSE 0 END,
-               CASE WHEN event_at IS NULL THEN 1
-                    WHEN longitude NOT BETWEEN 120 AND 123 OR latitude NOT BETWEEN 30 AND 32 THEN 2
-                    WHEN source_crs_id = 0 THEN 3 ELSE 0 END
-        FROM ranked;
+        ) WHERE row_rank = 1;
+        CREATE UNIQUE INDEX idx_arrival_order ON arrival(order_id);
 
-        CREATE VIEW fact_ridehail_event AS
-        SELECT event_key,
-               CASE source_dataset_code WHEN 'RHD' THEN 'RIDEHAIL_DEPARTURE' ELSE 'RIDEHAIL_ARRIVAL' END AS source_dataset,
-               source_row_id, HEX(order_hash) AS order_hash, event_type,
-               datetime(event_ts, 'unixepoch') AS event_at, date_key, minute_key, longitude, latitude,
-               CASE source_crs_id WHEN 1 THEN 'GCJ-02' WHEN 2 THEN 'WGS84' WHEN 3 THEN 'BD-09'
-                    WHEN 4 THEN 'CGCS2000' ELSE 'UNKNOWN' END AS source_crs,
-               duplicate_rank,
-               CASE quality_code WHEN 0 THEN 'OK' WHEN 3 THEN 'UNKNOWN_CRS'
-                    WHEN 1 THEN 'INVALID_TIME' ELSE 'INVALID_COORDINATE' END AS quality_status
-        FROM std_ridehail_event
-        WHERE is_deleted = 0 AND is_canonical = 1 AND quality_code IN (0, 3);
-
-        CREATE TABLE std_venue_trip (
-            trip_key INTEGER PRIMARY KEY,
-            venue_relation_id INTEGER NOT NULL CHECK (venue_relation_id IN (1, 2)),
-            source_dataset_code TEXT NOT NULL,
-            source_row_id INTEGER NOT NULL,
-            order_hash BLOB NOT NULL,
-            pickup_ts INTEGER NOT NULL,
-            pickup_date_key INTEGER NOT NULL,
-            pickup_minute_key INTEGER NOT NULL,
-            pickup_longitude REAL NOT NULL,
-            pickup_latitude REAL NOT NULL,
-            pickup_place TEXT,
-            dropoff_ts INTEGER NOT NULL,
-            dropoff_date_key INTEGER NOT NULL,
-            dropoff_minute_key INTEGER NOT NULL,
-            dropoff_longitude REAL NOT NULL,
-            dropoff_latitude REAL NOT NULL,
-            dropoff_place TEXT,
-            venue_event_date_key INTEGER NOT NULL,
-            venue_event_minute_key INTEGER NOT NULL,
-            trip_duration_seconds INTEGER,
-            is_deleted INTEGER NOT NULL,
-            duplicate_rank INTEGER NOT NULL,
-            is_canonical INTEGER NOT NULL,
-            quality_code INTEGER NOT NULL
-        ) STRICT;
-
-        WITH combined AS (
-            SELECT 2 AS venue_relation_id, 'PFV' AS source_dataset_code,
-                   _source_row_id AS source_row_id, 订单号 AS order_id, norm_datetime(上车时间) AS pickup_at,
+        CREATE TEMP TABLE payment_from_venue AS
+        SELECT order_id, pickup_at, pickup_longitude, pickup_latitude, pickup_place,
+               dropoff_at, dropoff_longitude, dropoff_latitude, dropoff_place,
+               is_deleted, source_rows
+        FROM (
+            SELECT 订单号 AS order_id, norm_datetime(上车时间) AS pickup_at,
                    上车经度 AS pickup_longitude, 上车维度 AS pickup_latitude, 上车点 AS pickup_place,
                    norm_datetime(下车时间) AS dropoff_at, 下车经度 AS dropoff_longitude,
                    下车纬度 AS dropoff_latitude, 下车点 AS dropoff_place,
-                   "逻辑删除，0有效；1无效" AS is_deleted
+                   "逻辑删除，0有效；1无效" AS is_deleted,
+                   COUNT(*) OVER (PARTITION BY 订单号) AS source_rows,
+                   ROW_NUMBER() OVER (PARTITION BY 订单号 ORDER BY _source_row_id) AS row_rank
             FROM src.raw_xuhui_payment_from_venue
-            UNION ALL
-            SELECT 1, 'PTV', _source_row_id AS source_row_id, 订单号, norm_datetime(上车时间),
-                   上车经度, 上车维度, 上车点, norm_datetime(下车时间), 下车经度, 下车纬度, 下车点,
-                   "逻辑删除，0有效；1无效"
+        ) WHERE row_rank = 1;
+        CREATE UNIQUE INDEX idx_payment_from_order ON payment_from_venue(order_id);
+
+        CREATE TEMP TABLE payment_to_venue AS
+        SELECT order_id, pickup_at, pickup_longitude, pickup_latitude, pickup_place,
+               dropoff_at, dropoff_longitude, dropoff_latitude, dropoff_place,
+               is_deleted, source_rows
+        FROM (
+            SELECT 订单号 AS order_id, norm_datetime(上车时间) AS pickup_at,
+                   上车经度 AS pickup_longitude, 上车维度 AS pickup_latitude, 上车点 AS pickup_place,
+                   norm_datetime(下车时间) AS dropoff_at, 下车经度 AS dropoff_longitude,
+                   下车纬度 AS dropoff_latitude, 下车点 AS dropoff_place,
+                   "逻辑删除，0有效；1无效" AS is_deleted,
+                   COUNT(*) OVER (PARTITION BY 订单号) AS source_rows,
+                   ROW_NUMBER() OVER (PARTITION BY 订单号 ORDER BY _source_row_id) AS row_rank
             FROM src.raw_xuhui_payment_to_venue
-        ), ranked AS (
-            SELECT *, ROW_NUMBER() OVER (
-                PARTITION BY source_dataset_code, order_id ORDER BY source_row_id
-            ) AS duplicate_rank
-            FROM combined
-        )
-        INSERT INTO std_venue_trip
-        SELECT CASE WHEN source_dataset_code = 'PFV' THEN source_row_id ELSE 1000000000 + source_row_id END,
-               venue_relation_id, source_dataset_code, source_row_id,
-               sha256_blob(order_id), CAST(strftime('%s', pickup_at) AS INTEGER), date_key(pickup_at), minute_of_day(pickup_at),
-               pickup_longitude, pickup_latitude, pickup_place,
-               CAST(strftime('%s', dropoff_at) AS INTEGER), date_key(dropoff_at), minute_of_day(dropoff_at),
-               dropoff_longitude, dropoff_latitude, dropoff_place,
-               CASE WHEN venue_relation_id = 2 THEN date_key(pickup_at) ELSE date_key(dropoff_at) END,
-               CASE WHEN venue_relation_id = 2 THEN minute_of_day(pickup_at) ELSE minute_of_day(dropoff_at) END,
-               CAST(strftime('%s', dropoff_at) - strftime('%s', pickup_at) AS INTEGER),
-               is_deleted, duplicate_rank, CASE WHEN duplicate_rank = 1 THEN 1 ELSE 0 END,
-               CASE WHEN pickup_at IS NULL OR dropoff_at IS NULL THEN 1
-                    WHEN pickup_longitude NOT BETWEEN 120 AND 123 OR pickup_latitude NOT BETWEEN 30 AND 32
-                      OR dropoff_longitude NOT BETWEEN 120 AND 123 OR dropoff_latitude NOT BETWEEN 30 AND 32
-                    THEN 2 ELSE 3 END
-        FROM ranked;
+        ) WHERE row_rank = 1;
+        CREATE UNIQUE INDEX idx_payment_to_order ON payment_to_venue(order_id);
+
+        CREATE TEMP TABLE all_orders AS
+        SELECT order_id FROM departure
+        UNION SELECT order_id FROM arrival
+        UNION SELECT order_id FROM payment_from_venue
+        UNION SELECT order_id FROM payment_to_venue;
+        CREATE UNIQUE INDEX idx_all_orders_order ON all_orders(order_id);
+
+        CREATE TEMP TABLE merged_trip_source AS
+        SELECT o.order_id,
+               COALESCE(f.pickup_at, t.pickup_at, d.pickup_at) AS pickup_at,
+               COALESCE(f.pickup_longitude, t.pickup_longitude, d.longitude) AS pickup_longitude,
+               COALESCE(f.pickup_latitude, t.pickup_latitude, d.latitude) AS pickup_latitude,
+               CASE
+                   WHEN f.order_id IS NOT NULL OR t.order_id IS NOT NULL
+                   THEN CASE WHEN d.order_id IS NOT NULL THEN COALESCE(d.source_crs_id, 0) ELSE 1 END
+                   ELSE COALESCE(d.source_crs_id, 0)
+               END AS pickup_crs_id,
+               CASE
+                   WHEN (f.order_id IS NOT NULL OR t.order_id IS NOT NULL) AND d.order_id IS NOT NULL
+                   THEN 'MATCHED_DEPARTURE'
+                   WHEN f.order_id IS NOT NULL OR t.order_id IS NOT NULL
+                   THEN 'VENUE_DATASET_MAJORITY'
+                   ELSE 'DIRECT_DEPARTURE'
+               END AS pickup_crs_evidence,
+               COALESCE(f.pickup_place, t.pickup_place) AS pickup_place,
+               COALESCE(f.dropoff_at, t.dropoff_at, a.dropoff_at) AS dropoff_at,
+               COALESCE(f.dropoff_longitude, t.dropoff_longitude, a.longitude) AS dropoff_longitude,
+               COALESCE(f.dropoff_latitude, t.dropoff_latitude, a.latitude) AS dropoff_latitude,
+               CASE
+                   WHEN f.order_id IS NOT NULL OR t.order_id IS NOT NULL
+                   THEN CASE WHEN a.order_id IS NOT NULL THEN COALESCE(a.source_crs_id, 0) ELSE 1 END
+                   ELSE COALESCE(a.source_crs_id, 0)
+               END AS dropoff_crs_id,
+               CASE
+                   WHEN (f.order_id IS NOT NULL OR t.order_id IS NOT NULL) AND a.order_id IS NOT NULL
+                   THEN 'MATCHED_ARRIVAL'
+                   WHEN f.order_id IS NOT NULL OR t.order_id IS NOT NULL
+                   THEN 'VENUE_DATASET_MAJORITY'
+                   ELSE 'DIRECT_ARRIVAL'
+               END AS dropoff_crs_evidence,
+               COALESCE(f.dropoff_place, t.dropoff_place) AS dropoff_place,
+               CASE WHEN f.order_id IS NOT NULL AND t.order_id IS NOT NULL THEN 'BOTH'
+                    WHEN f.order_id IS NOT NULL THEN 'FROM_VENUE'
+                    WHEN t.order_id IS NOT NULL THEN 'TO_VENUE'
+                    ELSE 'NONE' END AS venue_relation,
+               CASE WHEN f.order_id IS NOT NULL AND t.order_id IS NOT NULL
+                          AND (f.pickup_at IS NOT t.pickup_at
+                               OR f.dropoff_at IS NOT t.dropoff_at
+                               OR f.pickup_longitude IS NOT t.pickup_longitude
+                               OR f.pickup_latitude IS NOT t.pickup_latitude
+                               OR f.dropoff_longitude IS NOT t.dropoff_longitude
+                               OR f.dropoff_latitude IS NOT t.dropoff_latitude)
+                    THEN 1 ELSE 0 END AS venue_source_conflict,
+               RTRIM(
+                   CASE WHEN d.order_id IS NOT NULL THEN 'RHD|' ELSE '' END ||
+                   CASE WHEN a.order_id IS NOT NULL THEN 'RHA|' ELSE '' END ||
+                   CASE WHEN f.order_id IS NOT NULL THEN 'PFV|' ELSE '' END ||
+                   CASE WHEN t.order_id IS NOT NULL THEN 'PTV|' ELSE '' END,
+                   '|'
+               ) AS source_coverage,
+               COALESCE(d.source_rows - 1, 0) + COALESCE(a.source_rows - 1, 0) +
+               COALESCE(f.source_rows - 1, 0) + COALESCE(t.source_rows - 1, 0) AS source_duplicate_count,
+               CASE WHEN COALESCE(d.is_deleted, 1) = 0 OR COALESCE(a.is_deleted, 1) = 0
+                          OR COALESCE(f.is_deleted, 1) = 0 OR COALESCE(t.is_deleted, 1) = 0
+                    THEN 0 ELSE 1 END AS is_deleted
+        FROM all_orders o
+        LEFT JOIN departure d ON d.order_id = o.order_id
+        LEFT JOIN arrival a ON a.order_id = o.order_id
+        LEFT JOIN payment_from_venue f ON f.order_id = o.order_id
+        LEFT JOIN payment_to_venue t ON t.order_id = o.order_id;
+
+        CREATE TABLE std_trip (
+            trip_key INTEGER PRIMARY KEY,
+            order_hash BLOB NOT NULL UNIQUE,
+            source_coverage TEXT NOT NULL,
+            venue_relation TEXT NOT NULL CHECK (venue_relation IN ('NONE','TO_VENUE','FROM_VENUE','BOTH')),
+            venue_source_conflict INTEGER NOT NULL CHECK (venue_source_conflict IN (0, 1)),
+            pickup_at TEXT,
+            pickup_date_key INTEGER,
+            pickup_minute_key INTEGER,
+            pickup_longitude REAL,
+            pickup_latitude REAL,
+            pickup_crs TEXT NOT NULL CHECK (pickup_crs IN ('EPSG:4326','UNKNOWN')),
+            pickup_coordinate_status TEXT NOT NULL,
+            pickup_place TEXT,
+            dropoff_at TEXT,
+            dropoff_date_key INTEGER,
+            dropoff_minute_key INTEGER,
+            dropoff_longitude REAL,
+            dropoff_latitude REAL,
+            dropoff_crs TEXT NOT NULL CHECK (dropoff_crs IN ('EPSG:4326','UNKNOWN')),
+            dropoff_coordinate_status TEXT NOT NULL,
+            dropoff_place TEXT,
+            trip_duration_seconds INTEGER,
+            source_duplicate_count INTEGER NOT NULL,
+            is_deleted INTEGER NOT NULL,
+            quality_status TEXT NOT NULL
+        ) STRICT;
+
+        INSERT INTO std_trip
+        SELECT ROW_NUMBER() OVER (ORDER BY order_id), sha256_blob(order_id), source_coverage, venue_relation,
+               venue_source_conflict,
+               pickup_at, date_key(pickup_at), minute_of_day(pickup_at),
+               normalized_lon(pickup_longitude, pickup_latitude, pickup_crs_id),
+               normalized_lat(pickup_longitude, pickup_latitude, pickup_crs_id),
+               CASE WHEN pickup_longitude IS NOT NULL AND pickup_crs_id IN (1, 2, 3)
+                    THEN 'EPSG:4326' ELSE 'UNKNOWN' END,
+               CASE WHEN pickup_longitude IS NULL THEN 'MISSING_COORDINATE'
+                    WHEN pickup_crs_evidence = 'VENUE_DATASET_MAJORITY'
+                    THEN 'ASSUMED_GCJ02_FROM_DATASET_MAJORITY'
+                    WHEN pickup_crs_evidence = 'MATCHED_DEPARTURE' AND pickup_crs_id = 1
+                    THEN 'INFERRED_GCJ02_FROM_MATCHED_DEPARTURE'
+                    WHEN pickup_crs_evidence = 'MATCHED_DEPARTURE' AND pickup_crs_id = 2
+                    THEN 'INFERRED_WGS84_FROM_MATCHED_DEPARTURE'
+                    WHEN pickup_crs_evidence = 'MATCHED_DEPARTURE' AND pickup_crs_id = 3
+                    THEN 'INFERRED_BD09_FROM_MATCHED_DEPARTURE'
+                    WHEN pickup_crs_evidence = 'MATCHED_DEPARTURE'
+                    THEN 'UNKNOWN_CRS_FROM_MATCHED_DEPARTURE'
+                    WHEN pickup_crs_id = 1 THEN 'CONVERTED_FROM_GCJ02'
+                    WHEN pickup_crs_id = 2 THEN 'SOURCE_WGS84'
+                    WHEN pickup_crs_id = 3 THEN 'CONVERTED_FROM_BD09'
+                    WHEN pickup_crs_id = 4 THEN 'CGCS2000_UNRESOLVED'
+                    ELSE 'UNKNOWN_CRS_RETAINED' END,
+               pickup_place,
+               dropoff_at, date_key(dropoff_at), minute_of_day(dropoff_at),
+               normalized_lon(dropoff_longitude, dropoff_latitude, dropoff_crs_id),
+               normalized_lat(dropoff_longitude, dropoff_latitude, dropoff_crs_id),
+               CASE WHEN dropoff_longitude IS NOT NULL AND dropoff_crs_id IN (1, 2, 3)
+                    THEN 'EPSG:4326' ELSE 'UNKNOWN' END,
+               CASE WHEN dropoff_longitude IS NULL THEN 'MISSING_COORDINATE'
+                    WHEN dropoff_crs_evidence = 'VENUE_DATASET_MAJORITY'
+                    THEN 'ASSUMED_GCJ02_FROM_DATASET_MAJORITY'
+                    WHEN dropoff_crs_evidence = 'MATCHED_ARRIVAL' AND dropoff_crs_id = 1
+                    THEN 'INFERRED_GCJ02_FROM_MATCHED_ARRIVAL'
+                    WHEN dropoff_crs_evidence = 'MATCHED_ARRIVAL' AND dropoff_crs_id = 2
+                    THEN 'INFERRED_WGS84_FROM_MATCHED_ARRIVAL'
+                    WHEN dropoff_crs_evidence = 'MATCHED_ARRIVAL' AND dropoff_crs_id = 3
+                    THEN 'INFERRED_BD09_FROM_MATCHED_ARRIVAL'
+                    WHEN dropoff_crs_evidence = 'MATCHED_ARRIVAL'
+                    THEN 'UNKNOWN_CRS_FROM_MATCHED_ARRIVAL'
+                    WHEN dropoff_crs_id = 1 THEN 'CONVERTED_FROM_GCJ02'
+                    WHEN dropoff_crs_id = 2 THEN 'SOURCE_WGS84'
+                    WHEN dropoff_crs_id = 3 THEN 'CONVERTED_FROM_BD09'
+                    WHEN dropoff_crs_id = 4 THEN 'CGCS2000_UNRESOLVED'
+                    ELSE 'UNKNOWN_CRS_RETAINED' END,
+               dropoff_place,
+               CASE WHEN pickup_at IS NOT NULL AND dropoff_at IS NOT NULL
+                    THEN CAST(strftime('%s', dropoff_at) - strftime('%s', pickup_at) AS INTEGER) END,
+               source_duplicate_count, is_deleted,
+               CASE WHEN pickup_at IS NULL AND dropoff_at IS NULL THEN 'INVALID_TIME'
+                    WHEN (pickup_longitude IS NOT NULL AND
+                          (pickup_longitude NOT BETWEEN 120 AND 123 OR pickup_latitude NOT BETWEEN 30 AND 32))
+                      OR (dropoff_longitude IS NOT NULL AND
+                          (dropoff_longitude NOT BETWEEN 120 AND 123 OR dropoff_latitude NOT BETWEEN 30 AND 32))
+                    THEN 'INVALID_COORDINATE'
+                    WHEN (pickup_longitude IS NOT NULL AND pickup_crs_id NOT IN (1, 2, 3))
+                      OR (dropoff_longitude IS NOT NULL AND dropoff_crs_id NOT IN (1, 2, 3))
+                    THEN 'UNKNOWN_CRS'
+                    WHEN venue_source_conflict = 1 THEN 'SOURCE_CONFLICT'
+                    WHEN pickup_at IS NULL OR dropoff_at IS NULL THEN 'PARTIAL_TRIP'
+                    ELSE 'OK' END
+        FROM merged_trip_source;
+
+        CREATE VIEW fact_trip AS
+        SELECT trip_key, HEX(order_hash) AS order_hash, source_coverage, venue_relation,
+               venue_source_conflict,
+               pickup_at, pickup_date_key, pickup_minute_key, pickup_longitude, pickup_latitude,
+               pickup_crs, pickup_coordinate_status, pickup_place,
+               dropoff_at, dropoff_date_key, dropoff_minute_key, dropoff_longitude, dropoff_latitude,
+               dropoff_crs, dropoff_coordinate_status, dropoff_place,
+               trip_duration_seconds, source_duplicate_count, quality_status
+        FROM std_trip
+        WHERE is_deleted = 0 AND quality_status NOT IN ('INVALID_TIME', 'INVALID_COORDINATE');
+
+        CREATE VIEW fact_ridehail_event AS
+        SELECT trip_key * 2 - 1 AS event_key, trip_key, HEX(order_hash) AS order_hash, source_coverage,
+               'PICKUP' AS event_type, pickup_at AS event_at, pickup_date_key AS date_key,
+               pickup_minute_key AS minute_key, pickup_longitude AS longitude, pickup_latitude AS latitude,
+               pickup_crs AS crs, pickup_coordinate_status AS coordinate_status,
+               CASE WHEN source_coverage LIKE '%RHD%' THEN 'RIDEHAIL_SOURCE'
+                    ELSE 'VENUE_ENRICHMENT' END AS endpoint_source,
+               CASE WHEN pickup_crs = 'UNKNOWN' THEN 'UNKNOWN_CRS' ELSE 'OK' END AS endpoint_quality_status,
+               venue_relation, quality_status AS trip_quality_status
+        FROM std_trip
+        WHERE is_deleted = 0 AND pickup_at IS NOT NULL
+          AND (pickup_longitude IS NULL OR
+               (pickup_longitude BETWEEN 120 AND 123 AND pickup_latitude BETWEEN 30 AND 32))
+        UNION ALL
+        SELECT trip_key * 2, trip_key, HEX(order_hash), source_coverage,
+               'DROPOFF', dropoff_at, dropoff_date_key, dropoff_minute_key,
+               dropoff_longitude, dropoff_latitude, dropoff_crs, dropoff_coordinate_status,
+               CASE WHEN source_coverage LIKE '%RHA%' THEN 'RIDEHAIL_SOURCE'
+                    ELSE 'VENUE_ENRICHMENT' END,
+               CASE WHEN dropoff_crs = 'UNKNOWN' THEN 'UNKNOWN_CRS' ELSE 'OK' END,
+               venue_relation, quality_status
+        FROM std_trip
+        WHERE is_deleted = 0 AND dropoff_at IS NOT NULL
+          AND (dropoff_longitude IS NULL OR
+               (dropoff_longitude BETWEEN 120 AND 123 AND dropoff_latitude BETWEEN 30 AND 32));
 
         CREATE VIEW fact_venue_trip AS
-        SELECT trip_key,
-               CASE venue_relation_id WHEN 1 THEN 'TO_VENUE' ELSE 'FROM_VENUE' END AS venue_relation,
-               CASE source_dataset_code WHEN 'PFV' THEN 'PAYMENT_FROM_VENUE' ELSE 'PAYMENT_TO_VENUE' END AS source_dataset,
-               source_row_id, HEX(order_hash) AS order_hash,
-               datetime(pickup_ts, 'unixepoch') AS pickup_at, pickup_date_key, pickup_minute_key,
-               pickup_longitude, pickup_latitude, pickup_place,
-               datetime(dropoff_ts, 'unixepoch') AS dropoff_at, dropoff_date_key, dropoff_minute_key,
-               dropoff_longitude, dropoff_latitude, dropoff_place,
-               datetime(CASE venue_relation_id WHEN 2 THEN pickup_ts ELSE dropoff_ts END, 'unixepoch') AS venue_event_at,
-               venue_event_date_key, venue_event_minute_key, trip_duration_seconds,
-               'UNKNOWN' AS source_crs, duplicate_rank, 'UNKNOWN_CRS' AS quality_status
-        FROM std_venue_trip
-        WHERE is_deleted = 0 AND is_canonical = 1 AND quality_code IN (0, 3);
+        SELECT * FROM fact_trip WHERE venue_relation <> 'NONE';
+
+        CREATE VIEW fact_venue_event AS
+        SELECT trip_key, order_hash, 'FROM_VENUE' AS venue_relation,
+               pickup_at AS venue_event_at, pickup_date_key AS date_key, pickup_minute_key AS minute_key,
+               pickup_longitude AS longitude, pickup_latitude AS latitude, pickup_crs AS crs,
+               pickup_coordinate_status AS coordinate_status, trip_duration_seconds
+        FROM fact_trip
+        WHERE venue_relation IN ('FROM_VENUE', 'BOTH') AND pickup_at IS NOT NULL
+        UNION ALL
+        SELECT trip_key, order_hash, 'TO_VENUE', dropoff_at, dropoff_date_key, dropoff_minute_key,
+               dropoff_longitude, dropoff_latitude, dropoff_crs, dropoff_coordinate_status,
+               trip_duration_seconds
+        FROM fact_trip
+        WHERE venue_relation IN ('TO_VENUE', 'BOTH') AND dropoff_at IS NOT NULL;
 
         CREATE TABLE mart_ridehail_event_15m (
             date_key INTEGER NOT NULL,
             slot_15_start INTEGER NOT NULL,
             event_type TEXT NOT NULL,
-            source_crs TEXT NOT NULL,
             event_count INTEGER NOT NULL,
-            PRIMARY KEY (date_key, slot_15_start, event_type, source_crs)
+            source_event_count INTEGER NOT NULL,
+            venue_enriched_event_count INTEGER NOT NULL,
+            wgs84_event_count INTEGER NOT NULL,
+            unknown_crs_event_count INTEGER NOT NULL,
+            PRIMARY KEY (date_key, slot_15_start, event_type)
         ) STRICT;
-
         INSERT INTO mart_ridehail_event_15m
-        SELECT date_key, minute_key - minute_key % 15, event_type, source_crs, COUNT(*)
+        SELECT date_key, minute_key - minute_key % 15, event_type, COUNT(*),
+               SUM(endpoint_source = 'RIDEHAIL_SOURCE'),
+               SUM(endpoint_source = 'VENUE_ENRICHMENT'),
+               SUM(crs = 'EPSG:4326'), SUM(crs = 'UNKNOWN')
         FROM fact_ridehail_event
-        GROUP BY date_key, minute_key - minute_key % 15, event_type, source_crs;
+        GROUP BY date_key, minute_key - minute_key % 15, event_type;
+
+        CREATE TABLE mart_ridehail_event_hour (
+            date_key INTEGER NOT NULL,
+            hour INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            event_count INTEGER NOT NULL,
+            source_event_count INTEGER NOT NULL,
+            venue_enriched_event_count INTEGER NOT NULL,
+            wgs84_event_count INTEGER NOT NULL,
+            unknown_crs_event_count INTEGER NOT NULL,
+            PRIMARY KEY (date_key, hour, event_type)
+        ) STRICT;
+        INSERT INTO mart_ridehail_event_hour
+        SELECT date_key, CAST(minute_key / 60 AS INTEGER), event_type, COUNT(*),
+               SUM(endpoint_source = 'RIDEHAIL_SOURCE'),
+               SUM(endpoint_source = 'VENUE_ENRICHMENT'),
+               SUM(crs = 'EPSG:4326'), SUM(crs = 'UNKNOWN')
+        FROM fact_ridehail_event
+        GROUP BY date_key, CAST(minute_key / 60 AS INTEGER), event_type;
+
+        CREATE TABLE mart_ridehail_event_day (
+            date_key INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            event_count INTEGER NOT NULL,
+            source_event_count INTEGER NOT NULL,
+            venue_enriched_event_count INTEGER NOT NULL,
+            wgs84_event_count INTEGER NOT NULL,
+            unknown_crs_event_count INTEGER NOT NULL,
+            PRIMARY KEY (date_key, event_type)
+        ) STRICT;
+        INSERT INTO mart_ridehail_event_day
+        SELECT date_key, event_type, COUNT(*),
+               SUM(endpoint_source = 'RIDEHAIL_SOURCE'),
+               SUM(endpoint_source = 'VENUE_ENRICHMENT'),
+               SUM(crs = 'EPSG:4326'), SUM(crs = 'UNKNOWN')
+        FROM fact_ridehail_event GROUP BY date_key, event_type;
 
         CREATE TABLE mart_venue_trip_15m (
             date_key INTEGER NOT NULL,
             slot_15_start INTEGER NOT NULL,
             venue_relation TEXT NOT NULL,
             trip_count INTEGER NOT NULL,
+            wgs84_trip_count INTEGER NOT NULL,
             avg_trip_duration_seconds REAL,
             PRIMARY KEY (date_key, slot_15_start, venue_relation)
         ) STRICT;
-
         INSERT INTO mart_venue_trip_15m
-        SELECT venue_event_date_key, venue_event_minute_key - venue_event_minute_key % 15,
-               venue_relation, COUNT(*), AVG(trip_duration_seconds)
-        FROM fact_venue_trip
-        GROUP BY venue_event_date_key, venue_event_minute_key - venue_event_minute_key % 15, venue_relation;
+        SELECT date_key, minute_key - minute_key % 15, venue_relation, COUNT(*),
+               SUM(crs = 'EPSG:4326'), AVG(trip_duration_seconds)
+        FROM fact_venue_event
+        GROUP BY date_key, minute_key - minute_key % 15, venue_relation;
 
-        CREATE INDEX idx_ridehail_time ON std_ridehail_event(date_key, minute_key, event_type);
-        CREATE INDEX idx_venue_trip_time ON std_venue_trip(venue_event_date_key, venue_event_minute_key, venue_relation_id);
+        CREATE TABLE mart_venue_trip_hour (
+            date_key INTEGER NOT NULL,
+            hour INTEGER NOT NULL,
+            venue_relation TEXT NOT NULL,
+            trip_count INTEGER NOT NULL,
+            wgs84_trip_count INTEGER NOT NULL,
+            avg_trip_duration_seconds REAL,
+            PRIMARY KEY (date_key, hour, venue_relation)
+        ) STRICT;
+        INSERT INTO mart_venue_trip_hour
+        SELECT date_key, CAST(minute_key / 60 AS INTEGER), venue_relation, COUNT(*),
+               SUM(crs = 'EPSG:4326'), AVG(trip_duration_seconds)
+        FROM fact_venue_event
+        GROUP BY date_key, CAST(minute_key / 60 AS INTEGER), venue_relation;
+
+        CREATE TABLE mart_venue_trip_day (
+            date_key INTEGER NOT NULL,
+            venue_relation TEXT NOT NULL,
+            trip_count INTEGER NOT NULL,
+            wgs84_trip_count INTEGER NOT NULL,
+            avg_trip_duration_seconds REAL,
+            PRIMARY KEY (date_key, venue_relation)
+        ) STRICT;
+        INSERT INTO mart_venue_trip_day
+        SELECT date_key, venue_relation, COUNT(*), SUM(crs = 'EPSG:4326'),
+               AVG(trip_duration_seconds)
+        FROM fact_venue_event
+        GROUP BY date_key, venue_relation;
+
+        CREATE INDEX idx_trip_pickup_time ON std_trip(pickup_date_key, pickup_minute_key);
+        CREATE INDEX idx_trip_dropoff_time ON std_trip(dropoff_date_key, dropoff_minute_key);
+        CREATE INDEX idx_trip_venue ON std_trip(venue_relation);
         """
     )
     finish_database(conn)
 
+
+def standardize_published_assets() -> None:
+    """Keep one published CRS: WGS84 for known coordinates, UNKNOWN otherwise."""
+
+    common = sqlite3.connect(DB_DIR / "common.sqlite")
+    common.executescript(
+        """
+        UPDATE dim_venue
+        SET source_crs = 'EPSG:4326'
+        WHERE venue_key = 'venue_shanghai_stadium';
+
+        UPDATE dim_geo_feature
+        SET normalized_crs = 'EPSG:4326',
+            coordinate_quality = 'USER_CONFIRMED_WGS84'
+        WHERE geo_key = 'VENUE:venue_shanghai_stadium';
+
+        UPDATE dim_geo_feature
+        SET normalized_crs = 'UNKNOWN'
+        WHERE normalized_crs IS NULL;
+
+        DELETE FROM dim_crs WHERE crs_code NOT IN ('EPSG:4326', 'UNKNOWN');
+        UPDATE dim_crs
+        SET governance_note = '发布资产唯一标准坐标系；全部已确认坐标统一为WGS84经纬度。'
+        WHERE crs_code = 'EPSG:4326';
+        UPDATE dim_crs
+        SET governance_note = '无法确认来源坐标系的原值；保留但不得用于距离、缓冲、最近邻或跨域空间连接。'
+        WHERE crs_code = 'UNKNOWN';
+
+        ALTER TABLE dim_venue RENAME COLUMN source_crs TO crs;
+        ALTER TABLE dim_weather_grid RENAME COLUMN source_crs TO crs;
+
+        ALTER TABLE dim_geo_feature DROP COLUMN source_x;
+        ALTER TABLE dim_geo_feature DROP COLUMN source_y;
+        ALTER TABLE dim_geo_feature DROP COLUMN source_crs;
+        ALTER TABLE dim_geo_feature RENAME COLUMN normalized_crs TO crs;
+
+        CREATE TABLE mart_weather_grid_day (
+            grid_key INTEGER NOT NULL,
+            date_key INTEGER NOT NULL,
+            observed_hours INTEGER NOT NULL,
+            observation_count INTEGER NOT NULL,
+            avg_temperature_c REAL,
+            min_temperature_c REAL,
+            max_temperature_c REAL,
+            max_rainfall_1h_mm REAL,
+            PRIMARY KEY (grid_key, date_key)
+        ) STRICT;
+
+        INSERT INTO mart_weather_grid_day
+        SELECT grid_key, date_key, COUNT(DISTINCT CAST(minute_key / 60 AS INTEGER)), COUNT(*),
+               AVG(temperature_c), MIN(temperature_c), MAX(temperature_c), MAX(rainfall_1h_mm)
+        FROM fact_weather_observation
+        GROUP BY grid_key, date_key;
+        """
+    )
+    common.commit()
+    common.close()
+
+    bus = sqlite3.connect(DB_DIR / "bus.sqlite")
+    bus.executescript(
+        """
+        ALTER TABLE dim_bus_route_direction DROP COLUMN source_crs;
+        ALTER TABLE dim_bus_route_direction DROP COLUMN source_geometry_json;
+        ALTER TABLE dim_bus_route_direction RENAME COLUMN normalized_crs TO crs;
+
+        ALTER TABLE dim_bus_stop DROP COLUMN source_x;
+        ALTER TABLE dim_bus_stop DROP COLUMN source_y;
+        ALTER TABLE dim_bus_stop DROP COLUMN source_crs;
+        ALTER TABLE dim_bus_stop RENAME COLUMN normalized_crs TO crs;
+
+        ALTER TABLE bridge_bus_line_stop DROP COLUMN source_longitude;
+        ALTER TABLE bridge_bus_line_stop DROP COLUMN source_latitude;
+        ALTER TABLE bridge_bus_line_stop DROP COLUMN source_crs;
+        ALTER TABLE bridge_bus_line_stop RENAME COLUMN normalized_crs TO crs;
+
+        CREATE TABLE mart_bus_line_hour (
+            date_key INTEGER NOT NULL,
+            hour INTEGER NOT NULL,
+            line_key TEXT NOT NULL,
+            observed_slots INTEGER NOT NULL,
+            total_transactions INTEGER NOT NULL,
+            bus_boarding_transactions INTEGER NOT NULL,
+            transit_card_transactions INTEGER NOT NULL,
+            qr_transactions INTEGER NOT NULL,
+            PRIMARY KEY (date_key, hour, line_key)
+        ) STRICT;
+
+        INSERT INTO mart_bus_line_hour
+        SELECT date_key, CAST(minute_key / 60 AS INTEGER), line_key, COUNT(*),
+               SUM(total_transactions), SUM(bus_boarding_transactions),
+               SUM(transit_card_transactions), SUM(qr_transactions)
+        FROM fact_bus_line_30m
+        GROUP BY date_key, CAST(minute_key / 60 AS INTEGER), line_key;
+        """
+    )
+    bus.commit()
+    bus.close()
+
+    metro = sqlite3.connect(DB_DIR / "metro.sqlite")
+    metro.executescript(
+        """
+        UPDATE dim_metro_station
+        SET normalized_crs = 'UNKNOWN'
+        WHERE normalized_crs IS NULL;
+
+        ALTER TABLE dim_metro_route_direction DROP COLUMN source_crs;
+        ALTER TABLE dim_metro_route_direction DROP COLUMN source_geometry_json;
+        ALTER TABLE dim_metro_route_direction RENAME COLUMN normalized_crs TO crs;
+
+        ALTER TABLE dim_metro_line DROP COLUMN source_crs;
+        ALTER TABLE dim_metro_line RENAME COLUMN normalized_crs TO crs;
+
+        ALTER TABLE dim_metro_station DROP COLUMN source_x;
+        ALTER TABLE dim_metro_station DROP COLUMN source_y;
+        ALTER TABLE dim_metro_station DROP COLUMN source_crs;
+        ALTER TABLE dim_metro_station RENAME COLUMN normalized_crs TO crs;
+
+        ALTER TABLE bridge_metro_route_station DROP COLUMN source_longitude;
+        ALTER TABLE bridge_metro_route_station DROP COLUMN source_latitude;
+        ALTER TABLE bridge_metro_route_station DROP COLUMN source_crs;
+        ALTER TABLE bridge_metro_route_station RENAME COLUMN normalized_crs TO crs;
+
+        ALTER TABLE bridge_metro_line_station
+        ADD COLUMN crs TEXT NOT NULL DEFAULT 'EPSG:4326';
+        """
+    )
+    metro.commit()
+    metro.close()
+
+    road = sqlite3.connect(DB_DIR / "road.sqlite")
+    road.executescript(
+        """
+        CREATE TABLE mart_road_segment_day (
+            segment_key INTEGER NOT NULL,
+            date_key INTEGER NOT NULL,
+            observed_hours INTEGER NOT NULL,
+            free_seconds INTEGER NOT NULL,
+            crowd_seconds INTEGER NOT NULL,
+            jam_seconds INTEGER NOT NULL,
+            observed_seconds INTEGER NOT NULL,
+            state_event_count INTEGER NOT NULL,
+            PRIMARY KEY (segment_key, date_key)
+        ) STRICT;
+
+        INSERT INTO mart_road_segment_day
+        SELECT segment_key, date_key, COUNT(*), SUM(free_seconds), SUM(crowd_seconds),
+               SUM(jam_seconds), SUM(observed_seconds), SUM(state_event_count)
+        FROM mart_road_segment_hour
+        GROUP BY segment_key, date_key;
+        """
+    )
+    road.commit()
+    road.close()
 
 TABLE_DESCRIPTIONS = {
     "dim_date": "统一日期维表，包含星期、周末和活动日占位字段。",
@@ -1588,10 +1993,12 @@ TABLE_DESCRIPTIONS = {
     "std_weather_observation": "标准化气象网格观测。",
     "fact_weather_observation": "通过质量规则的气象观测事实视图。",
     "mart_weather_grid_hour": "气象网格小时指标集市。",
+    "mart_weather_grid_day": "气象网格日指标集市。",
     "dim_road_segment": "路网发布段维表。",
     "std_road_state_event": "标准化道路状态变化事件。",
     "fact_road_state_event": "有效道路状态事件事实视图。",
     "mart_road_segment_hour": "按小时精确切分的道路状态持续时间。",
+    "mart_road_segment_day": "道路发布段日状态持续时间。",
     "dim_metro_line": "20条统一轨交线路及高德方向几何转换后的WGS84线路。",
     "dim_metro_route_direction": "46条高德方向或支线路径及WGS84几何。",
     "dim_metro_station": "轨交物理站点维表及统一WGS84点位。",
@@ -1603,17 +2010,23 @@ TABLE_DESCRIPTIONS = {
     "mart_metro_station_day": "轨交站点日客流与高峰小时。",
     "dim_bus_line": "官方公交线路维表。",
     "dim_bus_route_direction": "公交上下行方向及高德几何转换后的WGS84线路。",
-    "dim_bus_stop": "官方和高德公交站点的统一WGS84维表，并保留源坐标。",
+    "dim_bus_stop": "官方和高德公交站点的统一WGS84维表。",
     "bridge_bus_line_stop": "公交线路、方向与站点序列、线路上下文坐标及点线距离。",
     "std_bus_line_30m": "标准化公交线路半小时客流。",
     "fact_bus_line_30m": "线路映射成功的公交客流事实视图。",
+    "mart_bus_line_hour": "公交线路小时客流指标集市。",
     "mart_bus_line_day": "公交线路日客流与高峰时段。",
-    "std_ridehail_event": "脱敏后的网约车上车、下车事件标准层。",
-    "fact_ridehail_event": "去重且有效的网约车事件事实视图。",
-    "std_venue_trip": "与上海体育场相关的脱敏支付订单标准层。",
-    "fact_venue_trip": "去重且有效的场馆到离场订单事实视图。",
-    "mart_ridehail_event_15m": "网约车上下车事件15分钟指标集市。",
-    "mart_venue_trip_15m": "场馆到离场订单15分钟指标集市。",
+    "std_trip": "四类订单源合并后的单一脱敏订单标准层；每个订单只存一行。",
+    "fact_trip": "有效订单事实视图；同时包含上下车端点和场馆关系。",
+    "fact_ridehail_event": "由统一订单拆分得到的上下车端点视图；endpoint_source区分原始网约车事件与场馆订单补齐端点。",
+    "fact_venue_trip": "由统一订单筛选得到的场馆关联订单事实视图。",
+    "fact_venue_event": "由统一订单派生的场馆到场、离场事件事实视图。",
+    "mart_ridehail_event_15m": "统一订单上下车端点15分钟集市，分列原始网约车事件与场馆补齐端点。",
+    "mart_ridehail_event_hour": "统一订单上下车端点小时集市，分列原始网约车事件与场馆补齐端点。",
+    "mart_ridehail_event_day": "统一订单上下车端点日集市，分列原始网约车事件与场馆补齐端点。",
+    "mart_venue_trip_15m": "场馆到场/离场事件15分钟指标集市。",
+    "mart_venue_trip_hour": "场馆到场/离场事件小时指标集市。",
+    "mart_venue_trip_day": "场馆到场/离场事件日指标集市。",
 }
 
 
@@ -1643,10 +2056,10 @@ SOURCE_TARGETS = {
     "raw_xuhui_bus_passenger_flow": ("bus", "std_bus_line_30m"),
     "raw_xuhui_bus_stop_info": ("bus", "dim_bus_stop"),
     "raw_xuhui_metro_passenger_flow": ("metro", "std_metro_station_hour"),
-    "raw_xuhui_payment_from_venue": ("ridehail", "std_venue_trip"),
-    "raw_xuhui_payment_to_venue": ("ridehail", "std_venue_trip"),
-    "raw_xuhui_ridehail_arrival": ("ridehail", "std_ridehail_event"),
-    "raw_xuhui_ridehail_departure": ("ridehail", "std_ridehail_event"),
+    "raw_xuhui_payment_from_venue": ("ridehail", "std_trip"),
+    "raw_xuhui_payment_to_venue": ("ridehail", "std_trip"),
+    "raw_xuhui_ridehail_arrival": ("ridehail", "std_trip"),
+    "raw_xuhui_ridehail_departure": ("ridehail", "std_trip"),
     "raw_xuhui_road_segment_state": ("road", "std_road_state_event"),
     "raw_xuhui_road_source_sql": ("catalog", "meta_source_extract_sql"),
     "raw_xuhui_weather_grid": ("common", "std_weather_observation"),
@@ -1752,6 +2165,24 @@ def build_catalog() -> None:
             source_object TEXT NOT NULL,
             sql_expression TEXT NOT NULL
         ) STRICT;
+        CREATE TABLE meta_analysis_guide (
+            domain_code TEXT PRIMARY KEY,
+            recommended_object TEXT NOT NULL,
+            grain TEXT NOT NULL,
+            min_date_key INTEGER,
+            max_date_key INTEGER,
+            entity_coverage TEXT NOT NULL,
+            spatial_scope TEXT NOT NULL,
+            crs_policy TEXT NOT NULL,
+            usage_note TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE meta_order_source_relation (
+            relation_code TEXT PRIMARY KEY,
+            order_count INTEGER NOT NULL,
+            denominator_count INTEGER,
+            ratio REAL,
+            interpretation_cn TEXT NOT NULL
+        ) STRICT;
         CREATE TABLE meta_quality_rule (
             rule_code TEXT PRIMARY KEY,
             domain_code TEXT NOT NULL,
@@ -1781,8 +2212,10 @@ def build_catalog() -> None:
     conn.executemany(
         "INSERT INTO meta_build VALUES (?, ?)",
         (
-            ("asset_version", "2.0.0"),
+            ("asset_version", ASSET_VERSION),
             ("built_at", BUILT_AT),
+            ("canonical_crs", CANONICAL_CRS),
+            ("canonical_time_zone", CANONICAL_TIME_ZONE),
             ("source_database", str(SOURCE_DB.relative_to(ROOT)) if SOURCE_DB.is_relative_to(ROOT) else str(SOURCE_DB)),
             ("source_database_sha256", file_sha256(SOURCE_DB)),
             ("source_database_size_bytes", str(SOURCE_DB.stat().st_size)),
@@ -1796,7 +2229,7 @@ def build_catalog() -> None:
         "road": ("路网", "道路发布段与状态持续时间"),
         "metro": ("轨交", "统一线路、高德方向线路、WGS84站点、点线关系与小时客流"),
         "bus": ("公交", "WGS84线路、站点、线路上下文站序与半小时客流"),
-        "ridehail": ("网约车", "脱敏订单事件、场馆到离场行程及15分钟指标"),
+        "ridehail": ("网约车", "单一脱敏订单事实、派生上下车与场馆事件及15分钟/小时/日指标"),
     }
     for db_name, (domain, purpose) in db_labels.items():
         db_path = DB_DIR / f"{db_name}.sqlite"
@@ -1836,7 +2269,7 @@ def build_catalog() -> None:
         target_db, target_table = SOURCE_TARGETS[row[0]]
         note = "字段标准化、类型修正并保留source_row_id。"
         if row[0].startswith("raw_xuhui_payment") or row[0].startswith("raw_xuhui_ridehail"):
-            note = "订单号SHA-256脱敏，保留全部记录并标注重复序号和质量状态。"
+            note = "四类订单源按订单号合并为一行，订单号SHA-256脱敏；保留来源覆盖、重复数、场馆关系和质量状态。"
         conn.execute(
             "INSERT INTO meta_source_dataset VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (*row, target_db, target_table, note),
@@ -1844,6 +2277,49 @@ def build_catalog() -> None:
     source_sql = source_conn.execute("SELECT source_sql FROM raw_xuhui_road_source_sql LIMIT 1").fetchone()[0]
     conn.execute("INSERT INTO meta_source_extract_sql VALUES (?, ?)", ("road_segment_state", source_sql))
     source_conn.close()
+
+    ridehail_union_count = scalar(
+        "ridehail",
+        "SELECT COUNT(*) FROM std_trip "
+        "WHERE source_coverage LIKE '%RHD%' OR source_coverage LIKE '%RHA%'",
+    )
+    venue_union_count = scalar("ridehail", "SELECT COUNT(*) FROM std_trip WHERE venue_relation <> 'NONE'")
+    source_overlap_count = scalar(
+        "ridehail",
+        "SELECT COUNT(*) FROM std_trip WHERE venue_relation <> 'NONE' "
+        "AND (source_coverage LIKE '%RHD%' OR source_coverage LIKE '%RHA%')",
+    )
+    relation_rows = (
+        (
+            "RIDEHAIL_ORDER_UNION",
+            ridehail_union_count,
+            None,
+            None,
+            "上车表和下车表按订单号去重后的并集。",
+        ),
+        (
+            "VENUE_ORDER_UNION",
+            venue_union_count,
+            None,
+            None,
+            "场馆离场表和到场表按订单号去重后的并集。",
+        ),
+        (
+            "VENUE_IN_RIDEHAIL_OVERLAP",
+            source_overlap_count,
+            venue_union_count,
+            source_overlap_count / venue_union_count,
+            "场馆订单中也出现在上车表或下车表的订单；证明场馆订单是同一订单体系的业务筛选子集。",
+        ),
+        (
+            "VENUE_ONLY_ORDERS",
+            venue_union_count - source_overlap_count,
+            venue_union_count,
+            (venue_union_count - source_overlap_count) / venue_union_count,
+            "只在场馆订单源出现的订单；仍并入统一订单事实表，不另存一份场馆订单事实。",
+        ),
+    )
+    conn.executemany("INSERT INTO meta_order_source_relation VALUES (?, ?, ?, ?, ?)", relation_rows)
 
     entities = (
         ("EVENT", "COMMON", "重大活动", "common.dim_event", "event_id", "全资产", "活动ID由日期级活动记录统一生成。"),
@@ -1857,7 +2333,7 @@ def build_catalog() -> None:
         ("BUS_LINE", "BUS", "公交线路", "bus.dim_bus_line", "line_key", "公交", "客流5位线路码映射到官方线路ID。"),
         ("BUS_ROUTE_DIRECTION", "BUS", "公交方向线路", "bus.dim_bus_route_direction", "route_direction_key", "公交", "使用高德方向线路ID。"),
         ("BUS_STOP", "BUS", "公交站点", "bus.dim_bus_stop", "stop_key", "公交", "来源尚不能可靠合并时使用OFFICIAL/AMAP前缀防碰撞。"),
-        ("RIDEHAIL_ORDER", "RIDEHAIL", "网约车订单", "ridehail.fact_ridehail_event", "order_hash", "网约车", "统一使用不可逆SHA-256哈希。"),
+        ("RIDEHAIL_ORDER", "RIDEHAIL", "网约车订单", "ridehail.fact_trip", "order_hash", "网约车与场馆订单", "四类源统一为一个订单实体，使用不可逆SHA-256哈希。"),
     )
     conn.executemany("INSERT INTO meta_entity_id VALUES (?, ?, ?, ?, ?, ?, ?)", entities)
 
@@ -1950,7 +2426,9 @@ def build_catalog() -> None:
         ("bus_line", "bus.fact_bus_line_30m", "line_key", "bus.dim_bus_line", "line_key", "N:1", "官方线路键"),
         ("bus_date", "bus.fact_bus_line_30m", "date_key", "common.dim_date", "date_key", "N:1", "跨库公共日期键"),
         ("ridehail_date", "ridehail.fact_ridehail_event", "date_key", "common.dim_date", "date_key", "N:1", "跨库公共日期键"),
-        ("venue_trip_date", "ridehail.fact_venue_trip", "venue_event_date_key", "common.dim_date", "date_key", "N:1", "场馆到离场发生日期"),
+        ("ridehail_event_trip", "ridehail.fact_ridehail_event", "trip_key", "ridehail.fact_trip", "trip_key", "N:1", "上下车事件由统一订单拆分，不是另一份订单。"),
+        ("venue_trip", "ridehail.fact_venue_trip", "trip_key", "ridehail.fact_trip", "trip_key", "1:1", "场馆订单是统一订单中venue_relation非NONE的子集。"),
+        ("venue_event_date", "ridehail.fact_venue_event", "date_key", "common.dim_date", "date_key", "N:1", "场馆到场或离场事件日期。"),
     )
     conn.executemany("INSERT INTO meta_relationship VALUES (?, ?, ?, ?, ?, ?, ?)", relationships)
 
@@ -1960,11 +2438,82 @@ def build_catalog() -> None:
         ("METRO_INBOUND", "轨交进站客流", "METRO", "站点-小时", "人次", "标准化进站客流求和。", "metro.fact_metro_station_hour", "SUM(inbound_flow)"),
         ("METRO_OUTBOUND", "轨交出站客流", "METRO", "站点-小时", "人次", "标准化出站客流求和。", "metro.fact_metro_station_hour", "SUM(outbound_flow)"),
         ("BUS_BOARDINGS", "公交上客交易数", "BUS", "线路-半小时", "笔", "公交上客交易数求和。", "bus.fact_bus_line_30m", "SUM(bus_boarding_transactions)"),
-        ("RIDEHAIL_EVENTS", "网约车上下车事件数", "RIDEHAIL", "15分钟-事件类型", "单", "去重有效网约车事件数。", "ridehail.mart_ridehail_event_15m", "SUM(event_count)"),
-        ("VENUE_TRIPS", "场馆到离场订单数", "RIDEHAIL", "15分钟-到离场方向", "单", "去重有效场馆关联订单数。", "ridehail.mart_venue_trip_15m", "SUM(trip_count)"),
+        ("RIDEHAIL_EVENTS", "原始网约车上下车事件数", "RIDEHAIL", "15分钟-事件类型", "次", "仅统计有上车表或下车表来源证据的去重事件，不包含场馆订单补齐端点。", "ridehail.mart_ridehail_event_15m", "SUM(source_event_count)"),
+        ("TRIP_ENDPOINTS", "统一订单上下车端点数", "RIDEHAIL", "15分钟-端点类型", "次", "统一订单的全部有效端点，包含由场馆订单补齐的端点。", "ridehail.mart_ridehail_event_15m", "SUM(event_count)"),
+        ("VENUE_TRIPS", "场馆到离场事件数", "RIDEHAIL", "15分钟-到离场方向", "次", "按场馆方向统计有效到场或离场事件；BOTH订单会产生两个方向事件。", "ridehail.mart_venue_trip_15m", "SUM(trip_count)"),
         ("RAIN_1H_MAX", "一小时累计降雨最大值", "WEATHER", "网格-小时", "毫米", "小时内观测的一小时累计降雨最大值，不做逐条累加。", "common.mart_weather_grid_hour", "MAX(max_rainfall_1h_mm)"),
     )
     conn.executemany("INSERT INTO meta_metric VALUES (?, ?, ?, ?, ?, ?, ?, ?)", metrics)
+
+    analysis_guides = (
+        (
+            "BUS",
+            "bus.mart_bus_line_hour",
+            "日期-小时-官方线路",
+            scalar("bus", "SELECT MIN(date_key) FROM fact_bus_line_30m"),
+            scalar("bus", "SELECT MAX(date_key) FROM fact_bus_line_30m"),
+            "75条有客流事实的官方线路",
+            "徐汇相关线路样本，不代表上海全市公交",
+            "线路与站点为EPSG:4326",
+            "适合小时和日趋势；缺失半小时记录不得自动补零。",
+        ),
+        (
+            "METRO",
+            "metro.fact_metro_station_hour",
+            "日期-小时-统一线路-物理站",
+            scalar("metro", "SELECT MIN(date_key) FROM fact_metro_station_hour"),
+            scalar("metro", "SELECT MAX(date_key) FROM fact_metro_station_hour"),
+            "10个物理站、19个线路-站点组合",
+            "静态网络接近全网，客流仅为所选站点",
+            "有坐标对象为EPSG:4326；1个站缺坐标",
+            "适合所选站点小时客流；不得外推全网客流。",
+        ),
+        (
+            "ROAD",
+            "road.mart_road_segment_hour",
+            "日期-小时-道路发布段",
+            scalar("road", "SELECT MIN(date_key) FROM mart_road_segment_hour"),
+            scalar("road", "SELECT MAX(date_key) FROM mart_road_segment_hour"),
+            "89个道路发布段",
+            "只有发布段标识，没有道路几何",
+            "无空间坐标",
+            "适合状态持续时间分析，不支持道路地图。",
+        ),
+        (
+            "WEATHER",
+            "common.mart_weather_grid_hour",
+            "日期-小时-天气网格",
+            scalar("common", "SELECT MIN(date_key) FROM mart_weather_grid_hour"),
+            scalar("common", "SELECT MAX(date_key) FROM mart_weather_grid_hour"),
+            "徐汇区8个天气网格",
+            "8个街镇网格",
+            "UNKNOWN；坐标原值保留但不可做精确空间运算",
+            "适合按网格名称和时间连接；降雨使用小时最大值。",
+        ),
+        (
+            "RIDEHAIL",
+            "ridehail.mart_ridehail_event_15m",
+            "日期-15分钟-事件类型",
+            scalar("ridehail", "SELECT MIN(date_key) FROM mart_ridehail_event_15m"),
+            scalar("ridehail", "SELECT MAX(date_key) FROM mart_ridehail_event_15m"),
+            "提供样本中的有效上下车事件",
+            "场馆周边样本，不代表上海全市",
+            "可确认记录统一为EPSG:4326；未知记录保留为UNKNOWN",
+            "默认查询聚合层；订单级查询使用fact_trip，避免把上下车事件重复计为两个订单。",
+        ),
+        (
+            "VENUE_TRIP",
+            "ridehail.mart_venue_trip_15m",
+            "日期-15分钟-到离场方向",
+            scalar("ridehail", "SELECT MIN(date_key) FROM mart_venue_trip_15m"),
+            scalar("ridehail", "SELECT MAX(date_key) FROM mart_venue_trip_15m"),
+            "上海体育场相关有效到场/离场事件",
+            "单场馆关联订单",
+            "优先继承同订单上/下车表显式CRS；无法回连的端点按数据集多数假设GCJ-02；全部转换为EPSG:4326并保留推断状态",
+            "场馆订单是统一订单的子集；适合到离场时间、数量、OD和时长分析，使用coordinate_status区分直接、回连推断和总体假设。",
+        ),
+    )
+    conn.executemany("INSERT INTO meta_analysis_guide VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", analysis_guides)
 
     rules = (
         ("SOURCE_COVERAGE", "CATALOG", "ERROR", "治理库中的全部源数据集必须登记到目标资产。"),
@@ -1975,13 +2524,15 @@ def build_catalog() -> None:
         ("METRO_LINE_STATION_DISTANCE", "METRO", "ERROR", "统一线路上下文站点与WGS84线路几何距离不得超过25米。"),
         ("BUS_ROUTE_STOP_DISTANCE", "BUS", "ERROR", "高德公交线路站点与同源线路几何距离不得超过25米。"),
         ("TRANSIT_WGS84_COMPLETE", "COMMON", "ERROR", "公交和轨交标准空间对象必须统一为EPSG:4326。"),
+        ("PUBLISHED_CRS_STANDARD", "CATALOG", "ERROR", "发布资产坐标只允许EPSG:4326或明确标记为UNKNOWN，且不保留源坐标副本。"),
         ("METRO_STATION_COORDINATE_COMPLETE", "METRO", "WARN", "统一轨交物理站点应具有可用WGS84坐标。"),
         ("CANONICAL_ID_EXPOSURE", "CATALOG", "ERROR", "Agent默认事实表只能暴露统一实体ID，不得暴露源系统业务实体ID。"),
         ("ROAD_STATE_DOMAIN", "ROAD", "ERROR", "道路状态只能为FREE、CROWD或JAM。"),
         ("WEATHER_GRID_COUNT", "WEATHER", "WARN", "气象观测应归属稳定的8个网格。"),
         ("ORDER_ID_DEIDENTIFIED", "RIDEHAIL", "ERROR", "Agent资产中不得保留原始订单号字段。"),
-        ("RIDEHAIL_DUPLICATE_TAGGED", "RIDEHAIL", "WARN", "重复订单必须保留但标注duplicate_rank。"),
-        ("RIDEHAIL_CRS_KNOWN", "RIDEHAIL", "WARN", "网约车事件应提供明确坐标系。"),
+        ("RIDEHAIL_DUPLICATE_TAGGED", "RIDEHAIL", "WARN", "四类源中的重复订单行必须计入source_duplicate_count。"),
+        ("VENUE_SOURCE_CONFLICT", "RIDEHAIL", "WARN", "同一订单同时出现在场馆到场和离场源且核心行程字段不一致时必须显式标记。"),
+        ("RIDEHAIL_CRS_KNOWN", "RIDEHAIL", "WARN", "统一订单的上、下车端点应提供明确坐标系；未知记录仍保留。"),
         ("VENUE_TRIP_COORDINATE", "RIDEHAIL", "WARN", "场馆订单坐标应位于上海合理经纬度范围。"),
         ("EVENT_CALENDAR_AVAILABLE", "COMMON", "WARN", "用户提供的活动日期必须完整进入活动维表。"),
         ("EVENT_TIME_AVAILABLE", "COMMON", "WARN", "活动开始和结束时刻应由可靠来源补充。"),
@@ -2011,7 +2562,7 @@ def build_catalog() -> None:
     transit_non_wgs = scalar(
         "common",
         "SELECT COUNT(*) FROM dim_geo_feature WHERE domain_code IN ('BUS','METRO') "
-        "AND (longitude IS NOT NULL OR geometry_json IS NOT NULL) AND normalized_crs <> 'EPSG:4326'",
+        "AND (longitude IS NOT NULL OR geometry_json IS NOT NULL) AND crs <> 'EPSG:4326'",
     )
     metro_missing_coordinates = scalar(
         "metro", "SELECT COUNT(*) FROM dim_metro_station WHERE longitude IS NULL OR latitude IS NULL"
@@ -2022,12 +2573,58 @@ def build_catalog() -> None:
         " AND column_name IN ('source_station_id', 'source_line_number')) OR "
         "(database_name='bus' AND table_name='fact_bus_line_30m' AND column_name='source_line_code_5')"
     ).fetchone()[0]
+    forbidden_coordinate_columns = conn.execute(
+        "SELECT COUNT(*) FROM meta_column WHERE column_name IN "
+        "('source_longitude','source_latitude','source_x','source_y','source_crs',"
+        "'source_crs_id','source_geometry_json','normalized_crs')"
+    ).fetchone()[0]
+    invalid_published_crs = sum(
+        (
+            scalar(
+                "common",
+                "SELECT SUM(n) FROM ("
+                "SELECT COUNT(*) n FROM dim_geo_feature WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM dim_venue WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM dim_weather_grid WHERE crs NOT IN ('EPSG:4326','UNKNOWN'))",
+            ),
+            scalar(
+                "bus",
+                "SELECT SUM(n) FROM ("
+                "SELECT COUNT(*) n FROM dim_bus_route_direction WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM dim_bus_stop WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM bridge_bus_line_stop WHERE crs NOT IN ('EPSG:4326','UNKNOWN'))",
+            ),
+            scalar(
+                "metro",
+                "SELECT SUM(n) FROM ("
+                "SELECT COUNT(*) n FROM dim_metro_route_direction WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM dim_metro_line WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM dim_metro_station WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM bridge_metro_route_station WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM bridge_metro_line_station WHERE crs NOT IN ('EPSG:4326','UNKNOWN'))",
+            ),
+            scalar(
+                "ridehail",
+                "SELECT COUNT(*) FROM std_trip "
+                "WHERE pickup_crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "OR dropoff_crs NOT IN ('EPSG:4326','UNKNOWN')",
+            ),
+        )
+    )
     road_unknown = scalar("road", "SELECT COUNT(*) FROM std_road_state_event WHERE state_code = 'UNKNOWN'")
     weather_grids = scalar("common", "SELECT COUNT(*) FROM dim_weather_grid")
-    duplicate_count = scalar("ridehail", "SELECT COUNT(*) FROM std_ridehail_event WHERE duplicate_rank > 1")
-    venue_duplicate_count = scalar("ridehail", "SELECT COUNT(*) FROM std_venue_trip WHERE duplicate_rank > 1")
-    unknown_crs_count = scalar("ridehail", "SELECT COUNT(*) FROM std_ridehail_event WHERE quality_code = 3")
-    invalid_venue_coordinates = scalar("ridehail", "SELECT COUNT(*) FROM std_venue_trip WHERE quality_code = 2")
+    duplicate_count = scalar("ridehail", "SELECT COALESCE(SUM(source_duplicate_count), 0) FROM std_trip")
+    venue_source_conflicts = scalar(
+        "ridehail", "SELECT COUNT(*) FROM std_trip WHERE venue_source_conflict = 1"
+    )
+    unknown_crs_count = scalar(
+        "ridehail", "SELECT COUNT(*) FROM fact_ridehail_event WHERE crs = 'UNKNOWN'"
+    )
+    invalid_venue_coordinates = scalar(
+        "ridehail",
+        "SELECT COUNT(*) FROM std_trip "
+        "WHERE venue_relation <> 'NONE' AND quality_status = 'INVALID_COORDINATE'",
+    )
     event_count = scalar("common", "SELECT COUNT(*) FROM dim_event")
     event_time_count = scalar(
         "common", "SELECT COUNT(*) FROM dim_event WHERE event_start_at IS NOT NULL AND event_end_at IS NOT NULL"
@@ -2041,12 +2638,20 @@ def build_catalog() -> None:
         ("METRO_LINE_STATION_DISTANCE", BUILT_AT, int(metro_line_distance_errors == 0), str(metro_line_distance_errors), "统一线路上下文点到线路距离超过25米的关系数。"),
         ("BUS_ROUTE_STOP_DISTANCE", BUILT_AT, int(bus_route_distance_errors == 0), str(bus_route_distance_errors), "点到同源高德公交线路距离超过25米的站序数。"),
         ("TRANSIT_WGS84_COMPLETE", BUILT_AT, int(transit_non_wgs == 0), str(transit_non_wgs), "存在空间值但未统一为EPSG:4326的公交/轨交对象数。"),
+        (
+            "PUBLISHED_CRS_STANDARD",
+            BUILT_AT,
+            int(invalid_published_crs == 0 and forbidden_coordinate_columns == 0),
+            f"invalid_crs={invalid_published_crs}, source_coordinate_columns={forbidden_coordinate_columns}",
+            "已确认坐标统一为EPSG:4326；无法确认的原值保留并标记UNKNOWN。",
+        ),
         ("METRO_STATION_COORDINATE_COMPLETE", BUILT_AT, int(metro_missing_coordinates == 0), str(metro_missing_coordinates), "仍缺少WGS84坐标的统一轨交站点数。"),
         ("CANONICAL_ID_EXPOSURE", BUILT_AT, int(exposed_source_ids == 0), str(exposed_source_ids), "默认事实表中暴露的源业务实体ID字段数。"),
         ("ROAD_STATE_DOMAIN", BUILT_AT, int(road_unknown == 0), str(road_unknown), "未知道路状态行数。"),
         ("WEATHER_GRID_COUNT", BUILT_AT, int(weather_grids == 8), str(weather_grids), "实际气象网格数。"),
         ("ORDER_ID_DEIDENTIFIED", BUILT_AT, 1, "0", "标准层仅保存order_hash。"),
-        ("RIDEHAIL_DUPLICATE_TAGGED", BUILT_AT, 1, f"event={duplicate_count}, venue_trip={venue_duplicate_count}", "重复记录已保留并排除在默认事实视图之外。"),
+        ("RIDEHAIL_DUPLICATE_TAGGED", BUILT_AT, 1, str(duplicate_count), "四类源中的重复行已汇总到统一订单的source_duplicate_count。"),
+        ("VENUE_SOURCE_CONFLICT", BUILT_AT, int(venue_source_conflicts == 0), str(venue_source_conflicts), "场馆到场和离场源核心字段冲突数；记录保留，统一订单取离场源为优先值并显式标记。"),
         ("RIDEHAIL_CRS_KNOWN", BUILT_AT, int(unknown_crs_count == 0), str(unknown_crs_count), "坐标系未知的网约车事件数；事实视图保留并显式标注。"),
         ("VENUE_TRIP_COORDINATE", BUILT_AT, int(invalid_venue_coordinates == 0), str(invalid_venue_coordinates), "坐标超出上海合理范围的场馆订单数；事实视图已排除。"),
         ("EVENT_CALENDAR_AVAILABLE", BUILT_AT, int(event_count == 4), str(event_count), "已纳入2025-08-20、21、23、24四天时代少年团上海体育场演出记录。"),
@@ -2068,6 +2673,44 @@ def build_catalog() -> None:
     conn.close()
 
 
+def validate_assets() -> None:
+    for db_name in ("common", "road", "metro", "bus", "ridehail", "catalog"):
+        conn = sqlite3.connect(DB_DIR / f"{db_name}.sqlite")
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        conn.close()
+        if integrity != "ok":
+            raise RuntimeError(f"{db_name}.sqlite integrity check failed: {integrity}")
+
+    ridehail = sqlite3.connect(DB_DIR / "ridehail.sqlite")
+    trip_count, unique_orders = ridehail.execute(
+        "SELECT COUNT(*), COUNT(DISTINCT order_hash) FROM std_trip"
+    ).fetchone()
+    if trip_count != unique_orders:
+        raise RuntimeError(f"std_trip is not one row per order: {trip_count} rows, {unique_orders} orders")
+    for table_name in (
+        "mart_ridehail_event_15m",
+        "mart_ridehail_event_hour",
+        "mart_ridehail_event_day",
+    ):
+        bad_rows = ridehail.execute(
+            f"SELECT COUNT(*) FROM {table_name} "
+            "WHERE event_count <> source_event_count + venue_enriched_event_count"
+        ).fetchone()[0]
+        if bad_rows:
+            raise RuntimeError(f"{table_name} has {bad_rows} inconsistent event totals")
+    ridehail.close()
+
+    catalog = sqlite3.connect(DB_DIR / "catalog.sqlite")
+    failed_errors = catalog.execute(
+        "SELECT COUNT(*) FROM meta_quality_result q "
+        "JOIN meta_quality_rule r USING(rule_code) "
+        "WHERE r.severity = 'ERROR' AND q.passed = 0"
+    ).fetchone()[0]
+    catalog.close()
+    if failed_errors:
+        raise RuntimeError(f"{failed_errors} ERROR quality rules failed")
+
+
 def build_all() -> None:
     if not SOURCE_DB.exists():
         raise FileNotFoundError(SOURCE_DB)
@@ -2078,7 +2721,9 @@ def build_all() -> None:
     build_bus()
     sync_transit_geo_features()
     build_ridehail()
+    standardize_published_assets()
     build_catalog()
+    validate_assets()
     print(f"Built data asset at {DB_DIR}")
 
 
