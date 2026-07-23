@@ -1,11 +1,26 @@
 ---
 name: shanghai-traffic-data-assets
-description: Query and analyze the governed Shanghai Stadium multimodal traffic SQLite assets. Use for WGS84 metro or bus geometry, passenger flow, road states, unified ride-hailing and venue orders, weather, event dates, data coverage, quality, lineage, metrics, and cross-domain SQL.
+description: Power the Major Event Traffic Situation Insight and Decision Support Agent with governed Shanghai Stadium multimodal traffic data. Use for the 2025 TNT concert case, event schedules, WGS84 networks, passenger flow, road states, unified ride-hailing and venue orders, weather, quality, metrics, and cross-domain SQL.
 ---
 
-# 上海交通数据资产
+# 重大活动交通态势数据资产
 
-使用系统提示给出的 `query_assets.py` 查询分域 SQLite 资产。数据库目录由本地安装包提供；不要把当前任务目录误认为数据库目录。
+本资产服务于“重大活动交通态势洞察及辅助决策智能体”，以上海体育场时代少年团演唱会为内置案例。使用系统提示给出的 `query_assets.py` 查询分域 SQLite 资产。
+
+## 内置案例
+
+活动名称：时代少年团「加冠礼」演唱会—「冠军」上海站。场馆：上海体育场。
+
+| 日期 | 开始 | 结束 | 时区 |
+|---|---|---|---|
+| 2025-08-20 | 19:00 | 22:00 | Asia/Shanghai |
+| 2025-08-21 | 19:00 | 22:00 | Asia/Shanghai |
+| 2025-08-23 | 19:00 | 22:00 | Asia/Shanghai |
+| 2025-08-24 | 19:00 | 22:00 | Asia/Shanghai |
+
+[上海地铁保障指南](https://www.jfdaily.com/sgh/detail?id=1627654)明确四日每日 19:00—22:00；[上海市公安局公告](https://www.shanghai.gov.cn/nw31406/20250822/555caa8ba4894640ab88f64cbbf193ce.html)确认四个演出日和场馆。这组活动背景只用于 SKILL 的案例解释，不写入 `ridehail.std_trip`、订单事实或订单集市。`common.dim_event` 仍是原有的日期级活动标记，不能据此读取开始和结束时刻。
+
+态势分析建议分为演前集结、演中、散场三个阶段。若没有更具体的管控时间，默认使用 15:00—19:00、19:00—22:00、22:00—24:00 作为分析窗口；前后两个窗口是分析口径，不是官方开门或清场时间。2025-08-23 附近上海体育馆另有 UFC 赛事，解释当天异常时必须提示并发活动影响。
 
 ## Agent 查询顺序
 
@@ -80,7 +95,7 @@ QUERY="<Shanghai traffic query tools directory>/query_assets.py"
 - 轨交客流只通过统一 `line_id`、`station_id` 连接；高德方向 ID 不能替代统一线路 ID。
 - 公交交易数、轨交人次、网约车事件和订单是不同量纲，不得相加为“综合总客流”。
 - `rainfall_1h_mm` 是滚动一小时累计值；小时统计取最大值或平均值，不逐条求和。
-- 四条活动记录只有日期，不得补写开演、进场或散场时刻。
+- 四场演唱会均为 19:00—22:00；进场、交通管制和疏散窗口不得冒充演出开始/结束时间。
 - 原始订单号未分发，不得尝试恢复。
 
 ## 输出要求
@@ -96,11 +111,19 @@ QUERY="<Shanghai traffic query tools directory>/query_assets.py"
 
 ## 参考文件
 
+先读整体说明，再只加载本次查询涉及的分库 Reference：
+
 - `references/coverage.md`：实际覆盖、行数和已知缺口。
 - `references/schema.md`：表粒度、字段、主键和连接方式。
 - `references/spatial.md`：WGS84 契约、场馆 CRS 推断和制图。
 - `references/metrics.md`：指标口径和聚合限制。
 - `references/governance.md`：血缘、质量、隐私和重建。
+- `references/catalog.md`：目录库的表、字段、质量和发现查询。
+- `references/common.md`：公共维度、活动日期、场馆和天气表。
+- `references/road.md`：道路状态事件与小时、日持续时间表。
+- `references/metro.md`：轨交线路、站点、映射和客流表。
+- `references/bus.md`：公交线路、站序和交易表。
+- `references/ridehail.md`：统一订单、端点、场馆事件和集市表。
 
 ## 重建限制
 

@@ -2535,7 +2535,7 @@ def build_catalog() -> None:
         ("RIDEHAIL_CRS_KNOWN", "RIDEHAIL", "WARN", "统一订单的上、下车端点应提供明确坐标系；未知记录仍保留。"),
         ("VENUE_TRIP_COORDINATE", "RIDEHAIL", "WARN", "场馆订单坐标应位于上海合理经纬度范围。"),
         ("EVENT_CALENDAR_AVAILABLE", "COMMON", "WARN", "用户提供的活动日期必须完整进入活动维表。"),
-        ("EVENT_TIME_AVAILABLE", "COMMON", "WARN", "活动开始和结束时刻应由可靠来源补充。"),
+        ("EVENT_TIME_AVAILABLE", "COMMON", "WARN", "数据库仅保留活动日期；案例开始和结束时刻在SKILL说明中维护。"),
     )
     conn.executemany("INSERT INTO meta_quality_rule VALUES (?, ?, ?, ?)", rules)
 
@@ -2655,7 +2655,7 @@ def build_catalog() -> None:
         ("RIDEHAIL_CRS_KNOWN", BUILT_AT, int(unknown_crs_count == 0), str(unknown_crs_count), "坐标系未知的网约车事件数；事实视图保留并显式标注。"),
         ("VENUE_TRIP_COORDINATE", BUILT_AT, int(invalid_venue_coordinates == 0), str(invalid_venue_coordinates), "坐标超出上海合理范围的场馆订单数；事实视图已排除。"),
         ("EVENT_CALENDAR_AVAILABLE", BUILT_AT, int(event_count == 4), str(event_count), "已纳入2025-08-20、21、23、24四天时代少年团上海体育场演出记录。"),
-        ("EVENT_TIME_AVAILABLE", BUILT_AT, int(event_time_count == event_count), f"datetime={event_time_count}, date_only={event_count - event_time_count}", "当前只有演出日期，未提供具体开演和结束时刻。"),
+        ("EVENT_TIME_AVAILABLE", BUILT_AT, int(event_time_count == event_count), f"datetime={event_time_count}, date_only={event_count - event_time_count}", "按治理边界，数据库只保留活动日期；案例开始和结束时刻请读取SKILL说明。"),
     )
     conn.executemany("INSERT INTO meta_quality_result VALUES (?, ?, ?, ?, ?)", quality_results)
 
