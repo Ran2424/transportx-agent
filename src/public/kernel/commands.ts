@@ -28,6 +28,7 @@ export type CommandDeps = {
 };
 
 export type SendPromptInput = { sessionId: string; message: string; images?: PendingImage[] };
+export type SetTaskModeInput = { sessionId: string; enabled: boolean };
 export type SteerInput = { sessionId: string; message: string };
 export type FollowUpInput = { sessionId: string; message: string };
 export type SetModelInput = { sessionId: string; model: string };
@@ -80,6 +81,7 @@ export type AgentState = {
 
 export type AgentCommands = {
   sendPrompt(input: SendPromptInput): Promise<void>;
+  setTaskMode(input: SetTaskModeInput): Promise<void>;
   abort(sessionId: string): Promise<void>;
   steer(input: SteerInput): Promise<void>;
   followUp(input: FollowUpInput): Promise<void>;
@@ -193,6 +195,14 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       }
       deps.transport.send({ type: 'prompt', sessionId, message, ...(images?.length ? { images } : {}) });
       deps.dispatch({ type: 'conversation/promptSent', sessionId, message, images });
+    },
+
+    async setTaskMode({ sessionId, enabled }) {
+      deps.transport.send({
+        type: 'prompt',
+        sessionId,
+        message: `/task ${enabled ? 'on' : 'off'} --silent`,
+      });
     },
 
     async abort(sessionId) {

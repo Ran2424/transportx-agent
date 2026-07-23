@@ -381,7 +381,7 @@ export function acceptTaskSnapshotRevision(
   previous: TaskSnapshot | null,
   next: TaskSnapshot,
 ): { accepted: boolean; diagnostic?: TaskParseDiagnostic } {
-  if (previous && next.revision <= previous.revision) {
+  if (previous?.taskId === next.taskId && next.revision <= previous.revision) {
     return {
       accepted: false,
       diagnostic: diagnostic({

@@ -67,7 +67,7 @@ const PresentVisualizationCommandSchema = Type.Object({
     Type.Literal('set_continuous'), Type.Literal('set_categorical'), Type.Literal('set_popup'),
     Type.Literal('set_controls'), Type.Literal('set_metadata'), Type.Literal('set_camera'),
     Type.Literal('fit_bounds'), Type.Literal('set_visibility'), Type.Literal('select'), Type.Literal('clear'),
-  ], { description: 'Map command. create_map requires title, resourceId, and layerType. Styling commands require layerId and channel.' }),
+  ], { description: 'One atomic scene mutation: create/add content, change one style or popup/control/metadata concern, focus/select, or clear. create_map starts a visualizationId; later commands update it.' }),
   visualizationId: VisualizationIdSchema,
   title: Type.Optional(Type.String({ description: 'Map title for create_map, or replacement title for set_metadata.' })),
   description: Type.Optional(Type.String()),
@@ -266,7 +266,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
   const restore = (ctx: ExtensionContext) => {
     scenes.clear();
     for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type !== 'message' || entry.message.role !== 'toolResult' || entry.message.toolName !== 'present_visualization') continue;
+      if (entry.type !== 'message' || entry.message.role !== 'toolResult') continue;
       const details = entry.message.details as { visualization?: unknown } | undefined;
       const envelope = parseVisualizationEnvelope(details?.visualization);
       if (!envelope) continue;
@@ -338,12 +338,14 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'present_visualization',
     label: 'Present Map',
-    description: 'Create or update an interactive 2D map with command-style parameters. The tool builds and validates GeoScene internally; do not write a scene JSON object.',
-    promptSnippet: 'Build interactive maps with create_map, add_layer, styling, popup, control, view, selection, and clear commands',
+    description: 'Create or update one revisioned declarative 2D map after GIS data preparation and analysis. The tool owns GeoScene mutations; it does not query or analyze source data.',
+    promptSnippet: 'Maintain interactive maps with explicit scene, layer style, popup, control, view, selection, and clear commands',
     promptGuidelines: [
       'Read the geo-visualization-explanation skill before first using publish_geodata or present_visualization for a map task.',
+      'Query, aggregate, compare, and validate GIS data before publishing it. present_visualization only turns an analyzed result into a revisioned GeoScene.',
       'Always call publish_geodata first, then pass its resourceId to command=create_map; never hand-write sources, layers, encoding, view, or metadata JSON.',
-      'After create_map succeeds, change one concern per command: add_layer, set_constant/set_step/set_continuous/set_categorical, set_popup, set_controls, set_metadata, or set_camera/fit_bounds.',
+      'Use create_map once per visualizationId. Afterwards change exactly one concern per command: layer, style, popup, controls, metadata, view, selection, or clear.',
+      'Reuse the same visualizationId for follow-up requests about the same analysis. Create another visualizationId only when the user explicitly asks for a separate map.',
       'Use the channel names color, radius, opacity, strokeColor, strokeWidth, width, dash, outlineColor, textField, size, haloColor, and haloWidth exactly as declared by the command schema.',
       'Reuse the current visualizationId when the user asks to add or overlay content. If the same styling target fails validation twice, preserve the last successful map and stop retrying that command.',
       `Project root: ${PROJECT_ROOT}`,

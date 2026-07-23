@@ -14,6 +14,23 @@
       ]
     },
     {
+      "match": "基线-tool-collapse",
+      "steps": [
+        { "tool": { "name": "read", "args": { "path": "traffic-summary.json" }, "result": { "content": "工具调用完成" }, "delayMs": 800 } }
+      ]
+    },
+    {
+      "match": "基线-tool-icons",
+      "steps": [
+        { "tool": { "name": "bash", "args": { "command": "python query.py" }, "result": { "content": "命令完成" } } },
+        { "tool": { "name": "task_runner", "args": { "action": "update" }, "result": { "content": "任务更新完成" } } },
+        { "tool": { "name": "present_visualization", "args": { "visualizationId": "tool_icon_map" }, "result": { "content": "地图发布完成" } } },
+        { "tool": { "name": "read", "args": { "path": "traffic-summary.json" }, "result": { "content": "读取完成" } } },
+        { "tool": { "name": "write", "args": { "path": "traffic-report.md" }, "result": { "content": "写入完成" } } },
+        { "tool": { "name": "custom_tool", "args": { "action": "run" }, "result": { "content": "默认工具完成" } } }
+      ]
+    },
+    {
       "match": "基线-task",
       "steps": [
         { "streamText": { "text": "我先和你确认分析范围。", "chunks": 4, "delayMs": 15 } },
@@ -24,11 +41,28 @@
       ]
     },
     {
+      "match": "连续任务切换",
+      "steps": [
+        { "tool": { "name": "tau_task", "args": { "action": "finish", "taskId": "task-first" }, "result": { "content": [{ "type": "text", "text": "第一项任务已完成" }], "details": { "kind": "tau-task", "task": { "schemaVersion": 1, "taskId": "task-first", "title": "第一项任务", "status": "completed", "revision": 6, "steps": [{ "id": "collect", "title": "收集数据", "status": "completed" }, { "id": "analyze", "title": "分析结果", "status": "completed" }], "createdAt": 10, "updatedAt": 16 } } } } },
+        { "delay": 2500 },
+        { "tool": { "name": "tau_task", "args": { "action": "start", "taskId": "task-second" }, "result": { "content": [{ "type": "text", "text": "第二项任务已创建" }], "details": { "kind": "tau-task", "task": { "schemaVersion": 1, "taskId": "task-second", "title": "第二项任务", "status": "planning", "revision": 1, "steps": [{ "id": "prepare", "title": "准备数据", "status": "pending" }, { "id": "report", "title": "输出报告", "status": "pending" }], "createdAt": 17, "updatedAt": 17 } } } } },
+        { "streamText": { "text": "第二项任务正在继续执行，任务面板应当立即显示新的计划，而不是等待整个响应结束。", "chunks": 40, "delayMs": 50 } }
+      ]
+    },
+    {
       "match": "基线-geo",
       "steps": [
         { "streamText": { "text": "正在生成下车热点地图。", "chunks": 4, "delayMs": 15 } },
         { "tool": { "name": "present_visualization", "args": { "visualizationId": "dropoff_heatmap" }, "result": { "$fixture": "features/geo-tool-result.json#presentVisualizationResult" } } },
         { "streamText": { "text": "地图已发布，可在右侧地图面板查看。", "chunks": 4, "delayMs": 15 } }
+      ]
+    },
+    {
+      "match": "更新-geo",
+      "steps": [
+        { "streamText": { "text": "正在更新同一张地图的专题样式。", "chunks": 4, "delayMs": 15 } },
+        { "tool": { "name": "present_visualization", "args": { "visualizationId": "dropoff_heatmap", "command": "set_constant" }, "result": { "$fixture": "features/geo-tool-result-update.json#presentVisualizationResult" } } },
+        { "streamText": { "text": "地图样式已更新。", "chunks": 3, "delayMs": 15 } }
       ]
     },
     {

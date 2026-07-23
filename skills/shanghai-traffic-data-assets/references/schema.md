@@ -116,6 +116,7 @@ event_count = source_event_count + venue_enriched_event_count
 | `common.dim_date` | 一天 | 所有事实用 `date_key` 连接 |
 | `common.dim_time` | 日内一分钟 | `minute_key` 0—1439 |
 | `common.dim_event` | 一次活动日期 | 只有日期精度；案例时刻仅在SKILL说明中维护 |
+| `common.dim_poi` | 一个重要交通枢纽 | 用户确认的 WGS84 火车站、机场中心点 |
 | `common.fact_weather_observation` | 网格—观测时刻 | 温度、滚动一小时降雨 |
 | `common.mart_weather_grid_hour` | 网格—日期—小时 | 小时跨域分析 |
 | `common.mart_weather_grid_day` | 网格—日期 | 日天气概览 |

@@ -107,6 +107,131 @@ try {
   if (thinkingChrome.background !== 'rgba(0, 0, 0, 0)' || thinkingChrome.border !== 'none') {
     throw new Error(`Thinking block should use plain gray text: ${JSON.stringify(thinkingChrome)}`);
   }
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+
+  // Task mode is a silent control action: it changes state without adding a
+  // slash-command bubble or extension notification to the conversation.
+  const taskToggle = reactPage.getByRole('switch', { name: '开启任务模式' });
+  const userMessageCount = await reactPage.locator('.user-message').count();
+  await taskToggle.click();
+  await reactPage.getByRole('switch', { name: '关闭任务模式' }).waitFor();
+  if (await reactPage.locator('.user-message').count() !== userMessageCount) {
+    throw new Error('Enabling task mode added a visible user message');
+  }
+  if (await reactPage.getByText('/task on', { exact: true }).count() || await reactPage.getByText('任务模式已开启', { exact: true }).count()) {
+    throw new Error('Enabling task mode exposed its internal command or notification');
+  }
+  await reactPage.getByRole('switch', { name: '关闭任务模式' }).click();
+  await reactPage.getByRole('switch', { name: '开启任务模式' }).waitFor();
+  if (await reactPage.locator('.user-message').count() !== userMessageCount) {
+    throw new Error('Disabling task mode added a visible user message');
+  }
+  if (await reactPage.getByText('/task off', { exact: true }).count() || await reactPage.getByText('任务模式已关闭', { exact: true }).count()) {
+    throw new Error('Disabling task mode exposed its internal command or notification');
+  }
+
+  // Streaming composer keeps only the steer and abort actions.
+  await composer.fill('基线-abort');
+  await composer.press('Enter');
+  const streamActions = reactPage.locator('.composer-stream-actions');
+  await streamActions.getByRole('button', { name: '发送引导', exact: true }).waitFor();
+  await streamActions.getByRole('button', { name: '终止当前任务', exact: true }).waitFor();
+  if (await streamActions.locator(':scope > button').count() !== 2) throw new Error('Streaming composer should expose exactly two actions');
+  if (await reactPage.getByRole('button', { name: '后续问题', exact: true }).count()) throw new Error('Streaming composer should not expose a separate follow-up action');
+  await streamActions.getByRole('button', { name: '终止当前任务', exact: true }).click();
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+
+  // Running tools stay inspectable, then collapse when they reach a terminal
+  // state.
+  await composer.fill('基线-tool-collapse');
+  await composer.press('Enter');
+  const runningTool = reactPage.locator('.tool-card', { hasText: 'traffic-summary.json' });
+  await runningTool.locator('.tool-status.running').waitFor({ timeout: 10_000 });
+  const toolToggle = runningTool.getByRole('button', { name: /读取/ });
+  if (await toolToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Running tool should be expanded');
+  await runningTool.locator('.tool-status.completed').waitFor({ timeout: 10_000 });
+  if (await toolToggle.getAttribute('aria-expanded') !== 'false') throw new Error('Completed tool should collapse automatically');
+  await reactPage.evaluate(() => { document.documentElement.dataset.theme = 'terracotta'; });
+  const toolChrome = await runningTool.evaluate((node) => {
+    const card = getComputedStyle(node);
+    const header = getComputedStyle(node.querySelector('header'));
+    const label = getComputedStyle(node.querySelector('.tool-card-toggle strong'));
+    const preview = getComputedStyle(node.querySelector('.tool-card-toggle small'));
+    const marker = getComputedStyle(node.querySelector('.tool-status.completed'));
+    return {
+      width: Number.parseFloat(card.width),
+      radius: Number.parseFloat(card.borderTopLeftRadius),
+      cardBackground: card.backgroundColor,
+      cardBorder: card.borderTopStyle,
+      headerHeight: Number.parseFloat(header.height),
+      labelFontSize: Number.parseFloat(label.fontSize),
+      previewFontSize: Number.parseFloat(preview.fontSize),
+      previewFlexGrow: Number.parseFloat(preview.flexGrow),
+      previewMaxWidth: preview.maxWidth,
+      previewMinWidth: preview.minWidth,
+      labelColor: label.color,
+      bodyColor: getComputedStyle(document.body).color,
+      labelBackground: label.backgroundColor,
+      labelBorder: label.borderTopStyle,
+      markerBackground: marker.backgroundColor,
+      markerRadius: marker.borderTopLeftRadius,
+    };
+  });
+  if (toolChrome.width < 719 || toolChrome.width > 721 || toolChrome.radius !== 0 || toolChrome.headerHeight < 40 || toolChrome.labelFontSize !== 12 || toolChrome.previewFontSize !== 12 || toolChrome.previewFlexGrow !== 1 || toolChrome.previewMaxWidth !== 'none' || toolChrome.previewMinWidth !== '0px') {
+    throw new Error(`Collapsed tool proportions are outside the timeline design: ${JSON.stringify(toolChrome)}`);
+  }
+  await toolToggle.click();
+  const expandedToolChrome = await runningTool.evaluate((node) => ({
+    width: Number.parseFloat(getComputedStyle(node).width),
+    argsFontSize: Number.parseFloat(getComputedStyle(node.querySelector('.tool-args')).fontSize),
+    outputFontSize: Number.parseFloat(getComputedStyle(node.querySelector('.tool-output')).fontSize),
+    outputLabelFontSize: Number.parseFloat(getComputedStyle(node.querySelector('.tool-output-actions')).fontSize),
+    copyFontSize: Number.parseFloat(getComputedStyle(node.querySelector('.tool-output-actions button')).fontSize),
+  }));
+  await toolToggle.click();
+  if (Math.abs(expandedToolChrome.width - toolChrome.width) > 1) {
+    throw new Error(`Collapsed and expanded tools should share one width: ${JSON.stringify({ collapsed: toolChrome.width, expanded: expandedToolChrome.width })}`);
+  }
+  if (expandedToolChrome.argsFontSize !== 12.5 || expandedToolChrome.outputFontSize !== 12.5 || expandedToolChrome.outputLabelFontSize !== 9 || expandedToolChrome.copyFontSize !== 10) {
+    throw new Error(`Expanded tool typography is not using the larger scale: ${JSON.stringify(expandedToolChrome)}`);
+  }
+  if (toolChrome.cardBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.cardBorder !== 'none' || toolChrome.labelColor !== toolChrome.bodyColor || toolChrome.labelBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.labelBorder !== 'none') {
+    throw new Error(`Tool history should be borderless with a plain text label: ${JSON.stringify(toolChrome)}`);
+  }
+  if (toolChrome.markerBackground !== 'rgb(176, 106, 72)' || toolChrome.markerRadius !== '50%') {
+    throw new Error(`Terracotta completion marker should carry the timeline accent: ${JSON.stringify(toolChrome)}`);
+  }
+  await reactPage.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, selectedTheme);
+
+  // Tool glyphs communicate command, task, Geo, read, write, and fallback
+  // semantics without relying on the text label.
+  await composer.fill('基线-tool-icons');
+  await composer.press('Enter');
+  const expectedToolKinds = ['command', 'task', 'map', 'file', 'write', 'tool'];
+  for (const kind of expectedToolKinds) {
+    await reactPage.locator(`.tool-status[data-tool-kind="${kind}"]`).last().waitFor({ timeout: 10_000 });
+  }
+  const allToolLabels = await reactPage.locator('.tool-card-toggle strong').evaluateAll((nodes) => nodes.map((node) => node.textContent?.trim() || ''));
+  const localizedToolLabels = allToolLabels.slice(-6);
+  const expectedToolLabels = ['命令执行', '任务执行', '地图展示', '文件读取', '文件写入', '通用工具'];
+  if (JSON.stringify(localizedToolLabels) !== JSON.stringify(expectedToolLabels) || allToolLabels.some((label) => !/^[\p{Script=Han}]{1,4}$/u.test(label))) {
+    throw new Error(`Tool labels should use unified Chinese names of at most four characters: ${JSON.stringify(allToolLabels)}`);
+  }
+  if (await reactPage.locator('.tool-card-toggle .tool-kind-icon').count()) throw new Error('Tool glyph should replace the timeline status mark, not appear beside the label');
+  const fallbackToolIcon = reactPage.locator('.tool-status[data-tool-kind="tool"]').last();
+  const iconChrome = await fallbackToolIcon.evaluate((node) => {
+    const icon = node.querySelector('svg');
+    const style = getComputedStyle(node);
+    const iconStyle = icon ? getComputedStyle(icon) : null;
+    return { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height), iconWidth: iconStyle ? Number.parseFloat(iconStyle.width) : 0 };
+  });
+  if (iconChrome.width !== 20 || iconChrome.height !== 20 || iconChrome.iconWidth !== 12) {
+    throw new Error(`Tool glyph proportions changed: ${JSON.stringify(iconChrome)}`);
+  }
+  await fallbackToolIcon.evaluate((node) => node.closest('.tool-card')?.querySelector('button')?.click());
+  const expandedIconTransform = await fallbackToolIcon.locator('svg').evaluate((node) => getComputedStyle(node).transform);
+  if (expandedIconTransform !== 'none') throw new Error(`Tool glyph should not rotate with the disclosure chevron: ${expandedIconTransform}`);
+  await fallbackToolIcon.evaluate((node) => node.closest('.tool-card')?.querySelector('button')?.click());
 
   // Trigger real extension_ui_request variants through fake Pi and answer them in React.
   async function triggerPrompt(message) {
@@ -129,25 +254,68 @@ try {
   await reactPage.locator('.tool-card', { hasText: '任务状态' }).waitFor({ timeout: 10_000 });
   await reactPage.locator('[data-testid="agent-status"][data-state="connected"]').waitFor();
 
-  // Feature UI: task and map have their own floating views; files remain the
-  // only right dock resource.
+  // The first task opens its flat progress surface automatically. Task and map
+  // keep their own floating views; files remain the only right dock resource.
+  const taskPanel = reactPage.getByTestId('workspace-float-tasks');
+  await taskPanel.locator('.task-board-card', { hasText: '分析上海体育馆早高峰下车热点' }).waitFor({ timeout: 10_000 });
+  await reactPage.waitForTimeout(250);
+  const taskPanelBeforeDrag = await taskPanel.boundingBox();
+  const taskHeader = taskPanel.locator('.workspace-float-header');
+  const taskHeaderBox = await taskHeader.boundingBox();
+  const taskPanelWidth = await taskPanel.evaluate((node) => Number.parseFloat(getComputedStyle(node).width));
+  if (!taskPanelBeforeDrag || !taskHeaderBox) throw new Error('Task panel drag geometry is unavailable');
+  if (taskPanelWidth !== 320 || await taskHeader.evaluate((node) => getComputedStyle(node).cursor) !== 'grab') {
+    throw new Error(`Task panel should use the narrower draggable treatment: ${JSON.stringify(taskPanelBeforeDrag)}`);
+  }
+  await reactPage.mouse.move(taskHeaderBox.x + 32, taskHeaderBox.y + taskHeaderBox.height / 2);
+  await reactPage.mouse.down();
+  await taskPanel.locator('.workspace-float-header').evaluate((node) => {
+    if (!node.closest('.workspace-float')?.classList.contains('is-dragging') || getComputedStyle(node).cursor !== 'grabbing') throw new Error('Task panel did not enter its dragging state');
+  });
+  await reactPage.mouse.move(taskHeaderBox.x - 48, taskHeaderBox.y + taskHeaderBox.height / 2 + 56, { steps: 4 });
+  await reactPage.mouse.up();
+  const taskPanelAfterDrag = await taskPanel.boundingBox();
+  if (!taskPanelAfterDrag || Math.abs(taskPanelAfterDrag.x - (taskPanelBeforeDrag.x - 80)) > 2 || Math.abs(taskPanelAfterDrag.y - (taskPanelBeforeDrag.y + 56)) > 2) {
+    throw new Error(`Task panel did not follow the drag gesture: ${JSON.stringify({ before: taskPanelBeforeDrag, after: taskPanelAfterDrag })}`);
+  }
+  const mainBounds = await reactPage.locator('.agent-main-column').boundingBox();
+  if (!mainBounds || taskPanelAfterDrag.x < mainBounds.x || taskPanelAfterDrag.y < mainBounds.y || taskPanelAfterDrag.x + taskPanelAfterDrag.width > mainBounds.x + mainBounds.width || taskPanelAfterDrag.y + taskPanelAfterDrag.height > mainBounds.y + mainBounds.height) {
+    throw new Error(`Dragged task panel escaped the main workspace: ${JSON.stringify({ main: mainBounds, panel: taskPanelAfterDrag })}`);
+  }
+  await taskPanel.locator('.task-board-card').evaluate((node) => {
+    const style = getComputedStyle(node);
+    if (Number.parseFloat(style.borderTopWidth) !== 0 || style.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+      throw new Error(`Task content should be flat inside the floating panel: ${JSON.stringify({ border: style.borderTopWidth, background: style.backgroundColor })}`);
+    }
+    if ((node.textContent || '').includes('PI TASK')) throw new Error('Task content still exposes the retired PI TASK label');
+  });
   await reactPage.getByRole('button', { name: '打开或关闭文件栏' }).click();
   await reactPage.locator('[data-testid="workspace-dock"].is-open').waitFor();
   await reactPage.locator('.workspace-file-list').waitFor();
   await reactPage.getByTestId('workspace-dock').getByRole('button', { name: '关闭文件栏', exact: true }).click();
   await reactPage.locator('[data-testid="workspace-dock"]:not(.is-open)').waitFor();
-  await reactPage.getByRole('button', { name: '打开或关闭任务面板' }).click();
-  await reactPage.locator('[data-testid="workspace-float-tasks"].is-open').waitFor();
-  await reactPage.locator('.task-board-card', { hasText: '分析上海体育馆早高峰下车热点' }).waitFor();
   if (requestedUrls.some((url) => url.includes('geo-runtime-entry') || url.includes('maplibre'))) {
     throw new Error('Task feature loaded the Geo Runtime before the Geo workspace was activated');
   }
+  await reactPage.getByTestId('workspace-float-tasks').getByRole('button', { name: '关闭任务面板', exact: true }).click();
+  await reactPage.locator('[data-testid="workspace-float-tasks"]:not(.is-open)').waitFor();
+
+  // A later task starts again at revision 1 and must replace the completed
+  // higher-revision task before the overall agent response finishes.
+  await triggerPrompt('连续任务切换');
+  await reactPage.getByRole('button', { name: '打开或关闭任务面板' }).click();
+  const taskFloat = reactPage.getByTestId('workspace-float-tasks');
+  await taskFloat.getByText('第一项任务', { exact: true }).waitFor({ timeout: 10_000 });
+  await taskFloat.getByText('第二项任务', { exact: true }).waitFor({ timeout: 10_000 });
+  await reactPage.getByRole('button', { name: '发送引导', exact: true }).waitFor();
+  await reactPage.locator('[data-testid="agent-status"][data-state="connected"]').waitFor({ timeout: 10_000 });
+  await taskFloat.getByRole('button', { name: '关闭任务面板', exact: true }).click();
 
   await triggerPrompt('基线-geo');
   await reactPage.locator('.assistant-message', { hasText: '地图已发布，可在右侧地图面板查看。' }).waitFor({ timeout: 10_000 });
   const conversationTimeline = await reactPage.evaluate(() => Array.from(document.querySelectorAll('.conversation-thread > *')).map((node) => (node.textContent || '').trim()));
   const geoIntroIndex = conversationTimeline.findLastIndex((text) => text.includes('正在生成下车热点地图。'));
-  const geoToolIndex = conversationTimeline.findLastIndex((text) => text.includes('present_visualization'));
+  const geoToolIndex = conversationTimeline.findLastIndex((text) => text.includes('地图展示'));
   const geoFinalIndex = conversationTimeline.findLastIndex((text) => text.includes('地图已发布，可在右侧地图面板查看。'));
   if (!(geoIntroIndex < geoToolIndex && geoToolIndex < geoFinalIndex)) {
     throw new Error(`Tool card left its conversation turn: ${JSON.stringify(conversationTimeline.slice(-8))}`);
@@ -161,11 +329,51 @@ try {
   await reactPage.locator('[data-testid="workspace-float-map"].is-open').waitFor({ timeout: 10_000 });
   await reactPage.locator('.geo-map').waitFor({ timeout: 10_000 });
   await reactPage.locator('.geo-layers', { hasText: '下车点' }).waitFor({ timeout: 10_000 });
+  const geoView = reactPage.getByTestId('workspace-float-map');
+  const geoCanvas = geoView.locator('canvas.maplibregl-canvas');
+  await geoCanvas.waitFor({ timeout: 10_000 });
+  await geoCanvas.evaluate((node) => { node.dataset.smokePersistentMap = 'true'; });
+  const geoLayerLayout = await geoView.locator('.geo-layers').evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      columns: style.gridTemplateColumns.split(/\s+/).filter(Boolean).length,
+      height: Number.parseFloat(style.height),
+      maxHeight: Number.parseFloat(style.maxHeight),
+      overflowY: style.overflowY,
+    };
+  });
+  if (geoLayerLayout.columns !== 3 || geoLayerLayout.maxHeight !== 96 || geoLayerLayout.height >= geoLayerLayout.maxHeight || geoLayerLayout.overflowY !== 'auto') {
+    throw new Error(`Geo layer panel is not a content-sized three-column scroller: ${JSON.stringify(geoLayerLayout)}`);
+  }
+  const geoDescriptionLayout = await geoView.locator('.geo-description').evaluate((node) => {
+    const style = getComputedStyle(node);
+    const chrome = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom)
+      + Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.borderBottomWidth);
+    return {
+      height: Number.parseFloat(style.height),
+      maxHeight: Number.parseFloat(style.maxHeight),
+      maxLines: (Number.parseFloat(style.maxHeight) - chrome) / Number.parseFloat(style.lineHeight),
+      overflowY: style.overflowY,
+    };
+  });
+  if (Math.abs(geoDescriptionLayout.maxLines - 4) > 0.05 || geoDescriptionLayout.height >= geoDescriptionLayout.maxHeight || geoDescriptionLayout.overflowY !== 'auto') {
+    throw new Error(`Geo description is not a content-sized four-line scroller: ${JSON.stringify(geoDescriptionLayout)}`);
+  }
+  await geoView.getByRole('button', { name: '回到范围' }).click();
+  const dropoffLayerToggle = geoView.locator('.geo-layers label', { hasText: '下车点' }).locator('input');
+  await dropoffLayerToggle.uncheck();
+  await triggerPrompt('更新-geo');
+  await geoView.locator('.geo-toolbar', { hasText: 'revision 2' }).waitFor({ timeout: 10_000 });
+  if (await geoView.locator('canvas[data-smoke-persistent-map="true"]').count() !== 1) {
+    throw new Error('Geo revision update rebuilt the MapLibre canvas');
+  }
+  if (await dropoffLayerToggle.isChecked()) {
+    throw new Error('Geo revision update discarded the local layer visibility override');
+  }
   if (!requestedUrls.some((url) => url.includes('geo-runtime-entry') || url.includes('maplibre'))) {
     throw new Error('Geo workspace did not load its runtime on demand');
   }
-  await reactPage.getByTestId('workspace-float-map')
-    .getByRole('button', { name: '关闭地图视图', exact: true }).click();
+  await geoView.getByRole('button', { name: '关闭地图视图', exact: true }).click();
 
   await triggerPrompt('React-dialog-confirm');
   const confirmDialog = reactPage.getByRole('dialog', { name: '确认发布报告' });

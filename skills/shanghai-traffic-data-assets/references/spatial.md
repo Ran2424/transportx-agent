@@ -19,9 +19,10 @@
 | 网约车显式 WGS84 | 原值规范为 EPSG:4326 |
 | 网约车显式 BD-09 | BD-09 转换为 WGS84 |
 | 上海体育场场馆 | 使用用户确认的 WGS84 `(121.43348, 31.18334)` |
+| 重要交通枢纽 POI | 使用 `common.dim_poi` 中用户确认的 WGS84 中心点 |
 | 无法确认的坐标 | 保留记录，CRS 标记 `UNKNOWN` |
 
-`common.dim_crs` 只登记 `EPSG:4326` 和 `UNKNOWN`。本次构建的 `common.dim_geo_feature` 中，5,869 个对象为 WGS84，9 个为 UNKNOWN。
+`common.dim_crs` 只登记 `EPSG:4326` 和 `UNKNOWN`。本次构建的 `common.dim_geo_feature` 中，5,873 个对象为 WGS84，9 个为 UNKNOWN。
 
 ## 场馆订单的 CRS 反推
 
@@ -61,6 +62,7 @@
 | 公交线路/方向站序 | `bus.bridge_bus_line_stop` |
 | 订单 OD | `ridehail.fact_trip` 的 pickup/dropoff 坐标和 CRS |
 | 场馆到离场点 | `ridehail.fact_venue_event` |
+| 重要火车站、机场中心点 | `common.dim_poi` |
 | 跨领域空间发现 | `common.dim_geo_feature` |
 
 换乘站可以有一个物理实体和多个线路上下文点。实体计数、客流连接用物理 `station_id`；线路制图用关系表中的上下文点。

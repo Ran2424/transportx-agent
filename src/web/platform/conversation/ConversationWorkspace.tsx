@@ -5,7 +5,7 @@ import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown, renderUserMarkdown } from '../../../public/markdown.js';
 import { useAppServices } from '../../app/AppProviders';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
-import { Icon } from '../../components/icons';
+import { Icon, type IconName } from '../../components/icons';
 import { projectTaskState } from '../../features/task/task-projection';
 
 const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
@@ -70,8 +70,46 @@ function preview(args: Record<string, unknown>) {
   return Object.values(args).find((value): value is string => typeof value === 'string') || '';
 }
 
+const TOOL_LABELS: Record<string, string> = {
+  read: '文件读取',
+  bash: '命令执行',
+  shell: '命令执行',
+  command: '命令执行',
+  exec: '命令执行',
+  edit: '文件编辑',
+  write: '文件写入',
+  create: '文件创建',
+  apply_patch: '文件修改',
+  tau_task: '任务状态',
+  tau_ask_user: '用户询问',
+  publish_geodata: '数据发布',
+  present_visualization: '地图展示',
+};
+
 function toolLabel(name: string) {
-  return ({ read: '读取', bash: '命令', edit: '编辑', write: '创建', tau_task: '任务状态', tau_ask_user: '用户交互' } as Record<string, string>)[name.toLowerCase()] || name;
+  const normalized = name.trim().toLowerCase().replaceAll('-', '_');
+  if (TOOL_LABELS[normalized]) return TOOL_LABELS[normalized];
+  if (normalized.includes('task')) return '任务执行';
+  if (normalized.includes('geo') || normalized.includes('map')) return '地图工具';
+  if (normalized.includes('visualization')) return '图形展示';
+  if (normalized.startsWith('read_') || normalized.includes('fetch')) return '文件读取';
+  if (normalized.startsWith('write_') || normalized.startsWith('create_')) return '文件写入';
+  if (normalized.startsWith('edit_') || normalized.includes('patch')) return '文件修改';
+  if (normalized.includes('search') || normalized.includes('find') || normalized.includes('query')) return '内容搜索';
+  if (normalized.includes('ask') || normalized.includes('input')) return '用户询问';
+  if (normalized.includes('browser') || normalized.startsWith('web_')) return '网页工具';
+  if (normalized.includes('image')) return '图像工具';
+  return '通用工具';
+}
+
+function toolIconName(name: string): IconName {
+  const normalized = name.trim().toLowerCase().replaceAll('-', '_');
+  if (['bash', 'shell', 'command', 'exec'].some((value) => normalized === value || normalized.startsWith(`${value}_`))) return 'command';
+  if (normalized.includes('task')) return 'task';
+  if (normalized.includes('geo') || normalized.includes('map') || normalized.includes('visualization')) return 'map';
+  if (normalized === 'read' || normalized.startsWith('read_')) return 'file';
+  if (['write', 'edit', 'create', 'apply_patch'].some((value) => normalized === value || normalized.startsWith(`${value}_`))) return 'write';
+  return 'tool';
 }
 
 function imagePaths(value: unknown) {
@@ -83,12 +121,16 @@ function imagePaths(value: unknown) {
 
 const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; sessionId: string }) {
   const [open, setOpen] = useState(tool.status === 'running');
+  useEffect(() => {
+    if (tool.status !== 'running') setOpen(false);
+  }, [tool.status]);
   const output = tool.result === undefined ? '' : formatToolResultText(tool.result);
   const isEdit = tool.name.toLowerCase() === 'edit' && (typeof tool.args.oldText === 'string' || typeof tool.args.old_text === 'string');
   const oldText = String(tool.args.oldText ?? tool.args.old_text ?? '');
   const newText = String(tool.args.newText ?? tool.args.new_text ?? '');
   const status = tool.status === 'running' ? '执行中' : tool.status === 'error' || tool.isError ? '出错' : '已完成';
-  return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}</button><span className={`tool-status ${tool.status}`}>{status}</span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(tool.args, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>输出</span><button type="button" onClick={() => void copy(output)}>复制</button></div><pre className="tool-output">{output}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={`工具图片预览：${path.split('/').pop()}`} /></a>)}</> : tool.status === 'running' ? <span className="tool-pending">等待工具输出…</span> : null}</div> : null}</section>;
+  const iconName = toolIconName(tool.name);
+  return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon className="tool-chevron" name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}</button><span className={`tool-status ${tool.status}`} data-tool-kind={iconName} title={status}><Icon name={iconName} /><span className="sr-only">{status}</span></span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(tool.args, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>输出</span><button type="button" onClick={() => void copy(output)}>复制</button></div><pre className="tool-output">{output}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={`工具图片预览：${path.split('/').pop()}`} /></a>)}</> : tool.status === 'running' ? <span className="tool-pending">等待工具输出…</span> : null}</div> : null}</section>;
 });
 
 function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolCallId: string; toolName?: string; args?: Record<string, unknown>; result?: unknown; partialResult?: unknown; isError?: boolean; status: 'running' | 'completed' | 'error' }>) {
@@ -150,24 +192,24 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled }: { sessionId
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
   useEffect(resize, [value]);
   async function add(files: FileList | File[]) { try { const next = await Promise.all(Array.from(files).map(processImage)); setImages((current) => [...current, ...next]); setError(''); } catch (cause) { setError((cause as Error).message); } }
-  async function submit(mode: 'prompt' | 'steer' | 'followUp' = streaming ? 'steer' : 'prompt') {
+  async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
     const message = value.trim() || (images.length ? '（见附加图片）' : '');
     if (!message) return;
-    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message }); else if (mode === 'followUp') await kernel.commands.agent.followUp({ sessionId, message }); else await kernel.commands.agent.sendPrompt({ sessionId, message, images }); setValue(''); setImages([]); } catch (cause) { setError((cause as Error).message || '发送失败'); }
+    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message }); else await kernel.commands.agent.sendPrompt({ sessionId, message, images }); setValue(''); setImages([]); } catch (cause) { setError((cause as Error).message || '发送失败'); }
   }
   async function toggleTaskMode() {
     if (streaming || taskModeBusy) return;
     setTaskModeBusy(true);
     setError('');
     try {
-      await kernel.commands.agent.sendPrompt({ sessionId, message: `/task ${taskModeEnabled ? 'off' : 'on'}` });
+      await kernel.commands.agent.setTaskMode({ sessionId, enabled: !taskModeEnabled });
     } catch (cause) {
       setError((cause as Error).message || '切换任务模式失败');
     } finally {
       setTaskModeBusy(false);
     }
   }
-  return <footer className="conversation-composer"><div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>排队中</span><p>{item.message}</p><button type="button" aria-label="取消排队消息" onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>{images.length ? <div className="attachment-list">{images.map((image, index) => <div key={`${image.data.slice(0, 12)}-${index}`}><img src={`data:${image.mimeType};base64,${image.data}`} alt="待发送图片" /><button type="button" aria-label="移除图片" onClick={() => setImages((current) => current.filter((_, i) => i !== index))}>×</button></div>)}</div> : null}<div className="composer-row"><div className="composer-action-rail"><button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? '关闭任务模式' : '开启任务模式'} disabled={streaming || taskModeBusy} onClick={() => void toggleTaskMode()}><Icon name="task" /><span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? '关闭任务模式' : '开启任务模式'}</span></button><label className="composer-attach"><Icon name="plus" /><span className="composer-action-hint" aria-hidden="true">添加图片附件</span><span className="sr-only">添加图片</span><input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onChange={(event) => { if (event.currentTarget.files) void add(event.currentTarget.files); event.currentTarget.value = ''; }} /></label></div><form onSubmit={(event) => { event.preventDefault(); void submit(); }}><textarea ref={inputRef} value={value} onChange={(event) => setValue(event.target.value)} onPaste={(event) => { const files = [...event.clipboardData.items].filter((item) => item.type.startsWith('image/')).map((item) => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void add(files); } }} onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void add(event.dataTransfer.files); } }} onDragOver={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={streaming ? '发送引导，或加入后续问题…' : '输入交通问题或 Pi 指令…'} aria-label="消息输入" />{streaming ? <><button className="composer-secondary" type="button" onClick={() => void submit('followUp')}>后续问题</button><button className="composer-send" type="button" onClick={() => void submit('steer')}>发送引导</button><button className="composer-abort" type="button" onClick={() => void kernel.commands.agent.abort(sessionId)}>中止</button></> : <button className="composer-send" type="submit" aria-label="发送消息">↑</button>}</form></div>{error ? <p className="composer-error" role="alert">{error}</p> : null}</footer>;
+  return <footer className="conversation-composer"><div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>排队中</span><p>{item.message}</p><button type="button" aria-label="取消排队消息" onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>{images.length ? <div className="attachment-list">{images.map((image, index) => <div key={`${image.data.slice(0, 12)}-${index}`}><img src={`data:${image.mimeType};base64,${image.data}`} alt="待发送图片" /><button type="button" aria-label="移除图片" onClick={() => setImages((current) => current.filter((_, i) => i !== index))}>×</button></div>)}</div> : null}<div className="composer-row"><div className="composer-action-rail"><button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? '关闭任务模式' : '开启任务模式'} disabled={streaming || taskModeBusy} onClick={() => void toggleTaskMode()}><Icon name="task" /><span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? '关闭任务模式' : '开启任务模式'}</span></button><label className="composer-attach"><Icon name="plus" /><span className="composer-action-hint" aria-hidden="true">添加图片附件</span><span className="sr-only">添加图片</span><input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onChange={(event) => { if (event.currentTarget.files) void add(event.currentTarget.files); event.currentTarget.value = ''; }} /></label></div><form onSubmit={(event) => { event.preventDefault(); void submit(); }}><textarea ref={inputRef} value={value} onChange={(event) => setValue(event.target.value)} onPaste={(event) => { const files = [...event.clipboardData.items].filter((item) => item.type.startsWith('image/')).map((item) => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void add(files); } }} onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void add(event.dataTransfer.files); } }} onDragOver={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={streaming ? '输入内容以引导当前任务…' : '输入交通问题或 Pi 指令…'} aria-label="消息输入" />{streaming ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label="发送引导" onClick={() => void submit('steer')}>发送引导</button><button className="composer-abort" type="button" aria-label="终止当前任务" onClick={() => void kernel.commands.agent.abort(sessionId)}>终止</button></div> : <button className="composer-send" type="submit" aria-label="发送消息">↑</button>}</form></div>{error ? <p className="composer-error" role="alert">{error}</p> : null}</footer>;
 }
 
 export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: string; showThinking: boolean }) {

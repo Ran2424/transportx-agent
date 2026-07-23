@@ -106,6 +106,7 @@ function chunkText(text, chunks) {
 // ---- 回放引擎 ----
 let aborted = false;
 let replaying = null;
+let taskStateRevision = 0;
 const pendingUi = new Map();
 
 async function runSteps(steps, promptMessage) {
@@ -319,6 +320,20 @@ async function handleCommand(command) {
     case 'follow_up': {
       respond(id, true, {});
       const message = String(command.message || '');
+      const taskModeMatch = message.trim().match(/^\/task (on|off) --silent$/);
+      if (taskModeMatch) {
+        const entry = appendSessionEntry({
+          type: 'custom',
+          customType: 'pi-task-mode',
+          data: {
+            schemaVersion: 1,
+            revision: ++taskStateRevision,
+            enabled: taskModeMatch[1] === 'on',
+          },
+        });
+        emit({ type: 'entry_appended', entry });
+        return;
+      }
       const rule = (scenario.rules || []).find((candidate) => message.includes(candidate.match));
       const steps = (rule || scenario.fallback || { steps: [{ streamText: { text: '（fake-pi 默认回复）', chunks: 4 } }] }).steps;
       replaying = runSteps(steps, message).finally(() => { replaying = null; });

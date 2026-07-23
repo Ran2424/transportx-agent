@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "description": "交通 Agent 浏览器工作台，基于 Pi Tau Web Server 管理多路 Pi RPC 会话",
   "keywords": [
     "pi",

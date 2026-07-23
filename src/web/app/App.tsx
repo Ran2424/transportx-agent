@@ -63,12 +63,20 @@ export function App() {
     ? `${activeSession.id}:${visualizations.map((item) => `${item.visualizationId}:${item.revision}`).join(',')}`
     : '';
   const openedMapKey = useRef('');
+  const openedTaskSessions = useRef(new Set<string>());
 
   useEffect(() => {
     if (!visualizationKey || visualizationKey === openedMapKey.current) return;
     openedMapKey.current = visualizationKey;
     setMapOpen(true);
   }, [visualizationKey]);
+
+  useEffect(() => {
+    const sessionId = activeSession?.id;
+    if (!sessionId || !taskState.task || openedTaskSessions.current.has(sessionId)) return;
+    openedTaskSessions.current.add(sessionId);
+    setTasksOpen(true);
+  }, [activeSession?.id, taskState.task]);
 
   useEffect(() => { if (!taskAvailable) setTasksOpen(false); }, [taskAvailable]);
   useEffect(() => { if (visualizations.length === 0) setMapOpen(false); }, [visualizations.length]);

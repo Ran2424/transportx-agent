@@ -8,8 +8,7 @@ type ToolResultBlock = {
 
 type ToolResult = { content?: ToolResultBlock[]; [key: string]: unknown };
 
-const MAX_TOOL_OUTPUT_CHARS = 6000;
-const MAX_TOOL_FIELD_CHARS = 1200;
+const MAX_TOOL_OUTPUT_CHARS = 50_000;
 const ENCODED_IMAGE_RE = /^data:image\/[a-z0-9.+-]+;base64,/i;
 const BASE64ISH_RE = /^[A-Za-z0-9+/=\s]+$/;
 
@@ -29,7 +28,7 @@ function formatToolResultBlock(block: ToolResultBlock) {
 function sanitizeToolText(text: string) {
   const raw = String(text || '');
   if (raw.length >= 2048 && (ENCODED_IMAGE_RE.test(raw.trim()) || (raw.replace(/\s+/g, '').length > 2048 && BASE64ISH_RE.test(raw.replace(/\s+/g, ''))))) return `[图片/二进制内容已省略：${raw.length.toLocaleString()} 字符]`;
-  return raw.length <= MAX_TOOL_FIELD_CHARS ? raw : `${raw.slice(0, MAX_TOOL_FIELD_CHARS)}\n\n[输出过长，已截断 ${raw.length.toLocaleString()} 字符，避免页面卡顿]`;
+  return raw;
 }
 
 function safeToolStringify(value: unknown) {
