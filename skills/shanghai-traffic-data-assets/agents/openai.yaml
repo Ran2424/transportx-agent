@@ -1,4 +1,4 @@
 interface:
-  display_name: "上海交通数据资产"
-  short_description: "查询统一WGS84交通资产、订单事实和小时/日业务指标"
-  default_prompt: "使用 $shanghai-traffic-data-assets 先确认覆盖、粒度和网约车/场馆订单关系，再按统一ID、Asia/Shanghai时间和WGS84坐标契约完成分析。"
+  display_name: "重大活动交通态势洞察"
+  short_description: "查询上海体育场重大活动多方式交通数据，支持态势洞察与辅助决策"
+  default_prompt: "使用 $shanghai-traffic-data-assets 分析重大活动交通态势。以内置的2025年时代少年团上海体育场四场演唱会为案例，先读取活动日期和19:00—22:00时段，再确认覆盖、粒度、订单关系、统一ID和WGS84坐标契约。"

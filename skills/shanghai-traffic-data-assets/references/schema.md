@@ -1,5 +1,17 @@
 # 数据模型、粒度与连接
 
+本文件说明整体模型和跨库连接。需要完整字段、行数、限制和查询样例时，按领域读取 `catalog.md`、`common.md`、`road.md`、`metro.md`、`bus.md` 或 `ridehail.md`。
+
+## 导航
+
+- [查询命名空间与分层](#查询命名空间)
+- [订单域](#订单域只保留一份订单)
+- [公交](#公交)
+- [轨交](#轨交)
+- [道路、天气与公共维度](#道路天气与公共维度)
+- [Catalog](#catalog)
+- [连接规则](#连接规则)
+
 ## 查询命名空间
 
 | 数据库 | 内容 |
@@ -103,7 +115,7 @@ event_count = source_event_count + venue_enriched_event_count
 |---|---|---|
 | `common.dim_date` | 一天 | 所有事实用 `date_key` 连接 |
 | `common.dim_time` | 日内一分钟 | `minute_key` 0—1439 |
-| `common.dim_event` | 一次活动日期 | 只有日期精度 |
+| `common.dim_event` | 一次活动日期 | 只有日期精度；案例时刻仅在SKILL说明中维护 |
 | `common.fact_weather_observation` | 网格—观测时刻 | 温度、滚动一小时降雨 |
 | `common.mart_weather_grid_hour` | 网格—日期—小时 | 小时跨域分析 |
 | `common.mart_weather_grid_day` | 网格—日期 | 日天气概览 |
