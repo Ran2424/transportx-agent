@@ -1,4 +1,4 @@
 interface:
   display_name: "上海交通数据资产"
-  short_description: "查询上海重大活动交通资产、WGS84公交轨交网络与治理口径"
-  default_prompt: "使用 $shanghai-traffic-data-assets 查询上海交通资产，并按正确覆盖范围、统一ID和坐标系完成分析。"
+  short_description: "查询统一WGS84交通资产、订单事实和小时/日业务指标"
+  default_prompt: "使用 $shanghai-traffic-data-assets 先确认覆盖、粒度和网约车/场馆订单关系，再按统一ID、Asia/Shanghai时间和WGS84坐标契约完成分析。"

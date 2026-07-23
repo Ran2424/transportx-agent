@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import math
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 
 DB_DIR = Path(__file__).resolve().parents[1] / "assets" / "databases"
 DATABASES = ("common", "road", "metro", "bus", "ridehail")
+MAX_ROWS_LIMIT = 5000
 
 
 def haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
@@ -90,27 +92,50 @@ def main() -> None:
     action.add_argument("--metrics", action="store_true", help="List governed metrics.")
     action.add_argument("--ids", action="store_true", help="List canonical entity ID policies.")
     action.add_argument("--examples", action="store_true", help="List verified query examples.")
+    action.add_argument("--coverage", action="store_true", help="Show domain grain, coverage, CRS, and usage notes.")
+    action.add_argument("--business", action="store_true", help="List hourly, daily, and other business marts.")
+    action.add_argument(
+        "--order-sources",
+        action="store_true",
+        help="Explain the overlap between ride-hailing and venue-order sources.",
+    )
     parser.add_argument("--format", choices=("table", "json", "csv"), default="table")
     parser.add_argument("--max-rows", type=int, default=200)
     args = parser.parse_args()
+
+    if not 1 <= args.max_rows <= MAX_ROWS_LIMIT:
+        raise SystemExit(f"--max-rows must be between 1 and {MAX_ROWS_LIMIT}")
 
     try:
         conn = connect()
     except FileNotFoundError as exc:
         raise SystemExit(str(exc)) from exc
     if args.sql:
+        if not re.match(r"^(SELECT|WITH|EXPLAIN\s+QUERY\s+PLAN)\b", args.sql.lstrip(), re.IGNORECASE):
+            raise SystemExit("--sql accepts one read-only SELECT, WITH, or EXPLAIN QUERY PLAN statement")
         rows, truncated = run_query(conn, args.sql, args.max_rows)
     elif args.describe:
         try:
             database_name, table_name = args.describe.split(".", 1)
         except ValueError as exc:
             raise SystemExit("--describe requires DATABASE.TABLE") from exc
+        if database_name not in ("catalog", *DATABASES):
+            raise SystemExit(f"Unknown database: {database_name}")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table_name):
+            raise SystemExit(f"Invalid object name: {table_name}")
+        exists = conn.execute(
+            f"SELECT 1 FROM {database_name}.sqlite_master WHERE name=? AND type IN ('table','view')",
+            (table_name,),
+        ).fetchone()
+        if not exists:
+            raise SystemExit(f"Unknown object: {database_name}.{table_name}")
         rows, truncated = run_query(
             conn,
-            "SELECT ordinal_position, column_name, declared_type, is_not_null, is_primary_key "
-            "FROM meta_column WHERE database_name=? AND table_name=? ORDER BY ordinal_position",
+            f"SELECT cid + 1 AS ordinal_position, name AS column_name, type AS declared_type, "
+            f"\"notnull\" AS is_not_null, pk AS primary_key_position "
+            f"FROM {database_name}.pragma_table_info(?) ORDER BY cid",
             args.max_rows,
-            (database_name, table_name),
+            (table_name,),
         )
     elif args.metrics:
         rows, truncated = run_query(conn, "SELECT * FROM meta_metric ORDER BY domain_code, metric_code", args.max_rows)
@@ -118,6 +143,21 @@ def main() -> None:
         rows, truncated = run_query(conn, "SELECT * FROM meta_entity_id ORDER BY domain_code, entity_code", args.max_rows)
     elif args.examples:
         rows, truncated = run_query(conn, "SELECT * FROM meta_query_example ORDER BY example_id", args.max_rows)
+    elif args.coverage:
+        rows, truncated = run_query(conn, "SELECT * FROM meta_analysis_guide ORDER BY domain_code", args.max_rows)
+    elif args.business:
+        rows, truncated = run_query(
+            conn,
+            "SELECT database_name, table_name, row_count, description_cn "
+            "FROM meta_table WHERE governance_layer='mart' ORDER BY database_name, table_name",
+            args.max_rows,
+        )
+    elif args.order_sources:
+        rows, truncated = run_query(
+            conn,
+            "SELECT * FROM meta_order_source_relation ORDER BY relation_code",
+            args.max_rows,
+        )
     else:
         rows, truncated = run_query(
             conn,

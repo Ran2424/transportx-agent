@@ -1,74 +1,113 @@
-# 数据治理与重建
+# 数据治理、质量与重建
 
-## 来源与标准层
+## 标准
 
-- 原始治理库按数据集登记来源路径、文件类型、粒度、行数、字段和抽取SQL。
-- `std_*` 保留接纳记录、`source_row_id`、源ID、重复序号和质量状态。
-- `fact_*` 只暴露通过默认规则、未删除且取规范重复记录的事实。
-- 生成资产保留源字段和标准字段；标准化不会覆盖或伪造源值。
+| 事项 | 标准 |
+|---|---|
+| 资产版本 | 3.0.0 |
+| 业务时区 | Asia/Shanghai |
+| 发布坐标系 | EPSG:4326 |
+| 未知坐标 | 保留记录并标 `UNKNOWN`，不得用于精确空间运算 |
+| 订单实体 | 四类订单源按订单号合并，一单一行 |
+| 订单标识 | 只发布 SHA-256 `order_hash` |
+| 趋势层 | 15分钟、小时、日预聚合 |
 
-## 统一ID
+## 订单来源合并
 
-- 既有20条轨交统一 `line_id` 和既有物理 `station_id` 保持稳定。
-- 高德方向/支线路径使用独立 `route_direction_id`，再映射到统一线路。
-- 高德站点优先按稳定源ID映射；仅在源ID不能匹配时使用唯一精确站名。
-- 同名不同物理站不得只凭名称合并。
-- 公交官方站点与高德站点缺少可靠一一映射，使用 `OFFICIAL:`、`AMAP:` 前缀避免碰撞。
-- 默认事实暴露统一业务ID；源ID只用于 `std_*`、`map_*` 和目录审计。
+四类源代码：
 
-## 质量规则
+- `RHD`：上车表；
+- `RHA`：下车表；
+- `PFV`：场馆离场完整订单；
+- `PTV`：场馆到场完整订单。
 
-错误级规则要求全部通过，至少包括：
+合并步骤：
 
-- 源数据集覆盖完整。
-- 公交客流线路、轨交客流站点和高德轨交站点ID映射完整。
-- 公交/轨交标准空间对象为 EPSG:4326。
-- 公交方向站序、轨交方向站序和统一轨交线站关系的点线距离不超过25米。
-- 默认事实不暴露源业务实体ID。
-- 原始订单号不进入分发资产。
+1. 每张源表先按订单号选择规范记录，同时统计源内重复行。
+2. 四张表取订单号并集。
+3. 场馆完整订单优先提供完整上下车时间、坐标和地点；同一订单同时命中两个场馆源时以 PFV 为优先值，并标记核心字段冲突。
+4. 生成一个 `std_trip` 记录，保留 `source_coverage`、`venue_relation`、`source_duplicate_count` 和质量状态。
+5. 从统一订单派生事件、场馆视图和集市，不再维护第二份场馆订单事实。
 
-查询最近构建结果：
+这个模型避免两类错误：把同一订单重复存储，以及把上、下车两个端点误计为两笔订单。
+
+## 质量处理
+
+- 逻辑删除订单不进入默认事实。
+- 源内重复行汇总到 `source_duplicate_count`，本次共 647 行。
+- 同时命中两个场馆源的 95,863 个订单中，9 个核心字段冲突，保留并标记 `venue_source_conflict=1`。
+- 无效时间和超出上海合理范围的坐标留在标准层，默认订单事实排除。
+- CRS 未知记录保留在事实中，字段明确标记。
+- 事件采用端点级质量过滤；订单采用整单质量过滤。
+- `catalog.meta_quality_result` 保存本次构建的规则结果。
+
+错误级规则要求全部通过，当前包括：
+
+- 32 个源数据集全部登记；
+- 公交线路、轨交站点和高德轨交站点 ID 映射完整；
+- 公交/轨交发布空间对象为 WGS84；
+- 发布资产 CRS 只有 EPSG:4326/UNKNOWN，且无源坐标副本列；
+- 点线距离规则通过；
+- 默认事实不暴露原始业务 ID；
+- 原始订单号不进入 Agent 资产。
+
+## 统一 ID
+
+- 轨交使用稳定 `line_id`、`station_id`。
+- 高德方向/支线路径使用独立 `route_direction_id`，再映射统一线路。
+- 公交官方站点与高德站点缺少可靠一一映射时，用 `OFFICIAL:`、`AMAP:` 前缀防碰撞。
+- 订单使用不可逆 SHA-256 哈希；不发布原始订单号。
+- 源 ID 只用于标准层、映射表和目录审计。
+
+## 隐私与查询边界
+
+- 订单级精确时间、坐标和地点属于敏感数据。一般分析优先使用 15 分钟、小时或日集市。
+- 输出明细前确认用途和最小必要字段，不默认展示地点文本或精确坐标。
+- 数据库和原始治理库不提交 Git。
+- 数据集是徐汇/上海体育场相关样本，不可外推为上海全市订单或客流总量。
+
+## 查询质量结果
 
 ```bash
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --sql "SELECT r.severity,q.* FROM catalog.meta_quality_result q JOIN catalog.meta_quality_rule r USING(rule_code) ORDER BY r.severity,q.rule_code"
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
+  "<Shanghai traffic query tools directory>/query_assets.py" \
+  --sql "SELECT r.severity,q.* FROM catalog.meta_quality_result q JOIN catalog.meta_quality_rule r USING(rule_code) ORDER BY r.severity,q.rule_code"
 ```
 
-已知警告及精确数量统一维护在 `coverage.md`，不要把警告写成错误级失败。
+已知警告和数量见 `coverage.md`。
 
-## 隐私
+## 分发
 
-- 原始订单号不进入分发数据库，只保存不可逆 SHA-256 `order_hash`。
-- 订单级精确时间和坐标属于敏感数据；对外输出优先使用15分钟聚合。
-- 包含原始订单号的治理库、原始文件和生成的 SQLite 数据库不提交到 Git。
+- 本地安装包可包含 `assets/databases/*.sqlite`。
+- Git 只版本化 SKILL、参考文档和脚本；数据库由 `.gitignore` 排除。
+- 数据库缺失时，`query_assets.py` 会停止并报告缺少的文件。
 
-## 分发边界
+## 重建
 
-- 本地安装包可包含 `assets/databases/*.sqlite`，供 `query_assets.py` 只读查询。
-- Git 仓库忽略 `*.sqlite` 和 `*.db`，只版本化技能说明、参考文档和构建/查询脚本。
-- 缺少数据库的 Git checkout 不能直接回答数据查询；需要受控安装包或重建输入。
-
-## 重建流程
-
-构建脚本会删除并重建目标 SQLite 文件。只有在用户明确要求、源路径已核实并允许覆盖生成资产时执行。
-
-从原始文件构建治理库：
+构建会删除并重建目标 SQLite 文件。只有用户明确要求、源治理库已核实且允许覆盖生成资产时执行。
 
 ```bash
-SHANGHAI_TRAFFIC_PROJECT_ROOT=/absolute/source/project \
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/build_data_governance.py"
-```
-
-从治理库构建分域资产：
-
-```bash
-SHANGHAI_TRAFFIC_SOURCE_DB=/absolute/source/project/data/traffic_governance.sqlite \
+SHANGHAI_TRAFFIC_SOURCE_DB=/absolute/source/traffic_governance.sqlite \
 SHANGHAI_TRAFFIC_SKILL_DIR=/absolute/skill/path \
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/build_agent_data_assets.py"
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
+  "<Shanghai traffic query tools directory>/build_agent_data_assets.py"
 ```
 
-重建后必须重新运行：
+重建后至少运行：
 
 ```bash
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --list
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --sql "SELECT * FROM catalog.meta_quality_result"
+PYTHON=/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10
+QUERY="<Shanghai traffic query tools directory>/query_assets.py"
+
+"$PYTHON" "$QUERY" --coverage
+"$PYTHON" "$QUERY" --order-sources
+"$PYTHON" "$QUERY" --business
+"$PYTHON" "$QUERY" --sql "SELECT * FROM catalog.meta_quality_result"
 ```
+
+还要验证：
+
+- `std_trip` 行数等于四源订单号并集；
+- `COUNT(*) = COUNT(DISTINCT order_hash)`；
+- 所有端点集市满足 `event_count = source_event_count + venue_enriched_event_count`；
+- 所有 SQLite 文件 `PRAGMA integrity_check` 返回 `ok`。

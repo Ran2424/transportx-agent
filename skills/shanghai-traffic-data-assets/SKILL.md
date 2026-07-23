@@ -1,64 +1,107 @@
 ---
 name: shanghai-traffic-data-assets
-description: Query and analyze the governed Shanghai Stadium multimodal traffic SQLite assets. Use when Codex needs WGS84 metro or bus network geometry, route-context stations or stops, passenger flow, road states, ride-hailing, venue trips, weather, event dates, schema discovery, quality checks, lineage, governed metrics, or cross-domain SQL.
+description: Query and analyze the governed Shanghai Stadium multimodal traffic SQLite assets. Use for WGS84 metro or bus geometry, passenger flow, road states, unified ride-hailing and venue orders, weather, event dates, data coverage, quality, lineage, metrics, and cross-domain SQL.
 ---
 
-# Shanghai Traffic Data Assets
+# 上海交通数据资产
 
-通过系统提示给出的“Shanghai traffic query tools directory”中的 `query_assets.py` 查询分域 SQLite 资产。数据库位于系统提示给出的“Shanghai traffic SQLite data directory”。当前任务目录通常是 `scenario/<任务>`，不要把它误认为 Skill 或数据库目录。
+使用系统提示给出的 `query_assets.py` 查询分域 SQLite 资产。数据库目录由本地安装包提供；不要把当前任务目录误认为数据库目录。
 
-## 工作流程
+## Agent 查询顺序
 
-1. 先运行发现命令，确认本地数据库齐全：
-
-```bash
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --list
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 "<Shanghai traffic query tools directory>/query_assets.py" --describe metro.bridge_metro_line_station
-```
-
-2. 按任务读取一份直接相关的参考文件：
-
-- 覆盖范围、行数和已知缺口：`references/coverage.md`
-- 表粒度、主键和连接方式：`references/schema.md`
-- 坐标、站线关系和地图制图：`references/spatial.md`
-- 指标定义和聚合限制：`references/metrics.md`
-- 血缘、质量、隐私和重建：`references/governance.md`
-
-3. 查询全限定对象名：`catalog.*`、`common.*`、`road.*`、`metro.*`、`bus.*`、`ridehail.*`。
-4. 输出时同时说明时间范围、空间范围、事实覆盖和 CRS；不要把静态供给覆盖误写成客流覆盖。
-
-## 对象选择
-
-- 默认分析用 `fact_*`；常用趋势用 `mart_*`。
-- 实体名称和属性用 `dim_*`；源ID映射用 `map_*` 或 `catalog.meta_id_mapping`。
-- 线路拓扑和线路上下文点位用 `bridge_*`。
-- 全量接纳记录和质量审计用 `std_*`、`ops_*`、`quality_*`、`catalog.meta_quality_result`。
-
-## 不可违反的规则
-
-- 公交和轨交标准空间字段为 WGS84，`normalized_crs='EPSG:4326'`；高德原始值仍是 GCJ-02。
-- 将目标实体名称本身不带“站”“站点”“地铁站”或“轨道交通站”的“上海体育场”和“上海体育馆”都解释为场馆 POI `venue_shanghai_stadium`，使用用户确认的 WGS84 坐标 `(121.43348, 31.18334)`，不得再次进行 GCJ-02 转换。这里的“上海体育馆”仅作为该 POI 的查询别名，不改变规范名称“上海体育场”。
-- 仅当目标实体名称明确为“上海体育场站”“上海体育馆站”或上下文明确要求轨交站点时，才查询 `metro.*` 中相应地铁站；不得用上述场馆 POI 坐标替代地铁站坐标。
-- 绘制某条线路时使用关系表中的线路上下文站点/站序坐标，不用物理站质心替代全部站台位置。
-- 米制缓冲、距离和点线校验先投影到 EPSG:32651；Web 底图显示可投影到 EPSG:3857。不要直接用经纬度计算米制距离。
-- 轨交客流只通过统一 `line_id`、`station_id` 连接；高德方向 `line_id` 不能替代统一线路ID。
-- 公交交易数、轨交人次、网约车事件和订单量纲不同，不得相加成“综合总客流”。
-- `rainfall_1h_mm` 是滚动一小时累计量，按小时取最大值或平均值，不对10分钟观测求和。
-- 4条活动记录只有日期，不得补写开演、结束、进场或散场时刻。
-- 除上述已由用户确认的 `venue_shanghai_stadium` 外，未知或混合 CRS 的场馆、天气、网约车和支付订单不得假定为 WGS84。
-- 原始订单号未分发，仅保留 SHA-256 哈希；不要尝试恢复。
-
-## 常用发现命令
+先发现，再查询。不要凭表名猜粒度、覆盖范围或坐标系。
 
 ```bash
 PYTHON=/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10
 QUERY="<Shanghai traffic query tools directory>/query_assets.py"
+
+"$PYTHON" "$QUERY" --coverage
+"$PYTHON" "$QUERY" --business
+"$PYTHON" "$QUERY" --order-sources
 "$PYTHON" "$QUERY" --metrics
-"$PYTHON" "$QUERY" --ids
-"$PYTHON" "$QUERY" --examples
-"$PYTHON" "$QUERY" --sql "SELECT * FROM catalog.meta_quality_result"
+"$PYTHON" "$QUERY" --describe ridehail.fact_trip
 ```
+
+查询 SQL 必须使用全限定对象名：`catalog.*`、`common.*`、`road.*`、`metro.*`、`bus.*`、`ridehail.*`。
+
+## 先选对对象
+
+- 订单数、OD、行程时长：`ridehail.fact_trip`。
+- 上下车端点：`ridehail.fact_ridehail_event`。
+- 场馆到场/离场事件：`ridehail.fact_venue_event`。
+- 15分钟、小时、日趋势：相应 `mart_*`。
+- 名称和属性：`dim_*`。
+- 线路站序和线路上下文点位：`bridge_*`。
+- 源 ID 映射：`map_*` 或 `catalog.meta_id_mapping`。
+- 全量接纳、异常和血缘审计：`std_*`、`ops_*`、`quality_*`、`catalog.meta_quality_result`。
+
+## 网约车与场馆订单
+
+上车表、下车表、场馆离场表和场馆到场表来自同一订单体系。四类来源按订单号合并到 `ridehail.std_trip`，每个订单只存一行；订单号只保留 SHA-256 哈希。
+
+场馆订单不是第二份订单事实：
+
+- `fact_venue_trip` 是 `fact_trip` 中 `venue_relation <> 'NONE'` 的子集。
+- `fact_ridehail_event` 是统一订单拆出的上、下车端点。
+- `fact_venue_event` 按业务方向选择到场的下车端或离场的上车端。
+- 统计订单必须数 `fact_trip`，不能把两个端点数成两单。
+- 同时命中两个场馆源但核心字段不一致的订单保留 `venue_source_conflict=1`；默认值按场馆离场源优先。
+
+`fact_ridehail_event.endpoint_source` 区分：
+
+- `RIDEHAIL_SOURCE`：端点原本存在于上车表或下车表；
+- `VENUE_ENRICHMENT`：端点由场馆完整订单补齐。
+
+聚合表中的 `source_event_count` 只统计原始上/下车来源，`event_count` 包含补齐后的全部订单端点。两者不能混用。
+
+## 时间与坐标契约
+
+- 全部业务时间解释为 `Asia/Shanghai` 本地时间。
+- `date_key` 为 `YYYYMMDD` 整数；`minute_key` 为 0—1439 的日内分钟。
+- 15分钟桶使用 `slot_15_start`，小时使用 `hour`，日期使用 `date_key`。
+- 发布资产唯一标准坐标系为 WGS84，即 `EPSG:4326`。
+- 已确认的 GCJ-02、BD-09、EPSG:32651 坐标在构建时转换为 WGS84；发布表不保留第二套源坐标列。
+- 无法确认 CRS 的记录不删除，`crs='UNKNOWN'`，并用 `coordinate_status` 说明原因。此类记录不得用于距离、缓冲、最近邻或跨域空间连接。
+
+场馆订单的端点 CRS 按以下证据顺序确定：
+
+1. 能按订单号回连上车表或下车表时，继承对应端点的显式 CRS；
+2. 回连到未知标识时保留为 `UNKNOWN`；
+3. 无法回连时，依据场馆数据集中绝大多数可回连端点为 GCJ-02 的结果，按 GCJ-02 推定并转换；字段标记为 `ASSUMED_GCJ02_FROM_DATASET_MAJORITY`。
+
+推定不等于来源确认。精确空间分析应报告 `coordinate_status` 的组成。
+
+## 不可违反的口径
+
+- 场馆“上海体育场”和本资产中的查询别名“上海体育馆”指 `venue_shanghai_stadium`，使用用户确认的 WGS84 坐标 `(121.43348, 31.18334)`，不得再次做 GCJ-02 转换。
+- 只有名称明确为“上海体育场站”“上海体育馆站”或上下文明确指轨交站时，才使用 `metro.*`。
+- 线路制图使用关系表中的线路上下文站序坐标，不用物理站质心替代所有站台位置。
+- 米制缓冲和距离先投影到 `EPSG:32651`；Web 显示可投影到 `EPSG:3857`。不要在经纬度上直接计算平面米制距离。
+- 轨交客流只通过统一 `line_id`、`station_id` 连接；高德方向 ID 不能替代统一线路 ID。
+- 公交交易数、轨交人次、网约车事件和订单是不同量纲，不得相加为“综合总客流”。
+- `rainfall_1h_mm` 是滚动一小时累计值；小时统计取最大值或平均值，不逐条求和。
+- 四条活动记录只有日期，不得补写开演、进场或散场时刻。
+- 原始订单号未分发，不得尝试恢复。
+
+## 输出要求
+
+回答数据问题时至少说明：
+
+1. 使用的事实或集市对象；
+2. 时间范围和粒度；
+3. 实体与空间覆盖；
+4. 指标单位；
+5. CRS 及 `UNKNOWN`/推定记录处理；
+6. 是否包含场馆补齐端点。
+
+## 参考文件
+
+- `references/coverage.md`：实际覆盖、行数和已知缺口。
+- `references/schema.md`：表粒度、字段、主键和连接方式。
+- `references/spatial.md`：WGS84 契约、场馆 CRS 推断和制图。
+- `references/metrics.md`：指标口径和聚合限制。
+- `references/governance.md`：血缘、质量、隐私和重建。
 
 ## 重建限制
 
-日常查询不要运行构建脚本。只有用户明确要求重建并提供受控源数据时，才按 `references/governance.md` 执行；构建会覆盖生成的 SQLite 数据库。
+日常查询不要运行构建脚本。只有用户明确要求重建且受控治理库路径已核实后，才按 `references/governance.md` 执行。构建会覆盖生成的 SQLite 数据库。
