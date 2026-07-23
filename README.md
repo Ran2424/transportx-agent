@@ -12,6 +12,16 @@
 - 按会话浏览并预览代码、表格、Markdown 报告和图片；预览窗口可拖动、缩放、并行打开。
 - 发布受会话目录约束的 GeoJSON，并按需加载 MapLibre 地图。
 
+## 界面示意
+
+Agent 可在同一工作台中完成 GIS 分析、地图增量编辑和结果说明。下图展示上海体育场周边地铁线路、站点与工具执行过程：
+
+![上海体育场周边地铁线路分析与地图增量编辑](./docs/images/geo-analysis-transit-network.png)
+
+地图可以叠加交通需求热力、重要场站标签和地铁线路，并在右侧保留分析说明：
+
+![网约车下车热力、重要场站与地铁线路叠加分析](./docs/images/geo-analysis-demand-heatmap.png)
+
 ## 快速开始
 
 ```bash
