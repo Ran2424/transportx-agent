@@ -36,7 +36,7 @@ import {
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string }>;
-type PiMessage = { role?: string; content?: PiMessageContent; usage?: JsonRecord; model?: string };
+type PiMessage = { role?: string; content?: PiMessageContent; usage?: JsonRecord; model?: string; timestamp?: unknown };
 type PiRpcPayload = {
   command?: string;
   id?: string;
@@ -58,6 +58,26 @@ type PiRpcMessage = PiRpcPayload & {
   result?: PiRpcPayload;
   message?: PiMessage;
 };
+
+function isoTimestamp(value: unknown) {
+  const date = typeof value === 'number' ? new Date(value) : typeof value === 'string' ? new Date(value) : null;
+  return date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function conversationTimestamp(entry: JsonRecord) {
+  const message = entry.message as { role?: unknown; timestamp?: unknown } | undefined;
+  if (message?.role !== 'user' && message?.role !== 'assistant') return null;
+  return isoTimestamp(message.timestamp) || isoTimestamp(entry.timestamp);
+}
+
+function latestConversationTimestamp(entries: JsonRecord[]) {
+  let latest: string | null = null;
+  for (const entry of entries) {
+    const timestamp = conversationTimestamp(entry);
+    if (timestamp && (!latest || timestamp > latest)) latest = timestamp;
+  }
+  return latest;
+}
 
 const PROJECT_PROMPT_PLACEHOLDERS: Record<string, (cwd: string) => string> = {
   PROJECT_ROOT: () => PROJECT_ROOT,
@@ -152,6 +172,7 @@ export class PiRpcSession {
   pid: number | null;
   createdAt: string;
   lastActiveAt: string;
+  lastConversationAt: string;
   isStreaming: boolean;
   projection: SessionProjection;
   model: ModelIdentity | null;
@@ -182,6 +203,7 @@ export class PiRpcSession {
     this.lastActiveAt = this.createdAt;
     this.isStreaming = false;
     this.projection = new SessionProjection(opts.entries || []);
+    this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
     this.thinkingLevel = parsed.level || 'off';
@@ -216,6 +238,7 @@ export class PiRpcSession {
       isStreaming: this.isStreaming,
       createdAt: this.createdAt,
       lastActiveAt: this.lastActiveAt,
+      lastConversationAt: this.lastConversationAt,
       contextUsage: this.contextUsage,
       capabilities: {
         ...this.capabilities,
@@ -491,11 +514,16 @@ export class PiRpcSession {
 
   reconcileProjection() {
     if (!this.projection.reconcile(this.sessionFile)) return false;
+    const lastConversationAt = latestConversationTimestamp(this.projection.entries);
+    if (lastConversationAt) this.lastConversationAt = lastConversationAt;
     this.applyLatestBridgeEnvelope();
     return true;
   }
 
   trackMessage(message: PiMessage, eventType: string) {
+    if (message.role === 'user' || message.role === 'assistant') {
+      this.lastConversationAt = isoTimestamp(message.timestamp) || new Date().toISOString();
+    }
     if (message.role === 'user' && eventType === 'message_start') {
       const text = this.messageText(message);
       if (text) this.userMessages.push(text.slice(0, 300));

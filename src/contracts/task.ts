@@ -8,8 +8,7 @@
  *     of returning null on the first failure (caller-facing API still returns
  *     `null` on hard failures for backwards compatibility — see
  *     `parseTaskSnapshotQuiet`).
- *   - The strict "running step requires activeStepId" rule that lived only in
- *     `src/public/features/task/task-protocol.ts` is now enforced here.
+ *   - The strict "running step requires activeStepId" rule is enforced here.
  */
 import { asRecord, asString, asFiniteNumber, asPositiveInteger, type JsonRecord } from './common.ts';
 import { TASK_SNAPSHOT_SCHEMA_VERSION } from './version.ts';

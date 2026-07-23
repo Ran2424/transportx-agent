@@ -1,5 +1,7 @@
 # Pi 任务模式与 Web 人机交互实施方案
 
+> 历史实施记录：本文保留旧阶段的方案与取舍；当前运行架构以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准，文中已删除的 DOM 层路径不再适用。
+
 更新时间：2026-07-21
 
 状态：Agent Extension、Web Adapter、版本化状态恢复和基础冒烟测试已完成；pending interaction 断线恢复、超时区分和完整浏览器任务回归仍待实现

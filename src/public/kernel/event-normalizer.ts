@@ -132,7 +132,7 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       case 'auto_compaction_end':
       case 'response':
         // Pi command responses are resolved by the server-side command port.
-        // The server also broadcasts them for legacy clients; they are not
+        // The server also broadcasts them to connected browsers; they are not
         // conversation events and must not surface as protocol errors.
         return [];
       case 'entry_appended': {
@@ -218,7 +218,7 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       case 'response':
       case 'session_switch':
         // RPC responses are consumed via HTTP command ports; session_switch
-        // is a legacy UI hint with no kernel state.
+        // has no Browser Kernel state.
         return [];
       default:
         return [protocolError('unknown_message_type', `Unknown WebSocket message type "${raw.type}"`, undefined, { messageType: raw.type })];

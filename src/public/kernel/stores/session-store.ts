@@ -1,8 +1,8 @@
 /**
  * Session store: live session list, the active session id and the per-session
  * streaming flag. isStreaming is derived here — and only here — from
- * agent_start/agent_end events and server snapshots, ending the legacy
- * RuntimeStore/StateManager/LiveSession triple-write.
+ * agent_start/agent_end events and server snapshots, avoiding duplicate
+ * streaming state in presentation code.
  */
 
 import type { LiveSession, SessionSnapshot } from '../../app-types.js';

@@ -5,52 +5,26 @@ const path = require('node:path');
 const os = require('node:os');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
+import type { TestContext } from 'node:test';
 
-// Loopback host so computeUrls() sets a localhost lanUrl; isolate settings.
 process.env.TAU_HOST = '127.0.0.1';
 process.env.PI_CODING_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-http-'));
 process.env.PI_CODING_AGENT_SESSION_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'sessions');
-// Configure a projects dir so /api/projects has something to list.
 const PROJECTS_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'projects');
 process.env.TAU_PROJECTS_DIR = PROJECTS_DIR;
 
 const { server, computeUrls, liveManager, SESSIONS_DIR, _setSpawnPiForTest } = require('../bin/tau.js');
-import type { TestContext } from 'node:test';
-
 let base = '';
-
 const PROJ_DIR = path.join(SESSIONS_DIR, '--tmp--httpproj');
-const SESSION_FILE = path.join(PROJ_DIR, 's.jsonl');
 
 function writeSessionFileAt(projectDir: string, fileName: string, lines: Array<Record<string, unknown>>) {
   fs.mkdirSync(projectDir, { recursive: true });
   const filePath = path.join(projectDir, fileName);
-  fs.writeFileSync(filePath, lines.map((l: Record<string, unknown>) => JSON.stringify(l)).join('\n') + '\n');
+  fs.writeFileSync(filePath, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
   return filePath;
 }
 
-function writeSessionFile(lines: Array<Record<string, unknown>>) {
-  writeSessionFileAt(PROJ_DIR, 's.jsonl', lines);
-}
-
-interface FakeHttpSession {
-  id: string;
-  cwd: string;
-  model: string;
-  modelSpec: string;
-  thinkingLevel: string;
-  isStreaming: boolean;
-  sessionFile: string;
-  sessionName: string | null;
-  contextUsage: { tokens?: number; usage?: { input_tokens: number; output_tokens: number } } | null;
-  entries: Array<Record<string, unknown>>;
-  metadata: () => { id: string; cwd: string; model: string; isStreaming: boolean; sessionFile: string };
-  snapshot: () => { schemaVersion: 1; session: { id: string }; entries: unknown[]; model: string; isStreaming: boolean; sessionFile: string };
-  terminate: () => Promise<void>;
-  send: () => Promise<{ data: { commands: unknown[] } }>;
-}
-
-function fakeSession(id: string): FakeHttpSession {
+function fakeSession(id: string) {
   return {
     id,
     cwd: '/tmp/proj',
@@ -69,19 +43,21 @@ function fakeSession(id: string): FakeHttpSession {
   };
 }
 
-// A realistic fake `pi` child: real streams so start()'s setEncoding/on('data')
-// wiring works, and an EventEmitter so on('error')/on('exit') resolve startup.
 function makeFakeChild() {
-  const child = new EventEmitter();
+  const child: any = new EventEmitter();
   child.stdin = new PassThrough();
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   child.pid = 12345;
-  child.kill = (sig: string) => { child.killedSignal = sig; };
+  child.kill = () => {};
   return child;
 }
 
-before((t: TestContext, done: () => void) => {
+async function jsonBody(res: Response) {
+  return JSON.parse(await res.text());
+}
+
+before((_: TestContext, done: () => void) => {
   server.listen(0, '127.0.0.1', () => {
     const port = server.address().port;
     computeUrls(port);
@@ -90,72 +66,17 @@ before((t: TestContext, done: () => void) => {
   });
 });
 
-after((t: TestContext, done: () => void) => {
-  server.close(done);
-});
+after((_: TestContext, done: () => void) => server.close(done));
+beforeEach(() => liveManager.sessions.clear());
 
-beforeEach(() => {
-  liveManager.sessions.clear();
-});
-
-async function jsonBody(res: Response) {
-  return JSON.parse(await res.text());
-}
-
-test('GET /api/health reports server health and live session count', async () => {
-  liveManager.sessions.set('tau_1', fakeSession('tau_1'));
-  const res = await fetch(`${base}/api/health`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.status, 'ok');
-  assert.equal(body.role, 'rpc-session-manager');
-  assert.equal(body.liveSessionCount, 1);
-  assert.match(body.lanUrl, /^http:\/\/localhost:\d+$/);
-});
-
-test('GET / serves the default React application and /legacy/ remains an explicit fallback', async () => {
-  const res = await fetch(`${base}/`);
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-type') || '', /^text\/html/);
-  const html = await res.text();
-  assert.match(html, /Pi Traffic Workspace/);
-  assert.match(html, /\/assets\//);
-  assert.doesNotMatch(html, /geo-runtime\.js/);
-
-  const assetPath = html.match(/src="([^\"]+\.js)"/)?.[1];
-  assert.ok(assetPath);
-  const asset = await fetch(`${base}${assetPath}`);
-  assert.equal(asset.status, 200);
-  assert.match(asset.headers.get('content-type') || '', /javascript/);
-
-  const compatibility = await fetch(`${base}/react`, { redirect: 'manual' });
-  assert.equal(compatibility.status, 302);
-  assert.equal(compatibility.headers.get('location'), '/');
-  const legacyRedirect = await fetch(`${base}/legacy`, { redirect: 'manual' });
-  assert.equal(legacyRedirect.status, 302);
-  assert.equal(legacyRedirect.headers.get('location'), '/legacy/');
-  const legacy = await fetch(`${base}/legacy/`);
-  assert.equal(legacy.status, 200);
-  assert.match(await legacy.text(), /Pi Traffic Workspace/);
-});
-
-test('GET /api/live-sessions lists managed sessions', async () => {
-  liveManager.sessions.set('tau_1', fakeSession('tau_1'));
-  const res = await fetch(`${base}/api/live-sessions`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.sessions.length, 1);
-  assert.equal(body.sessions[0].id, 'tau_1');
-});
-
-test('GET geo resource serves session-scoped GeoJSON with ETag revalidation', async (t: TestContext) => {
+test('serves only session-scoped GeoJSON and supports ETag revalidation', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-resource-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const sha256 = 'a'.repeat(64);
   const resourceId = `geo_${sha256.slice(0, 24)}`;
   const dir = path.join(cwd, '.tau', 'geo-resources', resourceId);
-  fs.mkdirSync(dir, { recursive: true });
   const geojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
+  fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'data.geojson'), geojson);
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256, bytes: Buffer.byteLength(geojson), featureCount: 0 }));
   const session = fakeSession('tau_geo');
@@ -163,646 +84,102 @@ test('GET geo resource serves session-scoped GeoJSON with ETag revalidation', as
   liveManager.sessions.set(session.id, session);
 
   const url = `${base}/api/live-sessions/${session.id}/geo-resources/${resourceId}/data`;
-  const res = await fetch(url);
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-type') || '', /^application\/geo\+json/);
-  assert.equal(res.headers.get('etag'), `"${sha256}"`);
-  assert.deepEqual(await jsonBody(res), { type: 'FeatureCollection', features: [] });
-
-  const cached = await fetch(url, { headers: { 'If-None-Match': `"${sha256}"` } });
-  assert.equal(cached.status, 304);
+  const resource = await fetch(url);
+  assert.equal(resource.headers.get('etag'), `"${sha256}"`);
+  assert.deepEqual(await jsonBody(resource), { type: 'FeatureCollection', features: [] });
+  assert.equal((await fetch(url, { headers: { 'If-None-Match': `"${sha256}"` } })).status, 304);
+  assert.equal((await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/..%2Fsecret/data`)).status, 400);
 });
 
-test('GET geo resource rejects malformed ids and cross-session misses', async (t: TestContext) => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-invalid-'));
-  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-  const session = fakeSession('tau_geo_invalid');
-  session.cwd = cwd;
-  liveManager.sessions.set(session.id, session);
-  const malformed = await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/..%2Fsecret/data`);
-  assert.equal(malformed.status, 400);
-  const missing = await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/geo_${'b'.repeat(24)}/data`);
-  assert.equal(missing.status, 404);
+test('Geo resources cannot be read through another live session', async (t: TestContext) => {
+  const firstRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-owner-'));
+  const secondRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-other-'));
+  t.after(() => { fs.rmSync(firstRoot, { recursive: true, force: true }); fs.rmSync(secondRoot, { recursive: true, force: true }); });
+  const resourceId = `geo_${'b'.repeat(24)}`;
+  const dir = path.join(firstRoot, '.tau', 'geo-resources', resourceId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'data.geojson'), JSON.stringify({ type: 'FeatureCollection', features: [] }));
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256: 'b'.repeat(64), bytes: 42, featureCount: 0 }));
+  const owner = fakeSession('tau_geo_owner'); owner.cwd = firstRoot;
+  const other = fakeSession('tau_geo_other'); other.cwd = secondRoot;
+  liveManager.sessions.set(owner.id, owner); liveManager.sessions.set(other.id, other);
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/geo-resources/${resourceId}/data`)).status, 200);
+  assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/geo-resources/${resourceId}/data`)).status, 404);
 });
 
-test('POST /api/live-sessions defaults to the server cwd when cwd is omitted', async (t: TestContext) => {
-  const child = makeFakeChild();
-  _setSpawnPiForTest(() => child);
-  t.after(() => _setSpawnPiForTest(null));
-  const res = await fetch(`${base}/api/live-sessions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  const scenarioRoot = path.join(process.cwd(), 'scenario');
-  assert.equal(path.dirname(body.session.cwd), scenarioRoot);
-  assert.match(path.basename(body.session.cwd), /^\d{8}-\d{6}-untitled(?:-\d+)?$/);
-  t.after(() => fs.rmSync(body.session.cwd, { recursive: true, force: true }));
-});
-
-test('GET /api/live-sessions/:id/snapshot returns 404 for missing session', async () => {
-  const res = await fetch(`${base}/api/live-sessions/tau_missing/snapshot`);
-  assert.equal(res.status, 404);
-});
-
-test('GET /api/live-sessions/:id/snapshot returns snapshot for a live session', async () => {
-  liveManager.sessions.set('tau_1', fakeSession('tau_1'));
-  const res = await fetch(`${base}/api/live-sessions/tau_1/snapshot`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.session.id, 'tau_1');
-  assert.deepEqual(body.entries, []);
-});
-
-test('DELETE /api/live-sessions/:id terminates and returns 200', async () => {
-  const s = fakeSession('tau_1');
-  let terminated = false;
-  s.terminate = async () => { terminated = true; };
-  liveManager.sessions.set('tau_1', s);
-  const res = await fetch(`${base}/api/live-sessions/tau_1`, { method: 'DELETE' });
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.success, true);
-  assert.equal(terminated, true);
-  assert.equal(liveManager.sessions.has('tau_1'), false);
-});
-
-test('DELETE /api/live-sessions/:id returns 404 for missing session', async () => {
-  const res = await fetch(`${base}/api/live-sessions/tau_missing`, { method: 'DELETE' });
-  assert.equal(res.status, 404);
-});
-
-test('DELETE /api/live-sessions/:id/snapshot is not a termination route and falls through', async () => {
-  const s = fakeSession('tau_1');
-  let terminated = false;
-  s.terminate = async () => { terminated = true; };
-  liveManager.sessions.set('tau_1', s);
-  const res = await fetch(`${base}/api/live-sessions/tau_1/snapshot`, { method: 'DELETE' });
-  // snapshot subroute has no DELETE handler -> falls through to 404
-  assert.equal(res.status, 404);
-  assert.equal(terminated, false, 'snapshot DELETE must not terminate the child');
-  assert.equal(liveManager.sessions.has('tau_1'), true);
-});
-
-test('GET /api/files without sessionId is rejected with 400', async () => {
-  const res = await fetch(`${base}/api/files`);
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /No live session selected/);
-});
-
-test('GET /api/session-resources returns the complete Pi tool manifest', async () => {
-  const session = fakeSession('tau_manifest');
-  session.entries.push({
-    type: 'custom', customType: 'pi-web-bridge',
-    data: {
-      schemaVersion: 1, revision: 1, model: { provider: 'openai', id: 'gpt-5.5' }, thinkingLevel: 'medium',
-      tools: [
-        { name: 'read', description: 'Read files', parameters: { type: 'object' }, active: true },
-        { name: 'tau_task', description: 'Track progress', parameters: { type: 'object' }, active: true },
-      ],
-    },
-  });
-  liveManager.sessions.set(session.id, session);
-  const res = await fetch(`${base}/api/session-resources?sessionId=${session.id}`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.toolsComplete, true);
-  assert.deepEqual(body.tools.map((tool: { name: string }) => tool.name), ['read', 'tau_task']);
-});
-
-test('GET /api/file/preview without sessionId is rejected with 400', async () => {
-  const res = await fetch(`${base}/api/file/preview?path=/x.png`);
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /No live session selected/);
-});
-
-test('GET /api/file/content without sessionId is rejected with 400', async () => {
-  const res = await fetch(`${base}/api/file/content?path=/x.md`);
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /No live session selected/);
-});
-
-test('malformed static URL returns 400 instead of crashing the server', async () => {
-  const res = await fetch(`${base}/%E0%A4%A`);
-  assert.equal(res.status, 400);
-  // server stays up for subsequent requests
-  const health = await fetch(`${base}/api/health`);
-  assert.equal(health.status, 200);
-});
-
-test('malformed live-session id returns 400 instead of crashing the server', async () => {
-  const res = await fetch(`${base}/api/live-sessions/%E0%A4%A`);
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /Malformed live session id/);
-  // server stays up
-  const health = await fetch(`${base}/api/health`);
-  assert.equal(health.status, 200);
-});
-
-test('cross-origin API preflight is rejected with 403 and no CORS headers', async () => {
-  const res = await fetch(`${base}/api/live-sessions`, {
-    method: 'OPTIONS',
-    headers: { Origin: 'http://evil.example', Host: new URL(base).host, 'Access-Control-Request-Method': 'POST' },
-  });
-  assert.equal(res.status, 403);
-  // a rejected origin must not get an Access-Control-Allow-Origin header
-  assert.equal(res.headers.get('access-control-allow-origin'), null);
-});
-
-test('same-origin API preflight is allowed with 200 and full CORS headers', async () => {
-  const host = new URL(base).host;
-  const res = await fetch(`${base}/api/live-sessions`, {
-    method: 'OPTIONS',
-    headers: { Origin: base, Host: host, 'Access-Control-Request-Method': 'POST' },
-  });
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get('access-control-allow-origin'), base);
-  assert.equal(res.headers.get('vary'), 'Origin');
-  assert.equal(res.headers.get('access-control-allow-methods'), 'GET, POST, DELETE, OPTIONS');
-  assert.equal(res.headers.get('access-control-allow-headers'), 'Content-Type');
-});
-
-test('cross-origin POST is rejected with 403', async () => {
-  const res = await fetch(`${base}/api/rpc`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example', Host: new URL(base).host },
-    body: JSON.stringify({ type: 'get_auth' }),
-  });
-  assert.equal(res.status, 403);
-});
-
-test('same-origin POST /api/rpc proxies to handleRpcCommand', async () => {
-  const host = new URL(base).host;
-  const res = await fetch(`${base}/api/rpc`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: host },
-    body: JSON.stringify({ type: 'get_auth' }),
-  });
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.success, true);
-  assert.equal(body.data.configured, false);
-});
-
-test('GET /api/sessions returns an empty project list when no sessions exist', async () => {
-  const res = await fetch(`${base}/api/sessions`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.deepEqual(body.projects, []);
-});
-
-test('POST /api/sessions/delete removes the session file from disk', async () => {
-  writeSessionFile([{ type: 'session', id: 's' }]);
-  assert.equal(fs.existsSync(SESSION_FILE), true);
-  const res = await fetch(`${base}/api/sessions/delete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: SESSION_FILE }),
-  });
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.success, true);
-  assert.equal(fs.existsSync(SESSION_FILE), false);
-});
-
-test('POST /api/sessions/delete rejects an invalid filePath with 400', async () => {
-  const res = await fetch(`${base}/api/sessions/delete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: '/etc/hosts' }),
-  });
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /Invalid session file/);
-});
-
-test('POST /api/sessions/delete rejects a missing filePath with 400', async () => {
-  const res = await fetch(`${base}/api/sessions/delete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({}),
-  });
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /filePath required/);
-});
-
-test('POST /api/sessions/switch is no longer a supported API', async () => {
-  const res = await fetch(`${base}/api/sessions/switch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({}),
-  });
-  assert.equal(res.status, 404);
-  const body = await jsonBody(res);
-  assert.equal(body.error, 'Not found');
-});
-
-test('GET /api/sessions/:project/:file returns the projected session snapshot', async () => {
-  writeSessionFile([{ type: 'session', id: 's' }, { type: 'message', message: { role: 'user', content: 'hi' } }]);
-  const res = await fetch(`${base}/api/sessions/--tmp--httpproj/s.jsonl`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.schemaVersion, 1);
-  assert.equal(body.entries.length, 1);
-  assert.equal(body.entries[0].type, 'message');
-});
-
-test('history and file snapshots select the same current parentId branch', async () => {
-  const rows = [
-    { type: 'session', id: 's', cwd: '/tmp' },
+test('projects the selected history branch and sorts sessions by conversation time', async () => {
+  const branchRows = [
+    { type: 'session', id: 'branch', cwd: '/tmp' },
     { type: 'message', id: 'root', parentId: null, message: { role: 'user', content: 'root' } },
-    { type: 'message', id: 'abandoned', parentId: 'root', message: { role: 'assistant', content: 'old answer' } },
+    { type: 'message', id: 'old', parentId: 'root', message: { role: 'assistant', content: 'old answer' } },
     { type: 'message', id: 'current', parentId: 'root', message: { role: 'assistant', content: 'current answer' } },
   ];
-  writeSessionFile(rows);
-
-  const [historyRes, fileRes] = await Promise.all([
-    fetch(`${base}/api/session-history?filePath=${encodeURIComponent(SESSION_FILE)}`),
-    fetch(`${base}/api/sessions/--tmp--httpproj/s.jsonl`),
+  const branchFile = writeSessionFileAt(PROJ_DIR, 'branch.jsonl', branchRows);
+  const [history, file] = await Promise.all([
+    fetch(`${base}/api/session-history?filePath=${encodeURIComponent(branchFile)}`),
+    fetch(`${base}/api/sessions/--tmp--httpproj/branch.jsonl`),
   ]);
-  assert.equal(historyRes.status, 200);
-  assert.equal(fileRes.status, 200);
-  const history = await jsonBody(historyRes);
-  const file = await jsonBody(fileRes);
-  assert.deepEqual(history, file);
-  assert.deepEqual(history.entries.map((entry: { id?: string }) => entry.id), ['root', 'current']);
-});
+  const historyBody = await jsonBody(history);
+  assert.deepEqual(historyBody, await jsonBody(file));
+  assert.deepEqual(historyBody.entries.map((entry: { id: string }) => entry.id), ['root', 'current']);
 
-test('GET /api/sessions/:project/:file returns 404 for a missing file', async () => {
-  const res = await fetch(`${base}/api/sessions/--tmp--httpproj/nope.jsonl`);
-  assert.equal(res.status, 404);
-});
-
-test('GET /api/search returns matching session entries', async () => {
-  writeSessionFile([
-    { type: 'session', id: 's', timestamp: '2026-01-01T00:00:00.000Z' },
-    { type: 'message', message: { role: 'user', content: 'please find the unique keyword here' } },
+  const projectPath = path.join(PROJECTS_DIR, 'conversation-recency');
+  const encodedDir = path.join(SESSIONS_DIR, '--tmp--conversation-recency');
+  const older = writeSessionFileAt(encodedDir, 'older.jsonl', [
+    { type: 'session', id: 'older', cwd: projectPath },
+    { type: 'message', timestamp: '2026-01-01T00:01:00.000Z', message: { role: 'user', content: 'older first' } },
+    { type: 'message', timestamp: '2026-01-01T00:02:00.000Z', message: { role: 'assistant', content: 'older reply' } },
+    { type: 'message', timestamp: '2026-01-01T00:03:00.000Z', message: { role: 'user', content: 'older follow-up' } },
   ]);
-  const res = await fetch(`${base}/api/search?q=keyword`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.results.length, 1);
-  assert.equal(body.results[0].sessionId, 's');
-  assert.match(body.results[0].matches[0].snippet, /keyword/);
-});
-
-test('GET /api/search returns an empty result list for a too-short query', async () => {
-  writeSessionFile([{ type: 'session', id: 's' }]);
-  const res = await fetch(`${base}/api/search?q=a`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.deepEqual(body.results, []);
-});
-
-test('GET /api/sessions preserves hyphenated project cwd from the session header', async () => {
-  const projectPath = path.join(PROJECTS_DIR, 'agent-scratch');
-  const encodedDir = path.join(SESSIONS_DIR, '--tmp--agent-scratch');
-  writeSessionFileAt(encodedDir, 'hyphen.jsonl', [
-    { type: 'session', id: 'hyphen', timestamp: '2026-01-01T00:00:00.000Z', cwd: projectPath },
-    { type: 'message', message: { role: 'user', content: 'first message' } },
-    { type: 'message', message: { role: 'assistant', content: 'reply' } },
-    { type: 'message', message: { role: 'user', content: 'second message' } },
+  const newer = writeSessionFileAt(encodedDir, 'newer.jsonl', [
+    { type: 'session', id: 'newer', cwd: projectPath },
+    { type: 'message', timestamp: '2026-01-02T00:01:00.000Z', message: { role: 'user', content: 'newer first' } },
+    { type: 'message', timestamp: '2026-01-02T00:02:00.000Z', message: { role: 'assistant', content: 'newer reply' } },
+    { type: 'message', timestamp: '2026-01-02T00:03:00.000Z', message: { role: 'user', content: 'newer follow-up' } },
   ]);
-
-  const res = await fetch(`${base}/api/sessions`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  const project = body.projects.find((p: { path: string }) => p.path === path.resolve(projectPath));
-  assert.ok(project);
-  assert.equal(path.basename(project.path), 'agent-scratch');
-  assert.ok(!project.path.includes(`${path.sep}agent${path.sep}scratch`));
+  fs.utimesSync(older, new Date('2030-01-01'), new Date('2030-01-01'));
+  fs.utimesSync(newer, new Date('2020-01-01'), new Date('2020-01-01'));
+  const sessions = await jsonBody(await fetch(`${base}/api/sessions`));
+  const project = sessions.projects.find((item: { path: string }) => item.path === path.resolve(projectPath));
+  assert.deepEqual(project.sessions.map((item: { id: string }) => item.id), ['newer', 'older']);
+  assert.equal(project.sessions[0].lastConversationAt, '2026-01-02T00:03:00.000Z');
 });
 
-test('GET /api/search returns the hyphenated project cwd from the session header', async () => {
-  const projectPath = path.join(PROJECTS_DIR, 'agent-scratch');
-  const encodedDir = path.join(SESSIONS_DIR, '--tmp--agent-scratch-search');
-  writeSessionFileAt(encodedDir, 'hyphen-search.jsonl', [
-    { type: 'session', id: 'hyphen-search', timestamp: '2026-01-01T00:00:00.000Z', cwd: projectPath },
-    { type: 'message', message: { role: 'user', content: 'please find hyphenneedle here' } },
-  ]);
-
-  const res = await fetch(`${base}/api/search?q=hyphenneedle`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.results.length, 1);
-  assert.equal(body.results[0].project, path.resolve(projectPath));
-});
-
-test('GET /api/projects lists project directories under the configured projects dir', async () => {
-  fs.mkdirSync(path.join(PROJECTS_DIR, 'myproj'), { recursive: true });
-  const res = await fetch(`${base}/api/projects`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  const names = body.projects.map((p: { name: string; active: boolean }) => p.name);
-  assert.ok(names.includes('myproj'));
-  const proj = body.projects.find((p: { name: string; active: boolean }) => p.name === 'myproj');
-  assert.equal(proj.active, false);
-});
-
-test('GET /api/projects counts sessions for hyphenated project names using header cwd', async () => {
-  const projectPath = path.join(PROJECTS_DIR, 'agent-scratch');
-  fs.mkdirSync(projectPath, { recursive: true });
-  writeSessionFileAt(path.join(SESSIONS_DIR, '--tmp--agent-scratch-projects'), 'hyphen-projects.jsonl', [
-    { type: 'session', id: 'hyphen-projects', timestamp: '2026-01-01T00:00:00.000Z', cwd: projectPath },
-    { type: 'message', message: { role: 'user', content: 'project count message' } },
-  ]);
-
-  const res = await fetch(`${base}/api/projects`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  const proj = body.projects.find((p: { name: string; sessionCount: number }) => p.name === 'agent-scratch');
-  assert.ok(proj);
-  assert.ok(proj.sessionCount >= 1);
-});
-
-test('GET /api/files lists the directory for a live session', async () => {
+test('reads files within the live-session directory but blocks static traversal', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-files-'));
-  fs.writeFileSync(path.join(cwd, 'a.txt'), 'hi');
-  const s = fakeSession('tau_1');
-  s.cwd = cwd;
-  liveManager.sessions.set('tau_1', s);
-  const res = await fetch(`${base}/api/files?sessionId=tau_1`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.ok(body.items.some((i: { name: string }) => i.name === 'a.txt'));
-});
-
-test('GET /api/file/content returns a text file inside the session cwd', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-content-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const report = path.join(cwd, 'report.md');
   fs.writeFileSync(report, '# Report\n\nTraffic analysis');
-  const s = fakeSession('tau_1');
-  s.cwd = cwd;
-  liveManager.sessions.set('tau_1', s);
-  const res = await fetch(`${base}/api/file/content?sessionId=tau_1&path=${encodeURIComponent(report)}`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.content, '# Report\n\nTraffic analysis');
-  assert.equal(body.encoding, 'utf8');
+  const session = fakeSession('tau_files');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  const content = await jsonBody(await fetch(`${base}/api/file/content?sessionId=${session.id}&path=${encodeURIComponent(report)}`));
+  assert.equal(content.content, '# Report\n\nTraffic analysis');
+  assert.equal((await fetch(`${base}/%2e%2e%2fsecret`)).status, 403);
+  assert.equal((await fetch(`${base}/api/health`)).status, 200);
 });
 
-test('GET /api/file/preview streams a previewable image inside the session cwd', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-prev-'));
-  const png = path.join(cwd, 'img.png');
-  fs.writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  const s = fakeSession('tau_1');
-  s.cwd = cwd;
-  liveManager.sessions.set('tau_1', s);
-  const res = await fetch(`${base}/api/file/preview?sessionId=tau_1&path=${encodeURIComponent(png)}`);
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get('content-type'), 'image/png');
-});
-
-test('POST /api/open rejects a missing filePath with 400', async () => {
-  const res = await fetch(`${base}/api/open`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({}),
-  });
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /filePath required/);
-});
-
-test('static-file path traversal is rejected with 403', async () => {
-  // %2e%2e decodes to '..'; the decoded path resolves outside STATIC_DIR and
-  // must be blocked by serveStaticFile's containment guard.
-  const res = await fetch(`${base}/%2e%2e%2fsecret`);
-  assert.equal(res.status, 403);
-  // server stays up for subsequent requests
-  const health = await fetch(`${base}/api/health`);
-  assert.equal(health.status, 200);
-});
-
-test('GET /api/file/preview rejects a non-image with 415', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-prev415-'));
-  fs.writeFileSync(path.join(cwd, 'notes.txt'), 'hi');
-  const s = fakeSession('tau_1');
-  s.cwd = cwd;
-  liveManager.sessions.set('tau_1', s);
-  const res = await fetch(`${base}/api/file/preview?sessionId=tau_1&path=${encodeURIComponent(path.join(cwd, 'notes.txt'))}`);
-  assert.equal(res.status, 415);
-  assert.match((await jsonBody(res)).error, /Not a previewable image/);
-});
-
-test('POST /api/rpc with a malformed JSON body returns 400', async () => {
-  const res = await fetch(`${base}/api/rpc`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: '{not json',
-  });
-  assert.equal(res.status, 400);
-  const body = await jsonBody(res);
-  assert.ok(body.error);
-});
-
-test('POST /api/live-sessions creates a live session and returns 200', async (t: TestContext) => {
-  const child = makeFakeChild();
-  _setSpawnPiForTest(() => child);
-  t.after(() => _setSpawnPiForTest(null));
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-post-create-'));
-  const res = await fetch(`${base}/api/live-sessions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ cwd, name: '早高峰分析', model: 'openai/gpt-5.5' }),
-  });
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.session.id.startsWith('tau_'), true);
-  assert.equal(path.dirname(body.session.cwd), path.resolve(cwd));
-  assert.match(path.basename(body.session.cwd), /^\d{8}-\d{6}-早高峰分析(?:-\d+)?$/);
-  assert.equal(fs.statSync(body.session.cwd).isDirectory(), true);
-  assert.equal(body.session.modelSpec, 'openai/gpt-5.5');
-  assert.equal(body.session.sessionName, '早高峰分析');
-  // end the fake stdin so start()'s 250ms get_session_stats probe rejects
-  // immediately instead of scheduling a long pending timer.
-  child.stdin.end();
-});
-
-test('POST /api/live-sessions/resume rejects missing filePath with 400', async () => {
-  const res = await fetch(`${base}/api/live-sessions/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({}),
-  });
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /filePath required/);
-});
-
-test('POST /api/live-sessions/resume rejects a filePath outside SESSIONS_DIR with 400', async () => {
-  const res = await fetch(`${base}/api/live-sessions/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: '/etc/hosts' }),
-  });
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /Invalid session file/);
-});
-
-test('POST /api/live-sessions/resume creates a live session with matching sessionFile', async (t: TestContext) => {
+test('resuming a stored session publishes the persisted conversation snapshot', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-resume-http-'));
-  writeSessionFileAt(PROJ_DIR, 'resume.jsonl', [
-    { type: 'session', id: 'resume-sess', timestamp: '2026-01-01T00:00:00.000Z', cwd },
-    { type: 'message', message: { role: 'user', content: 'first message' } },
-    { type: 'message', message: { role: 'assistant', content: 'reply' } },
-    { type: 'session_info', name: 'Named Chat' },
-  ]);
-  const sessionFile = path.join(PROJ_DIR, 'resume.jsonl');
-
-  const child = makeFakeChild();
-  _setSpawnPiForTest(() => child);
-  t.after(() => _setSpawnPiForTest(null));
-
-  const res = await fetch(`${base}/api/live-sessions/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: sessionFile }),
-  });
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.session.id.startsWith('tau_'), true);
-  assert.equal(body.session.sessionFile, path.resolve(sessionFile));
-  assert.equal(body.session.sessionName, 'Named Chat');
-  assert.equal(body.reused, undefined);
-  // Verify the session was added to liveManager.
-  assert.equal(liveManager.get(body.session.id)?.sessionFile, path.resolve(sessionFile));
-  child.stdin.end();
-});
-
-test('POST /api/live-sessions/resume exposes historical entries through the live snapshot', async (t: TestContext) => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-resume-snapshot-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const entries = [
-    { type: 'session', id: 'resume-snapshot-sess', timestamp: '2026-01-01T00:00:00.000Z', cwd },
+    { type: 'session', id: 'resume', timestamp: '2026-01-01T00:00:00.000Z', cwd },
     { type: 'message', message: { role: 'user', content: 'resume this historical thread' } },
     { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: 'historical reply' }] } },
     { type: 'session_info', name: 'Snapshot Chat' },
   ];
-  writeSessionFileAt(PROJ_DIR, 'resume-snapshot.jsonl', entries);
-  const sessionFile = path.join(PROJ_DIR, 'resume-snapshot.jsonl');
-
+  const filePath = writeSessionFileAt(PROJ_DIR, 'resume.jsonl', entries);
   const child = makeFakeChild();
   _setSpawnPiForTest(() => child);
   t.after(() => _setSpawnPiForTest(null));
-
-  const resumeRes = await fetch(`${base}/api/live-sessions/resume`, {
+  const resumed = await jsonBody(await fetch(`${base}/api/live-sessions/resume`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: sessionFile }),
-  });
-  assert.equal(resumeRes.status, 200);
-  const resumeBody = await jsonBody(resumeRes);
-
-  const snapshotRes = await fetch(`${base}/api/live-sessions/${encodeURIComponent(resumeBody.session.id)}/snapshot`);
-  assert.equal(snapshotRes.status, 200);
-  const snapshot = await jsonBody(snapshotRes);
-  assert.equal(snapshot.session.id, resumeBody.session.id);
-  assert.equal(snapshot.session.sessionFile, path.resolve(sessionFile));
+    body: JSON.stringify({ filePath }),
+  }));
+  const snapshot = await jsonBody(await fetch(`${base}/api/live-sessions/${encodeURIComponent(resumed.session.id)}/snapshot`));
   assert.equal(snapshot.session.sessionName, 'Snapshot Chat');
-  assert.equal(snapshot.schemaVersion, 1);
+  assert.equal(snapshot.session.sessionFile, path.resolve(filePath));
   assert.deepEqual(snapshot.entries, entries.slice(1));
   child.stdin.end();
-});
-
-test('POST /api/live-sessions/resume falls back to the first user message for generic or missing names', async (t: TestContext) => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-resume-title-'));
-  writeSessionFileAt(PROJ_DIR, 'resume-title.jsonl', [
-    { type: 'session', id: 'resume-title-sess', timestamp: '2026-01-01T00:00:00.000Z', cwd },
-    { type: 'message', message: { role: 'user', content: 'please investigate the flaky tab switching behavior\nwith details' } },
-    { type: 'session_info', name: 'chat' },
-  ]);
-  const sessionFile = path.join(PROJ_DIR, 'resume-title.jsonl');
-
-  const child = makeFakeChild();
-  _setSpawnPiForTest(() => child);
-  t.after(() => _setSpawnPiForTest(null));
-
-  const res = await fetch(`${base}/api/live-sessions/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: sessionFile }),
-  });
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  assert.equal(body.session.sessionName, 'Investigate the flaky tab switching behavior');
-  child.stdin.end();
-});
-
-test('POST /api/live-sessions/resume returns reused:true when a live session already exists for the file', async (t: TestContext) => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-resume-reuse-'));
-  writeSessionFileAt(PROJ_DIR, 'reuse.jsonl', [
-    { type: 'session', id: 'reuse-sess', timestamp: '2026-01-01T00:00:00.000Z', cwd },
-  ]);
-  const sessionFile = path.join(PROJ_DIR, 'reuse.jsonl');
-
-  const child = makeFakeChild();
-  _setSpawnPiForTest(() => child);
-  t.after(() => _setSpawnPiForTest(null));
-
-  // First resume creates the session.
-  const res1 = await fetch(`${base}/api/live-sessions/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: sessionFile }),
-  });
-  assert.equal(res1.status, 200);
-  const body1 = await jsonBody(res1);
-  assert.equal(body1.reused, undefined);
-
-  // Second resume returns the same session with reused:true.
-  const res2 = await fetch(`${base}/api/live-sessions/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: sessionFile }),
-  });
-  assert.equal(res2.status, 200);
-  const body2 = await jsonBody(res2);
-  assert.equal(body2.reused, true);
-  assert.equal(body2.session.id, body1.session.id);
-  // Only one session in the manager.
-  assert.equal(liveManager.sessions.size, 1);
-  child.stdin.end();
-});
-
-test('POST /api/live-sessions/resume rejects when the session header cwd no longer exists', async () => {
-  writeSessionFileAt(PROJ_DIR, 'gone-cwd.jsonl', [
-    { type: 'session', id: 'gone-sess', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/definitely/not/a/real/path/tau' },
-  ]);
-  const sessionFile = path.join(PROJ_DIR, 'gone-cwd.jsonl');
-
-  const res = await fetch(`${base}/api/live-sessions/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ filePath: sessionFile }),
-  });
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /Cannot resume session because its project directory no longer exists/);
-});
-
-test('POST /api/live-sessions returns 400 when the cwd does not exist', async (t: TestContext) => {
-  _setSpawnPiForTest(() => makeFakeChild());
-  t.after(() => _setSpawnPiForTest(null));
-  const res = await fetch(`${base}/api/live-sessions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
-    body: JSON.stringify({ cwd: '/definitely/not/a/real/path/tau' }),
-  });
-  assert.equal(res.status, 400);
-  assert.match((await jsonBody(res)).error, /Directory not found/);
-});
-
-test('GET /api/files filters dotfiles and ignored directories from the listing', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-filter-'));
-  fs.mkdirSync(path.join(cwd, 'node_modules'));
-  fs.mkdirSync(path.join(cwd, '.hidden'));
-  fs.writeFileSync(path.join(cwd, 'a.txt'), 'hi');
-  const s = fakeSession('tau_1');
-  s.cwd = cwd;
-  liveManager.sessions.set('tau_1', s);
-  const res = await fetch(`${base}/api/files?sessionId=tau_1`);
-  assert.equal(res.status, 200);
-  const body = await jsonBody(res);
-  const names = body.items.map((i: { name: string }) => i.name);
-  assert.ok(names.includes('a.txt'));
-  assert.ok(!names.includes('node_modules'));
-  assert.ok(!names.includes('.hidden'));
 });

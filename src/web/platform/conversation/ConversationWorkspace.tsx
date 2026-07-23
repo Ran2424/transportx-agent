@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AppMessage, MessageContentBlock, PendingImage, SessionEntry } from '../../../public/app-types.js';
 import { messageText, messageThinking } from '../../../public/kernel/stores/conversation-store.js';
-import { formatToolResultText } from '../../../public/tool-card.js';
+import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown, renderUserMarkdown } from '../../../public/markdown.js';
 import { useAppServices } from '../../app/AppProviders';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';

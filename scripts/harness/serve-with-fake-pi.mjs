@@ -5,7 +5,7 @@
 // 启动后 stdout 打印一行：TAU_FAKE_READY {"baseUrl","tempRoot","sessionsDir","resumeFile","longHistoryFile",...}
 // 之后保持运行（供 playwright 脚本驱动）；SIGTERM/SIGINT 时清理临时目录并退出。
 //
-// 参考 scripts/browser-smoke.mjs 的环境隔离方式，但 server 在进程内起以便
+// 使用独立环境目录，但 server 在进程内起以便
 // 通过 _setSpawnPiForTest 注入 mock spawn（bin/tau.js 需先 build）。
 import fs from 'node:fs';
 import os from 'node:os';

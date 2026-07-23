@@ -4,18 +4,43 @@
 
 ## 维护规则
 
-- 版本从 `v1.10` 开始，每次正式提交递增 `0.01`，即 `v1.10`、`v1.11`、`v1.12`。
-- npm 使用三段式 SemVer：日志版本 `vX.Y` 对应 `package.json` 的 `X.Y.0`；例如 `v1.22` 对应 `1.22.0`。
+- 当前发布线从 `v2.10` 开始，每次正式提交递增 `0.01`，即 `v2.10`、`v2.11`、`v2.12`。
+- npm 使用三段式 SemVer：日志版本 `vX.Y` 对应 `package.json` 的 `X.Y.0`；例如 `v2.11` 对应 `2.11.0`。
 - 新版本写在最上方；一次版本原则上对应一次提交并推送到 `origin/main`。
 - 每条记录至少包含日期、GitHub 操作、主要修改和验证情况。
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
-## v1.1 — React 工作台重构发布
+## v2.11 — React 单一工作台与交通 Skill 收敛
+
+- 日期：2026-07-23
+- GitHub 操作：提交至 `codex/shanghai-traffic-data-assets-unification`；本次未执行 push 或合并。
+- 提交主题：`release: v2.11.0 react workspace and skills`
+
+主要修改：
+
+- 删除旧 DOM/legacy Web 入口、样式、Service Worker、Feature Registry 和回退浏览器脚本，React 成为唯一生产 UI。
+- 拆分 `server-main.ts`：静态资源、会话历史、文件 API、WebSocket 分别由独立 handler 负责，HTTP 路由继续收敛于 `api-routes.ts`。
+- 默认测试维持 49 项，以 Cookie 鉴权、任务 Extension 生命周期、Geo 会话资源隔离、Markdown 安全渲染替换低价值检查。
+- README、架构文档和测试基线改为描述当前系统；React 迁移计划收敛为已采纳 ADR，旧 GIS/任务方案明确标注为历史记录。
+- 重整 `shanghai-traffic-data-assets`：将原本偏向案例说明的 Skill 收敛为交通数据资产的查询入口。根 Skill 负责识别问题、选择数据域和调用查询脚本；`references/` 按 `catalog`、`common`、`road`、`metro`、`bus`、`ridehail`、`coverage`、`metrics`、`spatial`、`schema` 拆分，避免一次向 Agent 注入无关字段和口径。
+- 明确六个数据库域及访问方式：查询必须使用 `catalog.*`、`common.*`、`road.*`、`metro.*`、`bus.*`、`ridehail.*` 全限定对象名；先读取覆盖范围、时间粒度、实体与指标定义，再选择事实表或汇总集市，禁止用表名猜测口径。
+- 重新梳理网约车资产模型：四类原始订单来源统一进入 `ridehail.std_trip`，以订单哈希去重；订单、上下车端点、场馆到离场事件分别使用 `fact_trip`、`fact_ridehail_event`、`fact_venue_trip` / `fact_venue_event`，趋势优先使用 15 分钟、小时、日三个粒度的 mart，避免把同一订单体系的不同视图相加。
+- 固化数据治理边界：交通需求、OD、行程时长、端点、场馆关联和道路/轨道/公交指标分别给出权威来源；坐标按 WGS84 经度/纬度处理，活动背景仅用于解释，不进入订单事实或集市，也不把并发活动错误归因于单一演出。
+- 升级地理可视化 Skill：使用说明、Agent 元数据和失败恢复流程全面中文化；补充 GeoJSON 发布限制、稳定 ID、图层/编码约束、会话资源隔离与渐进建图流程；上海地铁专题图必须采用官方线路色板，并通过 `set_categorical` 进行线路分类编码。
+- 将 npm 包版本更新为 `2.11.0`。
+
+验证：
+
+- `npm run typecheck` 通过。
+- `npm test`：49 项通过，0 项失败。
+- `npm run test:react-smoke` 通过。
+
+## v2.10 — React 工作台重构发布
 
 - 日期：2026-07-22
 - GitHub 操作：提交后合并并推送至 `origin/main`。
-- 提交主题：`release: v1.1.0 react workspace`
+- 提交主题：`release: v2.10.0 react workspace`
 
 主要修改：
 
@@ -26,7 +51,7 @@
 - 修复 `agent_settled` RPC 事件、地图切换后需刷新才能渲染，以及地图弹层与文件预览的层级、加载问题。
 - 文件面板支持多文件独立预览、代码/表格/Markdown/图片渲染，以及拖拽、关闭和四角缩放。
 - 会话侧栏仅保留当前项目 `scenario/` 下的会话，取消项目与状态分组，并按最后活动时间倒序展示。
-- 将包版本更新为 `1.1.0`（1.01 的 SemVer 表示）。
+- 将包版本更新为 `2.10.0`。
 
 验证：
 

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Geo Visualization Explanation"
-  short_description: "指导 GeoJSON 发布、GeoScene 构建与交互地图调试"
-  default_prompt: "Use $geo-visualization-explanation to publish GeoJSON and build a valid interactive web map."
+  display_name: "地理可视化说明"
+  short_description: "发布 GeoJSON，构建并调试 Tau 交互式 Web GIS 地图"
+  default_prompt: "使用 $geo-visualization-explanation 发布 GeoJSON，并构建有效的交互式 Web 地图。"
