@@ -45,6 +45,20 @@ async function messageTextOf(message: JsonRecord): Promise<string> {
   return messageText(message);
 }
 
+test('task mode commands stay out of the visible conversation', async () => {
+  const { kernel, sent } = await createKernel();
+  const sessionId = 'silent-task-mode';
+
+  await kernel.commands.agent.setTaskMode({ sessionId, enabled: true });
+  await kernel.commands.agent.setTaskMode({ sessionId, enabled: false });
+
+  assert.deepEqual(sent, [
+    { type: 'prompt', sessionId, message: '/task on --silent' },
+    { type: 'prompt', sessionId, message: '/task off --silent' },
+  ]);
+  assert.equal(kernel.stores.conversation.get().bySession[sessionId], undefined);
+});
+
 function kernelState(kernel: any): JsonRecord {
   return JSON.parse(JSON.stringify({
     runtime: kernel.stores.runtime.get(),
@@ -89,6 +103,30 @@ test('kernel replays stream-happy into the expected conversation/tool/session st
 
   assert.equal(kernel.stores.session.get().streamingBySession[sid], false);
   assert.equal(kernel.stores.runtime.get().lastError, null);
+});
+
+test('tool result messages preserve structured details in the live execution store', async () => {
+  const { kernel, emit } = await createKernel();
+  const sessionId = 'task-details-session';
+  const task = { schemaVersion: 1, taskId: 'task-2', title: '第二项任务', status: 'planning', revision: 1, steps: [{ id: 'prepare', title: '准备数据', status: 'pending' }, { id: 'report', title: '输出报告', status: 'pending' }], createdAt: 7, updatedAt: 7 };
+  emit({
+    type: 'event',
+    sessionId,
+    event: {
+      type: 'message_end',
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call-task-2',
+        toolName: 'tau_task',
+        content: [{ type: 'text', text: '已创建第二项任务' }],
+        details: { kind: 'tau-task', task },
+        isError: false,
+      },
+    },
+  });
+  const result = kernel.stores.toolExecution.get().bySession[sessionId]['call-task-2'].result;
+  assert.equal(result.details.kind, 'tau-task');
+  assert.equal(result.details.task.taskId, 'task-2');
 });
 
 test('replaying the same fixtures twice yields deeply equal state', async () => {

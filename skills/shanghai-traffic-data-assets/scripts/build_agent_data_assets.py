@@ -26,7 +26,7 @@ DB_DIR = SKILL_DIR / "assets" / "databases"
 DB_NAMES = ("common", "road", "metro", "bus", "ridehail")
 PYTHON = sys.executable
 BUILT_AT = datetime.now().replace(microsecond=0).isoformat()
-ASSET_VERSION = "3.0.0"
+ASSET_VERSION = "3.0.1"
 CANONICAL_CRS = "EPSG:4326"
 CANONICAL_TIME_ZONE = "Asia/Shanghai"
 EPSG32651_TO_WGS84 = Transformer.from_crs("EPSG:32651", "EPSG:4326", always_xy=True)
@@ -394,6 +394,19 @@ def build_common() -> None:
             source_row_id INTEGER NOT NULL
         ) STRICT;
 
+        CREATE TABLE dim_poi (
+            poi_key TEXT PRIMARY KEY,
+            poi_name TEXT NOT NULL UNIQUE,
+            poi_type TEXT NOT NULL CHECK (poi_type IN ('RAILWAY_STATION', 'AIRPORT')),
+            aliases TEXT NOT NULL,
+            longitude REAL NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+            latitude REAL NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+            crs TEXT NOT NULL CHECK (crs = 'EPSG:4326'),
+            geo_key TEXT NOT NULL UNIQUE,
+            coordinate_quality TEXT NOT NULL,
+            notes TEXT NOT NULL
+        ) STRICT;
+
         CREATE TABLE dim_weather_grid (
             grid_key INTEGER PRIMARY KEY,
             town_id INTEGER,
@@ -517,6 +530,12 @@ def build_common() -> None:
                coordinate_system, 'VENUE:' || poi_id, notes, _source_row_id
         FROM src.raw_poi_venue_pois;
 
+        INSERT INTO dim_poi VALUES
+            ('poi_shanghai_railway_station', '上海火车站', 'RAILWAY_STATION', '上海站', 121.45088, 31.25145, 'EPSG:4326', 'POI:poi_shanghai_railway_station', 'USER_CONFIRMED_WGS84', '用户提供的重要场站中心点。'),
+            ('poi_shanghai_south_railway_station', '上海南站', 'RAILWAY_STATION', '火车南站|上海火车南站', 121.41757, 31.14980, 'EPSG:4326', 'POI:poi_shanghai_south_railway_station', 'USER_CONFIRMED_WGS84', '用户提供的重要场站中心点。'),
+            ('poi_shanghai_hongqiao_railway_station', '上海虹桥站', 'RAILWAY_STATION', '虹桥站|虹桥火车站', 121.314, 31.194, 'EPSG:4326', 'POI:poi_shanghai_hongqiao_railway_station', 'USER_CONFIRMED_WGS84', '用户提供的重要场站中心点。'),
+            ('poi_shanghai_pudong_international_airport', '上海浦东国际机场', 'AIRPORT', '浦东机场', 121.80528, 31.14333, 'EPSG:4326', 'POI:poi_shanghai_pudong_international_airport', 'USER_CONFIRMED_WGS84', '用户提供的机场中心点。');
+
         INSERT INTO dim_event (
             event_id, event_series_id, event_name, venue_key, event_date_key, event_date,
             time_precision, event_start_at, event_end_at, ingress_start_at, egress_end_at,
@@ -549,6 +568,13 @@ def build_common() -> None:
                NULL, NULL, 'UNKNOWN', NULL,
                'SOURCE_CRS_UNKNOWN', 'raw_poi_venue_pois_geojson', _source_row_id
         FROM src.raw_poi_venue_pois_geojson;
+
+        INSERT INTO dim_geo_feature
+        SELECT geo_key, 'COMMON', 'TRANSPORT_HUB', poi_key, poi_name,
+               'Point', json_object('type', 'Point', 'coordinates', json_array(longitude, latitude)),
+               longitude, latitude, NULL, NULL, 'WGS84', crs,
+               coordinate_quality, 'dim_poi', rowid
+        FROM dim_poi;
 
         INSERT INTO dim_geo_feature
         SELECT geo_key, 'COMMON', 'WEATHER_GRID', CAST(grid_key AS TEXT), town_name,
@@ -1988,6 +2014,7 @@ TABLE_DESCRIPTIONS = {
     "dim_crs": "坐标参考系统字典。",
     "dim_event": "重大活动维表；已纳入四天时代少年团上海体育场演出日期。",
     "dim_venue": "重点场馆维表。",
+    "dim_poi": "用户确认的上海重要交通枢纽POI及WGS84中心点。",
     "dim_weather_grid": "气象网格空间维表。",
     "dim_geo_feature": "跨业态统一地理要素索引。",
     "std_weather_observation": "标准化气象网格观测。",
@@ -2225,7 +2252,7 @@ def build_catalog() -> None:
     )
 
     db_labels = {
-        "common": ("公共维度与环境", "时间、星期、活动、场馆、气象及跨业态地理索引"),
+        "common": ("公共维度与环境", "时间、星期、活动、场馆、重要交通枢纽POI、气象及跨业态地理索引"),
         "road": ("路网", "道路发布段与状态持续时间"),
         "metro": ("轨交", "统一线路、高德方向线路、WGS84站点、点线关系与小时客流"),
         "bus": ("公交", "WGS84线路、站点、线路上下文站序与半小时客流"),
@@ -2324,6 +2351,7 @@ def build_catalog() -> None:
     entities = (
         ("EVENT", "COMMON", "重大活动", "common.dim_event", "event_id", "全资产", "活动ID由日期级活动记录统一生成。"),
         ("VENUE", "COMMON", "场馆", "common.dim_venue", "venue_key", "全资产", "场馆POI ID作为统一ID。"),
+        ("POI", "COMMON", "重要交通枢纽POI", "common.dim_poi", "poi_key", "全资产", "使用用户确认的稳定POI键，名称和别名映射到同一实体。"),
         ("WEATHER_GRID", "COMMON", "气象网格", "common.dim_weather_grid", "grid_key", "全资产", "网格组合属性映射为统一整数ID。"),
         ("GEO_FEATURE", "COMMON", "地理要素", "common.dim_geo_feature", "geo_key", "全资产", "使用带业态前缀的统一地理ID。"),
         ("ROAD_SEGMENT", "ROAD", "路段", "road.dim_road_segment", "segment_key", "路网", "源发布段ID映射为统一整数ID。"),
@@ -2362,6 +2390,10 @@ def build_catalog() -> None:
     common_conn = sqlite3.connect(DB_DIR / "common.sqlite")
     for venue_id, in common_conn.execute("SELECT venue_key FROM dim_venue"):
         add_id_mapping("VENUE", "VENUE_POI", venue_id, None, venue_id, "SOURCE_ID", 1.0)
+    for poi_id, poi_name, aliases in common_conn.execute("SELECT poi_key, poi_name, aliases FROM dim_poi"):
+        add_id_mapping("POI", "USER_PROVIDED_POI", poi_id, None, poi_id, "SOURCE_ID", 1.0)
+        for alias in (poi_name, *aliases.split("|")):
+            add_id_mapping("POI", "POI_ALIAS", alias, None, poi_id, "EXACT_NAME", 1.0)
     for grid_id, geo_id in common_conn.execute("SELECT grid_key, geo_key FROM dim_weather_grid"):
         add_id_mapping("WEATHER_GRID", "WEATHER_GRID", geo_id, None, grid_id, "COMPOSITE_ATTRIBUTE", 1.0)
     common_conn.close()
@@ -2585,6 +2617,7 @@ def build_catalog() -> None:
                 "SELECT SUM(n) FROM ("
                 "SELECT COUNT(*) n FROM dim_geo_feature WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
                 "UNION ALL SELECT COUNT(*) FROM dim_venue WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
+                "UNION ALL SELECT COUNT(*) FROM dim_poi WHERE crs NOT IN ('EPSG:4326','UNKNOWN') "
                 "UNION ALL SELECT COUNT(*) FROM dim_weather_grid WHERE crs NOT IN ('EPSG:4326','UNKNOWN'))",
             ),
             scalar(
@@ -2662,6 +2695,7 @@ def build_catalog() -> None:
     examples = (
         ("road_hour", "某日各小时道路拥堵分钟数", "SELECT date_key, hour, SUM(jam_seconds)/60.0 AS jam_minutes FROM road.mart_road_segment_hour WHERE date_key=20250823 GROUP BY date_key,hour ORDER BY hour", "使用按小时精确切分的状态持续时间。"),
         ("event_days", "时代少年团演出日期", "SELECT e.event_date,e.event_name,v.venue_name,e.time_precision FROM common.dim_event e JOIN common.dim_venue v ON v.venue_key=e.venue_key ORDER BY e.event_date_key", "仅日期级经验记录，不得补写具体开演时刻。"),
+        ("transport_poi", "重要交通枢纽POI", "SELECT poi_key,poi_name,poi_type,longitude,latitude,crs FROM common.dim_poi ORDER BY poi_type,poi_key", "坐标由用户确认为WGS84；名称匹配时同时检查aliases。"),
         ("metro_station", "上海体育场站逐小时进出站客流", "SELECT f.date_key,f.hour,f.inbound_flow,f.outbound_flow FROM metro.fact_metro_station_hour f JOIN metro.dim_metro_station s ON s.station_id=f.station_id WHERE s.station_name='上海体育场' ORDER BY f.date_key,f.hour", "轨交分析统一使用station_id；源站点ID仅用于追溯。"),
         ("bus_peak", "公交线路日高峰客流", "SELECT l.line_name,m.date_key,m.peak_minute_key,m.peak_boarding_transactions FROM bus.mart_bus_line_day m JOIN bus.dim_bus_line l ON l.line_key=m.line_key ORDER BY m.peak_boarding_transactions DESC LIMIT 20", "客流事实映射到官方线路维表。"),
         ("multimodal", "同日轨交、公交与网约车总量", "WITH m AS (SELECT date_key,SUM(total_flow) v FROM metro.fact_metro_station_hour GROUP BY date_key), b AS (SELECT date_key,SUM(bus_boarding_transactions) v FROM bus.fact_bus_line_30m GROUP BY date_key), r AS (SELECT date_key,SUM(event_count) v FROM ridehail.mart_ridehail_event_15m GROUP BY date_key) SELECT d.date_iso,m.v metro_flow,b.v bus_boardings,r.v ridehail_events FROM common.dim_date d LEFT JOIN m USING(date_key) LEFT JOIN b USING(date_key) LEFT JOIN r USING(date_key) ORDER BY d.date_key", "不同业态量纲不同，不应直接相加为一个总客流指标。"),

@@ -1,6 +1,6 @@
 import type { SessionEntry } from '../../../public/app-types.js';
 import type { ToolExecution } from '../../../public/kernel/actions.js';
-import { parseTaskStateEntry, parseTaskToolResult, type TaskSnapshot } from '../../../contracts/task.js';
+import { acceptTaskSnapshotRevision, parseTaskStateEntry, parseTaskToolResult, type TaskSnapshot } from '../../../contracts/task.js';
 
 export type TaskFeatureState = { enabled: boolean; task: TaskSnapshot | null };
 
@@ -9,7 +9,7 @@ export function projectTaskState(entries: SessionEntry[], executions: ToolExecut
   let enabled = false;
   let task: TaskSnapshot | null = null;
   const accept = (candidate: TaskSnapshot | null) => {
-    if (candidate && (!task || candidate.revision > task.revision)) task = candidate;
+    if (candidate && acceptTaskSnapshotRevision(task, candidate).accepted) task = candidate;
   };
   for (const entry of entries) {
     const state = parseTaskStateEntry(entry);

@@ -102,7 +102,7 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         const actions: AppAction[] = [{ type: 'conversation/streamCompleted', sessionId, message }];
         // Tool results also arrive as messages; keep the execution map in sync.
         if (message?.toolCallId) {
-          actions.push({ type: 'tool/ended', sessionId, toolCallId: message.toolCallId, toolName: message.toolName, result: message.content, isError: message.isError });
+          actions.push({ type: 'tool/ended', sessionId, toolCallId: message.toolCallId, toolName: message.toolName, result: { content: message.content, details: message.details }, isError: message.isError });
         }
         return actions;
       }

@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from 'react';
 
-type IconName = 'menu' | 'plus' | 'refresh' | 'settings' | 'command' | 'workspace' | 'task' | 'map' | 'search' | 'close' | 'chevron' | 'panel' | 'file' | 'report' | 'code' | 'image' | 'table';
+export type IconName = 'menu' | 'plus' | 'refresh' | 'settings' | 'command' | 'workspace' | 'task' | 'map' | 'search' | 'close' | 'chevron' | 'panel' | 'file' | 'report' | 'code' | 'image' | 'table' | 'write' | 'tool';
 
 const paths: Record<IconName, ReactNode> = {
   menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
@@ -20,6 +20,8 @@ const paths: Record<IconName, ReactNode> = {
   code: <><path d="m9 7-4 5 4 5M15 7l4 5-4 5M13 5l-2 14" /></>,
   image: <><rect x="4" y="5" width="16" height="14" rx="2" /><circle cx="9" cy="10" r="1.5" /><path d="m5 17 4.5-4 3 3 2.5-2.5 4 3.5" /></>,
   table: <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M4 10h16M4 15h16M10 5v14M15 5v14" /></>,
+  write: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></>,
+  tool: <><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8Z" /></>,
 };
 
 export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {

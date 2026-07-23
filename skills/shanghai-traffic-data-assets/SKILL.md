@@ -78,6 +78,19 @@ QUERY="<Shanghai traffic query tools directory>/query_assets.py"
 - 已确认的 GCJ-02、BD-09、EPSG:32651 坐标在构建时转换为 WGS84；发布表不保留第二套源坐标列。
 - 无法确认 CRS 的记录不删除，`crs='UNKNOWN'`，并用 `coordinate_status` 说明原因。此类记录不得用于距离、缓冲、最近邻或跨域空间连接。
 
+## 重要交通枢纽 POI
+
+使用 `common.dim_poi` 查询用户确认的重要场站中心点；这些坐标均为 WGS84（`EPSG:4326`），不得再次做 GCJ-02 转换。名称匹配时同时检查 `aliases`。
+
+| `poi_key` | 标准名称 | 常用别名 | 类型 | 经度 | 纬度 |
+|---|---|---|---|---:|---:|
+| `poi_shanghai_railway_station` | 上海火车站 | 上海站 | `RAILWAY_STATION` | 121.45088 | 31.25145 |
+| `poi_shanghai_south_railway_station` | 上海南站 | 火车南站、上海火车南站 | `RAILWAY_STATION` | 121.41757 | 31.14980 |
+| `poi_shanghai_hongqiao_railway_station` | 上海虹桥站 | 虹桥站、虹桥火车站 | `RAILWAY_STATION` | 121.314 | 31.194 |
+| `poi_shanghai_pudong_international_airport` | 上海浦东国际机场 | 浦东机场 | `AIRPORT` | 121.80528 | 31.14333 |
+
+这些记录是交通枢纽 POI，不等同于同名轨交站。轨交客流仍使用 `metro.dim_metro_station` 的统一 `station_id`。
+
 场馆订单的端点 CRS 按以下证据顺序确定：
 
 1. 能按订单号回连上车表或下车表时，继承对应端点的显式 CRS；

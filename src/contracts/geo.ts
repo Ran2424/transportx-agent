@@ -78,6 +78,13 @@ export type GeoSceneSnapshot = {
   metadata: { title: string; description?: string; warnings?: string[] };
 };
 
+/**
+ * Every revision carries a complete Scene snapshot. The operation describes
+ * how the Browser reconciles that snapshot: replace rebuilds the map, patch
+ * updates content without resetting the camera, focus applies only the
+ * declared view, select applies only selection, and clear removes it. Local
+ * layer visibility survives while the same layer ID remains in the Scene.
+ */
 export type GeoEnvelopeOperation = 'replace' | 'patch' | 'focus' | 'select' | 'clear';
 
 export type VisualizationEnvelope = {

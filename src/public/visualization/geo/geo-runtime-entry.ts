@@ -1,173 +1,31 @@
-import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
+import maplibregl, {
+  type GeoJSONSource,
+  type IControl,
+  type Map as MapLibreMap,
+} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { GeoLayer, GeoSceneSnapshot, GeoVisualValue } from '../../../contracts/geo.js';
-
-type Expression = unknown;
-type LayerSpec = maplibregl.LayerSpecification;
+import type {
+  GeoLayer,
+  GeoSceneSnapshot,
+  GeoSource,
+  GeoView,
+  VisualizationEnvelope,
+} from '../../../contracts/geo.js';
+import {
+  compileGeoLayer,
+  geoRuntimeSourceId,
+} from './geo-layer-compiler.js';
+import { GeoInteractionController } from './geo-interaction-controller.js';
+import {
+  planGeoSceneUpdate,
+  retainedLayerVisibility,
+} from './geo-scene-reconciler.js';
 
 const BASEMAP_STYLES: Record<Exclude<GeoSceneSnapshot['basemap']['id'], 'none'>, string> = {
   default: 'https://tiles.openfreemap.org/styles/positron',
   light: 'https://tiles.openfreemap.org/styles/positron',
   dark: 'https://tiles.openfreemap.org/styles/dark',
 };
-
-function compile(value: GeoVisualValue | undefined, fallback: string | number | number[]): Expression {
-  if (!value) return fallback;
-  if (value.mode === 'constant') return value.value;
-  if (value.mode === 'categorical') {
-    return ['match', ['get', value.field], ...value.categories.flatMap((item) => [item.value, item.output]), value.fallback];
-  }
-  if (value.mode === 'step') {
-    return ['step', ['to-number', ['get', value.field]], value.default, ...value.stops.flatMap((item) => [item.value, item.output])];
-  }
-  return ['interpolate', ['linear'], ['to-number', ['get', value.field]], ...value.stops.flatMap((item) => [item.value, item.output])];
-}
-
-function selectedColor(normal: Expression) {
-  return ['case', ['boolean', ['feature-state', 'selected'], false], '#f59e0b', normal];
-}
-
-function interactiveSize(normal: Expression, hoverDelta: number, selectedDelta = hoverDelta) {
-  return ['+', normal,
-    ['case', ['boolean', ['feature-state', 'selected'], false], selectedDelta,
-      ['boolean', ['feature-state', 'hover'], false], hoverDelta, 0],
-  ];
-}
-
-function interactiveOpacity(normal: Expression) {
-  return ['case',
-    ['boolean', ['feature-state', 'selected'], false], 0.72,
-    ['boolean', ['feature-state', 'hover'], false], 0.62,
-    normal,
-  ];
-}
-
-function runtimeSourceId(sourceId: string) {
-  return `tau-source-${sourceId}`;
-}
-
-function runtimeLayerId(layerId: string, suffix = '') {
-  return `tau-layer-${layerId}${suffix}`;
-}
-
-function layerBase(layer: GeoLayer, id: string, sourceId: string) {
-  return {
-    id,
-    source: sourceId,
-    minzoom: layer.minZoom,
-    maxzoom: layer.maxZoom,
-    layout: { visibility: layer.visible === false ? 'none' : 'visible' },
-  };
-}
-
-function mapLayers(layer: GeoLayer, sourceId: string, darkBasemap: boolean): { specs: LayerSpec[]; interactiveId: string } {
-  const id = runtimeLayerId(layer.id);
-  const base = layerBase(layer, id, sourceId);
-  if (layer.type === 'circle') {
-    const radius = compile(layer.encoding.radius, 6);
-    const color = compile(layer.encoding.color, '#2563eb');
-    return {
-      interactiveId: id,
-      specs: [
-        {
-          ...base,
-          id: runtimeLayerId(layer.id, '-halo'),
-          type: 'circle',
-          paint: {
-            'circle-color': selectedColor(color),
-            'circle-radius': interactiveSize(radius, 4, 5),
-            'circle-opacity': 0.2,
-            'circle-blur': 0.55,
-          },
-        } as LayerSpec,
-        {
-          ...base,
-          type: 'circle',
-          paint: {
-            'circle-color': selectedColor(color),
-            'circle-radius': interactiveSize(radius, 1.5, 2),
-            'circle-opacity': compile(layer.encoding.opacity, 0.96),
-            'circle-stroke-color': compile(layer.encoding.strokeColor, darkBasemap ? '#0f172a' : '#ffffff'),
-            'circle-stroke-width': interactiveSize(compile(layer.encoding.strokeWidth, 2), 0.8, 1),
-          },
-        } as LayerSpec,
-      ],
-    };
-  }
-  if (layer.type === 'line') {
-    const width = compile(layer.encoding.width, 3.5);
-    const layout = { visibility: layer.visible === false ? 'none' : 'visible', 'line-cap': 'round', 'line-join': 'round' } as const;
-    return {
-      interactiveId: id,
-      specs: [
-        {
-          ...base,
-          id: runtimeLayerId(layer.id, '-casing'),
-          type: 'line',
-          layout,
-          paint: {
-            'line-color': darkBasemap ? '#111827' : '#ffffff',
-            'line-width': ['+', width, 3.2],
-            'line-opacity': 0.9,
-          },
-        } as LayerSpec,
-        {
-          ...base,
-          type: 'line',
-          layout,
-          paint: {
-            'line-color': selectedColor(compile(layer.encoding.color, '#2563eb')),
-            'line-width': interactiveSize(width, 1.2, 1.8),
-            'line-opacity': compile(layer.encoding.opacity, 0.94),
-            'line-blur': 0.1,
-            ...(layer.encoding.dash ? { 'line-dasharray': compile(layer.encoding.dash, [2, 1]) } : {}),
-          },
-        } as LayerSpec,
-      ],
-    };
-  }
-  if (layer.type === 'fill') return {
-    interactiveId: id,
-    specs: [{
-      ...base,
-      type: 'fill',
-      paint: {
-        'fill-color': selectedColor(compile(layer.encoding.color, '#60a5fa')),
-        'fill-opacity': interactiveOpacity(compile(layer.encoding.opacity, 0.5)),
-        'fill-outline-color': compile(layer.encoding.outlineColor, '#ffffff'),
-      },
-    } as LayerSpec],
-  };
-  const textValue = layer.encoding.textField;
-  const textField = textValue?.mode === 'constant' && typeof textValue.value === 'string'
-    ? ['coalesce', ['to-string', ['get', textValue.value]], textValue.value]
-    : compile(textValue, '');
-  return {
-    interactiveId: id,
-    specs: [{
-      ...base,
-      type: 'symbol',
-      layout: {
-        ...base.layout as object,
-        'text-field': textField,
-        'text-size': compile(layer.encoding.size, 12),
-        'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
-        'text-radial-offset': 0.85,
-        'text-justify': 'auto',
-        'text-padding': 3,
-        'text-max-width': 12,
-        'text-allow-overlap': false,
-        'text-optional': true,
-      },
-      paint: {
-        'text-color': selectedColor(compile(layer.encoding.color, darkBasemap ? '#f8fafc' : '#172033')),
-        'text-halo-color': compile(layer.encoding.haloColor, darkBasemap ? '#111827' : '#ffffff'),
-        'text-halo-width': compile(layer.encoding.haloWidth, 1.6),
-        'text-halo-blur': 0.25,
-      },
-    } as unknown as LayerSpec],
-  };
-}
 
 function blankStyle(basemap: GeoSceneSnapshot['basemap']) {
   const backgrounds = { default: '#eef3f8', light: '#f4f6f8', dark: '#17202b', none: '#f7f8fa' };
@@ -184,14 +42,87 @@ function styleForBasemap(basemap: GeoSceneSnapshot['basemap']) {
 
 class MapLibreGeoRuntime {
   private map: MapLibreMap | null = null;
+  private scene: GeoSceneSnapshot | null = null;
+  private sessionId: string | null = null;
+  private revision = 0;
   private layerIds = new Map<string, string[]>();
+  private visibilityOverrides = new Map<string, boolean>();
+  private interactions: GeoInteractionController | null = null;
+  private navigationControl: maplibregl.NavigationControl | null = null;
+  private fullscreenControl: maplibregl.FullscreenControl | null = null;
+  private scaleControl: maplibregl.ScaleControl | null = null;
+  private updateQueue: Promise<void> = Promise.resolve();
+  private destroyed = false;
 
   constructor(private container: HTMLElement, private onError: (message: string) => void) {}
 
-  async replace(scene: GeoSceneSnapshot, sessionId: string | null) {
-    this.destroy();
+  apply(envelope: VisualizationEnvelope, sessionId: string | null) {
+    if (this.destroyed) return Promise.resolve();
+    const update = this.updateQueue.then(() => this.applyEnvelope(envelope, sessionId));
+    this.updateQueue = update.catch(() => {});
+    return update;
+  }
+
+  setLayerVisibility(layerId: string, visible: boolean) {
+    this.visibilityOverrides.set(layerId, visible);
+    for (const id of this.layerIds.get(layerId) || []) {
+      if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+    }
+  }
+
+  fitToScene() {
+    if (this.scene) this.applyView(this.scene.view, 250);
+  }
+
+  resize() {
+    this.map?.resize();
+  }
+
+  destroy() {
+    this.destroyed = true;
+    this.teardownMap();
+    this.visibilityOverrides.clear();
+    this.scene = null;
+    this.sessionId = null;
+    this.revision = 0;
+  }
+
+  private async applyEnvelope(envelope: VisualizationEnvelope, sessionId: string | null) {
+    if (this.destroyed || envelope.revision <= this.revision) return;
+    if (!envelope.scene) {
+      this.teardownMap();
+      this.scene = null;
+      this.revision = envelope.revision;
+      return;
+    }
+    if (!this.map || !this.scene || this.sessionId !== sessionId) {
+      await this.mount(envelope.scene, sessionId, true);
+      this.revision = envelope.revision;
+      return;
+    }
+
+    const plan = planGeoSceneUpdate(this.scene, envelope.scene, envelope.operation);
+    if (plan.rebuildMap) {
+      this.visibilityOverrides = retainedLayerVisibility(this.scene, envelope.scene, this.visibilityOverrides);
+      await this.mount(envelope.scene, sessionId, false);
+    } else {
+      try {
+        if (plan.reconcileContent) this.reconcile(this.scene, envelope.scene, sessionId);
+        else if (plan.applySelection) this.applySelection(this.scene, envelope.scene);
+        if (plan.applyView) this.applyView(envelope.scene.view, 250);
+      } catch {
+        await this.mount(envelope.scene, sessionId, false);
+      }
+    }
+    this.scene = envelope.scene;
+    this.sessionId = sessionId;
+    this.revision = envelope.revision;
+  }
+
+  private async mount(scene: GeoSceneSnapshot, sessionId: string | null, resetLocalState: boolean) {
+    this.teardownMap();
+    if (resetLocalState) this.visibilityOverrides.clear();
     this.container.replaceChildren();
-    this.layerIds.clear();
     const center = scene.view.mode === 'camera' ? scene.view.center : [0, 0] as [number, number];
     const zoom = scene.view.mode === 'camera' ? scene.view.zoom : 1;
     const map = new maplibregl.Map({
@@ -223,109 +154,183 @@ class MapLibreGeoRuntime {
       if (map.isStyleLoaded()) finish();
       else map.once('load', onLoad);
     });
-    if (this.map !== map) return;
-    const sourceIds = new Map<string, string>();
-    for (const source of scene.sources) {
-      if (source.type === 'geojson-resource' && !sessionId) throw new Error('This map resource requires a live session');
-      const sourceId = runtimeSourceId(source.id);
-      sourceIds.set(source.id, sourceId);
-      const data = source.type === 'geojson-inline'
-        ? source.data
-        : `/api/live-sessions/${encodeURIComponent(sessionId!)}/geo-resources/${encodeURIComponent(source.resourceId)}/data`;
-      map.addSource(sourceId, {
-        type: 'geojson',
-        data: data as maplibregl.GeoJSONSourceSpecification['data'],
-        ...(source.idField ? { promoteId: source.idField } : {}),
-      });
+    if (this.destroyed || this.map !== map) return;
+    this.interactions = new GeoInteractionController(map);
+    for (const source of scene.sources) this.addSource(source, sessionId);
+    this.addLayers(scene);
+    this.syncControls(scene);
+    this.applySelection(null, scene);
+    this.applyView(scene.view, 0);
+    map.resize();
+    this.scene = scene;
+    this.sessionId = sessionId;
+  }
+
+  private reconcile(previous: GeoSceneSnapshot, next: GeoSceneSnapshot, sessionId: string | null) {
+    const map = this.requireMap();
+    this.visibilityOverrides = retainedLayerVisibility(previous, next, this.visibilityOverrides);
+    this.removeLayers();
+    this.reconcileSources(previous, next, sessionId);
+    this.addLayers(next);
+    this.syncControls(next);
+    this.applySelection(previous, next);
+    map.resize();
+  }
+
+  private reconcileSources(previous: GeoSceneSnapshot, next: GeoSceneSnapshot, sessionId: string | null) {
+    const map = this.requireMap();
+    const previousById = new Map(previous.sources.map((source) => [source.id, source]));
+    const nextIds = new Set(next.sources.map((source) => source.id));
+    for (const source of previous.sources) {
+      const runtimeId = geoRuntimeSourceId(source.id);
+      if (!nextIds.has(source.id) && map.getSource(runtimeId)) map.removeSource(runtimeId);
     }
+    for (const source of next.sources) {
+      const oldSource = previousById.get(source.id);
+      const runtimeId = geoRuntimeSourceId(source.id);
+      if (!oldSource || !map.getSource(runtimeId)) {
+        this.addSource(source, sessionId);
+        continue;
+      }
+      if (oldSource.type !== source.type || oldSource.idField !== source.idField) {
+        map.removeSource(runtimeId);
+        this.addSource(source, sessionId);
+        continue;
+      }
+      if (sourceDataKey(oldSource) !== sourceDataKey(source)) {
+        (map.getSource(runtimeId) as GeoJSONSource).setData(this.sourceData(source, sessionId));
+      }
+    }
+  }
+
+  private addSource(source: GeoSource, sessionId: string | null) {
+    if (source.type === 'geojson-resource' && !sessionId) throw new Error('This map resource requires a live session');
+    this.requireMap().addSource(geoRuntimeSourceId(source.id), {
+      type: 'geojson',
+      data: this.sourceData(source, sessionId),
+      ...(source.idField ? { promoteId: source.idField } : {}),
+    });
+  }
+
+  private sourceData(source: GeoSource, sessionId: string | null): maplibregl.GeoJSONSourceSpecification['data'] {
+    return source.type === 'geojson-inline'
+      ? source.data as maplibregl.GeoJSONSourceSpecification['data']
+      : `/api/live-sessions/${encodeURIComponent(sessionId!)}/geo-resources/${encodeURIComponent(source.resourceId)}/data`;
+  }
+
+  private addLayers(scene: GeoSceneSnapshot) {
+    const map = this.requireMap();
     const firstBasemapLabel = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
-    for (const layer of scene.layers) {
-      const sourceId = sourceIds.get(layer.sourceId)!;
-      const rendered = mapLayers(layer, sourceId, scene.basemap.id === 'dark');
+    for (const originalLayer of scene.layers) {
+      const override = this.visibilityOverrides.get(originalLayer.id);
+      const layer: GeoLayer = override === undefined ? originalLayer : { ...originalLayer, visible: override };
+      const sourceId = geoRuntimeSourceId(layer.sourceId);
+      const rendered = compileGeoLayer(layer, sourceId, scene.basemap.id === 'dark');
       const beforeId = (layer.type === 'line' || layer.type === 'fill') ? firstBasemapLabel : undefined;
       for (const spec of rendered.specs) map.addLayer(spec, beforeId);
       this.layerIds.set(layer.id, rendered.specs.map((spec) => spec.id));
-      this.bindPopup(map, layer, rendered.interactiveId, sourceId);
+      this.interactions?.bindLayer(layer, rendered.interactiveId, sourceId);
     }
-    if (scene.controls?.navigation !== false) map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
-    if (scene.controls?.fullscreen) map.addControl(new maplibregl.FullscreenControl(), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left');
-    for (const selection of scene.selection || []) {
-      const sourceId = sourceIds.get(selection.sourceId);
-      if (sourceId) for (const id of selection.featureIds.slice(0, 5000)) map.setFeatureState({ source: sourceId, id }, { selected: true });
+  }
+
+  private removeLayers() {
+    const map = this.requireMap();
+    this.interactions?.clear();
+    for (const ids of [...this.layerIds.values()].reverse()) {
+      for (const id of [...ids].reverse()) if (map.getLayer(id)) map.removeLayer(id);
     }
+    this.layerIds.clear();
+  }
+
+  private applySelection(previous: GeoSceneSnapshot | null, next: GeoSceneSnapshot) {
+    const map = this.requireMap();
+    for (const selection of previous?.selection || []) {
+      const source = geoRuntimeSourceId(selection.sourceId);
+      if (!map.getSource(source)) continue;
+      for (const id of selection.featureIds.slice(0, 5000)) map.removeFeatureState({ source, id }, 'selected');
+    }
+    for (const selection of next.selection || []) {
+      const source = geoRuntimeSourceId(selection.sourceId);
+      if (!map.getSource(source)) continue;
+      for (const id of selection.featureIds.slice(0, 5000)) map.setFeatureState({ source, id }, { selected: true });
+    }
+  }
+
+  private syncControls(scene: GeoSceneSnapshot) {
+    const map = this.requireMap();
+    this.navigationControl = this.syncControl(
+      this.navigationControl,
+      scene.controls?.navigation !== false,
+      () => new maplibregl.NavigationControl({ visualizePitch: false }),
+      'top-right',
+    );
+    this.fullscreenControl = this.syncControl(
+      this.fullscreenControl,
+      scene.controls?.fullscreen === true,
+      () => new maplibregl.FullscreenControl(),
+      'top-right',
+    );
+    this.scaleControl = this.syncControl(
+      this.scaleControl,
+      true,
+      () => new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }),
+      'bottom-left',
+    );
     map.resize();
-    if (scene.view.mode === 'bounds') map.fitBounds(scene.view.bounds, { padding: scene.view.padding ?? 32, duration: 0 });
   }
 
-  setLayerVisibility(layerId: string, visible: boolean) {
-    for (const id of this.layerIds.get(layerId) || []) {
-      if (this.map?.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  private syncControl<T extends IControl>(
+    current: T | null,
+    enabled: boolean,
+    create: () => T,
+    position: maplibregl.ControlPosition,
+  ) {
+    const map = this.requireMap();
+    if (enabled && !current) {
+      const control = create();
+      map.addControl(control, position);
+      return control;
+    }
+    if (!enabled && current) {
+      map.removeControl(current);
+      return null;
+    }
+    return current;
+  }
+
+  private applyView(view: GeoView, duration: number) {
+    const map = this.map;
+    if (!map) return;
+    if (view.mode === 'bounds') {
+      map.fitBounds(view.bounds, { padding: view.padding ?? 32, duration });
+    } else if (duration > 0) {
+      map.easeTo({ center: view.center, zoom: view.zoom, duration });
+    } else {
+      map.jumpTo({ center: view.center, zoom: view.zoom });
     }
   }
 
-  resize() {
-    this.map?.resize();
+  private requireMap() {
+    if (!this.map) throw new Error('Map is not initialized');
+    return this.map;
   }
 
-  destroy() {
+  private teardownMap() {
+    this.interactions?.clear();
+    this.interactions = null;
     this.map?.remove();
     this.map = null;
+    this.layerIds.clear();
+    this.navigationControl = null;
+    this.fullscreenControl = null;
+    this.scaleControl = null;
   }
+}
 
-  private bindPopup(map: MapLibreMap, layer: GeoLayer, renderedLayerId: string, sourceId: string) {
-    let hoveredId: string | number | null = null;
-    map.on('mousemove', renderedLayerId, (event) => {
-      map.getCanvas().style.cursor = layer.popup?.fields.length ? 'pointer' : '';
-      const id = event.features?.[0]?.id;
-      if (id === undefined || id === hoveredId) return;
-      if (hoveredId !== null) map.setFeatureState({ source: sourceId, id: hoveredId }, { hover: false });
-      hoveredId = id;
-      map.setFeatureState({ source: sourceId, id }, { hover: true });
-    });
-    map.on('mouseleave', renderedLayerId, () => {
-      map.getCanvas().style.cursor = '';
-      if (hoveredId !== null) map.setFeatureState({ source: sourceId, id: hoveredId }, { hover: false });
-      hoveredId = null;
-    });
-    if (!layer.popup?.fields.length) return;
-    map.on('click', renderedLayerId, (event) => {
-      const feature = event.features?.[0];
-      if (!feature) return;
-      const root = document.createElement('div');
-      root.className = 'geo-popup';
-      const header = document.createElement('div');
-      header.className = 'geo-popup-header';
-      const title = document.createElement('strong');
-      title.textContent = layer.title || layer.id;
-      header.append(title);
-      root.appendChild(header);
-      const fields = document.createElement('div');
-      fields.className = 'geo-popup-fields';
-      for (const field of layer.popup!.fields) {
-        const row = document.createElement('div');
-        row.className = 'geo-popup-row';
-        const label = document.createElement('span');
-        label.textContent = field.label;
-        const value = document.createElement('strong');
-        const raw = feature.properties?.[field.field];
-        value.textContent = this.formatPopupValue(raw, field.format);
-        row.append(label, value);
-        fields.appendChild(row);
-      }
-      root.appendChild(fields);
-      new maplibregl.Popup({ closeButton: true, maxWidth: '340px', offset: 10 }).setLngLat(event.lngLat).setDOMContent(root).addTo(map);
-    });
-  }
-
-  private formatPopupValue(value: unknown, format?: string) {
-    if (value === null || value === undefined) return '—';
-    if (typeof value !== 'number') return String(value);
-    if (format === 'integer') return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(value);
-    if (format === 'decimal') return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value);
-    if (format === 'percent') return new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 1 }).format(value);
-    return String(value);
-  }
+function sourceDataKey(source: GeoSource) {
+  return source.type === 'geojson-resource'
+    ? source.resourceId
+    : JSON.stringify(source.data);
 }
 
 export function createGeoMapRuntime(container: HTMLElement, onError: (message: string) => void) {

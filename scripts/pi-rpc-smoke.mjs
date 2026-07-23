@@ -67,7 +67,9 @@ try {
   const bridge = entries.data?.entries?.find((entry) => entry.type === 'custom' && entry.customType === 'pi-web-bridge');
   assert.equal(bridge?.data?.schemaVersion, 1);
   assert.ok(Array.isArray(bridge?.data?.tools));
-  assert.ok(bridge.data.tools.some((candidate) => candidate.name === 'tau_task'));
+  const taskTool = bridge.data.tools.find((candidate) => candidate.name === 'tau_task');
+  assert.ok(taskTool);
+  assert.equal(taskTool.active, false);
 
   send({ id: 'commands', type: 'get_commands' });
   const commands = await waitFor((line) => line.type === 'response' && line.id === 'commands');

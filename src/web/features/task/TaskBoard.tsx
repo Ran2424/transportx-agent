@@ -21,13 +21,13 @@ export function TaskBoard({ session }: { session: LiveSession | null }) {
 
   async function toggleMode() {
     if (!session || kernel.stores.session.isStreaming(session.id)) return;
-    await kernel.commands.agent.sendPrompt({ sessionId: session.id, message: `/task ${state.enabled ? 'off' : 'on'}` });
+    await kernel.commands.agent.setTaskMode({ sessionId: session.id, enabled: !state.enabled });
   }
 
   if (!session) return <FeatureEmpty mark="✓" title="等待任务上下文" description="选择一个运行中的任务后，可在这里查看执行计划。" />;
   if (!task) return <section className="feature-empty"><span>✓</span><strong>暂无任务计划</strong><p>开启任务模式并发起分析后，执行步骤会显示在这里。</p><button className="ui-button ui-button-quiet" type="button" disabled={kernel.stores.session.isStreaming(session.id)} onClick={() => void toggleMode()}>{state.enabled ? '关闭任务模式' : '开启任务模式'}</button></section>;
   return <section className={`task-board-card task-board--${task.status}`}>
-    <header><button type="button" className="task-board-heading" aria-expanded={!collapsed} onClick={() => setCollapsed((value) => !value)}><span><small>PI TASK</small><strong>{task.title}</strong></span><b>{completed}/{task.steps.length} · {taskLabels[task.status]}</b></button></header>
+    <header><button type="button" className="task-board-heading" aria-expanded={!collapsed} onClick={() => setCollapsed((value) => !value)}><strong>{task.title}</strong><b>{completed}/{task.steps.length} {taskLabels[task.status]}</b></button></header>
     {!collapsed && <div className="task-board-body"><div className="task-progress" role="progressbar" aria-valuemin={0} aria-valuemax={task.steps.length} aria-valuenow={completed}><span style={{ width: `${Math.round(completed / task.steps.length * 100)}%` }} /></div><ol>{task.steps.map((step, index) => <li key={step.id} className={`task-step task-step--${step.status}`}><i>{step.status === 'completed' ? '✓' : step.status === 'failed' ? '!' : step.status === 'blocked' ? '×' : index + 1}</i><span><strong>{step.title}</strong>{step.summary ? <small>{step.summary}</small> : null}</span><em>{stepLabels[step.status]}</em></li>)}</ol>{task.summary ? <p className="task-summary">{task.summary}</p> : null}</div>}
   </section>;
 }

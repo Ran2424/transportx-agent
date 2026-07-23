@@ -20,7 +20,8 @@
 | `dim_crs` | 2 | 一个发布 CRS 状态 | WGS84 与未知 CRS 治理 |
 | `dim_event` | 4 | 一个活动日期 | 活动日筛选，不提供演出时刻 |
 | `dim_venue` | 1 | 一个场馆 | 上海体育场标准名称和 WGS84 点位 |
-| `dim_geo_feature` | 5,878 | 一个空间实体 | 跨领域空间对象索引 |
+| `dim_poi` | 4 | 一个重要交通枢纽 | 用户确认的火车站、机场 WGS84 中心点 |
+| `dim_geo_feature` | 5,882 | 一个空间实体 | 跨领域空间对象索引 |
 | `dim_weather_grid` | 8 | 一个天气网格 | 徐汇天气网格名称和坐标状态 |
 | `std_weather_observation` | 11,384 | 网格—观测时刻 | 接纳层天气观测和质量审计 |
 | `fact_weather_observation` | 11,384 | 网格—观测时刻 | 有效温度、滚动一小时降雨 |
@@ -58,6 +59,12 @@
 `venue_key TEXT`，`venue_name TEXT`，`venue_type TEXT`，`longitude REAL`，`latitude REAL`，`crs TEXT`，`geo_key TEXT`，`notes TEXT`，`source_row_id INTEGER`
 
 当前唯一场馆为 `venue_shanghai_stadium`。用户确认点位为 WGS84 `(121.43348, 31.18334)`。
+
+### `dim_poi`
+
+`poi_key TEXT`，`poi_name TEXT`，`poi_type TEXT`，`aliases TEXT`，`longitude REAL`，`latitude REAL`，`crs TEXT`，`geo_key TEXT`，`coordinate_quality TEXT`，`notes TEXT`
+
+保存用户确认的重要交通枢纽 POI。当前包括上海火车站、上海南站、上海虹桥站和上海浦东国际机场，坐标均为 `EPSG:4326`。`aliases` 使用 `|` 分隔常用名称；这些 POI 不替代 `metro.dim_metro_station` 中用于轨交客流连接的物理站实体。
 
 ### `dim_geo_feature`
 
@@ -111,4 +118,9 @@ FROM common.mart_weather_grid_hour w
 JOIN common.dim_weather_grid g USING (grid_key)
 WHERE w.date_key IN (20250820, 20250821, 20250823, 20250824)
 ORDER BY w.date_key, w.hour, g.town_name;
+
+-- 用户确认的重要交通枢纽 POI
+SELECT poi_key, poi_name, poi_type, aliases, longitude, latitude, crs
+FROM common.dim_poi
+ORDER BY poi_type, poi_key;
 ```

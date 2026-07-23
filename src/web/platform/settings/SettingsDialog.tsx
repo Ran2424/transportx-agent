@@ -8,8 +8,8 @@ export const themes = [
   { id: 'dawn', label: 'Dawn', colors: ['#1a1720', '#e8ad8e', '#d7d68d'] },
   { id: 'midnight', label: 'Midnight', colors: ['#05070c', '#8fb8ff', '#bd9bff'] },
   { id: 'clean', label: 'Clean', colors: ['#f3f7fb', '#2463eb', '#ca6848'] },
-  { id: 'terracotta', label: 'Terracotta', colors: ['#f4f0ea', '#b96d4c', '#62508c'] },
-  { id: 'sage', label: 'Sage', colors: ['#eef1eb', '#71845d', '#775a9b'] },
+  { id: 'terracotta', label: 'Terracotta', colors: ['#f4f0ea', '#b96d4c', '#d6a38b'] },
+  { id: 'sage', label: 'Sage', colors: ['#eef1eb', '#71845d', '#aeba9f'] },
 ] as const;
 
 export type ThemeId = (typeof themes)[number]['id'];

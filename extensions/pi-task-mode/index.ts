@@ -112,6 +112,13 @@ export default function taskModeExtension(pi: ExtensionAPI) {
   let interactionPending = false;
   let stateRevision = 0;
 
+  const syncTaskTool = () => {
+    const active = pi.getActiveTools();
+    const hasTaskTool = active.includes('tau_task');
+    if (modeEnabled === hasTaskTool) return;
+    pi.setActiveTools(modeEnabled ? [...active, 'tau_task'] : active.filter((name) => name !== 'tau_task'));
+  };
+
   const persistState = () => {
     stateRevision += 1;
     pi.appendEntry(STATE_ENTRY, {
@@ -143,6 +150,7 @@ export default function taskModeExtension(pi: ExtensionAPI) {
       const task = parseTaskSnapshot(details?.task);
       if (task) currentTask = task;
     }
+    syncTaskTool();
     if (currentTask && !isTerminalTask(currentTask)) {
       currentTask = interruptTask(currentTask);
       persistState();
@@ -165,7 +173,10 @@ export default function taskModeExtension(pi: ExtensionAPI) {
   pi.registerCommand('task', {
     description: '开启、关闭或查看 Pi 任务模式：/task on|off|status',
     handler: async (args, ctx) => {
-      const action = args.trim().toLowerCase() || 'status';
+      const tokens = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const silent = tokens.at(-1) === '--silent';
+      if (silent) tokens.pop();
+      const action = tokens.join(' ') || 'status';
       if (action === 'status') {
         ctx.ui.notify(`任务模式：${modeEnabled ? '已开启' : '已关闭'}`, 'info');
         return;
@@ -175,8 +186,9 @@ export default function taskModeExtension(pi: ExtensionAPI) {
         return;
       }
       modeEnabled = action === 'on';
+      syncTaskTool();
       persistState();
-      ctx.ui.notify(`任务模式已${modeEnabled ? '开启' : '关闭'}`, 'info');
+      if (!silent) ctx.ui.notify(`任务模式已${modeEnabled ? '开启' : '关闭'}`, 'info');
     },
   });
 
@@ -192,6 +204,7 @@ export default function taskModeExtension(pi: ExtensionAPI) {
     executionMode: 'sequential',
     parameters: TauTaskSchema,
     async execute(_toolCallId, params) {
+      if (!modeEnabled) throw new Error('Task mode is disabled. Enable it with /task on first.');
       if (params.action === 'start') {
         if (currentTask && !isTerminalTask(currentTask)) throw new Error(`Cannot start a new task while active task ${currentTask.taskId} exists`);
         const taskId = params.taskId?.trim() || generatedId('task');
