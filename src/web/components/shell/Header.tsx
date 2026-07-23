@@ -64,7 +64,7 @@ export function Header({
         </button>
       </div>
 
-      <a className="workspace-brand" href="/react/" aria-label="Pi Traffic 工作台">
+      <a className="workspace-brand" href="/" aria-label="Pi Traffic 工作台">
         <span className="workspace-brand-mark">τ</span>
         <span><strong>PI TRAFFIC</strong><small>AGENT WORKSPACE</small></span>
       </a>

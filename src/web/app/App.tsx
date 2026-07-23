@@ -23,7 +23,7 @@ function initialTheme(): ThemeId {
 }
 
 function mostRecentSessionId(sessions: ReturnType<typeof useSessionState>['sessions']) {
-  return [...sessions].sort((a, b) => new Date(b.lastActiveAt || b.createdAt || 0).getTime() - new Date(a.lastActiveAt || a.createdAt || 0).getTime())[0]?.id || null;
+  return [...sessions].sort((a, b) => new Date(b.lastConversationAt || b.createdAt || 0).getTime() - new Date(a.lastConversationAt || a.createdAt || 0).getTime())[0]?.id || null;
 }
 
 export function App() {
@@ -197,7 +197,6 @@ export function App() {
       catch (cause) { setNotice((cause as { message?: string })?.message || '压缩上下文失败'); }
     } },
     { id: 'settings', label: '工作台设置', description: '主题、Agent 与访问控制', shortcut: '⌘,', action: () => setSettingsOpen(true) },
-    { id: 'legacy', label: '打开 Legacy 工作台', description: '在迁移周期内返回稳定入口', action: () => { window.location.href = '/'; } },
   ], [activeSession, filesOpen, kernel, mapOpen, taskAvailable, tasksOpen, toggleMap, toggleTasks, visualizations.length]);
 
   useEffect(() => {

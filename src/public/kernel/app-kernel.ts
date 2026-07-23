@@ -22,9 +22,8 @@ export type AppKernelOptions = {
 };
 
 /**
- * UI-only event tap. Stores hold all application state; a few legacy UI
- * concerns (compaction indicator, task-mode entries, tool-card DOM updates,
- * first-server-state restore) are pure side effects with no store slice.
+ * UI-only event tap. Stores hold all application state; presentation-only
+ * concerns can subscribe here without adding a second raw-WebSocket listener.
  * They subscribe here instead of adding a second raw-WebSocket listener.
  * Events fire after the corresponding actions have been applied, so stores
  * are already up to date when the listener runs.

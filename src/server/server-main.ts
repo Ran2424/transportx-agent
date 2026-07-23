@@ -1,26 +1,14 @@
 #!/usr/bin/env node
-/*
- * Tau standalone server.
- *
- * Serves the Tau web UI and manages backend-owned `pi --mode rpc` child
- * sessions. Browser connections are views only; explicit live-session DELETE or
- * server shutdown terminates child Pi processes.
- */
 
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn, execFile } = require('node:child_process');
-const readline = require('node:readline');
-const { WebSocketServer, WebSocket } = require('ws');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Stats, Dirent } from 'node:fs';
-import type { Socket } from 'node:net';
-import type { WebSocket as WsType } from 'ws';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PORT, REACT_STATIC_DIR, SESSIONS_DIR, STATIC_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PORT, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
@@ -28,27 +16,26 @@ import { handleGeoResourceRoute } from './geo-resources.js';
 import { inspectPiRuntime } from './pi-runtime.js';
 import { readSessionBranch } from './session-projection.js';
 import { createApiRouter } from './api-routes.js';
-import { SESSION_SNAPSHOT_SCHEMA_VERSION, latestPiWebBridgeEnvelope } from '../contracts/index.js';
-
-type TauWs = WsType & { isAlive?: boolean };
+import { SESSION_SNAPSHOT_SCHEMA_VERSION } from '../contracts/index.js';
+import { createFileApiHandlers } from './file-api-handler.js';
+import { createSessionHistoryHandlers } from './session-history-handler.js';
+import { createStaticHandler } from './static-handler.js';
+import { attachWebSocketHandler } from './websocket-handler.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
+let lanUrl = '';
+let tailscaleUrl = '';
+
+type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
 
 function checkBasicAuth(req: IncomingMessage) {
   if (!authEnabled) return true;
   const header = req.headers.authorization;
-  if (!header || !header.startsWith('Basic ')) return false;
-  const decoded = Buffer.from(header.slice(6), 'base64').toString();
-  const colon = decoded.indexOf(':');
-  if (colon === -1) return false;
-  return decoded.slice(0, colon) === TAU_SETTINGS.user && decoded.slice(colon + 1) === TAU_SETTINGS.pass;
+  if (!header?.startsWith('Basic ')) return false;
+  const decoded = Buffer.from(header.slice(6), 'base64').toString(), colon = decoded.indexOf(':');
+  return colon !== -1 && decoded.slice(0, colon) === TAU_SETTINGS.user && decoded.slice(colon + 1) === TAU_SETTINGS.pass;
 }
 
-type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
-
-// A wrong Basic header does not short-circuit: a valid session cookie still
-// wins, so a browser resending a stale cached Basic header cannot lock the
-// user out of an otherwise live session.
 function checkAuth(req: IncomingMessage): AuthResult {
   if (!authEnabled) return { ok: true, via: 'disabled' };
   if (checkBasicAuth(req)) return { ok: true, via: 'basic' };
@@ -60,15 +47,10 @@ function checkAuth(req: IncomingMessage): AuthResult {
   return { ok: false, via: 'none' };
 }
 
-function isForwardedHttps(req: IncomingMessage): boolean {
+function isForwardedHttps(req: IncomingMessage) {
   return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 }
 
-// Mint when the request carries no valid session cookie (covers the page load
-// right after the native prompt) and refresh one nearing expiry; never mint
-// while auth is disabled so toggling it back on grants nothing to bystanders.
-// Desktop browsers resend the Basic header on every request, so Basic-authed
-// requests usually also carry a fresh cookie — don't re-mint on every response.
 function maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: AuthResult) {
   if (!authEnabled || !auth.ok || auth.via === 'disabled') return;
   let expiresAt = auth.expiresAt;
@@ -83,967 +65,200 @@ function maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: 
   res.setHeader('Set-Cookie', buildSessionCookie(issueSessionToken(), { secure: isForwardedHttps(req) }));
 }
 
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  return String(e);
-}
+function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
+function errorStatus(error: unknown) { return error && typeof error === 'object' && 'status' in error && typeof (error as StatusError).status === 'number' ? (error as StatusError).status! : 400; }
+function json(res: ServerResponse, status: number, data: unknown, extraHeaders: Record<string, string> = {}) { res.writeHead(status, { 'Content-Type': 'application/json', ...extraHeaders }); res.end(JSON.stringify(data)); }
 
-function errorStatus(e: unknown): number {
-  if (e && typeof e === 'object' && 'status' in e) {
-    const status = (e as { status?: unknown }).status;
-    if (typeof status === 'number' && status) return status;
-  }
-  return 400;
-}
-
-function sendAuthRequired(res: ServerResponse, req?: IncomingMessage) {
-  // Clear a presented-but-invalid session cookie so the browser stops
-  // resending it and falls back to the Basic prompt.
-  if (req && parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME]) {
-    res.setHeader('Set-Cookie', buildSessionCookie('', { secure: isForwardedHttps(req), clear: true }));
-  }
+function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
+  if (parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME]) res.setHeader('Set-Cookie', buildSessionCookie('', { secure: isForwardedHttps(req), clear: true }));
   res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Tau"', 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Unauthorized' }));
-}
-
-function json(res: ServerResponse, status: number, data: unknown, extraHeaders: Record<string, string> = {}) {
-  res.writeHead(status, { 'Content-Type': 'application/json', ...extraHeaders });
-  res.end(JSON.stringify(data));
 }
 
 function readBody(req: IncomingMessage): Promise<RpcCommand> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk: Buffer) => {
-      body += chunk.toString();
-      if (body.length > 20 * 1024 * 1024) reject(new Error('Request body too large'));
-    });
-    req.on('end', () => {
-      try { resolve(body ? JSON.parse(body) as RpcCommand : {}); } catch (e) { reject(e); }
-    });
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); if (body.length > 20 * 1024 * 1024) reject(new Error('Request body too large')); });
+    req.on('end', () => { try { resolve(body ? JSON.parse(body) as RpcCommand : {}); } catch (error) { reject(error); } });
     req.on('error', reject);
   });
 }
 
-let lanUrl = '';
-let tailscaleUrl = '';
-
 function resolveSessionFile(filePath: string) {
   if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
-  const resolved = path.resolve(filePath);
-  const root = path.resolve(SESSIONS_DIR);
-  if (!resolved.startsWith(root + path.sep) || !resolved.endsWith('.jsonl')) {
-    throw new Error('Invalid session file');
-  }
+  const resolved = path.resolve(filePath), root = path.resolve(SESSIONS_DIR);
+  if (!resolved.startsWith(root + path.sep) || !resolved.endsWith('.jsonl')) throw new Error('Invalid session file');
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Session not found');
   return resolved;
 }
 
 function appendSessionName(filePath: string, name: string) {
   const resolved = resolveSessionFile(filePath);
-  fs.appendFileSync(resolved, JSON.stringify({ type: 'session_info', name, timestamp: new Date().toISOString() }) + '\n');
+  fs.appendFileSync(resolved, `${JSON.stringify({ type: 'session_info', name, timestamp: new Date().toISOString() })}\n`);
   return resolved;
 }
 
 function updateLiveSessionName(session: PiRpcSession | null | undefined, name: string) {
   if (!session) return;
-  session.sessionName = name;
-  session.titleSet = true;
+  session.sessionName = name; session.titleSet = true;
   liveManager.broadcast({ type: 'event', sessionId: session.id, event: { type: 'session_name', name } });
   liveManager.broadcastUpdated(session.id);
 }
 
 function isWithinPath(root: string, target: string) {
-  const rel = path.relative(path.resolve(root), path.resolve(target));
-  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+  const relative = path.relative(path.resolve(root), path.resolve(target));
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function resolveLiveSessionPath(session: PiRpcSession | null | undefined, requestedPath?: string | null) {
-  if (!session) {
-    const err = new Error('Live session not found') as StatusError;
-    err.status = 404;
-    throw err;
-  }
-  const root = fs.realpathSync(path.resolve(session.cwd));
-  const candidate = path.resolve(expandHome(requestedPath || session.cwd));
+  if (!session) { const error = new Error('Live session not found') as StatusError; error.status = 404; throw error; }
+  const root = fs.realpathSync(path.resolve(session.cwd)), candidate = path.resolve(expandHome(requestedPath || session.cwd));
   let resolved = candidate;
   try { resolved = fs.realpathSync(candidate); } catch {}
-  if (!isWithinPath(root, resolved)) {
-    const err = new Error('Path is outside the active session directory') as StatusError;
-    err.status = 403;
-    throw err;
-  }
+  if (!isWithinPath(root, resolved)) { const error = new Error('Path is outside the active session directory') as StatusError; error.status = 403; throw error; }
+  return resolved;
+}
+
+function resolveExportOutputPath(outputPath: string, sessionFile: string) {
+  if (!outputPath || typeof outputPath !== 'string') throw new Error('outputPath required');
+  const sessionDir = path.dirname(path.resolve(sessionFile)), sessionDirReal = fs.realpathSync(sessionDir), expanded = expandHome(outputPath), resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(sessionDir, expanded);
+  if (!isWithinPath(sessionDir, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Export outputPath must be an .html file in the session directory') as StatusError; error.status = 403; throw error; }
+  let parentReal: string;
+  try { parentReal = fs.realpathSync(path.dirname(resolved)); } catch { const error = new Error('Export output directory not found') as StatusError; error.status = 404; throw error; }
+  if (!isWithinPath(sessionDirReal, parentReal) || (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink())) { const error = new Error('Export outputPath must stay inside the session directory') as StatusError; error.status = 403; throw error; }
   return resolved;
 }
 
 function openUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url)) return Promise.reject(new Error('Invalid URL'));
-  if (process.platform === 'win32') {
-    spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref();
-    return Promise.resolve();
-  }
-  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
-  return new Promise<void>((resolve, reject) => {
-    execFile(opener, [url], (err: NodeJS.ErrnoException | null) => err ? reject(err) : resolve());
-  });
+  if (process.platform === 'win32') { spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref(); return Promise.resolve(); }
+  return new Promise((resolve, reject) => execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], (error: NodeJS.ErrnoException | null) => error ? reject(error) : resolve()));
 }
 
 async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
-  const id = command.id;
-  const cmd = command.type;
-  const success = (data?: unknown): RpcResponse => ({ type: 'response', command: cmd, success: true, id, ...(data !== undefined ? { data } : {}) });
-  const error = (message: string): RpcResponse => ({ type: 'response', command: cmd, success: false, error: message, id });
-
-  // Backend-local commands do not require a live Pi child.
-  if (cmd === 'get_auth') return success({ configured: AUTH_CONFIGURED, enabled: authEnabled });
-  if (cmd === 'set_auth') {
-    if (!AUTH_CONFIGURED) return error('No credentials configured. Set tau.user and tau.pass in settings.json');
-    const wasEnabled = authEnabled;
-    authEnabled = !!command.enabled;
-    saveTauSetting('authEnabled', authEnabled);
+  const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
+  const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
+  if (command.type === 'get_auth') return success({ configured: AUTH_CONFIGURED, enabled: authEnabled });
+  if (command.type === 'set_auth') {
+    if (!AUTH_CONFIGURED) return failure('No credentials configured. Set tau.user and tau.pass in settings.json');
+    const wasEnabled = authEnabled; authEnabled = !!command.enabled; saveTauSetting('authEnabled', authEnabled);
     liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled: authEnabled } });
-    if (!wasEnabled && authEnabled) {
-      const timer = setTimeout(() => {
-        for (const client of Array.from(liveManager.clients)) {
-          try { client.close(4001, 'Authentication enabled'); } catch {}
-        }
-      }, 25);
-      timer.unref?.();
-    }
+    if (!wasEnabled && authEnabled) { const timer = setTimeout(() => [...liveManager.clients].forEach((client) => { try { client.close(4001, 'Authentication enabled'); } catch {} }), 25); timer.unref?.(); }
     return success({ enabled: authEnabled });
   }
-  if (cmd === 'get_available_models') return success({ models: await getAvailableModels() });
-  if (cmd === 'set_session_name') {
-    const name = (command.name || '').trim();
-    if (!name) return error('Name cannot be empty');
-    const session = command.sessionId ? liveManager.get(command.sessionId) : null;
-    let resolvedFile = null;
-    const targetFile = command.filePath || session?.sessionFile;
-    if (targetFile) {
-      try { resolvedFile = appendSessionName(targetFile, name); } catch (e) { return error(errorMessage(e)); }
-    }
-    const matchingLive = resolvedFile
-      ? Array.from(liveManager.sessions.values()).find((s) => s.sessionFile && path.resolve(s.sessionFile) === resolvedFile)
-      : null;
-    if (session) updateLiveSessionName(session, name);
-    else if (matchingLive) updateLiveSessionName(matchingLive, name);
-    else if (!resolvedFile) return error('sessionId or filePath required');
+  if (command.type === 'get_available_models') return success({ models: await getAvailableModels() });
+  if (command.type === 'set_session_name') {
+    const name = command.name?.trim();
+    if (!name) return failure('Name cannot be empty');
+    const session = command.sessionId ? liveManager.get(command.sessionId) : null, resolvedFile = command.filePath || session?.sessionFile ? appendSessionName(command.filePath || session!.sessionFile!, name) : null;
+    const matching = resolvedFile ? [...liveManager.sessions.values()].find((item) => item.sessionFile && path.resolve(item.sessionFile) === resolvedFile) : null;
+    if (session) updateLiveSessionName(session, name); else if (matching) updateLiveSessionName(matching, name); else if (!resolvedFile) return failure('sessionId or filePath required');
     return success({ name });
   }
-
   const session = command.sessionId ? liveManager.get(command.sessionId) : null;
-  if (cmd === 'export_html') {
+  if (command.type === 'export_html') {
     try {
       if (command.sessionId && !session) throw new Error('Live session not found');
-      const sf = command.filePath ? resolveSessionFile(command.filePath) : session?.sessionFile;
-      if (!sf) throw new Error('No session file to export yet');
-      const args = ['--export', sf];
-      if (command.outputPath) args.push(resolveExportOutputPath(command.outputPath, sf));
-      const output = await new Promise<string>((resolve, reject) => {
-        execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(sf), timeout: 30000, encoding: 'utf8' }, (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => {
-          if (err) reject(new Error(stderr || err.message)); else resolve(stdout);
-        });
-      });
-      let result = output.trim().split('\n').pop() || sf.replace(/\.jsonl$/, '.html');
-      result = path.resolve(expandHome(result));
-      if (!fs.existsSync(result)) result = sf.replace(/\.jsonl$/, '.html');
+      const file = command.filePath ? resolveSessionFile(command.filePath) : session?.sessionFile;
+      if (!file) throw new Error('No session file to export yet');
+      const args = ['--export', file, ...(command.outputPath ? [resolveExportOutputPath(command.outputPath, file)] : [])];
+      const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(file), timeout: 30000, encoding: 'utf8' }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
+      let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
+      if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
       return success({ path: result });
-    } catch (e) { return error(errorMessage(e)); }
+    } catch (error) { return failure(errorMessage(error)); }
   }
-
-  if (!session) return error('No active Tau session. 没有活跃的交通任务，请先创建或选择一个任务。');
-
-  if (cmd === 'get_state') {
-    return success({
-      model: session.model,
-      thinkingLevel: session.thinkingLevel,
-      isStreaming: session.isStreaming,
-      sessionFile: session.sessionFile,
-      sessionName: session.sessionName,
-      autoCompactionEnabled: true,
-    });
-  }
-  if (cmd === 'get_messages') return success({ entries: session.entries });
-  if (cmd === 'live_session_snapshot_request') return { type: 'live_session_snapshot', sessionId: session.id, ...session.snapshot() };
-  if (cmd === 'set_auto_compaction') return success({ enabled: !!command.enabled });
-
+  if (!session) return failure('No active Tau session. 没有活跃的交通任务，请先创建或选择一个任务。');
+  if (command.type === 'get_state') return success({ model: session.model, thinkingLevel: session.thinkingLevel, isStreaming: session.isStreaming, sessionFile: session.sessionFile, sessionName: session.sessionName, autoCompactionEnabled: true });
+  if (command.type === 'get_messages') return success({ entries: session.entries });
+  if (command.type === 'live_session_snapshot_request') return { type: 'live_session_snapshot', sessionId: session.id, ...session.snapshot() };
+  if (command.type === 'set_auto_compaction') return success({ enabled: !!command.enabled });
   const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response']);
-  if (!native.has(cmd ?? '')) return error(`Unknown command: ${cmd}`);
-
-  // `set_thinking_level` is forwarded to pi but pi's response carries no
-  // level/thinkingLevel field, so updateStateFromResponse would never update
-  // session.thinkingLevel — yet touch(true)->broadcastUpdated would echo the
-  // stale level to all clients (reverting a client's just-set optimistic
-  // level). Record the level optimistically here and restore on pi failure.
-  const isSetThinkingLevel = cmd === 'set_thinking_level';
-  let prevThinkingLevel: string | null = null;
-  if (isSetThinkingLevel) {
-    prevThinkingLevel = session.thinkingLevel;
-    if (command.level) session.thinkingLevel = command.level;
-  }
-
+  if (!native.has(command.type || '')) return failure(`Unknown command: ${command.type}`);
+  const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
+  if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
   try {
-    const resp = await session.send(command, { timeoutMs: cmd === 'prompt' ? 10000 : 60000 });
-    if (isSetThinkingLevel && resp.success === false && prevThinkingLevel !== null) {
-      session.thinkingLevel = prevThinkingLevel;
-    }
-    return { ...resp, success: resp.success !== false };
-  } catch (e) {
-    if (isSetThinkingLevel && prevThinkingLevel !== null) session.thinkingLevel = prevThinkingLevel;
-    // Some commands are ack-less fire-and-forget in practice; keep UX moving
-    // only when the write succeeded and the child simply did not acknowledge.
-    const isAckTimeout = /^RPC command timed out:/.test(errorMessage(e));
-    if (isAckTimeout && (cmd === 'prompt' || cmd === 'abort' || cmd === 'extension_ui_response')) return success();
-    return error(errorMessage(e));
+    const response = await session.send(command, { timeoutMs: command.type === 'prompt' ? 10000 : 60000 });
+    if (response.success === false && previousLevel !== null) session.thinkingLevel = previousLevel;
+    return { ...response, success: response.success !== false };
+  } catch (error) {
+    if (previousLevel !== null) session.thinkingLevel = previousLevel;
+    if (/^RPC command timed out:/.test(errorMessage(error)) && ['prompt', 'abort', 'extension_ui_response'].includes(command.type || '')) return success();
+    return failure(errorMessage(error));
   }
-}
-
-function serveStaticFromRoot(res: ServerResponse, staticRootValue: string, requestPath: string) {
-  let decodedPath: string;
-  try {
-    decodedPath = decodeURIComponent(requestPath);
-  } catch {
-    res.writeHead(400);
-    res.end('Bad Request');
-    return;
-  }
-  const staticRoot = path.resolve(staticRootValue);
-  const filePath = path.resolve(path.join(staticRoot, decodedPath));
-  if (filePath !== staticRoot && !filePath.startsWith(staticRoot + path.sep)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-  fs.stat(filePath, (err: NodeJS.ErrnoException | null, stats: Stats) => {
-    if (err || !stats.isFile()) {
-      res.writeHead(404);
-      res.end('Not Found');
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': (MIME_TYPES as Record<string, string>)[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
-    fs.createReadStream(filePath).pipe(res);
-  });
-}
-
-function serveReactStaticFile(res: ServerResponse, urlPath: string) {
-  const pathname = urlPath.split('?')[0];
-  let decodedPath: string;
-  try {
-    decodedPath = decodeURIComponent(pathname);
-  } catch {
-    res.writeHead(400);
-    res.end('Bad Request');
-    return;
-  }
-  // Validate before SPA fallback: otherwise a malformed or traversal path
-  // would be silently converted into index.html instead of rejected.
-  if (decodedPath.split('/').includes('..')) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-  // React owns the default single-page application. Asset misses remain 404s;
-  // extension-less paths intentionally resolve to its index for future routes.
-  const requestPath = decodedPath === '/' || !path.extname(decodedPath) ? '/index.html' : decodedPath;
-  serveStaticFromRoot(res, REACT_STATIC_DIR, requestPath);
-}
-
-function serveLegacyStaticFile(res: ServerResponse, urlPath: string) {
-  const pathname = urlPath.split('?')[0];
-  if (pathname === '/legacy') {
-    res.writeHead(302, { Location: '/legacy/' });
-    res.end();
-    return;
-  }
-  const relativePath = pathname.slice('/legacy'.length) || '/';
-  serveStaticFromRoot(res, STATIC_DIR, relativePath === '/' ? '/index.html' : relativePath);
-}
-
-function serveStaticFile(req: IncomingMessage, res: ServerResponse) {
-  const urlPath = req.url || '/';
-  const auth = checkAuth(req);
-  if (authEnabled && !urlPath.startsWith('/api/health') && !auth.ok) return sendAuthRequired(res, req);
-  maybeSetSessionCookie(req, res, auth);
-  if (urlPath.startsWith('/api/')) return handleApiRoute(req, res, urlPath);
-  const pathname = urlPath.split('?')[0];
-  // Keep /react as a short-lived compatibility redirect after the default
-  // switch, while /legacy is the explicit rollback route for one cycle.
-  if (pathname === '/react' || pathname.startsWith('/react/')) {
-    res.writeHead(302, { Location: '/' });
-    res.end();
-    return;
-  }
-  if (pathname === '/legacy' || pathname.startsWith('/legacy/')) return serveLegacyStaticFile(res, urlPath);
-  return serveReactStaticFile(res, urlPath);
 }
 
 function isAllowedApiOrigin(req: IncomingMessage) {
   const origin = req.headers.origin;
   if (!origin) return true;
-  try {
-    return new URL(origin).host === req.headers.host;
-  } catch {
-    return false;
-  }
+  try { return new URL(origin).host === req.headers.host; } catch { return false; }
 }
 
 function setCorsForAllowedOrigin(req: IncomingMessage, res: ServerResponse) {
   const origin = req.headers.origin;
   if (!origin) return true;
   if (!isAllowedApiOrigin(req)) return false;
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   return true;
 }
 
+const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projectsDir: TAU_SETTINGS.projectsDir, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, expandHome, json, errorMessage, readBranch: readSessionBranch, isGenericSessionName, sessions: liveManager });
+const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
+const apiRouter = createApiRouter({
+  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', role: 'rpc-session-manager', liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, serveSessionFile: history.serveSessionFile,
+});
+
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
   const originAllowed = setCorsForAllowedOrigin(req, res);
-  if (req.method === 'OPTIONS') {
-    if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
-    res.writeHead(200);
-    res.end();
-    return;
-  }
+  if (req.method === 'OPTIONS') { if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' }); res.writeHead(200); res.end(); return; }
   if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
-
   const parsed = new URL(`http://localhost${req.url || urlPath}`);
-  if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (sessionId) => liveManager.get(sessionId) })) return;
+  if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
 
-const apiRouter = createApiRouter({
-  sessions: liveManager,
-  snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION,
-  health: () => ({ status: 'ok', role: 'rpc-session-manager', liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }),
-  json,
-  errorMessage,
-  errorStatus,
-  readBody,
-  resolveSessionFile,
-  sessionCwd: normalizeSessionCwd,
-  readSessionHeaderCwd,
-  readSessionEntries,
-  deriveSessionName: deriveSessionNameFromEntries,
-  serveProjects: serveProjectsList,
-  serveSessions: serveSessionsList,
-  serveSearch,
-  resolveLivePath: resolveLiveSessionPath,
-  serveFiles: serveFileList,
-  serveFileContent,
-  serveResources: serveSessionResources,
-  servePreview: serveFilePreview,
-  resolveOpen: resolveOpenPath,
-  openNative,
-  handleRpc: handleRpcCommand,
-  serveSessionFile,
-});
-
-function liveFilesSet() {
-  return new Set(liveManager.list().map((s) => s.sessionFile).filter(Boolean));
-}
-
-function normalizeSessionCwd(cwd: unknown) {
-  return typeof cwd === 'string' && cwd.trim() ? path.resolve(expandHome(cwd)) : null;
-}
-
-function readSessionEntries(filePath: string): unknown[] {
-  return readSessionBranch(filePath);
-}
-
-function deriveSessionNameFromEntries(entries: JsonRecord[]) {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i] as { type?: string; name?: unknown };
-    const name = typeof e?.name === 'string' ? e.name.trim() : '';
-    if (e?.type === 'session_info' && name && !isGenericSessionName(name)) return name;
-  }
-  for (const entry of entries) {
-    const e = entry as { type?: string; message?: { role?: string; content?: unknown } };
-    if (e?.type !== 'message' || e.message?.role !== 'user') continue;
-    const title = titleFromMessageContent(e.message.content);
-    if (title) return title;
-  }
-  return null;
-}
-
-function titleFromMessageContent(content: unknown) {
-  let text = '';
-  if (typeof content === 'string') text = content;
-  else if (Array.isArray(content)) {
-    text = content
-      .filter((b): b is { type?: unknown; text?: unknown } => !!b && typeof b === 'object')
-      .filter((b) => b.type === 'text')
-      .map((b) => typeof b.text === 'string' ? b.text : '')
-      .join('\n');
-  }
-  let title = text.replace(/^(ok |okay |so |actually |hey |please |can you |could you |i want(ed)? to |i wanna |let'?s )/i, '').replace(/\n.*/s, '').trim();
-  if (!title) return null;
-  const sentenceEnd = title.search(/[.!?]\s/);
-  if (sentenceEnd > 10 && sentenceEnd < 80) title = title.slice(0, sentenceEnd);
-  if (title.length > 60) title = title.slice(0, 57).replace(/\s+\S*$/, '') + '…';
-  title = title.charAt(0).toUpperCase() + title.slice(1);
-  return title || null;
-}
-
-function readSessionHeaderCwd(filePath: string) {
-  let fd: number | null = null;
-  try {
-    fd = fs.openSync(filePath, 'r');
-    const buffer = Buffer.alloc(64 * 1024);
-    const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    const text = buffer.toString('utf8', 0, bytesRead);
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      const entry = JSON.parse(line);
-      if (entry?.type === 'session') return normalizeSessionCwd(entry.cwd);
-    }
-  } catch {
-    return null;
-  } finally {
-    if (fd !== null) {
-      try { fs.closeSync(fd); } catch {}
-    }
-  }
-  return null;
-}
-
-function serveProjectsList(res: ServerResponse) {
-  const projectsDir = TAU_SETTINGS.projectsDir;
-  if (!projectsDir || !fs.existsSync(projectsDir)) return json(res, 200, { projects: [], ...(projectsDir ? { error: 'Directory not found' } : {}) });
-  try {
-    const projectsRoot = path.resolve(projectsDir);
-    const sessionInfo = new Map<string, { count: number; lastActive: number }>();
-    if (fs.existsSync(SESSIONS_DIR)) {
-      for (const dir of fs.readdirSync(SESSIONS_DIR, { withFileTypes: true })) {
-        if (!dir.isDirectory()) continue;
-        const files = fs.readdirSync(path.join(SESSIONS_DIR, dir.name)).filter((f: string) => f.endsWith('.jsonl'));
-        let sessionCwd: string | null = null;
-        let lastActive = 0;
-        for (const f of files) {
-          const filePath = path.join(SESSIONS_DIR, dir.name, f);
-          try {
-            lastActive = Math.max(lastActive, fs.statSync(filePath).mtimeMs);
-            if (!sessionCwd) sessionCwd = readSessionHeaderCwd(filePath);
-          } catch {}
-        }
-        const projectPath = sessionCwd;
-        if (!projectPath) continue;
-        if (!isWithinPath(projectsRoot, projectPath)) continue;
-        sessionInfo.set(projectPath, { count: files.length, lastActive });
-      }
-    }
-    const liveCwds = new Set(liveManager.list().map((s) => s.cwd));
-    const projects = fs.readdirSync(projectsRoot, { withFileTypes: true })
-      .filter((e: Dirent) => e.isDirectory() && !e.name.startsWith('.'))
-      .map((e: Dirent) => {
-        const fullPath = path.join(projectsRoot, e.name);
-        const info = sessionInfo.get(fullPath) || { count: 0, lastActive: 0 };
-        return { name: e.name, path: fullPath, sessionCount: info.count, lastActive: info.lastActive || null, active: liveCwds.has(fullPath) };
-      });
-    json(res, 200, { projects });
-  } catch (e) { json(res, 500, { error: errorMessage(e) }); }
-}
-
-async function serveSessionsList(res: ServerResponse) {
-  try {
-    if (!fs.existsSync(SESSIONS_DIR)) return json(res, 200, { projects: [] });
-    const projectsByPath = new Map<string, { path: string; dirName: string; sessions: Array<Record<string, unknown>> }>();
-    const liveFiles = liveFilesSet();
-    for (const dir of fs.readdirSync(SESSIONS_DIR, { withFileTypes: true })) {
-      if (!dir.isDirectory()) continue;
-      const projectDir = path.join(SESSIONS_DIR, dir.name);
-      for (const file of fs.readdirSync(projectDir).filter((f: string) => f.endsWith('.jsonl'))) {
-        try {
-          const filePath = path.join(projectDir, file);
-          const parsed = await parseSessionFile(filePath);
-          if (parsed) {
-            const projectPath = parsed.cwd || ''; // Intentionally leave missing header cwd empty; backward compatibility for legacy/incomplete sessions without cwd is not required.
-            let project = projectsByPath.get(projectPath);
-            if (!project) {
-              project = { path: projectPath, dirName: dir.name, sessions: [] };
-              projectsByPath.set(projectPath, project);
-            }
-            project.sessions.push({ ...parsed, file, filePath, mtime: fs.statSync(filePath).mtimeMs, live: liveFiles.has(filePath) });
-          }
-        } catch {}
-      }
-    }
-    const projects = Array.from(projectsByPath.values());
-    for (const project of projects) project.sessions.sort((a, b) => Number(b.mtime || 0) - Number(a.mtime || 0));
-    projects.sort((a, b) => Number(b.sessions[0]?.mtime || 0) - Number(a.sessions[0]?.mtime || 0));
-    json(res, 200, { projects });
-  } catch (e) { json(res, 500, { error: errorMessage(e) }); }
-}
-
-async function parseSessionFile(filePath: string) {
-  const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-  let header = null, firstMessage = null, sessionName = null, userMessageCount = 0, lineCount = 0;
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    lineCount++;
-    try {
-      const entry = JSON.parse(line);
-      if (entry.type === 'session') header = entry;
-      else if (entry.type === 'session_info' && entry.name) sessionName = entry.name;
-      else if (entry.type === 'message' && entry.message?.role === 'user') {
-        userMessageCount++;
-        if (!firstMessage) {
-          const c = entry.message.content;
-          firstMessage = typeof c === 'string' ? c.slice(0, 120) : (Array.isArray(c) ? (c.find((b) => b.type === 'text')?.text || '').slice(0, 120) : null);
-        }
-      }
-    } catch {}
-  }
-  rl.close(); stream.destroy();
-  if (!header?.id || (userMessageCount <= 1 && lineCount <= 8)) return null;
-  return { id: header.id, timestamp: header.timestamp || '', name: sessionName, firstMessage, cwd: normalizeSessionCwd(header.cwd) };
-}
-
-function serveSessionFile(res: ServerResponse, dirName: string, file: string) {
-  const filePath = path.join(SESSIONS_DIR, dirName, file);
-  if (!fs.existsSync(filePath)) return json(res, 404, { error: 'Session not found' });
-  return json(res, 200, { schemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, entries: readSessionEntries(filePath) });
-}
-
-const IGNORED_NAMES = new Set(['node_modules', '.git', '__pycache__', '.DS_Store', '.Trash', '.next', '.nuxt', 'dist', 'build', '.cache', '.turbo', 'venv', '.venv', 'env', '.env.local', '.pi', 'coverage', '.nyc_output', '.parcel-cache']);
-const FILE_PREVIEW_MAX_BYTES = 1_000_000;
-const DEFAULT_TOOLS: Record<string, { label: string; description: string }> = {
-  read: { label: '读取', description: '读取文件内容' },
-  bash: { label: '命令', description: '执行终端命令' },
-  edit: { label: '编辑', description: '修改已有文件' },
-  write: { label: '创建', description: '创建或覆盖文件' },
-};
-
-function serveFileList(res: ServerResponse, dirPath: string) {
-  try {
-    dirPath = path.resolve(expandHome(dirPath));
-    if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) return json(res, 400, { error: 'Not a directory' });
-    const items = [];
-    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') && entry.name !== '.env') continue;
-      if (IGNORED_NAMES.has(entry.name)) continue;
-      try {
-        const fullPath = path.join(dirPath, entry.name);
-        const stat = fs.statSync(fullPath);
-        items.push({ name: entry.name, path: fullPath, isDirectory: entry.isDirectory(), size: entry.isDirectory() ? null : stat.size, mtime: stat.mtimeMs });
-      } catch {}
-    }
-    items.sort((a, b) => a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name));
-    json(res, 200, { path: dirPath, items });
-  } catch (e) { json(res, 500, { error: errorMessage(e) }); }
-}
-
-function serveFileContent(res: ServerResponse, filePath: string) {
-  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return json(res, 404, { error: 'File not found' });
-  const stat = fs.statSync(filePath);
-  if (stat.size > FILE_PREVIEW_MAX_BYTES) return json(res, 413, { error: `File is too large to preview (limit ${FILE_PREVIEW_MAX_BYTES} bytes)` });
-  try {
-    const buffer = fs.readFileSync(filePath);
-    const extension = path.extname(filePath).toLowerCase();
-    if (['.xlsx', '.xls', '.ods'].includes(extension)) return json(res, 200, { content: buffer.toString('base64'), encoding: 'base64', size: stat.size });
-    if (buffer.includes(0)) return json(res, 415, { error: 'Binary files cannot be previewed as text' });
-    json(res, 200, { content: buffer.toString('utf8'), encoding: 'utf8', size: stat.size });
-  } catch (error) { json(res, 500, { error: errorMessage(error) }); }
-}
-
-async function serveSessionResources(res: ServerResponse, session: PiRpcSession) {
-  let commands: JsonRecord[] = [];
-  let commandsError = '';
-  try {
-    const resp = await session.send({ type: 'get_commands' }, { timeoutMs: 5000 });
-    const data = (resp.data || resp.result || resp) as JsonRecord;
-    const rawCommands = Array.isArray(data.commands) ? data.commands : [];
-    commands = rawCommands.filter((item): item is JsonRecord => !!item && typeof item === 'object');
-  } catch (e) {
-    commandsError = errorMessage(e);
-  }
-
-  const skills = commands
-    .filter((command) => command.source === 'skill')
-    .map((command) => ({
-      name: String(command.name || ''),
-      description: typeof command.description === 'string' ? command.description : '',
-      path: resourcePath(command),
-      scope: resourceScope(command),
-    }))
-    .filter((command) => command.name);
-
-  const observedTools = collectSessionTools(session.entries);
-  const observedByName = new Map(observedTools.map((tool) => [tool.name, tool]));
-  const bridge = latestPiWebBridgeEnvelope(session.entries);
-  const tools = bridge ? bridge.tools.map((tool) => {
-    const observed = observedByName.get(tool.name);
-    return {
-      name: tool.name,
-      label: tool.name,
-      description: tool.description,
-      usedCount: observed?.usedCount || 0,
-      lastPreview: observed?.lastPreview || '',
-      source: tool.sourceInfo || 'pi-manifest',
-      active: tool.active,
-      parameters: tool.parameters,
-      promptGuidelines: tool.promptGuidelines,
-    };
-  }) : observedTools;
-
-  json(res, 200, {
-    skills,
-    tools,
-    toolsComplete: !!bridge,
-    commandsError: commandsError || undefined,
-  });
-}
-
-function resourcePath(command: JsonRecord) {
-  const sourceInfo = command.sourceInfo;
-  if (sourceInfo && typeof sourceInfo === 'object' && 'path' in sourceInfo && typeof sourceInfo.path === 'string') return sourceInfo.path;
-  return typeof command.path === 'string' ? command.path : '';
-}
-
-function resourceScope(command: JsonRecord) {
-  const sourceInfo = command.sourceInfo;
-  if (sourceInfo && typeof sourceInfo === 'object' && 'scope' in sourceInfo && typeof sourceInfo.scope === 'string') return sourceInfo.scope;
-  return typeof command.location === 'string' ? command.location : '';
-}
-
-function collectSessionTools(entries: JsonRecord[]) {
-  const byName = new Map<string, { name: string; label: string; description: string; usedCount: number; lastPreview: string; source: string }>();
-  for (const [name, meta] of Object.entries(DEFAULT_TOOLS)) {
-    byName.set(name, { name, label: meta.label, description: meta.description, usedCount: 0, lastPreview: '', source: 'builtin' });
-  }
-
-  for (const entry of entries) {
-    if (entry.type !== 'message') continue;
-    const message = entry.message as JsonRecord | undefined;
-    if (!message || message.role !== 'assistant' || !Array.isArray(message.content)) continue;
-    for (const block of message.content) {
-      if (!block || typeof block !== 'object') continue;
-      const toolCall = block as JsonRecord;
-      if (toolCall.type !== 'toolCall') continue;
-      const name = String(toolCall.name || '').trim();
-      if (!name) continue;
-      const known = byName.get(name) || {
-        name,
-        label: DEFAULT_TOOLS[name]?.label || name,
-        description: '会话中出现过的工具调用',
-        usedCount: 0,
-        lastPreview: '',
-        source: 'observed',
-      };
-      known.usedCount += 1;
-      known.lastPreview = previewToolArgs(toolCall.arguments);
-      byName.set(name, known);
-    }
-  }
-
-  return Array.from(byName.values()).sort((a, b) => {
-    if (a.usedCount !== b.usedCount) return b.usedCount - a.usedCount;
-    return a.label.localeCompare(b.label);
-  });
-}
-
-function previewToolArgs(args: unknown) {
-  if (!args || typeof args !== 'object') return '';
-  const record = args as JsonRecord;
-  for (const key of ['path', 'command', 'query', 'url']) {
-    if (typeof record[key] === 'string' && record[key]) return String(record[key]);
-  }
-  const value = Object.values(record).find((item) => typeof item === 'string' && item);
-  return typeof value === 'string' ? value : '';
-}
-
-function serveFilePreview(res: ServerResponse, filePath: string) {
-  if (!filePath) return json(res, 400, { error: 'path required' });
-  const mimes: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon' };
-  const mime = mimes[path.extname(filePath).toLowerCase().slice(1)];
-  if (!mime) return json(res, 415, { error: 'Not a previewable image' });
-  try {
-    if (!fs.statSync(filePath).isFile()) throw new Error('Not a file');
-    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'max-age=60' });
-    fs.createReadStream(filePath).pipe(res);
-  } catch (e) { json(res, 404, { error: errorMessage(e) }); }
-}
-
-function resolveExportedSessionPath(filePath: string) {
-  const resolved = path.resolve(expandHome(filePath || ''));
-  const root = path.resolve(SESSIONS_DIR);
-  if (!resolved.startsWith(root + path.sep) || path.extname(resolved).toLowerCase() !== '.html') {
-    const err = new Error('Can only open exported session HTML without a live session') as StatusError;
-    err.status = 403;
-    throw err;
-  }
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-    const err = new Error('File not found') as StatusError;
-    err.status = 404;
-    throw err;
-  }
-  return resolved;
-}
-
-function resolveExportOutputPath(outputPath: string, sessionFile: string) {
-  if (!outputPath || typeof outputPath !== 'string') throw new Error('outputPath required');
-  const sessionDir = path.dirname(path.resolve(sessionFile));
-  const sessionDirReal = fs.realpathSync(sessionDir);
-  const expanded = expandHome(outputPath);
-  const resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(sessionDir, expanded);
-  if (!isWithinPath(sessionDir, resolved) || path.extname(resolved).toLowerCase() !== '.html') {
-    const err = new Error('Export outputPath must be an .html file in the session directory') as StatusError;
-    err.status = 403;
-    throw err;
-  }
-  const parentDir = path.dirname(resolved);
-  let parentReal;
-  try { parentReal = fs.realpathSync(parentDir); } catch {
-    const err = new Error('Export output directory not found') as StatusError;
-    err.status = 404;
-    throw err;
-  }
-  if (!isWithinPath(sessionDirReal, parentReal) || (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink())) {
-    const err = new Error('Export outputPath must stay inside the session directory') as StatusError;
-    err.status = 403;
-    throw err;
-  }
-  return resolved;
-}
-
-function resolveOpenPath(body: RpcCommand) {
-  if (!body?.filePath || typeof body.filePath !== 'string') throw new Error('filePath required');
-  if (body.sessionId) {
-    const session = liveManager.get(body.sessionId);
-    const resolved = resolveLiveSessionPath(session, body.filePath);
-    if (!fs.existsSync(resolved)) {
-      const err = new Error('File not found') as StatusError;
-      err.status = 404;
-      throw err;
-    }
-    return resolved;
-  }
-  return resolveExportedSessionPath(body.filePath);
-}
-
-async function openNative(fp: string) {
-  if (!fp || typeof fp !== 'string') throw new Error('filePath required');
-  const resolved = path.resolve(expandHome(fp));
-  if (!fs.existsSync(resolved)) throw new Error('File not found');
-  if (process.platform === 'win32') {
-    spawn('explorer.exe', [resolved], { detached: true, stdio: 'ignore' }).unref();
-  } else if (process.platform === 'darwin') {
-    execFile('open', [resolved], () => {});
-  } else {
-    execFile('xdg-open', [resolved], () => {});
-  }
-}
-
-async function serveSearch(res: ServerResponse, query: string) {
-  try {
-    if (!query || query.length < 2 || !fs.existsSync(SESSIONS_DIR)) return json(res, 200, { results: [] });
-    const q = query.toLowerCase();
-    const results = [];
-    for (const dir of fs.readdirSync(SESSIONS_DIR, { withFileTypes: true })) {
-      if (!dir.isDirectory() || results.length >= 30) continue;
-      const projectDir = path.join(SESSIONS_DIR, dir.name);
-      for (const file of fs.readdirSync(projectDir).filter((f: string) => f.endsWith('.jsonl'))) {
-        if (results.length >= 30) break;
-        const filePath = path.join(projectDir, file);
-        const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-        const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-        let sessionId = '', sessionName = '', sessionTimestamp = '', firstMessage = '';
-        let sessionCwd: string | null = null;
-        const matches = [];
-        for await (const line of rl) {
-          if (!line.trim()) continue;
-          try {
-            const entry = JSON.parse(line);
-            if (entry.type === 'session') { sessionId = entry.id; sessionTimestamp = entry.timestamp || ''; sessionCwd = normalizeSessionCwd(entry.cwd); }
-            if (entry.type === 'session_info' && entry.name) sessionName = entry.name;
-            if (entry.type === 'message') {
-              const c = entry.message?.content;
-              const text = typeof c === 'string' ? c : (Array.isArray(c) ? c.filter((b) => b.type === 'text').map((b) => b.text).join(' ') : '');
-              if (!firstMessage && entry.message?.role === 'user' && text) firstMessage = text.slice(0, 120);
-              const idx = text.toLowerCase().indexOf(q);
-              if (idx >= 0) {
-                matches.push({ role: entry.message?.role || 'unknown', snippet: `${idx > 0 ? '…' : ''}${text.slice(Math.max(0, idx - 60), Math.min(text.length, idx + q.length + 60)).replace(/\n/g, ' ')}${idx + q.length + 60 < text.length ? '…' : ''}` });
-                if (matches.length >= 3) break;
-              }
-            }
-          } catch {}
-        }
-        rl.close(); stream.destroy();
-        if (matches.length) results.push({ filePath, project: sessionCwd || '', sessionId, sessionName, sessionTimestamp, firstMessage, matches });
-      }
-    }
-    json(res, 200, { results });
-  } catch (e) { json(res, 500, { error: errorMessage(e) }); }
-}
+const staticHandler = createStaticHandler({ reactStaticDir: REACT_STATIC_DIR, mimeTypes: MIME_TYPES as Record<string, string>, authEnabled: () => authEnabled, checkAuth, sendAuthRequired, maybeSetSessionCookie, handleApi: handleApiRoute });
+const server = http.createServer(staticHandler.serveStaticFile);
+const socketHandler = attachWebSocketHandler({ server, sessions: liveManager, isAllowedOrigin: isAllowedApiOrigin, authEnabled: () => authEnabled, isAuthenticated: (request) => checkAuth(request).ok, handleRpc: handleRpcCommand, errorMessage });
+const { wss } = socketHandler;
 
 function computeUrls(port: number) {
-  const isLoopback = HOST === '127.0.0.1' || HOST === '::1' || HOST === 'localhost';
-  let localIp = 'localhost';
-  let tailscaleIp = '';
-  if (!isLoopback) {
+  const loopback = HOST === '127.0.0.1' || HOST === '::1' || HOST === 'localhost';
+  let localIp = 'localhost', tailscaleIp = '';
+  if (!loopback) {
     const nets = os.networkInterfaces();
-    for (const name of ['en0', 'en1', 'wlan0', 'eth0']) {
-      for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal) { localIp = net.address; break; }
-      if (localIp !== 'localhost') break;
-    }
-    if (localIp === 'localhost') {
-      outer: for (const name of Object.keys(nets)) {
-        if (/^(bridge|utun|lo)/.test(name)) continue;
-        for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal) { localIp = net.address; break outer; }
-      }
-    }
+    for (const name of ['en0', 'en1', 'wlan0', 'eth0']) { for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal) { localIp = net.address; break; } if (localIp !== 'localhost') break; }
+    if (localIp === 'localhost') outer: for (const name of Object.keys(nets)) { if (/^(bridge|utun|lo)/.test(name)) continue; for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal) { localIp = net.address; break outer; } }
     for (const name of Object.keys(nets)) for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal && net.address.startsWith('100.')) tailscaleIp = net.address;
   }
-  lanUrl = `http://${localIp}:${port}`;
-  tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
+  lanUrl = `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
 }
 
-const server = http.createServer(serveStaticFile);
-const wss = new WebSocketServer({ noServer: true });
-
-server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
-  if (!isAllowedApiOrigin(request)) {
-    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-  if (authEnabled && !checkAuth(request).ok) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="Tau"\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-  if (request.url === '/ws') wss.handleUpgrade(request, socket, head, (ws: TauWs) => wss.emit('connection', ws, request));
-  else socket.destroy();
-});
-
-wss.on('connection', (ws: TauWs) => {
-  liveManager.addClient(ws);
-  ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
-  ws.send(JSON.stringify({ type: 'state', liveSessions: liveManager.list() }));
-  ws.on('message', async (data: Buffer) => {
-    try {
-      const command = JSON.parse(data.toString());
-      const resp = await handleRpcCommand(command);
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(resp));
-    } catch (e) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', message: errorMessage(e) }));
-    }
-  });
-  ws.on('close', () => liveManager.removeClient(ws));
-  ws.on('error', () => liveManager.removeClient(ws));
-});
-
-setInterval(() => {
-  for (const client of liveManager.clients) {
-    if (client.readyState !== WebSocket.OPEN) { liveManager.removeClient(client); continue; }
-    if (!client.isAlive) { try { client.terminate(); } catch {} liveManager.removeClient(client); continue; }
-    client.isAlive = false;
-    try { client.ping(); } catch {}
-  }
-}, 20000).unref();
-
 function listen(port: number, attemptsLeft = 10) {
-  server.once('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
-      console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`);
-      server.removeAllListeners('error');
-      listen(port + 1, attemptsLeft - 1);
-    } else {
-      console.error(`[Tau] Failed to start: ${err.message}`);
-      process.exit(1);
-    }
+  server.once('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE' && attemptsLeft > 0) { console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`); server.removeAllListeners('error'); listen(port + 1, attemptsLeft - 1); }
+    else { console.error(`[Tau] Failed to start: ${error.message}`); process.exit(1); }
   });
-  server.listen(port, HOST, () => {
-    computeUrls(port);
-    console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`);
-    console.log(`[Tau] React application: ${REACT_STATIC_DIR} (/)`);
-    console.log(`[Tau] Legacy fallback: ${STATIC_DIR} (/legacy/)`);
-    if (ARGS.open) openUrl(lanUrl).catch(() => {});
-  });
+  server.listen(port, HOST, () => { computeUrls(port); console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`); console.log(`[Tau] React application: ${REACT_STATIC_DIR} (/)`); if (ARGS.open) openUrl(lanUrl).catch(() => {}); });
 }
 
 let shuttingDown = false;
 async function shutdown(signal: string) {
   if (shuttingDown) return;
-  shuttingDown = true;
-  console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
-  try { wss.close(); } catch {}
-  await liveManager.shutdown();
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 2500).unref();
+  shuttingDown = true; console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
+  socketHandler.close(); try { wss.close(); } catch {}
+  await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
 }
 function startCli() {
-  const piRuntime = inspectPiRuntime(PI_COMMAND);
-  liveManager.setPiVersion(piRuntime.version);
-  console.log(`[Tau] Pi runtime: ${piRuntime.command} ${piRuntime.version}`);
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('exit', () => {
-    for (const session of liveManager.sessions.values()) {
-      try { session.child?.kill('SIGTERM'); } catch {}
-    }
-  });
-  process.on('uncaughtException', (err) => { console.error(err); shutdown('uncaughtException'); });
-  process.on('unhandledRejection', (err) => { console.error(err); });
+  const runtime = inspectPiRuntime(PI_COMMAND); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);
+  process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('exit', () => { for (const session of liveManager.sessions.values()) try { session.child?.kill('SIGTERM'); } catch {} });
+  process.on('uncaughtException', (error) => { console.error(error); shutdown('uncaughtException'); }); process.on('unhandledRejection', (error) => console.error(error));
   listen(PORT);
 }
 
-// Test-only helper to reset module-level auth state between cases.
 function _setAuthForTest(enabled: boolean) { authEnabled = !!enabled; }
-
-// Test-only helpers for the session-cookie flow: mutate the live credentials
-// (tokens embed a credential fingerprint) and mint tokens at chosen expiries.
 function _setCredentialsForTest(user: string, pass: string) { TAU_SETTINGS.user = user; TAU_SETTINGS.pass = pass; }
 function _issueSessionTokenForTest(expiresAtSeconds?: number) { return issueSessionToken(expiresAtSeconds); }
 
-// Test-only hook to substitute the `pi` spawn so LiveSessionManager.create()
-// can be exercised without launching a real Pi process.
-
-module.exports = {
-  parseArgs,
-  expandHome,
-  loadTauSettings,
-  modelLabel,
-  normalizeModel,
-  parseModelSpecToModel,
-  parsePiListModels,
-  getAvailableModels,
-  makeId,
-  PiRpcSession,
-  LiveSessionManager,
-  liveManager,
-  resolveSessionFile,
-  appendSessionName,
-  updateLiveSessionName,
-  isWithinPath,
-  resolveLiveSessionPath,
-  resolveExportOutputPath,
-  resolveExportedSessionPath,
-  resolveOpenPath,
-  openUrl,
-  handleRpcCommand,
-  isAllowedApiOrigin,
-  setCorsForAllowedOrigin,
-  handleApiRoute,
-  serveStaticFile,
-  serveReactStaticFile,
-  server,
-  wss,
-  computeUrls,
-  listen,
-  startCli,
-  SESSIONS_DIR,
-  PI_AGENT_DIR,
-  GEO_EXTENSION_PATH,
-  checkAuth,
-  SESSION_COOKIE_NAME,
-  _setAuthForTest,
-  _setCredentialsForTest,
-  _issueSessionTokenForTest,
-  _setSpawnPiForTest,
-  _setExecFileForTest,
-  _clearModelListCacheForTest,
-};
+module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, GEO_EXTENSION_PATH, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, _clearModelListCacheForTest };

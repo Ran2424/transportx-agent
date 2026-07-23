@@ -1,7 +1,7 @@
 /**
  * Kernel transport abstraction. The kernel consumes TransportSignals instead
  * of touching WebSocket/EventTarget directly; eventTargetTransport() adapts
- * the legacy WebSocketClient (an EventTarget subclass emitting CustomEvents)
+ * the browser WebSocketClient (an EventTarget subclass emitting CustomEvents)
  * to this interface, and tests can inject a plain fake.
  */
 

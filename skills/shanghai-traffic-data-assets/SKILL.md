@@ -18,7 +18,7 @@ description: Power the Major Event Traffic Situation Insight and Decision Suppor
 | 2025-08-23 | 19:00 | 22:00 | Asia/Shanghai |
 | 2025-08-24 | 19:00 | 22:00 | Asia/Shanghai |
 
-[上海地铁保障指南](https://www.jfdaily.com/sgh/detail?id=1627654)明确四日每日 19:00—22:00；[上海市公安局公告](https://www.shanghai.gov.cn/nw31406/20250822/555caa8ba4894640ab88f64cbbf193ce.html)确认四个演出日和场馆。这组活动背景只用于 SKILL 的案例解释，不写入 `ridehail.std_trip`、订单事实或订单集市。`common.dim_event` 仍是原有的日期级活动标记，不能据此读取开始和结束时刻。
+[上海地铁保障指南](https://www.jfdaily.com/sgh/detail?id=1627654)明确四日每日 19:00—22:00；[上海市公安局公告](https://www.shanghai.gov.cn/nw31406/20250822/555caa8ba4894640ab88f64cbbf193ce.html)确认四个演出日和场馆。
 
 态势分析建议分为演前集结、演中、散场三个阶段。若没有更具体的管控时间，默认使用 15:00—19:00、19:00—22:00、22:00—24:00 作为分析窗口；前后两个窗口是分析口径，不是官方开门或清场时间。2025-08-23 附近上海体育馆另有 UFC 赛事，解释当天异常时必须提示并发活动影响。
 

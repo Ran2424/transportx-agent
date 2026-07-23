@@ -62,6 +62,7 @@ export type LiveSession = {
   isStreaming?: boolean;
   createdAt?: string;
   lastActiveAt?: string;
+  lastConversationAt?: string;
   contextUsage?: UsageRecord;
   capabilities?: RuntimeCapabilities & {
     ok: boolean;

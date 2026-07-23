@@ -30,7 +30,7 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
   </button>;
 }
 
-/** The legacy resource rail reduced to the one real resource it provides: files. */
+/** The resource dock intentionally exposes only session files. */
 export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: LiveSession | null; onClose(): void }) {
   const { kernel } = useAppServices();
   const [path, setPath] = useState('');

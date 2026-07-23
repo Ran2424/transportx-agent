@@ -46,6 +46,7 @@ export type HistorySession = {
   firstMessage?: string | null;
   timestamp?: string;
   mtime?: number;
+  lastConversationAt?: string;
   sessionName?: string | null;
   sessionTimestamp?: string;
   live?: boolean;

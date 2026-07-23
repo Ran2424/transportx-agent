@@ -35,7 +35,7 @@ test('SessionSnapshot contract accepts v1 and diagnoses unknown versions explici
 test('TaskSnapshot contract is shared by Extension and Web and diagnoses version/revision failures', async () => {
   const task = fixture('task');
   const contract = await import('../src/contracts/task.ts');
-  const web = await import('../src/public/features/task/task-protocol.ts');
+  const web = await import('../src/contracts/task.ts');
   const extension = await import('../extensions/pi-task-mode/task-state.ts');
 
   const valid = contract.parseTaskSnapshotStructured(task.valid);
@@ -63,7 +63,7 @@ test('TaskSnapshot contract is shared by Extension and Web and diagnoses version
 test('Geo envelope contract is shared by Extension/Web and diagnoses version/revision failures', async () => {
   const geo = fixture('geo');
   const contract = await import('../src/contracts/geo.ts');
-  const web = await import('../src/public/visualization/geo/protocol.ts');
+  const web = await import('../src/contracts/geo.ts');
 
   const valid = contract.parseVisualizationEnvelopeStructured(geo.valid);
   assert.equal(valid.ok, true);

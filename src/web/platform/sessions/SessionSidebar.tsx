@@ -73,7 +73,7 @@ export function SessionSidebar({
     const items: SidebarSession[] = liveSessions.map((session) => ({
       key: `live:${session.id}`,
       title: sessionTitle(session),
-      timestamp: session.lastActiveAt || session.createdAt,
+      timestamp: session.lastConversationAt || session.createdAt,
       live: session,
     }));
 
@@ -82,11 +82,11 @@ export function SessionSidebar({
       .forEach((project) => {
         (project.sessions || []).forEach((session) => {
           if (session.filePath && liveFiles.has(session.filePath)) return;
-          const lastActiveAt = session.mtime ? new Date(session.mtime).toISOString() : session.timestamp || session.sessionTimestamp;
+          const lastConversationAt = session.lastConversationAt || session.timestamp || session.sessionTimestamp;
           items.push({
             key: `history:${session.filePath || `${project.path}:${historyTitle(session)}`}`,
             title: historyTitle(session),
-            timestamp: lastActiveAt,
+            timestamp: lastConversationAt,
             history: session,
             project,
           });

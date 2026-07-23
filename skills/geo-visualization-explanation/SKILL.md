@@ -1,49 +1,49 @@
 ---
 name: geo-visualization-explanation
-description: Build and debug declarative interactive Web GIS maps in Tau with publish_geodata and present_visualization. Use for GeoJSON publication, point/line/polygon layers, spatial hotspots, thematic styling, POI reference layers, layer switching, selection, or any Invalid GeoScene failure. Do not use for ordinary static matplotlib charts.
+description: 在 Tau 中使用 publish_geodata 和 present_visualization 构建、解释并调试声明式交互 Web GIS 地图。适用于发布 GeoJSON、绘制点/线/面图层、展示空间热点与专题样式、添加 POI 参考图层、切换图层、处理选择交互，或排查任何 Invalid GeoScene 错误。不适用于普通的静态 matplotlib 图表。
 ---
 
-# Geo Visualization Explanation
+# 地理可视化说明
 
-Use the Tau Geo tools to publish session-scoped GeoJSON and present a declarative 2D map. Keep data preparation, map description, and Web rendering separate.
+使用 Tau Geo 工具发布当前会话范围内的 GeoJSON，并呈现声明式二维地图。将数据准备、地图描述和 Web 渲染分开处理。
 
-## Choose the workflow
+## 选择工作流
 
-- Always use `publish_geodata` followed by `present_visualization`. The presentation tool accepts command-style parameters and builds GeoScene internally; do not hand-write a `scene`, `sources`, `layers`, or `encoding` object.
-- Aggregate dense observations before publication. `publish_geodata` accepts at most 50,000 features and 20 MiB; do not send a million raw points to the browser.
-- Read `shanghai-traffic-data-assets` as well when the map uses the governed Shanghai traffic databases. Keep its metric, entity, and CRS rules authoritative.
+- 始终先调用 `publish_geodata`，再调用 `present_visualization`。呈现工具接收命令式参数，并在内部构建 GeoScene；不要手写 `scene`、`sources`、`layers` 或 `encoding` 对象。
+- 发布前聚合密集观测数据。`publish_geodata` 最多接受 50,000 个要素和 20 MiB 数据；不要把上百万个原始点发送到浏览器。
+- 当地图使用受治理的上海交通数据库时，同时读取 `shanghai-traffic-data-assets`，并以其中的指标、实体和坐标参考系规则为准。
 
-## Prepare GeoJSON
+## 准备 GeoJSON
 
-1. Convert source coordinates to WGS84 longitude/latitude before visualization. Do not expect the tools to convert GCJ-02 or BD-09.
-2. Validate coordinate order and range: `[longitude, latitude]`, longitude within `[-180, 180]`, latitude within `[-90, 90]`.
-3. Give every feature a stable unique top-level `Feature.id`, or add a unique string/integer property and pass its name as `idField`. The publisher currently validates uniqueness only for an explicitly supplied `idField`; verify top-level `Feature.id` uniqueness yourself.
-4. Keep lines, ordinary points, highlighted POIs, and different thematic groups in separate sources when they require different styling; GeoScene v1 has no filter channel.
-5. Write generated GeoJSON inside the current task directory before calling `publish_geodata`.
-6. Before publication, verify the root type, feature count, file size, geometry types, coordinate range, and ID uniqueness. Keep the result below 50,000 features and 20 MiB; increase aggregation size before publishing when it exceeds either limit.
+1. 可视化前，将源坐标转换为 WGS84 经纬度。不要期待工具自动转换 GCJ-02 或 BD-09。
+2. 校验坐标顺序和范围：使用 `[经度, 纬度]`；经度范围为 `[-180, 180]`，纬度范围为 `[-90, 90]`。
+3. 为每个要素提供稳定且唯一的顶层 `Feature.id`，或添加唯一的字符串/整数属性，并把属性名传给 `idField`。发布器目前只对显式传入的 `idField` 校验唯一性；顶层 `Feature.id` 的唯一性需自行验证。
+4. 当线、普通点、高亮 POI 或不同专题组需要不同样式时，将它们拆分到不同数据源；GeoScene v1 没有筛选通道。
+5. 调用 `publish_geodata` 前，将生成的 GeoJSON 写入当前任务目录。
+6. 发布前检查根类型、要素数量、文件大小、几何类型、坐标范围和 ID 唯一性。数据需小于 50,000 个要素和 20 MiB；超出任一限制时，先提高聚合粒度。
 
-When using GeoPandas with `idField: "id"`, create the property explicitly before export:
+在 GeoPandas 中使用 `idField: "id"` 时，导出前显式创建该属性：
 
 ```python
 grid["id"] = grid.index.astype(str)
 ```
 
-Do not rely on a DataFrame index becoming a GeoJSON property automatically.
+不要假设 DataFrame 索引会自动成为 GeoJSON 属性。
 
-## Publish data
+## 发布数据
 
-Call `publish_geodata` with the relative GeoJSON path, a clear title, and `idField` when using a property ID. Pass the returned `resourceId` exactly to `present_visualization` with `command: "create_map"`; do not construct a source object yourself.
+调用 `publish_geodata` 时，传入 GeoJSON 相对路径、清晰的标题，并在使用属性 ID 时传入 `idField`。将返回的 `resourceId` 原样传给 `present_visualization`，同时使用 `command: "create_map"`；不要自行构造数据源对象。
 
-If publication fails, fix the data instead of removing a meaningful `idField`:
+发布失败时，修复数据，不要移除有意义的 `idField`：
 
-- Missing ID: ensure every feature contains the property.
-- Duplicate ID: generate deterministic unique values.
-- Invalid coordinates: correct the CRS or coordinate order.
-- Excessive size: aggregate, simplify, or split the data.
+- 缺少 ID：确保每个要素都包含对应属性。
+- ID 重复：生成确定且唯一的值。
+- 坐标无效：修正坐标参考系或坐标顺序。
+- 数据过大：聚合、简化或拆分数据。
 
-## Build the map incrementally
+## 渐进构建地图
 
-Start with the resource returned by `publish_geodata` and one constant-style layer:
+从 `publish_geodata` 返回的资源和一个固定样式图层开始：
 
 ```json
 {
@@ -59,49 +59,68 @@ Start with the resource returned by `publish_geodata` and one constant-style lay
 }
 ```
 
-The `resourceId` above only demonstrates the required lowercase-hex shape. Replace it with the exact ID returned by the current `publish_geodata` call.
+上面的 `resourceId` 仅用于演示所需的小写十六进制格式。必须替换为当前 `publish_geodata` 调用实际返回的 ID。
 
-After `create_map` succeeds, add one concern per command in this order:
+`create_map` 成功后，每条命令只增加一个关注点，并按以下顺序执行：
 
-1. `set_step`, `set_continuous`, `set_categorical`, or `set_constant` for one channel.
-2. `add_layer` for a second source/layer or reference POI layer.
-3. `set_popup` for details.
-4. `set_controls` only when changing navigation or fullscreen. The schema currently accepts `legend`, `layerSwitcher`, and `fitToData`, but the Web Runtime does not implement those flags; the layer list is rendered unconditionally and there is no automatic legend or fit-to-data button.
-5. `set_metadata` for descriptions and warnings.
-6. `set_camera` or `fit_bounds` only when the automatically derived resource extent is unsuitable.
+1. 使用 `set_step`、`set_continuous`、`set_categorical` 或 `set_constant` 设置一个通道。
+2. 使用 `add_layer` 添加第二个数据源/图层或参考 POI 图层。
+3. 使用 `set_popup` 添加详情。
+4. 仅在需要改变导航或全屏行为时使用 `set_controls`。模式目前接受 `legend`、`layerSwitcher` 和 `fitToData`，但 Web Runtime 尚未实现这些标志；图层列表始终显示，且没有自动图例或“缩放至数据”按钮。
+5. 使用 `set_metadata` 添加说明和警告。
+6. 仅当根据资源范围自动推导的视图不合适时，使用 `set_camera` 或 `fit_bounds`。
 
-Reuse the same `visualizationId` while refining the map. When the user says “add”, “overlay”, “mark”, or “include” something in the current map, update that visualization instead of creating a second map. Create a new ID only when the user explicitly asks for a separate map.
+优化地图时复用同一个 `visualizationId`。当用户要求在当前地图中“添加”“叠加”“标注”或“包含”内容时，更新该可视化，不要新建第二张地图。仅当用户明确要求单独地图时才创建新 ID。
 
-## Follow encoding constraints
+## 遵守编码约束
 
-- Use color hex strings such as `#2563eb`, `#fff`, `#2563ebcc`, or `#fffc`. Do not use `rgb(...)`, `rgba(...)`, CSS variables, URLs, or named colors.
-- Use numeric opacity in `[0, 1]`.
-- Provide 2–16 strictly ascending numeric stops for `step` and `continuous`.
-- Include `defaultValue` for the `set_step` command; do not pass it to `set_continuous`.
-- Use only the channels supported by the layer type:
-  - `circle`: `color`, `radius`, `opacity`, `strokeColor`, `strokeWidth`
-  - `line`: `color`, `width`, `opacity`, `dash`
-  - `fill`: `color`, `opacity`, `outlineColor`
-  - `label`: `textField`, `color`, `size`, `haloColor`, `haloWidth`
-- Pass the channel and its values to the matching command. For example, use `command: "set_constant"`, `channel: "opacity"`, `value: 0.75`; never construct VisualValue, MapLibre `paint`, `layout`, or JavaScript expressions yourself.
+- 颜色只使用十六进制字符串，例如 `#2563eb`、`#fff`、`#2563ebcc` 或 `#fffc`。不要使用 `rgb(...)`、`rgba(...)`、CSS 变量、URL 或颜色名称。
+- 透明度使用 `[0, 1]` 范围内的数值。
+- 为 `step` 和 `continuous` 提供 2–16 个严格递增的数值断点。
+- `set_step` 命令必须包含 `defaultValue`；不要向 `set_continuous` 传入该字段。
+- 仅使用图层类型支持的通道：
+  - `circle`：`color`、`radius`、`opacity`、`strokeColor`、`strokeWidth`
+  - `line`：`color`、`width`、`opacity`、`dash`
+  - `fill`：`color`、`opacity`、`outlineColor`
+  - `label`：`textField`、`color`、`size`、`haloColor`、`haloWidth`
+- 将通道及其值传给对应命令。例如，使用 `command: "set_constant"`、`channel: "opacity"`、`value: 0.75`；不要自行构造 VisualValue、MapLibre `paint`、`layout` 或 JavaScript 表达式。
 
-## Compose readable thematic maps
+## 组合易读的专题地图
 
-- Default only one overlapping fill layer to `visible: true` and set alternatives to `visible: false`. The Web map always shows its current layer visibility list; do not rely on the reserved `layerSwitcher` flag.
-- Add a reference POI or label layer when the user needs to understand hotspot position relative to a venue or station.
-- Prefer clear layer titles and short popup fields.
-- Use a bounds view with padding when the source extent is known; use a camera view for a deliberate fixed composition.
-- Explain time range, spatial scope, aggregation unit, CRS, and important coverage limitations in the response.
+- 重叠的填充图层默认只让一个图层设置为 `visible: true`，其他备选图层设为 `visible: false`。Web 地图始终显示当前图层可见性列表；不要依赖预留的 `layerSwitcher` 标志。
+- 当用户需要理解热点与场馆或车站的相对位置时，添加参考 POI 或标签图层。
+- 使用清晰的图层标题和简短的弹窗字段。
+- 已知数据源范围时，优先使用带内边距的 bounds 视图；需要刻意安排固定构图时，使用 camera 视图。
+- 在回复中说明时间范围、空间范围、聚合单元、坐标参考系和重要的覆盖限制。
 
-## Recover from validation failures
+### 上海地铁线路配色
 
-When `present_visualization` rejects a command:
+> **风格规则：** 只要可视化使用上海地铁线路作为视觉编码，就必须按线路名称使用下表颜色，不要改用通用分类色板。
 
-1. Preserve the last successful scene.
-2. Read the returned validation issue path and code; change only that command parameter.
-3. Check color format, channel name, stop ordering, source/layer id, bounds, and popup format.
-4. Retry `create_map` with one constant-style layer if no previous map succeeded.
-5. Add commands back one at a time after the minimal map succeeds.
-6. If the same `visualizationId + command + layerId + channel` fails twice with the same field path, stop retrying it. Preserve the last successful scene and report the tool failure instead of guessing more values.
+| 线路 | Web 十六进制色值 | 线路 | Web 十六进制色值 |
+| --- | --- | --- | --- |
+| 1 号线 | `#E3022C` | 10 号线 | `#C6AFD4` |
+| 2 号线 | `#83C026` | 11 号线 | `#881C2C` |
+| 3 号线 | `#FBD500` | 12 号线 | `#007860` |
+| 4 号线 | `#461E84` | 13 号线 | `#E899C0` |
+| 5 号线 | `#944D9A` | 14 号线 | `#626021` |
+| 6 号线 | `#E20067` | 15 号线 | `#C9B28F` |
+| 7 号线 | `#ED7001` | 16 号线 | `#98D2C0` |
+| 8 号线 | `#0094D8` | 17 号线 | `#BB7970` |
+| 9 号线 | `#88CAEC` | 18 号线 | `#C4984F` |
+| 浦江线 | `#B5B5B6` |  |  |
 
-Do not repeatedly submit unrelated rewrites. Treat the tool's field-specific error as authoritative when one is available.
+这些十六进制值来自上海市政府发布、由上海申通地铁集团提供的 [上海轨道交通网络示意图](https://english.shanghai.gov.cn/en-Latest-WhatsNew/20240924/b625d488216241f78f743cd87a40df0c.html)，并按图像内嵌 ICC 配置转换为适用于 Web 的 sRGB。设置线路颜色时，对线路字段使用 `set_categorical`；不要把连续色带用于不同线路。若需绘制磁浮、市域线或尚未列入表中的在建线路，先核对最新官方线路图，不要自行猜色。
+
+## 从校验失败中恢复
+
+当 `present_visualization` 拒绝某条命令时：
+
+1. 保留上一次成功的场景。
+2. 读取返回的校验问题路径和代码，只修改该命令对应的参数。
+3. 检查颜色格式、通道名称、断点顺序、数据源/图层 ID、边界和弹窗格式。
+4. 如果此前没有成功创建地图，使用一个固定样式图层重试 `create_map`。
+5. 最小地图成功后，逐条重新添加命令。
+6. 如果相同的 `visualizationId + command + layerId + channel` 在同一字段路径上连续失败两次，停止重试。保留最后成功的场景并报告工具故障，不要继续猜测参数。
+
+不要反复提交互不相关的整体改写。当工具返回字段级错误时，以该错误为准。

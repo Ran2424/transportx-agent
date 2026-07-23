@@ -169,8 +169,7 @@ export class ConversationStore {
   /**
    * message_end is authoritative: when the payload text is at least as long
    * as the locally streamed text it wins; otherwise (client attached earlier
-   * than the payload accounts for) the local buffer is kept. This mirrors
-   * the legacy handleMessageEnd correction semantics.
+   * than the payload accounts for) the local buffer is kept.
    */
   streamCompleted(sessionId: string, message: AppMessage) {
     this.update(sessionId, (conv) => {

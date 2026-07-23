@@ -45,13 +45,6 @@ try {
   browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 
-  const legacyPage = await context.newPage();
-  const legacyErrors = [];
-  legacyPage.on('pageerror', (error) => legacyErrors.push(error.message));
-  await legacyPage.goto(`${baseUrl}/legacy/`, { waitUntil: 'domcontentloaded' });
-  await legacyPage.locator('#status-indicator.connected').waitFor({ timeout: 10_000 });
-  if (legacyErrors.length) throw new Error(`Legacy page errors:\n${legacyErrors.join('\n')}`);
-
   const reactPage = await context.newPage();
   const reactErrors = [];
   const requestedUrls = [];
@@ -77,7 +70,7 @@ try {
   // Command palette keyboard path.
   await reactPage.keyboard.press('Control+k');
   await reactPage.getByRole('dialog', { name: '命令' }).waitFor();
-  await reactPage.getByRole('option', { name: /打开 Legacy 工作台/ }).waitFor();
+  await reactPage.getByRole('option', { name: /工作台设置/ }).waitFor();
   await reactPage.keyboard.press('Escape');
 
   async function createTask(name) {
@@ -141,7 +134,7 @@ try {
   await reactPage.getByRole('button', { name: '打开或关闭文件栏' }).click();
   await reactPage.locator('[data-testid="workspace-dock"].is-open').waitFor();
   await reactPage.locator('.workspace-file-list').waitFor();
-  await reactPage.getByRole('button', { name: '关闭文件栏' }).click();
+  await reactPage.getByTestId('workspace-dock').getByRole('button', { name: '关闭文件栏', exact: true }).click();
   await reactPage.locator('[data-testid="workspace-dock"]:not(.is-open)').waitFor();
   await reactPage.getByRole('button', { name: '打开或关闭任务面板' }).click();
   await reactPage.locator('[data-testid="workspace-float-tasks"].is-open').waitFor();
@@ -171,7 +164,8 @@ try {
   if (!requestedUrls.some((url) => url.includes('geo-runtime-entry') || url.includes('maplibre'))) {
     throw new Error('Geo workspace did not load its runtime on demand');
   }
-  await reactPage.getByRole('button', { name: '关闭地图视图' }).click();
+  await reactPage.getByTestId('workspace-float-map')
+    .getByRole('button', { name: '关闭地图视图', exact: true }).click();
 
   await triggerPrompt('React-dialog-confirm');
   const confirmDialog = reactPage.getByRole('dialog', { name: '确认发布报告' });

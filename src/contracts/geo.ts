@@ -4,8 +4,7 @@
  *
  * Modules re-exporting this contract:
  *   - `extensions/pi-geo-visualization/index.ts` builds and validates Envelopes.
- *   - `src/public/visualization/visualization-host.ts` consumes Envelopes.
- *   - `src/public/visualization/session-visualization-store.ts` stores per-session state.
+ *   - The React Geo feature consumes envelopes through its session projection.
  */
 import {
   asRecord,

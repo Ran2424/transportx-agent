@@ -70,7 +70,7 @@ export function renderMarkdown(text: string) {
       const block = codeBlocks[parseInt(codeMatch[1])];
       const langLabel = block.lang || 'code';
       html += `<div class="code-block-wrapper">`;
-      html += `<div class="code-block-header"><span>${escapeHtml(langLabel)}</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>`;
+      html += `<div class="code-block-header"><span>${escapeHtml(langLabel)}</span></div>`;
       html += `<pre><code>${escapeHtml(block.code)}</code></pre></div>`;
       continue;
     }
@@ -245,16 +245,17 @@ export function renderUserMarkdown(text: string) {
 }
 
 function renderInline(text: string) {
+  text = escapeHtml(text);
   // Inline code (must come first to protect content)
   const codeSpans: string[] = [];
   text = text.replace(/`([^`]+)`/g, (_, code: string) => {
     const idx = codeSpans.length;
-    codeSpans.push(`<code>${escapeHtml(code)}</code>`);
+    codeSpans.push(`<code>${code}</code>`);
     return `%%ICODE${idx}%%`;
   });
 
   // Images (before links so ![...](...) isn't caught by link regex)
-  text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="inline-image">');
+  text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, url: string) => safeUrl(url, true) ? `<img src="${url}" alt="${alt}" class="inline-image">` : alt);
 
   // Bold + italic
   text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -271,7 +272,7 @@ function renderInline(text: string) {
   text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
   // Links
-  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => safeUrl(url) ? `<a href="${url}" target="_blank" rel="noopener">${label}</a>` : label);
 
   // Auto-link bare URLs
   text = text.replace(/(^|[^"'])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
@@ -290,25 +291,7 @@ function escapeHtml(text: string) {
     .replace(/"/g, '&quot;');
 }
 
-// Global copy function for legacy code blocks.
-declare global {
-  interface Window {
-    copyCode?: (btn: HTMLElement) => void;
-  }
+function safeUrl(value: string, image = false) {
+  const url = value.trim();
+  return image ? /^(https?:|data:image\/)/i.test(url) : /^(https?:|mailto:)/i.test(url);
 }
-
-window.copyCode = function(btn: HTMLElement) {
-  const wrapper = btn.closest('.code-block-wrapper');
-  if (!wrapper) return;
-  const codeBlock = wrapper.querySelector('code');
-  if (!codeBlock) return;
-  const text = codeBlock.textContent || '';
-  navigator.clipboard.writeText(text).then(() => {
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => {
-      btn.textContent = 'Copy';
-      btn.classList.remove('copied');
-    }, 2000);
-  });
-};

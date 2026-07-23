@@ -1,6 +1,6 @@
 import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { GeoLayer, GeoSceneSnapshot, GeoVisualValue } from './protocol.js';
+import type { GeoLayer, GeoSceneSnapshot, GeoVisualValue } from '../../../contracts/geo.js';
 
 type Expression = unknown;
 type LayerSpec = maplibregl.LayerSpecification;

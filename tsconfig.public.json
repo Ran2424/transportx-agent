@@ -13,7 +13,13 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "src/public/**/*.ts",
+    "src/public/app-types.ts",
+    "src/public/assets.d.ts",
+    "src/public/markdown.ts",
+    "src/public/tool-result.ts",
+    "src/public/websocket-client.ts",
+    "src/public/kernel/**/*.ts",
+    "src/public/visualization/geo/geo-runtime-entry.ts",
     "src/contracts/**/*.ts"
   ]
 }
