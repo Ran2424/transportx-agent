@@ -14,6 +14,10 @@
 
 ## 界面示意
 
+首页提供交通问数、地图分析和报告生成入口：
+
+![Pi Traffic Workspace 首页](./docs/images/view.png)
+
 Agent 可在同一工作台中完成 GIS 分析、地图增量编辑和结果说明。下图展示上海体育场周边地铁线路、站点与工具执行过程：
 
 ![上海体育场周边地铁线路分析与地图增量编辑](./docs/images/geo-analysis-transit-network.png)
