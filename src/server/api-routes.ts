@@ -29,6 +29,7 @@ type ApiRouteServices = {
   resolveOpen(body: RpcCommand): string;
   openNative(path: string): Promise<void>;
   handleRpc(command: RpcCommand): Promise<RpcResponse>;
+  renderReportPdf(title: string, html: string): Promise<Buffer>;
   serveSessionFile(res: ServerResponse, dirName: string, fileName: string): void;
 };
 
@@ -117,6 +118,24 @@ export function createApiRouter(services: ApiRouteServices) {
         await deps.openNative(deps.resolveOpen(await deps.readBody(req)));
         deps.json(res, 200, { ok: true });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/reports/pdf', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const title = typeof body.title === 'string' ? body.title.trim().slice(0, 300) : '';
+        const html = typeof body.html === 'string' ? body.html : '';
+        if (!title || !html) return deps.json(res, 400, { error: 'title and html required' });
+        if (html.length > 5 * 1024 * 1024) return deps.json(res, 413, { error: 'Rendered report is too large' });
+        const pdf = await deps.renderReportPdf(title, html);
+        const filename = `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf`;
+        res.writeHead(200, {
+          'Content-Type': 'application/pdf',
+          'Content-Length': String(pdf.length),
+          'Content-Disposition': `attachment; filename="report.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          'Cache-Control': 'no-store',
+        });
+        res.end(pdf);
+      } catch (error) { deps.json(res, 500, { error: deps.errorMessage(error) }); }
     })
     .post('/api/rpc', async ({ req, res, deps }) => {
       try { deps.json(res, 200, await deps.handleRpc(await deps.readBody(req))); }

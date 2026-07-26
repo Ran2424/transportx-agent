@@ -5,11 +5,18 @@ import { renderMarkdown } from '../../../public/markdown.js';
 import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Icon } from '../../components/icons';
+import { citationReferenceMarkdown, projectCitationText, stripManualCitationReferenceTail, type MessageCitationProjection } from '../../features/citation/citation-projection';
 
 type FileIcon = 'workspace' | 'file' | 'report' | 'code' | 'image' | 'table';
-type PreviewKind = 'code' | 'table' | 'report' | 'image' | null;
+type PreviewKind = 'code' | 'table' | 'report' | 'image' | 'pdf' | 'document' | null;
 
 export type FilePresentation = { kind: string; icon: FileIcon; label: string; preview: PreviewKind; extension: string };
+export type ExternalPreviewSource = {
+  url: string;
+  kind: 'pdf' | 'document' | 'image' | 'report';
+  mimeType: string;
+  page?: number;
+};
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'ico']);
 const TABLE_EXTENSIONS = new Set(['csv', 'tsv', 'xlsx', 'xls', 'ods']);
@@ -23,6 +30,13 @@ export function filePresentation(item: WorkspaceFile): FilePresentation {
   if (TABLE_EXTENSIONS.has(extension)) return { kind: 'table', icon: 'table', label: '表格', preview: 'table', extension };
   if (CODE_EXTENSIONS.has(extension)) return { kind: 'code', icon: 'code', label: '代码', preview: 'code', extension };
   return { kind: 'document', icon: 'file', label: '文档', preview: null, extension };
+}
+
+function externalPresentation(source: ExternalPreviewSource): FilePresentation {
+  if (source.kind === 'pdf') return { kind: 'pdf', icon: 'file', label: 'PDF 原件', preview: 'pdf', extension: 'pdf' };
+  if (source.kind === 'image') return { kind: 'image', icon: 'image', label: '图片原件', preview: 'image', extension: '' };
+  if (source.kind === 'report') return { kind: 'report', icon: 'report', label: 'Markdown 报告', preview: 'report', extension: 'md' };
+  return { kind: 'document', icon: 'file', label: '原始资料', preview: 'document', extension: '' };
 }
 
 function syntaxLanguage(extension: string) {
@@ -81,7 +95,10 @@ function TablePreview({ file, content }: { file: FilePresentation; content: Work
   return <div className="file-preview-table-wrap">{sheetName ? <p className="file-preview-sheet">工作表：{sheetName}</p> : null}<table className="file-preview-table"><thead><tr>{header.map((cell, index) => <th key={`${cell}-${index}`}>{cell}</th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex}>{header.map((_, cellIndex) => <td key={cellIndex}>{row[cellIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
 }
 
-async function renderReport(source: string) {
+async function renderReport(source: string, citationProjection?: MessageCitationProjection) {
+  const reportCitationProjection = citationProjection
+    ? projectCitationText(source, citationProjection.available)
+    : undefined;
   const replacements: Array<{ token: string; value: string }> = [];
   let index = 0;
   const token = () => `FILE_PREVIEW_RENDER_${index++}`;
@@ -98,7 +115,12 @@ async function renderReport(source: string) {
   };
   markdown = markdown.replace(/\$\$([\s\S]+?)\$\$/g, (_, expression) => addMath(expression, true));
   markdown = markdown.replace(/(^|[^\\])\$([^$\n]+)\$/g, (_, prefix, expression) => `${prefix}${addMath(expression, false)}`);
-  let html = renderMarkdown(markdown);
+  if (reportCitationProjection?.citations.length) markdown = stripManualCitationReferenceTail(markdown);
+  const hasReferenceIndex = /^#{1,3}\s+引用依据（逐条出处）\s*$/m.test(markdown);
+  if (reportCitationProjection?.citations.length && !hasReferenceIndex) {
+    markdown += `\n\n---\n\n${citationReferenceMarkdown(reportCitationProjection)}`;
+  }
+  let html = renderMarkdown(markdown, reportCitationProjection?.numbers);
   for (const replacement of replacements) {
     let value = replacement.value;
     if (!value.startsWith('<')) {
@@ -113,15 +135,15 @@ async function renderReport(source: string) {
   return html;
 }
 
-function ReportPreview({ source }: { source: string }) {
+function ReportPreview({ source, citationProjection }: { source: string; citationProjection?: MessageCitationProjection }) {
   const [html, setHtml] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
     setHtml(''); setError('');
-    void renderReport(source).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || '报告渲染失败'); });
+    void renderReport(source, citationProjection).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || '报告渲染失败'); });
     return () => { active = false; };
-  }, [source]);
+  }, [citationProjection, source]);
   if (error) return <p className="file-preview-error">{error}</p>;
   return html ? <article className="file-preview-report" dangerouslySetInnerHTML={{ __html: html }} /> : <p className="file-preview-loading">正在渲染报告…</p>;
 }
@@ -135,24 +157,36 @@ function previewSize() {
   return { width: Math.min(720, window.innerWidth - 44), height: Math.min(540, window.innerHeight - 44) };
 }
 
-export function FilePreview({ item, sessionId, stackIndex, initialOffset, onActivate, onClose }: { item: WorkspaceFile; sessionId: string; stackIndex: number; initialOffset: number; onActivate(): void; onClose(): void }) {
+export function FilePreview({ item, sessionId, stackIndex, initialOffset, externalSource, citationProjection, onActivate, onClose }: { item: WorkspaceFile; sessionId: string; stackIndex: number; initialOffset: number; externalSource?: ExternalPreviewSource; citationProjection?: MessageCitationProjection; onActivate(): void; onClose(): void }) {
   const { kernel } = useAppServices();
-  const presentation = useMemo(() => filePresentation(item), [item]);
+  const presentation = useMemo(() => externalSource ? externalPresentation(externalSource) : filePresentation(item), [externalSource, item]);
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [error, setError] = useState('');
+  const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [pdfError, setPdfError] = useState('');
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(() => ({ x: initialOffset * 26, y: initialOffset * 22 }));
   const [size, setSize] = useState(previewSize);
   const drag = useRef<{ id: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const resize = useRef<{ id: number; corner: PreviewCorner; x: number; y: number; originX: number; originY: number; width: number; height: number } | null>(null);
-  const imageUrl = useMemo(() => `/api/file/preview?${new URLSearchParams({ sessionId, path: item.path })}`, [item.path, sessionId]);
+  const previewUrl = useMemo(() => externalSource?.url || `/api/file/preview?${new URLSearchParams({ sessionId, path: item.path })}`, [externalSource?.url, item.path, sessionId]);
 
   useEffect(() => {
     let active = true;
     setContent(null); setError('');
+    if (externalSource) {
+      if (presentation.preview !== 'report') return;
+      void fetch(externalSource.url).then(async (response) => {
+        if (!response.ok) throw new Error('报告内容加载失败');
+        const next = await response.text();
+        if (active) setContent({ content: next, encoding: 'utf8', size: new Blob([next]).size });
+      }).catch((cause) => { if (active) setError((cause as Error).message || '报告内容加载失败'); });
+      return () => { active = false; };
+    }
     if (!presentation.preview || presentation.preview === 'image') return;
     void kernel.commands.session.readFileContent(sessionId, item.path).then((next) => { if (active) setContent(next); }).catch((cause) => { if (active) setError((cause as Error).message || '文件预览加载失败'); });
     return () => { active = false; };
-  }, [item.path, kernel, presentation.preview, sessionId]);
+  }, [externalSource, item.path, kernel, presentation.preview, sessionId]);
 
   function startDrag(event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
@@ -191,15 +225,74 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, onActi
     if (resize.current?.id === event.pointerId) resize.current = null;
   }
 
-  const body = presentation.preview === 'image' ? <img className="file-preview-image" src={imageUrl} alt={item.name} /> : error ? <p className="file-preview-error">{error}</p> : !content ? <p className="file-preview-loading">正在读取文件…</p> : presentation.preview === 'code' ? <CodePreview source={content.content} extension={presentation.extension} /> : presentation.preview === 'table' ? <TablePreview file={presentation} content={content} /> : <ReportPreview source={content.content} />;
+  async function downloadPdf() {
+    const report = bodyRef.current?.querySelector<HTMLElement>('.file-preview-report');
+    if (!report || pdfStatus === 'loading') return;
+    setPdfStatus('loading'); setPdfError('');
+    try {
+      const clone = report.cloneNode(true) as HTMLElement;
+      const sourceImages = [...report.querySelectorAll<HTMLImageElement>('img')];
+      const clonedImages = [...clone.querySelectorAll<HTMLImageElement>('img')];
+      await Promise.all(sourceImages.map(async (image, index) => {
+        if (!image.src || image.src.startsWith('data:')) return;
+        const response = await fetch(image.src);
+        if (!response.ok) throw new Error(`图片加载失败：${image.alt || index + 1}`);
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error('图片转换失败'));
+          void response.blob().then((blob) => reader.readAsDataURL(blob), reject);
+        });
+        clonedImages[index]?.setAttribute('src', dataUrl);
+      }));
+      const response = await fetch('/api/reports/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: item.name, html: clone.outerHTML }),
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(detail.error || 'PDF 生成失败');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${item.name.replace(/\.mdx?$/i, '')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      setPdfStatus('idle');
+    } catch (cause) {
+      setPdfError((cause as Error).message || 'PDF 生成失败');
+      setPdfStatus('error');
+    }
+  }
+
+  const body = presentation.preview === 'image'
+    ? <img className="file-preview-image" src={previewUrl} alt={item.name} />
+    : presentation.preview === 'pdf'
+      ? <iframe className="file-preview-document" src={`${previewUrl}#page=${externalSource?.page || 1}&view=FitH`} title={`PDF 原件：${item.name}`} />
+      : presentation.preview === 'document'
+        ? <iframe className="file-preview-document" src={previewUrl} title={`原始资料：${item.name}`} />
+        : error
+          ? <p className="file-preview-error">{error}</p>
+          : !content
+            ? <p className="file-preview-loading">正在读取文件…</p>
+            : presentation.preview === 'code'
+              ? <CodePreview source={content.content} extension={presentation.extension} />
+              : presentation.preview === 'table'
+                ? <TablePreview file={presentation} content={content} />
+                : <ReportPreview source={content.content} citationProjection={citationProjection} />;
 
   return createPortal(<section className="file-preview-card" role="dialog" aria-modal="false" aria-label={`预览 ${item.name}`} style={{ width: size.width, height: size.height, zIndex: 80 + stackIndex, transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))` }} onPointerDownCapture={onActivate}>
-    <header className="file-preview-header" onPointerDown={startDrag} onPointerMove={dragPreview} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
+    <header className={`file-preview-header${presentation.preview === 'report' ? ' has-export' : ''}`} onPointerDown={startDrag} onPointerMove={dragPreview} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
       <span className={`file-preview-type is-${presentation.kind}`}><Icon name={presentation.icon} />{presentation.label}</span>
       <strong title={item.path}>{item.name}</strong>
+      {presentation.preview === 'report' ? <button className={`file-preview-export${pdfStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={pdfStatus === 'loading'} title={pdfError || '生成并下载 PDF'} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadPdf()}>{pdfStatus === 'loading' ? '生成中…' : pdfStatus === 'error' ? '重试 PDF' : '下载 PDF'}</button> : null}
       <button className="icon-button" type="button" aria-label="关闭文件预览" onPointerDown={(event) => event.stopPropagation()} onClick={onClose}><Icon name="close" /></button>
     </header>
-    <div className={`file-preview-body is-${presentation.kind}`}>{body}</div>
+    <div ref={bodyRef} className={`file-preview-body is-${presentation.kind}`}>{body}</div>
     {(['nw', 'ne', 'se', 'sw'] as PreviewCorner[]).map((corner) => <span key={corner} className={`file-preview-resize is-${corner}`} aria-hidden="true" onPointerDown={(event) => startResize(corner, event)} onPointerMove={resizePreview} onPointerUp={stopResize} onPointerCancel={stopResize} />)}
   </section>, document.body);
 }
