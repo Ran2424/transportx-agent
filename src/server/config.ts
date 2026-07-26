@@ -55,10 +55,12 @@ export const REACT_STATIC_DIR = process.env.TAU_REACT_STATIC_DIR || findReactWeb
 export const GEO_EXTENSION_PATH = process.env.TAU_GEO_EXTENSION_PATH || findGeoExtensionPath();
 export const TASK_MODE_EXTENSION_PATH = process.env.TAU_TASK_MODE_EXTENSION_PATH || findTaskModeExtensionPath();
 export const WEB_BRIDGE_EXTENSION_PATH = process.env.TAU_WEB_BRIDGE_EXTENSION_PATH || findWebBridgeExtensionPath();
-export const BUILTIN_EXTENSION_PATHS = [GEO_EXTENSION_PATH, TASK_MODE_EXTENSION_PATH, WEB_BRIDGE_EXTENSION_PATH];
+export const CITATION_EXTENSION_PATH = process.env.TAU_CITATION_EXTENSION_PATH || findCitationExtensionPath();
+export const BUILTIN_EXTENSION_PATHS = [GEO_EXTENSION_PATH, TASK_MODE_EXTENSION_PATH, WEB_BRIDGE_EXTENSION_PATH, CITATION_EXTENSION_PATH];
 export const PROJECT_SKILLS_DIR = process.env.TAU_SKILLS_DIR || findProjectSkillsDir();
 export const BUILTIN_SKILL_PATHS = findSkillPaths(PROJECT_SKILLS_DIR);
 export const PROJECT_ROOT = path.dirname(PROJECT_SKILLS_DIR);
+export const KNOWLEDGE_ROOT = path.resolve(process.env.TAU_KNOWLEDGE_ROOT || '/Users/ran/WorkSpace/2 Unit Project/202 单位/上海交通指挥中心/揭榜挂帅/knowledge');
 export const TRAFFIC_SKILL_DIR = path.join(PROJECT_SKILLS_DIR, 'shanghai-traffic-data-assets');
 export const TRAFFIC_TOOLS_DIR = path.join(TRAFFIC_SKILL_DIR, 'scripts');
 export const TRAFFIC_DATA_DIR = path.join(TRAFFIC_SKILL_DIR, 'assets', 'databases');
@@ -126,6 +128,18 @@ function findWebBridgeExtensionPath() {
   try {
     const pkgPath = require.resolve('pi-traffic-workspace/package.json');
     add(path.join(path.dirname(pkgPath), 'extensions', 'pi-web-bridge', 'index.ts'));
+  } catch {}
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function findCitationExtensionPath() {
+  const candidates: string[] = [];
+  const add = (p: string) => candidates.push(path.resolve(p));
+  add(path.join(__dirname, '..', 'extensions', 'pi-citation', 'index.ts'));
+  add(path.join(process.cwd(), 'extensions', 'pi-citation', 'index.ts'));
+  try {
+    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
+    add(path.join(path.dirname(pkgPath), 'extensions', 'pi-citation', 'index.ts'));
   } catch {}
   return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
 }

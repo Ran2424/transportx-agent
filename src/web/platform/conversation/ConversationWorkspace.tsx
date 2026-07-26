@@ -1,4 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { AppMessage, MessageContentBlock, PendingImage, SessionEntry } from '../../../public/app-types.js';
 import { messageText, messageThinking } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
@@ -7,6 +8,15 @@ import { useAppServices } from '../../app/AppProviders';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
 import { Icon, type IconName } from '../../components/icons';
 import { projectTaskState } from '../../features/task/task-projection';
+import { FilePreview, filePresentation } from '../workspace/FilePreview';
+import {
+  citationCopyText,
+  citationDisplayText,
+  projectCitationText,
+  projectMessageCitations,
+  type MessageCitationProjection,
+  type ResolvedCitation,
+} from '../../features/citation/citation-projection';
 
 const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
 const MAX_IMAGE_DIM = 2048;
@@ -25,17 +35,19 @@ function copy(text: string) {
   return Promise.resolve();
 }
 
-function html(markdown: string, user = false) {
+function html(markdown: string, user = false, citationNumbers: Record<string, number> = {}) {
   const template = document.createElement('template');
-  template.innerHTML = user ? renderUserMarkdown(markdown) : renderMarkdown(markdown);
-  const allowed = new Set(['A', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL']);
+  template.innerHTML = user ? renderUserMarkdown(markdown) : renderMarkdown(markdown, citationNumbers);
+  const allowed = new Set(['A', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL']);
   template.content.querySelectorAll('*').forEach((node) => {
     if (!allowed.has(node.tagName)) { node.replaceWith(document.createTextNode(node.textContent || '')); return; }
     [...node.attributes].forEach((attribute) => {
       const name = attribute.name.toLowerCase();
       const value = attribute.value.trim();
       const safeUrl = name === 'href' ? /^(https?:|mailto:)/i.test(value) : name === 'src' ? /^(https?:|data:image\/)/i.test(value) : true;
-      if (name.startsWith('on') || !['class', 'checked', 'disabled', 'href', 'rel', 'src', 'style', 'target'].includes(name) || !safeUrl) node.removeAttribute(attribute.name);
+      const allowedName = ['aria-label', 'class', 'checked', 'data-citation-id', 'disabled', 'href', 'rel', 'src', 'style', 'target', 'type'].includes(name);
+      const validCitationId = name !== 'data-citation-id' || /^[A-Za-z0-9_.:-]{1,180}$/.test(value);
+      if (name.startsWith('on') || !allowedName || !safeUrl || !validCitationId) node.removeAttribute(attribute.name);
     });
   });
   return { __html: template.innerHTML };
@@ -58,11 +70,155 @@ function Thinking({ text, visible }: { text: string; visible: boolean }) {
   return <section className="thinking-block"><button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="chevron" /> 思考过程</button>{open ? <pre>{text}</pre> : null}</section>;
 }
 
-const AssistantMessage = memo(function AssistantMessage({ message, streaming, showThinking }: { message: AppMessage; streaming?: boolean; showThinking: boolean }) {
+function citationPosition(item: ResolvedCitation) {
+  const { locator } = item;
+  if (locator.page) return `PDF 第${locator.page}页${locator.printedPage ? `（正文第${locator.printedPage}页）` : ''}`;
+  return locator.section || locator.sourceUnit || locator.nodeId || '来源位置';
+}
+
+const CITATION_CATEGORY_LABELS: Record<string, string> = {
+  LEGAL_GOVERNANCE: '法律法规与制度',
+  STANDARD_SPEC: '标准规范',
+  PLAN_PROCEDURE: '预案与作业规程',
+  CASE_PRACTICE: '案例与实践',
+  METHOD_RESEARCH: '方法指南与研究',
+  PROJECT_DATA: '项目资料',
+};
+
+function citationCategory(item: ResolvedCitation) {
+  if (item.source.scope === 'session') return '任务产物';
+  return CITATION_CATEGORY_LABELS[item.citation.documentClass || ''] || '参考资料';
+}
+
+function citationSourceUrl(sessionId: string, sourceId: string, view: 'content' | 'preview' = 'content') {
+  return `/api/live-sessions/${encodeURIComponent(sessionId)}/citation-sources/${encodeURIComponent(sourceId)}/${view}`;
+}
+
+type CitationPeek = { item: ResolvedCitation; anchor: DOMRect };
+
+function CitationEvidencePeek({ peek, sessionId }: { peek: CitationPeek; sessionId: string }) {
+  const { item, anchor } = peek;
+  const width = Math.min(720, window.innerWidth - 24);
+  const height = item.source.kind === 'pdf' || item.source.kind === 'image' ? Math.min(680, window.innerHeight - 24) : 260;
+  const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.left + Math.min(22, anchor.width / 4)));
+  const top = anchor.top > height + 24 ? anchor.top - height - 10 : Math.min(window.innerHeight - height - 12, anchor.bottom + 10);
+  const visualUrl = item.source.kind === 'pdf' && item.locator.page
+    ? `${citationSourceUrl(sessionId, item.source.sourceId, 'preview')}?page=${item.locator.page}`
+    : item.source.kind === 'image'
+      ? citationSourceUrl(sessionId, item.source.sourceId, 'preview')
+      : '';
+  return createPortal(
+    <aside className="citation-evidence-peek" role="tooltip" style={{ width, height, left, top }}>
+      <header><strong>{item.source.title}</strong><span>{citationPosition(item)}</span></header>
+      {visualUrl
+        ? <img src={visualUrl} alt={`${item.source.title}，${citationPosition(item)}`} />
+        : <div className="citation-evidence-text"><span>原文定位</span><p>{item.locator.quote || '当前来源没有可显示的原文片段。'}</p></div>}
+    </aside>,
+    document.body,
+  );
+}
+
+function artifactPreviewKind(item: ResolvedCitation) {
+  return item.source.mimeType === 'text/markdown' || /\.mdx?$/i.test(item.source.relativePath) ? 'report' : item.source.kind;
+}
+
+function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
+  const [preview, setPreview] = useState<ResolvedCitation | null>(null);
+  if (!projection?.artifacts.length) return null;
+  return <section className="message-artifacts">
+    <header><strong>本次产出</strong><span>{projection.artifacts.length} 项</span></header>
+    <div>{projection.artifacts.map((item) => {
+      const name = item.source.relativePath.replaceAll('\\', '/').split('/').pop() || item.source.title;
+      const presentation = filePresentation({ name, path: item.source.relativePath, isDirectory: false });
+      return <button key={item.citation.citationId} type="button" onClick={() => setPreview(item)}>
+        <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
+        <span><strong>{item.source.title}</strong><small>{presentation.label}</small></span>
+        <Icon name="chevron" />
+      </button>;
+    })}</div>
+    {preview ? <FilePreview
+      item={{ name: preview.source.title, path: preview.source.relativePath, isDirectory: false }}
+      sessionId={sessionId}
+      stackIndex={0}
+      initialOffset={0}
+      citationProjection={projection}
+      externalSource={{
+        url: citationSourceUrl(sessionId, preview.source.sourceId),
+        kind: artifactPreviewKind(preview),
+        mimeType: preview.source.mimeType,
+        page: preview.locator.page,
+      }}
+      onActivate={() => {}}
+      onClose={() => setPreview(null)}
+    /> : null}
+  </section>;
+}
+
+function CitationFooter({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
+  const [preview, setPreview] = useState<ResolvedCitation | null>(null);
+  const [peek, setPeek] = useState<CitationPeek | null>(null);
+  if (!projection || (!projection.citations.length && !projection.unavailableIds.length)) return null;
+  const groups = [...projection.citations.reduce((map, item) => {
+    map.set(item.source.sourceId, [...(map.get(item.source.sourceId) || []), item]);
+    return map;
+  }, new Map<string, ResolvedCitation[]>()).values()];
+  return <section className="citation-footer"><header><strong>引用依据</strong><span>{projection.citations.length} 条</span></header><ol>{groups.map((items) => {
+    const first = items[0];
+    return <li key={first.source.sourceId}>
+      <header className="citation-source-heading">
+        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => setPreview(first)} title="在工作台中查看原始资料"><Icon name="file" />{first.source.title}</button></div>
+        <span>{items.length} 条引用</span>
+      </header>
+      <div className="citation-locator-list">{items.map((item) => <button
+        className="citation-locator"
+        type="button"
+        key={item.citation.citationId}
+        data-citation-card={item.citation.citationId}
+        onMouseEnter={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
+        onMouseLeave={() => setPeek(null)}
+        onFocus={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
+        onBlur={() => setPeek(null)}
+      >
+        <span className="citation-number">{item.number}</span>
+        <span className="citation-locator-copy"><strong>{citationPosition(item)}</strong>{item.locator.quote ? <span>{item.locator.quote}</span> : null}</span>
+        <span className="citation-locator-hint">悬浮查看</span>
+      </button>)}</div>
+    </li>;
+  })}</ol>
+    {projection.unavailableIds.length ? <p className="citation-warning">引用不可用：{projection.unavailableIds.join('、')}</p> : null}
+    {peek ? <CitationEvidencePeek peek={peek} sessionId={sessionId} /> : null}
+    {preview ? <FilePreview
+      item={{ name: preview.source.title, path: preview.source.relativePath, isDirectory: false }}
+      sessionId={sessionId}
+      stackIndex={0}
+      initialOffset={0}
+      externalSource={{
+        url: citationSourceUrl(sessionId, preview.source.sourceId),
+        kind: preview.source.kind,
+        mimeType: preview.source.mimeType,
+        page: preview.locator.page,
+      }}
+      onActivate={() => {}}
+      onClose={() => setPreview(null)}
+    /> : null}
+  </section>;
+}
+
+const AssistantMessage = memo(function AssistantMessage({ message, streaming, showThinking, projection, sessionId }: { message: AppMessage; streaming?: boolean; showThinking: boolean; projection?: MessageCitationProjection; sessionId: string }) {
   const text = messageText(message);
+  const displayText = citationDisplayText(text, projection);
   const thinking = messageThinking(message);
   const [copied, setCopied] = useState(false);
-  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`}><div className="message-content"><Thinking text={thinking} visible={showThinking} />{text ? <div dangerouslySetInnerHTML={html(text)} /> : streaming ? <span className="streaming-cursor" aria-label="正在生成" /> : null}</div>{!streaming && text ? <button className="message-copy" type="button" aria-label="复制消息" onClick={() => void copy(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? '已复制' : '复制'}</button> : null}</article>;
+  function citationClick(event: MouseEvent<HTMLElement>) {
+    const button = (event.target as HTMLElement).closest<HTMLElement>('[data-citation-id]');
+    const id = button?.dataset.citationId;
+    if (!id) return;
+    const card = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-citation-card]')].find((candidate) => candidate.dataset.citationCard === id);
+    card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    card?.focus({ preventScroll: true });
+  }
+  const copyText = citationCopyText(text, projection);
+  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={citationClick}><div className="message-content"><Thinking text={thinking} visible={showThinking} />{text ? <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label="正在生成" /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label="复制消息" onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? '已复制' : '复制'}</button> : null}</article>;
 });
 
 function preview(args: Record<string, unknown>) {
@@ -84,6 +240,7 @@ const TOOL_LABELS: Record<string, string> = {
   tau_ask_user: '用户询问',
   publish_geodata: '数据发布',
   present_visualization: '地图展示',
+  tau_cite: '引用注册',
 };
 
 function toolLabel(name: string) {
@@ -222,6 +379,8 @@ export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: 
   const liveTools = tools.bySession[sessionId] || {};
   const taskState = useMemo(() => projectTaskState(entries, Object.values(liveTools)), [entries, liveTools]);
   const toolProjection = useMemo(() => projectTools(entries, liveTools), [entries, liveTools]);
+  const citationProjection = useMemo(() => projectMessageCitations(entries), [entries]);
+  const liveCitationProjection = useMemo(() => projectCitationText(data?.live.streamingText || '', citationProjection.available), [data?.live.streamingText, citationProjection]);
   useLayoutEffect(() => { const viewport = viewportRef.current; if (viewport && nearBottom.current) viewport.scrollTop = viewport.scrollHeight; }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
-  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><span>τ</span><h1>开始分析交通问题</h1><p>描述路段、时间或出行需求，Agent 会在独立会话中完成分析。</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, images: data.live.optimisticPrompt.images }} /> : null}{data?.live.active ? <AssistantMessage streaming showThinking={showThinking} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data.live.streamingThinking }, { type: 'text', text: data.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} /></main>;
+  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><span>τ</span><h1>开始分析交通问题</h1><p>描述路段、时间或出行需求，Agent 会在独立会话中完成分析。</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, images: data.live.optimisticPrompt.images }} /> : null}{data?.live.active ? <AssistantMessage streaming showThinking={showThinking} projection={liveCitationProjection} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data.live.streamingThinking }, { type: 'text', text: data.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} /></main>;
 }

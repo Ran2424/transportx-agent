@@ -1,0 +1,4 @@
+interface:
+  display_name: "交通保障知识检索"
+  short_description: "检索重大活动交通保障法规、标准、预案和案例并返回可核验出处"
+  default_prompt: "使用 $search-traffic-assurance-knowledge 检索重大活动交通保障依据，并返回条款、来源与 PDF 页码。"

@@ -16,5 +16,6 @@ export * from './errors.ts';
 export * from './session.ts';
 export * from './task.ts';
 export * from './geo.ts';
+export * from './citation.ts';
 export * from './bridge.ts';
 export * from './capabilities.ts';
