@@ -1,6 +1,6 @@
 # Pi Traffic Workspace 架构与目录治理
 
-更新时间：2026-07-23
+更新时间：2026-07-26
 
 本项目是单仓库、单 npm 包、单 Node 服务的模块化单体。它服务于本地 Pi Agent 工作流：不为了理论上的扩展性拆分微服务，也不维护第二个 Web 应用。
 
@@ -10,6 +10,7 @@
 Pi Extensions
   ├─ pi-task-mode             任务状态与用户交互
   ├─ pi-geo-visualization     GeoJSON 与声明式地图
+  ├─ pi-citation              知识库与任务产物引用注册
   └─ pi-web-bridge            工具、模型和能力快照
              │ JSONL / RPC
              ▼
@@ -18,6 +19,7 @@ Node Server
   ├─ static-handler           React 静态资源与 SPA fallback
   ├─ session-history-handler  JSONL 历史、搜索、项目列表
   ├─ file-api-handler         会话范围内的文件、预览与本机打开
+  ├─ citation-resources       引用原件的会话隔离、摘要校验与只读访问
   ├─ websocket-handler        同源升级、连接与心跳
   └─ api-routes               类型化 HTTP 路由表
              │ HTTP / WebSocket
@@ -27,14 +29,14 @@ React Workspace
   │   ├─ Event normalizer / Command ports
   │   └─ Runtime / Session / Conversation / Tool / Extension UI stores
   ├─ Conversation、Session、Settings、File Preview
-  └─ Task Board、lazy Geo Workspace
+  └─ Citation、Task Board、lazy Geo Workspace
 ```
 
 ## 核心决策
 
 ### 1. 共享契约先于适配器
 
-`src/contracts/` 是 SessionSnapshot、TaskSnapshot、GeoScene、Bridge、诊断与版本的唯一权威。Extension、Server、React 都可以依赖它；契约不得依赖 Node、React、DOM 或 MapLibre。
+`src/contracts/` 是 SessionSnapshot、TaskSnapshot、GeoScene、Citation、Bridge、诊断与版本的唯一权威。Extension、Server、React 都可以依赖它；契约不得依赖 Node、React、DOM 或 MapLibre。
 
 ### 2. JSONL 是历史事实来源
 
@@ -67,6 +69,7 @@ src/
     sessions.ts                Pi 子进程与 live session 管理
     session-projection.ts      当前 JSONL 分支投影
     geo-resources.ts           Geo 数据资源路由
+    citation-resources.ts      引用原件的受控只读路由
   public/
     kernel/                    Browser Application Kernel
     app-types.ts               浏览器共享类型
@@ -77,7 +80,7 @@ src/
   web/                         React/Vite 应用
     app/                       Composition root、Provider、Shell
     platform/                  对话、会话、设置、文件等平台 UI
-    features/                  Task 与 Geo React feature
+    features/                  Citation、Task 与 Geo React feature
     components/, lib/          纯 UI 基元与工具
 
 extensions/                    Pi 侧工具和状态适配器

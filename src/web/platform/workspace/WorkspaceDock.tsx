@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
+import { useConversationState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
+import { projectMessageCitations, type MessageCitationProjection } from '../../features/citation/citation-projection';
 import { GeoWorkspace } from '../../features/geo/GeoWorkspace';
 import { TaskBoard } from '../../features/task/TaskBoard';
 import { basename } from '../../lib/formatting';
@@ -33,12 +35,22 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
 /** The resource dock intentionally exposes only session files. */
 export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: LiveSession | null; onClose(): void }) {
   const { kernel } = useAppServices();
+  const conversation = useConversationState();
   const [path, setPath] = useState('');
   const [items, setItems] = useState<WorkspaceFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copiedPath, setCopiedPath] = useState('');
   const [previewFiles, setPreviewFiles] = useState<WorkspaceFile[]>([]);
+  const artifactProjections = useMemo(() => {
+    const result = new Map<string, MessageCitationProjection>();
+    if (!session) return result;
+    const entries = conversation.bySession[session.id]?.snapshotEntries || [];
+    for (const projection of projectMessageCitations(entries).byEntry.values()) {
+      for (const artifact of projection.artifacts) result.set(artifact.source.relativePath.replaceAll('\\', '/'), projection);
+    }
+    return result;
+  }, [conversation.bySession, session]);
 
   const load = useCallback(async (nextPath?: string) => {
     if (!session) { setPath(''); setItems([]); return; }
@@ -79,7 +91,11 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
       {!session ? <WorkspaceEmpty mark="01" title="等待任务上下文" description="选择一个运行中的任务后，可以浏览其工作目录。" /> : loading ? <p className="workspace-file-status">正在读取文件…</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty mark="01" title="目录为空" description="当前工作目录中没有可显示的文件。" /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">已复制路径：{basename(copiedPath)}</p> : null}</>}
     </div>
     <footer className="workspace-dock-footer"><span>SESSION SCOPED</span><span>{session?.id.slice(-8) || 'NO SESSION'}</span></footer>
-    {session ? previewFiles.map((file, index) => <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />) : null}
+    {session ? previewFiles.map((file, index) => {
+      const normalizedPath = file.path.replaceAll('\\', '/');
+      const citationProjection = [...artifactProjections].find(([relativePath]) => normalizedPath === relativePath || normalizedPath.endsWith(`/${relativePath}`))?.[1];
+      return <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} citationProjection={citationProjection} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />;
+    }) : null}
   </aside>;
 }
 

@@ -3,6 +3,7 @@
 // Conversation, feature hydration, Task Board, lazy Geo Runtime, dialogs and responsive drawers.
 import net from 'node:net';
 import path from 'node:path';
+import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
@@ -108,6 +109,49 @@ try {
     throw new Error(`Thinking block should use plain gray text: ${JSON.stringify(thinkingChrome)}`);
   }
   await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+
+  await reactPage.getByLabel('消息输入').fill('基线-citation-document');
+  await reactPage.getByLabel('消息输入').press('Enter');
+  const citedMessage = reactPage.locator('.assistant-message', { hasText: '入口存在拥堵风险' }).last();
+  await citedMessage.locator('.message-artifacts', { hasText: '本次产出' }).waitFor({ timeout: 10_000 });
+  if (await citedMessage.locator('.citation-marker').count() || await citedMessage.locator('.citation-footer').count()) {
+    throw new Error('Session artifact was rendered as numbered evidence');
+  }
+  await citedMessage.getByRole('button', { name: /引用报告/ }).click();
+  const citationPreview = reactPage.locator('.file-preview-card', { hasText: '引用报告' });
+  await citationPreview.waitFor();
+  await citationPreview.locator('.file-preview-report', { hasText: '入口拥堵' }).waitFor();
+  const pdfDownloadPromise = reactPage.waitForEvent('download');
+  await citationPreview.getByRole('button', { name: '下载 PDF' }).click();
+  const reportDownload = await pdfDownloadPromise;
+  const reportPdfPath = await reportDownload.path();
+  if (!reportPdfPath || fs.readFileSync(reportPdfPath).subarray(0, 4).toString() !== '%PDF') {
+    throw new Error('Markdown report PDF download is invalid');
+  }
+  if (!reportDownload.suggestedFilename().endsWith('.pdf')) throw new Error(`Unexpected PDF filename: ${reportDownload.suggestedFilename()}`);
+  if (process.env.TAU_SMOKE_PDF) fs.copyFileSync(reportPdfPath, process.env.TAU_SMOKE_PDF);
+  await citationPreview.getByRole('button', { name: '关闭文件预览' }).click();
+
+  await reactPage.getByLabel('消息输入').fill('基线-citation-pdf');
+  await reactPage.getByLabel('消息输入').press('Enter');
+  const pdfCitationMessage = reactPage.locator('.assistant-message', { hasText: '发现人员聚集后应及时组织疏导' }).last();
+  await pdfCitationMessage.locator('.citation-footer', { hasText: '标准规范' }).waitFor({ timeout: 10_000 });
+  await pdfCitationMessage.locator('.citation-locator').hover();
+  const pdfPageImage = reactPage.locator('.citation-evidence-peek img');
+  await pdfPageImage.waitFor();
+  await pdfPageImage.evaluate((image) => new Promise((resolve, reject) => {
+    const target = image;
+    if (target.complete && target.naturalWidth > 0) return resolve(true);
+    target.addEventListener('load', () => resolve(true), { once: true });
+    target.addEventListener('error', () => reject(new Error('PDF citation page image failed to load')), { once: true });
+  }));
+  if (process.env.TAU_SMOKE_SCREENSHOT) await reactPage.screenshot({ path: process.env.TAU_SMOKE_SCREENSHOT, fullPage: true });
+  await pdfCitationMessage.getByRole('button', { name: /大型活动安全要求/ }).click();
+  const pdfPreview = reactPage.locator('.file-preview-card', { hasText: '大型活动安全要求' });
+  await pdfPreview.waitFor();
+  const pdfPreviewSrc = await pdfPreview.locator('iframe').getAttribute('src');
+  if (!pdfPreviewSrc?.includes('#page=9')) throw new Error(`PDF preview did not open at cited page: ${pdfPreviewSrc}`);
+  await pdfPreview.getByRole('button', { name: '关闭文件预览' }).click();
 
   // Task mode is a silent control action: it changes state without adding a
   // slash-command bubble or extension notification to the conversation.
@@ -326,6 +370,8 @@ try {
   if (responseProtocolErrors) throw new Error('RPC response acknowledgement surfaced as a protocol error');
   const settledProtocolErrors = await reactPage.locator('.runtime-notice', { hasText: 'Unknown RPC event type "agent_settled"' }).count();
   if (settledProtocolErrors) throw new Error('agent_settled surfaced as a protocol error');
+  const retryProtocolErrors = await reactPage.locator('.runtime-notice', { hasText: /Unknown RPC event type "auto_retry_(?:start|end)"/ }).count();
+  if (retryProtocolErrors) throw new Error('automatic retry lifecycle surfaced as a protocol error');
   await reactPage.locator('[data-testid="workspace-float-map"].is-open').waitFor({ timeout: 10_000 });
   await reactPage.locator('.geo-map').waitFor({ timeout: 10_000 });
   await reactPage.locator('.geo-layers', { hasText: '下车点' }).waitFor({ timeout: 10_000 });

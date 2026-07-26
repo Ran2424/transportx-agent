@@ -247,10 +247,12 @@ test('server-broadcast RPC responses are ignored as command-port acknowledgement
   assert.deepEqual(kernel.stores.toolExecution.get().bySession, {});
 });
 
-test('agent_settled is accepted and a retrying agent_end keeps the session busy', async () => {
+test('automatic retry events are accepted and agent_settled ends the stream', async () => {
   const { kernel, emit } = await createKernel();
   emit({ type: 'event', sessionId: 's-1', event: { type: 'agent_start' } });
   emit({ type: 'event', sessionId: 's-1', event: { type: 'agent_end', willRetry: true } });
+  emit({ type: 'event', sessionId: 's-1', event: { type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: 'overloaded' } });
+  emit({ type: 'event', sessionId: 's-1', event: { type: 'auto_retry_end', success: true, attempt: 1 } });
   assert.equal(kernel.stores.session.get().streamingBySession['s-1'], true);
   assert.equal(kernel.stores.runtime.get().lastError, null);
 
