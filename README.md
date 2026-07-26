@@ -9,7 +9,8 @@
 - 创建、切换、恢复和关闭多个 Pi RPC 任务；历史会话按最后一次对话时间排序。
 - 展示流式回复、思考过程、工具执行与上下文状态。
 - 用 `tau_task` 与 `tau_ask_user` 管理任务步骤和用户交互。
-- 按会话浏览并预览代码、表格、Markdown 报告和图片；预览窗口可拖动、缩放、并行打开。
+- 按会话浏览并预览代码、表格、Markdown 报告和图片；自动汇总本次产出，Markdown 报告可直接渲染并下载为 PDF。
+- 在回答中使用可核查的知识库引用，并在消息与 Markdown 报告末尾按正文序号自动生成引用依据。
 - 发布受会话目录约束的 GeoJSON，并按需加载 MapLibre 地图。
 
 ## 界面示意
@@ -75,6 +76,7 @@ npm run test:pi-smoke
 ## 文档
 
 - [架构与目录治理](./docs/ARCHITECTURE.md)：当前系统边界、依赖方向和模块职责。
+- [引用板块功能设计](./docs/CITATION_FEATURE_TECHNICAL_PLAN.md)：知识库引用、任务产物与报告参考依据的实现和验收记录。
 - [React UI 改造 ADR](./docs/REACT_UI_MIGRATION_PLAN.md)：已完成的迁移决策与删除 legacy 的记录。
 - [版本修改与 GitHub 操作日志](./docs/CHANGELOG.md)：发布与提交历史。
 - [测试基线](./docs/TEST_BASELINES.md)：默认测试与浏览器验证范围。

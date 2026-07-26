@@ -87,6 +87,35 @@ test('Geo envelope contract is shared by Extension/Web and diagnoses version/rev
   assert.equal(regression.diagnostic?.code, 'revision_regression');
 });
 
+test('Citation envelope accepts knowledge and session artifacts and rejects broken references', async () => {
+  const { parseCitationEnvelopeStructured } = await import('../src/contracts/citation.ts');
+  const valid = {
+    protocol: 'pi-citation',
+    version: '1.0',
+    citationSetId: 'citations:test',
+    generatedAt: '2026-07-26T00:00:00.000Z',
+    sources: [{
+      sourceId: 'artifact:report',
+      kind: 'document',
+      scope: 'session',
+      title: '交通分析报告',
+      relativePath: 'reports/traffic.md',
+      mimeType: 'text/markdown',
+      sha256: 'a'.repeat(64),
+    }],
+    locators: [{ locatorId: 'locator:report', sourceId: 'artifact:report', section: '结论', quote: '拥堵集中在入口。' }],
+    citations: [{ citationId: 'report', sourceId: 'artifact:report', locatorId: 'locator:report' }],
+  };
+  const parsed = parseCitationEnvelopeStructured(valid);
+  assert.equal(parsed.ok, true);
+  const broken = parseCitationEnvelopeStructured({
+    ...valid,
+    citations: [{ citationId: 'report', sourceId: 'artifact:missing', locatorId: 'locator:report' }],
+  });
+  assert.equal(broken.ok, false);
+  assert.ok(diagnosticCodes(broken).includes('invalid_type'));
+});
+
 test('Bridge contract and Server parser share fixtures, capabilities, and structured diagnostics', async () => {
   const bridge = fixture('bridge');
   const contract = await import('../src/contracts/bridge.ts');

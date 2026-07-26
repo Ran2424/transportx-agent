@@ -31,6 +31,92 @@
       ]
     },
     {
+      "match": "基线-citation-document",
+      "steps": [
+        { "event": { "type": "auto_retry_start", "attempt": 1, "maxAttempts": 3, "delayMs": 10, "errorMessage": "temporary overload" } },
+        { "event": { "type": "auto_retry_end", "success": true, "attempt": 1 } },
+        { "writeFile": { "path": "citation-report.md", "content": "# 引用报告\n\n入口拥堵。" } },
+        { "tool": { "name": "tau_cite", "args": { "artifacts": [{ "path": "citation-report.md" }] }, "result": {
+          "content": [{ "type": "text", "text": "Registered 1 citation. Use [[cite:artifact:c5131fbd1fec213043d167bd]]" }],
+          "details": {
+            "kind": "tau-citations",
+            "citations": {
+              "protocol": "pi-citation",
+              "version": "1.0",
+              "citationSetId": "citations:smoke",
+              "generatedAt": "2026-07-26T00:00:00.000Z",
+              "sources": [{
+                "sourceId": "artifact:c5131fbd1fec213043d167bd",
+                "kind": "document",
+                "scope": "session",
+                "title": "引用报告",
+                "relativePath": "citation-report.md",
+                "mimeType": "text/markdown",
+                "sha256": "c5131fbd1fec213043d167bdd721178bdb8d4349fc5eb6b9855490550eb1dd88"
+              }],
+              "locators": [{
+                "locatorId": "locator:artifact:c5131fbd1fec213043d167bd",
+                "sourceId": "artifact:c5131fbd1fec213043d167bd",
+                "section": "结论",
+                "quote": "入口拥堵。"
+              }],
+              "citations": [{
+                "citationId": "artifact:c5131fbd1fec213043d167bd",
+                "sourceId": "artifact:c5131fbd1fec213043d167bd",
+                "locatorId": "locator:artifact:c5131fbd1fec213043d167bd",
+                "verificationStatus": "session_artifact"
+              }]
+            }
+          }
+        } } },
+        { "streamText": { "text": "入口存在拥堵风险。[[cite:artifact:c5131fbd1fec213043d167bd]]", "chunks": 8, "delayMs": 10 } }
+      ]
+    },
+    {
+      "match": "基线-citation-pdf",
+      "steps": [
+        { "tool": { "name": "tau_cite", "args": { "knowledgeIds": ["K-GBT33170.2-2016-000058"] }, "result": {
+          "content": [{ "type": "text", "text": "Registered 1 citation. Use [[cite:K-GBT33170.2-2016-000058]]" }],
+          "details": {
+            "kind": "tau-citations",
+            "citations": {
+              "protocol": "pi-citation",
+              "version": "1.0",
+              "citationSetId": "citations:smoke-pdf",
+              "generatedAt": "2026-07-26T00:00:00.000Z",
+              "sources": [{
+                "sourceId": "knowledge:GBT33170.2-2016",
+                "kind": "pdf",
+                "scope": "knowledge",
+                "title": "大型活动安全要求 第2部分：人员管控",
+                "relativePath": "02_标准规范/GBT33170.2-2016/source/original.pdf",
+                "mimeType": "application/pdf",
+                "sha256": "b1d0b1f4438ca4e22b1d23aa19387a1e541d59207f554817b7adc083a1575140"
+              }],
+              "locators": [{
+                "locatorId": "locator:K-GBT33170.2-2016-000058",
+                "sourceId": "knowledge:GBT33170.2-2016",
+                "nodeId": "GBT33170.2-2016@8.4",
+                "page": 9,
+                "printedPage": "6",
+                "quote": "发现人群聚集和拥挤现象时，活动承办者应及时派工作人员予以疏导。"
+              }],
+              "citations": [{
+                "citationId": "K-GBT33170.2-2016-000058",
+                "knowledgeId": "K-GBT33170.2-2016-000058",
+                "sourceId": "knowledge:GBT33170.2-2016",
+                "locatorId": "locator:K-GBT33170.2-2016-000058",
+                "documentClass": "STANDARD_SPEC",
+                "normativeForce": "recommended",
+                "verificationStatus": "page_aligned"
+              }]
+            }
+          }
+        } } },
+        { "streamText": { "text": "发现人员聚集后应及时组织疏导。[[cite:K-GBT33170.2-2016-000058]]", "chunks": 8, "delayMs": 10 } }
+      ]
+    },
+    {
       "match": "基线-task",
       "steps": [
         { "streamText": { "text": "我先和你确认分析范围。", "chunks": 4, "delayMs": 15 } },

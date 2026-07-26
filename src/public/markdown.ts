@@ -5,8 +5,9 @@
  * task lists, images, paragraphs.
  */
 
-export function renderMarkdown(text: string) {
+export function renderMarkdown(text: string, citationNumbers: Record<string, number> = {}) {
   if (!text) return '';
+  const inline = (value: string) => renderInline(value, citationNumbers);
 
   // Normalize line endings
   text = text.replace(/\r\n/g, '\n');
@@ -29,7 +30,7 @@ export function renderMarkdown(text: string) {
 
   function flushBlockquote() {
     if (inBlockquote) {
-      html += '<blockquote>' + blockquoteLines.map(l => renderInline(l)).join('<br>') + '</blockquote>';
+      html += '<blockquote>' + blockquoteLines.map(l => inline(l)).join('<br>') + '</blockquote>';
       inBlockquote = false;
       blockquoteLines = [];
     }
@@ -90,7 +91,7 @@ export function renderMarkdown(text: string) {
       html += '<div class="table-wrapper"><table><thead><tr>';
       headerRow.forEach((cell: string, idx: number) => {
         const align = alignments[idx] || 'left';
-        html += `<th style="text-align:${align}">${renderInline(cell.trim())}</th>`;
+        html += `<th style="text-align:${align}">${inline(cell.trim())}</th>`;
       });
       html += '</tr></thead><tbody>';
 
@@ -103,7 +104,7 @@ export function renderMarkdown(text: string) {
         html += '<tr>';
         rowCells.forEach((cell: string, idx: number) => {
           const align = alignments[idx] || 'left';
-          html += `<td style="text-align:${align}">${renderInline(cell.trim())}</td>`;
+          html += `<td style="text-align:${align}">${inline(cell.trim())}</td>`;
         });
         html += '</tr>';
         i++;
@@ -128,7 +129,7 @@ export function renderMarkdown(text: string) {
       flushList();
       flushBlockquote();
       const level = headingMatch[1].length;
-      html += `<h${level}>${renderInline(headingMatch[2])}</h${level}>`;
+      html += `<h${level}>${inline(headingMatch[2])}</h${level}>`;
       continue;
     }
 
@@ -158,7 +159,7 @@ export function renderMarkdown(text: string) {
         listType = 'ul';
       }
       const checked = taskMatch[2] !== ' ';
-      html += `<li class="task-list-item"><input type="checkbox" disabled ${checked ? 'checked' : ''}> ${renderInline(taskMatch[3])}</li>`;
+      html += `<li class="task-list-item"><input type="checkbox" disabled ${checked ? 'checked' : ''}> ${inline(taskMatch[3])}</li>`;
       continue;
     }
 
@@ -172,7 +173,7 @@ export function renderMarkdown(text: string) {
         inList = true;
         listType = 'ul';
       }
-      html += `<li>${renderInline(ulMatch[2])}</li>`;
+      html += `<li>${inline(ulMatch[2])}</li>`;
       continue;
     }
 
@@ -186,7 +187,7 @@ export function renderMarkdown(text: string) {
         inList = true;
         listType = 'ol';
       }
-      html += `<li>${renderInline(olMatch[2])}</li>`;
+      html += `<li>${inline(olMatch[2])}</li>`;
       continue;
     }
 
@@ -199,7 +200,7 @@ export function renderMarkdown(text: string) {
     }
 
     // Regular paragraph
-    html += `<p>${renderInline(line)}</p>`;
+    html += `<p>${inline(line)}</p>`;
   }
 
   // Close any open blocks
@@ -244,7 +245,7 @@ export function renderUserMarkdown(text: string) {
   return html.replace(/\n$/, '');
 }
 
-function renderInline(text: string) {
+function renderInline(text: string, citationNumbers?: Record<string, number>) {
   text = escapeHtml(text);
   // Inline code (must come first to protect content)
   const codeSpans: string[] = [];
@@ -253,6 +254,15 @@ function renderInline(text: string) {
     codeSpans.push(`<code>${code}</code>`);
     return `%%ICODE${idx}%%`;
   });
+
+  if (citationNumbers) {
+    text = text.replace(/\[\[cite:([A-Za-z0-9_.:-]+(?:\s*,\s*[A-Za-z0-9_.:-]+)*)\]\]/g, (_marker, raw: string) => {
+      const ids = [...new Set(raw.split(',').map((id) => id.trim()))];
+      return `<span class="citation-group">${ids.map((id) => citationNumbers[id]
+        ? `<button type="button" class="citation-marker" data-citation-id="${id}" aria-label="查看引用 ${citationNumbers[id]}">${citationNumbers[id]}</button>`
+        : '<span class="citation-unavailable">引用不可用</span>').join('')}</span>`;
+    });
+  }
 
   // Images (before links so ![...](...) isn't caught by link regex)
   text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, url: string) => safeUrl(url, true) ? `<img src="${url}" alt="${alt}" class="inline-image">` : alt);

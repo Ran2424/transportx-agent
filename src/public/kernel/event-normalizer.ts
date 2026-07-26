@@ -130,10 +130,12 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         }];
       case 'auto_compaction_start':
       case 'auto_compaction_end':
+      case 'auto_retry_start':
+      case 'auto_retry_end':
       case 'response':
         // Pi command responses are resolved by the server-side command port.
-        // The server also broadcasts them to connected browsers; they are not
-        // conversation events and must not surface as protocol errors.
+        // Retry/compaction lifecycle events are status-only notifications.
+        // agent_settled remains the authoritative streaming boundary.
         return [];
       case 'entry_appended': {
         const entry = (event as { entry?: SessionEntry }).entry;

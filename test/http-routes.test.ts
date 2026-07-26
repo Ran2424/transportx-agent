@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 import type { TestContext } from 'node:test';
@@ -105,6 +106,39 @@ test('Geo resources cannot be read through another live session', async (t: Test
   liveManager.sessions.set(owner.id, owner); liveManager.sessions.set(other.id, other);
   assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/geo-resources/${resourceId}/data`)).status, 200);
   assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/geo-resources/${resourceId}/data`)).status, 404);
+});
+
+test('serves registered citation artifacts without exposing arbitrary session files', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-resource-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const report = Buffer.from('# 交通报告\n\n拥堵集中在入口。');
+  fs.writeFileSync(path.join(cwd, 'report.md'), report);
+  fs.writeFileSync(path.join(cwd, 'secret.txt'), 'not cited');
+  const sha256 = crypto.createHash('sha256').update(report).digest('hex');
+  const sourceId = `artifact:${sha256.slice(0, 24)}`;
+  const envelope = {
+    protocol: 'pi-citation',
+    version: '1.0',
+    citationSetId: 'citations:http',
+    generatedAt: '2026-07-26T00:00:00.000Z',
+    sources: [{ sourceId, kind: 'document', scope: 'session', title: '交通报告', relativePath: 'report.md', mimeType: 'text/markdown', sha256 }],
+    locators: [{ locatorId: 'locator:report', sourceId, section: '结论' }],
+    citations: [{ citationId: 'report', sourceId, locatorId: 'locator:report' }],
+  };
+  const owner = fakeSession('tau_citation_owner');
+  owner.cwd = cwd;
+  (owner as any).entries = [{ type: 'message', message: { role: 'toolResult', toolName: 'tau_cite', details: { kind: 'tau-citations', citations: envelope } } }];
+  const other = fakeSession('tau_citation_other');
+  other.cwd = cwd;
+  liveManager.sessions.set(owner.id, owner);
+  liveManager.sessions.set(other.id, other);
+  const url = `${base}/api/live-sessions/${owner.id}/citation-sources/${encodeURIComponent(sourceId)}/content`;
+  const response = await fetch(url);
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), report.toString());
+  assert.equal(response.headers.get('etag'), `"${sha256}"`);
+  assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/citation-sources/${encodeURIComponent(sourceId)}/content`)).status, 404);
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citation-sources/${encodeURIComponent('artifact:secret')}/content`)).status, 404);
 });
 
 test('projects the selected history branch and sorts sessions by conversation time', async () => {
