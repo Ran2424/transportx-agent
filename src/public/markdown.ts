@@ -5,9 +5,11 @@
  * task lists, images, paragraphs.
  */
 
-export function renderMarkdown(text: string, citationNumbers: Record<string, number> = {}) {
+export type MarkdownImageResolver = (url: string) => string;
+
+export function renderMarkdown(text: string, citationNumbers: Record<string, number> = {}, imageResolver?: MarkdownImageResolver) {
   if (!text) return '';
-  const inline = (value: string) => renderInline(value, citationNumbers);
+  const inline = (value: string) => renderInline(value, citationNumbers, imageResolver);
 
   // Normalize line endings
   text = text.replace(/\r\n/g, '\n');
@@ -245,7 +247,7 @@ export function renderUserMarkdown(text: string) {
   return html.replace(/\n$/, '');
 }
 
-function renderInline(text: string, citationNumbers?: Record<string, number>) {
+function renderInline(text: string, citationNumbers?: Record<string, number>, imageResolver?: MarkdownImageResolver) {
   text = escapeHtml(text);
   // Inline code (must come first to protect content)
   const codeSpans: string[] = [];
@@ -265,7 +267,14 @@ function renderInline(text: string, citationNumbers?: Record<string, number>) {
   }
 
   // Images (before links so ![...](...) isn't caught by link regex)
-  text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, url: string) => safeUrl(url, true) ? `<img src="${url}" alt="${alt}" class="inline-image">` : alt);
+  const images: string[] = [];
+  text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, url: string) => {
+    const resolvedUrl = imageResolver ? imageResolver(url) : url;
+    if (!safeUrl(resolvedUrl, true)) return alt;
+    const index = images.length;
+    images.push(`<img src="${resolvedUrl}" alt="${alt}" class="inline-image">`);
+    return `%%IIMAGE${index}%%`;
+  });
 
   // Bold + italic
   text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -289,6 +298,7 @@ function renderInline(text: string, citationNumbers?: Record<string, number>) {
 
   // Restore inline code
   text = text.replace(/%%ICODE(\d+)%%/g, (_, idx: string) => codeSpans[parseInt(idx)]);
+  text = text.replace(/%%IIMAGE(\d+)%%/g, (_, idx: string) => images[parseInt(idx)]);
 
   return text;
 }
