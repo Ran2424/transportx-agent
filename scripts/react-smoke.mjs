@@ -121,6 +121,21 @@ try {
   const citationPreview = reactPage.locator('.file-preview-card', { hasText: '引用报告' });
   await citationPreview.waitFor();
   await citationPreview.locator('.file-preview-report', { hasText: '入口拥堵' }).waitFor();
+  const reportImage = citationPreview.locator('.file-preview-report img[alt="报告图表"]');
+  await reportImage.waitFor();
+  await reportImage.evaluate((image) => new Promise((resolve) => {
+    if (image.complete) return resolve(true);
+    image.addEventListener('load', () => resolve(true), { once: true });
+    image.addEventListener('error', () => resolve(true), { once: true });
+  }));
+  const reportImageState = await reportImage.evaluate((image) => ({ src: image.src, naturalWidth: image.naturalWidth }));
+  if (!reportImageState.naturalWidth) {
+    const imageResponse = await reactPage.request.get(reportImageState.src);
+    throw new Error(`Relative Markdown report image is invalid (${imageResponse.status()} ${reportImageState.src}): ${(await imageResponse.text()).slice(0, 300)}`);
+  }
+  if (!(await reportImage.getAttribute('src'))?.includes('/api/file/preview?')) {
+    throw new Error('Relative Markdown report image did not use the session-scoped preview route');
+  }
   const pdfDownloadPromise = reactPage.waitForEvent('download');
   await citationPreview.getByRole('button', { name: '下载 PDF' }).click();
   const reportDownload = await pdfDownloadPromise;

@@ -31,7 +31,8 @@ test('renders the project context without unresolved or unsafe placeholders', ()
   const template = fs.readFileSync(path.join(process.cwd(), 'prompts', 'PI_SESSION_CONTEXT.md'), 'utf8');
   const rendered = renderProjectPrompt(template, '/tmp/example-task');
   assert.match(rendered, /miniconda3\/envs\/research\/bin\/python3\.10/);
-  assert.match(rendered, /上海交通查询脚本目录：/);
+  assert.ok(rendered.includes(process.cwd()));
+  assert.ok(rendered.includes(path.join(process.cwd(), 'skills')));
   assert.ok(rendered.includes('/tmp/example-task'));
   assert.doesNotMatch(rendered, /\{\{/);
   assert.throws(() => renderProjectPrompt('{{UNKNOWN_PATH}}', '/tmp'), /Unknown project prompt placeholders/);

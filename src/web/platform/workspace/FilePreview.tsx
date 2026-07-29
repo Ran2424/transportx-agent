@@ -95,7 +95,16 @@ function TablePreview({ file, content }: { file: FilePresentation; content: Work
   return <div className="file-preview-table-wrap">{sheetName ? <p className="file-preview-sheet">工作表：{sheetName}</p> : null}<table className="file-preview-table"><thead><tr>{header.map((cell, index) => <th key={`${cell}-${index}`}>{cell}</th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex}>{header.map((_, cellIndex) => <td key={cellIndex}>{row[cellIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
 }
 
-async function renderReport(source: string, citationProjection?: MessageCitationProjection) {
+export function sessionReportImageUrl(url: string, reportPath: string, sessionId: string, origin: string) {
+  const value = url.trim().replace(/^<(.+)>$/, '$1');
+  if (/^(https?:|data:image\/)/i.test(value) || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(value)) return value;
+  const separator = Math.max(reportPath.lastIndexOf('/'), reportPath.lastIndexOf('\\'));
+  const directory = separator >= 0 ? reportPath.slice(0, separator) : '';
+  const imagePath = value.startsWith('/') || !directory ? value : `${directory}/${value}`;
+  return `${origin}/api/file/preview?${new URLSearchParams({ sessionId, path: imagePath })}`;
+}
+
+async function renderReport(source: string, reportPath: string, sessionId: string, citationProjection?: MessageCitationProjection) {
   const reportCitationProjection = citationProjection
     ? projectCitationText(source, citationProjection.available)
     : undefined;
@@ -120,7 +129,11 @@ async function renderReport(source: string, citationProjection?: MessageCitation
   if (reportCitationProjection?.citations.length && !hasReferenceIndex) {
     markdown += `\n\n---\n\n${citationReferenceMarkdown(reportCitationProjection)}`;
   }
-  let html = renderMarkdown(markdown, reportCitationProjection?.numbers);
+  let html = renderMarkdown(
+    markdown,
+    reportCitationProjection?.numbers,
+    (url) => sessionReportImageUrl(url, reportPath, sessionId, window.location.origin),
+  );
   for (const replacement of replacements) {
     let value = replacement.value;
     if (!value.startsWith('<')) {
@@ -135,15 +148,15 @@ async function renderReport(source: string, citationProjection?: MessageCitation
   return html;
 }
 
-function ReportPreview({ source, citationProjection }: { source: string; citationProjection?: MessageCitationProjection }) {
+function ReportPreview({ source, reportPath, sessionId, citationProjection }: { source: string; reportPath: string; sessionId: string; citationProjection?: MessageCitationProjection }) {
   const [html, setHtml] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
     setHtml(''); setError('');
-    void renderReport(source, citationProjection).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || '报告渲染失败'); });
+    void renderReport(source, reportPath, sessionId, citationProjection).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || '报告渲染失败'); });
     return () => { active = false; };
-  }, [citationProjection, source]);
+  }, [citationProjection, reportPath, sessionId, source]);
   if (error) return <p className="file-preview-error">{error}</p>;
   return html ? <article className="file-preview-report" dangerouslySetInnerHTML={{ __html: html }} /> : <p className="file-preview-loading">正在渲染报告…</p>;
 }
@@ -283,7 +296,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
               ? <CodePreview source={content.content} extension={presentation.extension} />
               : presentation.preview === 'table'
                 ? <TablePreview file={presentation} content={content} />
-                : <ReportPreview source={content.content} citationProjection={citationProjection} />;
+                : <ReportPreview source={content.content} reportPath={item.path} sessionId={sessionId} citationProjection={citationProjection} />;
 
   return createPortal(<section className="file-preview-card" role="dialog" aria-modal="false" aria-label={`预览 ${item.name}`} style={{ width: size.width, height: size.height, zIndex: 80 + stackIndex, transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))` }} onPointerDownCapture={onActivate}>
     <header className={`file-preview-header${presentation.preview === 'report' ? ' has-export' : ''}`} onPointerDown={startDrag} onPointerMove={dragPreview} onPointerUp={stopDrag} onPointerCancel={stopDrag}>

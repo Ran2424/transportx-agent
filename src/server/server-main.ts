@@ -114,7 +114,9 @@ function isWithinPath(root: string, target: string) {
 
 function resolveLiveSessionPath(session: PiRpcSession | null | undefined, requestedPath?: string | null) {
   if (!session) { const error = new Error('Live session not found') as StatusError; error.status = 404; throw error; }
-  const root = fs.realpathSync(path.resolve(session.cwd)), candidate = path.resolve(expandHome(requestedPath || session.cwd));
+  const root = fs.realpathSync(path.resolve(session.cwd));
+  const requested = expandHome(requestedPath || session.cwd);
+  const candidate = path.resolve(path.isAbsolute(requested) ? requested : path.join(root, requested));
   let resolved = candidate;
   try { resolved = fs.realpathSync(candidate); } catch {}
   if (!isWithinPath(root, resolved)) { const error = new Error('Path is outside the active session directory') as StatusError; error.status = 403; throw error; }

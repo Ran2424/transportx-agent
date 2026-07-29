@@ -35,9 +35,10 @@
       "steps": [
         { "event": { "type": "auto_retry_start", "attempt": 1, "maxAttempts": 3, "delayMs": 10, "errorMessage": "temporary overload" } },
         { "event": { "type": "auto_retry_end", "success": true, "attempt": 1 } },
-        { "writeFile": { "path": "citation-report.md", "content": "# 引用报告\n\n入口拥堵。" } },
-        { "tool": { "name": "tau_cite", "args": { "artifacts": [{ "path": "citation-report.md" }] }, "result": {
-          "content": [{ "type": "text", "text": "Registered 1 citation. Use [[cite:artifact:c5131fbd1fec213043d167bd]]" }],
+        { "writeFile": { "path": "charts/report-chart.svg", "content": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"320\" height=\"120\" viewBox=\"0 0 320 120\"><rect width=\"320\" height=\"120\" fill=\"#f5eee7\"/><path d=\"M30 95 90 55l55 20 65-50 80 25\" fill=\"none\" stroke=\"#bd6842\" stroke-width=\"8\"/><text x=\"24\" y=\"28\" font-size=\"18\">报告图表</text></svg>" } },
+        { "writeFile": { "path": "output/citation-report.md", "content": "# 引用报告\n\n入口拥堵。\n\n![报告图表](../charts/report-chart.svg)" } },
+        { "tool": { "name": "tau_cite", "args": { "artifacts": [{ "path": "output/citation-report.md" }] }, "result": {
+          "content": [{ "type": "text", "text": "Registered 1 citation. Use [[cite:artifact:9cb29a6d1b0aeaa561c9f319]]" }],
           "details": {
             "kind": "tau-citations",
             "citations": {
@@ -46,30 +47,30 @@
               "citationSetId": "citations:smoke",
               "generatedAt": "2026-07-26T00:00:00.000Z",
               "sources": [{
-                "sourceId": "artifact:c5131fbd1fec213043d167bd",
+                "sourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
                 "kind": "document",
                 "scope": "session",
                 "title": "引用报告",
-                "relativePath": "citation-report.md",
+                "relativePath": "output/citation-report.md",
                 "mimeType": "text/markdown",
-                "sha256": "c5131fbd1fec213043d167bdd721178bdb8d4349fc5eb6b9855490550eb1dd88"
+                "sha256": "9cb29a6d1b0aeaa561c9f319b5dd7faf90b631ea80782b667cbfa7aa53cd0bb3"
               }],
               "locators": [{
-                "locatorId": "locator:artifact:c5131fbd1fec213043d167bd",
-                "sourceId": "artifact:c5131fbd1fec213043d167bd",
+                "locatorId": "locator:artifact:9cb29a6d1b0aeaa561c9f319",
+                "sourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
                 "section": "结论",
                 "quote": "入口拥堵。"
               }],
               "citations": [{
-                "citationId": "artifact:c5131fbd1fec213043d167bd",
-                "sourceId": "artifact:c5131fbd1fec213043d167bd",
-                "locatorId": "locator:artifact:c5131fbd1fec213043d167bd",
+                "citationId": "artifact:9cb29a6d1b0aeaa561c9f319",
+                "sourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
+                "locatorId": "locator:artifact:9cb29a6d1b0aeaa561c9f319",
                 "verificationStatus": "session_artifact"
               }]
             }
           }
         } } },
-        { "streamText": { "text": "入口存在拥堵风险。[[cite:artifact:c5131fbd1fec213043d167bd]]", "chunks": 8, "delayMs": 10 } }
+        { "streamText": { "text": "入口存在拥堵风险。[[cite:artifact:9cb29a6d1b0aeaa561c9f319]]", "chunks": 8, "delayMs": 10 } }
       ]
     },
     {

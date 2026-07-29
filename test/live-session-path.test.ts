@@ -43,6 +43,13 @@ test('resolveLiveSessionPath resolves nested paths inside cwd', () => {
   );
 });
 
+test('resolveLiveSessionPath resolves relative paths from the session cwd', () => {
+  assert.equal(
+    resolveLiveSessionPath(session, 'sub/nested.txt'),
+    fs.realpathSync(path.join(SUB, 'nested.txt')),
+  );
+});
+
 test('resolveLiveSessionPath defaults to session.cwd when no path given', () => {
   assert.equal(resolveLiveSessionPath(session), fs.realpathSync(CWD));
 });
@@ -55,6 +62,10 @@ test('resolveLiveSessionPath rejects paths outside the session cwd with 403', ()
   // traversal escape
   assert.throws(
     () => resolveLiveSessionPath(session, path.join(CWD, '..', 'outside')),
+    (err: Error & { status: number }) => err.status === 403,
+  );
+  assert.throws(
+    () => resolveLiveSessionPath(session, '../outside/secret.txt'),
     (err: Error & { status: number }) => err.status === 403,
   );
 });
