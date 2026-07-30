@@ -366,7 +366,46 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled }: { sessionId
       setTaskModeBusy(false);
     }
   }
-  return <footer className="conversation-composer"><div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>排队中</span><p>{item.message}</p><button type="button" aria-label="取消排队消息" onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>{images.length ? <div className="attachment-list">{images.map((image, index) => <div key={`${image.data.slice(0, 12)}-${index}`}><img src={`data:${image.mimeType};base64,${image.data}`} alt="待发送图片" /><button type="button" aria-label="移除图片" onClick={() => setImages((current) => current.filter((_, i) => i !== index))}>×</button></div>)}</div> : null}<div className="composer-row"><div className="composer-action-rail"><button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? '关闭任务模式' : '开启任务模式'} disabled={streaming || taskModeBusy} onClick={() => void toggleTaskMode()}><Icon name="task" /><span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? '关闭任务模式' : '开启任务模式'}</span></button><label className="composer-attach"><Icon name="plus" /><span className="composer-action-hint" aria-hidden="true">添加图片附件</span><span className="sr-only">添加图片</span><input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onChange={(event) => { if (event.currentTarget.files) void add(event.currentTarget.files); event.currentTarget.value = ''; }} /></label></div><form onSubmit={(event) => { event.preventDefault(); void submit(); }}><textarea ref={inputRef} value={value} onChange={(event) => setValue(event.target.value)} onPaste={(event) => { const files = [...event.clipboardData.items].filter((item) => item.type.startsWith('image/')).map((item) => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void add(files); } }} onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void add(event.dataTransfer.files); } }} onDragOver={(event) => event.preventDefault()} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={streaming ? '输入内容以引导当前任务…' : '输入交通问题或 Pi 指令…'} aria-label="消息输入" />{streaming ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label="发送引导" onClick={() => void submit('steer')}>发送引导</button><button className="composer-abort" type="button" aria-label="终止当前任务" onClick={() => void kernel.commands.agent.abort(sessionId)}>终止</button></div> : <button className="composer-send" type="submit" aria-label="发送消息">↑</button>}</form></div>{error ? <p className="composer-error" role="alert">{error}</p> : null}</footer>;
+  return <footer className="conversation-composer">
+    <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>排队中</span><p>{item.message}</p><button type="button" aria-label="取消排队消息" onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
+    {images.length ? <div className="attachment-list">{images.map((image, index) => <div key={`${image.data.slice(0, 12)}-${index}`}><img src={`data:${image.mimeType};base64,${image.data}`} alt="待发送图片" /><button type="button" aria-label="移除图片" onClick={() => setImages((current) => current.filter((_, i) => i !== index))}>×</button></div>)}</div> : null}
+    <div className="composer-row">
+      <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+        <textarea
+          ref={inputRef}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.items].filter((item) => item.type.startsWith('image/')).map((item) => item.getAsFile()).filter((file): file is File => !!file);
+            if (files.length) { event.preventDefault(); void add(files); }
+          }}
+          onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void add(event.dataTransfer.files); } }}
+          onDragOver={(event) => event.preventDefault()}
+          onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }}
+          placeholder={streaming ? '输入内容以引导当前任务…' : '输入交通问题或 Pi 指令…'}
+          aria-label="消息输入"
+        />
+        <div className="composer-toolbar">
+          <div className="composer-action-rail">
+            <label className="composer-attach">
+              <Icon name="plus" />
+              <span className="composer-action-hint" aria-hidden="true">添加图片附件</span>
+              <span className="sr-only">添加图片</span>
+              <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onChange={(event) => { if (event.currentTarget.files) void add(event.currentTarget.files); event.currentTarget.value = ''; }} />
+            </label>
+            <button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? '关闭任务模式' : '开启任务模式'} disabled={streaming || taskModeBusy} onClick={() => void toggleTaskMode()}>
+              <Icon name="task" />
+              <span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? '关闭任务模式' : '开启任务模式'}</span>
+            </button>
+          </div>
+          {streaming
+            ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label="发送引导" onClick={() => void submit('steer')}>发送引导</button><button className="composer-abort" type="button" aria-label="终止当前任务" onClick={() => void kernel.commands.agent.abort(sessionId)}>终止</button></div>
+            : <button className="composer-send" type="submit" aria-label="发送消息" disabled={!value.trim() && images.length === 0}>↑</button>}
+        </div>
+      </form>
+    </div>
+    {error ? <p className="composer-error" role="alert">{error}</p> : null}
+  </footer>;
 }
 
 export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: string; showThinking: boolean }) {
