@@ -26,7 +26,7 @@ DB_DIR = SKILL_DIR / "assets" / "databases"
 DB_NAMES = ("common", "road", "metro", "bus", "ridehail")
 PYTHON = sys.executable
 BUILT_AT = datetime.now().replace(microsecond=0).isoformat()
-ASSET_VERSION = "3.0.1"
+ASSET_VERSION = "3.1.0"
 CANONICAL_CRS = "EPSG:4326"
 CANONICAL_TIME_ZONE = "Asia/Shanghai"
 EPSG32651_TO_WGS84 = Transformer.from_crs("EPSG:32651", "EPSG:4326", always_xy=True)
@@ -2758,6 +2758,18 @@ def build_all() -> None:
     standardize_published_assets()
     build_catalog()
     validate_assets()
+    evdata_csv = os.environ.get("SHANGHAI_TRAFFIC_EVDATA_SPEED_CSV")
+    evdata_geojson = os.environ.get("SHANGHAI_TRAFFIC_EVDATA_ROAD_GEOJSON")
+    if bool(evdata_csv) != bool(evdata_geojson):
+        raise ValueError(
+            "Set both SHANGHAI_TRAFFIC_EVDATA_SPEED_CSV and "
+            "SHANGHAI_TRAFFIC_EVDATA_ROAD_GEOJSON, or neither"
+        )
+    if evdata_csv and evdata_geojson:
+        from import_evdata_road_speed import import_evdata
+
+        import_evdata(Path(evdata_csv), Path(evdata_geojson), DB_DIR)
+        validate_assets()
     print(f"Built data asset at {DB_DIR}")
 
 

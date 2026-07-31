@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "PROJECT-DATA-ASSET-MODEL",
+  "derived": true,
+  "root": {
+    "node_id": "PROJECT-DATA-ASSET-MODEL@document",
+    "number": null,
+    "title": "数据资产模型",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [
+      "数据治理"
+    ],
+    "children": [
+      {
+        "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0001",
+        "number": null,
+        "title": "数据资产模型",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "",
+        "tags": [
+          "数据治理"
+        ],
+        "children": [
+          {
+            "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0002",
+            "number": null,
+            "title": "分库与查询命名空间",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "| 数据库 | 内容 |\n|---|---|\n| `catalog` | 数据字典、血缘、实体ID、指标、质量规则与查询样例 |\n| `common` | 日期、时间、活动、场馆、天气、坐标系和统一空间索引 |\n| `road` | 道路状态事件与小时持续时间 |\n| `metro` | 统一线路、高德方向线路、物理站",
+            "tags": [
+              "人群管控",
+              "数据治理",
+              "活动场馆",
+              "道路交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0003",
+            "number": null,
+            "title": "坐标字段约定",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "公交和轨交标准空间字段统一为 EPSG:4326：\n\n- `longitude`、`latitude`、`geometry_json`：WGS84经纬度。\n- `normalized_crs`：有标准空间值时为 `EPSG:4326`。\n- `source_x`、`source_y`、`source_geometry_",
+            "tags": [
+              "出租车与网约车",
+              "地面公交",
+              "活动场馆"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0004",
+            "number": null,
+            "title": "轨交模型",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "| 对象 | 粒度 | 关键字段/用途 |\n|---|---|---|\n| `metro.dim_metro_line` | 统一线路 | `line_id`；20条稳定线路ID，几何来自高德方向线路并转为WGS84 |\n| `metro.dim_metro_route_direction` | 高德方向或支线路径 |",
+            "tags": [
+              "人群管控"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0005",
+            "number": null,
+            "title": "公交模型",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "| 对象 | 粒度 | 关键字段/用途 |\n|---|---|---|\n| `bus.dim_bus_line` | 官方线路 | `line_key`；公交客流的统一线路维度 |\n| `bus.dim_bus_route_direction` | 高德方向线路 | `route_direction_key`；源GCJ",
+            "tags": [
+              "人群管控",
+              "地面公交"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0006",
+            "number": null,
+            "title": "公共、道路和天气",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "| 对象 | 粒度 | 说明 |\n|---|---|---|\n| `common.dim_date` | 日期 | 2025-08-09至2025-08-31 |\n| `common.dim_time` | 分钟 | 0–1439及15/30分钟时段 |\n| `common.dim_event` | 活动日期 | 4条",
+            "tags": [
+              "地面公交",
+              "数据治理",
+              "道路交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0007",
+            "number": null,
+            "title": "网约车与场馆订单",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "`ridehail.fact_ridehail_event` 和 `ridehail.fact_venue_trip` 是去重、排除删除或无效坐标后的默认事实入口。订单号仅以 `order_hash` 保存。支付订单和部分事件的坐标系未知，不得与WGS84公交、轨交做高精度空间叠加。",
+            "tags": [
+              "入场",
+              "出租车与网约车",
+              "地面公交",
+              "活动场馆"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-DATA-ASSET-MODEL@sec-0008",
+            "number": null,
+            "title": "连接原则",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "- 日期：事实表通过 `date_key` 连接 `common.dim_date`。\n- 时间：分钟事实通过 `minute_key` 连接 `common.dim_time`；小时事实使用 `hour`。\n- 轨交客流：只通过统一 `line_id`、`station_id` 连接。\n- 轨交源ID：查询 `cat",
+            "tags": [
+              "人群管控"
+            ],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

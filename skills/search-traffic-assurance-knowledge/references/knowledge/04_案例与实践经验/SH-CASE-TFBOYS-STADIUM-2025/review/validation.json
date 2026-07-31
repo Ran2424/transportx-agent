@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "SH-CASE-TFBOYS-STADIUM-2025",
+  "source_sha256": "ca7c6a8f48203fd481252a569da7c346bb3c5899b0cf67e3963ec6fff432c092",
+  "validated_at": "2026-07-26T09:32:49+08:00",
+  "automatic_checks": {
+    "passed": 14,
+    "failed": 0,
+    "failures": []
+  },
+  "manual_samples": {
+    "planned": 2,
+    "checked": 2,
+    "failed": 0,
+    "method": "逐文档首末条、规范性条款、跨页/图表样本检查；PDF样本页视觉复核"
+  },
+  "status": "accepted",
+  "issues": [],
+  "reviewed_by": "Codex",
+  "reviewed_at": "2026-07-26T09:33:10+08:00",
+  "warnings": []
+}

@@ -1,0 +1,1135 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "GBT46791-2025",
+  "derived": true,
+  "root": {
+    "node_id": "GBT46791-2025@document",
+    "number": null,
+    "title": "应急预案情景构建方法",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [
+      "应急管理"
+    ],
+    "children": [
+      {
+        "node_id": "GBT46791-2025@sec-0001",
+        "number": null,
+        "title": "GB/T 46791-2025 应急预案情景构建方法",
+        "node_type": "clause",
+        "page_span": [
+          1,
+          7
+        ],
+        "summary": "> 本文由同名PDF及检索文本结构化整理而成，已删除页码、目录页和重复页眉页脚。OCR文本可能存在识别误差，正式引用请以PDF原文为准。",
+        "tags": [
+          "应急管理"
+        ],
+        "children": [
+          {
+            "node_id": "GBT46791-2025@1",
+            "number": "1",
+            "title": "1 范围",
+            "node_type": "chapter",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "本文件确立了应急预案情景构建的总则,描述了包含情景筛选与开发、应急任务梳理、应急能力分析、应急预案评估与制修订等内容的应急预案情景构建方法。本文件适用于政府及其部门在应急预案制修订过程中的情景构建活动,其他组织开展应急预案编制情景构建活动参照使用。",
+            "tags": [
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "GBT46791-2025@2",
+            "number": "2",
+            "title": "2 规范性引用文件",
+            "node_type": "chapter",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "下列文件中的内容通过文中的规范性引用而构成本文件必不可少的条款。其中,注日期的引用文件,仅该日期对应的版本适用于本文件;不注日期的引用文件,其最新版本(包括所有的修改单)适用于本文件。\n\n- GB/T 23694 风险管理术语\n- GB/T 27921 风险管理风险评估技术\n- GB/T 46793.1 突发事件应急预",
+            "tags": [
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "GBT46791-2025@3",
+            "number": "3",
+            "title": "3 术语和定义",
+            "node_type": "chapter",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "GB/T 23694、 GB/T 27921和 GB/T 46793.1界定的以及下列术语和定义适用于本文件。",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@3.1",
+                "number": "3.1",
+                "title": "3.1 情景 s c e n a r i o",
+                "node_type": "clause",
+                "page_span": [
+                  7,
+                  7
+                ],
+                "summary": "对风险的演化过程和灾害后果的系统性表述。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@3.2",
+                "number": "3.2",
+                "title": "3.2 应急预案情景构建 s c e n a r i o c o n s t r u c t i o n f o r e m e r g e n c y p l a n s",
+                "node_type": "clause",
+                "page_span": [
+                  7,
+                  7
+                ],
+                "summary": "以支撑应急预案的评估和制修订为目标,开展的情景筛选与开发、应急任务梳理和应急能力分析等活动。",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@4",
+            "number": "4",
+            "title": "4 总则",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@4.1",
+                "number": "4.1",
+                "title": "4.1",
+                "node_type": "clause",
+                "page_span": [
+                  7,
+                  7
+                ],
+                "summary": "应急预案情景构建遵循以提高突发事件应对能力为导向、实事求是、动态完善、利于实操的原则。在全面风险评估、全面梳理和分析现有应急预案体系的基础上确定应急预案编制需求和应急预案",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@4.2",
+                "number": "4.2",
+                "title": "4.2",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "情景构建目标。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@4.3",
+                "number": "4.3",
+                "title": "4.3",
+                "node_type": "clause",
+                "page_span": [
+                  7,
+                  7
+                ],
+                "summary": "流程开展,流程图见图1。应急预案情景构建按照情景筛选与开发、应急任务梳理、应急能力分析、应急预案评估与制修订的",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@sec-0011",
+                    "number": null,
+                    "title": "图1 应急预案情景构建流程图",
+                    "node_type": "figure",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@5",
+            "number": "5",
+            "title": "5 情景筛选与开发",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@5.1",
+                "number": "5.1",
+                "title": "5.1 情景筛选",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@5.1.1",
+                    "number": "5.1.1",
+                    "title": "5.1.1 筛选要求",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "情景筛选应符合以下要求。\n\n- **a)** 代表性和典型性:所筛选出的情景具备合理性、高风险性或典型性特点。\n- **b)** 后果严重性:所筛选出的情景是后果严重的突发事件情景。\n- **c)** 影响范围和处置难度:所筛选的情景是需要调动应急响应资源,需要各相关方配合或扩大应急响应处置范围的突发事件情景。\n- *",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@5.1.2",
+                    "number": "5.1.2",
+                    "title": "5.1.2 筛选方法",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "筛选方法包括但不限于以下方法。\n\n- **a)** 参照法:参考已发生的历史突发事件、风险发展趋势,结合专家研判等方式进行筛选。\n- **b)** 风险矩阵法:分析风险发生可能性和后果严重性,通过风险矩阵法评估风险等级,并生成情景备选清单。风险等级见表1。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": [
+                      {
+                        "node_id": "GBT46791-2025@sec-0016",
+                        "number": null,
+                        "title": "表1 风险等级",
+                        "node_type": "table",
+                        "page_span": [
+                          8,
+                          8
+                        ],
+                        "summary": "| 风险可能性 \\ 后果严重性 | 高 | 较高 | 一般 | 低 | 很低 |\n| --- | --- | --- | --- | --- | --- |\n| 高 | 重大 | 重大 | 较大 | 较大 | 一般 |\n| 较高 | 重大 | 较大 | 较大 | 一般 | 一般 |\n| 一般 | 重大 | 较大 | 一",
+                        "tags": [],
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT46791-2025@5.2",
+                "number": "5.2",
+                "title": "5.2 情景开发",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@5.2.1",
+                    "number": "5.2.1",
+                    "title": "5.2.1 总则",
+                    "node_type": "clause",
+                    "page_span": null,
+                    "summary": "",
+                    "tags": [],
+                    "children": [
+                      {
+                        "node_id": "GBT46791-2025@5.2.1.1",
+                        "number": "5.2.1.1",
+                        "title": "5.2.1.1",
+                        "node_type": "clause",
+                        "page_span": [
+                          9,
+                          9
+                        ],
+                        "summary": "数据收集和整理宜采用先进的数据处理和分析技术,提高数据的完整性和准确性。针对筛选的情景,描述情景概要、背景信息、演化过程、事件后果等情景要素,情景要素框架图",
+                        "tags": [
+                          "数据治理"
+                        ],
+                        "children": []
+                      },
+                      {
+                        "node_id": "GBT46791-2025@5.2.1.2",
+                        "number": "5.2.1.2",
+                        "title": "5.2.1.2",
+                        "node_type": "clause",
+                        "page_span": null,
+                        "summary": "见图2。",
+                        "tags": [],
+                        "children": []
+                      },
+                      {
+                        "node_id": "GBT46791-2025@5.2.1.3",
+                        "number": "5.2.1.3",
+                        "title": "5.2.1.3",
+                        "node_type": "clause",
+                        "page_span": [
+                          9,
+                          9
+                        ],
+                        "summary": "事件演化过程和后果分析宜采用情景模拟等方法,情景模拟方法见附录 A。",
+                        "tags": [],
+                        "children": [
+                          {
+                            "node_id": "GBT46791-2025@sec-0022",
+                            "number": null,
+                            "title": "图2 情景要素框架图",
+                            "node_type": "figure",
+                            "page_span": null,
+                            "summary": "",
+                            "tags": [],
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "node_id": "GBT46791-2025@5.2.2",
+                    "number": "5.2.2",
+                    "title": "5.2.2 描述情景概要",
+                    "node_type": "clause",
+                    "page_span": [
+                      9,
+                      9
+                    ],
+                    "summary": "用情景简表的方式概要描述突发事件及其发生在特定背景下可能导致的后果,情景简表示例见附录 B。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@5.2.3",
+                    "number": "5.2.3",
+                    "title": "5.2.3 明晰背景信息",
+                    "node_type": "clause",
+                    "page_span": [
+                      9,
+                      9
+                    ],
+                    "summary": "背景信息包括但不限于以下内容。\n\n- **a)** 主体信息:描述突发事件涉及的各类主体信息,包括事件所涉及组织或区域的人员规模及时空布局、承灾组织及群体自身应急能力、与事件相关的设施或危险物质的属性特点等。\n- **b)** 地理环境:描述突发事件发生与演化是否与特定的地理空间位置相关,或者事件的后果是否与事发地的自",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@5.2.4",
+                    "number": "5.2.4",
+                    "title": "5.2.4 分析演化过程",
+                    "node_type": "clause",
+                    "page_span": [
+                      9,
+                      10
+                    ],
+                    "summary": "推导分析突发事件的发生发展过程,对其潜伏期、爆发期、持续期和消退期进行描述。重点描述以下内容:\n\n- **a)** 发生原因及致灾机理;\n- **b)** 导致扩大的主要因素;\n- **c)** 演化过程中的关键节点,以及各节点的灾难场景、标志性事件等。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@5.2.5",
+                    "number": "5.2.5",
+                    "title": "5.2.5 研究事件后果",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "事件后果包括可能引发的损失和影响,具体包括但不限于以下内容。\n\n- **a)** 人员伤亡:估算事件及其次生衍生灾害可能导致的死亡和受伤人数。\n- **b)** 财产损失:估算事件及其次生衍生灾害可能导致的财产损失。\n- **c)** 服务中断:分析并描述事件及其次生衍生灾害可能造成的重要基础设施、生命线工程和公共服务",
+                    "tags": [
+                      "火灾"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@5.2.6",
+                    "number": "5.2.6",
+                    "title": "5.2.6 展示情景",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "在文字描述基础上,可辅以三维可视化技术、虚拟现实技术等技术手段对情景的演化过程、事件后果和主要的应对行动进行直观地展示。",
+                    "tags": [],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@6",
+            "number": "6",
+            "title": "6 应急任务梳理",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "",
+            "tags": [
+              "应急管理"
+            ],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@6.1",
+                "number": "6.1",
+                "title": "6.1 通用要求",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@6.1.1",
+                    "number": "6.1.1",
+                    "title": "6.1.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "应按照预防与应急准备、监测与预警、应急处置与救援、事后恢复与重建四个阶段,对应于GB/T 46793.1中应急预案编制主要内容,梳理每个阶段的任务。",
+                    "tags": [
+                      "应急管理",
+                      "恢复"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@6.1.2",
+                    "number": "6.1.2",
+                    "title": "6.1.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "应明确承担各项任务的主责部门、协同部门及其主要职责,并完成该项任务的任务支撑要素分析表(见附录 C)。",
+                    "tags": [],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT46791-2025@6.2",
+                "number": "6.2",
+                "title": "6.2 预防与应急准备",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@6.2.1",
+                    "number": "6.2.1",
+                    "title": "6.2.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "针对可能发生的突发事件做好应急准备工作。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@6.2.2",
+                    "number": "6.2.2",
+                    "title": "6.2.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "预防与应急准备任务包括开展危险源和风险辨识、实施规划设计和工程技术方面的风险控制措施、实施重要基础设施防护等预防措施,以及实施应急预案动态管理、培训及演练、应急救援队伍建设、物资装备储备、避难场所规划等应急准备措施。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT46791-2025@6.3",
+                "number": "6.3",
+                "title": "6.3 监测与预警",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@6.3.1",
+                    "number": "6.3.1",
+                    "title": "6.3.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "对可能引发突发事件的特征参数进行监测并及时发布预警信息,采取防范措施。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@6.3.2",
+                    "number": "6.3.2",
+                    "title": "6.3.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "监测与预警任务包括信息采集与分析、预警发布、预警响应、预警解除等。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT46791-2025@6.4",
+                "number": "6.4",
+                "title": "6.4 应急处置与救援",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@6.4.1",
+                    "number": "6.4.1",
+                    "title": "6.4.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      10,
+                      10
+                    ],
+                    "summary": "应急处置与救援可以细分为先期处置、专业救援与处置、协同应急三个层面。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@6.4.2",
+                    "number": "6.4.2",
+                    "title": "6.4.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "先期处置的任务包括事件研判、信息报告、秩序维护、疏散转移、自救互救等,先期处置注意现场应急处置和救援人员的安全。",
+                    "tags": [
+                      "人群管控",
+                      "应急管理",
+                      "活动期间"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@6.4.3",
+                    "number": "6.4.3",
+                    "title": "6.4.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "专业救援与处置的任务包括成立现场指挥部,监测评估现场形势,消除或控制现场危害因素,开展人员搜救、医疗救治、信息发布、队伍保障、物资保障、避难场所保障、通信保障、交通保障、公众保护(疏散安置)、受害人员心理干预、遇难者善后服务等。",
+                    "tags": [
+                      "人群管控",
+                      "信息发布",
+                      "活动期间"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@6.4.4",
+                    "number": "6.4.4",
+                    "title": "6.4.4",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "协同应急在突发事件引发的后果和社会影响全面显现,开始出现综合、复杂的社会面问题时开展,其任务包括舆情应对、基础设施和关键资源保护、环境与生态保护等,以及向其他部门、周边地区请求支援、与增援力量建立任务衔接等。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT46791-2025@6.5",
+                "number": "6.5",
+                "title": "6.5 事后恢复与重建",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [
+                  "恢复"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@6.5.1",
+                    "number": "6.5.1",
+                    "title": "6.5.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "在最短的时间内恢复基本状态,在后期恢复到事件发生前状态,并提升灾害应对能力。",
+                    "tags": [
+                      "恢复"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@6.5.2",
+                    "number": "6.5.2",
+                    "title": "6.5.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "先期恢复期间的任务包括基本生活秩序恢复、基本公共设施恢复、受害者救助、公众心理抚慰等,后期恢复重建任务包括受害人员长期安置、基础设施和建筑物修复、环境与自然资源恢复、社会经济恢复等。",
+                    "tags": [
+                      "恢复"
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@7",
+            "number": "7",
+            "title": "7 应急能力分析",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "",
+            "tags": [
+              "应急管理"
+            ],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@7.1",
+                "number": "7.1",
+                "title": "7.1 通用要求",
+                "node_type": "clause",
+                "page_span": [
+                  11,
+                  11
+                ],
+                "summary": "应基于情景任务梳理,对组织机构需具备的应急能力进行梳理归纳,明确组织机构的应急能力建设目标,为应急能力建设计划提供支撑。",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@7.2",
+                "number": "7.2",
+                "title": "7.2 应急能力需求分析",
+                "node_type": "clause",
+                "page_span": [
+                  11,
+                  11
+                ],
+                "summary": "",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@7.2.1",
+                    "number": "7.2.1",
+                    "title": "7.2.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "应急能力由组织架构、运行机制、人员与队伍、物资装备、应急预案和演练培训等要素构成。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@7.2.2",
+                    "number": "7.2.2",
+                    "title": "7.2.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "以情景应对为目标,对各项能力要素需要达到的水平或程度进行分析。",
+                    "tags": [],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT46791-2025@7.3",
+                "number": "7.3",
+                "title": "7.3 应急能力现状分析",
+                "node_type": "clause",
+                "page_span": [
+                  11,
+                  11
+                ],
+                "summary": "根据应急能力需求分析结果,逐项分析组织机构的现有能力情况,即各项能力要素的水平或程度。",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@7.4",
+                "number": "7.4",
+                "title": "7.4 应急能力提升",
+                "node_type": "clause",
+                "page_span": [
+                  11,
+                  11
+                ],
+                "summary": "逐项对应急能力需求和现状进行评估,在二者不匹配的情况下,应按照需求进行应急能力提升计划的编制,并填写《应急能力评估与提升计划表》,具体示例见附录 D。",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@8",
+            "number": "8",
+            "title": "8 应急预案评估与制修订",
+            "node_type": "chapter",
+            "page_span": [
+              3,
+              7
+            ],
+            "summary": "",
+            "tags": [
+              "应急管理"
+            ],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@8.1",
+                "number": "8.1",
+                "title": "8.1 应急预案体系评估",
+                "node_type": "clause",
+                "page_span": [
+                  11,
+                  11
+                ],
+                "summary": "",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@8.1.1",
+                    "number": "8.1.1",
+                    "title": "8.1.1 概述",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "根据开发的突发事件情景,基于任务支撑要素分析表,从全面性、衔接性、任务主体完整性、任务程序可行性、任务可持续性、支撑资源完备性6个方面对照评估应急预案体系是否完备,各项预案是否具备针对性和实用性。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@8.1.2",
+                    "number": "8.1.2",
+                    "title": "8.1.2 全面性评估",
+                    "node_type": "clause",
+                    "page_span": [
+                      11,
+                      11
+                    ],
+                    "summary": "评估预案体系是否涵盖任务清单中的全部任务。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@8.1.3",
+                    "number": "8.1.3",
+                    "title": "8.1.3 衔接性评估",
+                    "node_type": "clause",
+                    "page_span": [
+                      12,
+                      12
+                    ],
+                    "summary": "应急预案的衔接性从以下4个方面进行评估。\n\n- **a)** 任务执行衔接性:以任务为主线评估相关预案之间的衔接,包括不同预案对主责部门任务、协同部门任务以及任务执行程序表述的一致性。\n- **b)** 信息沟通衔接性:以信息为主线评估相关预案之间的衔接,包括不同预案中对信息传递路径(信息报告出口与接口、信息报告时限、",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@8.1.4",
+                    "number": "8.1.4",
+                    "title": "8.1.4 任务主体完整性评估",
+                    "node_type": "clause",
+                    "page_span": [
+                      12,
+                      12
+                    ],
+                    "summary": "评估预案体系中关于各项任务的主责部门、协同部门,及部门间协同机制的表述是否完整、\n\n- 致、可行。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@8.1.5",
+                    "number": "8.1.5",
+                    "title": "8.1.5 任务程序可行性评估",
+                    "node_type": "clause",
+                    "page_span": [
+                      12,
+                      12
+                    ],
+                    "summary": "评估预案体系中关于各项任务执行程序的描述是否完整、实用、具有可操作性,任务程序是否可以满足该类事件的时间约束。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@8.1.6",
+                    "number": "8.1.6",
+                    "title": "8.1.6 任务可持续性评估",
+                    "node_type": "clause",
+                    "page_span": [
+                      12,
+                      12
+                    ],
+                    "summary": "评估在情景中可能会出现的业务中断背景下(例如通信中断、交通堵塞),是否考虑了完成该项任务的备选方案。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@8.1.7",
+                    "number": "8.1.7",
+                    "title": "8.1.7 支撑资源完备性评估",
+                    "node_type": "clause",
+                    "page_span": [
+                      12,
+                      12
+                    ],
+                    "summary": "评估预案体系中是否针对各项任务的支撑资源(装备、队伍等)开展了差距分析,是否包含对资源的补充调用机制。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT46791-2025@8.2",
+                "number": "8.2",
+                "title": "8.2 应急预案制修订",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@8.2.1",
+                    "number": "8.2.1",
+                    "title": "8.2.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      12,
+                      12
+                    ],
+                    "summary": "按照 GB/T 46493.1的要求,开展应急预案制修订工作。应急预案制修订过程中,应急任务梳理结果和应急能力分析结果主要从以下两个方面进行",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT46791-2025@8.2.2",
+                    "number": "8.2.2",
+                    "title": "8.2.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      12,
+                      12
+                    ],
+                    "summary": "支撑。\n\n- **a)** 任务确定:依据应急任务梳理阶段的支撑要素分析表,考虑时间约束、资源约束、业务约束等不确定性条件,确定应急预案中的任务。\n- **b)** 协同机制建立:明确各任务主责部门、协同部门之间的协同机制,单个部门的资源统筹机制,以及资源储备和调度机制。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@9",
+            "number": "9",
+            "title": "9 应急预案实施与改进",
+            "node_type": "chapter",
+            "page_span": [
+              12,
+              12
+            ],
+            "summary": "应急预案印发后,基于情景构建定期进行演练,通过演练进行预案评估,适时启动应急预案制修订,实现应急预案持续改进。",
+            "tags": [
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "GBT46791-2025@sec-0066",
+            "number": null,
+            "title": "附录 A",
+            "node_type": "appendix",
+            "page_span": null,
+            "summary": "> 附录性质：资料性情景模拟方法",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@sec-0067",
+                "number": null,
+                "title": "A.1 历史案例资料分析",
+                "node_type": "clause",
+                "page_span": [
+                  13,
+                  13
+                ],
+                "summary": "国内外相似的案例资料,是进行情景模拟的重要参考。通常可采用以下方法分析:\n\n- **a)** 使用多次同类案例事件后果的统计数据;\n- **b)** 使用相似案例的后果数据,并根据环境条件的变化进行修正;\n- **c)** 使用不同类别的案例后果数据,同时根据事件强度、环境条件的变化进行类推。",
+                "tags": [
+                  "数据治理"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@sec-0068",
+                "number": null,
+                "title": "A.2 模拟仿真",
+                "node_type": "clause",
+                "page_span": [
+                  13,
+                  13
+                ],
+                "summary": "采用数学建模和计算机模拟技术,对事件演化过程及后果进行估算,尽可能科学、真实地展现出事件的发展规律和危害后果。选择和正确使用合适的计算机模拟技术工具、收集并准备模拟计算所需的各种数据资料、对模拟计算的结果进行解读和展示等工作需要较深的专业知识,可委托专业科研机构开展。",
+                "tags": [
+                  "数据治理"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@sec-0069",
+                "number": null,
+                "title": "A.3 现场调查与模拟试验",
+                "node_type": "clause",
+                "page_span": [
+                  13,
+                  13
+                ],
+                "summary": "对某些情景进行模拟时,可能缺少相似的历史案例数据或难以进行计算机模拟计算,需要对估算的结果进行验证时,可采取现场调查、物理模拟试验等方法,对事件可能产生的负面效果进行调查和试验。",
+                "tags": [
+                  "数据治理",
+                  "活动期间"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT46791-2025@sec-0070",
+                "number": null,
+                "title": "A.4 专家经验与推理",
+                "node_type": "clause",
+                "page_span": [
+                  13,
+                  13
+                ],
+                "summary": "对于发生频率很低或无统计规律的情景,通常可收集国内外类似事件的典型案例资料,由相关领域专家对事件的演化过程和危害后果进行推理判断。",
+                "tags": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@sec-0071",
+            "number": null,
+            "title": "附录 B",
+            "node_type": "appendix",
+            "page_span": null,
+            "summary": "> 附录性质：资料性",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@sec-0072",
+                "number": null,
+                "title": "情景简表示例",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@sec-0073",
+                    "number": null,
+                    "title": "表 B.1 情景简表字段",
+                    "node_type": "table",
+                    "page_span": [
+                      14,
+                      14
+                    ],
+                    "summary": "- 情景名称；\n- 编号；\n- 情景描述：时间、地点及突发事件类型；\n- 预计人员伤亡情况；\n- 预计基础设施损害；\n- 预计疏散或迁移人口；\n- 预计污染情况；\n- 预计经济损失；\n- 预计次生、衍生灾害；\n- 预计舆情；\n- 预计恢复期；\n- 国内外参考事件；\n- 构建组织；\n- 相关组织；\n- 公开范围；\n- 构",
+                    "tags": [
+                      "人群管控",
+                      "应急管理",
+                      "恢复"
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@sec-0074",
+            "number": null,
+            "title": "附录 C",
+            "node_type": "appendix",
+            "page_span": null,
+            "summary": "> 附录性质：资料性",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@sec-0075",
+                "number": null,
+                "title": "任务支撑要素分析表示例",
+                "node_type": "clause",
+                "page_span": [
+                  3,
+                  15
+                ],
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@sec-0076",
+                    "number": null,
+                    "title": "表 C.1 任务支撑要素分析表字段",
+                    "node_type": "table",
+                    "page_span": null,
+                    "summary": "- 任务名称；\n- 任务编号；\n- 任务重要性：描述与其他应急任务的关联关系，以及未完成该任务可能对应急响应造成的影响；\n- 相关预案；\n- 主责部门及其职责；\n- 协同部门及其职责；\n- 协同机制；\n- 执行程序或流程图；\n- 支撑应急资源：装备、队伍的名称和编号、需求情况、实际情况。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@sec-0077",
+            "number": null,
+            "title": "附录 D",
+            "node_type": "appendix",
+            "page_span": null,
+            "summary": "> 附录性质：资料性",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT46791-2025@sec-0078",
+                "number": null,
+                "title": "应急能力评估与提升计划表示例",
+                "node_type": "clause",
+                "page_span": [
+                  3,
+                  16
+                ],
+                "summary": "",
+                "tags": [
+                  "应急管理"
+                ],
+                "children": [
+                  {
+                    "node_id": "GBT46791-2025@sec-0079",
+                    "number": null,
+                    "title": "表 D.1 应急能力评估与提升计划表字段",
+                    "node_type": "table",
+                    "page_span": null,
+                    "summary": "- 应急能力要素：\n- 组织架构；\n- 运行机制；\n- 人员与队伍；\n- 物资装备；\n- 预案与计划；\n- 培训与演练。\n- 需求情况：按情景分别填写；\n- 现状情况；\n- 对策措施：包含措施、责任部门和完成时限。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT46791-2025@sec-0080",
+            "number": null,
+            "title": "参考文献",
+            "node_type": "clause",
+            "page_span": [
+              17,
+              17
+            ],
+            "summary": "- **[1]** GB/T 42768—2023 公共安全城市安全风险评估\n- **[2]** 中华人民共和国突发事件应对法( 2024修订)(中华人民共和国主席令第二十五号)\n- **[3]** 突发事件应急预案管理办法(国办发〔 2024〕 5号)\n- **[4]** 关于实施遏制重特大事故工作指南构建双重预防机",
+            "tags": [
+              "应急管理"
+            ],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

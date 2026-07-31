@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "extractor": "source_conversion",
+  "model_version": null,
+  "language": "zh-CN",
+  "started_at": "2026-07-26T09:04:05+08:00",
+  "completed_at": "2026-07-26T09:04:05+08:00",
+  "source_sha256": "da9167d958639c2b009fcaef185107917306255c864fa1359c048f0c15092f20",
+  "command": null,
+  "mineru_output_preserved": false,
+  "warnings": [
+    "non-PDF source conversion"
+  ]
+}

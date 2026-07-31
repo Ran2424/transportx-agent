@@ -1,0 +1,458 @@
+schema_version: "1.0.0"
+documents:
+  - doc_id: PROJECT-AGENT-CHALLENGE-20260622
+    class: PROJECT_DATA
+    subtype: project_requirement
+    title: 重大活动交通态势洞察及辅助决策智能体集群揭榜题目
+    issuer: 上海市交通指挥中心项目组
+    status: effective
+    binding_force: internal
+    primary: knowledge/00_项目资料/20260622智能体揭榜挂帅题目-重大活动交通态势洞察及辅助决策智能体集群.pdf
+
+  - doc_id: PROJECT-METRIC-DEFINITIONS
+    class: PROJECT_DATA
+    subtype: metric_definition
+    title: 指标口径
+    issuer: 上海市交通指挥中心项目组
+    status: effective
+    binding_force: internal
+    primary: knowledge/00_项目资料/指标口径.md
+
+  - doc_id: PROJECT-DATA-GOVERNANCE
+    class: PROJECT_DATA
+    subtype: data_governance
+    title: 数据治理规则
+    issuer: 上海市交通指挥中心项目组
+    status: effective
+    binding_force: internal
+    primary: knowledge/00_项目资料/数据治理规则.md
+
+  - doc_id: PROJECT-DATA-ASSET-MODEL
+    class: PROJECT_DATA
+    subtype: data_model
+    title: 数据资产模型
+    issuer: 上海市交通指挥中心项目组
+    status: effective
+    binding_force: internal
+    primary: knowledge/00_项目资料/数据资产模型.md
+
+  - doc_id: PROJECT-TRAFFIC-DATA-INVENTORY
+    class: PROJECT_DATA
+    subtype: project_report
+    title: 重大活动交通态势数据梳理报告
+    issuer: 上海市交通指挥中心项目组
+    status: effective
+    binding_force: internal
+    primary: knowledge/00_项目资料/重大活动交通态势数据梳理报告.md
+
+  - doc_id: CN-EMERGENCY-RESPONSE-LAW-2024
+    class: LEGAL_GOVERNANCE
+    subtype: national_law
+    title: 中华人民共和国突发事件应对法
+    official_number: 2024修订
+    jurisdiction: CN
+    issuer: 全国人民代表大会常务委员会
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/01_法律法规/中华人民共和国突发事件应对法_2024修订.pdf
+
+  - doc_id: CN-ROAD-TRAFFIC-SAFETY-LAW-2021
+    class: LEGAL_GOVERNANCE
+    subtype: national_law
+    title: 中华人民共和国道路交通安全法
+    official_number: 2021修订
+    jurisdiction: CN
+    issuer: 全国人民代表大会常务委员会
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/01_法律法规/中华人民共和国道路交通安全法_2021修订_官方网页.html
+
+  - doc_id: CN-URBAN-PUBLIC-TRANSPORT-REG-793
+    class: LEGAL_GOVERNANCE
+    subtype: administrative_regulation
+    title: 城市公共交通条例
+    official_number: 国务院令第793号
+    jurisdiction: CN
+    issuer: 国务院
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/01_法律法规/城市公共交通条例_国务院令793号.pdf
+    alternates:
+      - knowledge/01_法律法规/城市公共交通条例_国务院令793号_官方网页.html
+
+  - doc_id: CN-LARGE-MASS-EVENT-SAFETY-REG-505
+    class: LEGAL_GOVERNANCE
+    subtype: administrative_regulation
+    title: 大型群众性活动安全管理条例
+    official_number: 国务院令第505号
+    jurisdiction: CN
+    issuer: 国务院
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/01_法律法规/大型群众性活动安全管理条例_国务院令505号.pdf
+
+  - doc_id: CN-EMERGENCY-PLAN-MANAGEMENT-2024
+    class: LEGAL_GOVERNANCE
+    subtype: administrative_normative_document
+    title: 突发事件应急预案管理办法
+    official_number: 国办发〔2024〕5号
+    jurisdiction: CN
+    issuer: 国务院办公厅
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/01_法律法规/突发事件应急预案管理办法_国办发2024_5号_官方网页.html
+
+  - doc_id: SH-CROWD-GATHERING-SAFETY-MEASURES-29
+    class: LEGAL_GOVERNANCE
+    subtype: local_government_rule
+    title: 上海市公共场所人群聚集安全管理办法
+    official_number: 上海市人民政府令第29号
+    jurisdiction: CN-SH
+    issuer: 上海市人民政府
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/02_上海规范/上海市公共场所人群聚集安全管理办法_沪府令29号.pdf
+
+  - doc_id: SH-EMERGENCY-PLAN-MANAGEMENT-2025
+    class: LEGAL_GOVERNANCE
+    subtype: local_normative_document
+    title: 上海市突发事件应急预案管理实施办法
+    official_number: 沪府办发〔2025〕2号
+    jurisdiction: CN-SH
+    issuer: 上海市人民政府办公厅
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/02_上海规范/上海市突发事件应急预案管理实施办法_沪府办发2025_2号.pdf
+
+  - doc_id: SH-PUBLIC-CROWD-ACTIVITY-SAFETY-2019
+    class: LEGAL_GOVERNANCE
+    subtype: local_normative_document
+    title: 关于加强公共场所人群聚集活动安全管理的若干规定
+    official_number: 沪公行规〔2019〕7号
+    jurisdiction: CN-SH
+    issuer: 上海市公安局
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/02_上海规范/关于加强公共场所人群聚集活动安全管理的若干规定_沪公行规2019_7号.html
+
+  - doc_id: SH-PUBLIC-CROWD-ACTIVITY-SAFETY-EXTENSION-2025
+    class: LEGAL_GOVERNANCE
+    subtype: validity_extension_notice
+    title: 延长人群聚集活动安全管理规定有效期的通知
+    official_number: 沪公行规〔2025〕1号
+    jurisdiction: CN-SH
+    issuer: 上海市公安局
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/02_上海规范/延长人群聚集活动安全管理规定有效期_沪公行规2025_1号.html
+
+  - doc_id: SH-RIDE-HAILING-RULES-2024
+    class: LEGAL_GOVERNANCE
+    subtype: local_government_rule
+    title: 上海市网络预约出租汽车经营服务管理若干规定
+    official_number: 2024修正
+    jurisdiction: CN-SH
+    issuer: 上海市人民政府
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/03_交通行业/上海市网络预约出租汽车经营服务管理若干规定_2024修正.pdf
+    alternates:
+      - knowledge/03_交通行业/上海市网络预约出租汽车经营服务管理若干规定_2024修正.html
+      - knowledge/03_交通行业/上海市网络预约出租汽车经营服务管理若干规定_2024修正.docx
+
+  - doc_id: SH-RAIL-TRANSIT-SAFETY-MEASURES-2022
+    class: LEGAL_GOVERNANCE
+    subtype: local_government_rule
+    title: 上海市轨道交通运营安全管理办法
+    official_number: 2022修正
+    jurisdiction: CN-SH
+    issuer: 上海市人民政府
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/03_交通行业/上海市轨道交通运营安全管理办法_2022修正.pdf
+
+  - doc_id: SH-RAIL-TRANSIT-SERVICE-RULES-2025
+    class: LEGAL_GOVERNANCE
+    subtype: local_normative_document
+    title: 上海市轨道交通运营服务规范
+    official_number: 沪交行规〔2025〕1号
+    jurisdiction: CN-SH
+    issuer: 上海市交通委员会
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/03_交通行业/上海市轨道交通运营服务规范_沪交行规2025_1号.pdf
+    alternates:
+      - knowledge/03_交通行业/上海市轨道交通运营服务规范_沪交行规2025_1号.html
+
+  - doc_id: CN-URBAN-RAIL-PASSENGER-ORG-2025
+    class: LEGAL_GOVERNANCE
+    subtype: departmental_normative_document
+    title: 城市轨道交通客运组织与服务管理办法
+    official_number: 交运规〔2025〕3号
+    jurisdiction: CN
+    issuer: 交通运输部
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/03_交通行业/城市轨道交通客运组织与服务管理办法_交运规2025_3号.pdf
+
+  - doc_id: CN-URBAN-RAIL-DRILL-MANAGEMENT-2024
+    class: LEGAL_GOVERNANCE
+    subtype: departmental_normative_document
+    title: 城市轨道交通运营突发事件应急演练管理办法
+    official_number: 交运规〔2024〕5号
+    jurisdiction: CN
+    issuer: 交通运输部
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/03_交通行业/城市轨道交通运营突发事件应急演练管理办法_交运规2024_5号.pdf
+
+  - doc_id: CN-URBAN-RAIL-OPERATIONS-REG-2018
+    class: LEGAL_GOVERNANCE
+    subtype: departmental_rule
+    title: 城市轨道交通运营管理规定
+    official_number: 交通运输部令2018年第8号
+    jurisdiction: CN
+    issuer: 交通运输部
+    status: effective
+    binding_force: mandatory
+    primary: knowledge/03_交通行业/城市轨道交通运营管理规定_交通运输部令2018_8号.html
+
+  - doc_id: CN-NATIONAL-EMERGENCY-PLAN-2025
+    class: PLAN_PROCEDURE
+    subtype: national_overall_emergency_plan
+    title: 国家突发事件总体应急预案
+    official_number: 2025
+    jurisdiction: CN
+    issuer: 中共中央、国务院
+    status: effective
+    binding_force: guidance
+    primary: knowledge/01_法律法规/国家突发事件总体应急预案_2025_官方网页.html
+
+  - doc_id: SH-LARGE-PASSENGER-FLOW-PLAN-2022
+    class: PLAN_PROCEDURE
+    subtype: transport_emergency_plan
+    title: 上海轨交公交及非重大活动突发大客流交通应急预案
+    official_number: 2022修订版
+    jurisdiction: CN-SH
+    issuer: 上海市交通主管部门
+    status: effective
+    binding_force: guidance
+    primary: knowledge/03_交通行业/上海轨交公交及非重大活动突发大客流交通应急预案_2022修订版.pdf
+
+  - doc_id: GBT33170.1-2016
+    series_id: GBT33170.1
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 大型活动安全要求 第1部分：安全评估
+    official_number: GB/T 33170.1-2016
+    jurisdiction: CN
+    issuer: 国家质量监督检验检疫总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT33170.1-2016_大型活动安全要求_第1部分_安全评估.pdf
+    structured: knowledge/04_国家标准/GBT33170.1-2016_大型活动安全要求_第1部分_安全评估_结构化.md
+    page_text: knowledge/04_国家标准/GBT33170.1-2016_大型活动安全要求_第1部分_安全评估_检索文本.md
+    metadata: knowledge/04_国家标准/GBT33170.1-2016_大型活动安全要求_安全评估_官方元数据.html
+
+  - doc_id: GBT33170.2-2016
+    series_id: GBT33170.2
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 大型活动安全要求 第2部分：人员管控
+    official_number: GB/T 33170.2-2016
+    jurisdiction: CN
+    issuer: 国家质量监督检验检疫总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT33170.2-2016_大型活动安全要求_第2部分_人员管控.pdf
+    structured: knowledge/04_国家标准/GBT33170.2-2016_大型活动安全要求_第2部分_人员管控_结构化.md
+    page_text: knowledge/04_国家标准/GBT33170.2-2016_大型活动安全要求_第2部分_人员管控_检索文本.md
+    metadata: knowledge/04_国家标准/GBT33170.2-2016_大型活动安全要求_人员管控_官方元数据.html
+
+  - doc_id: GBT33170.3-2016
+    series_id: GBT33170.3
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 大型活动安全要求 第3部分：场地布局和安全导向标识
+    official_number: GB/T 33170.3-2016
+    jurisdiction: CN
+    issuer: 国家质量监督检验检疫总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT33170.3-2016_大型活动安全要求_第3部分_场地布局和安全导向标识.pdf
+    structured: knowledge/04_国家标准/GBT33170.3-2016_大型活动安全要求_第3部分_场地布局和安全导向标识_结构化.md
+    page_text: knowledge/04_国家标准/GBT33170.3-2016_大型活动安全要求_第3部分_场地布局和安全导向标识_检索文本.md
+    metadata: knowledge/04_国家标准/GBT33170.3-2016_大型活动安全要求_场地布局_官方元数据.html
+
+  - doc_id: GBT33170.4-2016
+    series_id: GBT33170.4
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 大型活动安全要求 第4部分：临建设施指南
+    official_number: GB/T 33170.4-2016
+    jurisdiction: CN
+    issuer: 国家质量监督检验检疫总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT33170.4-2016_大型活动安全要求_第4部分_临建设施指南.pdf
+    structured: knowledge/04_国家标准/GBT33170.4-2016_大型活动安全要求_第4部分_临建设施指南_结构化.md
+    page_text: knowledge/04_国家标准/GBT33170.4-2016_大型活动安全要求_第4部分_临建设施指南_检索文本.md
+    metadata: knowledge/04_国家标准/GBT33170.4-2016_大型活动安全要求_临建设施_官方元数据.html
+
+  - doc_id: GBT33170.5-2016
+    series_id: GBT33170.5
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 大型活动安全要求 第5部分：安保资源配置
+    official_number: GB/T 33170.5-2016
+    jurisdiction: CN
+    issuer: 国家质量监督检验检疫总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT33170.5-2016_大型活动安全要求_第5部分_安保资源配置.pdf
+    structured: knowledge/04_国家标准/GBT33170.5-2016_大型活动安全要求_第5部分_安保资源配置_结构化.md
+    page_text: knowledge/04_国家标准/GBT33170.5-2016_大型活动安全要求_第5部分_安保资源配置_检索文本.md
+    metadata: knowledge/04_国家标准/GBT33170.5-2016_大型活动安全要求_安保资源_官方元数据.html
+
+  - doc_id: GBT37228-2025
+    series_id: GBT37228
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 安全与韧性 应急管理 突发事件管理指南
+    official_number: GB/T 37228-2025
+    jurisdiction: CN
+    issuer: 国家市场监督管理总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT37228-2025_安全与韧性_应急管理_突发事件管理指南.pdf
+    structured: knowledge/04_国家标准/GBT37228-2025_安全与韧性_应急管理_突发事件管理指南_结构化.md
+    page_text: knowledge/04_国家标准/GBT37228-2025_安全与韧性_应急管理_突发事件管理指南_检索文本.md
+    metadata: knowledge/04_国家标准/GBT37228-2025_安全与韧性应急管理突发事件管理指南_官方元数据.html
+
+  - doc_id: GBT46791-2025
+    series_id: GBT46791
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 应急预案情景构建方法
+    official_number: GB/T 46791-2025
+    jurisdiction: CN
+    issuer: 国家市场监督管理总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT46791-2025_应急预案情景构建方法.pdf
+    structured: knowledge/04_国家标准/GBT46791-2025_应急预案情景构建方法_结构化.md
+    page_text: knowledge/04_国家标准/GBT46791-2025_应急预案情景构建方法_检索文本.md
+    metadata: knowledge/04_国家标准/GBT46791-2025_应急预案情景构建方法_官方元数据.html
+
+  - doc_id: GBT46793.1-2025
+    series_id: GBT46793.1
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 突发事件应急预案编制导则 第1部分：通则
+    official_number: GB/T 46793.1-2025
+    jurisdiction: CN
+    issuer: 国家市场监督管理总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT46793.1-2025_突发事件应急预案编制导则_第1部分_通则.pdf
+    structured: knowledge/04_国家标准/GBT46793.1-2025_突发事件应急预案编制导则_第1部分_通则_结构化.md
+    page_text: knowledge/04_国家标准/GBT46793.1-2025_突发事件应急预案编制导则_第1部分_通则_检索文本.md
+    metadata: knowledge/04_国家标准/GBT46793.1-2025_突发事件应急预案编制导则_官方元数据.html
+
+  - doc_id: GBT46793.2-2025
+    series_id: GBT46793.2
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 突发事件应急预案编制导则 第2部分：乡镇（街道）
+    official_number: GB/T 46793.2-2025
+    jurisdiction: CN
+    issuer: 国家市场监督管理总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT46793.2-2025_突发事件应急预案编制导则_第2部分_乡镇街道.pdf
+    structured: knowledge/04_国家标准/GBT46793.2-2025_突发事件应急预案编制导则_第2部分_乡镇街道_结构化.md
+    page_text: knowledge/04_国家标准/GBT46793.2-2025_突发事件应急预案编制导则_第2部分_乡镇街道_检索文本.md
+
+  - doc_id: GBT46793.3-2025
+    series_id: GBT46793.3
+    class: STANDARD_SPEC
+    subtype: national_recommended_standard
+    title: 突发事件应急预案编制导则 第3部分：村（社区）
+    official_number: GB/T 46793.3-2025
+    jurisdiction: CN
+    issuer: 国家市场监督管理总局、国家标准化管理委员会
+    status: effective
+    binding_force: recommended
+    primary: knowledge/04_国家标准/GBT46793.3-2025_突发事件应急预案编制导则_第3部分_村社区.pdf
+    structured: knowledge/04_国家标准/GBT46793.3-2025_突发事件应急预案编制导则_第3部分_村社区_结构化.md
+    page_text: knowledge/04_国家标准/GBT46793.3-2025_突发事件应急预案编制导则_第3部分_村社区_检索文本.md
+
+  - doc_id: SH-CASE-CIIE-2024
+    class: CASE_PRACTICE
+    subtype: event_transport_case
+    title: 2024进博会多模式交通保障案例
+    jurisdiction: CN-SH
+    issuer: 上海市人民政府门户网站、解放日报
+    status: effective
+    binding_force: experience
+    primary: knowledge/05_案例/2024进博会多模式交通保障案例.html
+
+  - doc_id: SH-CASE-STADIUM-CONCERT-PR-2025
+    class: CASE_PRACTICE
+    subtype: event_transport_case
+    title: 2025上海体育场演唱会入散场及P+R交通指南
+    jurisdiction: CN-SH
+    issuer: 上海市人民政府门户网站、徐汇区人民政府
+    status: effective
+    binding_force: experience
+    primary: knowledge/05_案例/2025上海体育场演唱会入散场及PR交通指南.html
+
+  - doc_id: SH-CASE-TOURISM-FESTIVAL-PARADE-2025
+    class: CASE_PRACTICE
+    subtype: event_traffic_control_case
+    title: 2025上海旅游节大巡游交通管制案例
+    jurisdiction: CN-SH
+    issuer: 上海市公安局
+    status: effective
+    binding_force: experience
+    primary: knowledge/05_案例/2025上海旅游节大巡游交通管制案例.html
+
+  - doc_id: SH-CASE-TFBOYS-STADIUM-2025
+    class: CASE_PRACTICE
+    subtype: event_security_transport_case
+    title: 2025时代少年团上海体育场演唱会安保交通保障案例
+    jurisdiction: CN-SH
+    issuer: 上海市公安局
+    status: effective
+    binding_force: experience
+    primary: knowledge/05_案例/2025时代少年团上海体育场演唱会安保交通保障案例.html
+
+  - doc_id: SH-CASE-F1-2026
+    class: CASE_PRACTICE
+    subtype: event_transport_case
+    title: 2026F1上海大奖赛交通组织案例
+    jurisdiction: CN-SH
+    issuer: 上海市人民政府门户网站、上海市公安局
+    status: effective
+    binding_force: experience
+    primary: knowledge/05_案例/2026F1上海大奖赛交通组织案例.html
+
+  - doc_id: FHWA-PSE-HANDBOOK-2004
+    class: METHOD_RESEARCH
+    subtype: international_method_handbook
+    title: Managing Travel for Planned Special Events Handbook
+    official_number: FHWA-OP-04-010
+    language: en-US
+    jurisdiction: US
+    issuer: Federal Highway Administration
+    status: effective
+    binding_force: guidance
+    primary: knowledge/06_方法指南/FHWA_Managing_Travel_for_Planned_Special_Events_Handbook.pdf
+    alternates:
+      - knowledge/06_方法指南/FHWA手册目录与案例索引.html
+      - knowledge/06_方法指南/FHWA计划性大型活动交通管理计划_第6章.pdf
+      - knowledge/06_方法指南/FHWA计划性大型活动交通管理计划_第6章1.html
+      - knowledge/06_方法指南/FHWA计划性大型活动交通管理计划_第6章2.html
+      - knowledge/06_方法指南/FHWA计划性大型活动交通运营规划_第5章.html
+      - knowledge/06_方法指南/FHWA计划性大型活动实施与演练_第8章.html
+      - knowledge/06_方法指南/FHWA计划性大型活动实施与演练_第8章.pdf

@@ -1,0 +1,22 @@
+schema_version: 1.0.0
+doc_id: GBT46793.3-2025
+series_id: GBT46793.3
+document_class: STANDARD_SPEC
+document_subtype: national_recommended_standard
+title: 突发事件应急预案编制导则 第3部分：村（社区）
+official_number: GB/T 46793.3-2025
+language: zh-CN
+jurisdiction: CN
+issuer: 国家市场监督管理总局、国家标准化管理委员会
+publication_date: null
+effective_date: null
+expiry_date: null
+status: effective
+binding_force: recommended
+source_url: null
+retrieved_at: '2026-07-23'
+source_file: source/original.pdf
+source_sha256: d74cff1bd8f0b9d97fbafc1f97a5a1f65416e817641eeefa569a8b8f2a99b873
+pdf_page_count: 19
+supersedes: []
+superseded_by: []

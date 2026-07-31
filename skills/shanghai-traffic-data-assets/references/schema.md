@@ -123,6 +123,8 @@ event_count = source_event_count + venue_enriched_event_count
 | `road.fact_road_state_event` | 发布段—状态变化时刻 | 逢变更新 |
 | `road.mart_road_segment_hour` | 发布段—日期—小时 | 各状态精确持续秒数 |
 | `road.mart_road_segment_day` | 发布段—日期 | 日状态持续时间 |
+| `road.dim_evdata_road_segment` | 一个 EVDATA 路段 | `road_id`、WGS84 MultiLineString |
+| `road.fact_evdata_road_speed_15m` | EVDATA 路段—15分钟时刻 | `road_id`、`date_key`、`minute_key` |
 
 ## Catalog
 
@@ -147,3 +149,4 @@ event_count = source_event_count + venue_enriched_event_count
 - 公交客流只用官方 `line_key`。
 - 空间连接前两侧都必须满足 `crs='EPSG:4326'`。
 - 跨领域同日并列比较时保留各自单位，不把人次、交易、事件和订单相加。
+- EVDATA 使用独立 `road_id`；未建立权威映射前，不与原状态数据的 `segment_key`/`segment_id` 连接。

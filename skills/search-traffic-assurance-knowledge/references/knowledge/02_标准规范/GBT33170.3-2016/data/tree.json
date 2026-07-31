@@ -1,0 +1,993 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "GBT33170.3-2016",
+  "derived": true,
+  "root": {
+    "node_id": "GBT33170.3-2016@document",
+    "number": null,
+    "title": "大型活动安全要求 第3部分：场地布局和安全导向标识",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [],
+    "children": [
+      {
+        "node_id": "GBT33170.3-2016@sec-0001",
+        "number": null,
+        "title": "GB/T 33170.3-2016 大型活动安全要求 第3部分：场地布局和安全导向标识",
+        "node_type": "clause",
+        "page_span": null,
+        "summary": "> 本文由同名PDF及检索文本结构化整理而成，已删除页码、目录页和重复页眉页脚。OCR文本可能存在识别误差，正式引用请以PDF原文为准。",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "GBT33170.3-2016@1",
+            "number": "1",
+            "title": "1 范围",
+            "node_type": "chapter",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "GB/T 33170 的本部分规定了保障大型活动安全在场地布局和安全导向标识方面的基本要求，以及场地的选择和安全导向标识的设置要求。本部分适用于大型活动场地布局设计和安全导向标识设置。",
+            "tags": [],
+            "children": []
+          },
+          {
+            "node_id": "GBT33170.3-2016@2",
+            "number": "2",
+            "title": "2 规范性引用文件",
+            "node_type": "chapter",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "下列文件对于本文件的应用是必不可少的。凡是注日期的引用文件，仅注日期的版本适用于本文件。凡是不注日期的引用文件，其最新版本（包括所有的修改单）适用于本文件。\n\n- GB/T 2893.1 图形符号安全色和安全标志第1部分：安全标志和安全标记的设计原则\n- GB 2894 安全标志及其使用导则\n- GB/T 10001.",
+            "tags": [
+              "火灾"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "GBT33170.3-2016@3",
+            "number": "3",
+            "title": "3 术语和定义",
+            "node_type": "chapter",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "GB/T 33170.1—2016 界定的以及下列术语和定义适用于本文件。",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT33170.3-2016@3.1",
+                "number": "3.1",
+                "title": "3.1 场地布局 field layout",
+                "node_type": "clause",
+                "page_span": [
+                  4,
+                  4
+                ],
+                "summary": "大型活动场地的空间分布，主要表现为从安全角度考虑，场地及所处的周边环境之间的协调关系，以及场地内部功能分区、设备设施空间布置及出入通道的情况。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.2",
+                "number": "3.2",
+                "title": "3.2 周边环境 surrounding environment",
+                "node_type": "clause",
+                "page_span": [
+                  4,
+                  4
+                ],
+                "summary": "大型活动场地周边能够直接影响到活动安全的环境条件，包括自然条件、建筑设施、社会状况等。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.3",
+                "number": "3.3",
+                "title": "3.3 安全容量 safety capacity",
+                "node_type": "clause",
+                "page_span": [
+                  4,
+                  4
+                ],
+                "summary": "通过安全性能分析得到的保证大型活动人员安全、活动有序进行、场地设备设施正常运转所能容纳的人员数量。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.4",
+                "number": "3.4",
+                "title": "3.4 功能分区 functional zone",
+                "node_type": "clause",
+                "page_span": [
+                  4,
+                  4
+                ],
+                "summary": "确定场地或建筑内部各个组成部分的相互关系和相互位置。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.5",
+                "number": "3.5",
+                "title": "3.5 出入通道 entrance and exit",
+                "node_type": "clause",
+                "page_span": [
+                  4,
+                  4
+                ],
+                "summary": "供人员，车辆进出场地的通行线路。",
+                "tags": [
+                  "交通组织"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.6",
+                "number": "3.6",
+                "title": "3.6 场地提供单位 organizations of site provision",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": "为活动开展、设施搭建提供场地的组织或机构。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.7",
+                "number": "3.7",
+                "title": "3.7 安全导向标识",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": ". safety guidance signs由各种图形、文字或符号组成的，为人员和车辆安全引导和紧急疏散撤离危险区域提供导向信息的静态或动态的标识。",
+                "tags": [
+                  "人群管控"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.8",
+                "number": "3.8",
+                "title": "3.8 识别性标识 identifying signs",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": "通过文字、符号、图像或照片等可识别的元素来表示对象物本身的标识，也称为名称标识，能提供使用者对特定目标的辨识及认知。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.9",
+                "number": "3.9",
+                "title": "3.9 引导性标识 leading signs",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": "引导人员至特定目标或方向的标识，大多数以线条、线标、箭头指示方式呈现，对环境中的目标进行序列性连续性引导。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.10",
+                "number": "3.10",
+                "title": "3.10 方位性标识 locating Signs",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": "将大型活动区域内各目标的相对关系，整体状况及相关设施以平面图或地图呈现的标识。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.11",
+                "number": "3.11",
+                "title": "3.11 说明性标识 illustrative signs",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": "说明对象的内容、操作方法、相关规范、活动内容及事项预告的标识，如布告栏、说明牌、目录、节目单、时刻表等。",
+                "tags": [],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@3.12",
+                "number": "3.12",
+                "title": "3.12 管制性标识 warning signs",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": "为保障安全而用以提醒、警告、禁止某种行为的标识。\n\n> 注：管制性标识根据程度不同可分为提醒标识、警告标识、禁止标识。",
+                "tags": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "GBT33170.3-2016@4",
+            "number": "4",
+            "title": "4 基本要求",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT33170.3-2016@4.1",
+                "number": "4.1",
+                "title": "4.1 场地选择基本要求",
+                "node_type": "clause",
+                "page_span": [
+                  5,
+                  5
+                ],
+                "summary": "大型活动场地首先应符合场地本身应具备的安全要求，根据活动的需要，因地制宜地进行布局，应符合消防、交通、建筑、卫生、用电、地质、安全生产、安全防范、园林绿化、特种设备等有关方面的规定要求，为活动参与人员提供安全和舒适的环境，活动工作管理人员提供方便有效的工作环垸。必要时应进行专门的安全评估。场地选择应考虑的环境条件包括：",
+                "tags": [
+                  "交通组织",
+                  "停车场",
+                  "停车管理",
+                  "应急管理",
+                  "恶劣天气",
+                  "活动承办方",
+                  "火灾",
+                  "道路交通"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@4.2",
+                "number": "4.2",
+                "title": "4.2 场地布局基本要求",
+                "node_type": "clause",
+                "page_span": [
+                  6,
+                  6
+                ],
+                "summary": "大型活动场地布局应：\n\n- **a)** 适合大型活动的特点和使用要求；\n- **b)** 充分考虑活动的规模大小，应有足够的通行能力和避免大规模人群聚集的缓冲空间；\n- **c)** 突发事件情况下满足人群尽快离开场地的应急疏散能力；\n- **d)** 便于利用已有的基础设施和安全设备；\n- **e)** 与有毒有害",
+                "tags": [
+                  "交通组织",
+                  "人群拥挤",
+                  "人群管控",
+                  "应急管理"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "GBT33170.3-2016@4.3",
+                "number": "4.3",
+                "title": "4.3 安全导向标识基本要求",
+                "node_type": "clause",
+                "page_span": [
+                  6,
+                  6
+                ],
+                "summary": "安全导向标识要实现对安全信息的有效传达、危险的明确警示、对人流合理引导和对人群紧急疏散的功能。标识的内容应简单明了，确保准确、快速理解标识的含义。大型活动承办者和场所管理者应在现场安全疏散通道、防车通道、安全出入口、楼梯口设置明显的标志、标识，标明疏散方向，并保证场地建筑设施、消防设施、照明设施、电视监控和广播系统等应",
+                "tags": [
+                  "人群管控",
+                  "信息发布",
+                  "入场",
+                  "应急管理",
+                  "活动承办方",
+                  "活动期间",
+                  "火灾",
+                  "集散通道"
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "GBT33170.3-2016@5",
+            "number": "5",
+            "title": "5 场地布局安全因素",
+            "node_type": "chapter",
+            "page_span": [
+              2,
+              6
+            ],
+            "summary": "",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT33170.3-2016@5.1",
+                "number": "5.1",
+                "title": "5.1 场地条件",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.1",
+                    "number": "5.1.1",
+                    "title": "5.1.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "活动举办前场地提供单位应向承办者提供场所人员核定容量、安全通道、出人口以及供电系统等涉及活动场地使用的资料、数据、证明。",
+                    "tags": [
+                      "数据治理",
+                      "活动承办方"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.2",
+                    "number": "5.1.2",
+                    "title": "5.1.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "承办者应明确场地的最大容量和安全容量，并在活动期间经常监测活动达到的规模，包括人员日流量、总流量、瞬时最大人数、持续时间等。承办者可委托专业机构进行估计和监测工作。",
+                    "tags": [
+                      "活动承办方",
+                      "活动期间"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.3",
+                    "number": "5.1.3",
+                    "title": "5.1.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "需要采取安检措施的活动场地，应设置围挡周界封闭。其他可视活动类型和周边环境情况，对开放场所设围挡或采取可以达到封闭效果的措施。",
+                    "tags": [
+                      "安全检查"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.4",
+                    "number": "5.1.4",
+                    "title": "5.1.4",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "场地夜间条件照明应满足安全要求。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.5",
+                    "number": "5.1.5",
+                    "title": "5.1.5",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "活动场地应满足建筑结构、阻燃性能、通风条件的基本要求。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.6",
+                    "number": "5.1.6",
+                    "title": "5.1.6",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "活动场地内桥梁、涵洞、水域、冰面、楼梯、坡道、急转弯、狭窄过道以及其他易发生拥堵或意外的区域应明确标识。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.7",
+                    "number": "5.1.7",
+                    "title": "5.1.7",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "场地通道宜设置人车分流，满足应急救援和人群疏散的需要。",
+                    "tags": [
+                      "人群管控",
+                      "应急管理"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.1.8",
+                    "number": "5.1.8",
+                    "title": "5.1.8",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "出入口及排队等候、检票、安检等区域应在条件允许的情况下设置缓冲带，并与外部交通工具应有良好的衔接。",
+                    "tags": [
+                      "入场",
+                      "安全检查",
+                      "集散通道"
+                    ],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT33170.3-2016@5.2",
+                "number": "5.2",
+                "title": "5.2 功能分区",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT33170.3-2016@5.2.1",
+                    "number": "5.2.1",
+                    "title": "5.2.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "活动应明确划分主要活动区域、集中休息区、缓冲区、记者区等主要功能分区。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.2.2",
+                    "number": "5.2.2",
+                    "title": "5.2.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "必要危险物品的使用、存储的区域应专门分隔设置，并设警示标志，采取临时安全防范措施。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.2.3",
+                    "number": "5.2.3",
+                    "title": "5.2.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      6,
+                      6
+                    ],
+                    "summary": "活动场地应设置专门的监控室、急救点、应急指挥中心等区域。",
+                    "tags": [
+                      "应急管理"
+                    ],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT33170.3-2016@5.3",
+                "number": "5.3",
+                "title": "5.3 设备设施的布置",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT33170.3-2016@5.3.1",
+                    "number": "5.3.1",
+                    "title": "5.3.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "场地提供单位应保证设备、器材性能良好，按照规定位置放置，重要的设备设施有明显标识。设备设施的摆放能够保证活动场地通道安全畅通。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.3.2",
+                    "number": "5.3.2",
+                    "title": "5.3.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "场地内的电梯、游艺设施等特种设备应符合安全规定的要求。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.3.3",
+                    "number": "5.3.3",
+                    "title": "5.3.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "护栏、隔离带、围墙应可根据人群流量的变化进行动态调整。",
+                    "tags": [
+                      "人群管控"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.3.4",
+                    "number": "5.3.4",
+                    "title": "5.3.4",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "电气设备、消防设备和其他应急设备应避免设置在人群通道中间。",
+                    "tags": [
+                      "人群管控",
+                      "应急管理",
+                      "火灾"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.3.5",
+                    "number": "5.3.5",
+                    "title": "5.3.5",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "假山、雕塑、广告牌、大型绿植、悬挂物、拱门等临时设施不应阻碍现场观众的视线。",
+                    "tags": [
+                      "活动期间"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.3.6",
+                    "number": "5.3.6",
+                    "title": "5.3.6",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "活动场地内的供电、供水、燃气、供热、通信等基础设施如需专门设置，应设置在专门的区域内，并有专人定期检查和监测。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@5.3.7",
+                    "number": "5.3.7",
+                    "title": "5.3.7",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "场地提供单位应根据大型活动情况制定供电方案，并对所提供的电源的安全负责。",
+                    "tags": [],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT33170.3-2016@6",
+            "number": "6",
+            "title": "6 安全导向标识的设置",
+            "node_type": "chapter",
+            "page_span": [
+              2,
+              7
+            ],
+            "summary": "",
+            "tags": [],
+            "children": [
+              {
+                "node_id": "GBT33170.3-2016@6.1",
+                "number": "6.1",
+                "title": "6.1 要素",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT33170.3-2016@6.1.1",
+                    "number": "6.1.1",
+                    "title": "6.1.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "安全导向标识的文字应紧邻所注释的图形、符号、标线。识别性标识、引导性标识、管制性标识的文字不宜在图形符号的上方，衬底色和文字的对比应明显。方位性标识的文字应紧邻标识物，或通过指示线明确指向标识物。根据活动对象的需求，文字应适当增加双语或是多种语言形式。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.1.2",
+                    "number": "6.1.2",
+                    "title": "6.1.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "安全导向标识应符合 GB/T 2893.1、GB 2894 和GB 13495中关于安全出口图形标识和箭头的要求。图形优先选用 GB/T 10001.1中的图形符号或图形标志，标准图形符号在使用时尺寸应等比例放大或缩小。识别性标识、引导性标识、说明性标识的图形符号应与同一环境中的管制性标识有明显区分。引导性标识应明确箭",
+                    "tags": [
+                      "人群管控"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.1.3",
+                    "number": "6.1.3",
+                    "title": "6.1.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "所有安全导向标识的颜色、形状和图形符号应符合 GB/T 2893.1 和 GB 2894的要求。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.1.4",
+                    "number": "6.1.4",
+                    "title": "6.1.4",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "大型活动区域内新设的安全导向标识，材料应轻便，易于搬拆，对人体无害、无毒、无辐射、可回收利用、防尘防菌、耐热、阻燃。",
+                    "tags": [],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT33170.3-2016@6.2",
+                "number": "6.2",
+                "title": "6.2 位置",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.1",
+                    "number": "6.2.1",
+                    "title": "6.2.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "标识应设在与安全有关的醒目地方，并使人员有足够的时间来注意其所表示的内容。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.2",
+                    "number": "6.2.2",
+                    "title": "6.2.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "在大型活动场所的入口处，应设置反映场所整体布局平面图或地图的方位性标识。",
+                    "tags": [
+                      "入场"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.3",
+                    "number": "6.2.3",
+                    "title": "6.2.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "在方向发生变化、疏散路线上的门以及向建筑物上一层疏散的位置，应选择恰当的引导性和方位性标识。",
+                    "tags": [
+                      "人群管控"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.4",
+                    "number": "6.2.4",
+                    "title": "6.2.4",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "危险区域、重要设施、易倒易碎设备上应安装识别性标识和安全警示或禁止标识。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.5",
+                    "number": "6.2.5",
+                    "title": "6.2.5",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "应急设施上可安装说明性标识，如在消防栓旁边安装使用说明性标识。",
+                    "tags": [
+                      "应急管理",
+                      "火灾"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.6",
+                    "number": "6.2.6",
+                    "title": "6.2.6",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "在有危险可能发生的地方，应设置管制性标识，提示危险的存在，警告或是限制人们靠近。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.7",
+                    "number": "6.2.7",
+                    "title": "6.2.7",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "在人流密集型的大型活动场所，宜在使用率高的入口处设置人流量的动态信息标识，告知参加活动的群众当前的人流量。临时通知通告，应在人群通行集中的位置设置临时的动态信息标识，及时把信息传递给公众。",
+                    "tags": [
+                      "交通组织",
+                      "人群管控",
+                      "入场"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.2.9",
+                    "number": "6.2.9",
+                    "title": "6.2.9",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "安全导向标识应按照需要间隔重复设置，设置数量应保证信息的一致性和连续性。",
+                    "tags": [],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT33170.3-2016@6.3",
+                "number": "6.3",
+                "title": "6.3 方式",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT33170.3-2016@6.3.1",
+                    "number": "6.3.1",
+                    "title": "6.3.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      7,
+                      7
+                    ],
+                    "summary": "安全导向标识设置方式分为固定式，移动式和动态更新式。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.3.2",
+                    "number": "6.3.2",
+                    "title": "6.3.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "固定式安全导向标识应尽量利用场所本身固有设施；如采用临时搭建设施，应确保其装置本身牢固并具有一定的稳定性。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.3.3",
+                    "number": "6.3.3",
+                    "title": "6.3.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "移动式安全导向标识的内容活动期间的临时性内容，其标识应易于根据需要移动位置，便于堆放。",
+                    "tags": [
+                      "活动期间"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.3.4",
+                    "number": "6.3.4",
+                    "title": "6.3.4",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "动态更新式安全导向标识的内容为活动期间动态发生变化、需实时更新的信息，宜采用张贴、翻页或电子滚动等形式。",
+                    "tags": [
+                      "活动期间"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.3.5",
+                    "number": "6.3.5",
+                    "title": "6.3.5",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "动态更新式安全导向标识应实时反映大型活动场所的现状，包括重要通知、通告等，如及时告诉参与人员参加某项活动需要等待多久的时间。",
+                    "tags": [],
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "node_id": "GBT33170.3-2016@6.4",
+                "number": "6.4",
+                "title": "6.4 设置的具体要求",
+                "node_type": "clause",
+                "page_span": null,
+                "summary": "",
+                "tags": [],
+                "children": [
+                  {
+                    "node_id": "GBT33170.3-2016@6.4.1",
+                    "number": "6.4.1",
+                    "title": "6.4.1",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "安全导向标识应避免提供多条可选路线，以免活动时给人员造成不确定性，应提前指出狭窄过道、坡道，桥梁等易造成聚集的路段，宜明确与各个目标地的距离。",
+                    "tags": [
+                      "人群拥挤"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.4.2",
+                    "number": "6.4.2",
+                    "title": "6.4.2",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "应在与危险物距离大于5 m 处设置管制性标识提示高压电气设备、压力容器、深水等危险物的位置和种类。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.4.3",
+                    "number": "6.4.3",
+                    "title": "6.4.3",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "应在不同权限活动区域边界距离大于 50m 处设置说明性标识或管制性标识提示权限等级。",
+                    "tags": [],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.4.4",
+                    "number": "6.4.4",
+                    "title": "6.4.4",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "用于紧急疏散的安全导向标识应提供一致、连续的信息，以便公众能从危险区域有序地疏散到集合区，应显示出疏散路线上的中途点（如安全出口、集合区、避难区）和最终目的地，并引导公众绕过障碍和凸起的地方。",
+                    "tags": [
+                      "人群管控"
+                    ],
+                    "children": []
+                  },
+                  {
+                    "node_id": "GBT33170.3-2016@6.4.5",
+                    "number": "6.4.5",
+                    "title": "6.4.5",
+                    "node_type": "clause",
+                    "page_span": [
+                      8,
+                      8
+                    ],
+                    "summary": "如根据行动不便人群的特需求专门设计了疏散路线，则应专门提供安全导向标识。如为有特殊需要的人专门提供的避难场所和设备，也应专门提供安全导向标识。",
+                    "tags": [
+                      "人群管控"
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "node_id": "GBT33170.3-2016@sec-0070",
+            "number": null,
+            "title": "参考文献",
+            "node_type": "clause",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "- **[1]** GB/T 15565.2—2008图形符号术语第2部分：标志及导向系统\n- **[2]**公共信息导向系统设置原则与要求第1部分：总则L3」公共信息导向系统设置原则与要求第2部分：民用机场\n- **[4]**GB/T 20501.1—2013 公共信息导向系统导向要素的设计原则与要求第1部分：总则L",
+            "tags": [
+              "应急管理",
+              "活动场馆",
+              "火灾",
+              "道路交通"
+            ],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

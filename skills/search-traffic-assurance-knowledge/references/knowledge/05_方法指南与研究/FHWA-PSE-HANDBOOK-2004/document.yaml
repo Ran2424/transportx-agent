@@ -1,0 +1,22 @@
+schema_version: 1.0.0
+doc_id: FHWA-PSE-HANDBOOK-2004
+series_id: FHWA-PSE-HANDBOOK-2004
+document_class: METHOD_RESEARCH
+document_subtype: international_method_handbook
+title: Managing Travel for Planned Special Events Handbook
+official_number: FHWA-OP-04-010
+language: en-US
+jurisdiction: US
+issuer: Federal Highway Administration
+publication_date: null
+effective_date: null
+expiry_date: null
+status: effective
+binding_force: guidance
+source_url: null
+retrieved_at: '2026-07-23'
+source_file: source/original.pdf
+source_sha256: dd6517b1f49fbbdc0b2d283dcef3744e929a070be1f8c59fdc3b1f67ba7e7ba3
+pdf_page_count: 448
+supersedes: []
+superseded_by: []

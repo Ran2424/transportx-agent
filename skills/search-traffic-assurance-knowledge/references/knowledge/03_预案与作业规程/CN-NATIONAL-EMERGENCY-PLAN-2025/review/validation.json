@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "CN-NATIONAL-EMERGENCY-PLAN-2025",
+  "source_sha256": "c46795e561e9a2f1766b5d035a3f043e6b7dfa586a0aa100bf46f6fb0ddd4943",
+  "validated_at": "2026-07-26T09:32:46+08:00",
+  "automatic_checks": {
+    "passed": 14,
+    "failed": 0,
+    "failures": []
+  },
+  "manual_samples": {
+    "planned": 3,
+    "checked": 3,
+    "failed": 0,
+    "method": "逐文档首末条、规范性条款、跨页/图表样本检查；PDF样本页视觉复核"
+  },
+  "status": "accepted",
+  "issues": [],
+  "reviewed_by": "Codex",
+  "reviewed_at": "2026-07-26T09:33:10+08:00",
+  "warnings": []
+}

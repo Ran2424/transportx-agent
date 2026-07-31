@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "SH-LARGE-PASSENGER-FLOW-PLAN-2022",
+  "source_sha256": "26a67484c71bab3871677b6586d2cdae5bbddcb06b51614f056ef4c0a1994e6e",
+  "validated_at": "2026-07-26T09:32:49+08:00",
+  "automatic_checks": {
+    "passed": 18,
+    "failed": 0,
+    "failures": []
+  },
+  "manual_samples": {
+    "planned": 5,
+    "checked": 5,
+    "failed": 0,
+    "method": "逐文档首末条、规范性条款、跨页/图表样本检查；PDF样本页视觉复核"
+  },
+  "status": "accepted",
+  "issues": [],
+  "reviewed_by": "Codex",
+  "reviewed_at": "2026-07-26T09:33:10+08:00",
+  "warnings": [
+    {
+      "code": "empty_source_units",
+      "details": [
+        82,
+        108
+      ],
+      "note": "空白、图片型或未提取文字的来源单元；已保留物理页记录。"
+    },
+    {
+      "code": "mineru_fallback",
+      "details": "pypdf_fallback",
+      "note": "MinerU认证不可用，采用已记录的降级解析；原件与哈希均已保留。"
+    }
+  ]
+}

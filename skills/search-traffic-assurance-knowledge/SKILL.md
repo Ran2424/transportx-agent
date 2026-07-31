@@ -11,7 +11,8 @@ description: Search and cite the local major-event traffic-assurance knowledge b
 
 - Python：`/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10`
 - 检索脚本：`/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/skills/search-traffic-assurance-knowledge/scripts/search_knowledge.py`
-- 默认知识库：脚本内置当前项目 `knowledge/` 的绝对路径；迁移后使用 `--knowledge-root`覆盖。
+- 默认知识库：随 Skill 分发的 `references/knowledge/`，脚本根据自身位置解析，不依赖项目外部绝对路径。
+- 替代知识库：仅在需要检索另一套同结构知识资产时使用 `--knowledge-root /absolute/path` 覆盖。
 
 先运行：
 
@@ -22,6 +23,8 @@ description: Search and cite the local major-event traffic-assurance knowledge b
 ```
 
 若目录不存在或没有`accepted`文档，停止并报告知识库位置或验收状态问题。
+
+知识资产包含原件、页级记录、层级树、知识卡、验收记录和全局目录。先按本文件流程通过检索脚本定位，不要递归读取整个 `references/knowledge/`；需要了解目录、入库规范或解析限制时，再分别读取 `references/knowledge/README.md`、`references/knowledge/SPEC.md` 或 `_catalog/INGESTION_REPORT.md`。
 
 ## 检索流程
 

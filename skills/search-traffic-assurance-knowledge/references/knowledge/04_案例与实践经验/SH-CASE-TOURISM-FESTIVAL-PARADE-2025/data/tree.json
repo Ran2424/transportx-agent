@@ -1,0 +1,118 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025",
+  "derived": true,
+  "root": {
+    "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@document",
+    "number": null,
+    "title": "2025上海旅游节大巡游交通管制案例",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [
+      "交通组织"
+    ],
+    "children": [
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0001",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "2025年上海旅游节大巡游活动定于9月13日在中山东一路（外滩）举行，为确保活动安全顺利举办，根据《中华人民共和国道路交通安全法》等有关规定，上海市公安局决定于9月12日和9月13日对本市相关道路采取临时交通管制措施。现公告如下：",
+        "tags": [
+          "交通组织",
+          "信息发布",
+          "道路交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0002",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "一、9月12日21时至9月13日2时，中山东一路（延安东路-南苏州路）、广东路（中山东一路-四川中路）、福州路（中山东一路-四川中路）、汉口路（中山东一路-四川中路）、九江路（中山东一路-四川中路）、滇池路（中山东一路-圆明园路）、北京东路（中山东一路-圆明园路）、南苏州路（中山东一路-江西中路）、虎丘路（北京东路-南",
+        "tags": [
+          "交通组织"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0003",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "二、9月12日23时至9月13日2时，北京东路（河南中路-圆明园路）、四川中路（北京东路-南苏州路）、外白渡桥、乍浦路桥、四川路桥禁止车辆通行。",
+        "tags": [
+          "交通组织"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0004",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "三、9月13日17时至22时，中山东一路（延安东路-南苏州路）、中山东二路（延安东路-东门路）南向北、延安东路（河南中路-中山东一路）、广东路（中山东一路-河南中路）、福州路（中山东一路-河南中路）、汉口路（中山东一路-河南中路）、九江路（中山东一路-河南中路）、滇池路（中山东一路-江西中路）、天津路（江西中路-河南中",
+        "tags": [
+          "交通组织"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0005",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "四、9月13日18时30分至22时，四川中路（延安东路-南苏州路）、江西中路（延安东路-南苏州路）禁止车辆通行。",
+        "tags": [
+          "交通组织"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0006",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "五、9月13日18时30分至22时，延安高架江西下匝道进地面机动车向外滩隧道改道。",
+        "tags": [
+          "道路交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0007",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "六、9月13日17时至22时外白渡桥、乍浦路桥，18时30分至22时四川路桥禁止车辆通行。",
+        "tags": [
+          "交通组织"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CASE-TOURISM-FESTIVAL-PARADE-2025@para-0008",
+        "number": null,
+        "title": null,
+        "node_type": "paragraph",
+        "page_span": null,
+        "summary": "届时，与巡游活动线路相关的部分公交线路将采取停驶、缩线及绕道措施。公安交通管理部门将根据活动现场情况视情提前或推迟交通管制时间，扩大或缩小交通管制范围，敬请广大市民事先做好出行安排。",
+        "tags": [
+          "交通组织",
+          "地面公交",
+          "活动期间"
+        ],
+        "children": []
+      }
+    ]
+  }
+}

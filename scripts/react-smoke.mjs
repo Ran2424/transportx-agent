@@ -74,22 +74,30 @@ try {
   await reactPage.getByRole('option', { name: /工作台设置/ }).waitFor();
   await reactPage.keyboard.press('Escape');
 
-  async function createTask(name) {
+  async function createTask() {
+    const previousCount = await reactPage.locator('.live-tab-select').count();
     await reactPage.getByRole('button', { name: '新建交通任务' }).first().click();
     const dialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
-    await dialog.getByLabel('任务名称').fill(name);
     await dialog.getByRole('button', { name: '创建任务' }).click();
-    await reactPage.locator('.live-tab.is-active .live-tab-select', { hasText: name }).waitFor({ timeout: 10_000 });
+    await reactPage.locator('.live-tab-select').nth(previousCount).waitFor({ timeout: 10_000 });
+    return reactPage.evaluate(async () => {
+      const sessions = await (await fetch('/api/live-sessions')).json();
+      return sessions.sessions.at(-1);
+    });
   }
 
-  await createTask('React 阶段四任务 A');
+  const primaryTask = await createTask();
+  if (!/^\d{8}-\d{6}(?:-\d+)?$/.test(path.basename(primaryTask.cwd))) {
+    throw new Error(`New task workspace should use only a timestamp: ${primaryTask.cwd}`);
+  }
   await reactPage.getByRole('button', { name: '新建交通任务' }).last().click();
   const secondDialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
-  await secondDialog.getByLabel('任务名称').fill('React 阶段四任务 B');
   await secondDialog.getByRole('button', { name: '创建任务' }).click();
-  await reactPage.locator('.live-tab.is-active .live-tab-select', { hasText: 'React 阶段四任务 B' }).waitFor({ timeout: 10_000 });
-  await reactPage.locator('.live-tab-select', { hasText: 'React 阶段四任务 A' }).click();
-  await reactPage.locator('.live-tab.is-active .live-tab-select', { hasText: 'React 阶段四任务 A' }).waitFor();
+  await reactPage.locator('.live-tab-select').nth(1).waitFor({ timeout: 10_000 });
+  await reactPage.getByTitle(primaryTask.cwd).click();
+  if (!await reactPage.getByTitle(primaryTask.cwd).evaluate((node) => node.closest('.live-tab')?.classList.contains('is-active'))) {
+    throw new Error('Primary timestamped task did not become active');
+  }
 
   // Conversation: React composer sends through the command port; optimistic
   // user message and streaming/final assistant rendering share the Kernel.
@@ -294,15 +302,13 @@ try {
 
   // Trigger real extension_ui_request variants through fake Pi and answer them in React.
   async function triggerPrompt(message) {
-    await reactPage.evaluate(async ({ taskName, prompt }) => {
-      const sessions = await (await fetch('/api/live-sessions')).json();
-      const session = sessions.sessions.find((item) => item.sessionName === taskName);
+    await reactPage.evaluate(async ({ sessionId, prompt }) => {
       await fetch('/api/rpc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'prompt', sessionId: session.id, message: prompt }),
+        body: JSON.stringify({ type: 'prompt', sessionId, message: prompt }),
       });
-    }, { taskName: 'React 阶段四任务 A', prompt: message });
+    }, { sessionId: primaryTask.id, prompt: message });
   }
 
   await triggerPrompt('基线-task');

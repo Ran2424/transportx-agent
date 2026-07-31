@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "GBT46793.3-2025",
+  "source_sha256": "d74cff1bd8f0b9d97fbafc1f97a5a1f65416e817641eeefa569a8b8f2a99b873",
+  "validated_at": "2026-07-26T09:32:49+08:00",
+  "automatic_checks": {
+    "passed": 18,
+    "failed": 0,
+    "failures": []
+  },
+  "manual_samples": {
+    "planned": 4,
+    "checked": 4,
+    "failed": 0,
+    "method": "逐文档首末条、规范性条款、跨页/图表样本检查；PDF样本页视觉复核"
+  },
+  "status": "accepted",
+  "issues": [],
+  "reviewed_by": "Codex",
+  "reviewed_at": "2026-07-26T09:33:10+08:00",
+  "warnings": [
+    {
+      "code": "empty_source_units",
+      "details": [
+        2,
+        4,
+        18,
+        19
+      ],
+      "note": "空白、图片型或未提取文字的来源单元；已保留物理页记录。"
+    },
+    {
+      "code": "mineru_fallback",
+      "details": "legacy_structured_fallback",
+      "note": "MinerU认证不可用，采用已记录的降级解析；原件与哈希均已保留。"
+    }
+  ]
+}

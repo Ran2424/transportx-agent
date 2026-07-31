@@ -1,0 +1,946 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025",
+  "derived": true,
+  "root": {
+    "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@document",
+    "number": null,
+    "title": "上海市轨道交通运营服务规范",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [
+      "轨道交通"
+    ],
+    "children": [
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0001",
+        "number": null,
+        "title": "PDF 第 1 页",
+        "node_type": "chapter",
+        "page_span": [
+          1,
+          1
+        ],
+        "summary": "—１—\n上 海 市 交 通 委 员 会 文 件沪交行规〔2025〕1 号上海市交通委员会关于印发《上海市轨道交通运营服务规范》的通知各有关单位：\n《上海市轨道交通运营服务规范》已经 2024 年 12 月\n31 日第 20 次主任办公会审议通过，现予印发，自 2025 年\n3 月 1 日起施行，有效期至 2030 年 ",
+        "tags": [
+          "交通主管部门",
+          "轨道交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0002",
+        "number": null,
+        "title": "PDF 第 2 页",
+        "node_type": "chapter",
+        "page_span": [
+          2,
+          2
+        ],
+        "summary": "—２—\n上海市轨道交通运营服务规范",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第一章",
+        "number": "第一章",
+        "title": "第一章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "总 则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第一条",
+            "number": "第一条",
+            "title": "第一条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "（目的依据）\n\n为加强本市轨道交通（以下简称轨道交通）的运营管理，规范运营服务标准，提高服务工作质量，保障乘客合法权益，依据《城市公共交通条例》《上海市轨道交通管理条例》《上海市轨道交通运营安全管理办法》《城市轨道交通运营管理规定》等法规、规章，制定本规范。",
+            "tags": [
+              "交通组织",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二条",
+            "number": "第二条",
+            "title": "第二条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "（适用范围）\n\n本规范适用于本市行政区域内轨道交通的运营服务及相关管理活动。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第三条",
+            "number": "第三条",
+            "title": "第三条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "（管理主体）\n\n上海市交通委员会（以下简称市交通委）是主管本市轨道交通的行政管理部门，负责本规范的组织制定和监督实施。\n本市轨道交通企业（以下简称轨道交通企业）负责轨道交通的日常运营管理工作，并按照本规范要求提供轨道交通运营服务。",
+            "tags": [
+              "交通主管部门",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第四条",
+            "number": "第四条",
+            "title": "第四条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "（基本要求）\n\n轨道交通企业应当遵循“安全可靠、高效便捷、功能完善、文明有序”的服务宗旨，为乘客提供安全、优质的",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0008",
+        "number": null,
+        "title": "PDF 第 3 页",
+        "node_type": "chapter",
+        "page_span": [
+          3,
+          3
+        ],
+        "summary": "—３—\n运营服务。\n轨道交通企业应当为乘客提供必要的服务设施设备，\n保持设施设备运行完好，发生故障时应当及时组织抢修；\n提供行车、客运、票务等服务和整洁卫生的站、车环境。\n轨道交通企业应当公开服务承诺，主动接受社会监督，\n通过多种渠道听取社会各界意见和建议，并根据乘客需求不断改进和完善运营服务，提高服务工作质量。",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二章",
+        "number": "第二章",
+        "title": "第二章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "行车服务",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第五条",
+            "number": "第五条",
+            "title": "第五条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "（行车服务原则）\n\n轨道交通企业应当根据网络运营的要求、客流变化等情况编制和调整列车运行计划。首末班车时间（含换乘首末班车）、运营间隔应当向社会公开。运营间隔时间大于\n10 分钟以上的，应当通过网站、现场等渠道公示车站列车时刻表。\n轨道交通企业应当根据运营计划为乘客提供安全准点的列车运行服务。\n因各类突发事件、恶劣天气",
+            "tags": [
+              "人群管控",
+              "应急管理",
+              "恶劣天气",
+              "活动期间",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第六条",
+            "number": "第六条",
+            "title": "第六条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "（运营时间）\n\n轨道交通线路全天运营时间应当不少于 17 小时。首班车始发站发车时间不晚于 6:00；末班车始发站发车时间不",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0012",
+        "number": null,
+        "title": "PDF 第 4 页",
+        "node_type": "chapter",
+        "page_span": [
+          4,
+          4
+        ],
+        "summary": "—４—\n早于 22:30。\n遇法定节假日、大型活动、春运、机场铁路等保障需要，轨道交通企业应当增加运力，加强组织，延长运营时间，满足乘客出行需要。",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第七条",
+            "number": "第七条",
+            "title": "第七条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "（行车间隔）\n\n行车间隔应当根据客流量、列车拥挤程度、乘客候车时间、相关线路换乘匹配等因素综合确定。\n高峰时段中心城内线路最小行车间隔应当不大于 3 分钟，中心城外线路最小行车间隔不宜大于 5 分钟。\n轨道交通企业应当持续跟踪评估客流情况，遇满载率超标时，应当调整运营计划，增加运力供应。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第八条",
+            "number": "第八条",
+            "title": "第八条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "（列车停站）\n\n停站时间设置应当满足乘客上下车需求。列车停站时间，应当根据车站性质、客流等数据合理确定。列车车门和站台门的开启、关闭前应当有明显的声光提示。列车车门和站台之间缝隙较大的车站，轨道交通企业应当采取必要的安全保护措施。运营期间应当加强站台监护，遇有紧急情况时及时启动紧急关闭装置并截停列车。",
+            "tags": [
+              "人群管控",
+              "数据治理",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第九条",
+            "number": "第九条",
+            "title": "第九条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "（运营调整）\n\n遇线路改造、设备更新、系统调试等重大事由时，轨道交通企业报市交通委后，可以对运营时间、运营间隔作临时调整，并应当提前 3 天向社会公告。",
+            "tags": [
+              "交通主管部门",
+              "信息发布",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0016",
+        "number": null,
+        "title": "PDF 第 5 页",
+        "node_type": "chapter",
+        "page_span": [
+          5,
+          5
+        ],
+        "summary": "—５—\n因节假日、大型活动等引起客流上升时，轨道交通企业应当提前做好列车运行计划和客运组织方案，需要采取封闭车站、延长运营时间措施的，应当提前 3 天向社会公告。\n因设备故障或其它原因的运营突发事件造成列车延误或封站时，轨道交通企业应当采取必要的调度措施，合理调整行车时间，尽快恢复正常运行秩序。无法保证运营安全时，轨道",
+        "tags": [
+          "人群管控",
+          "信息发布",
+          "应急管理",
+          "恢复",
+          "设施故障",
+          "轨道交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第三章",
+        "number": "第三章",
+        "title": "第三章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "客运服务",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十条",
+            "number": "第十条",
+            "title": "第十条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "（客运服务原则）\n\n轨道交通企业应当制定客运服务标准，为乘客提供规范服务，设置引导标志，提供服务信息，不断提高服务水平。\n轨道交通企业应当根据列车运行图、车站设施设备、\n车站规模和客流情况等编制客运组织方案，及时有效疏导乘客，保证运营秩序正常，并根据客流及变化情况，及时进行必要的调整。",
+            "tags": [
+              "人群管控",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十一条",
+            "number": "第十一条",
+            "title": "第十一条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "（站车环境）\n\n轨道交通企业应当加强运营服务区域环境整治，定期做好公共区域的清洁、消毒和通风工作，保证车站、隧道",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0020",
+        "number": null,
+        "title": "PDF 第 6 页",
+        "node_type": "chapter",
+        "page_span": [
+          6,
+          6
+        ],
+        "summary": "—６—\n环境清洁卫生，空气质量、噪声和虫害防治等符合有关规定。车站内实施垃圾分类。\n轨道交通企业应当建立健全列车车容车貌清洁保洁制度，定期对车厢及通风系统进行清洁、消毒，保证列车整洁卫生。列车内空气质量和噪声应当符合有关规定。\n轨道交通企业应当制定车站、载客运营期间列车巡查制度，巡视频率不应当低于每 3 小时一次，及时",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十二条",
+            "number": "第十二条",
+            "title": "第十二条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "（安全检查与安全防范）\n\n轨道交通企业应当按照有关规定和标准，配置安全检查设施、设备，与航空、水运、铁路、道路运输等交通枢纽相邻的车站应当设置相适应的大件行李安检设备。配备受过专业培训的安全检查人员，并按照规定对乘客携带的物品进行安全检查。\n轨道交通企业应当在车站内张贴禁止乘客携带危险物品名录。安全检查人员在安全检查中",
+            "tags": [
+              "交通枢纽",
+              "公安机关",
+              "安全检查",
+              "轨道交通",
+              "道路交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十三条",
+            "number": "第十三条",
+            "title": "第十三条",
+            "node_type": "article",
+            "page_span": null,
+            "summary": "（导向标志）",
+            "tags": [],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0023",
+        "number": null,
+        "title": "PDF 第 7 页",
+        "node_type": "chapter",
+        "page_span": [
+          7,
+          7
+        ],
+        "summary": "—７—\n轨道交通导向标志的设置应当符合下列要求：\n（一）导向标志的设置应当符合统一、规范、简明、\n连贯的原则，不妨碍乘客通行。\n（二）导向标志能通过提供相关的视觉、触觉信息，\n给乘客必要的引导、提示和警示，以方便乘客，确保安全。\n（三）向乘客提供与进出站、换乘等直接相关的导向，\n包括无障碍设施、厕所、服务中心等的位置指",
+        "tags": [
+          "交通组织",
+          "火灾",
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十四条",
+            "number": "第十四条",
+            "title": "第十四条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "（信息服务）\n\n轨道交通企业应当按照下列要求向乘客提供信息服务：\n（一）通过网络、车站公告、站台广播、电子显示屏等渠道向乘客提供线路、车站、首末班车时间（换乘时间）、\n换乘路径、列车到达时间、行车间隔、目的地以及安全提示等信息。\n（二）车站出入口、服务中心、站台应当提供轨道交通网络示意图、线路示意图，公示本车站首末班车",
+            "tags": [
+              "人群管控",
+              "信息发布",
+              "入场",
+              "公交站点",
+              "地面公交",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0025",
+        "number": null,
+        "title": "PDF 第 8 页",
+        "node_type": "chapter",
+        "page_span": [
+          8,
+          8
+        ],
+        "summary": "—８—\n线路示意图或者获取方式、列车运行方向、到站、换乘、\n开关车门提示、紧急疏散路线等信息。\n（四）履行安全风险告知义务，在车站出入口、电梯、\n站台、车厢等部位应当按规定张贴有关警示标志，明示乘客禁止行为。\n（五）提供问询服务，车站服务人员在接受乘客问询时执行首问责任制，及时准确向乘客解答。\n（六）公告、告示和通知按",
+        "tags": [
+          "人群管控",
+          "信息发布",
+          "入场",
+          "设施故障",
+          "轨道交通",
+          "集散通道"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十五条",
+            "number": "第十五条",
+            "title": "第十五条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "（限流组织）\n\n轨道交通企业应当公布常态化采取限流措施的车站信息，包括日期、时段等，并对限流措施的实施效果持续进行评估，可以取消的，应当及时取消。\n发生轨道交通突发事件、客流量激增等可能危及运营安全的紧急情况时，轨道交通企业应当采取限制客流量的措施，立即疏散乘客，启动应急联动机制，确保运营安全。\n采取限制客流量的措施无",
+            "tags": [
+              "交通主管部门",
+              "人群管控",
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0027",
+        "number": null,
+        "title": "PDF 第 9 页",
+        "node_type": "chapter",
+        "page_span": [
+          9,
+          9
+        ],
+        "summary": "—９—\n轨道交通企业采取限制客流量或者停止运营措施的，\n应当同时向乘客履行告知义务。轨道交通因故障等原因造成列车运行延误 15 分钟以上的，轨道交通企业应当出具延误证明，为乘客办理退票手续，并告知票款退还或者车票延期等注意事项。",
+        "tags": [
+          "人群管控",
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十六条",
+            "number": "第十六条",
+            "title": "第十六条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "（站车广告、商业网点）\n\n车站、车辆的广告设置应当合法、规范。广告设置不得影响服务标志的识别，不得影响轨道交通运营安全、消防安全和服务设施的使用，广告灯箱标志燃烧性能符合消防安全要求。\n车站商业网点的设置应当符合运营安全、方便乘客、\n统筹规划、因地制宜的要求。除轨道交通车站设计方案确定设置的商业网点和设置在站台的自动售",
+            "tags": [
+              "入场",
+              "安全检查",
+              "火灾",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第四章",
+        "number": "第四章",
+        "title": "第四章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "票务服务",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十七条",
+            "number": "第十七条",
+            "title": "第十七条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "（票务服务原则）\n\n轨道交通企业应当按规定制定票务管理制度。轨道交通企业应当向乘客公示票价表、票务处理规则。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0031",
+        "number": null,
+        "title": "PDF 第 10 页",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "—１０—",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十八条",
+            "number": "第十八条",
+            "title": "第十八条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "（售、检票）\n\n轨道交通企业提供的售、检票服务设施应当符合下列要求：\n（一）车站售票处、服务中心应当公示票价表、票务处理须知。\n（二）支持互联互通公共交通一卡通的使用和互联网支付方式的应用。\n（三）自动售票机应当标有操作说明，方便乘客查询出行路径、票价、首末班车与换乘时间。在售票过程中备有充足的车票、钱币，并根据使用情",
+            "tags": [
+              "交通枢纽",
+              "人群管控",
+              "突发大客流",
+              "轨道交通",
+              "道路交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第十九条",
+            "number": "第十九条",
+            "title": "第十九条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "（票务处理）\n\n乘客因超程、超时或其他原因不能正常进出站时，车站服务人员应当对乘客进行票务处理。\n轨道交通因故障等原因造成列车运行延误 15 分钟以上的，轨道交通企业应当对持有效车票的乘客在任意车站",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0034",
+        "number": null,
+        "title": "PDF 第 11 页",
+        "node_type": "chapter",
+        "page_span": [
+          11,
+          11
+        ],
+        "summary": "—１１—\n按原价退还票款。",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十条",
+            "number": "第二十条",
+            "title": "第二十条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "（票价优惠）\n\n轨道交通企业应当执行市人民政府批准的票价及统一制定的公共交通票价优惠政策。企业自主推出票价优惠措施，应当足额缴纳票务收入。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第五章",
+        "number": "第五章",
+        "title": "第五章",
+        "node_type": "chapter",
+        "page_span": [
+          11,
+          11
+        ],
+        "summary": "服务设施及管理要求",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十一条",
+            "number": "第二十一条",
+            "title": "第二十一条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "（服务设施基本要求）\n\n本规范所称服务设施指：车站出入口、楼梯、通道、\n站厅、站台等场所，列车、售检票设备、自动扶梯与电梯、\n导乘设施、服务查询设施及其它服务设施。\n车站出入口、楼梯、通道、站厅、站台等场所，台阶、\n地面完好，保持平整、畅通；楼梯及有坡度的区域应当设扶手，扶手光滑牢固、不间断；地面应当采取防滑措施，\n如",
+            "tags": [
+              "入场",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十二条",
+            "number": "第二十二条",
+            "title": "第二十二条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "（列车服务）\n\n轨道交通列车服务应当符合下列要求：",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0039",
+        "number": null,
+        "title": "PDF 第 12 页",
+        "node_type": "chapter",
+        "page_span": [
+          12,
+          12
+        ],
+        "summary": "—１２—\n（一）列车客室内应当配备照明、座椅、扶手、通风、\n空调、广播、标志等服务设施，以及灭火器、报警器、应急照明、应急广播、紧急疏散标志等安全设备设施。\n（二）列车客室内设置的安全警示标志、操作指南、\n本线线路图等清晰完好。提供列车运行报站服务，涉及安全与乘客信息内容的采用中英文对照。\n（三）列车空调通风及紧急通风",
+        "tags": [
+          "人群管控",
+          "信息发布",
+          "应急管理",
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十三条",
+            "number": "第二十三条",
+            "title": "第二十三条",
+            "node_type": "article",
+            "page_span": [
+              12,
+              12
+            ],
+            "summary": "（电梯、自动扶梯）\n\n电梯、自动扶梯应当按特种设备相关规范进行定期检查，并张贴安全检验合格证。自动扶梯应当有明确的运行方向指示，并在两端配备紧急停车开关。自动扶梯的出入口应当有开阔的空间，入口处应当有明确的安全警示并张贴使用须知。\n轨道交通企业应当在运营前对电梯、自动扶梯进行例行检查，确认其外观完整无损，安全标志齐全，",
+            "tags": [
+              "人群管控",
+              "停车管理",
+              "入场",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0041",
+        "number": null,
+        "title": "PDF 第 13 页",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "—１３—",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十四条",
+            "number": "第二十四条",
+            "title": "第二十四条",
+            "node_type": "article",
+            "page_span": [
+              13,
+              13
+            ],
+            "summary": "（售检票设备）\n\n自动售检票设施包括售票机、充资机、进出站检（验）\n票机等，轨道交通企业应当保证售检票设施的安全可靠、\n状态完好。\n车站售检票设施应当在充分考虑客流组织及乘客需求的基础上进行合理配置，便于乘客使用并提高设备的使用效率。\n人工售票窗口作为无人售票模式的必要补充，可以根据客流情况适时开启。遇有大客流集中到达",
+            "tags": [
+              "交通组织",
+              "人群管控",
+              "应急管理",
+              "突发大客流",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十五条",
+            "number": "第二十五条",
+            "title": "第二十五条",
+            "node_type": "article",
+            "page_span": [
+              13,
+              13
+            ],
+            "summary": "（站台门系统）\n\n轨道交通站台门系统应当符合下列要求：\n（一）站台门满足轨道交通列车各种运营模式的要求，\n保证正常运营时乘客安全地上下车、故障或灾害时乘客安全疏散。\n（二）站台门与列车车门的开、关门时间及位置应当保持同步，并具备关门声光提示功能，站台门与列车车门之间的协调动作过程应当保证乘客安全。",
+            "tags": [
+              "人群管控",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0044",
+        "number": null,
+        "title": "PDF 第 14 页",
+        "node_type": "chapter",
+        "page_span": [
+          14,
+          14
+        ],
+        "summary": "—１４—\n（三）站台门系统所有的滑动门、端头门及应急门，\n在轨道侧应当有醒目的手动开门把手及安全疏散操作提示，在站台侧应当保持锁闭良好，应当由专用钥匙才能打开。\n（四）站台门设置障碍物探测装置与防夹检测装置，\n确保乘客乘降安全。\n（五）站台门发生故障无法关闭时，应当安排专人值守，做好安全防护。无法打开时，应当通过列车广",
+        "tags": [
+          "人群管控",
+          "信息发布",
+          "应急管理",
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十六条",
+            "number": "第二十六条",
+            "title": "第二十六条",
+            "node_type": "article",
+            "page_span": [
+              14,
+              14
+            ],
+            "summary": "（无障碍环境）\n\n车站、列车应当设置无障碍设施，方便老弱病残孕和需要帮助的乘客进出车站、乘车和换乘，必要时应当提供人工服务。\n轨道交通企业应当确保无障碍设施正常使用、状态良好，并提供无障碍设施的配置情况，方便乘客查询使用。\n车站应当设置无障碍电梯、无障碍卫生间等设施的导向提示，方便乘客辨识设施所处方位。\n新建线路车站应",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0046",
+        "number": null,
+        "title": "PDF 第 15 页",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "—１５—",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十七条",
+            "number": "第二十七条",
+            "title": "第二十七条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "（其他服务设施）\n\n轨道交通其它服务设施应当符合下列要求：\n（一）车站、区间内的正常照明、应急照明、环控及防灾报警设施应当按规范设置并运行正常。\n（二）车站站台公共区域设置适量的乘客座椅，并保持完好。\n（三）车站应当设置公共厕所，并保持厕所的清洁及正常使用。\n（四）车站的站台、站厅设置适量的分类废物箱，并定期清洁。\n（",
+            "tags": [
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第六章",
+        "number": "第六章",
+        "title": "第六章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "服务人员",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十八条",
+            "number": "第二十八条",
+            "title": "第二十八条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "（服务人员基本要求）\n\n轨道交通运营服务人员应当遵守下列要求：\n（一）经系统培训，掌握岗位操作技能与应急处置要求，考核合格，方可持证上岗。\n（二）按规定统一着装，佩戴服务标志，穿着整洁，\n仪表端庄。\n（三）举止规范，坐姿端正，礼貌待客，主动服务。\n（四）严格执行首问负责制，接待乘客问询时有问必",
+            "tags": [
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0050",
+        "number": null,
+        "title": "PDF 第 16 页",
+        "node_type": "chapter",
+        "page_span": [
+          16,
+          16
+        ],
+        "summary": "—１６—\n答，尽力为乘客提供必要的帮助，使用普通话以及文明用语，并掌握与服务岗位相关的基本英语会话，提倡使用地方方言提供个性化服务。\n（五）及时寻找、登记、妥善保管乘客的遗失物品，\n并做好招领、上交工作。\n（六）规范操作，妥善处置各类突发事件，及时通报运营情况。",
+        "tags": [
+          "应急管理"
+        ],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第二十九条",
+            "number": "第二十九条",
+            "title": "第二十九条",
+            "node_type": "article",
+            "page_span": [
+              16,
+              16
+            ],
+            "summary": "（驾驶员服务要求）\n\n轨道交通列车驾驶员应当遵守下列要求：\n（一）驾驶员应当经过系统岗位培训考核合格，掌握应急处置规定的岗位技能。随身携带有效驾驶证件，按规范驾驶列车，保证列车运行安全。\n（二）按运行图行车，严格执行运行规定和调度命令。\n（三）在列车行驶过程中加强瞭望，遇有险情，及时采取安全措施，并立即汇报，按照应急预",
+            "tags": [
+              "信息发布",
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0052",
+        "number": null,
+        "title": "PDF 第 17 页",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "—１７—",
+        "tags": [],
+        "children": []
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第七章",
+        "number": "第七章",
+        "title": "第七章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "监督评价",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第三十条",
+            "number": "第三十条",
+            "title": "第三十条",
+            "node_type": "article",
+            "page_span": [
+              17,
+              17
+            ],
+            "summary": "（服务承诺）\n\n轨道交通企业应当公开向乘客做出服务承诺，并每年向社会公布服务表现与运营服务改进情况。服务质量承诺应当至少包括以下内容：\n（一）列车正点率、列车运行图兑现率、设施完好率等运行服务指标。\n（二）乘客投诉、意见、建议受理渠道和处理时限。\n（三）服务改进的举措和计划。",
+            "tags": [
+              "数据治理",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第三十一条",
+            "number": "第三十一条",
+            "title": "第三十一条",
+            "node_type": "article",
+            "page_span": [
+              17,
+              17
+            ],
+            "summary": "（服务投诉）\n\n轨道交通企业应当通过服务热线、官方网站等渠道听取乘客意见和建议，接受社会监督，不断改善运营服务。\n轨道交通企业应当建立投诉受理制度，设置专职机构和专职人员，制定乘客投诉受理及处理反馈的工作程序，\n及时有效处理乘客的服务投诉，及时通报重大舆情的调查情况。\n服务投诉热线、服务监督热线电话应当向社会公布，\n并",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第三十二条",
+            "number": "第三十二条",
+            "title": "第三十二条",
+            "node_type": "article",
+            "page_span": [
+              17,
+              17
+            ],
+            "summary": "（服务监督与评价）\n\n轨道交通企业应当建立内部服务监督制度，并将服务",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@sec-0057",
+        "number": null,
+        "title": "PDF 第 18 页",
+        "node_type": "chapter",
+        "page_span": [
+          18,
+          18
+        ],
+        "summary": "—１８—\n监督情况纳入日常工作的评价、考核体系。\n市交通委应当每年组织服务质量评价，轨道交通企业应当配合做好服务质量评价工作，如实报告有关情况，准确提供相应数据资料，并在收到年度服务质量评价报告后的一个月内向市交通行政管理部门报送服务质量整改报告。轨道交通行业服务质量评价结果应当及时向社会公布。\n轨道交通企业应当根据评",
+        "tags": [
+          "交通主管部门",
+          "交通组织",
+          "数据治理",
+          "轨道交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第八章",
+        "number": "第八章",
+        "title": "第八章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "附则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第三十三条",
+            "number": "第三十三条",
+            "title": "第三十三条",
+            "node_type": "article",
+            "page_span": [
+              18,
+              18
+            ],
+            "summary": "（参照执行）\n\n磁浮交通的运营服务参照本规范执行。",
+            "tags": [],
+            "children": []
+          },
+          {
+            "node_id": "SH-RAIL-TRANSIT-SERVICE-RULES-2025@第三十四条",
+            "number": "第三十四条",
+            "title": "第三十四条",
+            "node_type": "article",
+            "page_span": [
+              18,
+              18
+            ],
+            "summary": "（施行日期）\n\n本规范自 2025 年 3 月 1 日起施行，有效期至 2030 年\n2 月 28 日止。《上海市交通委员会关于印发〈上海市轨道交通运营服务规范〉的通知》（沪交行规〔2020〕4 号）同时废止。\n信息公开属性：主动公开上海市交通委员会办公室 2025 年 1 月 22 日印发",
+            "tags": [
+              "交通主管部门",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

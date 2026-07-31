@@ -1,4 +1,5 @@
 import type { LiveSession } from '../../../public/app-types.js';
+import { BrandMark } from '../../components/BrandMark';
 import { Button } from '../../components/ui/button';
 import { ConversationWorkspace } from './ConversationWorkspace';
 
@@ -11,7 +12,7 @@ export function ConversationStage({ session, loading, onNewSession, showThinking
     return (
       <main className="conversation-stage">
         <section className="workspace-welcome">
-          <div className="welcome-mark">τ</div>
+          <BrandMark className="welcome-mark" />
           <h1>从一个清晰的<br /><em>交通问题</em>开始。</h1>
           <Button onClick={onNewSession}>新建交通任务 <span aria-hidden="true">↗</span></Button>
           <div className="welcome-capabilities"><article><strong>交通问数</strong><span>路段 · 时段 · 需求</span></article><article><strong>地图分析</strong><span>空间关系 · 可视化</span></article><article><strong>报告生成</strong><span>结论 · 文件 · 交付</span></article></div>

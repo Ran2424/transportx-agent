@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="24"
+     height="24"
+     viewBox="0 0 100 100"
+     fill="none"
+     style="color:#111111"
+     role="img"
+     aria-labelledby="title">
+  <title id="title">X ribbon icon</title>
+  <g fill="currentColor" shape-rendering="geometricPrecision">
+    <polygon points="7,10 20,10 45,45 39,51"/>
+    <polygon points="22,10 34,10 50,39 45,44"/>
+    <polygon points="50,39 68,10 80,10 56,46"/>
+    <polygon points="57,47 82,10 94,10 62,51"/>
+
+    <g transform="rotate(180 50 50)">
+      <polygon points="7,10 20,10 45,45 39,51"/>
+      <polygon points="22,10 34,10 50,39 45,44"/>
+      <polygon points="50,39 68,10 80,10 56,46"/>
+      <polygon points="57,47 82,10 94,10 62,51"/>
+    </g>
+  </g>
+</svg>

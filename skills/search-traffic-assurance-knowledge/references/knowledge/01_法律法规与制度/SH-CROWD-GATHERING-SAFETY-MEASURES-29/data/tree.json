@@ -1,0 +1,1019 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29",
+  "derived": true,
+  "root": {
+    "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@document",
+    "number": null,
+    "title": "上海市公共场所人群聚集安全管理办法",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [
+      "人群拥挤",
+      "人群管控"
+    ],
+    "children": [
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0001",
+        "number": null,
+        "title": "PDF 第 1 页",
+        "node_type": "chapter",
+        "page_span": [
+          1,
+          1
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 1 -\n上海市公共场所人群聚集安全管理办法\n（2015 年 5 月 15 日上海市人民政府令第 29 号公布 自 2015\n年 7 月 1 日起施行）",
+        "tags": [
+          "人群拥挤",
+          "人群管控"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第一章",
+        "number": "第一章",
+        "title": "第一章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "总 则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第一条",
+            "number": "第一条",
+            "title": "第一条",
+            "node_type": "article",
+            "page_span": [
+              1,
+              1
+            ],
+            "summary": "（目的和依据）\n\n为了加强对公共场所人群聚集活动的安全管理，保护公众生命和财产安全，维护社会秩序和公共安全，根据《中华人民共和国突发事件应对法》（以下简称《突发事件应对法》）、《大型群众性活动安全管理条例》（以下简称《条例》）等法律、法规，结合本市实际，制定本办法。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二条",
+            "number": "第二条",
+            "title": "第二条",
+            "node_type": "article",
+            "page_span": [
+              1,
+              1
+            ],
+            "summary": "（适用范围）\n\n本市行政区域内人群聚集公共场所和人群聚集活动的安全管理，适用本办法。\n在公共场所集会、游行、示威的，按照《中华人民共和国集会游行示威法》等法律、法规执行。",
+            "tags": [
+              "人群拥挤",
+              "人群管控"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0005",
+        "number": null,
+        "title": "PDF 第 2 页",
+        "node_type": "chapter",
+        "page_span": [
+          2,
+          2
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 2 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三条",
+            "number": "第三条",
+            "title": "第三条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "（定义）\n\n本办法所称人群聚集公共场所，是指下列场所：\n（一）景区（点）、公园、轨道交通站点、机场航站楼、客运车站、客运码头、展览场馆、体育场馆、文化娱乐场所、商场、\n集贸市场；\n（二）医院、学校、宗教活动场所；\n（三）人群经常聚集的广场、道路等其他公共场所。\n本办法所称人群聚集活动，是指下列活动：\n（一）按照《条例》",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "活动场馆",
+              "轨道交通",
+              "道路交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第四条",
+            "number": "第四条",
+            "title": "第四条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "（政府职责）\n\n市和区（县）人民政府应当按照“分级管理、属地为主”的原则，加强对人群聚集公共场所和人群聚集活动的领导，组织、\n督促相关部门依法履行安全管理职责。\n市和区（县）公安部门负责本行政区域内大型群众性活动的安全管理工作，按照职责对人群聚集活动进行应急处置。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "公安机关",
+              "应急管理"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0008",
+        "number": null,
+        "title": "PDF 第 3 页",
+        "node_type": "chapter",
+        "page_span": [
+          3,
+          3
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 3 -\n安全生产监管、建设、交通、商务、旅游、卫生计生、教育、\n文广影视、体育、民政、民族宗教、绿化市容、质量技监、食品药品监管等相关部门，按照各自职责负责与人群聚集相关的安全管理工作。",
+        "tags": [
+          "人群拥挤",
+          "人群管控"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第五条",
+            "number": "第五条",
+            "title": "第五条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "（信息沟通）\n\n市和区（县）人民政府及其相关部门应当加强信息沟通和资源共享，预防、控制和消除与人群聚集相关的安全风险。",
+            "tags": [
+              "人群拥挤",
+              "人群管控"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第六条",
+            "number": "第六条",
+            "title": "第六条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "（宣传教育）\n\n市和区（县）人民政府及其相关部门、乡（镇）人民政府、\n街道办事处应当组织开展相关宣传活动，普及与人群聚集相关的安全知识。\n教育部门应当指导、督促各级各类学校把与人群聚集相关的安全知识纳入教学内容，培养学生的安全意识，提高自救能力。\n电视、广播、报纸、互联网站等新闻媒体应当广泛普及与人群聚集相关的紧急避险",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "信息发布"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第七条",
+            "number": "第七条",
+            "title": "第七条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "（市民参与）\n\n市民应当遵守公共秩序，提高安全防范意识，注意安全提示信息，有序参与人群聚集活动；发现人群聚集公共场所、人群聚",
+            "tags": [
+              "人群拥挤",
+              "人群管控"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0012",
+        "number": null,
+        "title": "PDF 第 4 页",
+        "node_type": "chapter",
+        "page_span": [
+          4,
+          4
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 4 -\n集活动存在安全隐患的，及时向公安部门或者其他相关部门报告。",
+        "tags": [
+          "公安机关"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二章",
+        "number": "第二章",
+        "title": "第二章",
+        "node_type": "chapter",
+        "page_span": [
+          4,
+          4
+        ],
+        "summary": "人群聚集公共场所的日常安全管理",
+        "tags": [
+          "人群拥挤",
+          "人群管控"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第八条",
+            "number": "第八条",
+            "title": "第八条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "（单位的安全责任）\n\n人群聚集公共场所的经营、管理单位应当履行下列责任：\n（一）设置应急广播、应急照明等应急救援设施和安全提示设施，并定期维修保养，确保其正常运行；\n（二）设置必要的监控设施，对场所内人员流动、聚集情况进行监测；\n（三）显著标明安全撤离的通道、路线，并保证安全通道、\n出口的畅通；\n（四）经常性巡查场所，",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "信息发布",
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第九条",
+            "number": "第九条",
+            "title": "第九条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "（日常监测）\n\n区（县）人民政府应当将人群经常聚集的广场、道路等公共场所纳入监测网络，确定监测点，明确监测项目，组织公安、建设、交通等部门设置必要的监控设施，配备专门人员进行监测。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "道路交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0016",
+        "number": null,
+        "title": "PDF 第 5 页",
+        "node_type": "chapter",
+        "page_span": [
+          5,
+          5
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 5 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十条",
+            "number": "第十条",
+            "title": "第十条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "（安全提示）\n\n区（县）人民政府应当在人群经常聚集的广场、道路等公共场所，设立电子显示屏和高音喇叭等安全提示设施，发布预警信息和其他提示信息。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "道路交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十一条",
+            "number": "第十一条",
+            "title": "第十一条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "（风险评估和隐患排查）\n\n市人民政府应当组织相关部门进行城市公共安全风险评估，\n指导、督促区（县）人民政府排查人群聚集公共场所的安全隐患，\n落实整改措施。\n区（县）人民政府应当组织相关部门排查人群聚集公共场所的安全隐患，督促人群聚集公共场所的经营、管理单位落实安全责任。",
+            "tags": [
+              "人群拥挤",
+              "人群管控"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十二条",
+            "number": "第十二条",
+            "title": "第十二条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "（场所管理的其他规定）\n\n《中华人民共和国消防法》、《公共文化体育设施条例》、《娱乐场所管理条例》、《宗教事务条例》、《上海市公园管理条例》、\n《上海市轨道交通管理条例》等其他法律、法规对人群聚集公共场所的安全管理另有规定的，从其规定。",
+            "tags": [
+              "交通组织",
+              "人群拥挤",
+              "人群管控",
+              "火灾",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三章",
+        "number": "第三章",
+        "title": "第三章",
+        "node_type": "chapter",
+        "page_span": [
+          5,
+          5
+        ],
+        "summary": "人群聚集活动的应急管理",
+        "tags": [
+          "人群拥挤",
+          "人群管控",
+          "应急管理"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0021",
+        "number": null,
+        "title": "PDF 第 6 页",
+        "node_type": "chapter",
+        "page_span": [
+          6,
+          6
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 6 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十三条",
+            "number": "第十三条",
+            "title": "第十三条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "（单位评估风险）\n\n人群聚集公共场所内举办群众性活动的，人群聚集公共场所的经营、管理单位应当预测人数、评估风险，采取相应的安全防范措施，根据需要配备安保人员，制定突发事件应急预案。\n属于大型群众性活动的，按照《条例》和本办法第四章的规定执行。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十四条",
+            "number": "第十四条",
+            "title": "第十四条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "（单位报告）\n\n人群聚集公共场所的经营、管理单位发现人群聚集可能发生突发事件或者已经发生突发事件的，应当立即启动应急预案，并及时向公安部门或者其他相关部门报告。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "公安机关",
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十五条",
+            "number": "第十五条",
+            "title": "第十五条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "（重要时段的预防性风险评估）\n\n重要节假日和重大活动举办前，区（县）人民政府应当组织公安、安全生产监管、建设、交通、商务、旅游、卫生计生、教育、文广影视、体育、绿化市容、民政、民族宗教等相关部门通过多种途径收集信息，对人群聚集公共场所和人群聚集活动进行风险评估，并根据风险程度和工作需要制定专门应急预案。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十六条",
+            "number": "第十六条",
+            "title": "第十六条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "（重要时段的现场监测）\n\n重要节假日和重大活动期间，区（县）人民政府应当根据风险程度和工作需要，扩大监测区域、增加监测人员，通过多种技",
+            "tags": [
+              "活动期间"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0026",
+        "number": null,
+        "title": "PDF 第 7 页",
+        "node_type": "chapter",
+        "page_span": [
+          7,
+          7
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 7 -\n术手段加强现场监测。",
+        "tags": [
+          "活动期间"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十七条",
+            "number": "第十七条",
+            "title": "第十七条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "（突发事件的预防性处置和预警）\n\n公安部门接到报告或者监测发现人群聚集可能发生突发事件的，应当立即研判风险，及时采取预防性处置措施；对需要发布预警的，应当立即报告本级人民政府。\n安全生产监管、建设、交通、商务、旅游、卫生计生、教育、\n文广影视、体育、绿化市容、民政、民族宗教等相关部门接到报告或者监测发现人群聚集可能发生",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "公安机关",
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十八条",
+            "number": "第十八条",
+            "title": "第十八条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "（预警信息的发布）\n\n市或者区（县）人民政府发布预警信息，可以根据实际情况采取广播、电视、报纸、互联网、通讯工具、宣传车、警报器、\n电子显示屏、高音喇叭等方式。\n广播、电视、报纸等新闻媒体和互联网信息服务单位、电信运营企业、公共场所电子显示屏管理单位等应当配合做好预警信息的发布工作。",
+            "tags": [
+              "信息发布"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0029",
+        "number": null,
+        "title": "PDF 第 8 页",
+        "node_type": "chapter",
+        "page_span": [
+          8,
+          8
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 8 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十九条",
+            "number": "第十九条",
+            "title": "第十九条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "（突发事件的应急处置）\n\n公安、安全生产监管、建设、交通、商务、旅游、卫生计生、\n教育、文广影视、体育、绿化市容、民政、民族宗教等相关部门接到报告或者监测发现人群聚集活动已经发生突发事件的，应当立即按照应急预案开展先期处置，同时报告本级人民政府。\n市或者区（县）人民政府接到报告后，应当组织相关部门按照突发事件应急联动的",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十条",
+            "number": "第二十条",
+            "title": "第二十条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "（参与者的义务）\n\n人群聚集活动参与者应当注意应急避险，听从现场工作人员的引导和指挥，配合相关部门开展突发事件的应急处置。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "应急管理",
+              "活动期间"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十一条",
+            "number": "第二十一条",
+            "title": "第二十一条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "（专业人员的参与）\n\n鼓励具有医疗救护、避险逃生等专业技术的人员参与对人群聚集活动突发事件应急处置的现场救援。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "应急管理",
+              "活动期间"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第四章",
+        "number": "第四章",
+        "title": "第四章",
+        "node_type": "chapter",
+        "page_span": [
+          8,
+          8
+        ],
+        "summary": "大型群众性活动的安全许可管理",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十二条",
+            "number": "第二十二条",
+            "title": "第二十二条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "（大型群众性活动的安全许可）\n\n公安部门依据《条例》的相关规定，对大型群众性活动实施安全许可。",
+            "tags": [
+              "公安机关"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0035",
+        "number": null,
+        "title": "PDF 第 9 页",
+        "node_type": "chapter",
+        "page_span": [
+          9,
+          9
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 9 -\n大型群众性活动的预计参加人数在 1000 人以上 5000 人以下的，由活动所在地的区（县）公安部门实施安全许可；预计参加人数在 5000 人以上的，由市公安局实施安全许可；跨区（县）\n举办的大型群众性活动，由市公安局实施安全许可。",
+        "tags": [
+          "公安机关"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十三条",
+            "number": "第二十三条",
+            "title": "第二十三条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "（大型群众性活动的安全责任主体）\n\n大型群众性活动的承办者（以下简称承办者）对其承办活动的安全负责，承办者的主要负责人为大型群众性活动的安全责任人。\n前款所称承办者，是指负责筹备、举办大型群众性活动并申请安全许可的法人或者其他组织。",
+            "tags": [
+              "活动承办方",
+              "活动筹备"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十四条",
+            "number": "第二十四条",
+            "title": "第二十四条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "（申请许可前的准备）\n\n承办者申请安全许可前，应当完成下列准备工作：\n（一）制定安全工作方案，明确安全措施、安全工作人员岗位职责；\n（二）确定具备相应安全条件的活动场所；\n（三）根据大型群众性活动安全需要，聘请具有相应资质的保安和消防服务机构，配备安全工作人员。\n承办者应当与场所经营、管理单位及其他参与大型群众性活动的",
+            "tags": [
+              "活动承办方",
+              "火灾"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0038",
+        "number": null,
+        "title": "PDF 第 10 页",
+        "node_type": "chapter",
+        "page_span": [
+          10,
+          10
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 10 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十五条",
+            "number": "第二十五条",
+            "title": "第二十五条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "（安全工作方案）\n\n大型群众性活动的安全工作方案包括下列内容：\n（一）活动的时间、地点、内容及组织方式；\n（二）安全工作人员的数量、任务分配和识别标志；\n（三）活动场所的建筑结构和消防安全措施；\n（四）活动场所的地理环境、面积、可容纳的人数以及活动预计参加人数；\n（五）治安缓冲区域的设定及其标识，以及应急疏散通道、\n应",
+            "tags": [
+              "人群管控",
+              "信息发布",
+              "入场",
+              "安全检查",
+              "应急管理",
+              "活动期间",
+              "火灾",
+              "集散通道"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十六条",
+            "number": "第二十六条",
+            "title": "第二十六条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "（受理）\n\n承办者应当在活动举办日的 20 日前提出安全许可申请。公安部门收到申请后，应当当场或者在 3 日内做出受理或者不予受理的决定。不予受理的，应当书面说明理由。",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十七条",
+            "number": "第二十七条",
+            "title": "第二十七条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "（便民告知）\n\n依据相关法律、法规、规章规定，举办大型群众性活动还需",
+            "tags": [],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0042",
+        "number": null,
+        "title": "PDF 第 11 页",
+        "node_type": "chapter",
+        "page_span": [
+          11,
+          11
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 11 -\n要办理营业性演出审批、展览项目审查、焰火燃放许可、特种设备使用登记、临时占用城市道路许可、食品经营许可等相关手续的，承办者应当依法及时办理，公安部门应当提供告知、指导服务。",
+        "tags": [
+          "公安机关",
+          "活动承办方",
+          "道路交通"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十八条",
+            "number": "第二十八条",
+            "title": "第二十八条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "（审查）\n\n对受理的大型群众性活动申请，公安部门应当自受理之日起\n7 日内进行审查，对活动场所、设施进行现场查验，评估活动安全风险，核定活动参加人数，做出许可或者不予许可的决定。\n大型群众性活动情况复杂、影响重大，公安部门不能在 7 日内做出安全许可决定的，经本级公安部门负责人批准，可以延长\n7 日，并以书面形式告知承",
+            "tags": [
+              "公安机关",
+              "活动承办方",
+              "活动期间"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第二十九条",
+            "number": "第二十九条",
+            "title": "第二十九条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "（取得许可后的责任）\n\n承办者取得安全许可后，应当履行下列责任：\n（一）按照安全许可的时间、地点、内容和规模，严格落实安全工作方案；\n（二）按照核定的活动参加人数、划定的区域，发放或者出售门票；",
+            "tags": [
+              "活动承办方"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0045",
+        "number": null,
+        "title": "PDF 第 12 页",
+        "node_type": "chapter",
+        "page_span": [
+          12,
+          12
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 12 -\n（三）组织应急演练；\n（四）接受公安部门及其他相关部门的指导和监督，消除安全隐患。\n承办者不得以委托、转包、分包等形式，将已经取得安全许可的大型群众性活动转由他人承办。",
+        "tags": [
+          "公安机关",
+          "应急管理",
+          "活动承办方"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十条",
+            "number": "第三十条",
+            "title": "第三十条",
+            "node_type": "article",
+            "page_span": [
+              12,
+              12
+            ],
+            "summary": "（临时搭建的要求）\n\n需要在大型群众性活动现场搭建临时设施的，承办者应当委托具有相应资质的单位进行设计、施工，使用符合国家和本市相关安全标准的材料、设备。\n对于规模较大、存在较大安全风险的临时设施，承办者应当组织建设单位进行验收，并聘请专业机构开展检验、检测。",
+            "tags": [
+              "活动承办方",
+              "活动期间"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十一条",
+            "number": "第三十一条",
+            "title": "第三十一条",
+            "node_type": "article",
+            "page_span": [
+              12,
+              12
+            ],
+            "summary": "（征求意见与抄告）\n\n公安部门在做出安全许可决定前，应当根据大型群众性活动的安全管理需要，征求建设、交通、商务、质量技监、文广影视、\n食品药品监管等相关部门的意见；做出安全许可决定后，应当及时抄告相关部门，按照各自职责实施监督管理。",
+            "tags": [
+              "公安机关"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十二条",
+            "number": "第三十二条",
+            "title": "第三十二条",
+            "node_type": "article",
+            "page_span": [
+              12,
+              12
+            ],
+            "summary": "（现场检查）\n\n对有下列情形之一的大型群众性活动，公安、安全生产监管、\n建设、交通、质量技监、文广影视、食品药品监管等相关部门应",
+            "tags": [
+              "活动期间"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0049",
+        "number": null,
+        "title": "PDF 第 13 页",
+        "node_type": "chapter",
+        "page_span": [
+          13,
+          13
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 13 -\n当按照各自职责，在大型群众性活动举办前以及活动期间进行现场检查；发现安全隐患的，及时责令改正：\n（一）活动现场搭建大规模临时设施的；\n（二）活动现场安装、使用特种设备的；\n（三）活动现场使用烟花爆竹等易燃易爆物品的；\n（四）活动现场制售食品或者提供餐饮服务的；\n",
+        "tags": [
+          "活动期间"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十三条",
+            "number": "第三十三条",
+            "title": "第三十三条",
+            "node_type": "article",
+            "page_span": [
+              13,
+              13
+            ],
+            "summary": "（许可的撤销）\n\n对有下列情形之一的大型群众性活动，公安部门应当撤销安全许可：\n（一）承办者以欺骗、贿赂等不正当手段取得安全许可的；\n（二）承办者取得安全许可后未落实安全工作方案，活动存在安全隐患且经责令改正仍无法消除的；\n（三）承办者将已经取得安全许可的大型群众性活动转由他人承办的。",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十四条",
+            "number": "第三十四条",
+            "title": "第三十四条",
+            "node_type": "article",
+            "page_span": [
+              13,
+              13
+            ],
+            "summary": "（许可的变更、撤回）\n\n做出安全许可决定所依据的客观情况发生重大变化的，为了公共利益的需要，公安部门可以变更或者撤回安全许可。\n公安部门变更或者撤回安全许可的，应当及时告知承办者；",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0052",
+        "number": null,
+        "title": "PDF 第 14 页",
+        "node_type": "chapter",
+        "page_span": [
+          14,
+          14
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 14 -\n造成承办者财产损失的，应当依法给予补偿。",
+        "tags": [
+          "活动承办方"
+        ],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十五条",
+            "number": "第三十五条",
+            "title": "第三十五条",
+            "node_type": "article",
+            "page_span": [
+              14,
+              14
+            ],
+            "summary": "（公告）\n\n公安部门做出撤销、变更或者撤回安全许可的，应当通过政府网站等形式，及时向社会公告。\n大型群众性活动变更、取消的，承办者应当通过广播、电视、\n报纸、互联网等方式予以公告，并及时向已经购票或者预约的活动参加人员做好解释说明、赔偿损失等工作。",
+            "tags": [
+              "信息发布",
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十六条",
+            "number": "第三十六条",
+            "title": "第三十六条",
+            "node_type": "article",
+            "page_span": [
+              14,
+              14
+            ],
+            "summary": "（现场处置）\n\n大型群众性活动举办期间，发生危及公共安全的突发事件的，承办者应当立即启动应急预案，并报告公安部门。公安部门应当立即采取相应处置措施，维护现场秩序；对没有消除安全风险的活动，应当责令承办者立即停止活动。",
+            "tags": [
+              "公安机关",
+              "应急管理",
+              "活动承办方",
+              "活动期间"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十七条",
+            "number": "第三十七条",
+            "title": "第三十七条",
+            "node_type": "article",
+            "page_span": [
+              14,
+              14
+            ],
+            "summary": "（政府及其部门直接举办的大型群众性活动）\n\n以市和区（县）人民政府名义举办的大型群众性活动，不实行安全许可制度，由举办活动的人民政府按照《条例》和本办法的相关规定，责成或者会同公安部门制定更加严格的安全保卫工作方案，并组织落实。\n以市和区（县）人民政府部门、乡（镇）人民政府或者街道办事处名义举办的大型群众性活动，承办者",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0056",
+        "number": null,
+        "title": "PDF 第 15 页",
+        "node_type": "chapter",
+        "page_span": [
+          15,
+          15
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 15 -\n本办法的相关规定向公安部门申请安全许可，履行安全管理职责，落实安全工作措施。",
+        "tags": [
+          "公安机关"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第五章",
+        "number": "第五章",
+        "title": "第五章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "法律责任",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十八条",
+            "number": "第三十八条",
+            "title": "第三十八条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "（行政处分）\n\n区（县）人民政府及其相关部门违反本办法第九条、第十条、",
+            "tags": [],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第十一条-2",
+            "number": "第十一条",
+            "title": "第十一条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "第二款规定，有下列情形之一的，由其上级行政机关责令改正；拒不改正或者造成严重后果的，由其上级行政机关或者监察机关对直接负责的主管人员和其他直接责任人员依法给予行政处分：\n（一）未按照规定设置必要的监控设施的；\n（二）未按照规定设置安全提示设施的；\n（三）未按照规定进行安全隐患排查，未督促落实安全责任的。",
+            "tags": [],
+            "children": []
+          },
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第三十九条",
+            "number": "第三十九条",
+            "title": "第三十九条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "（擅自转让的法律责任）\n\n承办者违反本办法第二十九条第二款规定，将已经取得安全许可的大型群众性活动转由他人承办的，由公安部门对承办者处\n10 万元以上 20 万元以下罚款；造成严重后果的，处 20 万元以",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@sec-0061",
+        "number": null,
+        "title": "PDF 第 16 页",
+        "node_type": "chapter",
+        "page_span": [
+          16,
+          16
+        ],
+        "summary": "上海市人民政府规章\nX\n上海市人民政府发布\n- 16 -\n上 30 万元以下罚款。",
+        "tags": [],
+        "children": []
+      },
+      {
+        "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第六章",
+        "number": "第六章",
+        "title": "第六章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "附 则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "SH-CROWD-GATHERING-SAFETY-MEASURES-29@第四十条",
+            "number": "第四十条",
+            "title": "第四十条",
+            "node_type": "article",
+            "page_span": [
+              16,
+              16
+            ],
+            "summary": "（施行日期）\n\n本办法自 2015 年 7 月 1 日起施行。",
+            "tags": [],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

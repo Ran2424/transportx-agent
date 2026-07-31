@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "PROJECT-DATA-ASSET-MODEL",
+  "source_sha256": "35087d9c6edd0e446366efbce4107c69f4c07dc0123e01daaf30d288f6f20c37",
+  "validated_at": "2026-07-26T09:32:43+08:00",
+  "automatic_checks": {
+    "passed": 14,
+    "failed": 0,
+    "failures": []
+  },
+  "manual_samples": {
+    "planned": 3,
+    "checked": 3,
+    "failed": 0,
+    "method": "逐文档首末条、规范性条款、跨页/图表样本检查；PDF样本页视觉复核"
+  },
+  "status": "accepted",
+  "issues": [],
+  "reviewed_by": "Codex",
+  "reviewed_at": "2026-07-26T09:33:10+08:00",
+  "warnings": []
+}

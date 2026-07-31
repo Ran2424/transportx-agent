@@ -151,7 +151,8 @@ function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string 
     fs.mkdirSync(parent, { recursive: true });
   }
 
-  const prefix = `${timestampForDirectory()}-${safeDirectoryName(sessionName)}`;
+  const timestamp = timestampForDirectory();
+  const prefix = sessionName ? `${timestamp}-${safeDirectoryName(sessionName)}` : timestamp;
   for (let i = 1; i <= 999; i++) {
     const name = i === 1 ? prefix : `${prefix}-${i}`;
     const candidate = path.join(parent, name);

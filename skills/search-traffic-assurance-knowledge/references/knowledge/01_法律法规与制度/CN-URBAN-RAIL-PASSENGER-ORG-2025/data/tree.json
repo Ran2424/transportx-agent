@@ -1,0 +1,1080 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025",
+  "derived": true,
+  "root": {
+    "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@document",
+    "number": null,
+    "title": "城市轨道交通客运组织与服务管理办法",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [
+      "轨道交通"
+    ],
+    "children": [
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0001",
+        "number": null,
+        "title": "PDF 第 1 页",
+        "node_type": "chapter",
+        "page_span": [
+          1,
+          1
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 1 -\n交通运输部关于印发《城市轨道交通客运组织与服务管理办法》的通知\n（交运规〔2025〕3 号）\n各省、自治区、直辖市交通运输厅（委）：\n现将修订后的《城市轨道交通客运组织与服务管理办法》印发给你们，请遵照执行。\n交通运输部\n2025 年 4 月 8 日\n（此件公开",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0002",
+        "number": null,
+        "title": "PDF 第 2 页",
+        "node_type": "chapter",
+        "page_span": [
+          2,
+          2
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 2 -",
+        "tags": [],
+        "children": []
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第一章",
+        "number": "第一章",
+        "title": "第一章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "总则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第一条",
+            "number": "第一条",
+            "title": "第一条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "为进一步规范城市轨道交通客运组织与服务工作，\n\n推动城市轨道交通服务质量提升，更好地保障人民群众安全、便捷出行，根据《城市公共交通条例》、《国务院办公厅关于保障城市轨道交通安全运行的意见》（国办发〔2018〕13 号）、《城市轨道交通运营管理规定》（交通运输部令 2018 年第 8 号）等有关要求，制定本办法。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二条",
+            "number": "第二条",
+            "title": "第二条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "地铁、轻轨等城市轨道交通的客运组织与服务及其监督管理工作适用本办法。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三条",
+            "number": "第三条",
+            "title": "第三条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "城市轨道交通客运组织与服务工作坚持以人民为中心，遵循安全第一、乘客为先、需求导向、持续改进的原则。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四条",
+            "number": "第四条",
+            "title": "第四条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "城市轨道交通所在地城市交通运输主管部门或者城市人民政府指定的城市轨道交通运营主管部门（以下统称城市轨道交通运营主管部门）负责本行政区域内城市轨道交通客运组织与服务的监督管理工作。\n城市轨道交通运营单位（以下简称运营单位）负责城市轨道交通客运组织与服务工作。",
+            "tags": [
+              "交通主管部门",
+              "轨道交通",
+              "轨道运营单位"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0008",
+        "number": null,
+        "title": "PDF 第 3 页",
+        "node_type": "chapter",
+        "page_span": [
+          3,
+          3
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 3 -",
+        "tags": [],
+        "children": []
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二章",
+        "number": "第二章",
+        "title": "第二章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "基础管理",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第五条",
+            "number": "第五条",
+            "title": "第五条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "运营单位应建立客运组织与服务质量管理体系，制定车站岗位职责与人员培训、应急预案和演练、客流组织及服务管理、客运设施设备管理、票务管理、环境卫生管理、信息发布、\n乘客遗失物保管和招领等制度。",
+            "tags": [
+              "人群管控",
+              "信息发布",
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第六条",
+            "number": "第六条",
+            "title": "第六条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "运营单位应根据车站规模、客流情况、设施设备布局、设备系统自动化程度、应急处置要求、服务标准、公众需求等，科学设置客运人员岗位，明确岗位职责和作业标准，相应配备符合要求的客运人员。人员上岗前应经过岗位培训，掌握本岗位知识和技能。",
+            "tags": [
+              "人群管控",
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第七条",
+            "number": "第七条",
+            "title": "第七条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "运营单位应与出入口属地，连通的物业、商铺，客运枢纽等相关单位明确车站管辖界线和安全管理责任。车站管辖范围一般以出入口建筑垂直投影线、楼梯台阶、进出口闸机围栏等为界。",
+            "tags": [
+              "入场",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第八条",
+            "number": "第八条",
+            "title": "第八条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "城市轨道交通线网应统一标志标识。\n\n车站醒目位置应张贴本站首末班车时间、周边公交换乘信息、无障碍设施指引、车站疏散示意图、票价及乘客乘车规范，\n以及禁止、限制携带物品目录等。出入口、站内指示和导向标志",
+            "tags": [
+              "人群管控",
+              "入场",
+              "地面公交",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0014",
+        "number": null,
+        "title": "PDF 第 4 页",
+        "node_type": "chapter",
+        "page_span": [
+          4,
+          4
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 4 -\n应清晰、醒目、连续、规范。车站控制室、设备房、轨行区等区域应设置醒目的禁行标志，应急装置应设置醒目的警示标志和安全使用指引。",
+        "tags": [
+          "应急管理",
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第九条",
+            "number": "第九条",
+            "title": "第九条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "运营单位应根据车站规模、客流特点、设施设备布局、岗位设置等，制定工作日、节假日、重要活动以及突发事件的车站客运组织方案（含应急预案），换乘站还应包括共管换乘站协同客运组织要求（含应急预案），做到“一站一方案”，并根据车站实际客流和设施设备变化情况及时修订完善。",
+            "tags": [
+              "人群管控",
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十条",
+            "number": "第十条",
+            "title": "第十条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "运营单位应以服务乘客安全出行为导向建立客运、\n\n行车、维保等业务工作协调机制，根据客流变化优化客运、行车、\n维保方案，不断满足客流需要。\n运营单位应组织客运人员开展应急设施设备使用方法和应急处置措施等实操培训，充分利用客流较少时段，在车站和列车开展应急疏散、应急设施设备使用等实战演练。",
+            "tags": [
+              "人群管控",
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三章",
+        "number": "第三章",
+        "title": "第三章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "客运组织",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十一条",
+            "number": "第十一条",
+            "title": "第十一条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "车站应根据本站客流流线组织乘客进出站、换乘。因新线开通、车站客流变化、车站设施设备布局改变、枢纽站衔接等，需要对客流流线进行调整的，应对车站整体客流流线、\n人员疏散进行统筹论证，必要时可组织专家进行风险评估。车站",
+            "tags": [
+              "人群管控",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0019",
+        "number": null,
+        "title": "PDF 第 5 页",
+        "node_type": "chapter",
+        "page_span": [
+          5,
+          5
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 5 -\n客流流线设置、设施设备布局等应综合考虑反恐防范、安检、治安防范和消防安全需要。与火车站、汽车客运站、机场等相衔接的车站，应加强信息共享、标志接续、流线衔接等服务协同，提供的安检场地应为安检互认提供便利，以减少重复安检，提高通行效率和服务水平。",
+        "tags": [
+          "交通组织",
+          "人群管控",
+          "安全检查",
+          "火灾",
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十二条",
+            "number": "第十二条",
+            "title": "第十二条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "车站工作人员应在每日运营前，对车站客运设施设备进行检查，应在首班车到站前完成准备工作，开启所有投入运营的出入口、换乘通道和自动扶梯、电梯。末班车前一列车驶离车站后，应通过广播等方式告知乘客末班车信息。换乘站应根据列车运行计划、乘客换乘所需时间，及时关闭换乘通道或者采取其他禁止换乘的措施，防止乘客误入。\n列车退出运营前，",
+            "tags": [
+              "信息发布",
+              "入场",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十三条",
+            "number": "第十三条",
+            "title": "第十三条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "车站工作人员应对投入运营的车站出入口、站厅、站台、通道等公共区域进行巡视，检查应急设施、乘客信息系统、自动售检票设备、标志标识、照明设施、电扶梯、站台门、\n站台候车椅状态，运营期间巡视频率不应低于每 3 小时一次，发现异常情况及时进行处理；遇客流高峰、恶劣天气、重大活动等情况，应根据需要增加巡视次数。",
+            "tags": [
+              "人群管控",
+              "入场",
+              "应急管理",
+              "恶劣天气",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0022",
+        "number": null,
+        "title": "PDF 第 6 页",
+        "node_type": "chapter",
+        "page_span": [
+          6,
+          6
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 6 -\n客流集中的出入口、站台门、楼扶梯、换乘通道等重点区域，\n站台列车集中到发、车站客流高峰时段、运营临时调整等重要时段，列车降级运行、客运设备故障停止服务等非正常情况，应加强安全盯控和组织引导，必要时相关区域增加车站工作人员。",
+        "tags": [
+          "人群管控",
+          "入场",
+          "设施故障",
+          "轨道交通",
+          "集散通道"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十四条",
+            "number": "第十四条",
+            "title": "第十四条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "车站站台服务人员应维护站台候车及上下车秩序，查看车门和站台门的开闭状态，防止夹人夹物动车。遇站台紧急关闭按钮、车门和站台门紧急解锁装置触发或消防报警装置启动，要立即查明原因，妥善处置。发生信号故障等突发情况时，\n车站站台服务人员应按规定协助行车人员做好接发列车引导。",
+            "tags": [
+              "火灾",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十五条",
+            "number": "第十五条",
+            "title": "第十五条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "运营单位应当持续监测客流情况，科学编制列车运行计划，在线路设计能力范围内合理安排运力，不断满足客流需求。\n发生突发大客流时，客运人员应当协调行车调度人员及时增加运力进行疏导。预判站台客流聚集超过预警值、可能危及安全时，应当实施单站级客流控制。无法缓解客流压力的，应当在本线多个车站实施单线级客流控制；仍无法缓解客流压力或",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "突发大客流",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0025",
+        "number": null,
+        "title": "PDF 第 7 页",
+        "node_type": "chapter",
+        "page_span": [
+          7,
+          7
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 7 -\n闭换乘通道或其他禁止换乘的措施、单向开放或关闭出入口等。\n临时采取客流控制措施的，车站应通过乘客信息系统、广播等形式及时告知乘客。常态化采取客流控制措施的，车站应公布采取客流控制措施的日期、时段等信息，并对客流控制措施的实施效果持续进行评估，可以取消的，应及时取",
+        "tags": [
+          "人群管控",
+          "信息发布",
+          "入场",
+          "轨道交通",
+          "集散通道"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十六条",
+            "number": "第十六条",
+            "title": "第十六条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "车站公共区域施工作业一般应安排在非运营时间进行。确需在运营时间进行的，运营单位应采取划定隔离区域、\n围蔽、工作人员现场盯控等安全防护措施，加强客流疏导，对乘客做好解释说明。对于涉及关闭车站出入口或换乘通道、暂停车站使用、缩短运营时间的施工改造，运营单位应提前报告城市轨道交通运营主管部门并向社会公告。",
+            "tags": [
+              "人群管控",
+              "信息发布",
+              "停车管理",
+              "入场",
+              "活动期间",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十七条",
+            "number": "第十七条",
+            "title": "第十七条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "非突发情况的列车越站，应至少提前一站告知车内乘客，并通过站内广播告知车站乘客。列车因故在车站停留时，\n列车车门、站台门应处于开启状态，列车和车站通过广播告知车内、车站乘客。",
+            "tags": [
+              "信息发布",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十八条",
+            "number": "第十八条",
+            "title": "第十八条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "出现低温雨雪冰冻等恶劣天气时，运营单位应采取铺设防滑垫、设置防滑或防拥堵提示等必要措施，加强广播提示和现场疏导；站内或出入口乘客聚集可能造成客流对冲等情况时，可调整自动扶梯运行方向或暂时关闭自动扶梯，危及乘客安全时，可暂时关闭出入口。",
+            "tags": [
+              "人群拥挤",
+              "人群管控",
+              "信息发布",
+              "入场",
+              "恶劣天气",
+              "活动期间",
+              "集散通道"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0029",
+        "number": null,
+        "title": "PDF 第 8 页",
+        "node_type": "chapter",
+        "page_span": [
+          8,
+          8
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 8 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第十九条",
+            "number": "第十九条",
+            "title": "第十九条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "车站发生火灾、淹水倒灌、公共安全、公共卫生等突发事件时，车站工作人员应当报告行车调度部门，按照应急预案进行现场处置，必要时采取关闭出入口、疏散站内乘客、封站等措施。",
+            "tags": [
+              "人群管控",
+              "入场",
+              "应急管理",
+              "活动期间",
+              "火灾",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四章",
+        "number": "第四章",
+        "title": "第四章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "客运服务",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十条",
+            "number": "第二十条",
+            "title": "第二十条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "城市轨道交通线路全天运营时间不应少于 15 小时。运营单位应当根据客流需求，制定列车运行计划，高峰时段加大安排运力，不断提高乘客服务体验。\n遇节假日、大型活动、恶劣天气以及衔接火车站或者机场的线路有火车、飞机大面积晚点的，城市轨道交通运营主管部门可要求运营单位在保障安全的前提下，适当采取开行临时车次、加密行车间隔、延长",
+            "tags": [
+              "人群管控",
+              "恶劣天气",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十一条",
+            "number": "第二十一条",
+            "title": "第二十一条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "车站乘客信息系统应当准确发布当前列车到达时间、后续一班列车到达时间、开行方向等信息，发生突发事件时，及时提供紧急信息。车站乘客信息系统出现故障或者信息发布错误等情况时，应及时处置。",
+            "tags": [
+              "信息发布",
+              "应急管理",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十二条",
+            "number": "第二十二条",
+            "title": "第二十二条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "车站站台应广播排队候车、安全乘车等提示信息，列车进站时站台应广播列车到站和开行方向。列车应广播到达车站和换乘信息，需要开启另一侧车门时，应通过广播提前告",
+            "tags": [
+              "信息发布",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0035",
+        "number": null,
+        "title": "PDF 第 9 页",
+        "node_type": "chapter",
+        "page_span": [
+          9,
+          9
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 9 -\n知乘客。",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十三条",
+            "number": "第二十三条",
+            "title": "第二十三条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "自动扶梯和电梯运行时间应当与车站运营时间同步。\n自动扶梯发生故障时，应立即停止使用，在自动扶梯出入口放置安全护栏、警示标志等，引导乘客使用其他自动扶梯或者楼梯。\n电梯发生故障时，应立即停止使用，在电梯口放置安全护栏、\n警示标志等。有乘客被困时，应安抚乘客并及时采取救援措施。\n自动扶梯上有乘客时禁止启动。",
+            "tags": [
+              "入场",
+              "轨道交通",
+              "集散通道"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十四条",
+            "number": "第二十四条",
+            "title": "第二十四条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "每个自动售票机群组至少有 1 台具备现金支付功能的售票设备正常使用，每组进、出站自动检票机群组正常使用的通道均不应少于 2 个。自动售票机、自动检票机发生故障时，应设置故障提示。自动售票机大面积故障时，应增加人工售票窗口或引导乘客使用其他支付方式购票进站。自动检票机大面积故障时，应采取人工检票、免检等方式，引导乘客有序",
+            "tags": [
+              "人群管控"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十五条",
+            "number": "第二十五条",
+            "title": "第二十五条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "站台门发生故障无法关闭时，车站应安排专人值守，做好安全防护；无法打开时，应通过列车广播、标识或其他方式告知乘客，引导乘客从其他站台门下车。站台门发生大面积故障的，驾驶员、行车值班员等应及时报告行车调度人员采取",
+            "tags": [
+              "信息发布",
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0039",
+        "number": null,
+        "title": "PDF 第 10 页",
+        "node_type": "chapter",
+        "page_span": [
+          10,
+          10
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 10 -\n越站等应急措施，通过广播及时告知乘客，维护候车秩序。车站工作人员应将站台门故障情况及时报告设施设备维保人员进行处理。",
+        "tags": [
+          "信息发布",
+          "应急管理",
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十六条",
+            "number": "第二十六条",
+            "title": "第二十六条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "列车临时清客时，应通过广播或者其他方式告知车内和站内乘客，车站工作人员应上车引导乘客下车，清客完毕后报告驾驶员关闭车门或由车站工作人员操作关门。\n列车区间疏散时，应通过车内广播等方式准确、清晰告知乘客疏散方向，车站工作人员应进入轨行区引导客流快速疏散；车站可采取暂停进入车站等措施防止乘客进站，并及时告知乘客。",
+            "tags": [
+              "人群管控",
+              "信息发布",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十七条",
+            "number": "第二十七条",
+            "title": "第二十七条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "车站工作人员应按规定统一着装，正确佩戴服务标志，答复乘客咨询时应坚持首问负责、礼貌热情、用语规范，\n使用普通话（乘客提问时使用方言或外语的除外）。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十八条",
+            "number": "第二十八条",
+            "title": "第二十八条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "车站和列车温度、湿度、空气质量、噪声等应符合有关规定。车站公共卫生间应能正常使用、环境整洁、通风良好，因维修、清洁等暂停使用的应设置提示信息。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第二十九条",
+            "number": "第二十九条",
+            "title": "第二十九条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "车站内应配备急救箱，乘客受伤或者身体不适时，车站工作人员应及时拨打救助电话并等待至救护人员到场，\n可视需要对现场进行隔离。",
+            "tags": [
+              "到场",
+              "活动期间",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十条",
+            "number": "第三十条",
+            "title": "第三十条",
+            "node_type": "article",
+            "page_span": [
+              10,
+              10
+            ],
+            "summary": "车站和列车内配备的无障碍设施应保持功能完好，车站工作人员应为有需要的乘客提供无障碍乘车服务。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0045",
+        "number": null,
+        "title": "PDF 第 11 页",
+        "node_type": "chapter",
+        "page_span": [
+          11,
+          11
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 11 -\n既有设施设备不符合无障碍相关标准的，运营单位应有计划组织实施更新改造，不具备改造条件的应采取必要的替代性措施，不断提高无障碍服务水平。",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十一条",
+            "number": "第三十一条",
+            "title": "第三十一条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "具备条件的车站应设置无障碍卫生间、婴儿护理台、儿童洗手盆等服务设施，宜开辟母婴室，设置自动售货机等便民服务设备，并设置引导标识。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十二条",
+            "number": "第三十二条",
+            "title": "第三十二条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "运营单位应每年向社会公布运营服务质量承诺及履行情况，服务质量承诺应至少包括以下内容：\n（一）列车正点率、列车运行图兑现率等列车运行指标；\n（二）自动售票机可靠度、自动检票机可靠度、乘客信息系统可靠度等客运服务设施设备运行指标；\n（三）乘客投诉、意见、建议受理渠道和处理时限；\n（四）服务改进的举措和计划。",
+            "tags": [
+              "数据治理",
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十三条",
+            "number": "第三十三条",
+            "title": "第三十三条",
+            "node_type": "article",
+            "page_span": [
+              11,
+              11
+            ],
+            "summary": "运营单位应建立乘客投诉受理处理制度，设置服务监督机构，公布服务监督电话，及时受理乘客投诉。对受理的乘客投诉，运营单位应在 7 个工作日内处理完毕，并将处理结果告知乘客。\n运营单位应对乘客反映的问题进行核实整改，设施设备类投诉应核实设施设备信息，组织相关单位进行处理；服务类投诉应及时查找原因，改进相关服务；规章制度类投诉",
+            "tags": [],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0049",
+        "number": null,
+        "title": "PDF 第 12 页",
+        "node_type": "chapter",
+        "page_span": [
+          12,
+          12
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 12 -\n据需要修改完善制度。对于超出运营单位职责范畴无法解决的问题，应及时报有关部门协调处理。\n城市轨道交通运营主管部门应建立乘客投诉受理处理制度，\n公布服务监督电话，及时受理乘客投诉。对乘客投诉自受理之日起 15 个工作日内，应将处理结果告知乘客。",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第五章",
+        "number": "第五章",
+        "title": "第五章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "乘客行为规范",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十四条",
+            "number": "第三十四条",
+            "title": "第三十四条",
+            "node_type": "article",
+            "page_span": [
+              12,
+              12
+            ],
+            "summary": "乘客应遵守票务管理规定，持有效乘车凭证乘车，不得采取尾随、强行冲撞、翻越自动检票机或其他设施设备等方式逃票。城市轨道交通因故中断运营时，乘客有权持有效车票要求运营单位按照票价退还票款。按照有关规定享受票价优待的乘客，运营单位应执行票价优待规定。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十五条",
+            "number": "第三十五条",
+            "title": "第三十五条",
+            "node_type": "article",
+            "page_span": [
+              12,
+              12
+            ],
+            "summary": "禁止乘客有下列影响城市轨道交通运营安全的行为：\n（一）非法拦截列车，在列车车门或站台门提示警铃鸣响时强行上下列车，车门或站台门关闭后扒门；\n（二）擅自操作有警示标志的按钮和开关装置，在非紧急状态下动用紧急或者安全装置；\n（三）携带有毒、有害、易燃、易爆、放射性、腐蚀性以及",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0053",
+        "number": null,
+        "title": "PDF 第 13 页",
+        "node_type": "chapter",
+        "page_span": [
+          13,
+          13
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 13 -\n其他可能危及人身和财产安全的危险物品进站、乘车；\n（四）攀爬或者跨越围栏、护栏、护网、站台门等，擅自进入驾驶室、控制中心、车辆基地、轨道、隧道或者其他禁止非工作人员进入的区域，干扰、阻碍驾驶员安全驾驶；\n（五）向城市轨道交通线路、列车以及其他设施投掷物品，\n或",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十六条",
+            "number": "第三十六条",
+            "title": "第三十六条",
+            "node_type": "article",
+            "page_span": [
+              13,
+              13
+            ],
+            "summary": "乘客不得有下列影响城市轨道交通运营秩序的行为：\n（一）在车站或者列车内涂写、刻画或者私自张贴、悬挂物品；\n（二）携带动物（导盲犬、导听犬、辅助犬等服务犬和军警犬除外）进站乘车，携带有严重异味、刺激性气味的物品进站乘",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0055",
+        "number": null,
+        "title": "PDF 第 14 页",
+        "node_type": "chapter",
+        "page_span": [
+          14,
+          14
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 14 -\n车；\n（三）推销产品或从事营销活动，乞讨、卖艺及歌舞表演，\n大声喧哗、吵闹，使用电子设备时外放声音；\n（四）骑行平衡车、电动代步工具（残疾人助力车除外）、\n自行车，使用滑板、溜冰鞋；\n（五）在列车内进食（婴儿、病人除外）；\n（六）随地吐痰、便溺、乱吐口香糖，乱",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十七条",
+            "number": "第三十七条",
+            "title": "第三十七条",
+            "node_type": "article",
+            "page_span": [
+              14,
+              14
+            ],
+            "summary": "发生突发事件时，乘客应服从工作人员指挥和引导。",
+            "tags": [
+              "应急管理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十八条",
+            "number": "第三十八条",
+            "title": "第三十八条",
+            "node_type": "article",
+            "page_span": [
+              14,
+              14
+            ],
+            "summary": "提倡尊老爱幼、文明乘车的美德，提倡主动给老、弱、病、残、孕、怀抱婴儿的乘客让座和提供方便。",
+            "tags": [],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第三十九条",
+            "number": "第三十九条",
+            "title": "第三十九条",
+            "node_type": "article",
+            "page_span": [
+              14,
+              14
+            ],
+            "summary": "城市轨道交通运营主管部门应按照本章上述条款要求，结合实际制定本地城市轨道交通乘客乘车规范。乘客应遵守乘车规范，听从车站工作人员的指挥和引导，文明有序进站、乘车，自觉维护车站和列车整洁，爱护城市轨道交通设施设备，维护良好公共秩序。拒不遵守乘车规范的，运营单位有权予以制止，制止无效的，应报有关部门依法处理。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0059",
+        "number": null,
+        "title": "PDF 第 15 页",
+        "node_type": "chapter",
+        "page_span": [
+          15,
+          15
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 15 -",
+        "tags": [],
+        "children": []
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第六章",
+        "number": "第六章",
+        "title": "第六章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "服务监督与提升",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四十条",
+            "number": "第四十条",
+            "title": "第四十条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "运营单位应当制定本单位客运服务质量标准，建立内部服务质量监督、检查、考核机制，不断改进服务质量，提升乘客出行体验。",
+            "tags": [],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四十一条",
+            "number": "第四十一条",
+            "title": "第四十一条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "城市轨道交通运营主管部门和运营单位应当建立健全乘客沟通机制，通过公众开放日、接待日、网络平台等形式开展乘客交流活动，向乘客介绍客运组织和服务举措，了解公众诉求和意见建议，及时回应乘客关切。鼓励邀请“常乘客”\n或者乘客服务督导员参与服务质量监督工作。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四十二条",
+            "number": "第四十二条",
+            "title": "第四十二条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "城市轨道交通运营主管部门应当对运营单位客运组织与服务工作进行监督检查，每年组织开展服务质量评价，向社会公布服务质量评价结果，督促运营单位不断改进服务。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第七章",
+        "number": "第七章",
+        "title": "第七章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "附则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四十三条",
+            "number": "第四十三条",
+            "title": "第四十三条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "本文件所称车站工作人员包含站长、值班站长、行车值班员和站务员，其中，站长、值班站长和站务员统称客运人员。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四十四条",
+            "number": "第四十四条",
+            "title": "第四十四条",
+            "node_type": "article",
+            "page_span": [
+              15,
+              15
+            ],
+            "summary": "跨城市运营的城市轨道交通线路，线路所在城",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@sec-0067",
+        "number": null,
+        "title": "PDF 第 16 页",
+        "node_type": "chapter",
+        "page_span": [
+          16,
+          16
+        ],
+        "summary": "交通运输部行政规范性文件\nX\n交通运输部发布\n- 16 -\n市的城市轨道交通运营主管部门应协商建立健全跨区域协同的票务管理、乘客信息、标志接续等乘客服务标准，提升一体化服务水平。",
+        "tags": [
+          "轨道交通"
+        ],
+        "children": [
+          {
+            "node_id": "CN-URBAN-RAIL-PASSENGER-ORG-2025@第四十五条",
+            "number": "第四十五条",
+            "title": "第四十五条",
+            "node_type": "article",
+            "page_span": [
+              16,
+              16
+            ],
+            "summary": "本办法自印发之日起施行。《交通运输部关于印发〈城市轨道交通客运组织与服务管理办法〉的通知》（交运规〔2019〕15 号）同时废止。",
+            "tags": [
+              "轨道交通"
+            ],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

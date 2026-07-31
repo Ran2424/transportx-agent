@@ -1,5 +1,6 @@
 import type { LiveSession } from '../../../public/app-types.js';
 import type { ConnectionState } from '../../../public/kernel/stores/runtime-store.js';
+import { BrandMark } from '../BrandMark';
 import { Icon } from '../icons';
 import { modelReference } from '../../lib/formatting';
 
@@ -17,6 +18,7 @@ type HeaderProps = {
   onToggleFiles(): void;
   onToggleTasks(): void;
   onToggleMap(): void;
+  onGoHome(): void;
   onOpenModel(): void;
   onOpenCommands(): void;
   onOpenSettings(): void;
@@ -36,6 +38,7 @@ export function Header({
   onToggleFiles,
   onToggleTasks,
   onToggleMap,
+  onGoHome,
   onOpenModel,
   onOpenCommands,
   onOpenSettings,
@@ -64,10 +67,10 @@ export function Header({
         </button>
       </div>
 
-      <a className="workspace-brand" href="/" aria-label="Pi Traffic 工作台">
-        <span className="workspace-brand-mark">τ</span>
-        <span><strong>PI TRAFFIC</strong><small>AGENT WORKSPACE</small></span>
-      </a>
+      <button className="workspace-brand" type="button" aria-label="返回 TransportX 主界面" onClick={onGoHome}>
+        <BrandMark className="workspace-brand-mark" />
+        <span><strong>TRANSPORTX</strong><small>AGENT WORKSPACE</small></span>
+      </button>
 
       <div className="workspace-header-right">
         <div className="agent-status" data-testid="agent-status" data-state={status} title={`Agent ${statusLabel}`}>

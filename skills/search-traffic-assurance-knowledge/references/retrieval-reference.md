@@ -14,8 +14,10 @@
 默认知识库根目录：
 
 ```text
-/Users/ran/WorkSpace/2 Unit Project/202 单位/上海交通指挥中心/揭榜挂帅/knowledge
+<skill-root>/references/knowledge
 ```
+
+`search_knowledge.py` 根据脚本自身位置解析 `<skill-root>`，因此移动或分发整个 Skill 后无需修改路径。
 
 全局入口：
 
@@ -119,7 +121,8 @@ cite KNOWLEDGE_ID
 示例：
 
 ```bash
-python /Users/ran/.codex/skills/search-traffic-assurance-knowledge/scripts/search_knowledge.py \
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
+  "<skill-root>/scripts/search_knowledge.py" \
   search \
   "演唱会 散场 轨道 客流 疏导 接驳 信息发布" \
   --stage 散场 --limit 12

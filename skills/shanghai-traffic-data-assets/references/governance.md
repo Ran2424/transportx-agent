@@ -14,7 +14,7 @@
 
 | 事项 | 标准 |
 |---|---|
-| 资产版本 | 3.0.1 |
+| 资产版本 | 3.1.0 |
 | 业务时区 | Asia/Shanghai |
 | 发布坐标系 | EPSG:4326 |
 | 未知坐标 | 保留记录并标 `UNKNOWN`，不得用于精确空间运算 |
@@ -92,6 +92,21 @@
 - Git 只版本化 SKILL、参考文档和脚本；数据库由 `.gitignore` 排除。
 - 数据库缺失时，`query_assets.py` 会停止并报告缺少的文件。
 
+## EVDATA 接入
+
+EVDATA 路段 GeoJSON 与速度 CSV 使用独立导入脚本，脚本会校验 CRS、字段、路段 ID 全覆盖、
+15 分钟对齐和复合主键唯一性，并同步更新 `road.sqlite` 与 `catalog.sqlite`。
+
+```bash
+/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
+  "<Shanghai traffic query tools directory>/import_evdata_road_speed.py" \
+  --csv "/absolute/path/时代少年团数据.csv" \
+  --geojson "/absolute/path/road_segment_80000.geojson"
+```
+
+导入是幂等的：只替换三个 EVDATA 对象和对应目录记录，不修改原道路状态表。
+源速度单位未声明，因此资产登记为 `UNKNOWN`；高值只标警告，不静默删除。
+
 ## 重建
 
 构建会删除并重建目标 SQLite 文件。只有用户明确要求、源治理库已核实且允许覆盖生成资产时执行。
@@ -99,9 +114,13 @@
 ```bash
 SHANGHAI_TRAFFIC_SOURCE_DB=/absolute/source/traffic_governance.sqlite \
 SHANGHAI_TRAFFIC_SKILL_DIR=/absolute/skill/path \
+SHANGHAI_TRAFFIC_EVDATA_SPEED_CSV=/absolute/path/时代少年团数据.csv \
+SHANGHAI_TRAFFIC_EVDATA_ROAD_GEOJSON=/absolute/path/road_segment_80000.geojson \
 /Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
   "<Shanghai traffic query tools directory>/build_agent_data_assets.py"
 ```
+
+两个 EVDATA 环境变量必须同时提供或同时省略。省略时只重建原治理库资产；提供时会在基础资产验证后接入 EVDATA。
 
 重建后至少运行：
 

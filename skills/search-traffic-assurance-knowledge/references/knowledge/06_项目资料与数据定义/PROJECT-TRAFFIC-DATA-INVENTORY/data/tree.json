@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "PROJECT-TRAFFIC-DATA-INVENTORY",
+  "derived": true,
+  "root": {
+    "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@document",
+    "number": null,
+    "title": "重大活动交通态势数据梳理报告",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [
+      "数据治理"
+    ],
+    "children": [
+      {
+        "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@sec-0001",
+        "number": null,
+        "title": "重大活动交通态势数据梳理报告",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "更新时间：2026-07-20\n资产版本：2.0.0",
+        "tags": [
+          "数据治理"
+        ],
+        "children": [
+          {
+            "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@sec-0002",
+            "number": null,
+            "title": "1. 报告边界",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "本报告只陈述当前文件和SQLite资产中可以验证的内容。题目场景涉及上海体育场周边重大活动交通，但数据并非所有领域都覆盖全上海或完整活动周期。\n\n`common.dim_event` 中的2025-08-20、21、23、24四条活动记录来自用户提供的日期级信息。数据中没有可靠的开演、结束、进场或散场时刻，不据交通峰值",
+            "tags": [
+              "到场",
+              "散场",
+              "数据治理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@sec-0003",
+            "number": null,
+            "title": "2. 原始治理库",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "`data/traffic_governance.sqlite` 当前登记32个源数据集、2,534,244条源记录：\n\n| 目录 | 数据集数 | 记录数 | 定位 |\n|---|---:|---:|---|\n| `data/amap_metro` | 6 | 2,152 | 2026-07-19高德轨交方向线路、站",
+            "tags": [
+              "人群管控",
+              "出租车与网约车",
+              "地面公交",
+              "数据治理"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@sec-0004",
+            "number": null,
+            "title": "3. 标准资产",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "标准资产由 `scripts/build_agent_data_assets.py` 生成，分为 `catalog`、`common`、`road`、`metro`、`bus`、`ridehail` 六个SQLite数据库。",
+            "tags": [
+              "数据治理"
+            ],
+            "children": [
+              {
+                "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@3.1",
+                "number": "3.1",
+                "title": "3.1 统一坐标规则",
+                "node_type": "section",
+                "page_span": null,
+                "summary": "- 公交和轨交标准字段 `longitude`、`latitude`、`geometry_json` 统一为WGS84经纬度，`normalized_crs='EPSG:4326'`。\n- 高德原始GCJ-02坐标保留在治理库以及 `source_x/source_y/source_geometry_json` 中。\n",
+                "tags": [
+                  "公交站点",
+                  "地面公交",
+                  "数据治理",
+                  "活动场馆"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@3.2",
+                "number": "3.2",
+                "title": "3.2 轨交",
+                "node_type": "section",
+                "page_span": null,
+                "summary": "| 对象 | 数量 | 说明 |\n|---|---:|---|\n| 统一线路 | 20 | 保留既有稳定 `line_id` |\n| 高德方向/支线路径 | 46 | 5、10、11号线各含4个方向/支线路径，其余线路各2个 |\n| 统一物理站点 | 420 | 既有ID保持稳定，新增站使用414–420 |\n| 高德",
+                "tags": [
+                  "人群管控"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@3.3",
+                "number": "3.3",
+                "title": "3.3 公交",
+                "node_type": "section",
+                "page_span": null,
+                "summary": "| 对象 | 数量 | 说明 |\n|---|---:|---|\n| 官方线路 | 77 | 客流连接使用的统一线路维度 |\n| 高德方向线路 | 151 | WGS84标准几何，保留GCJ-02源几何 |\n| 来源站点 | 1,272 | 194个官方站点、1,078个高德站点，不做未经验证的一一合并 |\n| 高德方向",
+                "tags": [
+                  "人群管控",
+                  "地面公交"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@3.4",
+                "number": "3.4",
+                "title": "3.4 其他领域",
+                "node_type": "section",
+                "page_span": null,
+                "summary": "- 路网：89个发布段、21,775条状态事件。源数据没有路段几何，不能将路段精确分配到场馆圈层。\n- 网约车：默认事实1,275,581条；其中仍有1,684条记录源CRS未知并明确标记。\n- 场馆订单：默认事实1,150,668条；29条无效坐标记录已排除。\n- 气象：8个徐汇网格、11,384条有效观测。`rai",
+                "tags": [
+                  "出租车与网约车",
+                  "到场",
+                  "数据治理",
+                  "活动场馆"
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@sec-0009",
+            "number": null,
+            "title": "4. 实体与客流连接",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "- 轨交客流只通过统一 `line_id`、`station_id` 连接；高德方向线路ID和站点ID保存在映射表中。\n- 公交客流通过官方 `line_key` 连接；高德方向线路用于静态供给和空间制图。\n- 公交交易数、轨交人次和网约车订单量纲不同，只能并列比较趋势，不能相加为“总客流”。\n- 订单号不进入资产包，",
+            "tags": [
+              "人群管控",
+              "出租车与网约车",
+              "地面公交"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@sec-0010",
+            "number": null,
+            "title": "5. 构建质量结果",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "当前错误级规则全部通过：\n\n- 32个源数据集全部登记。\n- 公交和轨交客流维度映射无遗漏。\n- 420个高德轨交站点ID全部映射。\n- 公交、轨交路线级点线距离均不超过25米。\n- 存在空间值的公交、轨交标准对象全部为EPSG:4326。\n- 默认事实表不暴露源业务ID，订单ID已脱敏。\n\n仍保留并明确报告的警告：活",
+            "tags": [
+              "人群管控",
+              "出租车与网约车",
+              "地面公交",
+              "数据治理",
+              "活动场馆"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "PROJECT-TRAFFIC-DATA-INVENTORY@sec-0011",
+            "number": null,
+            "title": "6. 查询入口",
+            "node_type": "chapter",
+            "page_span": null,
+            "summary": "通过迁移后的 `shanghai-traffic-data-assets/scripts/query_assets.py` 只读查询。数据结构、治理限制和指标分别见：\n\n- `references/schema.md`\n- `references/governance.md`\n- `references/metrics",
+            "tags": [
+              "入场",
+              "数据治理"
+            ],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

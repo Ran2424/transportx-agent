@@ -1,0 +1,607 @@
+{
+  "schema_version": "1.0.0",
+  "doc_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505",
+  "derived": true,
+  "root": {
+    "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@document",
+    "number": null,
+    "title": "大型群众性活动安全管理条例",
+    "node_type": "document",
+    "page_span": null,
+    "summary": "",
+    "tags": [],
+    "children": [
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0001",
+        "number": null,
+        "title": "PDF 第 1 页",
+        "node_type": "chapter",
+        "page_span": [
+          1,
+          1
+        ],
+        "summary": "- 1 -\n大型群众性活动安全管理条例\n(2007 年 8 月 29 日国务院第 190 次常务会议通过 2007 年 9\n月 14 日中华人民共和国国务院令第 505 号公布 自 2007 年 10\n月 1 日起施行)",
+        "tags": [],
+        "children": []
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第一章",
+        "number": "第一章",
+        "title": "第一章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "总则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第一条",
+            "number": "第一条",
+            "title": "第一条",
+            "node_type": "article",
+            "page_span": [
+              1,
+              1
+            ],
+            "summary": "为了加强对大型群众性活动的安全管理，保护公民生命和财产安全，维护社会治安秩序和公共安全，制定本条例。",
+            "tags": [],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二条",
+            "number": "第二条",
+            "title": "第二条",
+            "node_type": "article",
+            "page_span": [
+              1,
+              1
+            ],
+            "summary": "本条例所称大型群众性活动，是指法人或者其他组织面向社会公众举办的每场次预计参加人数达到 1000 人以上的下列活动：\n(一)体育比赛活动；\n(二)演唱会、音乐会等文艺演出活动；\n(三)展览、展销等活动；\n(四)游园、灯会、庙会、花会、焰火晚会等活动；\n(五)人才招聘会、现场开奖的彩票销售等活动。\n影剧院、音乐厅、公园、",
+            "tags": [
+              "活动期间"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0005",
+        "number": null,
+        "title": "PDF 第 2 页",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "- 2 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第三条",
+            "number": "第三条",
+            "title": "第三条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "大型群众性活动的安全管理应当遵循安全第一、预防为主的方针，坚持承办者负责、政府监管的原则。",
+            "tags": [
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第四条",
+            "number": "第四条",
+            "title": "第四条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "县级以上人民政府公安机关负责大型群众性活动的安全管理工作。\n县级以上人民政府其他有关主管部门按照各自的职责，负责大型群众性活动的有关安全工作。",
+            "tags": [
+              "公安机关"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二章",
+        "number": "第二章",
+        "title": "第二章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "安全责任",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第五条",
+            "number": "第五条",
+            "title": "第五条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "大型群众性活动的承办者(以下简称承办者)对其承办活动的安全负责，承办者的主要负责人为大型群众性活动的安全责任人。",
+            "tags": [
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第六条",
+            "number": "第六条",
+            "title": "第六条",
+            "node_type": "article",
+            "page_span": [
+              2,
+              2
+            ],
+            "summary": "举办大型群众性活动，承办者应当制订大型群众性活动安全工作方案。\n大型群众性活动安全工作方案包括下列内容：\n(一)活动的时间、地点、内容及组织方式；\n(二)安全工作人员的数量、任务分配和识别标志；\n(三)活动场所消防安全措施；\n(四)活动场所可容纳的人员数量以及活动预计参加人数；\n(五)治安缓冲区域的设定及其标识；\n(六",
+            "tags": [
+              "入场",
+              "安全检查",
+              "活动承办方",
+              "火灾"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0011",
+        "number": null,
+        "title": "PDF 第 3 页",
+        "node_type": "chapter",
+        "page_span": [
+          3,
+          3
+        ],
+        "summary": "- 3 -\n(七)车辆停放、疏导措施；\n(八)现场秩序维护、人员疏导措施；\n(九)应急救援预案。",
+        "tags": [
+          "应急管理",
+          "活动期间"
+        ],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第七条",
+            "number": "第七条",
+            "title": "第七条",
+            "node_type": "article",
+            "page_span": [
+              3,
+              3
+            ],
+            "summary": "承办者具体负责下列安全事项：\n\n(一)落实大型群众性活动安全工作方案和安全责任制度，明确安全措施、安全工作人员岗位职责，开展大型群众性活动安全宣传教育；\n(二)保障临时搭建的设施、建筑物的安全，消除安全隐患；\n(三)按照负责许可的公安机关的要求，配备必要的安全检查设备，对参加大型群众性活动的人员进行安全检查，对拒不接受",
+            "tags": [
+              "人群管控",
+              "公安机关",
+              "安全检查",
+              "应急管理",
+              "活动承办方"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0013",
+        "number": null,
+        "title": "PDF 第 4 页",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "- 4 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第八条",
+            "number": "第八条",
+            "title": "第八条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "大型群众性活动的场所管理者具体负责下列安全事项：\n(一)保障活动场所、设施符合国家安全标准和安全规定；\n(二)保障疏散通道、安全出口、消防车通道、应急广播、应急照明、疏散指示标志符合法律、法规、技术标准的规定；\n(三)保障监控设备和消防设施、器材配置齐全、完好有效；\n(四)提供必要的停车场地，并维护安全秩序。",
+            "tags": [
+              "人群管控",
+              "信息发布",
+              "停车场",
+              "停车管理",
+              "应急管理",
+              "火灾",
+              "集散通道"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第九条",
+            "number": "第九条",
+            "title": "第九条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "参加大型群众性活动的人员应当遵守下列规定：\n\n(一)遵守法律、法规和社会公德，不得妨碍社会治安、影响社会秩序；\n(二)遵守大型群众性活动场所治安、消防等管理制度，接受安全检查，不得携带爆炸性、易燃性、放射性、毒害性、腐蚀性等危险物质或者非法携带枪支、弹药、管制器具；\n(三)服从安全管理，不得展示侮辱性标语、条幅等物品，",
+            "tags": [
+              "安全检查",
+              "火灾"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十条",
+            "number": "第十条",
+            "title": "第十条",
+            "node_type": "article",
+            "page_span": [
+              4,
+              4
+            ],
+            "summary": "公安机关应当履行下列职责：\n\n(一)审核承办者提交的大型群众性活动申请材料，实施安全许可；\n(二)制订大型群众性活动安全监督方案和突发事件处置预案；",
+            "tags": [
+              "公安机关",
+              "应急管理",
+              "活动承办方"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0017",
+        "number": null,
+        "title": "PDF 第 5 页",
+        "node_type": "chapter",
+        "page_span": [
+          5,
+          5
+        ],
+        "summary": "- 5 -\n(三)指导对安全工作人员的教育培训；\n(四)在大型群众性活动举办前，对活动场所组织安全检查，\n发现安全隐患及时责令改正；\n(五)在大型群众性活动举办过程中，对安全工作的落实情况实施监督检查，发现安全隐患及时责令改正；\n(六)依法查处大型群众性活动中的违法犯罪行为，处置危害公共安全的突发事件。",
+        "tags": [
+          "安全检查",
+          "应急管理",
+          "活动期间"
+        ],
+        "children": []
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第三章",
+        "number": "第三章",
+        "title": "第三章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "安全管理",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十一条",
+            "number": "第十一条",
+            "title": "第十一条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "公安机关对大型群众性活动实行安全许可制度。\n\n《营业性演出管理条例》对演出活动的安全管理另有规定的，从其规定。\n举办大型群众性活动应当符合下列条件：\n(一)承办者是依照法定程序成立的法人或者其他组织；\n(二)大型群众性活动的内容不得违反宪法、法律、法规的规定，不得违反社会公德；\n(三)具有符合本条例规定的安全工作方案，",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十二条",
+            "number": "第十二条",
+            "title": "第十二条",
+            "node_type": "article",
+            "page_span": [
+              5,
+              5
+            ],
+            "summary": "大型群众性活动的预计参加人数在 1000 人以上",
+            "tags": [],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0021",
+        "number": null,
+        "title": "PDF 第 6 页",
+        "node_type": "chapter",
+        "page_span": [
+          6,
+          6
+        ],
+        "summary": "- 6 -\n5000 人以下的，由活动所在地县级人民政府公安机关实施安全许可；预计参加人数在 5000 人以上的，由活动所在地设区的市级人民政府公安机关或者直辖市人民政府公安机关实施安全许可；跨省、自治区、直辖市举办大型群众性活动的，由国务院公安部门实施安全许可。",
+        "tags": [
+          "公安机关"
+        ],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十三条",
+            "number": "第十三条",
+            "title": "第十三条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "承办者应当在活动举办日的 20 日前提出安全许可申请，申请时，应当提交下列材料：\n(一)承办者合法成立的证明以及安全责任人的身份证明；\n(二)大型群众性活动方案及其说明，2 个或者 2 个以上承办者共同承办大型群众性活动的，还应当提交联合承办的协议；\n(三)大型群众性活动安全工作方案；\n(四)活动场所管理者同意提供活动",
+            "tags": [
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十四条",
+            "number": "第十四条",
+            "title": "第十四条",
+            "node_type": "article",
+            "page_span": [
+              6,
+              6
+            ],
+            "summary": "公安机关收到申请材料应当依法做出受理或者不予受理的决定。对受理的申请，应当自受理之日起 7 日内进行审查，对活动场所进行查验，对符合安全条件的，做出许可的决定；对不符合安全条件的，做出不予许可的决定，并书面说明理由。",
+            "tags": [
+              "公安机关"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0024",
+        "number": null,
+        "title": "PDF 第 7 页",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "- 7 -",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十五条",
+            "number": "第十五条",
+            "title": "第十五条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "对经安全许可的大型群众性活动，承办者不得擅自变更活动的时间、地点、内容或者扩大大型群众性活动的举办规模。\n承办者变更大型群众性活动时间的，应当在原定举办活动时间之前向做出许可决定的公安机关申请变更，经公安机关同意方可变更。\n承办者变更大型群众性活动地点、内容以及扩大大型群众性活动举办规模的，应当依照本条例的规定重新申请",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十六条",
+            "number": "第十六条",
+            "title": "第十六条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "对经安全许可的大型群众性活动，公安机关根据安全需要组织相应警力，维持活动现场周边的治安、交通秩序，\n预防和处置突发治安事件，查处违法犯罪活动。",
+            "tags": [
+              "公安机关",
+              "活动期间"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十七条",
+            "number": "第十七条",
+            "title": "第十七条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "在大型群众性活动现场负责执行安全管理任务的公安机关工作人员，凭值勤证件进入大型群众性活动现场，依法履行安全管理职责。\n公安机关和其他有关主管部门及其工作人员不得向承办者索取门票。",
+            "tags": [
+              "公安机关",
+              "活动承办方",
+              "活动期间"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十八条",
+            "number": "第十八条",
+            "title": "第十八条",
+            "node_type": "article",
+            "page_span": [
+              7,
+              7
+            ],
+            "summary": "承办者发现进入活动场所的人员达到核准数量",
+            "tags": [
+              "活动承办方"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0029",
+        "number": null,
+        "title": "PDF 第 8 页",
+        "node_type": "chapter",
+        "page_span": [
+          8,
+          8
+        ],
+        "summary": "- 8 -\n时，应当立即停止验票；发现持有划定区域以外的门票或者持假票的人员，应当拒绝其入场并向活动现场的公安机关工作人员报告。",
+        "tags": [
+          "入场",
+          "公安机关",
+          "活动期间"
+        ],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第十九条",
+            "number": "第十九条",
+            "title": "第十九条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "在大型群众性活动举办过程中发生公共安全事故、治安案件的，安全责任人应当立即启动应急救援预案，并立即报告公安机关。",
+            "tags": [
+              "公安机关",
+              "应急管理"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第四章",
+        "number": "第四章",
+        "title": "第四章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "法律责任",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二十条",
+            "number": "第二十条",
+            "title": "第二十条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "承办者擅自变更大型群众性活动的时间、地点、\n\n内容或者擅自扩大大型群众性活动的举办规模的，由公安机关处\n1 万元以上 5 万元以下罚款；有违法所得的，没收违法所得。\n未经公安机关安全许可的大型群众性活动由公安机关予以取缔，对承办者处 10 万元以上 30 万元以下罚款。",
+            "tags": [
+              "公安机关",
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二十一条",
+            "number": "第二十一条",
+            "title": "第二十一条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "承办者或者大型群众性活动场所管理者违反本条例规定致使发生重大伤亡事故、治安案件或者造成其他严重后果构成犯罪的，依法追究刑事责任；尚不构成犯罪的，对安全责任人和其他直接责任人员依法给予处分、治安管理处罚，对单位处 1 万元以上 5 万元以下罚款。",
+            "tags": [
+              "活动承办方"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二十二条",
+            "number": "第二十二条",
+            "title": "第二十二条",
+            "node_type": "article",
+            "page_span": [
+              8,
+              8
+            ],
+            "summary": "在大型群众性活动举办过程中发生公共安全事故，安全责任人不立即启动应急救援预案或者不立即向公安机",
+            "tags": [
+              "应急管理"
+            ],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@sec-0035",
+        "number": null,
+        "title": "PDF 第 9 页",
+        "node_type": "chapter",
+        "page_span": [
+          9,
+          9
+        ],
+        "summary": "- 9 -\n关报告的，由公安机关对安全责任人和其他直接责任人员处 5000\n元以上 5 万元以下罚款。",
+        "tags": [
+          "公安机关"
+        ],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二十三条",
+            "number": "第二十三条",
+            "title": "第二十三条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "参加大型群众性活动的人员有违反本条例第九条规定行为的，由公安机关给予批评教育；有危害社会治安秩序、威胁公共安全行为的，公安机关可以将其强行带离现场，依法给予治安管理处罚；构成犯罪的，依法追究刑事责任。",
+            "tags": [
+              "公安机关",
+              "活动期间"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二十四条",
+            "number": "第二十四条",
+            "title": "第二十四条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "有关主管部门的工作人员和直接负责的主管人员在履行大型群众性活动安全管理职责中，有滥用职权、玩忽职守、徇私舞弊行为的，依法给予处分；构成犯罪的，依法追究刑事责任。",
+            "tags": [],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第五章",
+        "number": "第五章",
+        "title": "第五章",
+        "node_type": "chapter",
+        "page_span": null,
+        "summary": "附则",
+        "tags": [],
+        "children": [
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二十五条",
+            "number": "第二十五条",
+            "title": "第二十五条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "县级以上各级人民政府、国务院部门直接举办的大型群众性活动的安全保卫工作，由举办活动的人民政府、国务院部门负责，不实行安全许可制度，但应当按照本条例的有关规定，责成或者会同有关公安机关制订更加严格的安全保卫工作方案，并组织实施。",
+            "tags": [
+              "公安机关"
+            ],
+            "children": []
+          },
+          {
+            "node_id": "CN-LARGE-MASS-EVENT-SAFETY-REG-505@第二十六条",
+            "number": "第二十六条",
+            "title": "第二十六条",
+            "node_type": "article",
+            "page_span": [
+              9,
+              9
+            ],
+            "summary": "本条例自 2007 年 10 月 1 日起施行。",
+            "tags": [],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

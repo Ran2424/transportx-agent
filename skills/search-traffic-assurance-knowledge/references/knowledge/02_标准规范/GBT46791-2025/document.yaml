@@ -1,0 +1,22 @@
+schema_version: 1.0.0
+doc_id: GBT46791-2025
+series_id: GBT46791
+document_class: STANDARD_SPEC
+document_subtype: national_recommended_standard
+title: 应急预案情景构建方法
+official_number: GB/T 46791-2025
+language: zh-CN
+jurisdiction: CN
+issuer: 国家市场监督管理总局、国家标准化管理委员会
+publication_date: null
+effective_date: null
+expiry_date: null
+status: effective
+binding_force: recommended
+source_url: null
+retrieved_at: '2026-07-23'
+source_file: source/original.pdf
+source_sha256: 5c4aff281d25c46501169e88a221d8988552e534dfdd791cea18e2b1789bc93c
+pdf_page_count: 19
+supersedes: []
+superseded_by: []

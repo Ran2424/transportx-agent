@@ -15,10 +15,7 @@ from typing import Any, Iterable
 import yaml
 
 
-DEFAULT_ROOT = Path(
-    "/Users/ran/WorkSpace/2 Unit Project/202 单位/上海交通指挥中心/"
-    "揭榜挂帅/knowledge"
-)
+DEFAULT_ROOT = Path(__file__).resolve().parent.parent / "references" / "knowledge"
 CLASS_ALIASES = {
     "法律": "LEGAL_GOVERNANCE",
     "法规": "LEGAL_GOVERNANCE",
