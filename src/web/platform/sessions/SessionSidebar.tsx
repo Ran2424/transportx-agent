@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { HistoryProject, HistorySession } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
+import { BrandMark } from '../../components/BrandMark';
 import { Icon } from '../../components/icons';
 import { relativeTime, sessionTitle } from '../../lib/formatting';
 
@@ -102,7 +103,9 @@ export function SessionSidebar({
     <>
       <aside className={`session-sidebar${open ? ' is-open' : ''}`} aria-label="会话侧栏" data-testid="session-sidebar">
         <div className="sidebar-tools">
-          <button className="sidebar-home-mark" type="button" aria-label="返回主页" onClick={onGoHome}>τ</button>
+          <button className="sidebar-home-mark" type="button" aria-label="返回主页" onClick={onGoHome}>
+            <BrandMark className="sidebar-home-icon" />
+          </button>
           <label className="sidebar-search">
             <Icon name="search" />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索会话…" aria-label="搜索会话" />

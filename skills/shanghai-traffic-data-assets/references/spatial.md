@@ -20,6 +20,7 @@
 | 网约车显式 BD-09 | BD-09 转换为 WGS84 |
 | 上海体育场场馆 | 使用用户确认的 WGS84 `(121.43348, 31.18334)` |
 | 重要交通枢纽 POI | 使用 `common.dim_poi` 中用户确认的 WGS84 中心点 |
+| EVDATA 道路 GeoJSON | CRS84 按 `EPSG:4326` 原值发布 |
 | 无法确认的坐标 | 保留记录，CRS 标记 `UNKNOWN` |
 
 `common.dim_crs` 只登记 `EPSG:4326` 和 `UNKNOWN`。本次构建的 `common.dim_geo_feature` 中，5,873 个对象为 WGS84，9 个为 UNKNOWN。
@@ -63,6 +64,7 @@
 | 订单 OD | `ridehail.fact_trip` 的 pickup/dropoff 坐标和 CRS |
 | 场馆到离场点 | `ridehail.fact_venue_event` |
 | 重要火车站、机场中心点 | `common.dim_poi` |
+| EVDATA 道路几何 | `road.dim_evdata_road_segment.geometry_geojson` |
 | 跨领域空间发现 | `common.dim_geo_feature` |
 
 换乘站可以有一个物理实体和多个线路上下文点。实体计数、客流连接用物理 `station_id`；线路制图用关系表中的上下文点。
@@ -81,6 +83,7 @@
 
 - 严御路站缺少可靠坐标，不绘制伪位置。
 - 8 个天气网格 CRS 未确认，按网格名称和时间使用，不做精确空间连接。
-- 道路发布段没有几何，不能制图、缓冲或计算网络邻接。
+- 原有 89 个道路状态发布段没有几何；新增 207 个 EVDATA 路段有 WGS84 几何，但两套 ID 未映射。
+- EVDATA 几何可制图和做受控空间筛选，但未提供拓扑，不能据此计算网络邻接或路径。
 - 29 个场馆关联订单坐标超出上海合理范围，默认订单事实排除。
 - 11号线延伸至昆山，全线路图会超出上海行政边界。

@@ -3,6 +3,7 @@ import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
+import { MenuSelect } from '../../components/ui/menu-select';
 import { modelReference } from '../../lib/formatting';
 
 const thinkingLevels = [
@@ -16,11 +17,11 @@ const thinkingLevels = [
 
 function normalizeModel(model: ModelRecord | string) {
   const reference = modelReference(model);
-  if (typeof model === 'string') return { reference, label: reference };
+  if (typeof model === 'string') return { reference, label: reference, metadata: '' };
   const context = model.contextWindow || model.context || model.context_window;
   const abilities = [model.thinking ? '思考' : '', model.images ? '图像' : ''].filter(Boolean).join(' · ');
   const metadata = [context ? `${context} context` : '', abilities].filter(Boolean).join(' · ');
-  return { reference, label: metadata ? `${reference} — ${metadata}` : reference };
+  return { reference, label: reference, metadata };
 }
 
 export function ModelPickerDialog({ open, onOpenChange, session }: { open: boolean; onOpenChange(open: boolean): void; session: LiveSession | null }) {
@@ -75,22 +76,30 @@ export function ModelPickerDialog({ open, onOpenChange, session }: { open: boole
   }
 
   const normalized = models.map(normalizeModel).filter((item) => item.reference);
-  if (model && !normalized.some((item) => item.reference === model)) normalized.unshift({ reference: model, label: `${model} — 当前模型` });
+  if (model && !normalized.some((item) => item.reference === model)) normalized.unshift({ reference: model, label: model, metadata: '当前模型' });
+  const modelOptions = normalized.map((item) => ({ value: item.reference, label: item.label, metadata: item.metadata }));
+  const thinkingOptions = thinkingLevels.map(([value, label]) => ({ value, label }));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="模型与推理">
+    <Dialog open={open} onOpenChange={onOpenChange} title="模型与推理" className="model-dialog">
       <form className="form-stack" onSubmit={save}>
-        <label className="field-label"><span>模型</span>
-          <select autoFocus value={model} onChange={(event) => setModel(event.target.value)} disabled={loading || !session}>
-            {normalized.length === 0 ? <option value="">{loading ? '正在读取模型…' : '暂无可用模型'}</option> : null}
-            {normalized.map((item) => <option value={item.reference} key={item.reference}>{item.label}</option>)}
-          </select>
-        </label>
-        <label className="field-label"><span>思考级别</span>
-          <select value={thinking} onChange={(event) => setThinking(event.target.value)}>
-            {thinkingLevels.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-          </select>
-        </label>
+        <MenuSelect
+          label="模型"
+          value={model}
+          options={modelOptions}
+          placeholder={loading ? '正在读取模型…' : '暂无可用模型'}
+          disabled={loading || !session || modelOptions.length === 0}
+          autoFocus
+          onChange={setModel}
+        />
+        <MenuSelect
+          label="思考级别"
+          value={thinking}
+          options={thinkingOptions}
+          placeholder="选择思考级别"
+          compact
+          onChange={setThinking}
+        />
         {error ? <div className="inline-error" role="alert">{error}</div> : <p className="field-help">可用能力由 Pi 返回的模型目录决定。</p>}
         <div className="form-actions">
           <DialogClose asChild><Button type="button" variant="quiet">取消</Button></DialogClose>

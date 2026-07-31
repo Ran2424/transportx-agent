@@ -25,19 +25,19 @@
 |---|---:|---|---|
 | `meta_build` | 9 | 一个构建属性 | 版本、构建时间、时区、CRS、源库哈希 |
 | `meta_database` | 5 | 一个业务数据库 | 文件、领域、用途和大小 |
-| `meta_table` | 48 | 一个业务表或视图 | 对象类型、层次、行数和说明 |
-| `meta_column` | 543 | 一个业务字段 | 技术字段字典 |
-| `meta_source_dataset` | 32 | 一个源数据集 | 来源、粒度、行数和目标 |
+| `meta_table` | 52 | 一个业务表或视图 | 对象类型、层次、行数和说明 |
+| `meta_column` | 582 | 一个业务字段 | 技术字段字典 |
+| `meta_source_dataset` | 34 | 一个源数据集 | 来源、粒度、行数和目标 |
 | `meta_source_extract_sql` | 1 | 一份抽取 SQL | 道路源抽取逻辑 |
-| `meta_relationship` | 16 | 一条对象关系 | 连接键、基数和说明 |
-| `meta_entity_id` | 12 | 一类统一实体 | 规范对象和 ID 策略 |
-| `meta_id_mapping` | 2,500 | 一个源 ID 映射 | 源 ID 到统一 ID |
-| `meta_metric` | 9 | 一个指标 | 粒度、单位和 SQL 口径 |
+| `meta_relationship` | 17 | 一条对象关系 | 连接键、基数和说明 |
+| `meta_entity_id` | 14 | 一类统一实体 | 规范对象和 ID 策略 |
+| `meta_id_mapping` | 2,721 | 一个源 ID 映射 | 源 ID 到统一 ID |
+| `meta_metric` | 10 | 一个指标 | 粒度、单位和 SQL 口径 |
 | `meta_analysis_guide` | 6 | 一个业务领域 | 推荐对象、覆盖和限制 |
 | `meta_order_source_relation` | 4 | 一个订单来源关系指标 | 网约车与场馆订单重叠 |
-| `meta_quality_rule` | 20 | 一条质量规则 | 领域、严重度和规则 |
-| `meta_quality_result` | 20 | 一条本次质量结果 | 是否通过、观测值和说明 |
-| `meta_query_example` | 6 | 一个查询样例 | 问题、SQL 和治理提示 |
+| `meta_quality_rule` | 25 | 一条质量规则 | 领域、严重度和规则 |
+| `meta_quality_result` | 25 | 一条本次质量结果 | 是否通过、观测值和说明 |
+| `meta_query_example` | 8 | 一个查询样例 | 问题、SQL 和治理提示 |
 
 ## 字段
 
@@ -45,7 +45,9 @@
 
 `key TEXT`，`value TEXT`
 
-重要键：`asset_version`、`built_at`、`canonical_crs`、`canonical_time_zone`、`source_database_sha256`、`privacy_policy`。
+重要键：`asset_version`、`built_at`、`canonical_crs`、`canonical_time_zone`、
+`source_database_sha256`、`evdata_speed_csv_sha256`、`evdata_road_geojson_sha256`、
+`evdata_speed_unit`、`privacy_policy`。
 
 ### `meta_database`
 

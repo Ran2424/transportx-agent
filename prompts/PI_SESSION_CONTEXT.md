@@ -8,6 +8,7 @@
 - 当前任务工作目录：`{{TASK_WORKING_DIRECTORY}}`
 - 项目 Skills 目录：`{{PROJECT_SKILLS_DIR}}`
 - Python 解释器：`/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10`
+- Python 设置中文字体时使用：`/System/Library/Fonts/Supplemental/Songti.ttc`（Songti SC／宋体）。
 
 ## 路径规则
 

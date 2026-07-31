@@ -1,7 +1,7 @@
 {
-  "name": "Pi Traffic Workspace",
-  "short_name": "交通工作台",
-  "description": "面向交通分析的 Pi 多会话浏览器工作台",
+  "name": "TransportX Traffic Workspace",
+  "short_name": "TransportX",
+  "description": "TransportX 课题组的交通智能体多会话浏览器工作台",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f5f3ef",
@@ -9,20 +9,10 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "icons/tau-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icons/tau-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    },
-    {
-      "src": "icons/tau-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "src": "icons/x-ribbon-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }
