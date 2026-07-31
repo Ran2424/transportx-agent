@@ -20,6 +20,7 @@ description: 在 Tau 中使用 publish_geodata 和 present_visualization 构建�
 | --- | --- | --- |
 | 首次展示一项分析 | `create_map` | 不要为同一分析连续创建多个 `visualizationId` |
 | 叠加另一份结果或参考数据 | `add_layer` | 不要重建整张地图 |
+| 添加或替换点位统计图式 | `add_chart_layer`、`set_chart` | 不要手工生成 SVG 或 MapLibre 图标 |
 | 设置固定、分类、分级或连续样式 | `set_constant`、`set_categorical`、`set_step`、`set_continuous` | 不要生成 MapLibre expression |
 | 增加可解释属性 | `set_popup`、`set_metadata` | 不要把完整属性表塞进标题或说明 |
 | 改变地图视角 | `set_camera` 或 `fit_bounds` | 不要通过重新创建地图改变视角 |
@@ -98,9 +99,17 @@ grid["id"] = grid.index.astype(str)
   - `line`：`color`、`width`、`opacity`、`dash`
   - `fill`：`color`、`opacity`、`outlineColor`
   - `label`：`textField`、`color`、`size`、`haloColor`、`haloWidth`
+  - `chart`：不使用通用样式通道；通过 `chartType`、`valueFields`、`colors`、`size`、`maxValue`、`labelField` 和 `labelFormat` 配置
 - 将通道及其值传给对应命令。例如，使用 `command: "set_constant"`、`channel: "opacity"`、`value: 0.75`；不要自行构造 VisualValue、MapLibre `paint`、`layout` 或 JavaScript 表达式。
 
 ## 组合易读的专题地图
+
+- 点位统计图式使用 `add_chart_layer` 添加，并使用 `set_chart` 在 `pie`、`donut` 和 `bar` 之间切换。图式仅适用于 Point/MultiPoint 数据。
+- `pie` 使用 2–5 个非负数值字段，工具按每个点位的字段总和计算扇区比例。
+- `donut` 使用单字段时，该字段必须提前计算为 `[0, 1]` 比例；使用多个字段时按字段总和绘制构成。
+- `bar` 只使用一个非负数值字段，并必须传入正数 `maxValue` 作为柱高上限。不要让渲染器猜测全局最大值。
+- `size` 是 16–96 像素的固定图符画布大小；柱高或扇区比例由 `valueFields` 决定。需要显示数值时设置 `labelField`，并用 `integer`、`decimal` 或 `percent` 指定格式。
+- 图式字段、比例分母和 `maxValue` 必须在发布前根据分析口径确定；不要把“当前视图最大值”无说明地称为百分比。
 
 - 重叠的填充图层默认只让一个图层设置为 `visible: true`，其他备选图层设为 `visible: false`。Web 地图始终显示当前图层可见性列表；不要依赖预留的 `layerSwitcher` 标志。
 - 当用户需要理解热点与场馆或车站的相对位置时，添加参考 POI 或标签图层。

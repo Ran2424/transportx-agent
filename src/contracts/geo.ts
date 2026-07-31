@@ -56,15 +56,27 @@ export type GeoSource =
   | { id: string; type: 'geojson-inline'; data: GeoJsonFeatureCollection; idField?: string }
   | { id: string; type: 'geojson-resource'; resourceId: string; idField?: string };
 
+export type GeoChart = {
+  type: 'pie' | 'donut' | 'bar';
+  valueFields: string[];
+  colors: string[];
+  size: number;
+  maxValue?: number;
+  trackColor?: string;
+  labelField?: string;
+  labelFormat?: 'integer' | 'decimal' | 'percent';
+};
+
 export type GeoLayer = {
   id: string;
   sourceId: string;
-  type: 'circle' | 'line' | 'fill' | 'label';
+  type: 'circle' | 'line' | 'fill' | 'label' | 'chart';
   title?: string;
   visible?: boolean;
   minZoom?: number;
   maxZoom?: number;
   encoding: Record<string, GeoVisualValue>;
+  chart?: GeoChart;
   popup?: { fields: Array<{ field: string; label: string; format?: 'text' | 'integer' | 'decimal' | 'percent' }> };
 };
 
@@ -121,6 +133,7 @@ const LAYER_CHANNELS: Record<GeoLayer['type'], Set<string>> = {
   line: new Set(['color', 'width', 'opacity', 'dash']),
   fill: new Set(['color', 'opacity', 'outlineColor']),
   label: new Set(['textField', 'color', 'size', 'haloColor', 'haloWidth']),
+  chart: new Set(),
 };
 
 function finite(value: unknown): value is number {
@@ -342,7 +355,7 @@ export function parseGeoSceneStructured(value: unknown, sink: ContractDiagnostic
     const layerSourceId = asString(layer.sourceId, 64);
     if (!layerSourceId) return fail(`${layerPath}.sourceId`, 'invalid_type', 'Layer sourceId is required.');
     if (!sourceIds.has(layerSourceId)) return fail(`${layerPath}.sourceId`, 'unknown_reference', `Source not found: ${layerSourceId}.`);
-    if (!['circle', 'line', 'fill', 'label'].includes(String(layer.type))) return fail(`${layerPath}.type`, 'unsupported_value', 'Layer type must be circle, line, fill, or label.');
+    if (!['circle', 'line', 'fill', 'label', 'chart'].includes(String(layer.type))) return fail(`${layerPath}.type`, 'unsupported_value', 'Layer type must be circle, line, fill, label, or chart.');
     const layerType = layer.type as GeoLayer['type'];
     const encoding = asRecord(layer.encoding);
     if (!encoding) return fail(`${layerPath}.encoding`, 'invalid_type', 'Layer encoding must be an object.');
@@ -354,6 +367,38 @@ export function parseGeoSceneStructured(value: unknown, sink: ContractDiagnostic
       parsedEncoding[channel] = parsed;
     }
     if (layerType === 'label' && !parsedEncoding.textField) return fail(`${layerPath}.encoding.textField`, 'missing_text_field', 'Label layers require textField.');
+    let chart: GeoLayer['chart'];
+    if (layerType === 'chart') {
+      const chartInput = asRecord(layer.chart);
+      if (!chartInput || !['pie', 'donut', 'bar'].includes(String(chartInput.type))) return fail(`${layerPath}.chart.type`, 'unsupported_value', 'Chart layers require pie, donut, or bar chart type.');
+      if (!Array.isArray(chartInput.valueFields) || !chartInput.valueFields.every((field) => !!asString(field, 100))) return fail(`${layerPath}.chart.valueFields`, 'invalid_type', 'Chart valueFields must be non-empty field names.');
+      const valueFields = chartInput.valueFields as string[];
+      if (valueFields.length < 1 || valueFields.length > 5) return fail(`${layerPath}.chart.valueFields`, 'out_of_range', 'Chart layers require 1 to 5 value fields.');
+      if (chartInput.type === 'pie' && valueFields.length < 2) return fail(`${layerPath}.chart.valueFields`, 'out_of_range', 'Pie charts require at least 2 value fields.');
+      if (chartInput.type === 'bar' && valueFields.length !== 1) return fail(`${layerPath}.chart.valueFields`, 'out_of_range', 'Bar charts require exactly 1 value field.');
+      if (!Array.isArray(chartInput.colors) || chartInput.colors.length < valueFields.length || !chartInput.colors.every((color) => typeof color === 'string' && HEX_COLOR_RE.test(color))) return fail(`${layerPath}.chart.colors`, 'unsupported_value', 'Chart colors must provide a valid hex color for every value field.');
+      const size = asFiniteNumber(chartInput.size);
+      if (size === null || size < 16 || size > 96) return fail(`${layerPath}.chart.size`, 'out_of_range', 'Chart size must be between 16 and 96 pixels.');
+      const maxValue = chartInput.maxValue === undefined ? undefined : asFiniteNumber(chartInput.maxValue);
+      if (chartInput.type === 'bar' && (maxValue === undefined || maxValue === null || maxValue <= 0)) return fail(`${layerPath}.chart.maxValue`, 'out_of_range', 'Bar charts require a positive maxValue.');
+      const trackColor = chartInput.trackColor === undefined ? undefined : asString(chartInput.trackColor, 9);
+      if (trackColor !== undefined && (trackColor === null || !HEX_COLOR_RE.test(trackColor))) return fail(`${layerPath}.chart.trackColor`, 'unsupported_value', 'Chart trackColor must be a hex color.');
+      const labelField = chartInput.labelField === undefined ? undefined : asString(chartInput.labelField, 100);
+      if (chartInput.labelField !== undefined && !labelField) return fail(`${layerPath}.chart.labelField`, 'invalid_type', 'Chart labelField must be a non-empty field name.');
+      if (chartInput.labelFormat !== undefined && !['integer', 'decimal', 'percent'].includes(String(chartInput.labelFormat))) return fail(`${layerPath}.chart.labelFormat`, 'unsupported_value', 'Chart labelFormat must be integer, decimal, or percent.');
+      chart = {
+        type: chartInput.type as NonNullable<GeoLayer['chart']>['type'],
+        valueFields,
+        colors: chartInput.colors as string[],
+        size,
+        ...(maxValue !== undefined && maxValue !== null ? { maxValue } : {}),
+        ...(trackColor ? { trackColor } : {}),
+        ...(labelField ? { labelField } : {}),
+        ...(chartInput.labelFormat ? { labelFormat: chartInput.labelFormat as NonNullable<GeoLayer['chart']>['labelFormat'] } : {}),
+      };
+    } else if (layer.chart !== undefined) {
+      return fail(`${layerPath}.chart`, 'unsupported_value', 'Only chart layers may define chart settings.');
+    }
     const title = layer.title === undefined ? undefined : asString(layer.title, 120);
     if (layer.title !== undefined && !title) return fail(`${layerPath}.title`, 'invalid_type', 'Layer title must be a non-empty string of at most 120 characters.');
     const rawMinZoom = layer.minZoom === undefined ? undefined : asFiniteNumber(layer.minZoom);
@@ -378,6 +423,7 @@ export function parseGeoSceneStructured(value: unknown, sink: ContractDiagnostic
       sourceId: layerSourceId,
       type: layerType,
       encoding: parsedEncoding,
+      ...(chart ? { chart } : {}),
       ...(title ? { title } : {}),
       ...(typeof layer.visible === 'boolean' ? { visible: layer.visible } : {}),
       ...(minZoom !== undefined ? { minZoom } : {}),
