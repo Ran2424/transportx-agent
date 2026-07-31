@@ -46,7 +46,8 @@ const PopupSchema = Type.Object({
 const VisualizationIdSchema = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' });
 const ItemIdSchema = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' });
 const ResourceIdSchema = Type.String({ pattern: '^geo_[a-f0-9]{16,64}$' });
-const LayerTypeSchema = Type.Union([Type.Literal('circle'), Type.Literal('line'), Type.Literal('fill'), Type.Literal('label')]);
+const LayerTypeSchema = Type.Union([Type.Literal('circle'), Type.Literal('line'), Type.Literal('fill'), Type.Literal('label'), Type.Literal('chart')]);
+const ChartTypeSchema = Type.Union([Type.Literal('pie'), Type.Literal('donut'), Type.Literal('bar')]);
 const ChannelSchema = Type.Union([
   Type.Literal('color'), Type.Literal('radius'), Type.Literal('opacity'), Type.Literal('strokeColor'),
   Type.Literal('strokeWidth'), Type.Literal('width'), Type.Literal('dash'), Type.Literal('outlineColor'),
@@ -67,6 +68,7 @@ const PresentVisualizationCommandSchema = Type.Object({
     Type.Literal('set_continuous'), Type.Literal('set_categorical'), Type.Literal('set_popup'),
     Type.Literal('set_controls'), Type.Literal('set_metadata'), Type.Literal('set_camera'),
     Type.Literal('fit_bounds'), Type.Literal('set_visibility'), Type.Literal('select'), Type.Literal('clear'),
+    Type.Literal('add_chart_layer'), Type.Literal('set_chart'),
   ], { description: 'One atomic scene mutation: create/add content, change one style or popup/control/metadata concern, focus/select, or clear. create_map starts a visualizationId; later commands update it.' }),
   visualizationId: VisualizationIdSchema,
   title: Type.Optional(Type.String({ description: 'Map title for create_map, or replacement title for set_metadata.' })),
@@ -100,6 +102,14 @@ const PresentVisualizationCommandSchema = Type.Object({
   bounds: Type.Optional(Type.Tuple([Type.Number(), Type.Number(), Type.Number(), Type.Number()])),
   padding: Type.Optional(Type.Number()),
   featureIds: Type.Optional(Type.Array(Type.Union([Type.Number(), Type.String()]), { maxItems: 5000 })),
+  chartType: Type.Optional(ChartTypeSchema),
+  valueFields: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
+  colors: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
+  size: Type.Optional(Type.Number({ minimum: 16, maximum: 96 })),
+  maxValue: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+  trackColor: Type.Optional(Type.String()),
+  labelField: Type.Optional(Type.String()),
+  labelFormat: Type.Optional(Type.Union([Type.Literal('integer'), Type.Literal('decimal'), Type.Literal('percent')])),
 }, { description: 'Flat command parameters. Do not pass a scene JSON object.' });
 
 const COMMAND_REQUIRED_PARAMS: Record<string, string[]> = {
@@ -114,12 +124,20 @@ const COMMAND_REQUIRED_PARAMS: Record<string, string[]> = {
   fit_bounds: ['bounds'],
   set_visibility: ['layerId', 'visible'],
   select: ['sourceId', 'featureIds'],
+  add_chart_layer: ['sourceId', 'layerId', 'chartType', 'valueFields'],
+  set_chart: ['layerId', 'chartType', 'valueFields'],
 };
 
 function assertCommandParams(params: PresentCommand) {
   const required = COMMAND_REQUIRED_PARAMS[params.command] || [];
   const missing = required.filter((name) => params[name] === undefined || params[name] === null || params[name] === '');
   if (missing.length) throw new Error(`Missing parameters for command ${params.command}: ${missing.join(', ')}`);
+  if ((params.layerType === 'chart' || params.command === 'add_chart_layer' || params.command === 'set_chart') && params.chartType === 'bar' && !(params.maxValue > 0)) {
+    throw new Error('Bar charts require a positive maxValue.');
+  }
+  if (params.layerType === 'chart' && (!params.chartType || !params.valueFields?.length)) {
+    throw new Error('Chart layers require chartType and valueFields.');
+  }
 }
 
 function isWithin(root: string, target: string) {
@@ -201,7 +219,17 @@ function viewForBounds(bounds: [number, number, number, number] | null | undefin
 
 function initialLayer(params: PresentCommand, sourceId: string, layerId: string): GeoLayer {
   const encoding: Record<string, GeoVisualValue> = {};
-  if (params.layerType === 'label') {
+  if (params.layerType === 'chart') {
+    return {
+      id: layerId,
+      sourceId,
+      type: 'chart',
+      encoding,
+      chart: chartSettings(params),
+      ...(params.layerTitle ? { title: params.layerTitle } : {}),
+      ...(typeof params.visible === 'boolean' ? { visible: params.visible } : {}),
+    };
+  } else if (params.layerType === 'label') {
     if (params.textField) encoding.textField = { mode: 'constant', value: params.textField };
     encoding.color = { mode: 'constant', value: params.color || '#172033' };
   } else {
@@ -214,6 +242,21 @@ function initialLayer(params: PresentCommand, sourceId: string, layerId: string)
     encoding,
     ...(params.layerTitle ? { title: params.layerTitle } : {}),
     ...(typeof params.visible === 'boolean' ? { visible: params.visible } : {}),
+  };
+}
+
+const DEFAULT_CHART_COLORS = ['#34c79b', '#8268bd', '#e8795b', '#4f8edc', '#e2b93b'];
+
+function chartSettings(params: PresentCommand): NonNullable<GeoLayer['chart']> {
+  return {
+    type: params.chartType,
+    valueFields: params.valueFields,
+    colors: params.colors?.length ? params.colors : DEFAULT_CHART_COLORS.slice(0, params.valueFields.length),
+    size: params.size ?? 40,
+    ...(params.maxValue !== undefined ? { maxValue: params.maxValue } : {}),
+    ...(params.trackColor ? { trackColor: params.trackColor } : {}),
+    ...(params.labelField ? { labelField: params.labelField } : {}),
+    ...(params.labelFormat ? { labelFormat: params.labelFormat } : {}),
   };
 }
 
@@ -347,6 +390,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       'Use create_map once per visualizationId. Afterwards change exactly one concern per command: layer, style, popup, controls, metadata, view, selection, or clear.',
       'Reuse the same visualizationId for follow-up requests about the same analysis. Create another visualizationId only when the user explicitly asks for a separate map.',
       'Use the channel names color, radius, opacity, strokeColor, strokeWidth, width, dash, outlineColor, textField, size, haloColor, and haloWidth exactly as declared by the command schema.',
+      'Use add_chart_layer for point-based pie, donut, or bar symbols. valueFields drive the chart; bar charts also require maxValue. Use set_chart to replace one chart layer configuration without rebuilding the map.',
       'Reuse the current visualizationId when the user asks to add or overlay content. If the same styling target fails validation twice, preserve the last successful map and stop retrying that command.',
       `Project root: ${PROJECT_ROOT}`,
       `Project skills directory: ${PROJECT_SKILLS_DIR}`,
@@ -390,7 +434,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
         const base = requireCurrentScene(current, params.visualizationId);
         let candidate: unknown = base;
 
-        if (params.command === 'add_layer') {
+        if (params.command === 'add_layer' || params.command === 'add_chart_layer') {
           const sources = new Map(base.sources.map((source) => [source.id, source]));
           if (params.resourceId) {
             const manifest = readResourceManifest(ctx.cwd, params.resourceId);
@@ -404,8 +448,14 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
             throw new Error(`Source not found: ${params.sourceId}. Provide resourceId when adding a new source.`);
           }
           const layers = new Map(base.layers.map((layer) => [layer.id, layer]));
-          layers.set(params.layerId, initialLayer(params, params.sourceId, params.layerId));
+          const layerParams = params.command === 'add_chart_layer' ? { ...params, layerType: 'chart' } : params;
+          layers.set(params.layerId, initialLayer(layerParams, params.sourceId, params.layerId));
           candidate = { ...base, sources: Array.from(sources.values()), layers: Array.from(layers.values()) };
+        } else if (params.command === 'set_chart') {
+          candidate = updateLayer(base, params.layerId, (layer) => {
+            if (layer.type !== 'chart') throw new Error(`Layer is not a chart layer: ${params.layerId}`);
+            return { ...layer, chart: chartSettings(params) };
+          });
         } else if (['set_constant', 'set_step', 'set_continuous', 'set_categorical'].includes(params.command)) {
           let value: GeoVisualValue;
           if (params.command === 'set_constant') value = { mode: 'constant', value: params.value };

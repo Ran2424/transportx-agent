@@ -1,5 +1,6 @@
 import maplibregl from 'maplibre-gl';
-import type { GeoLayer, GeoVisualValue } from '../../../contracts/geo.js';
+import type { GeoChart, GeoLayer, GeoVisualValue } from '../../../contracts/geo.js';
+import { geoChartImagePrefix } from './geo-chart-images.js';
 
 type Expression = unknown;
 type LayerSpec = maplibregl.LayerSpecification;
@@ -51,6 +52,38 @@ function layerBase(layer: GeoLayer, id: string, sourceId: string) {
     maxzoom: layer.maxZoom,
     layout: { visibility: layer.visible === false ? 'none' : 'visible' },
   };
+}
+
+function numericField(field: string): Expression {
+  return ['max', 0, ['to-number', ['get', field], 0]];
+}
+
+function chartPercent(value: Expression, total: Expression): Expression {
+  return ['min', 100, ['round', ['*', 100, ['/', value, ['max', 1e-12, total]]]]];
+}
+
+function chartImageExpression(layer: GeoLayer, chart: GeoChart): Expression {
+  const values = chart.valueFields.map(numericField);
+  let percentages: Expression[];
+  if (chart.type === 'bar') {
+    percentages = [chartPercent(values[0], chart.maxValue!)];
+  } else if (chart.type === 'donut' && values.length === 1) {
+    percentages = [['round', ['*', 100, ['min', 1, values[0]]]]];
+  } else {
+    const total: Expression = ['+', ...values];
+    percentages = values.map((value) => chartPercent(value, total));
+  }
+  return ['concat', geoChartImagePrefix(layer.id), ...percentages.flatMap((value, index) => [
+    ...(index ? ['_'] : []),
+    ['to-string', value],
+  ])];
+}
+
+function chartLabel(chart: GeoChart): Expression {
+  if (!chart.labelField) return '';
+  const value: Expression = ['to-number', ['get', chart.labelField], 0];
+  if (chart.labelFormat === 'percent') return ['concat', ['number-format', ['*', 100, value], { 'max-fraction-digits': 1 }], '%'];
+  return ['number-format', value, { 'max-fraction-digits': chart.labelFormat === 'decimal' ? 2 : 0 }];
 }
 
 export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: boolean): { specs: LayerSpec[]; interactiveId: string } {
@@ -131,6 +164,63 @@ export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: 
       },
     } as LayerSpec],
   };
+  if (layer.type === 'chart' && layer.chart) {
+    const chart = layer.chart;
+    return {
+      interactiveId: id,
+      specs: [
+        {
+          ...base,
+          id: geoRuntimeLayerId(layer.id, '-halo'),
+          type: 'circle',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: {
+            'circle-radius': chart.size / 2 + 3,
+            'circle-color': '#f59e0b',
+            'circle-opacity': ['case',
+              ['boolean', ['feature-state', 'selected'], false], 0.9,
+              ['boolean', ['feature-state', 'hover'], false], 0.35,
+              0,
+            ],
+            'circle-stroke-color': '#f59e0b',
+            'circle-stroke-width': 2,
+            'circle-stroke-opacity': ['case',
+              ['boolean', ['feature-state', 'selected'], false], 1,
+              ['boolean', ['feature-state', 'hover'], false], 0.7,
+              0,
+            ],
+          },
+        } as LayerSpec,
+        {
+          ...base,
+          type: 'symbol',
+          filter: ['==', ['geometry-type'], 'Point'],
+          layout: {
+            ...base.layout as object,
+            'icon-image': ['coalesce',
+              ['image', chartImageExpression(layer, chart)],
+              ['image', chartImageExpression(layer, chart)],
+            ],
+            'icon-size': 1,
+            'icon-anchor': chart.type === 'bar' ? 'bottom' : 'center',
+            'icon-allow-overlap': false,
+            'icon-padding': 3,
+            'text-field': chartLabel(chart),
+            'text-size': Math.max(10, Math.min(14, chart.size * 0.28)),
+            'text-anchor': chart.type === 'bar' ? 'bottom' : 'center',
+            'text-offset': chart.type === 'bar' ? [0, -chart.size / 12] : [0, 0],
+            'text-optional': true,
+            'text-allow-overlap': false,
+          },
+          paint: {
+            'text-color': darkBasemap ? '#f8fafc' : '#172033',
+            'text-halo-color': darkBasemap ? '#111827' : '#ffffff',
+            'text-halo-width': 1.2,
+          },
+        } as unknown as LayerSpec,
+      ],
+    };
+  }
   const textValue = layer.encoding.textField;
   const textField = textValue?.mode === 'constant' && typeof textValue.value === 'string'
     ? ['coalesce', ['to-string', ['get', textValue.value]], textValue.value]

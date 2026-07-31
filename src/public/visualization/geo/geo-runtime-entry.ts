@@ -15,6 +15,7 @@ import {
   compileGeoLayer,
   geoRuntimeSourceId,
 } from './geo-layer-compiler.js';
+import { GeoChartImageManager } from './geo-chart-images.js';
 import { GeoInteractionController } from './geo-interaction-controller.js';
 import {
   planGeoSceneUpdate,
@@ -48,6 +49,7 @@ class MapLibreGeoRuntime {
   private layerIds = new Map<string, string[]>();
   private visibilityOverrides = new Map<string, boolean>();
   private interactions: GeoInteractionController | null = null;
+  private chartImages: GeoChartImageManager | null = null;
   private navigationControl: maplibregl.NavigationControl | null = null;
   private fullscreenControl: maplibregl.FullscreenControl | null = null;
   private scaleControl: maplibregl.ScaleControl | null = null;
@@ -156,6 +158,7 @@ class MapLibreGeoRuntime {
     });
     if (this.destroyed || this.map !== map) return;
     this.interactions = new GeoInteractionController(map);
+    this.chartImages = new GeoChartImageManager(map);
     for (const source of scene.sources) this.addSource(source, sessionId);
     this.addLayers(scene);
     this.syncControls(scene);
@@ -220,6 +223,7 @@ class MapLibreGeoRuntime {
 
   private addLayers(scene: GeoSceneSnapshot) {
     const map = this.requireMap();
+    this.chartImages?.setLayers(scene.layers);
     const firstBasemapLabel = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
     for (const originalLayer of scene.layers) {
       const override = this.visibilityOverrides.get(originalLayer.id);
@@ -318,6 +322,8 @@ class MapLibreGeoRuntime {
   private teardownMap() {
     this.interactions?.clear();
     this.interactions = null;
+    this.chartImages?.destroy();
+    this.chartImages = null;
     this.map?.remove();
     this.map = null;
     this.layerIds.clear();
