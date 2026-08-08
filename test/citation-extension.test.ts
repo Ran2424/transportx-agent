@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const KNOWLEDGE_CATALOG = '/Users/ran/WorkSpace/2 Unit Project/202 单位/上海交通指挥中心/揭榜挂帅/knowledge/_catalog/documents.jsonl';
+const KNOWLEDGE_ROOT = path.join(process.cwd(), 'modules', 'official', 'traffic-knowledge', 'assets');
+const KNOWLEDGE_CATALOG = path.join(KNOWLEDGE_ROOT, '_catalog', 'documents.jsonl');
+process.env.TRANSPORTX_KNOWLEDGE_ROOT ||= KNOWLEDGE_ROOT;
 
 function extensionHarness() {
   const handlers = new Map<string, Function>();

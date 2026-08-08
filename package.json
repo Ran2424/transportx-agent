@@ -1,7 +1,8 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "2.14.0",
-  "description": "交通 Agent 浏览器工作台，基于 Pi Tau Web Server 管理多路 Pi RPC 会话",
+  "version": "3.0.0",
+  "description": "TransportX Traffic Agent 本地交通分析桌面工作台",
+  "main": "dist-desktop/main.js",
   "keywords": [
     "pi",
     "coding-agent",
@@ -25,6 +26,7 @@
     "extensions",
     "skills",
     "prompts",
+    "modules",
     "docs/*.md",
     "src",
     "dist/web",
@@ -37,24 +39,31 @@
     "tsconfig.extensions.json"
   ],
   "scripts": {
-    "build": "npm run build:server && npm run build:web && npm run build:react && npm run build:geo",
+    "build": "npm run build:server && npm run build:web && npm run build:react && npm run build:geo && npm run build:desktop",
     "build:server": "tsc -p tsconfig.server.json && node scripts/postbuild-layout.mjs server",
     "build:web": "tsc -p tsconfig.public.json && node scripts/postbuild-layout.mjs public",
     "build:react": "vite build",
     "build:geo": "esbuild src/public/visualization/geo/geo-runtime-entry.ts --bundle --format=esm --target=es2022 --outfile=public/geo-runtime.js",
+    "build:desktop": "tsc -p tsconfig.desktop.json",
+    "desktop:dev": "npm run build && electron .",
+    "desktop:dir": "npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",
+    "desktop:pack": "node desktop/scripts/check-mac-release.mjs && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml",
     "dev:web": "vite --config vite.config.ts",
     "prepare": "npm run build",
-    "typecheck": "npm run typecheck:server && npm run typecheck:web && npm run typecheck:react && npm run typecheck:extensions && npm run typecheck:test",
+    "typecheck": "npm run typecheck:server && npm run typecheck:web && npm run typecheck:react && npm run typecheck:extensions && npm run typecheck:desktop && npm run typecheck:test",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.public.json --noEmit",
     "typecheck:react": "tsc -p tsconfig.web.json --noEmit",
     "typecheck:extensions": "tsc -p tsconfig.extensions.json --noEmit",
+    "typecheck:desktop": "tsc -p tsconfig.desktop.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "npm run build && node --test",
     "test:pi-smoke": "npm run build:server && node scripts/pi-rpc-smoke.mjs",
-    "test:react-smoke": "npm run build && node scripts/react-smoke.mjs"
+    "test:react-smoke": "npm run build && node scripts/react-smoke.mjs",
+    "test:desktop-smoke": "npm run build && node scripts/desktop-smoke.mjs"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "@radix-ui/react-dialog": "^1.1.20",
     "katex": "^0.18.1",
     "mermaid": "^11.16.0",
@@ -65,17 +74,15 @@
     "ws": "^8.16.0",
     "xlsx": "^0.18.5"
   },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.80.10 <0.81.0"
-  },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.80.10",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.4",
+    "electron": "43.3.0",
+    "electron-builder": "26.15.3",
     "esbuild": "^0.28.1",
     "maplibre-gl": "^5.24.0",
     "playwright": "^1.61.1",

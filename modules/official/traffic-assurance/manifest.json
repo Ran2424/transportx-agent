@@ -1,0 +1,21 @@
+{
+  "manifestVersion": 1,
+  "id": "com.transportx.traffic-assurance",
+  "name": "TransportX Traffic Assurance",
+  "version": "1.0.0",
+  "type": "domain",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [
+    "com.transportx.web-bridge",
+    "com.transportx.task",
+    "com.transportx.citation",
+    "com.transportx.geo",
+    "com.transportx.traffic.skills",
+    "com.transportx.traffic.knowledge",
+    "com.transportx.traffic.data",
+    "com.transportx.traffic.report-template"
+  ],
+  "entrypoints": {
+    "prompts": ["prompts/PI_SESSION_CONTEXT.md"]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "com.transportx.traffic.skills",
+  "name": "TransportX Traffic Skills",
+  "version": "1.0.0",
+  "type": "skill",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": ["com.transportx.geo"],
+  "entrypoints": {
+    "skills": [
+      "skills/geo-visualization-explanation/SKILL.md",
+      "skills/plot-from-data/SKILL.md"
+    ]
+  }
+}

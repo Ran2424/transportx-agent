@@ -19,3 +19,4 @@ export * from './geo.ts';
 export * from './citation.ts';
 export * from './bridge.ts';
 export * from './capabilities.ts';
+export * from './module.ts';

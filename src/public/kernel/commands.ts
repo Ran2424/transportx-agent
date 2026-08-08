@@ -33,6 +33,17 @@ export type SteerInput = { sessionId: string; message: string };
 export type FollowUpInput = { sessionId: string; message: string };
 export type SetModelInput = { sessionId: string; model: string };
 export type SetThinkingLevelInput = { sessionId: string; level: string };
+export type PiModelApi = 'openai-completions' | 'openai-responses' | 'anthropic-messages' | 'google-generative-ai';
+export type AddModelInput = {
+  provider: string;
+  modelId: string;
+  api: PiModelApi;
+  baseUrl: string;
+  apiKey: string;
+  name?: string;
+  reasoning?: boolean;
+  images?: boolean;
+};
 export type CreateSessionInput = { cwd?: string; name?: string; model?: string };
 export type ResumeSessionInput = { filePath: string; model?: string; cwd?: string };
 export type ExtensionUiResponseInput = {
@@ -79,6 +90,25 @@ export type AgentState = {
   autoCompactionEnabled?: boolean;
 };
 
+export type PlatformModule = {
+  id: string;
+  name: string;
+  version: string;
+  type: 'module' | 'capability' | 'domain' | 'skill' | 'knowledge' | 'data' | 'template';
+  origin: 'builtin' | 'installed' | 'external';
+  removable: boolean;
+  enabled: boolean;
+  extensions: number;
+  skills: number;
+  assets: Array<{ id: string; kind: 'knowledge' | 'data' | 'template'; configured: boolean; error?: string }>;
+};
+
+export type PlatformOverview = {
+  storage: { root: string; scenario: string; models: string; settings: string; modules: string };
+  modules: PlatformModule[];
+  errors: Array<{ moduleId?: string; message: string }>;
+};
+
 export type AgentCommands = {
   sendPrompt(input: SendPromptInput): Promise<void>;
   setTaskMode(input: SetTaskModeInput): Promise<void>;
@@ -108,6 +138,10 @@ export type SessionCommands = {
 
 export type PlatformCommands = {
   getAvailableModels(sessionId?: string | null): Promise<Array<ModelRecord | string>>;
+  addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
+  getOverview(): Promise<PlatformOverview>;
+  installModule(sourcePath: string, kind: 'module' | 'skill' | 'extension' | 'data' | 'knowledge'): Promise<PlatformOverview>;
+  uninstallModule(moduleId: string): Promise<PlatformOverview>;
   getAuth(): Promise<{ configured: boolean; enabled: boolean }>;
   setAuth(enabled: boolean): Promise<{ enabled: boolean }>;
 };
@@ -310,6 +344,26 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
         ...(sessionId ? { sessionId } : {}),
       });
       return ((data as { data?: { models?: Array<ModelRecord | string> } }).data?.models ?? []);
+    },
+
+    async addModel(input) {
+      const data = await rpcCommand(deps.http, { type: 'add_model', ...input });
+      return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
+    },
+
+    async getOverview() {
+      const data = await rpcCommand(deps.http, { type: 'get_platform_overview' });
+      return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '' }, modules: [], errors: [] });
+    },
+
+    async installModule(sourcePath, kind) {
+      const data = await rpcCommand(deps.http, { type: 'install_module', sourcePath, kind });
+      return (data as { data: { overview: PlatformOverview } }).data.overview;
+    },
+
+    async uninstallModule(moduleId) {
+      const data = await rpcCommand(deps.http, { type: 'uninstall_module', moduleId });
+      return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 
     async getAuth() {

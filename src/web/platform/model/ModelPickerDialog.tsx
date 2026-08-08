@@ -24,7 +24,7 @@ function normalizeModel(model: ModelRecord | string) {
   return { reference, label: reference, metadata };
 }
 
-export function ModelPickerDialog({ open, onOpenChange, session }: { open: boolean; onOpenChange(open: boolean): void; session: LiveSession | null }) {
+export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: { open: boolean; onOpenChange(open: boolean): void; session: LiveSession | null; onAddModel(): void }) {
   const { kernel } = useAppServices();
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
   const [model, setModel] = useState('');
@@ -101,9 +101,9 @@ export function ModelPickerDialog({ open, onOpenChange, session }: { open: boole
           onChange={setThinking}
         />
         {error ? <div className="inline-error" role="alert">{error}</div> : <p className="field-help">可用能力由 Pi 返回的模型目录决定。</p>}
-        <div className="form-actions">
-          <DialogClose asChild><Button type="button" variant="quiet">取消</Button></DialogClose>
-          <Button type="submit" disabled={!session || !model || saving}>{saving ? '正在保存…' : '保存'}</Button>
+        <div className="form-actions is-split">
+          <Button type="button" variant="outline" onClick={onAddModel}>添加模型</Button>
+          <span><DialogClose asChild><Button type="button" variant="quiet">取消</Button></DialogClose><Button type="submit" disabled={!session || !model || saving}>{saving ? '正在保存…' : '保存'}</Button></span>
         </div>
       </form>
     </Dialog>

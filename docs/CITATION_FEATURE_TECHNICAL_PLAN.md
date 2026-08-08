@@ -382,13 +382,13 @@ tau_cite(["K-GBT33170.2-2016-000058"])
 项目 Skill 原先写死的脚本路径为：
 
 ```text
-/Users/ran/.codex/skills/search-traffic-assurance-knowledge/scripts/search_knowledge.py
+/Applications/TransportX Traffic Agent.app/.../modules/official/traffic-knowledge/skill/scripts/search_knowledge.py
 ```
 
 该路径不存在。实际脚本位于：
 
 ```text
-skills/search-traffic-assurance-knowledge/scripts/search_knowledge.py
+modules/official/traffic-knowledge/skill/scripts/search_knowledge.py
 ```
 
 当前已改为项目内实际脚本路径，并由 `cite --json` 直接返回完整结构化字段，后续代码不再从可读引用文案中反向解析标题或页码。

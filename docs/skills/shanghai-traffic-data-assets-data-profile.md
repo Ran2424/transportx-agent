@@ -1,6 +1,6 @@
 # 上海交通数据资产实际数据报告
 
-数据目录：`skills/shanghai-traffic-data-assets/assets/databases`  
+数据目录：由已安装 Data Module 提供；本机默认位于 `~/.transportx/traffic-agent/modules/<module-id>/asset`
 剖析日期：2026-08-06  
 资产版本：`3.2.0`  
 业务时区：`Asia/Shanghai`  

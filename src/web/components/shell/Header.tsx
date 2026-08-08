@@ -69,7 +69,7 @@ export function Header({
 
       <button className="workspace-brand" type="button" aria-label="返回 TransportX 主界面" onClick={onGoHome}>
         <BrandMark className="workspace-brand-mark" />
-        <span><strong>TRANSPORTX</strong><small>AGENT WORKSPACE</small></span>
+        <span><strong>TRANSPORTX</strong><small>TRAFFIC AGENT</small></span>
       </button>
 
       <div className="workspace-header-right">

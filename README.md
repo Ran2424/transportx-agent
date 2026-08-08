@@ -1,6 +1,6 @@
-# Pi Traffic Workspace
+# TransportX Traffic Agent
 
-面向交通分析的 Pi Agent 工作台。它在一个浏览器界面中管理 Pi RPC 会话、结构化任务、会话文件和地图结果。
+可安装的本地交通分析 Agent。Electron 负责桌面生命周期，Node Agent Host 管理 Pi RPC、Python、会话与文件，现有 React Workspace 展示结构化任务、引用、报告和地图结果。
 
 项目采用单仓库、模块化单体：Pi Extension 负责产生受控数据，Node 服务负责会话与资源边界，React 负责交互和展示。当前没有第二套 Web UI 或回退入口。
 
@@ -17,7 +17,7 @@
 
 首页提供交通问数、地图分析和报告生成入口：
 
-![Pi Traffic Workspace 首页](./docs/images/view.png)
+![TransportX Traffic Agent 首页](./docs/images/view.png)
 
 Agent 可在同一工作台中完成 GIS 分析、地图增量编辑和结果说明。下图展示上海体育场周边地铁线路、站点与工具执行过程：
 
@@ -51,31 +51,60 @@ npm run dev:web
 
 它会代理 API 和 WebSocket 到 `127.0.0.1:3000`。
 
+## 桌面应用
+
+开发模式直接启动 Electron 与本地 Agent Host：
+
+```bash
+npm run desktop:dev
+```
+
+macOS 首次启动会创建 `~/.transportx/traffic-agent/`。任务工作目录统一位于 `scenario/`，Pi 的 `models.json`、`auth.json`、会话、日志和缓存也都保存在该应用目录下。应用不会预设模型；请在“新建交通任务”或“设置”中点击“添加模型”，填写 Pi 兼容的供应商、模型、API 协议和密钥后再创建任务。
+
+设置页以 Module 为统一安装单元。一个 Module 可以同时包含 Skill、Extension、Data 和 Knowledge；也可以选择“单独 Skill / Extension / Data / Knowledge”，系统会自动包装为单一贡献项的受管 Module。安装时填写本地模块目录、`manifest.json` 或单独资源路径，内容会复制到 `~/.transportx/traffic-agent/modules/`；卸载只删除该受管副本，内置模块不可卸载。
+
+制作安装包前，需要准备对应平台的可重定位 Python 3.10 运行时，并按 `desktop/python-requirements.txt` 安装运行依赖。构建脚本会在复制后检查 Python 版本、CPU 架构、目录可重定位性和必要模块；普通 Conda 环境不能直接作为发布运行时。Pi CLI 与 Node/Electron 版本已由项目锁定。
+
+正式 macOS 发布还必须配置 Developer ID Application 证书，以及 Apple ID、App Store Connect API Key 或 keychain profile 三种公证凭据之一：
+
+```bash
+TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:pack
+```
+
+`desktop:pack` 在缺少签名或公证凭据时会直接停止，避免误发未签名 DMG。仅做本机结构验收时可显式设置 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。macOS 目标为 macOS 12 及以上的 Apple Silicon DMG，Windows 目标为 x64 NSIS；发布凭据不写入仓库。
+
+交通知识库和数据库作为大体积外部资产，不写入应用安装包，也不放在 Skill 相邻目录。推荐在设置页将它们安装为受管 Module；运行时会从安装清单解析资产，并分别注入 `TRANSPORTX_KNOWLEDGE_ROOT` 与 `TRANSPORTX_TRAFFIC_DATA_ROOT`。`TAU_KNOWLEDGE_ROOT`、`TAU_DATA_ROOT` 和 `TAU_MODULE_MANIFESTS` 仅保留给开发及受控外部部署覆盖。
+
 ## 验证
 
 ```bash
 npm run typecheck
 npm test
 npm run test:react-smoke
+npm run test:desktop-smoke
 npm run test:pi-smoke
 ```
 
-- `npm test`：构建并运行 49 个默认测试，覆盖共享契约、会话投影、HTTP/WebSocket、鉴权 Cookie、任务 Extension 生命周期、Geo 资源隔离和 Markdown 安全渲染。
+- `npm test`：构建并运行 89 个默认测试，覆盖共享契约、模块安装/卸载与装配、桌面运行时、模型配置、Agent Host、会话投影、HTTP/WebSocket、鉴权 Cookie、任务 Extension 生命周期、Geo 资源隔离和 Markdown 安全渲染。Knowledge 实体资产不随仓库分发，因此依赖它的 2 项集成用例在未安装资产时跳过。
 - `test:react-smoke`：真实 Node 服务、fake Pi 和 Chrome 的 React 工作台冒烟。
+- `test:desktop-smoke`：真实 Electron、Agent Host 和 fake Pi 的桌面生命周期、内置 Python、PDF 导出、安全选项与退出清理冒烟；设置 `TRANSPORTX_PACKAGED_APP` 后可直接验证构建出的 `.app`。
 - `test:pi-smoke`：真实本机 Pi RPC 离线冒烟；它会启动子进程，不纳入默认测试。
 
 `bin/`、`public/*.js`、`public/geo-runtime.*` 和 `dist/web/` 都是本地生成物，不手工编辑或提交。
 
 ## 运行约束
 
-- 用当前用户权限启动；服务需要访问本机 `pi`、`~/.pi/agent/` 和任务目录。不要用 `sudo`。
-- 新建任务默认位于仓库 `scenario/` 下，每次任务独立目录；这些运行资产默认不进入 Git。
+- 桌面安装包使用内置 Pi CLI 与 Python；Web 开发模式仍可通过环境变量覆盖运行时。不要用 `sudo` 启动。
+- macOS 新建任务默认位于 `~/.transportx/traffic-agent/scenario/`，每次任务使用独立目录；可用 `TAU_USER_DATA_DIR` 覆盖整套应用数据根目录。
+- Pi 的模型与认证配置分别写入 `~/.transportx/traffic-agent/models.json` 和 `auth.json`；API Key 不会返回前端，配置文件权限限制为当前用户读写。
 - 在线底图需要网络；GeoScene 的 `none` 底图可离线使用。
-- 本机交通数据库、密钥和原始数据资产不在仓库内，换机后需单独准备。
+- 本机交通数据库、Knowledge、密钥和原始数据资产不在仓库内；受管 Module 位于 `~/.transportx/traffic-agent/modules/`，换机后需重新安装或迁移该目录。
+- 正式对外分发的 DMG 必须通过 Developer ID 签名、Apple 公证和 stapling；未签名构建只用于本机验收。
 
 ## 文档
 
 - [架构与目录治理](./docs/ARCHITECTURE.md)：当前系统边界、依赖方向和模块职责。
+- [桌面化与模块化实施记录](./docs/AGENT_PLATFORM_PRODUCTIZATION.md)：3.0 改造范围、落地结果、macOS 分发修复与待发布事项。
 - [引用板块功能设计](./docs/CITATION_FEATURE_TECHNICAL_PLAN.md)：知识库引用、任务产物与报告参考依据的实现和验收记录。
 - [React UI 改造 ADR](./docs/REACT_UI_MIGRATION_PLAN.md)：已完成的迁移决策与删除 legacy 的记录。
 - [版本修改与 GitHub 操作日志](./docs/CHANGELOG.md)：发布与提交历史。

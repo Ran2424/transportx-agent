@@ -6,9 +6,9 @@ const path = require('node:path');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseCitationEnvelope, type CitationSource } from '../contracts/index.js';
 
-type CitationResourceSession = { cwd: string; entries: Array<Record<string, any>> };
+type CitationResourceSession = { cwd: string; entries: Array<Record<string, any>>; resolvedSessionPlan?: { assets?: Array<{ kind?: string; path?: string }> } | null };
 type CitationResourceDeps = {
-  knowledgeRoot: string;
+  knowledgeRoot: string | ((session: CitationResourceSession) => string);
   getSession(sessionId: string): CitationResourceSession | null | undefined;
 };
 
@@ -64,10 +64,11 @@ export function handleCitationResourceRoute(
     json(res, 404, { error: 'Citation source not found in this session' });
     return true;
   }
+  const knowledgeRoot = typeof deps.knowledgeRoot === 'function' ? deps.knowledgeRoot(session) : deps.knowledgeRoot;
   if (match[3] === 'preview') {
-    serveCitationPreview(req, res, session, source, deps.knowledgeRoot);
+    serveCitationPreview(req, res, session, source, knowledgeRoot);
   } else {
-    serveCitationSource(res, session, source, deps.knowledgeRoot);
+    serveCitationSource(res, session, source, knowledgeRoot);
   }
   return true;
 }
