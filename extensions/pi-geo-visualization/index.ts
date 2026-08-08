@@ -48,6 +48,7 @@ const ItemIdSchema = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' });
 const ResourceIdSchema = Type.String({ pattern: '^geo_[a-f0-9]{16,64}$' });
 const LayerTypeSchema = Type.Union([Type.Literal('circle'), Type.Literal('line'), Type.Literal('fill'), Type.Literal('label'), Type.Literal('chart')]);
 const ChartTypeSchema = Type.Union([Type.Literal('pie'), Type.Literal('donut'), Type.Literal('bar')]);
+const ChartCollisionModeSchema = Type.Union([Type.Literal('show-all'), Type.Literal('hide-overlap')]);
 const ChannelSchema = Type.Union([
   Type.Literal('color'), Type.Literal('radius'), Type.Literal('opacity'), Type.Literal('strokeColor'),
   Type.Literal('strokeWidth'), Type.Literal('width'), Type.Literal('dash'), Type.Literal('outlineColor'),
@@ -106,10 +107,11 @@ const PresentVisualizationCommandSchema = Type.Object({
   valueFields: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
   colors: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
   size: Type.Optional(Type.Number({ minimum: 16, maximum: 96 })),
+  collisionMode: Type.Optional(ChartCollisionModeSchema),
   maxValue: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
   trackColor: Type.Optional(Type.String()),
   labelField: Type.Optional(Type.String()),
-  labelFormat: Type.Optional(Type.Union([Type.Literal('integer'), Type.Literal('decimal'), Type.Literal('percent')])),
+  labelFormat: Type.Optional(Type.Union([Type.Literal('text'), Type.Literal('integer'), Type.Literal('decimal'), Type.Literal('percent')])),
 }, { description: 'Flat command parameters. Do not pass a scene JSON object.' });
 
 const COMMAND_REQUIRED_PARAMS: Record<string, string[]> = {
@@ -253,6 +255,7 @@ function chartSettings(params: PresentCommand): NonNullable<GeoLayer['chart']> {
     valueFields: params.valueFields,
     colors: params.colors?.length ? params.colors : DEFAULT_CHART_COLORS.slice(0, params.valueFields.length),
     size: params.size ?? 40,
+    collisionMode: params.collisionMode ?? 'show-all',
     ...(params.maxValue !== undefined ? { maxValue: params.maxValue } : {}),
     ...(params.trackColor ? { trackColor: params.trackColor } : {}),
     ...(params.labelField ? { labelField: params.labelField } : {}),
@@ -390,7 +393,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       'Use create_map once per visualizationId. Afterwards change exactly one concern per command: layer, style, popup, controls, metadata, view, selection, or clear.',
       'Reuse the same visualizationId for follow-up requests about the same analysis. Create another visualizationId only when the user explicitly asks for a separate map.',
       'Use the channel names color, radius, opacity, strokeColor, strokeWidth, width, dash, outlineColor, textField, size, haloColor, and haloWidth exactly as declared by the command schema.',
-      'Use add_chart_layer for point-based pie, donut, or bar symbols. valueFields drive the chart; bar charts also require maxValue. Use set_chart to replace one chart layer configuration without rebuilding the map.',
+      'Use add_chart_layer for point-based pie, donut, or bar symbols. valueFields drive the chart; bar charts also require maxValue. Charts default to collisionMode=show-all so every point remains visible; use hide-overlap only when occlusion is acceptable. Use labelFormat=text for name fields. Use set_chart to replace one chart layer configuration without rebuilding the map.',
       'Reuse the current visualizationId when the user asks to add or overlay content. If the same styling target fails validation twice, preserve the last successful map and stop retrying that command.',
       `Project root: ${PROJECT_ROOT}`,
       `Project skills directory: ${PROJECT_SKILLS_DIR}`,

@@ -14,7 +14,7 @@
 
 | 事项 | 标准 |
 |---|---|
-| 资产版本 | 3.1.0 |
+| 资产版本 | 3.2.0 |
 | 业务时区 | Asia/Shanghai |
 | 发布坐标系 | EPSG:4326 |
 | 未知坐标 | 保留记录并标 `UNKNOWN`，不得用于精确空间运算 |
@@ -95,7 +95,7 @@
 ## EVDATA 接入
 
 EVDATA 路段 GeoJSON 与速度 CSV 使用独立导入脚本，脚本会校验 CRS、字段、路段 ID 全覆盖、
-15 分钟对齐和复合主键唯一性，并同步更新 `road.sqlite` 与 `catalog.sqlite`。
+日期一致性、15 分钟对齐和复合主键唯一性，并同步更新 `road.sqlite` 与 `catalog.sqlite`。
 
 ```bash
 /Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
@@ -104,8 +104,9 @@ EVDATA 路段 GeoJSON 与速度 CSV 使用独立导入脚本，脚本会校验 C
   --geojson "/absolute/path/road_segment_80000.geojson"
 ```
 
-导入是幂等的：只替换三个 EVDATA 对象和对应目录记录，不修改原道路状态表。
-源速度单位未声明，因此资产登记为 `UNKNOWN`；高值只标警告，不静默删除。
+如果路段几何已存在，只替换补增版速度数据时可省略 `--geojson`。导入是幂等的：
+只替换 EVDATA 对象和对应目录记录，不修改原道路状态表。速度单位由用户确认为 km/h；
+大于 120 km/h 的值只标警告，不静默删除。
 
 ## 重建
 

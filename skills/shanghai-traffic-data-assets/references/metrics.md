@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | `ROAD_JAM_MINUTES` | 道路严重拥堵分钟数 | 路段—日期—小时 | 分钟 | `jam_seconds / 60.0` |
 | `ROAD_CROWD_MINUTES` | 道路拥挤分钟数 | 路段—日期—小时 | 分钟 | `crowd_seconds / 60.0` |
-| `EVDATA_ROAD_SPEED_AVG` | EVDATA路段平均速度 | 路段—15分钟时刻 | 未知 | 源字段 `t.speed_avg` 原值 |
+| `EVDATA_ROAD_SPEED_AVG` | EVDATA路段平均速度 | 路段—15分钟时刻 | km/h | 源字段 `t.speed_avg` 原值 |
 | `METRO_INBOUND` | 轨交进站客流 | 站点—小时 | 人次 | `SUM(inbound_flow)` |
 | `METRO_OUTBOUND` | 轨交出站客流 | 站点—小时 | 人次 | `SUM(outbound_flow)` |
 | `BUS_BOARDINGS` | 公交上客交易数 | 线路—半小时 | 笔 | `SUM(bus_boarding_transactions)` |
@@ -47,7 +47,7 @@
 - 公交交易、轨交人次、网约车事件、端点和订单量纲不同，只能并列比较趋势。
 - `inbound_flow + outbound_flow` 不是去重乘客数。
 - 道路状态为逢变更新。持续时间由相邻事件推导；每段最后一个状态没有结束时刻，不计入持续时间。
-- EVDATA `speed_avg` 的源文件未声明单位；不得自行标为 km/h，也不要在未知权重下跨路段求简单平均。
+- EVDATA `speed_avg` 的单位由用户确认为 km/h；不要在未知权重下跨路段求简单平均。
 - `rainfall_1h_mm` 是滚动一小时累计值，不对10分钟记录求和。
 - 缺失时段表示未观测，不能自动补零。
 - 空间聚合只使用 `crs='EPSG:4326'`；需要时按 `coordinate_status` 排除总体假设记录。

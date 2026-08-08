@@ -99,7 +99,7 @@ grid["id"] = grid.index.astype(str)
   - `line`：`color`、`width`、`opacity`、`dash`
   - `fill`：`color`、`opacity`、`outlineColor`
   - `label`：`textField`、`color`、`size`、`haloColor`、`haloWidth`
-  - `chart`：不使用通用样式通道；通过 `chartType`、`valueFields`、`colors`、`size`、`maxValue`、`labelField` 和 `labelFormat` 配置
+  - `chart`：不使用通用样式通道；通过 `chartType`、`valueFields`、`colors`、`size`、`collisionMode`、`maxValue`、`labelField` 和 `labelFormat` 配置
 - 将通道及其值传给对应命令。例如，使用 `command: "set_constant"`、`channel: "opacity"`、`value: 0.75`；不要自行构造 VisualValue、MapLibre `paint`、`layout` 或 JavaScript 表达式。
 
 ## 组合易读的专题地图
@@ -108,7 +108,8 @@ grid["id"] = grid.index.astype(str)
 - `pie` 使用 2–5 个非负数值字段，工具按每个点位的字段总和计算扇区比例。
 - `donut` 使用单字段时，该字段必须提前计算为 `[0, 1]` 比例；使用多个字段时按字段总和绘制构成。
 - `bar` 只使用一个非负数值字段，并必须传入正数 `maxValue` 作为柱高上限。不要让渲染器猜测全局最大值。
-- `size` 是 16–96 像素的固定图符画布大小；柱高或扇区比例由 `valueFields` 决定。需要显示数值时设置 `labelField`，并用 `integer`、`decimal` 或 `percent` 指定格式。
+- `size` 是 16–96 像素的固定图符画布大小；柱高或扇区比例由 `valueFields` 决定。`collisionMode` 默认为 `show-all`，确保每个点位图式可见；只有用户接受密集点位被隐藏时才用 `hide-overlap`。
+- 需要显示标签时设置 `labelField`。名称字段使用 `text`，数值字段使用 `integer`、`decimal` 或 `percent`；不要把名称字段配置成数值格式。
 - 图式字段、比例分母和 `maxValue` 必须在发布前根据分析口径确定；不要把“当前视图最大值”无说明地称为百分比。
 
 - 重叠的填充图层默认只让一个图层设置为 `visible: true`，其他备选图层设为 `visible: false`。Web 地图始终显示当前图层可见性列表；不要依赖预留的 `layerSwitcher` 标志。

@@ -80,14 +80,14 @@ QUERY="<Shanghai traffic query tools directory>/query_assets.py"
 
 ## EVDATA 道路速度
 
-2025-08-24 的 EVDATA 数据单独发布为 `road.dim_evdata_road_segment` 和
-`road.fact_evdata_road_speed_15m`：207 个上海体育场周边路段、14,977 条路段—15分钟时刻记录。
+2025-08-18—2025-08-24 的 EVDATA 数据单独发布为 `road.dim_evdata_road_segment` 和
+`road.fact_evdata_road_speed_15m`：207 个上海体育场周边路段、98,738 条路段—15分钟时刻记录。
 GeoJSON 明确为 CRS84，按 `EPSG:4326` 发布。EVDATA `roadid` 与原有 89 个道路状态发布段
 不是同一套 ID，未建立权威映射前不得强行合并。
 
-源 CSV 只给出 `speed_avg` 字段，没有声明速度单位；查询结果必须将单位写为“未知”，
-不得自行表述为 km/h。12 条大于 120 的高值原样保留并标记 `WARN_HIGH_SPEED`。
-只有 63/207 个路段覆盖全天 96 个时槽，缺失表示未观测，不能补零。
+用户已确认 `speed_avg` 的单位为 km/h。数据中没有大于 120 km/h 的记录。
+207 个路段—7 天共 1,449 个路段日，其中 390 个覆盖全天 96 个时槽；
+其余缺失表示未观测，不能补零。
 
 如果需要涉及到道路相关的数据，优先使用 EVDATA 的数据。
 
@@ -123,7 +123,7 @@ GeoJSON 明确为 CRS84，按 `EPSG:4326` 发布。EVDATA `roadid` 与原有 89 
 - `rainfall_1h_mm` 是滚动一小时累计值；小时统计取最大值或平均值，不逐条求和。
 - 四场演唱会均为 19:00—22:00；进场、交通管制和疏散窗口不得冒充演出开始/结束时间。
 - 原始订单号未分发，不得尝试恢复。
-- EVDATA 平均速度与原有 `FREE/CROWD/JAM` 状态是两套独立口径；未确认单位和路段映射前不得互相换算或拼接。
+- EVDATA 平均速度与原有 `FREE/CROWD/JAM` 状态是两套独立口径；未建立路段映射前不得互相换算或拼接。
 
 ## 输出要求
 
