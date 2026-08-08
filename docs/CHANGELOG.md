@@ -11,6 +11,38 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0 — TransportX Traffic Agent 桌面化与模块化
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支提交并推送，创建面向 `main` 的草稿 PR。
+
+主要修改：
+
+- 产品统一命名为 `TransportX Traffic Agent`，新增安全沙箱化 Electron 宿主、单实例窗口和 Agent Host 进程治理。
+- Agent Host 支持随机回环端口、版本化 ready/health 协议、父进程退出检测、有界日志与进程树清理。
+- 新增 Runtime Manifest、内置 Pi/Python 路径解析、持久化用户目录和统一 Python Runner，移除正式能力中的开发机绝对运行时路径。
+- 新增 Manifest v1、Module Registry、Asset Resolver 和 Session Assembly；Task、Citation、Geo、交通 Skill、Knowledge、Data 与 Template 通过官方模块装配。
+- Module 升级为统一生命周期单元，可组合贡献 Skill、Extension、Data 和 Knowledge；单独资源安装会自动包装为受管 Module。
+- 新增本地模块安装器、动态注册表重载和安全卸载，模块统一复制到 `~/.transportx/traffic-agent/modules/`，拒绝符号链接与包路径逃逸。
+- Data/Knowledge 已从 Skill 目录彻底迁出；查询脚本必须使用会话注入的资产根目录，不再存在相邻目录回退。
+- 支持通过环境变量选择外部 Knowledge/Data Root、导入只读外部模块 Manifest，并切换会话领域模块。
+- 每个新建或恢复会话保存 `ResolvedSessionPlan`，记录实际 Platform、Pi、Python、Module 与资产版本。
+- macOS 应用数据统一迁移到 `~/.transportx/traffic-agent/`，任务工作目录固定为其下的 `scenario/`，Pi 模型、认证、会话、日志和缓存不再散落到其他用户目录。
+- 首次启动不再提供默认模型；新建任务、模型选择器和设置页均可添加 Pi 兼容模型，并将密钥与模型定义分开安全存储。
+- 设置页新增统一模块管理，可查看每个模块贡献的 Skill、Extension、Data、Knowledge 和 Template，并安装模块包、单独资源或卸载用户模块。
+- macOS 打包改用经校验的可重定位 Python 3.10 运行时，固定运行依赖并检查版本、arm64 架构、模块完整性及复制后的路径边界。
+- 桌面报告 PDF 改由 Electron 主进程安全渲染，不再依赖目标机器预装 Chrome；新增 macOS 应用图标、hardened runtime entitlement、公证配置和发布凭据前置检查。
+- 清理旧 launchd 配置、字体测试文件、旧图标和生成缓存；仓库内 298 MB 历史任务经校验后迁移到 `~/.transportx/traffic-agent/scenario/`。
+- 重写整体架构和桌面化实施文档，使组件职责、Session Assembly、Module 生命周期、Data/Knowledge 解耦、用户目录、安全边界、macOS 分发问题与当前发布限制和实际实现保持一致。
+
+验证：
+
+- `npm run typecheck` 通过。
+- `npm test`：89 项测试，87 项通过、2 项外部 Knowledge 资产用例按默认策略跳过，0 项失败。
+- `npm run test:react-smoke` 通过，覆盖添加模型、模块设置、桌面端与移动端基线。
+- `npm run test:desktop-smoke` 通过，验证 Electron 安全选项、Mac 应用目录、无默认模型、Agent Host、包内 Python、PDF 导出和退出清理。
+- arm64 `.app` 的测试构建会在生成 DMG 前应用并严格验证 ad-hoc 签名；Python 启动链禁止在 `.app` 内生成字节码缓存。应用从只读 DMG 完整启动前后均通过严格签名检查，240 MB DMG 通过 `hdiutil verify`。正式外发仍需 Developer ID 签名和 Apple 公证，发布脚本会在凭据缺失时停止。
+
 ## v2.14 — 响应式对话布局与报告预览完善
 
 - 日期：2026-07-30

@@ -30,7 +30,8 @@ test('renders the project context without unresolved or unsafe placeholders', ()
   const { renderProjectPrompt } = require('../bin/sessions.js');
   const template = fs.readFileSync(path.join(process.cwd(), 'prompts', 'PI_SESSION_CONTEXT.md'), 'utf8');
   const rendered = renderProjectPrompt(template, '/tmp/example-task');
-  assert.match(rendered, /miniconda3\/envs\/research\/bin\/python3\.10/);
+  assert.match(rendered, /Python 解释器：`[^`]+`/);
+  assert.doesNotMatch(rendered, /Python 解释器：`\/Users\/ran/);
   assert.ok(rendered.includes(process.cwd()));
   assert.ok(rendered.includes(path.join(process.cwd(), 'skills')));
   assert.ok(rendered.includes('/tmp/example-task'));
@@ -96,4 +97,8 @@ test('resolves child RPC responses and restores thinking level after a failed co
   } finally {
     liveManager.sessions.delete(session.id);
   }
+});
+
+test('a new task requires an explicit model selection', async () => {
+  await assert.rejects(() => liveManager.create({ model: '' }), /添加并选择模型/);
 });

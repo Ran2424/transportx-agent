@@ -20,8 +20,8 @@ import {
 const execFileAsync = promisify(execFile);
 const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(EXTENSION_DIR, '..', '..');
-const PYTHON = '/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10';
-const SEARCH_SCRIPT = path.join(PROJECT_ROOT, 'skills', 'search-traffic-assurance-knowledge', 'scripts', 'search_knowledge.py');
+const PYTHON = process.env.TAU_PYTHON_COMMAND || 'python3';
+const SEARCH_SCRIPT = path.join(PROJECT_ROOT, 'modules', 'official', 'traffic-knowledge', 'skill', 'scripts', 'search_knowledge.py');
 const KNOWLEDGE_ID_RE = /^K-[A-Za-z0-9_.-]+-\d{6}$/;
 const MARKER_RE = /\[\[cite:([^\]\r\n]+)\]\]/g;
 const REFERENCE_START = '<!-- tau:references:start -->';

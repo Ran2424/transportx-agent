@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "com.transportx.task",
+  "name": "Task Mode",
+  "version": "1.0.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "entrypoints": {
+    "piExtensions": ["extensions/pi-task-mode/index.ts"]
+  },
+  "contributes": {
+    "artifactTypes": ["task.snapshot"]
+  }
+}

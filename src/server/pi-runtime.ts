@@ -27,13 +27,13 @@ export function assertSupportedPiVersion(value: unknown) {
   return actual.raw;
 }
 
-export function inspectPiRuntime(command: string) {
+export function inspectPiRuntime(command: string, prefixArgs: string[] = []) {
   let output: string;
   try {
-    output = execFileSync(command, ['--version'], { encoding: 'utf8', timeout: 5000 }).trim();
+    output = execFileSync(command, [...prefixArgs, '--version'], { encoding: 'utf8', timeout: 5000 }).trim();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cannot execute Pi CLI '${command} --version': ${message}`);
+    throw new Error(`Cannot execute Pi CLI '${[command, ...prefixArgs, '--version'].join(' ')}': ${message}`);
   }
-  return { command, version: assertSupportedPiVersion(output) };
+  return { command: [command, ...prefixArgs].join(' '), version: assertSupportedPiVersion(output) };
 }

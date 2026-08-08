@@ -6,18 +6,26 @@ const { WebSocket } = require('ws');
 import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, PendingCommand, RpcCommand, RpcResponse } from './types.js';
 import {
+  APP_PATHS,
   BUILTIN_EXTENSION_PATHS,
   BUILTIN_SKILL_PATHS,
+  DEFAULT_DOMAIN_ID,
   PI_COMMAND,
+  PI_COMMAND_ARGS,
+  PI_AGENT_DIR,
   PROJECT_PROMPT_PATH,
   PROJECT_ROOT,
   PROJECT_SKILLS_DIR,
-  TRAFFIC_DATA_DIR,
-  TRAFFIC_TOOLS_DIR,
+  SESSION_ASSEMBLER,
+  SESSIONS_DIR,
+  TAU_SETTINGS,
+  PYTHON_COMMAND,
   expandHome,
 } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import { SessionProjection } from './session-projection.js';
+import { signalProcessTree } from './process-tree.js';
+import type { ResolvedSessionPlan } from './session-assembly.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
@@ -79,28 +87,29 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
   return latest;
 }
 
-const PROJECT_PROMPT_PLACEHOLDERS: Record<string, (cwd: string) => string> = {
+const PROJECT_PROMPT_PLACEHOLDERS: Record<string, (cwd: string, plan: ResolvedSessionPlan | null) => string> = {
   PROJECT_ROOT: () => PROJECT_ROOT,
   TASK_WORKING_DIRECTORY: (cwd) => cwd,
   PROJECT_SKILLS_DIR: () => PROJECT_SKILLS_DIR,
-  TRAFFIC_TOOLS_DIR: () => TRAFFIC_TOOLS_DIR,
-  TRAFFIC_DATA_DIR: () => TRAFFIC_DATA_DIR,
   PROJECT_PROMPT_PATH: () => PROJECT_PROMPT_PATH,
+  PYTHON_COMMAND: () => PYTHON_COMMAND,
+  KNOWLEDGE_ROOT: (_cwd, plan) => plan?.assets.find((asset) => asset.kind === 'knowledge')?.path || '<not installed>',
+  DATA_ROOT: (_cwd, plan) => plan?.assets.find((asset) => asset.kind === 'data')?.path || '<not installed>',
 };
 
-export function renderProjectPrompt(template: string, cwd: string) {
+export function renderProjectPrompt(template: string, cwd: string, plan: ResolvedSessionPlan | null = null) {
   let rendered = template;
   for (const [name, resolveValue] of Object.entries(PROJECT_PROMPT_PLACEHOLDERS)) {
-    rendered = rendered.replaceAll(`{{${name}}}`, resolveValue(cwd));
+    rendered = rendered.replaceAll(`{{${name}}}`, resolveValue(cwd, plan));
   }
   const unresolved = Array.from(new Set(rendered.match(/\{\{[A-Z0-9_]+\}\}/g) || []));
   if (unresolved.length) throw new Error(`Unknown project prompt placeholders: ${unresolved.join(', ')}`);
   return rendered.trim();
 }
 
-function loadProjectPrompt(cwd: string) {
-  if (!fs.existsSync(PROJECT_PROMPT_PATH)) throw new Error(`Project prompt not found: ${PROJECT_PROMPT_PATH}`);
-  return renderProjectPrompt(fs.readFileSync(PROJECT_PROMPT_PATH, 'utf8'), cwd);
+function loadProjectPrompt(cwd: string, promptPath = PROJECT_PROMPT_PATH, plan: ResolvedSessionPlan | null = null) {
+  if (!fs.existsSync(promptPath)) throw new Error(`Project prompt not found: ${promptPath}`);
+  return renderProjectPrompt(fs.readFileSync(promptPath, 'utf8'), cwd, plan);
 }
 
 export function makeId() {
@@ -140,9 +149,9 @@ function safeDirectoryName(name: unknown) {
   return cleaned || 'untitled';
 }
 
-function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
+export function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
   const explicitParent = Boolean(parentCwd);
-  const parent = path.resolve(expandHome(parentCwd || path.join(process.cwd(), 'scenario')));
+  const parent = path.resolve(expandHome(parentCwd || TAU_SETTINGS.projectsDir || path.join(process.cwd(), 'scenario')));
   if (explicitParent) {
     if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
       throw new Error(`Directory not found: ${parent}`);
@@ -192,8 +201,9 @@ export class PiRpcSession {
   piVersion: string;
   lastBridgeRevision: number | null;
   contractDiagnostics: ContractDiagnostic[];
+  resolvedSessionPlan: ResolvedSessionPlan | null;
 
-  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string }) {
+  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
     this.id = opts.id || makeId();
     this.cwd = opts.cwd;
@@ -222,6 +232,7 @@ export class PiRpcSession {
     this.capabilities = runtimeCapabilities(this.piVersion);
     this.capabilityMismatches = [];
     this.contractDiagnostics = [];
+    this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.applyLatestBridgeEnvelope();
   }
 
@@ -247,6 +258,7 @@ export class PiRpcSession {
         mismatches: this.capabilityMismatches,
         diagnostics: this.contractDiagnostics,
       },
+      resolvedSessionPlan: this.resolvedSessionPlan,
     };
   }
 
@@ -271,22 +283,35 @@ export class PiRpcSession {
     if (!fs.existsSync(this.cwd) || !fs.statSync(this.cwd).isDirectory()) {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
-    const args = ['--mode', 'rpc'];
-    for (const extensionPath of BUILTIN_EXTENSION_PATHS) {
+    const args = [...PI_COMMAND_ARGS, '--mode', 'rpc'];
+    const extensionPaths = this.resolvedSessionPlan?.piExtensions || BUILTIN_EXTENSION_PATHS;
+    const skillPaths = this.resolvedSessionPlan?.skills || BUILTIN_SKILL_PATHS;
+    for (const extensionPath of extensionPaths) {
       if (!fs.existsSync(extensionPath)) throw new Error(`Built-in extension not found: ${extensionPath}`);
       args.push('--extension', extensionPath);
     }
-    for (const skillPath of BUILTIN_SKILL_PATHS) {
+    for (const skillPath of skillPaths) {
       if (!fs.existsSync(skillPath)) throw new Error(`Built-in skill not found: ${skillPath}`);
       args.push('--skill', skillPath);
     }
-    args.push('--append-system-prompt', loadProjectPrompt(this.cwd));
+    args.push('--append-system-prompt', loadProjectPrompt(this.cwd, this.resolvedSessionPlan?.promptPath, this.resolvedSessionPlan));
     if (this.sessionFile) args.push('--session', this.sessionFile);
     if (this.modelSpec) args.push('--model', this.modelSpec);
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
     const child = spawnFn(PI_COMMAND, args, {
       cwd: this.cwd,
-      env: { ...process.env, TAU_DISABLED: '1' },
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: PI_AGENT_DIR,
+        PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
+        TAU_DISABLED: '1',
+        TAU_PYTHON_COMMAND: PYTHON_COMMAND,
+        MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
+        PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
+        ...(this.resolvedSessionPlan?.assets.find((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ROOT: this.resolvedSessionPlan.assets.find((asset) => asset.kind === 'knowledge')!.path } : {}),
+        ...(this.resolvedSessionPlan?.assets.find((asset) => asset.kind === 'data') ? { TRANSPORTX_TRAFFIC_DATA_ROOT: this.resolvedSessionPlan.assets.find((asset) => asset.kind === 'data')!.path } : {}),
+      },
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.child = child;
@@ -576,10 +601,10 @@ export class PiRpcSession {
     }
     this.pending.clear();
     if (!this.child || this.child.exitCode !== null) return;
-    try { this.child.kill('SIGTERM'); } catch {}
+    signalProcessTree(this.child, 'SIGTERM');
     await new Promise((resolve) => setTimeout(resolve, 1500));
     if (this.child && this.child.exitCode === null && this.child.signalCode === null) {
-      try { this.child.kill('SIGKILL'); } catch {}
+      signalProcessTree(this.child, 'SIGKILL');
     }
   }
 
@@ -655,8 +680,11 @@ export class LiveSessionManager {
   hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
   async create({ cwd, model, sessionName }: { cwd?: string; model?: string; sessionName?: string | null }) {
+    if (!model?.trim()) throw new Error('请先添加并选择模型');
     const resolved = createSessionWorkingDirectory(cwd, sessionName);
-    const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), sessionName, piVersion: this.piVersion });
+    const resolvedSessionPlan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, resolved);
+    SESSION_ASSEMBLER.save(resolvedSessionPlan);
+    const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), sessionName, piVersion: this.piVersion, resolvedSessionPlan });
     await session.start();
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
@@ -674,7 +702,9 @@ export class LiveSessionManager {
         if (terminating) await terminating.catch(() => {});
         const afterTerminationExisting = this.findBySessionFile(resolved);
         if (afterTerminationExisting) return afterTerminationExisting;
-        const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion });
+        const resolvedSessionPlan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, cwd);
+        SESSION_ASSEMBLER.save(resolvedSessionPlan);
+        const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
         await session.start();
         this.sessions.set(session.id, session);
         this.broadcast({ type: 'live_session_created', session: session.metadata() });

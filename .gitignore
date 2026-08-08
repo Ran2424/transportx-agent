@@ -21,6 +21,9 @@ node_modules/
 /public/workspace/
 /public/kernel/
 /dist/
+/dist-desktop/
+/release/
+/desktop/build/
 /public/geo-runtime.css
 
 .DS_Store
@@ -38,6 +41,8 @@ references/pi-development-guide.md
 scenario/
 .tau/
 /logs/
+modules/official/traffic-data/assets/
+modules/official/traffic-knowledge/assets/
 
 # 浏览器截图基线 PNG（体积大，只保留 manifest.json 哈希清单，见 docs/TEST_BASELINES.md）
 test/baselines/screenshots/*.png
