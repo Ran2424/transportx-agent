@@ -31,6 +31,7 @@ test('GeoScene parser accepts point chart layers and enforces chart semantics', 
       valueFields: ['in_flow', 'out_flow'],
       colors: ['#34c79b', '#8268bd'],
       size: 40,
+      collisionMode: 'show-all',
       labelField: 'total_flow',
       labelFormat: 'integer',
     },
@@ -38,4 +39,6 @@ test('GeoScene parser accepts point chart layers and enforces chart semantics', 
   assert.equal(parseGeoScene(scene({ layers: [chartLayer] })).ok, true);
   assert.equal(parseGeoScene(scene({ layers: [{ ...chartLayer, chart: { ...chartLayer.chart, type: 'bar', valueFields: ['total_flow'], colors: ['#34c79b'] } }] })).ok, false);
   assert.equal(parseGeoScene(scene({ layers: [{ ...chartLayer, chart: { ...chartLayer.chart, type: 'pie', valueFields: ['total_flow'], colors: ['#34c79b'] } }] })).ok, false);
+  assert.equal(parseGeoScene(scene({ layers: [{ ...chartLayer, chart: { ...chartLayer.chart, collisionMode: 'priority' } }] })).ok, false);
+  assert.equal(parseGeoScene(scene({ layers: [{ ...chartLayer, chart: { ...chartLayer.chart, labelFormat: 'text' } }] })).ok, true);
 });

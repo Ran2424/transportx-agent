@@ -61,10 +61,11 @@ export type GeoChart = {
   valueFields: string[];
   colors: string[];
   size: number;
+  collisionMode?: 'show-all' | 'hide-overlap';
   maxValue?: number;
   trackColor?: string;
   labelField?: string;
-  labelFormat?: 'integer' | 'decimal' | 'percent';
+  labelFormat?: 'text' | 'integer' | 'decimal' | 'percent';
 };
 
 export type GeoLayer = {
@@ -379,18 +380,20 @@ export function parseGeoSceneStructured(value: unknown, sink: ContractDiagnostic
       if (!Array.isArray(chartInput.colors) || chartInput.colors.length < valueFields.length || !chartInput.colors.every((color) => typeof color === 'string' && HEX_COLOR_RE.test(color))) return fail(`${layerPath}.chart.colors`, 'unsupported_value', 'Chart colors must provide a valid hex color for every value field.');
       const size = asFiniteNumber(chartInput.size);
       if (size === null || size < 16 || size > 96) return fail(`${layerPath}.chart.size`, 'out_of_range', 'Chart size must be between 16 and 96 pixels.');
+      if (chartInput.collisionMode !== undefined && !['show-all', 'hide-overlap'].includes(String(chartInput.collisionMode))) return fail(`${layerPath}.chart.collisionMode`, 'unsupported_value', 'Chart collisionMode must be show-all or hide-overlap.');
       const maxValue = chartInput.maxValue === undefined ? undefined : asFiniteNumber(chartInput.maxValue);
       if (chartInput.type === 'bar' && (maxValue === undefined || maxValue === null || maxValue <= 0)) return fail(`${layerPath}.chart.maxValue`, 'out_of_range', 'Bar charts require a positive maxValue.');
       const trackColor = chartInput.trackColor === undefined ? undefined : asString(chartInput.trackColor, 9);
       if (trackColor !== undefined && (trackColor === null || !HEX_COLOR_RE.test(trackColor))) return fail(`${layerPath}.chart.trackColor`, 'unsupported_value', 'Chart trackColor must be a hex color.');
       const labelField = chartInput.labelField === undefined ? undefined : asString(chartInput.labelField, 100);
       if (chartInput.labelField !== undefined && !labelField) return fail(`${layerPath}.chart.labelField`, 'invalid_type', 'Chart labelField must be a non-empty field name.');
-      if (chartInput.labelFormat !== undefined && !['integer', 'decimal', 'percent'].includes(String(chartInput.labelFormat))) return fail(`${layerPath}.chart.labelFormat`, 'unsupported_value', 'Chart labelFormat must be integer, decimal, or percent.');
+      if (chartInput.labelFormat !== undefined && !['text', 'integer', 'decimal', 'percent'].includes(String(chartInput.labelFormat))) return fail(`${layerPath}.chart.labelFormat`, 'unsupported_value', 'Chart labelFormat must be text, integer, decimal, or percent.');
       chart = {
         type: chartInput.type as NonNullable<GeoLayer['chart']>['type'],
         valueFields,
         colors: chartInput.colors as string[],
         size,
+        ...(chartInput.collisionMode ? { collisionMode: chartInput.collisionMode as NonNullable<GeoLayer['chart']>['collisionMode'] } : {}),
         ...(maxValue !== undefined && maxValue !== null ? { maxValue } : {}),
         ...(trackColor ? { trackColor } : {}),
         ...(labelField ? { labelField } : {}),

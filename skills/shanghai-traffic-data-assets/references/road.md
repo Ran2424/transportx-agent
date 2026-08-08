@@ -3,8 +3,8 @@
 ## 定位
 
 `road.sqlite` 包含两套彼此独立的道路数据：89 个命名发布段的交通状态变化（无可靠几何），
-以及 207 个 EVDATA 路段的 WGS84 几何和 2025-08-24 的 15 分钟平均速度。
-两套来源没有权威 ID 映射，不得直接拼接。EVDATA 源文件未声明 `speed_avg` 的单位。
+以及 207 个 EVDATA 路段的 WGS84 几何和 2025-08-18—2025-08-24 的 15 分钟平均速度。
+两套来源没有权威 ID 映射，不得直接拼接。EVDATA `speed_avg` 的单位为 km/h。
 
 ## 表清单
 
@@ -16,8 +16,8 @@
 | `mart_road_segment_hour` | 39,494 | 发布段—日期—小时 | 小时畅通/拥挤/拥堵时长 |
 | `mart_road_segment_day` | 1,704 | 发布段—日期 | 日状态时长 |
 | `dim_evdata_road_segment` | 207 | 一个 EVDATA 路段 | 路段名称、WGS84 MultiLineString 几何 |
-| `std_evdata_road_speed_15m` | 14,977 | 路段—15分钟时刻 | 全量接纳、来源行号与质量状态 |
-| `fact_evdata_road_speed_15m` | 14,977 | 路段—15分钟时刻 | EVDATA 平均速度查询 |
+| `std_evdata_road_speed_15m` | 98,738 | 路段—15分钟时刻 | 全量接纳、来源行号与质量状态 |
+| `fact_evdata_road_speed_15m` | 98,738 | 路段—15分钟时刻 | EVDATA 平均速度查询 |
 
 时间覆盖为 2025-08-11—2025-08-31。缺失小时表示未观测，不能自动补零。
 
@@ -64,9 +64,9 @@ GeoJSON 的 207 个 `road_id` 唯一，几何均为 `MultiLineString`，CRS84 �
 `speed_avg REAL`，`speed_unit TEXT`，`quality_status TEXT`，
 `source_record_number INTEGER`，`source_table TEXT`
 
-覆盖 2025-08-24 00:00—23:45。`speed_unit='UNKNOWN'` 表示源文件未声明单位。
-12 条大于 120 的值标为 `WARN_HIGH_SPEED`，最高约 503.78，原值保留待业务复核。
-63/207 个路段有完整 96 个时槽，其余路段缺失不补零。
+覆盖 2025-08-18 00:00—2025-08-24 23:45，`speed_unit='km/h'`。
+速度范围为 0.1—110.0 km/h，没有大于 120 km/h 的警告记录。
+1,449 个路段日中 390 个有完整 96 个时槽，其余路段日缺失不补零。
 
 ## 连接与查询注意
 
@@ -76,7 +76,7 @@ GeoJSON 的 207 个 `road_id` 唯一，几何均为 `MultiLineString`，CRS84 �
 - 不要仅凭 `segment_name` 与公交、轨交或场馆做空间连接。
 - 多路段汇总前先明确是“路段分钟之和”还是“至少一个路段拥堵的钟表分钟”，两者不是同一指标。
 - EVDATA 通过 `road_id` 连接 `dim_evdata_road_segment`；不要与 `segment_key` 或 `segment_id` 混用。
-- `speed_avg` 是来源平均值，因单位和聚合权重未知，不建议跨路段再次求简单平均。
+- `speed_avg` 是来源平均值，单位为 km/h；因聚合权重未知，不建议跨路段再次求简单平均。
 
 ## 可支撑分析
 
@@ -84,10 +84,10 @@ GeoJSON 的 207 个 `road_id` 唯一，几何均为 `MultiLineString`，CRS84 �
 - 活动日与非活动日同路段、同时段对比；
 - 各状态转换序列和拥堵开始、缓解时刻；
 - 观测覆盖率评估。
-- 2025-08-24 上海体育场周边 EVDATA 路段速度的 15 分钟时序与空间制图。
+- 2025-08-18—2025-08-24 上海体育场周边 EVDATA 路段速度的 15 分钟时序与空间制图。
 
 原状态表不能支撑道路速度或制图；EVDATA 可支撑其 207 个路段的几何展示，但不能支撑
-流量、行程时间、路网拓扑，也不能外推到其他日期。速度单位未确认前不能与限速或其他速度源比较。
+流量、行程时间、路网拓扑，也不能外推到覆盖日期之外。
 
 ## 样例查询
 
@@ -110,7 +110,7 @@ WHERE d.segment_name = :segment_name
   AND e.date_key = :date_key
 ORDER BY e.event_at;
 
--- EVDATA 演出日分时速度；单位必须保留为 UNKNOWN
+-- EVDATA 演出日分时速度；单位为 km/h
 SELECT s.observed_at, s.road_id, d.road_name, s.speed_avg,
        s.speed_unit, s.quality_status
 FROM road.fact_evdata_road_speed_15m s

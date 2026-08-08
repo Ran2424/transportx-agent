@@ -26,7 +26,7 @@ DB_DIR = SKILL_DIR / "assets" / "databases"
 DB_NAMES = ("common", "road", "metro", "bus", "ridehail")
 PYTHON = sys.executable
 BUILT_AT = datetime.now().replace(microsecond=0).isoformat()
-ASSET_VERSION = "3.1.0"
+ASSET_VERSION = "3.2.0"
 CANONICAL_CRS = "EPSG:4326"
 CANONICAL_TIME_ZONE = "Asia/Shanghai"
 EPSG32651_TO_WGS84 = Transformer.from_crs("EPSG:32651", "EPSG:4326", always_xy=True)
