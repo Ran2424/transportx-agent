@@ -236,7 +236,7 @@ try {
   if (await toolToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Running tool should be expanded');
   await runningTool.locator('.tool-status.completed').waitFor({ timeout: 10_000 });
   if (await toolToggle.getAttribute('aria-expanded') !== 'false') throw new Error('Completed tool should collapse automatically');
-  await reactPage.evaluate(() => { document.documentElement.dataset.theme = 'terracotta'; });
+  await reactPage.evaluate(() => { document.documentElement.dataset.theme = 'sand'; });
   const toolChrome = await runningTool.evaluate((node) => {
     const card = getComputedStyle(node);
     const header = getComputedStyle(node.querySelector('header'));
@@ -277,14 +277,14 @@ try {
   if (Math.abs(expandedToolChrome.width - toolChrome.width) > 1) {
     throw new Error(`Collapsed and expanded tools should share one width: ${JSON.stringify({ collapsed: toolChrome.width, expanded: expandedToolChrome.width })}`);
   }
-  if (expandedToolChrome.argsFontSize !== 12.5 || expandedToolChrome.outputFontSize !== 12.5 || expandedToolChrome.outputLabelFontSize !== 9 || expandedToolChrome.copyFontSize !== 10) {
+  if (expandedToolChrome.argsFontSize !== 12.5 || expandedToolChrome.outputFontSize !== 12.5 || expandedToolChrome.outputLabelFontSize !== 11 || expandedToolChrome.copyFontSize !== 11) {
     throw new Error(`Expanded tool typography is not using the larger scale: ${JSON.stringify(expandedToolChrome)}`);
   }
   if (toolChrome.cardBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.cardBorder !== 'none' || toolChrome.labelColor !== toolChrome.bodyColor || toolChrome.labelBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.labelBorder !== 'none') {
     throw new Error(`Tool history should be borderless with a plain text label: ${JSON.stringify(toolChrome)}`);
   }
-  if (toolChrome.markerBackground !== 'rgb(176, 106, 72)' || toolChrome.markerRadius !== '50%') {
-    throw new Error(`Terracotta completion marker should carry the timeline accent: ${JSON.stringify(toolChrome)}`);
+  if (toolChrome.markerBackground !== 'rgb(185, 109, 76)' || toolChrome.markerRadius !== '50%') {
+    throw new Error(`Sand completion marker should carry the timeline accent: ${JSON.stringify(toolChrome)}`);
   }
   await reactPage.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, selectedTheme);
 

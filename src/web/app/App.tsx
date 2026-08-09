@@ -17,10 +17,24 @@ import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDo
 import { projectVisualizations } from '../features/geo/geo-projection';
 import { projectTaskState } from '../features/task/task-projection';
 
+const LEGACY_THEME_MIGRATION: Record<string, ThemeId> = {
+  clean: 'light',
+  night: 'dark',
+  dawn: 'dark',
+  midnight: 'dark',
+  terracotta: 'sand',
+  sage: 'light',
+};
+
 function initialTheme(): ThemeId {
   const saved = window.localStorage.getItem('tau-theme');
-  if (themes.some((theme) => theme.id === saved)) return saved as ThemeId;
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'clean' : 'night';
+  if (saved) {
+    if (themes.some((theme) => theme.id === saved)) return saved as ThemeId;
+    const migrated = LEGACY_THEME_MIGRATION[saved];
+    if (migrated) return migrated;
+  }
+  // New installs keep the TransportX brand first impression: Sand.
+  return 'sand';
 }
 
 function mostRecentSessionId(sessions: ReturnType<typeof useSessionState>['sessions']) {
@@ -272,7 +286,7 @@ export function App() {
   return (
     <AppShell
       header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={visualizations.length > 0} onToggleSidebar={() => setSidebarOpen((value) => !value)} onToggleFiles={() => setFilesOpen((value) => !value)} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
-      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={() => setSidebarOpen(false)} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
+      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={() => setSidebarOpen(false)} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={() => setFilesOpen(false)} />}

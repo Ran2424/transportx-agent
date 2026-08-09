@@ -1,0 +1,195 @@
+/* ============================================================
+   TransportX Design System — Primitive & Semantic Tokens
+   ------------------------------------------------------------
+   三套主题（Light / Dark / Sand）共用同一份 semantic token
+   contract：主题只改 token 值，不改变任何布局、尺寸、圆角、
+   字号、DOM 和交互。组件只允许消费 semantic token。
+   ============================================================ */
+
+/* ---------- Primitives（品牌基础值，组件不得直接消费） ---------- */
+:root {
+  /* TransportX 品牌暖色阶（Terracotta） */
+  --tx-brand-700: #7C3E24;
+  --tx-brand-600: #8F4A2E;
+  --tx-brand-500: #A85A3A;
+  --tx-brand-400: #B96D4C;
+  --tx-brand-300: #D98E6F;
+  --tx-brand-200: #E5A184;
+
+  /* 间距刻度：4 / 8 / 12 / 16 / 24 / 32 */
+  --tx-space-1: 4px;
+  --tx-space-2: 8px;
+  --tx-space-3: 12px;
+  --tx-space-4: 16px;
+  --tx-space-5: 24px;
+  --tx-space-6: 32px;
+
+  /* 圆角规则：按钮/Tabs/搜索 6px，输入/Select 8px，Dialog/输入容器 12px */
+  --tx-radius-sm: 6px;
+  --tx-radius-md: 8px;
+  --tx-radius-lg: 12px;
+
+  /* 控件高度 */
+  --tx-control-sm: 28px;
+  --tx-control: 30px;
+  --tx-control-md: 32px;
+  --tx-control-lg: 36px;
+
+  /* 字体 */
+  --tx-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --tx-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --tx-font-display: "Iowan Old Style", "Baskerville", Georgia, serif;
+
+  /* 字号（功能文字下限 11px） */
+  --tx-text-xs: 11px;
+  --tx-text-sm: 12px;
+  --tx-text-base: 13px;
+  --tx-text-md: 14px;
+  --tx-text-lg: 14.5px;
+
+  /* ---- 结构刻度（组件直接消费的别名，与 semantic 分离） ---- */
+  /* 字号 */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 14.5px;
+
+  /* 圆角：小型控件 6px，输入 8px，容器 12px */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* 控件高度 */
+  --control-compact: 28px;
+  --control-small: 30px;
+  --control-default: 32px;
+  --control-form: 36px;
+
+  /* 间距：4 / 8 / 12 / 16 / 24 / 32 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ============================================================
+   Theme Light — 干净、专业、高密度工具感
+   （:root 默认值 = Light，未设置 data-theme 时同样成立）
+   ============================================================ */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface-canvas: #F7F7F6;
+  --surface-sidebar: #F1F1F0;
+  --surface-default: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-hover: rgba(36, 36, 36, 0.055);
+  --selection-bg: rgba(168, 90, 58, 0.10);
+  --selection-border: #A85A3A;
+  --selection-fg: #8F4A2E;
+
+  --text-primary: #242424;
+  --text-secondary: #66635F;
+  --text-tertiary: #96918B;
+
+  --border-default: rgba(36, 36, 36, 0.10);
+  --border-strong: rgba(36, 36, 36, 0.16);
+
+  --interactive-primary-bg: #A85A3A;
+  --interactive-primary-bg-hover: #8F4A2E;
+  --interactive-primary-fg: #FFFFFF;
+
+  --focus-ring: rgba(168, 90, 58, 0.32);
+  --link-fg: #8F4A2E;
+
+  --status-success: #3D7A4E;
+  --status-warning: #A8782E;
+  --status-danger: #B23B34;
+  --status-info: #3D6E9E;
+
+  --shadow-menu: 0 6px 20px rgba(36, 36, 36, 0.12);
+  --shadow-dialog: 0 18px 48px rgba(36, 36, 36, 0.16);
+  --shadow-overlay: 0 28px 72px rgba(36, 36, 36, 0.20);
+}
+
+/* ============================================================
+   Theme Dark — IDE 深色材料层级，不使用纯黑
+   ============================================================ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-canvas: #1E1E1E;
+  --surface-sidebar: #252526;
+  --surface-default: #202020;
+  --surface-raised: #2A2A2A;
+  --surface-hover: rgba(255, 255, 255, 0.07);
+  --selection-bg: rgba(217, 142, 111, 0.18);
+  --selection-border: #D98E6F;
+  --selection-fg: #E5A184;
+
+  --text-primary: #E7E7E7;
+  --text-secondary: #A7A7A7;
+  --text-tertiary: #747474;
+
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --interactive-primary-bg: #D98E6F;
+  --interactive-primary-bg-hover: #E5A184;
+  --interactive-primary-fg: #1E1E1E;
+
+  --focus-ring: rgba(217, 142, 111, 0.45);
+  --link-fg: #E5A184;
+
+  --status-success: #7FB98C;
+  --status-warning: #D9A75E;
+  --status-danger: #E0695F;
+  --status-info: #7FA6CC;
+
+  --shadow-menu: 0 6px 20px rgba(0, 0, 0, 0.28);
+  --shadow-dialog: 0 18px 48px rgba(0, 0, 0, 0.40);
+  --shadow-overlay: 0 28px 72px rgba(0, 0, 0, 0.52);
+}
+
+/* ============================================================
+   Theme Sand — TransportX 品牌主题（warm canvas + terracotta）
+   ============================================================ */
+:root[data-theme="sand"] {
+  color-scheme: light;
+  --surface-canvas: #F4F1EC;
+  --surface-sidebar: #ECE7DF;
+  --surface-default: #FAF8F4;
+  --surface-raised: #FFFDFC;
+  --surface-hover: rgba(38, 35, 32, 0.055);
+  --selection-bg: rgba(185, 109, 76, 0.12);
+  --selection-border: #B96D4C;
+  --selection-fg: #8F4A2E;
+
+  --text-primary: #262320;
+  --text-secondary: #6F6963;
+  --text-tertiary: #928A82;
+
+  --border-default: rgba(38, 35, 32, 0.10);
+  --border-strong: rgba(38, 35, 32, 0.16);
+
+  --interactive-primary-bg: #B96D4C;
+  --interactive-primary-bg-hover: #A85A3A;
+  --interactive-primary-fg: #FFFFFF;
+
+  --focus-ring: rgba(185, 109, 76, 0.32);
+  --link-fg: #8F4A2E;
+
+  --status-success: #4C7A5C;
+  --status-warning: #A8782E;
+  --status-danger: #A33D39;
+  --status-info: #4E6E8E;
+
+  --shadow-menu: 0 6px 20px rgba(99, 66, 45, 0.10);
+  --shadow-dialog: 0 18px 48px rgba(99, 66, 45, 0.16);
+  --shadow-overlay: 0 28px 72px rgba(99, 66, 45, 0.20);
+}
