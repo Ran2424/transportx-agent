@@ -45,11 +45,14 @@ const sessionsDir = path.join(agentDir, 'sessions');
 const projectsDir = path.join(tempRoot, 'projects');
 fs.mkdirSync(sessionsDir, { recursive: true });
 fs.mkdirSync(projectsDir, { recursive: true });
+fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { 'kimi-coding': { baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', models: [{ id: 'k2p7', name: 'Fake K2P7', reasoning: true }] } } }));
+fs.writeFileSync(path.join(agentDir, 'auth.json'), JSON.stringify({ 'kimi-coding': { type: 'api_key', key: 'fake-smoke-key' } }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.PI_CODING_AGENT_SESSION_DIR = sessionsDir;
 process.env.TAU_PROJECTS_DIR = projectsDir;
 process.env.TAU_STATIC_DIR = path.join(REPO_ROOT, 'public');
 process.env.TAU_HOST = '127.0.0.1';
+process.env.PI_OFFLINE = '1';
 
 // ---- 预置会话文件：resume 基线（straight fixture，cwd 重写进临时任务目录） ----
 function sessionDirName(tag) { return `--tau-fake-${tag}--`; }

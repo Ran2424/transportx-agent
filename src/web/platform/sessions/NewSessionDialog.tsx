@@ -10,6 +10,7 @@ type NewSessionDialogProps = {
   open: boolean;
   onOpenChange(open: boolean): void;
   onCreated(sessionId: string): void;
+  onAddModel(): void;
 };
 
 function normalizeModel(model: ModelRecord | string) {
@@ -24,7 +25,7 @@ function normalizeModel(model: ModelRecord | string) {
   };
 }
 
-export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDialogProps) {
+export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: NewSessionDialogProps) {
   const { kernel } = useAppServices();
   const [model, setModel] = useState('');
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
@@ -61,10 +62,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     }
   }
 
-  const modelOptions = [
-    { value: '', label: '使用 Pi 默认模型', metadata: '继承 Pi 的启动配置' },
-    ...models.map(normalizeModel).filter((item) => item.value),
-  ];
+  const modelOptions = models.map(normalizeModel).filter((item) => item.value);
 
   return (
     <Dialog
@@ -75,20 +73,23 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
       footer={null}
     >
       <form className="form-stack" onSubmit={submit}>
-        <MenuSelect
-          label="模型"
-          value={model}
-          options={modelOptions}
-          placeholder={loadingModels ? '正在读取模型…' : '使用 Pi 默认模型'}
-          disabled={loadingModels}
-          autoFocus
-          onChange={setModel}
-        />
-        <p className="field-help">工作区按创建时间自动生成；模型稍后仍可从顶部状态栏切换。</p>
+        <div className="field-with-action">
+          <MenuSelect
+            label="模型"
+            value={model}
+            options={modelOptions}
+            placeholder={loadingModels ? '正在读取模型…' : '尚未添加模型'}
+            disabled={loadingModels || modelOptions.length === 0}
+            autoFocus={modelOptions.length > 0}
+            onChange={setModel}
+          />
+          <Button type="button" variant="outline" onClick={onAddModel}>添加模型</Button>
+        </div>
+        <p className="field-help">工作区自动创建在 ~/.transportx/traffic-agent/scenario。创建前必须选择模型。</p>
         {error ? <div className="inline-error" role="alert">{error}</div> : null}
         <div className="form-actions">
           <DialogClose asChild><Button type="button" variant="quiet">取消</Button></DialogClose>
-          <Button type="submit" disabled={submitting}>{submitting ? '正在启动…' : '创建任务'}</Button>
+          <Button type="submit" disabled={submitting || !model}>{submitting ? '正在启动…' : '创建任务'}</Button>
         </div>
       </form>
     </Dialog>

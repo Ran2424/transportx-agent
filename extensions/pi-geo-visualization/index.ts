@@ -26,10 +26,16 @@ const MAX_FEATURES = 50_000;
 const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_RUNTIME_ID = 'pi-geo-visualization-command-v2';
 const PROJECT_ROOT = path.resolve(EXTENSION_DIR, '..', '..');
-const PROJECT_SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
-const TRAFFIC_SKILL_DIR = path.join(PROJECT_SKILLS_DIR, 'shanghai-traffic-data-assets');
+const preferUnpackedPath = (filePath: string) => {
+  const marker = `${path.sep}app.asar${path.sep}`;
+  if (!filePath.includes(marker)) return filePath;
+  const unpacked = filePath.replace(marker, `${path.sep}app.asar.unpacked${path.sep}`);
+  return fs.existsSync(unpacked) ? unpacked : filePath;
+};
+const PROJECT_SKILLS_DIR = preferUnpackedPath(path.join(PROJECT_ROOT, 'skills'));
+const TRAFFIC_SKILL_DIR = preferUnpackedPath(path.join(PROJECT_ROOT, 'modules', 'official', 'traffic-data', 'skill'));
 const TRAFFIC_TOOLS_DIR = path.join(TRAFFIC_SKILL_DIR, 'scripts');
-const TRAFFIC_DATA_DIR = path.join(TRAFFIC_SKILL_DIR, 'assets', 'databases');
+const TRAFFIC_DATA_DIR = process.env.TRANSPORTX_TRAFFIC_DATA_ROOT || '<Data module not installed>';
 
 const BasemapIdSchema = Type.Union(
   [Type.Literal('default'), Type.Literal('light'), Type.Literal('dark'), Type.Literal('none')],

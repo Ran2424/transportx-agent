@@ -12,10 +12,6 @@
 | --- | --- | --- |
 | `sessions/straight-session.jsonl` | 真实 pi 会话 JSONL（session/model_change/thinking_level_change/custom/message/session_info 行） | `bin/session-projection.js` 的 `SessionProjection` / `readSessionBranch` 投影出确定性 snapshot（schemaVersion=1、全部分支保留、id 链完整） |
 | `sessions/branch-session.jsonl` | 同上，另加 parentId 旁路分支与无 id 的 custom/session_info 条目 | `selectCurrentSessionBranch`：从最后一个树条目沿 parentId 回溯，丢弃放弃分支（`bb000004`/`bb000005`），保留无 id sideband 条目 |
-| `events/stream-happy.json` | WS `event` 消息内层的 Pi RPC 事件（`app-main.ts` `handleRPCEvent` 消费形状） | 关键字段：agent_start/turn_start/message_start/message_update(`assistantMessageEvent.delta`)/tool_execution_start·update·end/message_end/turn_end/agent_end；序列以 agent_start 开始、agent_end 结束 |
-| `events/stream-abort.json` | 同上 | abort 序列：`message_end.message.stopReason === 'aborted'`，之后紧跟 turn_end/agent_end |
-| `events/stream-late-duplicate.json` | 同上 | 重复/乱序 delta 后 `message_end` 携带权威全文；纠偏语义注释对应 `app-main.ts:1064-1090`（全文长度 >= 本地流式文本才覆盖） |
-| `events/reconnect-snapshot.json` | WS `live_session_snapshot` 消息（`PiRpcSession.snapshot()`） | `schemaVersion === 1`、`entries` 与 `session` 元数据齐备；entries 内容与 stream-happy 的最终消息重叠，语义是「clear 后全量重渲染、不得重复追加」（`app-main.ts:1769`） |
 | `features/task-entries.json` | pi-task-mode custom entry + tau_task/tau_ask_user toolResult | `src/public/features/task/task-protocol.ts`：`parseTaskStateEntry`（versioned 与 legacy 两种）、`parseTaskModeEntry`、`parseTaskToolResult`（`tau-task` 与 `tau-interaction`） |
 | `features/geo-tool-result.json` | present_visualization toolResult（真实 GIS smoke 会话同款形状） | `src/public/visualization/geo/protocol.ts`：`getVisualizationFromToolResult` 解析出 envelope，`parseGeoScene` 接受内联 GeoJSON scene |
 | `features/bridge-envelope.json` | pi-web-bridge custom entry（`entry_appended` 的 entry 内层） | `bin/pi-web-bridge.js` 的 `parsePiWebBridgeEnvelope`：schemaVersion/revision/model/thinkingLevel/tools |

@@ -379,19 +379,19 @@ tau_cite(["K-GBT33170.2-2016-000058"])
 
 ## 12. 已解决的前置问题
 
-项目 Skill 原先写死的脚本路径为：
+项目 Skill 曾写死安装包内脚本路径：
 
 ```text
-/Users/ran/.codex/skills/search-traffic-assurance-knowledge/scripts/search_knowledge.py
+/Applications/TransportX Traffic Agent.app/.../modules/official/traffic-knowledge/skill/scripts/search_knowledge.py
 ```
 
-该路径不存在。实际脚本位于：
+该路径不可靠。当前检索 Skill 属于用户安装的 `traffic-assurance-knowledge` 模块，安装后位于用户模块目录：
 
 ```text
-skills/search-traffic-assurance-knowledge/scripts/search_knowledge.py
+~/.transportx/traffic-agent/modules/com.transportx.traffic-assurance-knowledge/skill/scripts/search_knowledge.py
 ```
 
-当前已改为项目内实际脚本路径，并由 `cite --json` 直接返回完整结构化字段，后续代码不再从可读引用文案中反向解析标题或页码。
+会话装配直接注入该 Skill 的解析后路径，Skill 以自身根目录定位脚本，不依赖 `.app` 或开发仓库路径。`cite --json` 直接返回完整结构化字段，后续代码不再从可读引用文案中反向解析标题或页码。
 
 ## 13. 最终逻辑线
 

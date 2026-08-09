@@ -1,13 +1,13 @@
-# Tau 项目上下文
+# TransportX Traffic Agent 会话上下文
 
-以下目录由 Tau 服务端在创建 Pi Web 会话时注入。
+以下目录由 TransportX Agent Host 在创建会话时注入。
 
 ## 当前目录
 
 - 项目根目录：`{{PROJECT_ROOT}}`
 - 当前任务工作目录：`{{TASK_WORKING_DIRECTORY}}`
 - 项目 Skills 目录：`{{PROJECT_SKILLS_DIR}}`
-- Python 解释器：`/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10`
+- Python 解释器：`{{PYTHON_COMMAND}}`
 - Python 设置中文字体时使用：`/System/Library/Fonts/Supplemental/Songti.ttc`（Songti SC／宋体）。
 
 ## 路径规则

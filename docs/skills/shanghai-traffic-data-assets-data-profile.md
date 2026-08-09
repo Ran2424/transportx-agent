@@ -1,6 +1,6 @@
 # 上海交通数据资产实际数据报告
 
-数据目录：`skills/shanghai-traffic-data-assets/assets/databases`  
+数据目录：由已安装 Data Module 提供；本机默认位于 `~/.transportx/traffic-agent/modules/<module-id>/asset`
 剖析日期：2026-08-06  
 资产版本：`3.2.0`  
 业务时区：`Asia/Shanghai`  
@@ -314,7 +314,7 @@ CSV 与 GeoJSON 的 207 个路段 ID 完全一致，路段—时刻无重复。�
 ### 7.1 查看订单来源关系
 
 ```bash
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
+"<TransportX 会话注入的 Python 解释器>" \
   "<Shanghai traffic query tools directory>/query_assets.py" --order-sources
 ```
 

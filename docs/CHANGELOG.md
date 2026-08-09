@@ -4,12 +4,111 @@
 
 ## 维护规则
 
-- 当前发布线从 `v2.10` 开始，每次正式提交递增 `0.01`，即 `v2.10`、`v2.11`、`v2.12`、`v2.13`。
-- npm 使用三段式 SemVer：日志版本 `vX.Y` 对应 `package.json` 的 `X.Y.0`；例如 `v2.11` 对应 `2.11.0`。
+- 产品版本遵循 SemVer：不兼容改造递增主版本，向后兼容的新能力递增次版本，向后兼容的问题修复递增补丁版本。
+- npm、桌面安装包、Agent Host 平台版本和发布日志使用相同的三段式版本号。
 - 新版本写在最上方；一次版本原则上对应一次提交并推送到 `origin/main`。
 - 每条记录至少包含日期、GitHub 操作、主要修改和验证情况。
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
+
+## v3.0.3 — 本地应用启动、会话恢复与平台模块边界修复
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支发布，并合并至 `origin/main`；发布后删除开发分支。
+- 发布提交主题：`release: TransportX Traffic Agent 3.0.3`
+
+主要修改：
+
+- macOS Agent Host 改用 Electron Utility Process，避免应用启动时在 Dock 中短暂出现独立 `exec` Electron 图标，同时保留 PDF IPC、日志和退出清理能力。
+- 会话历史兼容根目录与项目子目录两种持久化结构，恢复项目统计、历史会话列表、全文搜索与应用重启后的会话加载。
+- 平台内置模块收敛为 Workbench、Task、Geo、Citation、Web Bridge 和 Report 等通用能力；上海交通数据、交通保障知识与绘图经验分别迁移为 `shanghaidata`、`traffic-assurance-knowledge`、`plot-style` 用户安装模块，不进入应用安装包。
+- macOS 窗口使用 `hiddenInset`，将原生红黄绿窗口控件整合到工作台顶部栏，并保持 Web、Windows 与 Linux 布局不变。
+- 默认 Node 回归测试由 94 项精简为 30 项必要测试，保留共享契约、桌面运行时、会话恢复、资源隔离、模块装配、Task 生命周期与 WebSocket 安全等关键边界。
+- npm 包与平台版本同步更新为 `3.0.3`。
+
+验证：
+
+- TypeScript 桌面、React 与测试配置检查通过。
+- `npm test` 通过：30 项必要回归，0 项失败。
+- `npm run test:desktop-smoke` 通过，验证 Electron、Agent Host 与集成式 macOS 窗口正常启动和关闭。
+
+## v3.0.2 — 三主题设计系统、会话侧栏能力区与桌面质感统一
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支提交 `78a143b`，尚未推送至 `origin/main`。
+- 发布提交主题：`release: TransportX Traffic Agent 3.0.2`
+
+主要修改：
+
+- 建立 Light / Dark / Sand 三主题共用的 semantic token contract：`styles/tokens.css` 统一存放品牌 primitives、结构刻度（字号/间距/圆角/控件高度）与三套主题 token，组件只消费 semantic token；清理历史 `--react-*` 兼容别名与重复主题覆盖，切换主题只修改根节点 `data-theme`，不改变任何布局、尺寸、DOM 与交互。
+- 会话侧栏新增能力扩展区：位于固定工具栏下方、会话列表上方，按 30% / 70% 拆分并分别独立滚动。提供模块、技能、数据、知识四类紧凑 Tabs（底部 2px 强调线），能力条目由现有 Platform Overview 投影（不新增服务端协议），支持 Loading 骨架、空状态与错误重试，状态统一为已启用 / 待配置 / 不可用并配状态点；能力区可收起（`localStorage` 持久化，≤860px 移动端默认收起）。
+- Header 改为窗口 Chrome：有活动任务时中部视觉焦点切换为任务名称与运行状态，品牌标识退居低对比度；模型选择器、连接状态和工作区操作保持高优先级。
+- 设置页收敛为 Light、Dark、Sand 三个正式主题，主题预览运行时直接读取 semantic token，不再维护第二份手写色值；旧主题偏好自动迁移（clean→light、night/dawn/midnight→dark、terracotta→sand、sage→light、未知值回退到 sand），新安装默认 Sand 主题。
+- 统一桌面质感：按钮、图标按钮、输入框、Tabs、菜单、Dialog 收敛控件高度（28–36px）与圆角规则（小型控件 6px、输入 8px、容器 12px）；功能文字下限提升至 11px；欢迎页 Hero 收敛为桌面应用欢迎标题（42–56px）并缩小留白；主面板移除多余阴影与卡片化边框，阴影通过 semantic token 提供。
+- 将 npm 包版本更新为 `3.0.2`，同步 `src/server/config.ts` 的 `PLATFORM_VERSION`。
+- 默认 Node 回归由 94 项收敛为 30 项必要测试，删除重复 happy-path、渲染微行为与已由 React/Desktop smoke 覆盖的实现细节用例。
+
+验证：
+
+- `npm run typecheck`（react / web / server）通过。
+- `npm test` 通过：30 项必要回归，0 项失败。
+- `npm run build:react` 通过；产物 CSS 仅保留 `light / dark / sand` 三个主题选择器，无旧主题与 `--react-*` 变量残留。
+- `npm run test:react-smoke` 通过，覆盖主题切换、会话侧栏与桌面/移动端基线。
+- `TRANSPORTX_PYTHON_RUNTIME_DIR=… TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 npm run desktop:pack` 产出 `TransportX Traffic Agent-3.0.2-arm64.dmg`（约 242 MB），ad-hoc 签名与结构校验通过；正式外发仍要求 Developer ID Application 证书与 Apple 公证。
+
+## v3.0.1 — 模块资产与 Mac 发布链修复
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支提交并推送，创建面向 `main` 的草稿 PR。
+
+主要修改：
+
+- Pi 基础系统提示词改为从 `prompts/PI_SYSTEM.md` 加载，会话路径和资产上下文继续由 `PI_SESSION_CONTEXT.md` 动态追加。
+- 修复 Knowledge、Data 与 Skill 解耦后的资产根目录、脚本参数、引用原件和设置页生效状态，补充 Knowledge 清单完整性校验。
+- 完善模块安装、卸载和同类资产选择规则，模块可统一贡献 Skill、Extension、Data 与 Knowledge。
+- Mac 安装包显式携带并解包需要真实文件系统路径的 Skill，增加正式签名与 Apple 公证凭据前置检查。
+- 同步架构、实施记录、数据资产说明和交通分析报告中的新目录与运行方式。
+
+验证：
+
+- `npm run typecheck`、自动化测试、桌面构建与安装包结构检查通过。
+- 正式外发包仍要求 Developer ID Application 证书和 Apple 公证凭据；缺失凭据时发布脚本拒绝生成正式包。
+
+## v3.0 — TransportX Traffic Agent 桌面化与模块化
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支提交并推送，创建面向 `main` 的草稿 PR。
+
+主要修改：
+
+- 产品统一命名为 `TransportX Traffic Agent`，新增安全沙箱化 Electron 宿主、单实例窗口和 Agent Host 进程治理。
+- Agent Host 支持随机回环端口、版本化 ready/health 协议、父进程退出检测、有界日志与进程树清理。
+- 新增 Runtime Manifest、内置 Pi/Python 路径解析、持久化用户目录和统一 Python Runner，移除正式能力中的开发机绝对运行时路径。
+- 新增 Manifest v1、Module Registry、Asset Resolver 和 Session Assembly；Task、Citation、Geo、交通 Skill、Knowledge、Data 与 Template 通过官方模块装配。
+- Module 升级为统一生命周期单元，可组合贡献 Skill、Extension、Data 和 Knowledge；单独资源安装会自动包装为受管 Module。
+- 新增本地模块安装器、动态注册表重载和安全卸载，模块统一复制到 `~/.transportx/traffic-agent/modules/`，拒绝符号链接与包路径逃逸。
+- Data/Knowledge 已从 Skill 目录彻底迁出；查询脚本必须使用会话注入的资产根目录，不再存在相邻目录回退。
+- Data/Knowledge 查询同时支持显式 `--data-root` / `--knowledge-root` 诊断参数；Geo Extension 不再引用旧 Skill 内的数据库路径。
+- 同类资产按用户安装、外部加载、内置顺序选择；同优先级冲突时要求显式资产 ID，设置页标记当前生效资产。
+- Knowledge 清单从仅检查文件存在升级为逐文件 SHA-256 校验，独立安装时兼容并规范化旧 `knowledge/` 前缀。
+- 支持通过环境变量选择外部 Knowledge/Data Root、导入只读外部模块 Manifest，并切换会话领域模块。
+- 每个新建或恢复会话保存 `ResolvedSessionPlan`，记录实际 Platform、Pi、Python、Module 与资产版本。
+- macOS 应用数据统一迁移到 `~/.transportx/traffic-agent/`，任务工作目录固定为其下的 `scenario/`，Pi 模型、认证、会话、日志和缓存不再散落到其他用户目录。
+- 首次启动不再提供默认模型；新建任务、模型选择器和设置页均可添加 Pi 兼容模型，并将密钥与模型定义分开安全存储。
+- 设置页新增统一模块管理，可查看每个模块贡献的 Skill、Extension、Data、Knowledge 和 Template，并安装模块包、单独资源或卸载用户模块。
+- macOS 打包改用经校验的可重定位 Python 3.10 运行时，固定运行依赖并检查版本、arm64 架构、模块完整性及复制后的路径边界。
+- macOS 打包将查询 Skill 与通用 Skill 放入 `app.asar.unpacked`，Session Assembly、Citation 与 Geo Extension 向 Python 传递真实文件系统路径。
+- 桌面报告 PDF 改由 Electron 主进程安全渲染，不再依赖目标机器预装 Chrome；新增 macOS 应用图标、hardened runtime entitlement、公证配置和发布凭据前置检查。
+- 清理旧 launchd 配置、字体测试文件、旧图标和生成缓存；仓库内 298 MB 历史任务经校验后迁移到 `~/.transportx/traffic-agent/scenario/`。
+- 重写整体架构和桌面化实施文档，使组件职责、Session Assembly、Module 生命周期、Data/Knowledge 解耦、用户目录、安全边界、macOS 分发问题与当前发布限制和实际实现保持一致。
+
+验证：
+
+- `npm run typecheck` 通过。
+- `npm test`：93 项测试，91 项通过、2 项外部 Knowledge 资产用例按默认策略跳过，0 项失败；另以本机受管资产运行 4 项引用集成测试，全部通过。
+- `npm run test:react-smoke` 通过，覆盖添加模型、模块设置、桌面端与移动端基线。
+- `npm run test:desktop-smoke` 通过，验证 Electron 安全选项、Mac 应用目录、无默认模型、Agent Host、包内 Python、PDF 导出和退出清理。
+- arm64 `.app` 的测试构建会在生成 DMG 前应用并严格验证 ad-hoc 签名；Python 启动链禁止在 `.app` 内生成字节码缓存。应用从只读 DMG 完整启动前后均通过严格签名检查，240 MB DMG 通过 `hdiutil verify`。正式外发仍需 Developer ID 签名和 Apple 公证，发布脚本会在凭据缺失时停止。
 
 ## v2.14 — 响应式对话布局与报告预览完善
 

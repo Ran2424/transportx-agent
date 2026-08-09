@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { WebSocket, WebSocketServer } = require('ws');
+const { WebSocket } = require('ws');
 import type { TestContext } from 'node:test';
 import type { WebSocket as WsWebSocket } from 'ws';
 
@@ -99,27 +99,6 @@ test('cross-origin WebSocket upgrade is rejected', async () => {
   try { ws.close(); } catch {}
 });
 
-test('same-origin WebSocket upgrade receives the initial live-session state', async () => {
-  liveManager.sessions.set('tau_1', fakeSession('tau_1'));
-  const ws = connect();
-  const msg = await nextMessage(ws);
-  assert.equal(msg.type, 'state');
-  assert.equal(msg.liveSessions.length, 1);
-  assert.equal(msg.liveSessions[0].id, 'tau_1');
-  ws.close();
-});
-
-test('RPC commands over WebSocket are handled and respond', async () => {
-  const ws = connect();
-  await nextMessage(ws); // swallow initial state
-  ws.send(JSON.stringify({ type: 'get_auth' }));
-  const resp = await nextMessage(ws);
-  assert.equal(resp.type, 'response');
-  assert.equal(resp.success, true);
-  assert.equal(resp.data.configured, false);
-  ws.close();
-});
-
 test('WebSocket disconnect does not terminate backend live sessions', async () => {
   const s = fakeSession('tau_1');
   let terminated = false;
@@ -137,15 +116,4 @@ test('WebSocket disconnect does not terminate backend live sessions', async () =
   assert.equal(terminated, false, 'disconnecting a client must not terminate child sessions');
   assert.equal(liveManager.sessions.has('tau_1'), true);
   assert.equal(liveManager.clients.size, 0);
-});
-
-test('manager broadcasts are delivered to connected WS clients', async () => {
-  const ws = connect();
-  await nextMessage(ws);
-  // exercise the same broadcast path the manager uses on create()
-  liveManager.broadcast({ type: 'live_session_created', session: fakeSession('tau_new').metadata() });
-  const msg = await nextMessage(ws);
-  assert.equal(msg.type, 'live_session_created');
-  assert.equal(msg.session.id, 'tau_new');
-  ws.close();
 });

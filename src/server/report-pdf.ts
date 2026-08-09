@@ -1,4 +1,32 @@
-const { chromium } = require('playwright');
+const crypto = require('node:crypto');
+
+type UtilityParentPort = {
+  on(event: 'message', listener: (event: { data: unknown }) => void): void;
+  off(event: 'message', listener: (event: { data: unknown }) => void): void;
+  postMessage(message: unknown): void;
+};
+
+function desktopMessageChannel() {
+  const parentPort = (process as NodeJS.Process & { parentPort?: UtilityParentPort }).parentPort;
+  if (parentPort) {
+    return {
+      onMessage(listener: (message: unknown) => void) {
+        const wrapped = (event: { data: unknown }) => listener(event.data);
+        parentPort.on('message', wrapped);
+        return () => parentPort.off('message', wrapped);
+      },
+      send(message: unknown) { parentPort.postMessage(message); },
+    };
+  }
+  if (typeof process.send !== 'function') return null;
+  return {
+    onMessage(listener: (message: unknown) => void) {
+      process.on('message', listener);
+      return () => process.off('message', listener);
+    },
+    send(message: unknown) { process.send!(message); },
+  };
+}
 
 function escapeHtml(value: string) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -39,6 +67,27 @@ function documentHtml(title: string, reportHtml: string) {
 }
 
 export async function renderReportPdf(title: string, reportHtml: string) {
+  const html = documentHtml(title, reportHtml);
+  const desktopChannel = process.env.TAU_DESKTOP === '1' ? desktopMessageChannel() : null;
+  if (desktopChannel) {
+    const id = crypto.randomUUID();
+    return new Promise<Buffer>((resolve, reject) => {
+      const timeout = setTimeout(() => finish(new Error('Desktop PDF rendering timed out')), 30_000);
+      const onMessage = (message: unknown) => {
+        const response = message as { type?: string; id?: string; ok?: boolean; data?: string; error?: string };
+        if (response?.type !== 'transportx-pdf-response' || response.id !== id) return;
+        finish(response.ok && response.data ? undefined : new Error(response.error || 'Desktop PDF rendering failed'), response.data);
+      };
+      const finish = (error?: Error, data?: string) => {
+        clearTimeout(timeout);
+        removeMessageListener();
+        if (error) reject(error); else resolve(Buffer.from(data!, 'base64'));
+      };
+      const removeMessageListener = desktopChannel.onMessage(onMessage);
+      desktopChannel.send({ type: 'transportx-pdf-request', id, title, html });
+    });
+  }
+  const { chromium } = require('playwright');
   const browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   try {
     const context = await browser.newContext({ javaScriptEnabled: false });
@@ -47,7 +96,7 @@ export async function renderReportPdf(title: string, reportHtml: string) {
       return /^(?:about:|data:)/.test(url) ? route.continue() : route.abort();
     });
     const page = await context.newPage();
-    await page.setContent(documentHtml(title, reportHtml), { waitUntil: 'load' });
+    await page.setContent(html, { waitUntil: 'load' });
     await page.emulateMedia({ media: 'print' });
     const pdf = await page.pdf({
       format: 'A4',

@@ -62,11 +62,25 @@ try {
   await reactPage.getByRole('dialog', { name: '设置' }).waitFor();
   const focusInSettings = await reactPage.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null);
   if (!focusInSettings) throw new Error('Settings dialog did not capture focus');
+  await reactPage.getByRole('dialog', { name: '设置' }).getByLabel('添加类型').waitFor();
+  await reactPage.getByRole('dialog', { name: '设置' }).getByLabel('本地资源路径').waitFor();
+  await reactPage.getByRole('dialog', { name: '设置' }).getByText(ready.tempRoot, { exact: false }).first().waitFor();
   await reactPage.locator('[role="radio"][aria-checked="false"]').first().click();
   const selectedTheme = await reactPage.evaluate(() => document.documentElement.dataset.theme);
   await reactPage.keyboard.press('Escape');
   await reactPage.getByRole('dialog', { name: '设置' }).waitFor({ state: 'hidden' });
   if (!await settingsButton.evaluate((node) => node === document.activeElement)) throw new Error('Settings dialog did not restore trigger focus');
+
+  await settingsButton.click();
+  await reactPage.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '添加模型' }).click();
+  const addModel = reactPage.getByRole('dialog', { name: '添加 Pi 模型' });
+  await addModel.getByLabel('Provider ID').fill('smoke-provider');
+  await addModel.getByLabel('Model ID').fill('smoke-model');
+  await addModel.getByLabel('API Base URL').fill('http://127.0.0.1:1/v1');
+  await addModel.getByLabel('API Key').fill('smoke-key');
+  await addModel.getByRole('button', { name: '保存模型' }).click();
+  await reactPage.getByRole('dialog', { name: '设置' }).waitFor();
+  await reactPage.keyboard.press('Escape');
 
   // Command palette keyboard path.
   await reactPage.keyboard.press('Control+k');
@@ -78,6 +92,8 @@ try {
     const previousCount = await reactPage.locator('.live-tab-select').count();
     await reactPage.getByRole('button', { name: '新建交通任务' }).first().click();
     const dialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
+    await dialog.locator('.menu-select-trigger').click();
+    await dialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
     await dialog.getByRole('button', { name: '创建任务' }).click();
     await reactPage.locator('.live-tab-select').nth(previousCount).waitFor({ timeout: 10_000 });
     return reactPage.evaluate(async () => {
@@ -92,10 +108,12 @@ try {
   }
   await reactPage.getByRole('button', { name: '新建交通任务' }).last().click();
   const secondDialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
+  await secondDialog.locator('.menu-select-trigger').click();
+  await secondDialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
   await secondDialog.getByRole('button', { name: '创建任务' }).click();
   await reactPage.locator('.live-tab-select').nth(1).waitFor({ timeout: 10_000 });
-  await reactPage.getByTitle(primaryTask.cwd).click();
-  if (!await reactPage.getByTitle(primaryTask.cwd).evaluate((node) => node.closest('.live-tab')?.classList.contains('is-active'))) {
+  await reactPage.getByTitle(primaryTask.cwd, { exact: true }).click();
+  if (!await reactPage.getByTitle(primaryTask.cwd, { exact: true }).evaluate((node) => node.closest('.live-tab')?.classList.contains('is-active'))) {
     throw new Error('Primary timestamped task did not become active');
   }
 
@@ -218,7 +236,7 @@ try {
   if (await toolToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Running tool should be expanded');
   await runningTool.locator('.tool-status.completed').waitFor({ timeout: 10_000 });
   if (await toolToggle.getAttribute('aria-expanded') !== 'false') throw new Error('Completed tool should collapse automatically');
-  await reactPage.evaluate(() => { document.documentElement.dataset.theme = 'terracotta'; });
+  await reactPage.evaluate(() => { document.documentElement.dataset.theme = 'sand'; });
   const toolChrome = await runningTool.evaluate((node) => {
     const card = getComputedStyle(node);
     const header = getComputedStyle(node.querySelector('header'));
@@ -259,14 +277,14 @@ try {
   if (Math.abs(expandedToolChrome.width - toolChrome.width) > 1) {
     throw new Error(`Collapsed and expanded tools should share one width: ${JSON.stringify({ collapsed: toolChrome.width, expanded: expandedToolChrome.width })}`);
   }
-  if (expandedToolChrome.argsFontSize !== 12.5 || expandedToolChrome.outputFontSize !== 12.5 || expandedToolChrome.outputLabelFontSize !== 9 || expandedToolChrome.copyFontSize !== 10) {
+  if (expandedToolChrome.argsFontSize !== 12.5 || expandedToolChrome.outputFontSize !== 12.5 || expandedToolChrome.outputLabelFontSize !== 11 || expandedToolChrome.copyFontSize !== 11) {
     throw new Error(`Expanded tool typography is not using the larger scale: ${JSON.stringify(expandedToolChrome)}`);
   }
   if (toolChrome.cardBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.cardBorder !== 'none' || toolChrome.labelColor !== toolChrome.bodyColor || toolChrome.labelBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.labelBorder !== 'none') {
     throw new Error(`Tool history should be borderless with a plain text label: ${JSON.stringify(toolChrome)}`);
   }
-  if (toolChrome.markerBackground !== 'rgb(176, 106, 72)' || toolChrome.markerRadius !== '50%') {
-    throw new Error(`Terracotta completion marker should carry the timeline accent: ${JSON.stringify(toolChrome)}`);
+  if (toolChrome.markerBackground !== 'rgb(185, 109, 76)' || toolChrome.markerRadius !== '50%') {
+    throw new Error(`Sand completion marker should carry the timeline accent: ${JSON.stringify(toolChrome)}`);
   }
   await reactPage.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, selectedTheme);
 

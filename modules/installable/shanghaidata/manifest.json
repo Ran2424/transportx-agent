@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "com.transportx.shanghaidata",
+  "name": "Shanghai Data",
+  "version": "2.0.0",
+  "type": "module",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": ["com.transportx.geo"],
+  "entrypoints": {
+    "skills": ["skill/SKILL.md"]
+  },
+  "contributes": {
+    "assets": [
+      {
+        "id": "data:shanghai-traffic",
+        "kind": "data",
+        "path": "assets/databases",
+        "required": false
+      }
+    ]
+  }
+}

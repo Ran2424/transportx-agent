@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "com.transportx.plot-style",
+  "name": "Plot Style Playbook",
+  "version": "1.0.0",
+  "type": "skill",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "entrypoints": {
+    "skills": ["skill/SKILL.md"]
+  }
+}
