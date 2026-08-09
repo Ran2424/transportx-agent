@@ -6,15 +6,33 @@ import { Button } from '../../components/ui/button';
 import { Dialog } from '../../components/ui/dialog';
 
 export const themes = [
-  { id: 'night', label: 'Night', colors: ['#0d1218', '#9dd7d0', '#e8ad8e'] },
-  { id: 'dawn', label: 'Dawn', colors: ['#1a1720', '#e8ad8e', '#d7d68d'] },
-  { id: 'midnight', label: 'Midnight', colors: ['#05070c', '#8fb8ff', '#bd9bff'] },
-  { id: 'clean', label: 'Clean', colors: ['#f3f7fb', '#2463eb', '#ca6848'] },
-  { id: 'terracotta', label: 'Terracotta', colors: ['#f4f0ea', '#b96d4c', '#d6a38b'] },
-  { id: 'sage', label: 'Sage', colors: ['#eef1eb', '#71845d', '#aeba9f'] },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'sand', label: 'Sand' },
 ] as const;
 
 export type ThemeId = (typeof themes)[number]['id'];
+
+/**
+ * 主题预览色直接读取 semantic token（styles/styles/tokens.css），
+ * 不维护第二份手写色值，保证预览与真实主题一致。
+ */
+function readThemeSwatches(): Record<ThemeId, string[]> {
+  const root = document.documentElement;
+  const previous = root.dataset.theme;
+  const result = {} as Record<ThemeId, string[]>;
+  for (const id of themes.map((item) => item.id)) {
+    root.dataset.theme = id;
+    const style = getComputedStyle(root);
+    result[id] = [
+      style.getPropertyValue('--surface-canvas').trim() || '#FFFFFF',
+      style.getPropertyValue('--surface-sidebar').trim() || '#F1F1F0',
+      style.getPropertyValue('--interactive-primary-bg').trim() || '#888888',
+    ];
+  }
+  root.dataset.theme = previous;
+  return result;
+}
 
 type SettingsDialogProps = {
   open: boolean;
@@ -47,9 +65,11 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [installKind, setInstallKind] = useState<'module' | 'skill' | 'extension' | 'data' | 'knowledge'>('module');
   const [moduleSource, setModuleSource] = useState('');
+  const [swatches, setSwatches] = useState<Record<ThemeId, string[]> | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setSwatches(readThemeSwatches());
     let current = true;
     setError('');
     setOverviewLoading(true);
@@ -132,7 +152,7 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
         <div className="theme-grid" role="radiogroup" aria-label="外观主题">
           {themes.map((option) => (
             <button className={`theme-option${theme === option.id ? ' is-active' : ''}`} type="button" role="radio" aria-checked={theme === option.id} key={option.id} onClick={() => onThemeChange(option.id)}>
-              <span className="theme-colors">{option.colors.map((color) => <i style={{ background: color }} key={color} />)}</span>
+              <span className="theme-colors">{(swatches?.[option.id] ?? ['#CCCCCC', '#DDDDDD', '#888888']).map((color) => <i style={{ background: color }} key={color} />)}</span>
               <span>{option.label}</span>
             </button>
           ))}

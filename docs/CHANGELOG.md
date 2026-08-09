@@ -11,6 +11,28 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0.2 — 三主题设计系统、会话侧栏能力区与桌面质感统一
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支提交 `78a143b`，尚未推送至 `origin/main`。
+- 发布提交主题：`release: TransportX Traffic Agent 3.0.2`
+
+主要修改：
+
+- 建立 Light / Dark / Sand 三主题共用的 semantic token contract：`styles/tokens.css` 统一存放品牌 primitives、结构刻度（字号/间距/圆角/控件高度）与三套主题 token，组件只消费 semantic token；清理历史 `--react-*` 兼容别名与重复主题覆盖，切换主题只修改根节点 `data-theme`，不改变任何布局、尺寸、DOM 与交互。
+- 会话侧栏新增能力扩展区：位于固定工具栏下方、会话列表上方，按 30% / 70% 拆分并分别独立滚动。提供模块、技能、数据、知识四类紧凑 Tabs（底部 2px 强调线），能力条目由现有 Platform Overview 投影（不新增服务端协议），支持 Loading 骨架、空状态与错误重试，状态统一为已启用 / 待配置 / 不可用并配状态点；能力区可收起（`localStorage` 持久化，≤860px 移动端默认收起）。
+- Header 改为窗口 Chrome：有活动任务时中部视觉焦点切换为任务名称与运行状态，品牌标识退居低对比度；模型选择器、连接状态和工作区操作保持高优先级。
+- 设置页收敛为 Light、Dark、Sand 三个正式主题，主题预览运行时直接读取 semantic token，不再维护第二份手写色值；旧主题偏好自动迁移（clean→light、night/dawn/midnight→dark、terracotta→sand、sage→light、未知值回退到 sand），新安装默认 Sand 主题。
+- 统一桌面质感：按钮、图标按钮、输入框、Tabs、菜单、Dialog 收敛控件高度（28–36px）与圆角规则（小型控件 6px、输入 8px、容器 12px）；功能文字下限提升至 11px；欢迎页 Hero 收敛为桌面应用欢迎标题（42–56px）并缩小留白；主面板移除多余阴影与卡片化边框，阴影通过 semantic token 提供。
+- 将 npm 包版本更新为 `3.0.2`，同步 `src/server/config.ts` 的 `PLATFORM_VERSION`。
+
+验证：
+
+- `npm run typecheck`（react / web / server）通过。
+- `npm run build:react` 通过；产物 CSS 仅保留 `light / dark / sand` 三个主题选择器，无旧主题与 `--react-*` 变量残留。
+- `npm run test:react-smoke` 通过，覆盖主题切换、会话侧栏与桌面/移动端基线。
+- `TRANSPORTX_PYTHON_RUNTIME_DIR=… TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 npm run desktop:pack` 产出 `TransportX Traffic Agent-3.0.2-arm64.dmg`（约 242 MB），ad-hoc 签名与结构校验通过；正式外发仍要求 Developer ID Application 证书与 Apple 公证。
+
 ## v3.0.1 — 模块资产与 Mac 发布链修复
 
 - 日期：2026-08-09
