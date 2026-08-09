@@ -2,8 +2,6 @@ appId: com.transportx.traffic-agent
 productName: TransportX Traffic Agent
 asar: true
 asarUnpack:
-  - modules/official/traffic-data/skill/**
-  - modules/official/traffic-knowledge/skill/**
   - skills/**
 afterPack: desktop/scripts/after-pack.cjs
 directories:
@@ -17,10 +15,9 @@ files:
   - public/geo-runtime.*
   - extensions/**
   - skills/**
-  - "!modules/official/traffic-knowledge/assets/**"
-  - "!modules/official/traffic-data/assets/**"
   - prompts/**
   - modules/**
+  - "!modules/installable/**"
   - src/contracts/**
 extraResources:
   - from: desktop/build/runtime-manifest.json

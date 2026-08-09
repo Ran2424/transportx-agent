@@ -20,6 +20,22 @@ type HistoryHandlersOptions = {
 };
 
 export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
+  const listSessionFiles = () => {
+    if (!fs.existsSync(options.sessionsDir)) return [];
+    const files: Array<{ dirName: string; file: string; filePath: string }> = [];
+    for (const entry of fs.readdirSync(options.sessionsDir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        files.push({ dirName: '', file: entry.name, filePath: path.join(options.sessionsDir, entry.name) });
+        continue;
+      }
+      if (!entry.isDirectory()) continue;
+      const projectDir = path.join(options.sessionsDir, entry.name);
+      for (const file of fs.readdirSync(projectDir).filter((name: string) => name.endsWith('.jsonl'))) {
+        files.push({ dirName: entry.name, file, filePath: path.join(projectDir, file) });
+      }
+    }
+    return files;
+  };
   const isWithinPath = (root: string, target: string) => {
     const relative = path.relative(path.resolve(root), path.resolve(target));
     return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
@@ -109,15 +125,13 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
     try {
       const root = path.resolve(projectsDir);
       const sessionInfo = new Map<string, { count: number; lastActive: number }>();
-      if (fs.existsSync(options.sessionsDir)) for (const dir of fs.readdirSync(options.sessionsDir, { withFileTypes: true })) {
-        if (!dir.isDirectory()) continue;
-        const files = fs.readdirSync(path.join(options.sessionsDir, dir.name)).filter((file: string) => file.endsWith('.jsonl'));
-        let cwd: string | null = null, lastActive = 0;
-        for (const file of files) {
-          const filePath = path.join(options.sessionsDir, dir.name, file);
-          try { lastActive = Math.max(lastActive, fs.statSync(filePath).mtimeMs); if (!cwd) cwd = readSessionHeaderCwd(filePath); } catch {}
-        }
-        if (cwd && isWithinPath(root, cwd)) sessionInfo.set(cwd, { count: files.length, lastActive });
+      for (const { filePath } of listSessionFiles()) {
+        try {
+          const cwd = readSessionHeaderCwd(filePath);
+          if (!cwd || !isWithinPath(root, cwd)) continue;
+          const current = sessionInfo.get(cwd) || { count: 0, lastActive: 0 };
+          sessionInfo.set(cwd, { count: current.count + 1, lastActive: Math.max(current.lastActive, fs.statSync(filePath).mtimeMs) });
+        } catch {}
       }
       const liveCwds = new Set(options.sessions.list().map((session) => session.cwd));
       const projects = fs.readdirSync(root, { withFileTypes: true }).filter((entry: Dirent) => entry.isDirectory() && !entry.name.startsWith('.')).map((entry: Dirent) => {
@@ -134,20 +148,15 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
       if (!fs.existsSync(options.sessionsDir)) return options.json(res, 200, { projects: [] });
       const projectsByPath = new Map<string, { path: string; dirName: string; sessions: Array<Record<string, unknown>> }>();
       const liveFiles = new Set(options.sessions.list().map((session) => session.sessionFile).filter(Boolean));
-      for (const dir of fs.readdirSync(options.sessionsDir, { withFileTypes: true })) {
-        if (!dir.isDirectory()) continue;
-        const projectDir = path.join(options.sessionsDir, dir.name);
-        for (const file of fs.readdirSync(projectDir).filter((name: string) => name.endsWith('.jsonl'))) {
-          try {
-            const filePath = path.join(projectDir, file);
-            const parsed = await parseSessionFile(filePath);
-            if (!parsed) continue;
-            const projectPath = parsed.cwd || '';
-            const project = projectsByPath.get(projectPath) || { path: projectPath, dirName: dir.name, sessions: [] };
-            projectsByPath.set(projectPath, project);
-            project.sessions.push({ ...parsed, file, filePath, mtime: fs.statSync(filePath).mtimeMs, live: liveFiles.has(filePath) });
-          } catch {}
-        }
+      for (const { dirName, file, filePath } of listSessionFiles()) {
+        try {
+          const parsed = await parseSessionFile(filePath);
+          if (!parsed) continue;
+          const projectPath = parsed.cwd || '';
+          const project = projectsByPath.get(projectPath) || { path: projectPath, dirName, sessions: [] };
+          projectsByPath.set(projectPath, project);
+          project.sessions.push({ ...parsed, file, filePath, mtime: fs.statSync(filePath).mtimeMs, live: liveFiles.has(filePath) });
+        } catch {}
       }
       const projects = [...projectsByPath.values()];
       projects.forEach((project) => project.sessions.sort((a, b) => conversationTime(b) - conversationTime(a)));
@@ -160,28 +169,25 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
     try {
       if (!query || query.length < 2 || !fs.existsSync(options.sessionsDir)) return options.json(res, 200, { results: [] });
       const results: Array<Record<string, unknown>> = [], needle = query.toLowerCase();
-      for (const dir of fs.readdirSync(options.sessionsDir, { withFileTypes: true })) {
-        if (!dir.isDirectory() || results.length >= 30) continue;
-        for (const file of fs.readdirSync(path.join(options.sessionsDir, dir.name)).filter((name: string) => name.endsWith('.jsonl'))) {
-          if (results.length >= 30) break;
-          const filePath = path.join(options.sessionsDir, dir.name, file), stream = fs.createReadStream(filePath, { encoding: 'utf8' }), lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-          let sessionId = '', sessionName = '', sessionTimestamp = '', firstMessage = '', cwd: string | null = null;
-          const matches: Array<Record<string, string>> = [];
-          for await (const line of lines) try {
-            const entry = JSON.parse(line);
-            if (entry.type === 'session') { sessionId = entry.id; sessionTimestamp = entry.timestamp || ''; cwd = normalizeSessionCwd(entry.cwd); }
-            if (entry.type === 'session_info' && entry.name) sessionName = entry.name;
-            if (entry.type === 'message') {
-              const content = entry.message?.content, text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((block) => block.type === 'text').map((block) => block.text).join(' ') : '';
-              if (!firstMessage && entry.message?.role === 'user' && text) firstMessage = text.slice(0, 120);
-              const index = text.toLowerCase().indexOf(needle);
-              if (index >= 0) matches.push({ role: entry.message?.role || 'unknown', snippet: `${index > 0 ? '…' : ''}${text.slice(Math.max(0, index - 60), Math.min(text.length, index + needle.length + 60)).replace(/\n/g, ' ')}${index + needle.length + 60 < text.length ? '…' : ''}` });
-              if (matches.length >= 3) break;
-            }
-          } catch {}
-          lines.close(); stream.destroy();
-          if (matches.length) results.push({ filePath, project: cwd || '', sessionId, sessionName, sessionTimestamp, firstMessage, matches });
-        }
+      for (const { filePath } of listSessionFiles()) {
+        if (results.length >= 30) break;
+        const stream = fs.createReadStream(filePath, { encoding: 'utf8' }), lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
+        let sessionId = '', sessionName = '', sessionTimestamp = '', firstMessage = '', cwd: string | null = null;
+        const matches: Array<Record<string, string>> = [];
+        for await (const line of lines) try {
+          const entry = JSON.parse(line);
+          if (entry.type === 'session') { sessionId = entry.id; sessionTimestamp = entry.timestamp || ''; cwd = normalizeSessionCwd(entry.cwd); }
+          if (entry.type === 'session_info' && entry.name) sessionName = entry.name;
+          if (entry.type === 'message') {
+            const content = entry.message?.content, text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((block) => block.type === 'text').map((block) => block.text).join(' ') : '';
+            if (!firstMessage && entry.message?.role === 'user' && text) firstMessage = text.slice(0, 120);
+            const index = text.toLowerCase().indexOf(needle);
+            if (index >= 0) matches.push({ role: entry.message?.role || 'unknown', snippet: `${index > 0 ? '…' : ''}${text.slice(Math.max(0, index - 60), Math.min(text.length, index + needle.length + 60)).replace(/\n/g, ' ')}${index + needle.length + 60 < text.length ? '…' : ''}` });
+            if (matches.length >= 3) break;
+          }
+        } catch {}
+        lines.close(); stream.destroy();
+        if (matches.length) results.push({ filePath, project: cwd || '', sessionId, sessionName, sessionTimestamp, firstMessage, matches });
       }
       options.json(res, 200, { results });
     } catch (error) { options.json(res, 500, { error: options.errorMessage(error) }); }

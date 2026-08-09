@@ -3,8 +3,11 @@ const http = require('node:http');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
+const { utilityProcess } = require('electron') as typeof import('electron');
 
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { Readable } from 'node:stream';
+import type { UtilityProcess } from 'electron';
 import type { DesktopPaths } from './app-paths.js';
 
 export const AGENT_HOST_READY_TYPE = 'transportx-agent-host-ready';
@@ -81,8 +84,28 @@ function appendBounded(filePath: string, text: string, maxBytes = 5 * 1024 * 102
   fs.appendFileSync(filePath, text);
 }
 
-function terminateProcessTree(child: ChildProcessWithoutNullStreams) {
+type AgentHostProcess = ChildProcessWithoutNullStreams | UtilityProcess;
+
+function isUtilityProcess(child: AgentHostProcess): child is UtilityProcess {
+  return 'postMessage' in child;
+}
+
+function sendMessage(child: AgentHostProcess, message: unknown) {
+  if (isUtilityProcess(child)) child.postMessage(message);
+  else child.send(message as any);
+}
+
+function onceExit(child: AgentHostProcess, listener: (code: number | null, signal?: NodeJS.Signals | null) => void) {
+  if (isUtilityProcess(child)) child.once('exit', (code) => listener(code));
+  else child.once('exit', listener);
+}
+
+function terminateProcessTree(child: AgentHostProcess) {
   if (!child.pid) return;
+  if (isUtilityProcess(child)) {
+    try { process.kill(child.pid, 'SIGKILL'); } catch {}
+    return;
+  }
   if (process.platform === 'win32') {
     execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
     return;
@@ -92,7 +115,7 @@ function terminateProcessTree(child: ChildProcessWithoutNullStreams) {
 
 export class AgentHostSupervisor {
   private options: SupervisorOptions;
-  private child: ChildProcessWithoutNullStreams | null = null;
+  private child: AgentHostProcess | null = null;
   private stopping = false;
 
   constructor(options: SupervisorOptions) {
@@ -110,31 +133,38 @@ export class AgentHostSupervisor {
       TAU_PI_ENTRYPOINT: path.join(paths.appRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
       TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
     };
-    const child = spawn(process.execPath, [paths.agentHostEntrypoint, '--desktop', '--parent-pid', String(process.pid)], {
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        TAU_DESKTOP: '1',
-        TAU_APP_ROOT: paths.appRoot,
-        TAU_RESOURCES_DIR: paths.resourcesDir,
-        TAU_USER_DATA_DIR: paths.userDataDir,
-        PYTHONDONTWRITEBYTECODE: '1',
-        ...developmentRuntime,
-      },
-      detached: process.platform !== 'win32',
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-    });
+    const args = ['--desktop', '--parent-pid', String(process.pid)];
+    const env = {
+      ...process.env,
+      TAU_DESKTOP: '1',
+      TAU_APP_ROOT: paths.appRoot,
+      TAU_RESOURCES_DIR: paths.resourcesDir,
+      TAU_USER_DATA_DIR: paths.userDataDir,
+      PYTHONDONTWRITEBYTECODE: '1',
+      ...developmentRuntime,
+    };
+    const child: AgentHostProcess = process.platform === 'darwin'
+      ? utilityProcess.fork(paths.agentHostEntrypoint, args, {
+          env,
+          serviceName: 'TransportX Agent Host',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+      : spawn(process.execPath, [paths.agentHostEntrypoint, ...args], {
+          env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+          detached: process.platform !== 'win32',
+          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+        });
     this.child = child;
     child.on('message', (message: unknown) => {
       const request = message as { type?: string; id?: string; title?: string; html?: string };
       if (request?.type !== 'transportx-pdf-request' || !request.id || typeof request.title !== 'string' || typeof request.html !== 'string') return;
       if (!this.options.renderPdf || Buffer.byteLength(request.html, 'utf8') > 20 * 1024 * 1024) {
-        child.send({ type: 'transportx-pdf-response', id: request.id, ok: false, error: 'Desktop PDF request is unavailable or too large' });
+        sendMessage(child, { type: 'transportx-pdf-response', id: request.id, ok: false, error: 'Desktop PDF request is unavailable or too large' });
         return;
       }
       this.options.renderPdf(request.title, request.html).then(
-        (pdf) => child.send({ type: 'transportx-pdf-response', id: request.id, ok: true, data: pdf.toString('base64') }),
-        (error) => child.send({ type: 'transportx-pdf-response', id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) }),
+        (pdf) => sendMessage(child, { type: 'transportx-pdf-response', id: request.id, ok: true, data: pdf.toString('base64') }),
+        (error) => sendMessage(child, { type: 'transportx-pdf-response', id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) }),
       );
     });
 
@@ -148,9 +178,12 @@ export class AgentHostSupervisor {
         clearTimeout(timeout);
         if (error) { this.stop().finally(() => reject(error)); } else resolve(url!);
       };
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (chunk: string) => {
+      const childStdout = child.stdout as Readable | null;
+      const childStderr = child.stderr as Readable | null;
+      if (!childStdout || !childStderr) return finish(new Error('Agent Host output pipes are unavailable'));
+      childStdout.setEncoding('utf8');
+      childStderr.setEncoding('utf8');
+      childStdout.on('data', (chunk: string) => {
         appendBounded(logFile, chunk);
         stdout += chunk;
         const lines = stdout.split(/\r?\n/);
@@ -162,9 +195,10 @@ export class AgentHostSupervisor {
           checkHealth(url).then(() => finish(undefined, url), (error) => finish(new Error(`Agent Host health check failed: ${error instanceof Error ? error.message : String(error)}`)));
         }
       });
-      child.stderr.on('data', (chunk: string) => appendBounded(logFile, chunk));
-      child.once('error', (error: Error) => finish(error));
-      child.once('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+      childStderr.on('data', (chunk: string) => appendBounded(logFile, chunk));
+      if (isUtilityProcess(child)) child.once('error', (type, location) => finish(new Error(`Agent Host ${type} at ${location}`)));
+      else child.once('error', (error: Error) => finish(error));
+      onceExit(child, (code, signal) => {
         this.child = null;
         const message = `Agent Host exited (${signal || code})`;
         if (!settled) finish(new Error(message));
@@ -177,10 +211,13 @@ export class AgentHostSupervisor {
     const child = this.child;
     if (!child) return;
     this.stopping = true;
-    try { child.kill('SIGTERM'); } catch {}
+    try {
+      if (isUtilityProcess(child)) child.kill();
+      else child.kill('SIGTERM');
+    } catch {}
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => { terminateProcessTree(child); resolve(); }, this.options.shutdownTimeoutMs ?? 5000);
-      child.once('exit', () => { clearTimeout(timeout); resolve(); });
+      onceExit(child, () => { clearTimeout(timeout); resolve(); });
     });
     this.child = null;
   }

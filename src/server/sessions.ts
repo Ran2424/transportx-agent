@@ -24,6 +24,7 @@ import {
   expandHome,
 } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
+import { piProcessEnv } from './pi-runtime.js';
 import { SessionProjection } from './session-projection.js';
 import { signalProcessTree } from './process-tree.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
@@ -308,8 +309,7 @@ export class PiRpcSession {
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
     const child = spawnFn(PI_COMMAND, args, {
       cwd: this.cwd,
-      env: {
-        ...process.env,
+      env: piProcessEnv({
         PI_CODING_AGENT_DIR: PI_AGENT_DIR,
         PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
         TAU_DISABLED: '1',
@@ -318,7 +318,7 @@ export class PiRpcSession {
         PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
         ...(this.resolvedSessionPlan?.assets.find((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ROOT: this.resolvedSessionPlan.assets.find((asset) => asset.kind === 'knowledge')!.path } : {}),
         ...(this.resolvedSessionPlan?.assets.find((asset) => asset.kind === 'data') ? { TRANSPORTX_TRAFFIC_DATA_ROOT: this.resolvedSessionPlan.assets.find((asset) => asset.kind === 'data')!.path } : {}),
-      },
+      }),
       detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });

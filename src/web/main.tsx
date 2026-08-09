@@ -8,6 +8,9 @@ import './styles.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('React root element is missing');
 
+const desktopPlatform = new URLSearchParams(window.location.search).get('desktop-platform');
+if (desktopPlatform) document.documentElement.dataset.desktopPlatform = desktopPlatform;
+
 startBrowserApplication();
 
 createRoot(root).render(

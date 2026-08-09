@@ -36,7 +36,7 @@ export const PI_COMMAND = PI_EXECUTABLE.command;
 export const PI_COMMAND_ARGS = PI_EXECUTABLE.args;
 export const PYTHON_EXECUTABLE = resolvePythonExecutable({ resourcesDir: APP_PATHS.resourcesDir, desktop: DESKTOP_MODE });
 export const PYTHON_COMMAND = PYTHON_EXECUTABLE.command;
-export const PLATFORM_VERSION = '3.0.2';
+export const PLATFORM_VERSION = '3.0.3';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -76,22 +76,15 @@ export const BUILTIN_SKILL_PATHS = findSkillPaths(PROJECT_SKILLS_DIR);
 export const PROJECT_ROOT = path.dirname(PROJECT_SKILLS_DIR);
 export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(path.join(PROJECT_ROOT, 'prompts', 'PI_SYSTEM.md'));
 export const PROJECT_PROMPT_PATH = path.resolve(process.env.TAU_PROJECT_PROMPT_PATH || path.join(PROJECT_ROOT, 'prompts', 'PI_SESSION_CONTEXT.md'));
-export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.traffic-assurance';
-const ISOLATED_BUILTIN_MODULES = new Set([
-  'modules/official/traffic-knowledge/manifest.json',
-  'modules/official/traffic-data/manifest.json',
-]);
+export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.workbench';
 export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',
-  'modules/official/traffic-skills/manifest.json',
-  'modules/official/traffic-knowledge/manifest.json',
-  'modules/official/traffic-data/manifest.json',
   'modules/official/traffic-report/manifest.json',
-  'modules/official/traffic-assurance/manifest.json',
-].map((manifestPath) => ({ manifestPath: path.join(APP_PATHS.appRoot, manifestPath), packageRoot: ISOLATED_BUILTIN_MODULES.has(manifestPath) ? path.join(APP_PATHS.appRoot, path.dirname(manifestPath)) : APP_PATHS.appRoot, origin: 'builtin' as const }));
+  'modules/official/workbench/manifest.json',
+].map((manifestPath) => ({ manifestPath: path.join(APP_PATHS.appRoot, manifestPath), packageRoot: APP_PATHS.appRoot, origin: 'builtin' as const }));
 export const LOCAL_MODULE_MANIFESTS = String(process.env.TAU_MODULE_MANIFESTS || '')
   .split(path.delimiter)
   .map((manifestPath) => expandHome(manifestPath.trim()))
@@ -101,8 +94,8 @@ export const MODULE_INSTALLER = new ModuleInstaller(APP_PATHS.modulesDir);
 export function moduleSources() { return [...BUILTIN_MODULE_MANIFESTS, ...MODULE_INSTALLER.sources(), ...LOCAL_MODULE_MANIFESTS]; }
 export const MODULE_REGISTRY = new ModuleRegistry(PLATFORM_VERSION).load(moduleSources());
 export const ASSET_RESOLVER = new AssetResolver(MODULE_REGISTRY, {
-  ...(process.env.TAU_KNOWLEDGE_ROOT ? { 'knowledge:traffic-assurance': process.env.TAU_KNOWLEDGE_ROOT } : {}),
-  ...(process.env.TAU_DATA_ROOT ? { 'data:shanghai-traffic': process.env.TAU_DATA_ROOT } : {}),
+  ...(process.env.TAU_KNOWLEDGE_ROOT && process.env.TAU_KNOWLEDGE_ASSET_ID ? { [process.env.TAU_KNOWLEDGE_ASSET_ID]: process.env.TAU_KNOWLEDGE_ROOT } : {}),
+  ...(process.env.TAU_DATA_ROOT && process.env.TAU_DATA_ASSET_ID ? { [process.env.TAU_DATA_ASSET_ID]: process.env.TAU_DATA_ROOT } : {}),
 });
 export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RESOLVER, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE, {
   ...(process.env.TAU_KNOWLEDGE_ASSET_ID ? { knowledge: process.env.TAU_KNOWLEDGE_ASSET_ID } : {}),

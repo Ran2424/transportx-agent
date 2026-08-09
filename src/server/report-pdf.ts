@@ -1,5 +1,33 @@
 const crypto = require('node:crypto');
 
+type UtilityParentPort = {
+  on(event: 'message', listener: (event: { data: unknown }) => void): void;
+  off(event: 'message', listener: (event: { data: unknown }) => void): void;
+  postMessage(message: unknown): void;
+};
+
+function desktopMessageChannel() {
+  const parentPort = (process as NodeJS.Process & { parentPort?: UtilityParentPort }).parentPort;
+  if (parentPort) {
+    return {
+      onMessage(listener: (message: unknown) => void) {
+        const wrapped = (event: { data: unknown }) => listener(event.data);
+        parentPort.on('message', wrapped);
+        return () => parentPort.off('message', wrapped);
+      },
+      send(message: unknown) { parentPort.postMessage(message); },
+    };
+  }
+  if (typeof process.send !== 'function') return null;
+  return {
+    onMessage(listener: (message: unknown) => void) {
+      process.on('message', listener);
+      return () => process.off('message', listener);
+    },
+    send(message: unknown) { process.send!(message); },
+  };
+}
+
 function escapeHtml(value: string) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
@@ -40,7 +68,8 @@ function documentHtml(title: string, reportHtml: string) {
 
 export async function renderReportPdf(title: string, reportHtml: string) {
   const html = documentHtml(title, reportHtml);
-  if (process.env.TAU_DESKTOP === '1' && typeof process.send === 'function') {
+  const desktopChannel = process.env.TAU_DESKTOP === '1' ? desktopMessageChannel() : null;
+  if (desktopChannel) {
     const id = crypto.randomUUID();
     return new Promise<Buffer>((resolve, reject) => {
       const timeout = setTimeout(() => finish(new Error('Desktop PDF rendering timed out')), 30_000);
@@ -51,11 +80,11 @@ export async function renderReportPdf(title: string, reportHtml: string) {
       };
       const finish = (error?: Error, data?: string) => {
         clearTimeout(timeout);
-        process.off('message', onMessage);
+        removeMessageListener();
         if (error) reject(error); else resolve(Buffer.from(data!, 'base64'));
       };
-      process.on('message', onMessage);
-      process.send!({ type: 'transportx-pdf-request', id, title, html });
+      const removeMessageListener = desktopChannel.onMessage(onMessage);
+      desktopChannel.send({ type: 'transportx-pdf-request', id, title, html });
     });
   }
   const { chromium } = require('playwright');

@@ -2,6 +2,7 @@ const { execFile } = require('node:child_process');
 
 import type { JsonRecord, ModelIdentity, ParsedModelSpec, StatusError } from './types.js';
 import { PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS } from './config.js';
+import { piProcessEnv } from './pi-runtime.js';
 
 type ExecFileCallback = (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => void;
 type ExecFileFn = (file: string, args: string[], opts: JsonRecord, callback: ExecFileCallback) => void;
@@ -110,7 +111,7 @@ export async function getAvailableModels() {
     const { stdout } = await execFileAsync(PI_COMMAND, [...PI_COMMAND_ARGS, '--list-models'], {
       timeout: 30000,
       encoding: 'utf8',
-      env: { ...process.env, PI_CODING_AGENT_DIR: PI_AGENT_DIR },
+      env: piProcessEnv({ PI_CODING_AGENT_DIR: PI_AGENT_DIR }),
     });
     const models = parsePiListModels(stdout);
     modelListCache = { at: now, models };

@@ -28,6 +28,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .workspace-header-left, .workspace-header-right { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .workspace-header-right { justify-content: flex-end; }
 .workspace-header-center { min-width: 0; display: flex; justify-content: center; }
+:root[data-desktop-platform="darwin"] .workspace-header { -webkit-app-region: drag; }
+:root[data-desktop-platform="darwin"] .workspace-header-left { padding-left: 66px; }
+:root[data-desktop-platform="darwin"] .workspace-header button { -webkit-app-region: no-drag; }
 .icon-button { width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: var(--tx-radius-md); color: var(--text-secondary); background: transparent; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: 160ms ease; }
 .icon-button svg { width: 17px; height: 17px; }
 .icon-button:hover, .icon-button[aria-pressed="true"] { color: var(--text-primary); border-color: var(--border-default); background: var(--surface-hover); }

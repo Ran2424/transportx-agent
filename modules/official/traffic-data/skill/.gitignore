@@ -1,6 +1,0 @@
-*.db
-*.sqlite
-*.sqlite-*
-assets/databases/
-__pycache__/
-.DS_Store

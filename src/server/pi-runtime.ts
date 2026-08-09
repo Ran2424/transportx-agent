@@ -16,6 +16,14 @@ function compareVersion(left: PiVersion, right: PiVersion) {
   return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
 }
 
+export function piProcessEnv(extra: NodeJS.ProcessEnv = {}) {
+  return {
+    ...process.env,
+    ...(process.env.TAU_DESKTOP === '1' ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+    ...extra,
+  };
+}
+
 export function assertSupportedPiVersion(value: unknown) {
   const actual = parsePiVersion(value);
   const minimum = parsePiVersion(MIN_PI_VERSION)!;
@@ -30,7 +38,7 @@ export function assertSupportedPiVersion(value: unknown) {
 export function inspectPiRuntime(command: string, prefixArgs: string[] = []) {
   let output: string;
   try {
-    output = execFileSync(command, [...prefixArgs, '--version'], { encoding: 'utf8', timeout: 5000 }).trim();
+    output = execFileSync(command, [...prefixArgs, '--version'], { encoding: 'utf8', timeout: 5000, env: piProcessEnv() }).trim();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Cannot execute Pi CLI '${[command, ...prefixArgs, '--version'].join(' ')}': ${message}`);

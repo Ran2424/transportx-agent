@@ -7,7 +7,8 @@
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-geo-visualization/index.ts"]
+    "piExtensions": ["extensions/pi-geo-visualization/index.ts"],
+    "skills": ["skills/geo-visualization-explanation/SKILL.md"]
   },
   "contributes": {
     "artifactTypes": ["geo.scene"]

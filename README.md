@@ -63,6 +63,8 @@ macOS 首次启动会创建 `~/.transportx/traffic-agent/`。任务工作目录�
 
 设置页以 Module 为统一安装单元。一个 Module 可以同时包含 Skill、Extension、Data 和 Knowledge；也可以选择“单独 Skill / Extension / Data / Knowledge”，系统会自动包装为单一贡献项的受管 Module。安装时填写本地模块目录、`manifest.json` 或单独资源路径，内容会复制到 `~/.transportx/traffic-agent/modules/`；卸载只删除该受管副本，内置模块不可卸载。
 
+平台内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用应用与功能能力。仓库中的用户模块源码位于 `modules/installable/`：`shanghaidata` 负责上海数据及其口径，`traffic-assurance-knowledge` 负责交通保障知识，`plot-style` 负责可替换的绘图经验与风格。它们不会进入桌面应用安装包，也不属于平台启动依赖。
+
 制作安装包前，需要准备对应平台的可重定位 Python 3.10 运行时，并按 `desktop/python-requirements.txt` 安装运行依赖。构建脚本会在复制后检查 Python 版本、CPU 架构、目录可重定位性和必要模块；普通 Conda 环境不能直接作为发布运行时。Pi CLI 与 Node/Electron 版本已由项目锁定。
 
 正式 macOS 发布还必须配置 Developer ID Application 证书，以及 Apple ID、App Store Connect API Key 或 keychain profile 三种公证凭据之一：
@@ -73,7 +75,7 @@ TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:p
 
 `desktop:pack` 在缺少签名或公证凭据时会直接停止，避免误发未签名 DMG。仅做本机结构验收时可显式设置 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。macOS 目标为 macOS 12 及以上的 Apple Silicon DMG，Windows 目标为 x64 NSIS；发布凭据不写入仓库。
 
-交通知识库和数据库作为大体积外部资产，不写入应用安装包，也不放在 Skill 相邻目录。推荐在设置页将它们安装为受管 Module；运行时会从安装清单解析资产，并分别注入 `TRANSPORTX_KNOWLEDGE_ROOT` 与 `TRANSPORTX_TRAFFIC_DATA_ROOT`。`TAU_KNOWLEDGE_ROOT`、`TAU_DATA_ROOT` 和 `TAU_MODULE_MANIFESTS` 仅保留给开发及受控外部部署覆盖。
+交通知识库和数据库作为大体积外部资产，不写入应用安装包，也不放在 Skill 相邻目录。推荐在设置页将它们安装为受管 Module；运行时会从安装清单解析资产，并分别注入 `TRANSPORTX_KNOWLEDGE_ROOT` 与 `TRANSPORTX_TRAFFIC_DATA_ROOT`。`TAU_KNOWLEDGE_ROOT` 和 `TAU_DATA_ROOT` 仅用于开发及受控外部部署，并须分别配合 `TAU_KNOWLEDGE_ASSET_ID` 和 `TAU_DATA_ASSET_ID`；外部 Manifest 使用 `TAU_MODULE_MANIFESTS` 加载。
 
 ## 验证
 
@@ -85,7 +87,7 @@ npm run test:desktop-smoke
 npm run test:pi-smoke
 ```
 
-- `npm test`：构建并运行 89 个默认测试，覆盖共享契约、模块安装/卸载与装配、桌面运行时、模型配置、Agent Host、会话投影、HTTP/WebSocket、鉴权 Cookie、任务 Extension 生命周期、Geo 资源隔离和 Markdown 安全渲染。Knowledge 实体资产不随仓库分发，因此依赖它的 2 项集成用例在未安装资产时跳过。
+- `npm test`：构建并运行 30 个必要回归测试，覆盖 Agent Host、认证、共享契约、桌面运行时、会话历史与恢复、文件/Geo/Citation 边界、模块安装与装配、Task 生命周期、WebSocket 安全与断连行为，以及版本同步。
 - `test:react-smoke`：真实 Node 服务、fake Pi 和 Chrome 的 React 工作台冒烟。
 - `test:desktop-smoke`：真实 Electron、Agent Host 和 fake Pi 的桌面生命周期、内置 Python、PDF 导出、安全选项与退出清理冒烟；设置 `TRANSPORTX_PACKAGED_APP` 后可直接验证构建出的 `.app`。
 - `test:pi-smoke`：真实本机 Pi RPC 离线冒烟；它会启动子进程，不纳入默认测试。

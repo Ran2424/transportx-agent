@@ -44,6 +44,8 @@ async function renderPdf(_title: string, html: string) {
 }
 
 function createWindow(url: string) {
+  const windowUrl = new URL(url);
+  windowUrl.searchParams.set('desktop-platform', process.platform);
   const window = new BrowserWindow({
     title: 'TransportX Traffic Agent',
     width: 1440,
@@ -52,6 +54,8 @@ function createWindow(url: string) {
     minHeight: 640,
     show: false,
     backgroundColor: '#f5f7fa',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 14, y: 14 } } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -70,7 +74,7 @@ function createWindow(url: string) {
   });
   window.once('ready-to-show', () => window.show());
   window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
-  window.loadURL(url).catch((error: Error) => {
+  window.loadURL(windowUrl.toString()).catch((error: Error) => {
     dialog.showErrorBox('TransportX Traffic Agent', `无法加载本地工作台：${error.message}`);
     app.quit();
   });

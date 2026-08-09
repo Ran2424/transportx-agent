@@ -149,6 +149,18 @@ Manifest v1 支持 `module`、`capability`、`domain`、`skill`、`knowledge`、
 
 Registry 拒绝重复 ID 和不兼容平台版本，按依赖顺序装配；缺失依赖会禁用相关模块，但单个可选模块损坏不阻止平台启动。
 
+平台与用户模块按“机制”和“内容”分层：
+
+| 层级 | 模块 | 职责 |
+|---|---|---|
+| 平台内置 | Workbench、Task、Geo、Citation、Web Bridge | 会话装配、任务状态、地图呈现、可信引用和前后端桥接等通用机制 |
+| 平台内置 | Geo 操作说明、通用交通报告模板 | 使用内置机制所需的通用说明与基础输出结构，不包含城市或项目数据 |
+| 用户安装 | `shanghaidata` | 上海数据、数据字典、查询脚本、数据口径和上海专属地图表达约定 |
+| 用户安装 | `traffic-assurance-knowledge` | 交通保障法规、标准、预案、案例知识及检索流程 |
+| 用户安装 | `plot-style` | 图表选型、审美经验、参考参数和 matplotlib 风格模板 |
+
+内置 Workbench 不依赖任何用户模块。删除全部用户模块后，任务、会话、文件、Geo 和 Citation 等平台能力仍应正常启动；城市、项目、案例、知识库和风格模板不得写入内置依赖图。
+
 ### 5.3 Data / Knowledge 与 Skill 解耦
 
 Data 和 Knowledge 不再存放于 Skill 相邻目录。Skill 只包含行为与查询工具，不拥有资产路径。Asset Resolver 从 Module Manifest 解析资产，并在 Session 启动时注入：
@@ -156,7 +168,7 @@ Data 和 Knowledge 不再存放于 Skill 相邻目录。Skill 只包含行为与
 - `TRANSPORTX_TRAFFIC_DATA_ROOT`；
 - `TRANSPORTX_KNOWLEDGE_ROOT`。
 
-查询脚本不得回退到开发机绝对路径或 Skill 相邻目录。官方 Knowledge/Data 的实体资产不进入 Git 仓库和应用安装包，由用户单独安装或迁移。
+查询脚本不得回退到开发机绝对路径或 Skill 相邻目录。Knowledge/Data 的实体资产不进入 Git 仓库和应用安装包，由用户单独安装或迁移。
 
 若同类资产同时存在，Session Assembly 优先选择用户安装资产，其次是外部资产，最后是内置资产；同一优先级存在多个候选时停止创建任务，并要求通过 `TAU_DATA_ASSET_ID` 或 `TAU_KNOWLEDGE_ASSET_ID` 明确选择。设置页显示当前生效资产。带 `integrityFile` 的资产在安装及每次解析时执行 SHA-256 校验，内容不一致会被拒绝。
 
@@ -169,7 +181,8 @@ desktop/                       Electron、Supervisor、打包配置和运行时�
 extensions/                    官方 Pi Extension 源码
 modules/
   capabilities/               Task、Citation、Geo、Web Bridge
-  official/                   Traffic Domain、Skill、Data、Knowledge、Template
+  official/                   Workbench 与通用 Template
+  installable/                独立交付、不随应用打包的用户模块源码
 prompts/                       会话 Prompt 源文件
 skills/                        不属于领域 Module 的通用 Skill
 src/
@@ -186,13 +199,15 @@ release/                       本地安装包交付目录，不提交
 
 ```text
 TransportX Traffic Agent.app/Contents/Resources/
-├─ app.asar                    Agent Host、Pi CLI、React 和内置模块
+├─ app.asar                    Agent Host、Pi CLI、React 和平台内置模块
 ├─ app.asar.unpacked/          需要由 Python/外部进程直接读取的 Skill 与脚本
 ├─ runtime-manifest.json       产品、Agent Host、Pi、Python 版本和 SHA-256
 └─ runtimes/python/            可重定位 Python 3.10
 ```
 
 安装后不得修改 `.app` 内容。日志、模型、Session、Module、Python/Matplotlib 缓存和任务产物全部写入用户目录。
+
+`modules/installable/` 在 Electron 打包时被显式排除。需要交付其中的模块时，应把对应目录连同实际资产作为独立安装包发布，不能借由应用资源目录自动注册。
 
 ### 6.3 macOS 用户目录
 
@@ -255,7 +270,7 @@ React Geo runtime ───────────> contracts + maplibre-gl
 ## 10. 验证基线
 
 - `npm run typecheck`：Server、Public、React 和 Desktop 类型检查；
-- `npm test`：89 项默认回归，当前 87 项通过、2 项外部 Knowledge 资产用例按条件跳过；
+- `npm test`：30 项必要默认回归，覆盖进程、契约、持久化、安全边界、模块生命周期和桌面打包；
 - `npm run test:react-smoke`：真实 Server、fake Pi 和浏览器工作台；
 - `npm run test:desktop-smoke`：Electron、Agent Host、模型入口、模块设置、内置 Python、PDF 和退出清理；
 - `TRANSPORTX_PACKAGED_APP=... npm run test:desktop-smoke`：真实 `.app`/DMG 运行时验证；
