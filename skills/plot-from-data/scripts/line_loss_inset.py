@@ -150,7 +150,7 @@ fig.add_artist(con1)
 fig.add_artist(con2)
 
 fig.savefig(
-    '/Users/bytedance/gitcode/paper_experiment_plot_skills/repro/line_loss_inset_repro.png',
+    'line_loss_inset_repro.png',
     dpi=300, facecolor='white',
 )
 plt.close(fig)

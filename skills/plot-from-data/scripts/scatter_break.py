@@ -162,7 +162,7 @@ leg = ax1.legend(
 )
 
 fig.savefig(
-    '/Users/bytedance/gitcode/paper_experiment_plot_skills/repro/scatter_break_repro.png',
+    'scatter_break_repro.png',
     dpi=300, facecolor='white',
 )
 plt.close(fig)

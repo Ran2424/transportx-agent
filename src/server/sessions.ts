@@ -13,6 +13,7 @@ import {
   PI_COMMAND,
   PI_COMMAND_ARGS,
   PI_AGENT_DIR,
+  PROJECT_SYSTEM_PROMPT_PATH,
   PROJECT_PROMPT_PATH,
   PROJECT_ROOT,
   PROJECT_SKILLS_DIR,
@@ -110,6 +111,13 @@ export function renderProjectPrompt(template: string, cwd: string, plan: Resolve
 function loadProjectPrompt(cwd: string, promptPath = PROJECT_PROMPT_PATH, plan: ResolvedSessionPlan | null = null) {
   if (!fs.existsSync(promptPath)) throw new Error(`Project prompt not found: ${promptPath}`);
   return renderProjectPrompt(fs.readFileSync(promptPath, 'utf8'), cwd, plan);
+}
+
+function loadSystemPrompt() {
+  if (!fs.existsSync(PROJECT_SYSTEM_PROMPT_PATH)) throw new Error(`System prompt not found: ${PROJECT_SYSTEM_PROMPT_PATH}`);
+  const prompt = fs.readFileSync(PROJECT_SYSTEM_PROMPT_PATH, 'utf8').trim();
+  if (!prompt) throw new Error(`System prompt is empty: ${PROJECT_SYSTEM_PROMPT_PATH}`);
+  return prompt;
 }
 
 export function makeId() {
@@ -283,7 +291,7 @@ export class PiRpcSession {
     if (!fs.existsSync(this.cwd) || !fs.statSync(this.cwd).isDirectory()) {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
-    const args = [...PI_COMMAND_ARGS, '--mode', 'rpc'];
+    const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
     const extensionPaths = this.resolvedSessionPlan?.piExtensions || BUILTIN_EXTENSION_PATHS;
     const skillPaths = this.resolvedSessionPlan?.skills || BUILTIN_SKILL_PATHS;
     for (const extensionPath of extensionPaths) {

@@ -3,8 +3,9 @@ const path = require('node:path');
 
 import type { ModuleAsset } from '../contracts/index.js';
 import type { ModuleRegistry, RegisteredModule } from './module-registry.js';
+import { verifyChecksumFile } from './asset-integrity.js';
 
-export type ResolvedAsset = ModuleAsset & { moduleId: string; moduleVersion: string; resolvedPath: string };
+export type ResolvedAsset = ModuleAsset & { moduleId: string; moduleVersion: string; moduleOrigin: RegisteredModule['origin']; resolvedPath: string };
 
 function within(root: string, target: string) {
   const relative = path.relative(path.resolve(root), path.resolve(target));
@@ -45,7 +46,8 @@ export class AssetResolver {
     if (record.asset.integrityFile) {
       const integrityPath = override ? path.join(resolvedPath, path.basename(record.asset.integrityFile)) : path.resolve(record.module.packageRoot, record.asset.integrityFile);
       if ((!override && !within(record.module.packageRoot, integrityPath)) || !fs.existsSync(integrityPath)) throw new Error(`Asset integrity file is missing: ${id}`);
+      verifyChecksumFile(resolvedPath, integrityPath);
     }
-    return { ...record.asset, moduleId: record.module.manifest.id, moduleVersion: record.module.manifest.version, resolvedPath };
+    return { ...record.asset, moduleId: record.module.manifest.id, moduleVersion: record.module.manifest.version, moduleOrigin: record.module.origin, resolvedPath };
   }
 }

@@ -8,7 +8,7 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { APP_PATHS, ARGS, ASSET_RESOLVER, AUTH_CONFIGURED, DESKTOP_MODE, GEO_EXTENSION_PATH, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting } from './config.js';
+import { APP_PATHS, ARGS, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, GEO_EXTENSION_PATH, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
@@ -142,6 +142,16 @@ function openUrl(url: string): Promise<void> {
   return new Promise((resolve, reject) => execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], (error: NodeJS.ErrnoException | null) => error ? reject(error) : resolve()));
 }
 
+function currentPlatformOverview() {
+  const storage = { root: PI_AGENT_DIR, scenario: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir };
+  try {
+    const plan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, storage.scenario);
+    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(plan.assets.map((asset) => asset.id)));
+  } catch (error) {
+    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(), errorMessage(error));
+  }
+}
+
 async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
@@ -161,7 +171,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       return success({ model });
     } catch (error) { return failure(errorMessage(error)); }
   }
-  if (command.type === 'get_platform_overview') return success(platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, { root: PI_AGENT_DIR, scenario: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir }));
+  if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
   if (command.type === 'install_module') {
     if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
     let installed: { id: string; name: string; version: string; path: string } | null = null;
@@ -169,7 +179,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       installed = MODULE_INSTALLER.install(String(command.sourcePath || ''), String(command.kind || 'module') as import('./module-installer.js').InstallKind);
       reloadModules();
       if (MODULE_REGISTRY.get(installed.id)?.origin !== 'installed') throw new Error(`Module id conflicts with an existing module: ${installed.id}`);
-      return success({ installed, overview: platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, { root: PI_AGENT_DIR, scenario: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir }) });
+      return success({ installed, overview: currentPlatformOverview() });
     } catch (error) {
       if (installed) {
         try { MODULE_INSTALLER.uninstall(installed.id); } catch {}
@@ -185,7 +195,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       if ([...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId))) throw new Error('Close active tasks that use this module before uninstalling it');
       MODULE_INSTALLER.uninstall(moduleId, MODULE_REGISTRY);
       reloadModules();
-      return success({ overview: platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, { root: PI_AGENT_DIR, scenario: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir }) });
+      return success({ overview: currentPlatformOverview() });
     } catch (error) { return failure(errorMessage(error)); }
   }
   if (command.type === 'set_session_name') {

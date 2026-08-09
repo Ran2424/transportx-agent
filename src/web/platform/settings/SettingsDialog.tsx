@@ -179,8 +179,11 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
         {overviewLoading && !overview ? <div className="settings-loading" aria-label="正在读取模块"><span /><span /><span /></div> : overview?.modules.length ? (
           <div className="module-list module-list-root">
             {overview.modules.map((module) => {
-              const missingAssets = module.assets.filter((asset) => !asset.configured);
-              const status = !module.enabled ? '不可用' : missingAssets.length ? '待配置资产' : '已启用';
+              const activeKinds = new Set(overview.modules.flatMap((item) => item.assets.filter((asset) => asset.active).map((asset) => asset.kind)));
+              const missingAssets = module.assets.filter((asset) => !asset.configured && !activeKinds.has(asset.kind));
+              const hasActiveAsset = module.assets.some((asset) => asset.active);
+              const substituted = module.assets.length > 0 && module.assets.every((asset) => asset.configured || activeKinds.has(asset.kind));
+              const status = !module.enabled ? '不可用' : hasActiveAsset ? '当前生效' : missingAssets.length ? '待配置资产' : substituted && module.assets.some((asset) => !asset.configured) ? '由其他模块提供' : '已启用';
               const contributions = [module.skills ? `${module.skills} Skill` : '', module.extensions ? `${module.extensions} Extension` : '', ...module.assets.map((asset) => asset.kind === 'data' ? 'Data' : asset.kind === 'knowledge' ? 'Knowledge' : 'Template')].filter(Boolean);
               return <div className="module-row" key={module.id}><span><strong>{module.name}</strong><small>{module.version} · {moduleLabels[module.type]} · {module.origin === 'installed' ? '用户安装' : module.origin === 'external' ? '外部加载' : '内置'} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>卸载</Button> : null}</span></div>;
             })}

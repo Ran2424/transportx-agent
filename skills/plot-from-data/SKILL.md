@@ -10,7 +10,7 @@ description: |
 
 Generate a paper-quality figure by picking a style template and filling it with user data. The bundled templates save `dpi=300` PNG files after their output path is adapted to the current task.
 
-The scripts are imported templates, not directly runnable project commands: several still contain the original `/Users/bytedance/...` output path. Always copy the selected script into the current task directory and replace both its data section and output path before execution. Never edit or run the template in place.
+The scripts are imported templates, not directly runnable project commands. Their default PNG outputs are relative to the current working directory. Always copy the selected script into the current task directory and replace its data section and, when needed, its output filename before execution. Never edit the template in place.
 
 ## Available Styles
 

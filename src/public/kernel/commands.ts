@@ -100,7 +100,7 @@ export type PlatformModule = {
   enabled: boolean;
   extensions: number;
   skills: number;
-  assets: Array<{ id: string; kind: 'knowledge' | 'data' | 'template'; configured: boolean; error?: string }>;
+  assets: Array<{ id: string; kind: 'knowledge' | 'data' | 'template'; configured: boolean; active: boolean; error?: string }>;
 };
 
 export type PlatformOverview = {

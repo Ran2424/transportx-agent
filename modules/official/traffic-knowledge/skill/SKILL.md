@@ -12,7 +12,7 @@ description: Search and cite the local major-event traffic-assurance knowledge b
 - Python：使用 TransportX 会话上下文给出的内置解释器。
 - 检索脚本：使用本 Skill 根目录下的 `scripts/search_knowledge.py`。
 - 知识库由独立 Knowledge 资产提供，运行时通过 `TRANSPORTX_KNOWLEDGE_ROOT` 注入；Skill 不包含知识正文，也不从相邻目录回退。
-- 替代知识库：仅在需要检索另一套同结构知识资产时使用 `--knowledge-root /absolute/path` 覆盖。
+- 替代知识库：仅在需要检索另一套同结构知识资产时使用 `--knowledge-root /absolute/path` 覆盖；该参数也可在没有环境变量时独立使用。
 
 先运行：
 
@@ -42,6 +42,11 @@ Knowledge 模块可包含原件、页级记录、层级树、知识卡、验收�
 "<Python interpreter>" \
   "<skill-root>/scripts/search_knowledge.py" \
   search "演唱会 散场 轨道交通 客流控制" --limit 8
+
+# 仅在排查入库质量或结构化结果不足时纳入带页眉/页码残片的降级知识卡
+"<Python interpreter>" \
+  "<skill-root>/scripts/search_knowledge.py" \
+  search "客流控制" --include-page-fragments --limit 8
 
 # 按类别、阶段、标签缩小范围
 "<Python interpreter>" \
@@ -88,6 +93,7 @@ Knowledge 模块可包含原件、页级记录、层级树、知识卡、验收�
 - 案例知识统一视为经验，只能说明“曾采用”或“可参考”。
 - FHWA 内容属于国外方法指南，必须说明适用性转换。
 - 不确定、冲突或跨版本内容回到原件，不根据相似条款补写。
+- `manual_review_required=true` 或 `quality_warnings` 非空时，必须回到原件复核；不得把页面占位节点或页眉残片直接写成正式结论。
 - 报告产物保留正文中的 `[[cite:...]]` 标记；参考依据由 `tau_cite` 自动注入，模型不得自行生成或维护索引。
 
 ## 正式方案安全门

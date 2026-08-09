@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -17,11 +18,13 @@ test('an aggregate module installs Skill, extension, data and knowledge as one m
   const root = temp(t, 'transportx-module-install-');
   const source = path.join(root, 'source');
   const managed = path.join(root, 'managed');
-  for (const file of ['skill/SKILL.md', 'extension/index.js', 'data/catalog.sqlite', 'knowledge/SHA256SUMS.txt']) {
+  for (const file of ['skill/SKILL.md', 'extension/index.js', 'data/catalog.sqlite', 'knowledge/original.txt']) {
     const target = path.join(source, file);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, file);
   }
+  const digest = crypto.createHash('sha256').update(fs.readFileSync(path.join(source, 'knowledge', 'original.txt'))).digest('hex');
+  fs.writeFileSync(path.join(source, 'knowledge', 'SHA256SUMS.txt'), `${digest}  original.txt\n`);
   fs.writeFileSync(path.join(source, '.DS_Store'), 'finder metadata');
   fs.writeFileSync(path.join(source, 'manifest.json'), JSON.stringify({
     manifestVersion: 1, id: 'local.aggregate.test', name: 'Aggregate test', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [],
@@ -38,6 +41,27 @@ test('an aggregate module installs Skill, extension, data and knowledge as one m
   installer.uninstall(installed.id, registry);
   assert.equal(fs.existsSync(installed.path), false);
 });
+
+test('standalone Knowledge installation normalizes legacy checksum prefixes and verifies content', (t: any) => {
+  const root = temp(t, 'transportx-knowledge-integrity-');
+  const source = path.join(root, 'traffic-knowledge');
+  fs.mkdirSync(path.join(source, '01_法律法规'), { recursive: true });
+  fs.writeFileSync(path.join(source, '01_法律法规', 'original.pdf'), 'verified');
+  const digest = crypto.createHash('sha256').update('verified').digest('hex');
+  fs.writeFileSync(path.join(source, 'SHA256SUMS.txt'), `${digest}  knowledge/01_法律法规/original.pdf\n`);
+  const installer = new ModuleInstaller(path.join(root, 'managed'));
+  const installed = installer.install(source, 'knowledge');
+  const manifest = JSON.parse(fs.readFileSync(path.join(installed.path, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.contributes.assets[0].integrityFile, 'asset/SHA256SUMS.txt');
+  assert.match(fs.readFileSync(path.join(installed.path, 'asset', 'SHA256SUMS.txt'), 'utf8'), /  01_法律法规\/original\.pdf/);
+  fs.writeFileSync(path.join(installed.path, 'asset', '01_法律法规', 'original.pdf'), 'tampered');
+  assert.throws(() => validateInstalled(installed.path), /integrity mismatch/);
+});
+
+function validateInstalled(root: string) {
+  const { validateModulePackage } = require('../bin/module-installer.js');
+  validateModulePackage(root, JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')));
+}
 
 test('standalone resources are wrapped in managed one-contribution modules', (t: any) => {
   const root = temp(t, 'transportx-standalone-install-');

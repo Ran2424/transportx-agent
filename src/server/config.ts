@@ -36,7 +36,7 @@ export const PI_COMMAND = PI_EXECUTABLE.command;
 export const PI_COMMAND_ARGS = PI_EXECUTABLE.args;
 export const PYTHON_EXECUTABLE = resolvePythonExecutable({ resourcesDir: APP_PATHS.resourcesDir, desktop: DESKTOP_MODE });
 export const PYTHON_COMMAND = PYTHON_EXECUTABLE.command;
-export const PLATFORM_VERSION = '3.0.0';
+export const PLATFORM_VERSION = '3.0.1';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -74,6 +74,7 @@ export const BUILTIN_EXTENSION_PATHS = [GEO_EXTENSION_PATH, TASK_MODE_EXTENSION_
 export const PROJECT_SKILLS_DIR = process.env.TAU_SKILLS_DIR || findProjectSkillsDir();
 export const BUILTIN_SKILL_PATHS = findSkillPaths(PROJECT_SKILLS_DIR);
 export const PROJECT_ROOT = path.dirname(PROJECT_SKILLS_DIR);
+export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(path.join(PROJECT_ROOT, 'prompts', 'PI_SYSTEM.md'));
 export const PROJECT_PROMPT_PATH = path.resolve(process.env.TAU_PROJECT_PROMPT_PATH || path.join(PROJECT_ROOT, 'prompts', 'PI_SESSION_CONTEXT.md'));
 export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.traffic-assurance';
 const ISOLATED_BUILTIN_MODULES = new Set([
@@ -103,7 +104,10 @@ export const ASSET_RESOLVER = new AssetResolver(MODULE_REGISTRY, {
   ...(process.env.TAU_KNOWLEDGE_ROOT ? { 'knowledge:traffic-assurance': process.env.TAU_KNOWLEDGE_ROOT } : {}),
   ...(process.env.TAU_DATA_ROOT ? { 'data:shanghai-traffic': process.env.TAU_DATA_ROOT } : {}),
 });
-export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RESOLVER, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE);
+export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RESOLVER, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE, {
+  ...(process.env.TAU_KNOWLEDGE_ASSET_ID ? { knowledge: process.env.TAU_KNOWLEDGE_ASSET_ID } : {}),
+  ...(process.env.TAU_DATA_ASSET_ID ? { data: process.env.TAU_DATA_ASSET_ID } : {}),
+});
 export function reloadModules() {
   MODULE_REGISTRY.reload(moduleSources());
   ASSET_RESOLVER.reload(MODULE_REGISTRY);

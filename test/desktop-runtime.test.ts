@@ -55,6 +55,10 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   const prepareRuntime = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
   const smoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'desktop-smoke.mjs'), 'utf8');
   assert.match(builder, /afterPack: desktop\/scripts\/after-pack\.cjs/);
+  assert.match(builder, /asarUnpack:[\s\S]*traffic-data\/skill\/\*\*/);
+  assert.match(builder, /asarUnpack:[\s\S]*traffic-knowledge\/skill\/\*\*/);
+  assert.match(builder, /asarUnpack:[\s\S]*skills\/\*\*/);
+  assert.match(builder, /prompts\/\*\*/);
   assert.match(hook, /TRANSPORTX_ALLOW_UNSIGNED_BUILD/);
   assert.match(hook, /--verify/);
   assert.match(prepareRuntime, /\['-B', '-I', '-c'/);

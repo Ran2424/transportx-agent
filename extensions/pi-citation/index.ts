@@ -21,7 +21,13 @@ const execFileAsync = promisify(execFile);
 const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(EXTENSION_DIR, '..', '..');
 const PYTHON = process.env.TAU_PYTHON_COMMAND || 'python3';
-const SEARCH_SCRIPT = path.join(PROJECT_ROOT, 'modules', 'official', 'traffic-knowledge', 'skill', 'scripts', 'search_knowledge.py');
+export function externalProcessPath(filePath: string) {
+  const marker = `${path.sep}app.asar${path.sep}`;
+  if (!filePath.includes(marker)) return filePath;
+  const unpacked = filePath.replace(marker, `${path.sep}app.asar.unpacked${path.sep}`);
+  return fs.existsSync(unpacked) ? unpacked : filePath;
+}
+const SEARCH_SCRIPT = externalProcessPath(path.join(PROJECT_ROOT, 'modules', 'official', 'traffic-knowledge', 'skill', 'scripts', 'search_knowledge.py'));
 const KNOWLEDGE_ID_RE = /^K-[A-Za-z0-9_.-]+-\d{6}$/;
 const MARKER_RE = /\[\[cite:([^\]\r\n]+)\]\]/g;
 const REFERENCE_START = '<!-- tau:references:start -->';

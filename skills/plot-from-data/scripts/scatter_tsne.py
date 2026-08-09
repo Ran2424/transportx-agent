@@ -126,7 +126,7 @@ leg = ax.legend(
 
 fig.tight_layout(pad=0.9)
 fig.savefig(
-    '/Users/bytedance/gitcode/paper_experiment_plot_skills/repro/scatter_tsne_repro.png',
+    'scatter_tsne_repro.png',
     dpi=300, facecolor='white',
 )
 plt.close(fig)

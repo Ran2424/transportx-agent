@@ -103,7 +103,7 @@ for ax, panel in zip(axes, panels):
             fontsize=12, fontweight='bold', va='top', ha='left',
             color='#003F6C', fontfamily='serif')
 
-plt.savefig('/Users/bytedance/gitcode/paper_experiment_plot_skills/repro/bar_memevolve_repro.png',
+plt.savefig('bar_memevolve_repro.png',
             dpi=300, bbox_inches='tight', facecolor='white')
 plt.close()
 print('saved: bar_memevolve_repro.png')

@@ -4,12 +4,30 @@
 
 ## 维护规则
 
-- 当前发布线从 `v2.10` 开始，每次正式提交递增 `0.01`，即 `v2.10`、`v2.11`、`v2.12`、`v2.13`。
-- npm 使用三段式 SemVer：日志版本 `vX.Y` 对应 `package.json` 的 `X.Y.0`；例如 `v2.11` 对应 `2.11.0`。
+- 产品版本遵循 SemVer：不兼容改造递增主版本，向后兼容的新能力递增次版本，向后兼容的问题修复递增补丁版本。
+- npm、桌面安装包、Agent Host 平台版本和发布日志使用相同的三段式版本号。
 - 新版本写在最上方；一次版本原则上对应一次提交并推送到 `origin/main`。
 - 每条记录至少包含日期、GitHub 操作、主要修改和验证情况。
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
+
+## v3.0.1 — 模块资产与 Mac 发布链修复
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支提交并推送，创建面向 `main` 的草稿 PR。
+
+主要修改：
+
+- Pi 基础系统提示词改为从 `prompts/PI_SYSTEM.md` 加载，会话路径和资产上下文继续由 `PI_SESSION_CONTEXT.md` 动态追加。
+- 修复 Knowledge、Data 与 Skill 解耦后的资产根目录、脚本参数、引用原件和设置页生效状态，补充 Knowledge 清单完整性校验。
+- 完善模块安装、卸载和同类资产选择规则，模块可统一贡献 Skill、Extension、Data 与 Knowledge。
+- Mac 安装包显式携带并解包需要真实文件系统路径的 Skill，增加正式签名与 Apple 公证凭据前置检查。
+- 同步架构、实施记录、数据资产说明和交通分析报告中的新目录与运行方式。
+
+验证：
+
+- `npm run typecheck`、自动化测试、桌面构建与安装包结构检查通过。
+- 正式外发包仍要求 Developer ID Application 证书和 Apple 公证凭据；缺失凭据时发布脚本拒绝生成正式包。
 
 ## v3.0 — TransportX Traffic Agent 桌面化与模块化
 
@@ -25,12 +43,16 @@
 - Module 升级为统一生命周期单元，可组合贡献 Skill、Extension、Data 和 Knowledge；单独资源安装会自动包装为受管 Module。
 - 新增本地模块安装器、动态注册表重载和安全卸载，模块统一复制到 `~/.transportx/traffic-agent/modules/`，拒绝符号链接与包路径逃逸。
 - Data/Knowledge 已从 Skill 目录彻底迁出；查询脚本必须使用会话注入的资产根目录，不再存在相邻目录回退。
+- Data/Knowledge 查询同时支持显式 `--data-root` / `--knowledge-root` 诊断参数；Geo Extension 不再引用旧 Skill 内的数据库路径。
+- 同类资产按用户安装、外部加载、内置顺序选择；同优先级冲突时要求显式资产 ID，设置页标记当前生效资产。
+- Knowledge 清单从仅检查文件存在升级为逐文件 SHA-256 校验，独立安装时兼容并规范化旧 `knowledge/` 前缀。
 - 支持通过环境变量选择外部 Knowledge/Data Root、导入只读外部模块 Manifest，并切换会话领域模块。
 - 每个新建或恢复会话保存 `ResolvedSessionPlan`，记录实际 Platform、Pi、Python、Module 与资产版本。
 - macOS 应用数据统一迁移到 `~/.transportx/traffic-agent/`，任务工作目录固定为其下的 `scenario/`，Pi 模型、认证、会话、日志和缓存不再散落到其他用户目录。
 - 首次启动不再提供默认模型；新建任务、模型选择器和设置页均可添加 Pi 兼容模型，并将密钥与模型定义分开安全存储。
 - 设置页新增统一模块管理，可查看每个模块贡献的 Skill、Extension、Data、Knowledge 和 Template，并安装模块包、单独资源或卸载用户模块。
 - macOS 打包改用经校验的可重定位 Python 3.10 运行时，固定运行依赖并检查版本、arm64 架构、模块完整性及复制后的路径边界。
+- macOS 打包将查询 Skill 与通用 Skill 放入 `app.asar.unpacked`，Session Assembly、Citation 与 Geo Extension 向 Python 传递真实文件系统路径。
 - 桌面报告 PDF 改由 Electron 主进程安全渲染，不再依赖目标机器预装 Chrome；新增 macOS 应用图标、hardened runtime entitlement、公证配置和发布凭据前置检查。
 - 清理旧 launchd 配置、字体测试文件、旧图标和生成缓存；仓库内 298 MB 历史任务经校验后迁移到 `~/.transportx/traffic-agent/scenario/`。
 - 重写整体架构和桌面化实施文档，使组件职责、Session Assembly、Module 生命周期、Data/Knowledge 解耦、用户目录、安全边界、macOS 分发问题与当前发布限制和实际实现保持一致。
@@ -38,7 +60,7 @@
 验证：
 
 - `npm run typecheck` 通过。
-- `npm test`：89 项测试，87 项通过、2 项外部 Knowledge 资产用例按默认策略跳过，0 项失败。
+- `npm test`：93 项测试，91 项通过、2 项外部 Knowledge 资产用例按默认策略跳过，0 项失败；另以本机受管资产运行 4 项引用集成测试，全部通过。
 - `npm run test:react-smoke` 通过，覆盖添加模型、模块设置、桌面端与移动端基线。
 - `npm run test:desktop-smoke` 通过，验证 Electron 安全选项、Mac 应用目录、无默认模型、Agent Host、包内 Python、PDF 导出和退出清理。
 - arm64 `.app` 的测试构建会在生成 DMG 前应用并严格验证 ad-hoc 签名；Python 启动链禁止在 `.app` 内生成字节码缓存。应用从只读 DMG 完整启动前后均通过严格签名检查，240 MB DMG 通过 `hdiutil verify`。正式外发仍需 Developer ID 签名和 Apple 公证，发布脚本会在凭据缺失时停止。
