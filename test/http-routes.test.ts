@@ -171,12 +171,23 @@ test('projects the selected history branch and sorts sessions by conversation ti
     { type: 'message', timestamp: '2026-01-02T00:02:00.000Z', message: { role: 'assistant', content: 'newer reply' } },
     { type: 'message', timestamp: '2026-01-02T00:03:00.000Z', message: { role: 'user', content: 'newer follow-up' } },
   ]);
+  const flatProjectPath = path.join(PROJECTS_DIR, 'flat-session');
+  const flat = writeSessionFileAt(SESSIONS_DIR, 'flat.jsonl', [
+    { type: 'session', id: 'flat', cwd: flatProjectPath },
+    { type: 'message', timestamp: '2026-01-03T00:01:00.000Z', message: { role: 'user', content: 'flat first' } },
+    { type: 'message', timestamp: '2026-01-03T00:02:00.000Z', message: { role: 'assistant', content: 'flat reply' } },
+    { type: 'message', timestamp: '2026-01-03T00:03:00.000Z', message: { role: 'user', content: 'flat follow-up' } },
+  ]);
   fs.utimesSync(older, new Date('2030-01-01'), new Date('2030-01-01'));
   fs.utimesSync(newer, new Date('2020-01-01'), new Date('2020-01-01'));
   const sessions = await jsonBody(await fetch(`${base}/api/sessions`));
+  const flatHistory = await jsonBody(await fetch(`${base}/api/session-history?filePath=${encodeURIComponent(flat)}`));
   const project = sessions.projects.find((item: { path: string }) => item.path === path.resolve(projectPath));
+  const flatProject = sessions.projects.find((item: { path: string }) => item.path === path.resolve(flatProjectPath));
   assert.deepEqual(project.sessions.map((item: { id: string }) => item.id), ['newer', 'older']);
   assert.equal(project.sessions[0].lastConversationAt, '2026-01-02T00:03:00.000Z');
+  assert.deepEqual(flatProject.sessions.map((item: { id: string }) => item.id), ['flat']);
+  assert.deepEqual(flatHistory.entries.map((entry: { message?: { content?: string } }) => entry.message?.content).filter(Boolean), ['flat first', 'flat reply', 'flat follow-up']);
 });
 
 test('reads files within the live-session directory but blocks static traversal', async (t: TestContext) => {

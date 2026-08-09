@@ -1,14 +1,14 @@
 ---
-name: plot-from-data
+name: plot-style-playbook
 description: |
-  Generate publication-quality matplotlib figures by selecting a pre-built style and substituting user data.
+  Apply reusable chart-design experience and visual styles to generate publication-quality matplotlib figures from user data.
   Use when: wants a chart;
   user asks to "plot this data", "make a bar chart", "draw a radar chart",  "把我的数据画出来";
 ---
 
-# Plot From Data
+# Plot Style Playbook
 
-Generate a paper-quality figure by picking a style template and filling it with user data. The bundled templates save `dpi=300` PNG files after their output path is adapted to the current task.
+This is an optional experience-and-style Skill, not a platform plotting capability. Generate a paper-quality figure by picking a style template and filling it with user data. The bundled templates save `dpi=300` PNG files after their output path is adapted to the current task.
 
 The scripts are imported templates, not directly runnable project commands. Their default PNG outputs are relative to the current working directory. Always copy the selected script into the current task directory and replace its data section and, when needed, its output filename before execution. Never edit the template in place.
 

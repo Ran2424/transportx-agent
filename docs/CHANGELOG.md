@@ -11,6 +11,27 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0.3 — 本地应用启动、会话恢复与平台模块边界修复
+
+- 日期：2026-08-09
+- GitHub 操作：通过 `codex/desktop-localization` 分支发布，并合并至 `origin/main`；发布后删除开发分支。
+- 发布提交主题：`release: TransportX Traffic Agent 3.0.3`
+
+主要修改：
+
+- macOS Agent Host 改用 Electron Utility Process，避免应用启动时在 Dock 中短暂出现独立 `exec` Electron 图标，同时保留 PDF IPC、日志和退出清理能力。
+- 会话历史兼容根目录与项目子目录两种持久化结构，恢复项目统计、历史会话列表、全文搜索与应用重启后的会话加载。
+- 平台内置模块收敛为 Workbench、Task、Geo、Citation、Web Bridge 和 Report 等通用能力；上海交通数据、交通保障知识与绘图经验分别迁移为 `shanghaidata`、`traffic-assurance-knowledge`、`plot-style` 用户安装模块，不进入应用安装包。
+- macOS 窗口使用 `hiddenInset`，将原生红黄绿窗口控件整合到工作台顶部栏，并保持 Web、Windows 与 Linux 布局不变。
+- 默认 Node 回归测试由 94 项精简为 30 项必要测试，保留共享契约、桌面运行时、会话恢复、资源隔离、模块装配、Task 生命周期与 WebSocket 安全等关键边界。
+- npm 包与平台版本同步更新为 `3.0.3`。
+
+验证：
+
+- TypeScript 桌面、React 与测试配置检查通过。
+- `npm test` 通过：30 项必要回归，0 项失败。
+- `npm run test:desktop-smoke` 通过，验证 Electron、Agent Host 与集成式 macOS 窗口正常启动和关闭。
+
 ## v3.0.2 — 三主题设计系统、会话侧栏能力区与桌面质感统一
 
 - 日期：2026-08-09
@@ -25,10 +46,12 @@
 - 设置页收敛为 Light、Dark、Sand 三个正式主题，主题预览运行时直接读取 semantic token，不再维护第二份手写色值；旧主题偏好自动迁移（clean→light、night/dawn/midnight→dark、terracotta→sand、sage→light、未知值回退到 sand），新安装默认 Sand 主题。
 - 统一桌面质感：按钮、图标按钮、输入框、Tabs、菜单、Dialog 收敛控件高度（28–36px）与圆角规则（小型控件 6px、输入 8px、容器 12px）；功能文字下限提升至 11px；欢迎页 Hero 收敛为桌面应用欢迎标题（42–56px）并缩小留白；主面板移除多余阴影与卡片化边框，阴影通过 semantic token 提供。
 - 将 npm 包版本更新为 `3.0.2`，同步 `src/server/config.ts` 的 `PLATFORM_VERSION`。
+- 默认 Node 回归由 94 项收敛为 30 项必要测试，删除重复 happy-path、渲染微行为与已由 React/Desktop smoke 覆盖的实现细节用例。
 
 验证：
 
 - `npm run typecheck`（react / web / server）通过。
+- `npm test` 通过：30 项必要回归，0 项失败。
 - `npm run build:react` 通过；产物 CSS 仅保留 `light / dark / sand` 三个主题选择器，无旧主题与 `--react-*` 变量残留。
 - `npm run test:react-smoke` 通过，覆盖主题切换、会话侧栏与桌面/移动端基线。
 - `TRANSPORTX_PYTHON_RUNTIME_DIR=… TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 npm run desktop:pack` 产出 `TransportX Traffic Agent-3.0.2-arm64.dmg`（约 242 MB），ad-hoc 签名与结构校验通过；正式外发仍要求 Developer ID Application 证书与 Apple 公证。

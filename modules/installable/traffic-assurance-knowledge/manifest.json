@@ -1,11 +1,11 @@
 {
   "manifestVersion": 1,
-  "id": "com.transportx.traffic.knowledge",
+  "id": "com.transportx.traffic-assurance-knowledge",
   "name": "Traffic Assurance Knowledge",
   "version": "1.0.0",
-  "type": "knowledge",
+  "type": "module",
   "platformVersion": ">=3.0.0 <4.0.0",
-  "dependencies": [],
+  "dependencies": ["com.transportx.citation"],
   "entrypoints": {
     "skills": ["skill/SKILL.md"]
   },

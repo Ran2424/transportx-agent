@@ -1,6 +1,6 @@
 # 上海交通数据资产 SKILL 审查与优化报告
 
-审查对象：`modules/official/traffic-data/skill`
+审查对象：`modules/installable/shanghaidata/skill`
 审查日期：2026-07-23  
 优化后版本：`3.1.0`  
 数据标准：`Asia/Shanghai`、`EPSG:4326`

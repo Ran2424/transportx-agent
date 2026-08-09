@@ -15,7 +15,7 @@ import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, ma
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
 import { renderReportPdf } from './report-pdf.js';
-import { inspectPiRuntime } from './pi-runtime.js';
+import { inspectPiRuntime, piProcessEnv } from './pi-runtime.js';
 import { readSessionBranch } from './session-projection.js';
 import { createApiRouter } from './api-routes.js';
 import { SESSION_SNAPSHOT_SCHEMA_VERSION } from '../contracts/index.js';
@@ -213,7 +213,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       const file = command.filePath ? resolveSessionFile(command.filePath) : session?.sessionFile;
       if (!file) throw new Error('No session file to export yet');
       const args = [...PI_COMMAND_ARGS, '--export', file, ...(command.outputPath ? [resolveExportOutputPath(command.outputPath, file)] : [])];
-      const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(file), timeout: 30000, encoding: 'utf8' }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
+      const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(file), timeout: 30000, encoding: 'utf8', env: piProcessEnv() }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
       let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
       if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
       return success({ path: result });

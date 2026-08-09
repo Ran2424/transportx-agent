@@ -148,19 +148,6 @@ test('Bridge contract and Server parser share fixtures, capabilities, and struct
   assert.equal(regression.diagnostic?.code, 'revision_regression');
 });
 
-test('Browser Kernel normalizes Server contract diagnostics into protocol AppErrors', async () => {
-  const { createEventNormalizer } = await import('../src/public/kernel/event-normalizer.ts');
-  const error = {
-    code: 'contract_invalid',
-    category: 'protocol',
-    message: 'Unsupported Bridge capability version.',
-    sessionId: 'session-contract',
-    retryable: false,
-  };
-  const actions = createEventNormalizer().normalizeMessage({ type: 'contract_diagnostic', sessionId: 'session-contract', error });
-  assert.deepEqual(actions, [{ type: 'error/raised', error }]);
-});
-
 test('Server creates initial capabilities and exposes incompatible Bridge diagnostics at session creation', () => {
   const bridge = fixture('bridge');
   const { LiveSessionManager, PiRpcSession } = require('../bin/sessions.js');

@@ -148,12 +148,14 @@ modules/
 │  ├─ citation
 │  ├─ geo
 │  └─ web-bridge
-└─ official/
-   ├─ traffic-assurance       领域依赖与 Prompt
-   ├─ traffic-skills          通用交通分析 Skills
-   ├─ traffic-data            Data Manifest + 查询 Skill
-   ├─ traffic-knowledge       Knowledge Manifest + 检索 Skill
-   └─ traffic-report          报告 Template
+├─ official/
+│  ├─ workbench               通用领域依赖与 Prompt
+│  └─ traffic-report          通用报告 Template
+└─ installable/
+   ├─ shanghaidata            上海 Data Manifest + 查询 Skill
+   ├─ traffic-assurance-knowledge
+   │                          交通保障 Knowledge Manifest + 检索 Skill
+   └─ plot-style              可选绘图经验与风格 Skill
 ```
 
 Task、Citation、Geo 和 Web Bridge 的源码仍在 `extensions/`，Manifest 以显式入口引用；领域 Skill 归属各自 Module。大型 Data/Knowledge 实体不进入 Git 和安装包。
@@ -183,7 +185,7 @@ skills/shanghai-traffic-data-assets/
 skills/search-traffic-assurance-knowledge/references/knowledge/
 ```
 
-已移除。查询 Skill 分别迁移到 `modules/official/traffic-data/skill/` 和 `modules/official/traffic-knowledge/skill/`，实体资产由 Module 的 `contributes.assets` 声明。
+已移除。查询 Skill 分别迁移到用户安装模块 `modules/installable/shanghaidata/skill/` 和 `modules/installable/traffic-assurance-knowledge/skill/`，实体资产由各 Module 的 `contributes.assets` 声明。
 
 Session Assembly 根据启用模块解析实际资产，并注入：
 
@@ -262,7 +264,7 @@ ad-hoc 签名只解决包体结构完整性，不替代 Apple Developer ID。正
 ## 12. 验证结果
 
 - `npm run typecheck`：通过；
-- `npm test`：89 项，87 项通过，2 项外部 Knowledge 资产用例跳过，0 项失败；
+- `npm test`：30 项必要回归全部通过，0 项失败；
 - `npm run test:react-smoke`：通过；
 - `npm run test:desktop-smoke`：开发模式通过；
 - 真实 `.app` 和只读 DMG 桌面冒烟：通过；
