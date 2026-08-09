@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "id": "com.transportx.geo",
+  "name": "Geo Visualization",
+  "version": "1.0.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "entrypoints": {
+    "piExtensions": ["extensions/pi-geo-visualization/index.ts"],
+    "skills": ["skills/geo-visualization-explanation/SKILL.md"]
+  },
+  "contributes": {
+    "artifactTypes": ["geo.scene"]
+  }
+}

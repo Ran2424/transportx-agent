@@ -2,7 +2,7 @@ import type { LiveSession } from '../../../public/app-types.js';
 import type { ConnectionState } from '../../../public/kernel/stores/runtime-store.js';
 import { BrandMark } from '../BrandMark';
 import { Icon } from '../icons';
-import { modelReference } from '../../lib/formatting';
+import { modelReference, sessionTitle } from '../../lib/formatting';
 
 type HeaderProps = {
   connection: ConnectionState;
@@ -49,7 +49,7 @@ export function Header({
   const thinking = activeSession?.thinkingLevel || 'off';
 
   return (
-    <header className="workspace-header">
+    <header className={`workspace-header${activeSession ? ' has-task' : ''}`}>
       <div className="workspace-header-left">
         <button className="icon-button" type="button" aria-label="展开或收起会话侧栏" aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
           <Icon name="menu" />
@@ -67,10 +67,19 @@ export function Header({
         </button>
       </div>
 
-      <button className="workspace-brand" type="button" aria-label="返回 TransportX 主界面" onClick={onGoHome}>
-        <BrandMark className="workspace-brand-mark" />
-        <span><strong>TRANSPORTX</strong><small>AGENT WORKSPACE</small></span>
-      </button>
+      <div className="workspace-header-center">
+        {activeSession ? (
+          <button className="workspace-task" type="button" aria-label="返回 TransportX 主界面" title={sessionTitle(activeSession)} onClick={onGoHome}>
+            <span className="workspace-task-name">{sessionTitle(activeSession)}</span>
+            <span className={`workspace-task-status${streaming ? ' is-streaming' : ''}`}>{streaming ? '处理中' : '已就绪'}</span>
+          </button>
+        ) : (
+          <button className="workspace-brand" type="button" aria-label="返回 TransportX 主界面" onClick={onGoHome}>
+            <BrandMark className="workspace-brand-mark" />
+            <span><strong>TRANSPORTX</strong><small>TRAFFIC AGENT</small></span>
+          </button>
+        )}
+      </div>
 
       <div className="workspace-header-right">
         <div className="agent-status" data-testid="agent-status" data-state={status} title={`Agent ${statusLabel}`}>

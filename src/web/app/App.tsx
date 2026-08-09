@@ -8,6 +8,7 @@ import { CommandPalette, type CommandItem } from '../platform/commands/CommandPa
 import { ConversationStage } from '../platform/conversation/ConversationStage';
 import { ExtensionDialogLayer } from '../platform/extension-ui/ExtensionDialogLayer';
 import { ModelPickerDialog } from '../platform/model/ModelPickerDialog';
+import { ModelSetupDialog } from '../platform/model/ModelSetupDialog';
 import { NewSessionDialog } from '../platform/sessions/NewSessionDialog';
 import { LiveTabs } from '../platform/sessions/LiveTabs';
 import { SessionSidebar } from '../platform/sessions/SessionSidebar';
@@ -16,10 +17,24 @@ import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDo
 import { projectVisualizations } from '../features/geo/geo-projection';
 import { projectTaskState } from '../features/task/task-projection';
 
+const LEGACY_THEME_MIGRATION: Record<string, ThemeId> = {
+  clean: 'light',
+  night: 'dark',
+  dawn: 'dark',
+  midnight: 'dark',
+  terracotta: 'sand',
+  sage: 'light',
+};
+
 function initialTheme(): ThemeId {
   const saved = window.localStorage.getItem('tau-theme');
-  if (themes.some((theme) => theme.id === saved)) return saved as ThemeId;
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'clean' : 'night';
+  if (saved) {
+    if (themes.some((theme) => theme.id === saved)) return saved as ThemeId;
+    const migrated = LEGACY_THEME_MIGRATION[saved];
+    if (migrated) return migrated;
+  }
+  // New installs keep the TransportX brand first impression: Sand.
+  return 'sand';
 }
 
 function mostRecentSessionId(sessions: ReturnType<typeof useSessionState>['sessions']) {
@@ -42,6 +57,8 @@ export function App() {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [modelSetupOpen, setModelSetupOpen] = useState(false);
+  const [modelSetupOrigin, setModelSetupOrigin] = useState<'new' | 'picker' | 'settings' | null>(null);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [notice, setNotice] = useState('');
@@ -64,6 +81,23 @@ export function App() {
     : '';
   const openedMapKey = useRef('');
   const openedTaskSessions = useRef(new Set<string>());
+
+  function openModelSetup(origin: 'new' | 'picker' | 'settings') {
+    setModelSetupOrigin(origin);
+    if (origin === 'new') setNewSessionOpen(false);
+    if (origin === 'picker') setModelOpen(false);
+    if (origin === 'settings') setSettingsOpen(false);
+    setModelSetupOpen(true);
+  }
+
+  function changeModelSetupOpen(open: boolean) {
+    setModelSetupOpen(open);
+    if (open) return;
+    if (modelSetupOrigin === 'new') setNewSessionOpen(true);
+    if (modelSetupOrigin === 'picker') setModelOpen(true);
+    if (modelSetupOrigin === 'settings') setSettingsOpen(true);
+    setModelSetupOrigin(null);
+  }
 
   useEffect(() => {
     if (!visualizationKey || visualizationKey === openedMapKey.current) return;
@@ -225,7 +259,7 @@ export function App() {
         setSettingsOpen(true);
         return;
       }
-      const hasOverlay = newSessionOpen || settingsOpen || modelOpen || commandsOpen || !!extensionUi.current;
+      const hasOverlay = newSessionOpen || settingsOpen || modelOpen || modelSetupOpen || commandsOpen || !!extensionUi.current;
       if (event.key === 'Escape' && !hasOverlay) {
         if (mapOpen) {
           setMapOpen(false);
@@ -243,7 +277,7 @@ export function App() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [activeSession, commandsOpen, extensionUi.current, filesOpen, kernel, mapOpen, modelOpen, newSessionOpen, settingsOpen, sidebarOpen, tasksOpen]);
+  }, [activeSession, commandsOpen, extensionUi.current, filesOpen, kernel, mapOpen, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, tasksOpen]);
 
   const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
   const runtimeErrorMessage = runtime.lastError?.message || '';
@@ -252,7 +286,7 @@ export function App() {
   return (
     <AppShell
       header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={visualizations.length > 0} onToggleSidebar={() => setSidebarOpen((value) => !value)} onToggleFiles={() => setFilesOpen((value) => !value)} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
-      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={() => setSidebarOpen(false)} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
+      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={() => setSidebarOpen(false)} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={() => setFilesOpen(false)} />}
@@ -260,9 +294,10 @@ export function App() {
       mapPanel={<WorkspaceFloat kind="map" open={mapOpen} session={activeSession} onClose={() => setMapOpen(false)} />}
       mapOpen={mapOpen}
       overlays={<>
-        <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} />
-        <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} />
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} session={activeSession} />
+        <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} onAddModel={() => openModelSetup('new')} />
+        <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
+        <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(`已添加模型 ${reference}`); changeModelSetupOpen(false); }} />
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
         {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label="关闭状态通知" onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}

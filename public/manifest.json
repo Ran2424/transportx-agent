@@ -1,7 +1,7 @@
 {
-  "name": "TransportX Traffic Workspace",
-  "short_name": "TransportX",
-  "description": "TransportX 课题组的交通智能体多会话浏览器工作台",
+  "name": "TransportX Traffic Agent",
+  "short_name": "Traffic Agent",
+  "description": "TransportX 本地交通态势分析与辅助决策智能体",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f5f3ef",

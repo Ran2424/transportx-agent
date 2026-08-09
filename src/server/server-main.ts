@@ -8,14 +8,14 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { ARGS, AUTH_CONFIGURED, GEO_EXTENSION_PATH, HOST, KNOWLEDGE_ROOT, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PORT, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { APP_PATHS, ARGS, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, GEO_EXTENSION_PATH, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
 import { renderReportPdf } from './report-pdf.js';
-import { inspectPiRuntime } from './pi-runtime.js';
+import { inspectPiRuntime, piProcessEnv } from './pi-runtime.js';
 import { readSessionBranch } from './session-projection.js';
 import { createApiRouter } from './api-routes.js';
 import { SESSION_SNAPSHOT_SCHEMA_VERSION } from '../contracts/index.js';
@@ -23,6 +23,9 @@ import { createFileApiHandlers } from './file-api-handler.js';
 import { createSessionHistoryHandlers } from './session-history-handler.js';
 import { createStaticHandler } from './static-handler.js';
 import { attachWebSocketHandler } from './websocket-handler.js';
+import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
+import { addPiModel } from './pi-model-config.js';
+import { platformOverview } from './platform-overview.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -139,6 +142,16 @@ function openUrl(url: string): Promise<void> {
   return new Promise((resolve, reject) => execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], (error: NodeJS.ErrnoException | null) => error ? reject(error) : resolve()));
 }
 
+function currentPlatformOverview() {
+  const storage = { root: PI_AGENT_DIR, scenario: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir };
+  try {
+    const plan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, storage.scenario);
+    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(plan.assets.map((asset) => asset.id)));
+  } catch (error) {
+    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(), errorMessage(error));
+  }
+}
+
 async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
@@ -151,6 +164,40 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
     return success({ enabled: authEnabled });
   }
   if (command.type === 'get_available_models') return success({ models: await getAvailableModels() });
+  if (command.type === 'add_model') {
+    try {
+      const model = addPiModel(command, PI_AGENT_DIR);
+      _clearModelListCacheForTest();
+      return success({ model });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
+  if (command.type === 'install_module') {
+    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
+    let installed: { id: string; name: string; version: string; path: string } | null = null;
+    try {
+      installed = MODULE_INSTALLER.install(String(command.sourcePath || ''), String(command.kind || 'module') as import('./module-installer.js').InstallKind);
+      reloadModules();
+      if (MODULE_REGISTRY.get(installed.id)?.origin !== 'installed') throw new Error(`Module id conflicts with an existing module: ${installed.id}`);
+      return success({ installed, overview: currentPlatformOverview() });
+    } catch (error) {
+      if (installed) {
+        try { MODULE_INSTALLER.uninstall(installed.id); } catch {}
+        try { reloadModules(); } catch {}
+      }
+      return failure(errorMessage(error));
+    }
+  }
+  if (command.type === 'uninstall_module') {
+    if (!DESKTOP_MODE) return failure('Module uninstallation is only available in the desktop app');
+    try {
+      const moduleId = String(command.moduleId || '');
+      if ([...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId))) throw new Error('Close active tasks that use this module before uninstalling it');
+      MODULE_INSTALLER.uninstall(moduleId, MODULE_REGISTRY);
+      reloadModules();
+      return success({ overview: currentPlatformOverview() });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
   if (command.type === 'set_session_name') {
     const name = command.name?.trim();
     if (!name) return failure('Name cannot be empty');
@@ -165,8 +212,8 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       if (command.sessionId && !session) throw new Error('Live session not found');
       const file = command.filePath ? resolveSessionFile(command.filePath) : session?.sessionFile;
       if (!file) throw new Error('No session file to export yet');
-      const args = ['--export', file, ...(command.outputPath ? [resolveExportOutputPath(command.outputPath, file)] : [])];
-      const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(file), timeout: 30000, encoding: 'utf8' }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
+      const args = [...PI_COMMAND_ARGS, '--export', file, ...(command.outputPath ? [resolveExportOutputPath(command.outputPath, file)] : [])];
+      const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(file), timeout: 30000, encoding: 'utf8', env: piProcessEnv() }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
       let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
       if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
       return success({ path: result });
@@ -209,7 +256,7 @@ function setCorsForAllowedOrigin(req: IncomingMessage, res: ServerResponse) {
 const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projectsDir: TAU_SETTINGS.projectsDir, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, expandHome, json, errorMessage, readBranch: readSessionBranch, isGenericSessionName, sessions: liveManager });
 const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
 const apiRouter = createApiRouter({
-  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', role: 'rpc-session-manager', liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
+  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Traffic Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -218,7 +265,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
   const parsed = new URL(`http://localhost${req.url || urlPath}`);
   if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
-  if (handleCitationResourceRoute(req, res, parsed.pathname, { knowledgeRoot: KNOWLEDGE_ROOT, getSession: (id) => liveManager.get(id) })) return;
+  if (handleCitationResourceRoute(req, res, parsed.pathname, { knowledgeRoot: (session) => session.resolvedSessionPlan?.assets?.find((asset) => asset.kind === 'knowledge')?.path || '', getSession: (id) => liveManager.get(id) })) return;
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
 
@@ -244,7 +291,15 @@ function listen(port: number, attemptsLeft = 10) {
     if (error.code === 'EADDRINUSE' && attemptsLeft > 0) { console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`); server.removeAllListeners('error'); listen(port + 1, attemptsLeft - 1); }
     else { console.error(`[Tau] Failed to start: ${error.message}`); process.exit(1); }
   });
-  server.listen(port, HOST, () => { computeUrls(port); console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`); console.log(`[Tau] React application: ${REACT_STATIC_DIR} (/)`); if (ARGS.open) openUrl(lanUrl).catch(() => {}); });
+  server.listen(port, HOST, () => {
+    const address = server.address();
+    const actualPort = typeof address === 'object' && address ? address.port : port;
+    computeUrls(actualPort);
+    console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`);
+    console.log(`[Tau] React application: ${REACT_STATIC_DIR} (/)`);
+    if (DESKTOP_MODE) console.log(JSON.stringify({ type: 'transportx-agent-host-ready', port: actualPort, host: HOST, protocolVersion: AGENT_HOST_PROTOCOL_VERSION, pid: process.pid }));
+    if (ARGS.open) openUrl(lanUrl).catch(() => {});
+  });
 }
 
 let shuttingDown = false;
@@ -255,10 +310,16 @@ async function shutdown(signal: string) {
   await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
 }
 function startCli() {
-  const runtime = inspectPiRuntime(PI_COMMAND); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);
+  const runtime = inspectPiRuntime(PI_COMMAND, PI_COMMAND_ARGS); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);
+  console.log(`[Tau] Modules: ${MODULE_REGISTRY.enabled().length} enabled, ${MODULE_REGISTRY.errors.length} error(s)`);
   process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('exit', () => { for (const session of liveManager.sessions.values()) try { session.child?.kill('SIGTERM'); } catch {} });
   process.on('uncaughtException', (error) => { console.error(error); shutdown('uncaughtException'); }); process.on('unhandledRejection', (error) => console.error(error));
+  const parentPid = Number(ARGS['parent-pid'] || process.env.TAU_PARENT_PID || 0);
+  if (DESKTOP_MODE && parentPid > 0) {
+    const watcher = setInterval(() => { try { process.kill(parentPid, 0); } catch { clearInterval(watcher); shutdown('parent_exit'); } }, 1000);
+    watcher.unref();
+  }
   listen(PORT);
 }
 

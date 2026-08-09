@@ -5,6 +5,7 @@ import { useAppServices } from '../../app/AppProviders';
 import { BrandMark } from '../../components/BrandMark';
 import { Icon } from '../../components/icons';
 import { relativeTime, sessionTitle } from '../../lib/formatting';
+import { CapabilityPane } from '../capabilities/CapabilityPane';
 
 type SessionSidebarProps = {
   open: boolean;
@@ -13,6 +14,7 @@ type SessionSidebarProps = {
   onClose(): void;
   onGoHome(): void;
   onNewSession(): void;
+  onOpenSettings(): void;
   onSelectLive(sessionId: string): void;
   onSelectHistory(session: HistorySession, project: HistoryProject): void;
 };
@@ -39,6 +41,13 @@ type SidebarSession = {
   project?: HistoryProject;
 };
 
+function initialCapabilityCollapsed() {
+  if (typeof window === 'undefined') return false;
+  const saved = window.localStorage.getItem('tau-capability-collapsed');
+  if (saved !== null) return saved === '1';
+  return window.innerWidth <= 860;
+}
+
 export function SessionSidebar({
   open,
   sessions,
@@ -46,6 +55,7 @@ export function SessionSidebar({
   onClose,
   onGoHome,
   onNewSession,
+  onOpenSettings,
   onSelectLive,
   onSelectHistory,
 }: SessionSidebarProps) {
@@ -55,6 +65,7 @@ export function SessionSidebar({
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState('');
+  const [capabilityCollapsed, setCapabilityCollapsed] = useState(initialCapabilityCollapsed);
 
   useEffect(() => {
     let current = true;
@@ -99,6 +110,14 @@ export function SessionSidebar({
       .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp));
   }, [projects, sessions, normalizedQuery]);
 
+  const toggleCapability = () => {
+    setCapabilityCollapsed((value) => {
+      const next = !value;
+      window.localStorage.setItem('tau-capability-collapsed', next ? '1' : '0');
+      return next;
+    });
+  };
+
   return (
     <>
       <aside className={`session-sidebar${open ? ' is-open' : ''}`} aria-label="会话侧栏" data-testid="session-sidebar">
@@ -115,21 +134,24 @@ export function SessionSidebar({
           <button className="icon-button mobile-only" type="button" aria-label="关闭侧栏" onClick={onClose}><Icon name="close" /></button>
         </div>
 
-        <div className="session-scroll">
-          {loading ? <div className="session-empty">正在读取会话索引…</div> : null}
-          {error ? <div className="session-empty is-error">{error}</div> : null}
-          {!loading && !error && scenarioSessions.map((item) => (
-            <button
-              className={`session-row${item.live?.id === activeSessionId ? ' is-active' : ''}`}
-              type="button"
-              key={item.key}
-              onClick={() => item.live ? onSelectLive(item.live.id) : onSelectHistory(item.history!, item.project!)}
-            >
-              <span className="session-row-main"><strong>{item.title}</strong><small>{relativeTime(item.timestamp)}</small></span>
-              {item.live?.isStreaming ? <span className="session-row-meta"><i className="streaming-beacon" /></span> : null}
-            </button>
-          ))}
-          {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">暂无场景会话。新建任务后，它会出现在这里。</div> : null}
+        <div className="sidebar-split">
+          <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} onOpenSettings={onOpenSettings} />
+          <div className="session-scroll">
+            {loading ? <div className="session-empty">正在读取会话索引…</div> : null}
+            {error ? <div className="session-empty is-error">{error}</div> : null}
+            {!loading && !error && scenarioSessions.map((item) => (
+              <button
+                className={`session-row${item.live?.id === activeSessionId ? ' is-active' : ''}`}
+                type="button"
+                key={item.key}
+                onClick={() => item.live ? onSelectLive(item.live.id) : onSelectHistory(item.history!, item.project!)}
+              >
+                <span className="session-row-main"><strong>{item.title}</strong><small>{relativeTime(item.timestamp)}</small></span>
+                {item.live?.isStreaming ? <span className="session-row-meta"><i className="streaming-beacon" /></span> : null}
+              </button>
+            ))}
+            {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">暂无场景会话。新建任务后，它会出现在这里。</div> : null}
+          </div>
         </div>
 
       </aside>

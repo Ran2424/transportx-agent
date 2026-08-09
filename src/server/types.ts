@@ -10,8 +10,10 @@ export type ParsedModelSpec = { model: ModelIdentity | null; level: string | nul
 
 export type TauArgs = Record<string, string | boolean | undefined> & {
   open?: boolean;
+  desktop?: boolean;
   port?: string;
   host?: string;
+  'parent-pid'?: string;
   'projects-dir'?: string;
 };
 
@@ -48,9 +50,17 @@ export type RpcCommand = {
   model?: string;
   provider?: string;
   modelId?: string;
+  api?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  reasoning?: boolean;
+  images?: boolean;
   level?: string;
   name?: string;
   enabled?: boolean;
+  sourcePath?: string;
+  kind?: string;
+  moduleId?: string;
   [key: string]: unknown;
 };
 

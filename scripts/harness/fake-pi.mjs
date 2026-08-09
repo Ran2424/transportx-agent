@@ -280,7 +280,7 @@ async function handleCommand(command) {
       respond(id, true, {
         commands: [
           { name: 'task', description: '切换任务模式', source: 'extension' },
-          { name: 'shanghai-traffic-data-assets', description: '查询受治理的上海体育馆交通数据', source: 'skill', path: path.join(REPO_ROOT, 'skills', 'shanghai-traffic-data-assets', 'SKILL.md'), location: 'project' },
+          { name: 'shanghai-traffic-data-assets', description: '查询受治理的上海体育馆交通数据', source: 'skill', path: path.join(REPO_ROOT, 'modules', 'official', 'traffic-data', 'skill', 'SKILL.md'), location: 'project' },
         ],
       });
       return;

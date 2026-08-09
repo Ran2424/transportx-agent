@@ -1,0 +1,47 @@
+appId: com.transportx.traffic-agent
+productName: TransportX Traffic Agent
+asar: true
+asarUnpack:
+  - skills/**
+afterPack: desktop/scripts/after-pack.cjs
+directories:
+  output: release
+  buildResources: desktop/assets
+files:
+  - package.json
+  - dist-desktop/**
+  - bin/**
+  - dist/web/**
+  - public/geo-runtime.*
+  - extensions/**
+  - skills/**
+  - prompts/**
+  - modules/**
+  - "!modules/installable/**"
+  - src/contracts/**
+extraResources:
+  - from: desktop/build/runtime-manifest.json
+    to: runtime-manifest.json
+  - from: desktop/build/runtimes/python
+    to: runtimes/python
+mac:
+  category: public.app-category.productivity
+  icon: app-icon.svg
+  minimumSystemVersion: "12.0"
+  notarize: true
+  entitlements: desktop/assets/entitlements.mac.plist
+  entitlementsInherit: desktop/assets/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch: arm64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+win:
+  icon: app-icon.svg
+  target:
+    - target: nsis
+      arch: x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

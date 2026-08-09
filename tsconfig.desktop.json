@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "rootDir": "desktop",
+    "outDir": "dist-desktop",
+    "types": ["node", "electron"],
+    "strict": true,
+    "declaration": false,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["desktop/**/*.ts"]
+}
