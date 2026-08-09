@@ -79,6 +79,7 @@ search QUERY
   [--tag TAG] [--stage STAGE] [--scenario SCENARIO] [--actor ACTOR]
   [--knowledge-type TYPE] [--force FORCE]
   [--limit N] [--all-status]
+  [--include-page-fragments]
 ```
 
 多次提供同一筛选参数表示任一值命中。不同种类筛选之间为“且”关系。
@@ -141,6 +142,8 @@ cite KNOWLEDGE_ID
 - `source_refs`：节点和页码/来源单元；
 - `verification_status`：自动或人工复核状态；
 - `score`：词法相关度，仅用于排序，不代表权威性。
+- `manual_review_required`：知识条目尚未完成人工复核；正式方案必须回看原件；
+- `quality_warnings`：页面占位节点、页眉或页码残片等质量警告。默认搜索会排除明显页眉/页码残片；只有显式使用`--include-page-fragments`才纳入。
 
 权威性由文档类别、效力、状态、适用范围和发布机构决定，不由搜索分数决定。
 

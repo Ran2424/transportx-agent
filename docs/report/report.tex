@@ -757,7 +757,7 @@ SQLite 和模块化单体适合当前的数据规模、本地部署方式和交�
 \begin{itemize}
   \item 交通态势智能工作台 v2.14.0 源码与构建脚本：Node/TypeScript 服务、React 工作台、浏览器 Kernel 和共享契约。
   \item Task Mode、Geo Visualization、Citation、Web Bridge 等扩展组件。
-  \item shanghai-traffic-data-assets、search-traffic-assurance-knowledge、geo-visualization-explanation、plot-from-data 等项目级 Skill；知识检索 Skill 随附结构化知识目录和原件资产。
+  \item shanghai-traffic-data-assets、search-traffic-assurance-knowledge、geo-visualization-explanation、plot-from-data 等项目级 Skill；结构化知识目录和原件由独立 Knowledge Module 提供，不与检索 Skill 捆绑。
   \item 自动化测试、浏览器冒烟、真实运行时 RPC 冒烟和测试夹具。
   \item 受控数据安装包：6 个 SQLite 分域库及查询/治理脚本；数据库与原始数据单独交付。
 \end{itemize}
@@ -770,6 +770,6 @@ SQLite 和模块化单体适合当前的数据规模、本地部署方式和交�
 
 仓库提供首页、设置、命令面板、移动端和交通地图分析截图，可直接用于汇报。地图示例包括上海体育场周边轨交网络、网约车热度与重要场站叠加。演示视频可按``新建交通任务—开启任务模式—完成问数—生成地图—导出报告''的路径录制。
 
-交通数据库和组织方原始交通数据通过受控安装包交付。代码仓库可独立启动界面，安装数据库后开放数据查询。法规、标准、预案和案例的原件及结构化索引已迁入项目内的知识检索 Skill。
+交通数据库和组织方原始交通数据通过受控安装包交付。代码仓库可独立启动界面，安装数据库后开放数据查询。法规、标准、预案和案例的原件及结构化索引由独立 Knowledge Module 安装，运行时再与知识检索 Skill 装配。
 
 \end{document}

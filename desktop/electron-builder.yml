@@ -1,6 +1,10 @@
 appId: com.transportx.traffic-agent
 productName: TransportX Traffic Agent
 asar: true
+asarUnpack:
+  - modules/official/traffic-data/skill/**
+  - modules/official/traffic-knowledge/skill/**
+  - skills/**
 afterPack: desktop/scripts/after-pack.cjs
 directories:
   output: release

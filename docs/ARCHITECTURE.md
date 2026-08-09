@@ -1,6 +1,6 @@
 # TransportX Traffic Agent 架构与目录治理
 
-- 产品版本：3.0.0
+- 产品版本：3.0.1
 - 架构状态：已实现基线
 - 更新时间：2026-08-09
 - 当前正式目标：macOS 12+ Apple Silicon；Windows x64 保留构建配置，尚待实机发布验收
@@ -158,6 +158,8 @@ Data 和 Knowledge 不再存放于 Skill 相邻目录。Skill 只包含行为与
 
 查询脚本不得回退到开发机绝对路径或 Skill 相邻目录。官方 Knowledge/Data 的实体资产不进入 Git 仓库和应用安装包，由用户单独安装或迁移。
 
+若同类资产同时存在，Session Assembly 优先选择用户安装资产，其次是外部资产，最后是内置资产；同一优先级存在多个候选时停止创建任务，并要求通过 `TAU_DATA_ASSET_ID` 或 `TAU_KNOWLEDGE_ASSET_ID` 明确选择。设置页显示当前生效资产。带 `integrityFile` 的资产在安装及每次解析时执行 SHA-256 校验，内容不一致会被拒绝。
+
 ## 6. 目录治理
 
 ### 6.1 仓库目录
@@ -185,6 +187,7 @@ release/                       本地安装包交付目录，不提交
 ```text
 TransportX Traffic Agent.app/Contents/Resources/
 ├─ app.asar                    Agent Host、Pi CLI、React 和内置模块
+├─ app.asar.unpacked/          需要由 Python/外部进程直接读取的 Skill 与脚本
 ├─ runtime-manifest.json       产品、Agent Host、Pi、Python 版本和 SHA-256
 └─ runtimes/python/            可重定位 Python 3.10
 ```

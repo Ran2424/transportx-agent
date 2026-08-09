@@ -15,9 +15,7 @@ from pathlib import Path
 
 
 DATA_ROOT = os.environ.get("TRANSPORTX_TRAFFIC_DATA_ROOT")
-if not DATA_ROOT:
-    raise SystemExit("TRANSPORTX_TRAFFIC_DATA_ROOT is required; install a Data module and start the query through TransportX Traffic Agent.")
-DB_DIR = Path(DATA_ROOT)
+DEFAULT_ROOT = Path(DATA_ROOT) if DATA_ROOT else None
 DATABASES = ("common", "road", "metro", "bus", "ridehail")
 MAX_ROWS_LIMIT = 5000
 
@@ -31,14 +29,14 @@ def haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return 2 * radius_km * math.asin(math.sqrt(value))
 
 
-def connect() -> sqlite3.Connection:
-    catalog = DB_DIR / "catalog.sqlite"
-    required = [catalog, *(DB_DIR / f"{name}.sqlite" for name in DATABASES)]
+def connect(db_dir: Path) -> sqlite3.Connection:
+    catalog = db_dir / "catalog.sqlite"
+    required = [catalog, *(db_dir / f"{name}.sqlite" for name in DATABASES)]
     missing = [path for path in required if not path.is_file()]
     if missing:
         names = ", ".join(path.name for path in missing)
         raise FileNotFoundError(
-            f"Missing packaged databases in {DB_DIR}: {names}. "
+            f"Missing packaged databases in {db_dir}: {names}. "
             "Use the controlled installed asset or rebuild it as documented in references/governance.md."
         )
     conn = sqlite3.connect(f"file:{catalog}?mode=ro&immutable=1", uri=True)
@@ -46,7 +44,7 @@ def connect() -> sqlite3.Connection:
     conn.create_function("haversine_km", 4, haversine_km, deterministic=True)
     conn.execute("ATTACH DATABASE ? AS catalog", (f"file:{catalog}?mode=ro&immutable=1",))
     for name in DATABASES:
-        uri = f"file:{DB_DIR / f'{name}.sqlite'}?mode=ro&immutable=1"
+        uri = f"file:{db_dir / f'{name}.sqlite'}?mode=ro&immutable=1"
         conn.execute(f"ATTACH DATABASE ? AS {name}", (uri,))
     conn.execute("PRAGMA query_only=ON")
     return conn
@@ -105,13 +103,17 @@ def main() -> None:
     )
     parser.add_argument("--format", choices=("table", "json", "csv"), default="table")
     parser.add_argument("--max-rows", type=int, default=200)
+    parser.add_argument("--data-root", type=Path, default=DEFAULT_ROOT)
     args = parser.parse_args()
+
+    if args.data_root is None:
+        raise SystemExit("TRANSPORTX_TRAFFIC_DATA_ROOT or --data-root is required; install a Data module or provide an explicit root.")
 
     if not 1 <= args.max_rows <= MAX_ROWS_LIMIT:
         raise SystemExit(f"--max-rows must be between 1 and {MAX_ROWS_LIMIT}")
 
     try:
-        conn = connect()
+        conn = connect(args.data_root)
     except FileNotFoundError as exc:
         raise SystemExit(str(exc)) from exc
     if args.sql:

@@ -82,7 +82,7 @@ GeoMapRuntime → MapLibre GL JS
 - GIS 模块是本项目自带的能力，新建和恢复的 Pi 会话都应自动加载它。
 - 第一个可用版本优先证明端到端闭环，而不是一次性覆盖所有 GIS 格式、引擎和交互。
 - 地理数据资源随任务 cwd 保存；会话 JSONL 只保存稳定引用和 Scene Snapshot，不嵌入大型数据。
-- 大型 GIS 处理属于后续的 Python/GDAL 执行层，不应在浏览器或 Pi Extension 中重新实现。该层如开始建设，项目内脚本统一使用 `/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10`。
+- 大型 GIS 处理属于后续的 Python/GDAL 执行层，不应在浏览器或 Pi Extension 中重新实现。该层如开始建设，项目内脚本统一使用 TransportX 会话注入的 Python 解释器。
 
 ### 2.3 首期非目标
 

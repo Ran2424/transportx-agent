@@ -24,7 +24,28 @@ function resolvePackagePath(packageRoot: string, relativePath: string, label: st
   const relative = path.relative(path.resolve(packageRoot), resolved);
   if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`${label} escapes package root: ${relativePath}`);
   if (!fs.existsSync(resolved)) throw new Error(`${label} is missing: ${resolved}`);
-  return resolved;
+  return preferUnpackedPath(resolved);
+}
+
+export function preferUnpackedPath(filePath: string) {
+  const marker = `${path.sep}app.asar${path.sep}`;
+  if (!filePath.includes(marker)) return filePath;
+  const unpacked = filePath.replace(marker, `${path.sep}app.asar.unpacked${path.sep}`);
+  return fs.existsSync(unpacked) ? unpacked : filePath;
+}
+
+function selectAsset(candidates: ResolvedAsset[], kind: 'knowledge' | 'data', preferredId?: string) {
+  if (!candidates.length) return null;
+  if (preferredId) {
+    const preferred = candidates.find((asset) => asset.id === preferredId);
+    if (!preferred) throw new Error(`Configured ${kind} asset is unavailable: ${preferredId}`);
+    return preferred;
+  }
+  const priority = { builtin: 0, external: 1, installed: 2 } as const;
+  const highest = Math.max(...candidates.map((asset) => priority[asset.moduleOrigin]));
+  const winners = candidates.filter((asset) => priority[asset.moduleOrigin] === highest);
+  if (winners.length > 1) throw new Error(`Multiple ${kind} assets are active (${winners.map((asset) => asset.id).join(', ')}); configure TAU_${kind.toUpperCase()}_ASSET_ID`);
+  return winners[0];
 }
 
 export class SessionAssembler {
@@ -34,6 +55,7 @@ export class SessionAssembler {
     private platformVersion: string,
     private pi: Executable,
     private python: Executable,
+    private preferredAssets: Partial<Record<'knowledge' | 'data', string>> = {},
   ) {}
 
   assemble(domainId: string, workspace: string): ResolvedSessionPlan {
@@ -61,12 +83,17 @@ export class SessionAssembler {
       }
     }
     if (prompts.length !== 1) throw new Error(`Domain ${domainId} must contribute exactly one prompt`);
+    const selectedAssets = assets.filter((asset) => asset.kind === 'template');
+    for (const kind of ['knowledge', 'data'] as const) {
+      const selected = selectAsset(assets.filter((asset) => asset.kind === kind), kind, this.preferredAssets[kind]);
+      if (selected) selectedAssets.push(selected);
+    }
     return {
       schemaVersion: 1,
       platform: { name: 'TransportX Traffic Agent', version: this.platformVersion },
       domain: { id: domain.manifest.id, version: domain.manifest.version },
       modules: modules.map((module) => ({ id: module.manifest.id, version: module.manifest.version, type: module.manifest.type })),
-      assets: assets.map((asset) => ({ id: asset.id, kind: asset.kind, moduleId: asset.moduleId, moduleVersion: asset.moduleVersion, path: asset.resolvedPath })),
+      assets: selectedAssets.map((asset) => ({ id: asset.id, kind: asset.kind, moduleId: asset.moduleId, moduleVersion: asset.moduleVersion, path: asset.resolvedPath })),
       piExtensions: [...new Set(piExtensions)],
       skills: [...new Set(skills)],
       promptPath: prompts[0],

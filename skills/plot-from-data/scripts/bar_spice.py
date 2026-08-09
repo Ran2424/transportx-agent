@@ -159,7 +159,7 @@ draw_panel(
     legend_anchor=(0.992, 0.986),
 )
 
-plt.savefig('/Users/bytedance/gitcode/paper_experiment_plot_skills/repro/bar_spice_repro.png',
+plt.savefig('bar_spice_repro.png',
             dpi=300, facecolor='white')
 plt.close()
 print('saved: bar_spice_repro.png')

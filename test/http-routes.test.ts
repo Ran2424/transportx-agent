@@ -204,7 +204,11 @@ test('resuming a stored session publishes the persisted conversation snapshot', 
   ];
   const filePath = writeSessionFileAt(PROJ_DIR, 'resume.jsonl', entries);
   const child = makeFakeChild();
-  _setSpawnPiForTest(() => child);
+  let piArgs: string[] = [];
+  _setSpawnPiForTest((_cmd: string, args: string[]) => {
+    piArgs = args;
+    return child;
+  });
   t.after(() => _setSpawnPiForTest(null));
   const resumed = await jsonBody(await fetch(`${base}/api/live-sessions/resume`, {
     method: 'POST',
@@ -215,5 +219,8 @@ test('resuming a stored session publishes the persisted conversation snapshot', 
   assert.equal(snapshot.session.sessionName, 'Snapshot Chat');
   assert.equal(snapshot.session.sessionFile, path.resolve(filePath));
   assert.deepEqual(snapshot.entries, entries.slice(1));
+  const systemPromptIndex = piArgs.indexOf('--system-prompt');
+  assert.ok(systemPromptIndex >= 0);
+  assert.equal(piArgs[systemPromptIndex + 1], fs.readFileSync(path.join(process.cwd(), 'prompts', 'PI_SYSTEM.md'), 'utf8').trim());
   child.stdin.end();
 });

@@ -87,7 +87,7 @@ leg = ax.legend(
 
 fig.tight_layout(pad=0.8)
 fig.savefig(
-    '/Users/bytedance/gitcode/paper_experiment_plot_skills/repro/line_aime_repro.png',
+    'line_aime_repro.png',
     dpi=300, facecolor='white',
 )
 plt.close(fig)

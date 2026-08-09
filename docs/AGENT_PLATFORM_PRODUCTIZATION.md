@@ -2,7 +2,7 @@
 
 - 文档状态：已实现基线
 - 文档版本：v2.0
-- 产品版本：3.0.0
+- 产品版本：3.0.1
 - 更新时间：2026-08-09
 - 正式实现：Electron + Node Agent Host + Pi CLI + Python 3.10 + React Workspace
 
@@ -191,6 +191,10 @@ Session Assembly 根据启用模块解析实际资产，并注入：
 - `TRANSPORTX_KNOWLEDGE_ROOT`。
 
 脚本缺少资产时明确失败，不再从 Skill 相邻目录或开发机绝对路径寻找数据。这使 Skill 可以独立升级，Data/Knowledge 可以单独安装、替换和卸载。
+
+Session Assembly 对同类资产采用“用户安装 > 外部加载 > 内置”的选择顺序；同一优先级出现多个候选时要求用 `TAU_DATA_ASSET_ID` 或 `TAU_KNOWLEDGE_ASSET_ID` 明确选择。设置页标记当前生效资产。Knowledge 的 `SHA256SUMS.txt` 在安装和运行时都会校验，旧包中的 `knowledge/` 清单前缀会在独立安装时规范化。
+
+macOS 安装包把 Data/Knowledge 查询 Skill 和通用 Skill 解包到 `app.asar.unpacked`。凡需交给 Python 或其他外部进程的路径，Session Assembly 与 Citation/Geo Extension 均解析为真实文件系统路径，不把 `app.asar` 虚拟路径传给子进程。
 
 ## 8. Session Assembly
 

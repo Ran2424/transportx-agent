@@ -314,7 +314,7 @@ CSV 与 GeoJSON 的 207 个路段 ID 完全一致，路段—时刻无重复。�
 ### 7.1 查看订单来源关系
 
 ```bash
-/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10 \
+"<TransportX 会话注入的 Python 解释器>" \
   "<Shanghai traffic query tools directory>/query_assets.py" --order-sources
 ```
 

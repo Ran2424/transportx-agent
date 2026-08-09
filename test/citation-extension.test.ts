@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const KNOWLEDGE_ROOT = path.join(process.cwd(), 'modules', 'official', 'traffic-knowledge', 'assets');
+const KNOWLEDGE_ROOT = process.env.TRANSPORTX_KNOWLEDGE_ROOT || path.join(process.cwd(), 'modules', 'official', 'traffic-knowledge', 'assets');
 const KNOWLEDGE_CATALOG = path.join(KNOWLEDGE_ROOT, '_catalog', 'documents.jsonl');
 process.env.TRANSPORTX_KNOWLEDGE_ROOT ||= KNOWLEDGE_ROOT;
 
@@ -17,6 +17,19 @@ function extensionHarness() {
   } as any);
   return { handlers, tools };
 }
+
+test('citation extension maps Python-facing ASAR paths to unpacked files', (t: any) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-asar-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const packed = path.join(root, 'app.asar', 'modules', 'search.py');
+  const unpacked = path.join(root, 'app.asar.unpacked', 'modules', 'search.py');
+  fs.mkdirSync(path.dirname(packed), { recursive: true });
+  fs.mkdirSync(path.dirname(unpacked), { recursive: true });
+  fs.writeFileSync(packed, 'packed');
+  fs.writeFileSync(unpacked, 'unpacked');
+  const { externalProcessPath } = require('../extensions/pi-citation/index.ts');
+  assert.equal(externalProcessPath(packed), unpacked);
+});
 
 test('citation extension registers current-task reports and rejects files outside the task', async (t: any) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-extension-'));

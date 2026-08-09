@@ -17,9 +17,7 @@ import yaml
 
 
 KNOWLEDGE_ROOT = os.environ.get("TRANSPORTX_KNOWLEDGE_ROOT")
-if not KNOWLEDGE_ROOT:
-    raise SystemExit("TRANSPORTX_KNOWLEDGE_ROOT is required; install a Knowledge module and run the search through TransportX Traffic Agent.")
-DEFAULT_ROOT = Path(KNOWLEDGE_ROOT)
+DEFAULT_ROOT = Path(KNOWLEDGE_ROOT) if KNOWLEDGE_ROOT else None
 CLASS_ALIASES = {
     "法律": "LEGAL_GOVERNANCE",
     "法规": "LEGAL_GOVERNANCE",
@@ -92,6 +90,7 @@ def resolve_classes(values: list[str] | None) -> set[str]:
 class KnowledgeBase:
     def __init__(self, root: Path, include_all_status: bool = False) -> None:
         self.root = root
+        self._nodes: dict[str, dict[str, dict[str, Any]]] = {}
         catalog = root / "_catalog" / "documents.jsonl"
         if not catalog.exists():
             raise SystemExit(f"Knowledge catalog not found: {catalog}")
@@ -127,11 +126,18 @@ class KnowledgeBase:
         document = self.documents.get(doc_id)
         if not document:
             raise SystemExit(f"Unknown or ineligible node: {node_id}")
-        nodes = load_jsonl(self.doc_path(doc_id) / "data" / "nodes.jsonl")
-        node = next((row for row in nodes if row["node_id"] == node_id), None)
+        node = self.nodes(doc_id).get(node_id)
         if not node:
             raise SystemExit(f"Node not found: {node_id}")
         return document, node
+
+    def nodes(self, doc_id: str) -> dict[str, dict[str, Any]]:
+        if doc_id not in self._nodes:
+            self._nodes[doc_id] = {
+                row["node_id"]: row
+                for row in load_jsonl(self.doc_path(doc_id) / "data" / "nodes.jsonl")
+            }
+        return self._nodes[doc_id]
 
     def knowledge_item(
         self, knowledge_id: str
@@ -200,6 +206,8 @@ def citation_for(
     for ref in item.get("source_refs", []):
         node = nodes.get(ref["node_id"], {})
         clause = node.get("number") or node.get("title") or node.get("locator")
+        if re.fullmatch(r"PDF\s*第\s*\d+\s*页", str(clause or "")):
+            clause = ""
         if ref.get("pdf_page"):
             printed = (
                 f"（正文第{ref['printed_page']}页）"
@@ -238,6 +246,20 @@ def add_runtime_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--knowledge-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--all-status", action="store_true")
+
+
+def quality_warnings(kb: KnowledgeBase, document: dict[str, Any], item: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    nodes = kb.nodes(document["doc_id"])
+    referenced = [nodes.get(ref.get("node_id"), {}) for ref in item.get("source_refs", [])]
+    if any(re.fullmatch(r"PDF\s*第\s*\d+\s*页", str(node.get("title") or "")) for node in referenced):
+        warnings.append("page_placeholder_source")
+    statement = item.get("statement", "")
+    if statement.startswith("交通运输部行政规范性文件") or re.match(r"^\s*-?\s*\d+\s*-?\s*\n", statement):
+        warnings.append("page_header_or_number_artifact")
+    if item.get("verification_status") != "manual_verified":
+        warnings.append("manual_review_required")
+    return warnings
 
 
 def command_stats(kb: KnowledgeBase, args: argparse.Namespace) -> None:
@@ -299,17 +321,19 @@ def command_search(kb: KnowledgeBase, args: argparse.Namespace) -> None:
     if not query_tokens:
         raise SystemExit("Query must contain searchable text")
     corpus = [
-        (document, item)
+        (document, item, quality_warnings(kb, document, item))
         for document, item in kb.iter_knowledge()
         if matches_filters(document, item, args)
     ]
+    if not args.include_page_fragments:
+        corpus = [row for row in corpus if "page_header_or_number_artifact" not in row[2]]
     if not corpus:
         emit([], args.json)
         return
 
     frequencies = []
     document_frequency: Counter[str] = Counter()
-    for document, item in corpus:
+    for document, item, warnings in corpus:
         searchable = " ".join(
             [
                 item["statement"],
@@ -321,14 +345,14 @@ def command_search(kb: KnowledgeBase, args: argparse.Namespace) -> None:
             ]
         )
         counter = Counter(tokens(searchable))
-        frequencies.append((document, item, searchable, counter))
+        frequencies.append((document, item, warnings, searchable, counter))
         document_frequency.update(set(counter))
 
     total = len(frequencies)
     average_length = sum(sum(counter.values()) for *_, counter in frequencies) / total
     query_compact = normalized(args.query)
     scored = []
-    for document, item, searchable, counter in frequencies:
+    for document, item, warnings, searchable, counter in frequencies:
         length = sum(counter.values()) or 1
         score = 0.0
         for token in query_tokens:
@@ -352,12 +376,14 @@ def command_search(kb: KnowledgeBase, args: argparse.Namespace) -> None:
         ]
         score += 2.5 * sum(part in statement_compact for part in query_parts)
         score += 0.08 * CLASS_PRIORITY.get(document["document_class"], 0)
+        if "page_placeholder_source" in warnings:
+            score -= 1.5
         if score > 0:
-            scored.append((score, document, item))
+            scored.append((score, document, item, warnings))
 
     scored.sort(key=lambda row: (-row[0], row[2]["knowledge_id"]))
     results = []
-    for score, document, item in scored[: args.limit]:
+    for score, document, item, warnings in scored[: args.limit]:
         results.append(
             {
                 "score": round(score, 4),
@@ -368,6 +394,8 @@ def command_search(kb: KnowledgeBase, args: argparse.Namespace) -> None:
                 "knowledge_type": item["knowledge_type"],
                 "normative_force": item["normative_force"],
                 "verification_status": item["verification_status"],
+                "manual_review_required": item["verification_status"] != "manual_verified",
+                "quality_warnings": warnings,
                 "statement": item["statement"],
                 "topics": item.get("topics", []),
                 "stages": item.get("applicable_stages", []),
@@ -479,9 +507,10 @@ def command_cite(kb: KnowledgeBase, args: argparse.Namespace) -> None:
     refs = source_locator(kb.root, document, item)
     metadata = kb.metadata(document["doc_id"])
     source_path = kb.doc_path(document["doc_id"]) / metadata["source_file"]
-    source_sha256 = metadata.get("source_sha256")
-    if not source_sha256:
-        source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    actual_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    source_sha256 = metadata.get("source_sha256") or actual_sha256
+    if source_sha256 != actual_sha256:
+        raise SystemExit(f"Knowledge source hash mismatch: {source_path}")
     mime_type = mimetypes.guess_type(source_path.name)[0] or "application/octet-stream"
     source_kind = (
         "pdf" if mime_type == "application/pdf"
@@ -496,6 +525,8 @@ def command_cite(kb: KnowledgeBase, args: argparse.Namespace) -> None:
         "document_class": document["document_class"],
         "normative_force": item["normative_force"],
         "verification_status": item["verification_status"],
+        "manual_review_required": item["verification_status"] != "manual_verified",
+        "quality_warnings": quality_warnings(kb, document, item),
         "document_status": metadata.get("status"),
         "issuer": metadata.get("issuer"),
         "source": {
@@ -540,6 +571,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_runtime_options(search)
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=10)
+    search.add_argument("--include-page-fragments", action="store_true")
     add_common_filters(search)
 
     tree = subparsers.add_parser("tree")
@@ -561,6 +593,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.knowledge_root is None:
+        raise SystemExit("TRANSPORTX_KNOWLEDGE_ROOT or --knowledge-root is required; install a Knowledge module or provide an explicit root.")
     kb = KnowledgeBase(args.knowledge_root, include_all_status=args.all_status)
     commands = {
         "stats": command_stats,

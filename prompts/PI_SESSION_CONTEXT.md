@@ -8,8 +8,6 @@
 - 当前任务工作目录：`{{TASK_WORKING_DIRECTORY}}`
 - 项目 Skills 目录：`{{PROJECT_SKILLS_DIR}}`
 - Python 解释器：`{{PYTHON_COMMAND}}`
-- 交通保障知识资产：`{{KNOWLEDGE_ROOT}}`
-- 上海交通数据资产：`{{DATA_ROOT}}`
 - Python 设置中文字体时使用：`/System/Library/Fonts/Supplemental/Songti.ttc`（Songti SC／宋体）。
 
 ## 路径规则

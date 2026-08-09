@@ -144,7 +144,7 @@ ax.set_frame_on(False)
 
 fig.subplots_adjust(left=0.10, right=0.90, top=0.86, bottom=0.06)
 fig.savefig(
-    '/Users/bytedance/gitcode/paper_experiment_plot_skills/repro/radar_dora_repro.png',
+    'radar_dora_repro.png',
     dpi=300, facecolor='white',
 )
 plt.close(fig)

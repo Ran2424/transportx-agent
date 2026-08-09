@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 
 import { diagnosticMessage, parseModuleManifestStructured, type ModuleManifest, type ModuleType } from '../contracts/index.js';
 import type { ModuleRegistry, ModuleSource } from './module-registry.js';
+import { verifyChecksumFile } from './asset-integrity.js';
 
 export type InstallKind = 'module' | 'skill' | 'extension' | 'data' | 'knowledge';
 const INSTALL_KINDS = new Set<InstallKind>(['module', 'skill', 'extension', 'data', 'knowledge']);
@@ -70,9 +71,26 @@ export function validateModulePackage(packageRoot: string, manifest: ModuleManif
   for (const entry of manifest.entrypoints?.skills || []) resolvePackageEntry(packageRoot, entry, 'Skill');
   for (const entry of manifest.entrypoints?.prompts || []) resolvePackageEntry(packageRoot, entry, 'Prompt');
   for (const asset of manifest.contributes?.assets || []) {
-    resolvePackageEntry(packageRoot, asset.path, `Asset ${asset.id}`, asset.required === false);
-    if (asset.integrityFile) resolvePackageEntry(packageRoot, asset.integrityFile, `Integrity file for ${asset.id}`, asset.required === false);
+    const assetRoot = resolvePackageEntry(packageRoot, asset.path, `Asset ${asset.id}`, asset.required === false);
+    if (asset.integrityFile) {
+      const integrityFile = resolvePackageEntry(packageRoot, asset.integrityFile, `Integrity file for ${asset.id}`, asset.required === false);
+      if (fs.existsSync(assetRoot) && fs.existsSync(integrityFile)) verifyChecksumFile(assetRoot, integrityFile);
+    }
   }
+}
+
+function normalizeStandaloneKnowledgeChecksum(assetRoot: string) {
+  const checksumPath = path.join(assetRoot, 'SHA256SUMS.txt');
+  if (!fs.existsSync(checksumPath)) return;
+  const lines = fs.readFileSync(checksumPath, 'utf8').split(/\r?\n/);
+  let changed = false;
+  const normalized = lines.map((line: string) => {
+    const match = line.match(/^([a-f0-9]{64}\s+\*?)knowledge\/(.+)$/i);
+    if (!match || !fs.existsSync(path.join(assetRoot, match[2]))) return line;
+    changed = true;
+    return `${match[1]}${match[2]}`;
+  });
+  if (changed) fs.writeFileSync(checksumPath, `${normalized.join('\n').replace(/\n+$/, '')}\n`);
 }
 
 function standaloneManifest(kind: Exclude<InstallKind, 'module'>, sourcePath: string): ModuleManifest {
@@ -139,6 +157,7 @@ export class ModuleInstaller {
         const destination = path.join(staging, kind === 'skill' ? 'skill' : kind === 'extension' ? 'extension' : 'asset');
         if (fs.statSync(sourcePath).isDirectory()) copyInstallSource(sourcePath, destination);
         else { fs.mkdirSync(destination, { recursive: true }); fs.copyFileSync(sourcePath, path.join(destination, path.basename(sourcePath))); }
+        if (kind === 'knowledge' && fs.statSync(sourcePath).isDirectory()) normalizeStandaloneKnowledgeChecksum(destination);
         fs.writeFileSync(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
       }
       const installedManifest = readManifest(path.join(staging, 'manifest.json'));
