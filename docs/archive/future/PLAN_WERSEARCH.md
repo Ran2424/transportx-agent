@@ -786,9 +786,9 @@ TAU_WEB_SEARCH_SERVICE_ID=ops-web-search-001 # 可选，默认 ops-web-search-00
 | `test/citation-extension.test.ts` | 修改 | `webResults` 串联 |
 | `test/http-routes.test.ts` | 修改 | `/web-search` 路由 + `kind: web` 资源 |
 | `test/citation-projection.test.ts` | 修改 | web 来源混合投影 |
-| `docs/PLAN_WERSEARCH.md` | 新增 | 本文件 |
+| `docs/archive/future/PLAN_WERSEARCH.md` | 新增 | 本文件 |
 | `docs/CHANGELOG.md` | 修改 | 增加阶段 0/1/2/3 实施记录 |
-| `docs/CITATION_FEATURE_TECHNICAL_PLAN.md` | 修改 | 在「9. 当前实现落点」表追加 web 行；在「8. 阶段」表追加阶段二扩展点 |
+| `docs/archive/implemented/CITATION_FEATURE_TECHNICAL_PLAN.md` | 修改 | 在「9. 当前实现落点」表追加 web 行；在「8. 阶段」表追加阶段二扩展点 |
 
 ## 15. 最终逻辑线（一句话）
 

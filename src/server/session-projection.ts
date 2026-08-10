@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { selectCurrentSessionBranch, SESSION_SNAPSHOT_SCHEMA_VERSION } from '../contracts/index.js';
 import type { JsonRecord } from './types.js';
 import type { SessionSnapshot } from '../contracts/session.js';
+import { applyAttachmentMessageRefs, type AttachmentMessageRef } from './session-attachments.js';
 
 export {
   SESSION_SNAPSHOT_SCHEMA_VERSION,
@@ -44,9 +45,11 @@ export function readSessionBranch(filePath: string): JsonRecord[] {
  */
 export class SessionProjection {
   private currentEntries: JsonRecord[];
+  private messageRefs: AttachmentMessageRef[];
 
-  constructor(entries: unknown[] = []) {
-    this.currentEntries = selectCurrentSessionBranch(entries);
+  constructor(entries: unknown[] = [], messageRefs: AttachmentMessageRef[] = []) {
+    this.messageRefs = messageRefs;
+    this.currentEntries = applyAttachmentMessageRefs(selectCurrentSessionBranch(entries), this.messageRefs);
   }
 
   get entries() {
@@ -54,8 +57,10 @@ export class SessionProjection {
   }
 
   replace(entries: unknown[]) {
-    this.currentEntries = selectCurrentSessionBranch(entries);
+    this.currentEntries = applyAttachmentMessageRefs(selectCurrentSessionBranch(entries), this.messageRefs);
   }
+
+  setMessageRefs(refs: AttachmentMessageRef[]) { this.messageRefs = refs; this.replace(this.currentEntries); }
 
   append(entry: JsonRecord) {
     if (entry.type !== 'session') this.currentEntries.push(entry);

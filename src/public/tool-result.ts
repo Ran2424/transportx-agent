@@ -15,13 +15,13 @@ const BASE64ISH_RE = /^[A-Za-z0-9+/=\s]+$/;
 export function formatToolResultText(result: unknown) {
   if (!result) return '';
   const value = result as ToolResult;
-  if (Array.isArray(value.content)) return limitToolOutput(value.content.map(formatToolResultBlock).join('\n'));
+  if (Array.isArray(value.content)) return limitToolOutput(value.content.map(formatToolResultBlock).filter(Boolean).join('\n'));
   return limitToolOutput(safeToolStringify(result));
 }
 
 function formatToolResultBlock(block: ToolResultBlock) {
   if (block.type === 'text') return sanitizeToolText(block.text || '');
-  if (block.type === 'image') return `[图片内容已省略：${block.source?.media_type || block.media_type || 'image'}]`;
+  if (block.type === 'image') return '';
   return safeToolStringify(block);
 }
 

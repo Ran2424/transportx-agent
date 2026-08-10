@@ -9,7 +9,6 @@ import type {
   AppEvent,
   AppMessage,
   LiveSession,
-  PendingImage,
   SessionEntry,
   SessionSnapshot,
 } from '../app-types.js';
@@ -46,8 +45,8 @@ export type AppAction =
   | { type: 'conversation/streamCompleted'; sessionId: string; message: AppMessage }
   | { type: 'conversation/streamEnded'; sessionId: string }
   | { type: 'conversation/messageAppended'; sessionId: string; entry: SessionEntry }
-  | { type: 'conversation/promptSent'; sessionId: string; message: string; images?: PendingImage[] }
-  | { type: 'conversation/promptQueued'; sessionId: string; message: string; images?: PendingImage[] }
+  | { type: 'conversation/promptSent'; sessionId: string; message: string; attachmentIds?: string[] }
+  | { type: 'conversation/promptQueued'; sessionId: string; message: string; attachmentIds?: string[] }
   | { type: 'conversation/queueItemRemoved'; sessionId: string; index: number }
   | { type: 'conversation/queueDrained'; sessionId: string }
   // tool execution

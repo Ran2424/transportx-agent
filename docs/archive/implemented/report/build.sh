@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 编译 docs/report 下的 LaTeX 报告。
+# 编译 docs/archive/implemented/report 下的 LaTeX 报告。
 #  - 中间产物输出到 ./build/（被 .gitignore 忽略）
 #  - 最终 PDF 以正式报告名拷回当前目录
 #

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse } from './types.js';
 import type { LiveSessionManager, PiRpcSession } from './sessions.js';
+import type { SessionAttachmentSource } from '../contracts/attachments.js';
 import { ServerRouter } from './router.js';
 
 type ApiRouteServices = {
@@ -31,6 +32,9 @@ type ApiRouteServices = {
   handleRpc(command: RpcCommand): Promise<RpcResponse>;
   renderReportPdf(title: string, html: string): Promise<Buffer>;
   serveSessionFile(res: ServerResponse, dirName: string, fileName: string): void;
+  listAttachments(cwd: string): unknown[];
+  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource): Promise<unknown[]>;
+  deleteAttachment(cwd: string, id: string): void;
 };
 
 export function createApiRouter(services: ApiRouteServices) {
@@ -67,6 +71,24 @@ export function createApiRouter(services: ApiRouteServices) {
     .get(/^\/api\/live-sessions\/([^/]+)\/snapshot$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (session) deps.json(res, 200, session.snapshot());
+    })
+    .get(/^\/api\/live-sessions\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (session) deps.json(res, 200, { attachments: deps.listAttachments(session.cwd) });
+    })
+    .post(/^\/api\/live-sessions\/([^/]+)\/attachments$/, async ({ req, res, url, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      const source = url.searchParams.get('source');
+      if (source !== 'picker' && source !== 'drop' && source !== 'clipboard') return deps.json(res, 400, { error: 'Invalid attachment source' });
+      try { deps.json(res, 200, { attachments: await deps.uploadAttachments(session.cwd, req, source) }); }
+      catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
+    })
+    .delete(/^\/api\/live-sessions\/([^/]+)\/attachments\/([^/]+)$/, ({ res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.deleteAttachment(session.cwd, decodeURIComponent(params[1])); deps.json(res, 200, { success: true }); }
+      catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
     })
     .get(/^\/api\/live-sessions\/([^/]+)$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);

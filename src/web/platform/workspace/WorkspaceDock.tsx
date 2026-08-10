@@ -67,6 +67,11 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
   }, [kernel, session]);
 
   useEffect(() => { if (open) void load(); }, [load, open]);
+  useEffect(() => {
+    const refresh = () => { if (open) void load(path || undefined); };
+    window.addEventListener('transportx-attachments-changed', refresh);
+    return () => window.removeEventListener('transportx-attachments-changed', refresh);
+  }, [load, open, path]);
   useEffect(() => { setPreviewFiles([]); }, [session?.id]);
 
   async function openFile(item: WorkspaceFile) {

@@ -8,8 +8,8 @@ export const appKernel = createAppKernel({
   transport,
   http: (path, init) => fetch(path, {
     method: init?.method,
-    headers: { 'Content-Type': 'application/json' },
-    body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+    headers: init?.body instanceof FormData ? init?.headers : { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    body: init?.body === undefined ? undefined : init.body instanceof FormData ? init.body : JSON.stringify(init.body),
   }),
 });
 

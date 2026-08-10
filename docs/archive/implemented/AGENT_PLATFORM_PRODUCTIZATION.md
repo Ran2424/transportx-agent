@@ -2,11 +2,11 @@
 
 - 文档状态：已实现基线
 - 文档版本：v2.0
-- 产品版本：3.0.1
+- 归档时产品版本：3.0.1
 - 更新时间：2026-08-09
 - 正式实现：Electron + Node Agent Host + Pi CLI + Python 3.10 + React Workspace
 
-本文记录从 Pi Traffic Workspace 开发项目到 TransportX Traffic Agent 桌面产品的实施结果。当前权威运行架构、依赖方向和安全边界见 [ARCHITECTURE.md](./ARCHITECTURE.md)；本文聚焦改造范围、落地结果、验收状态和仍待完成的发布工作。
+本文记录从 Pi Traffic Workspace 开发项目到 TransportX Traffic Agent 桌面产品的实施结果。当前权威运行架构、依赖方向和安全边界见 [ARCHITECTURE.md](../../ARCHITECTURE.md)；本文聚焦改造范围、落地结果、验收状态和仍待完成的发布工作。
 
 ## 1. 改造目标
 

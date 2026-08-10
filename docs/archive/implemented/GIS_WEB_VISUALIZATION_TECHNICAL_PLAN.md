@@ -1,12 +1,12 @@
 # GIS Web 展示模块：技术设计与实施路线
 
-> 历史实施记录：本文保留旧阶段的方案与取舍；当前运行架构以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准，文中已删除的 DOM 层路径不再适用。
+> 历史实施记录：本文保留旧阶段的方案与取舍；当前运行架构以 [ARCHITECTURE.md](../../ARCHITECTURE.md) 为准，文中已删除的 DOM 层路径不再适用。
 
 > 状态：基础闭环已实现；阶段 1 的自动图例、显式 fit-to-data、完整错误降级和浏览器验收尚未全部完成
 > 面向项目：`pi-tau-traffic`  
 > 文档目标：将通用 GIS 可视化能力嵌入现有 Pi RPC + Tau Web 工作台，作为后续实现、测试和验收的基线。
 
-> 校对说明：本文包含已实现协议和未来路线。当前事实以第 1.1 节及 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准；后文出现的 GeoFilter、自动图例、历史资源直读、增量 MapLibre diff 等属于目标设计，不能当作现有能力。
+> 校对说明：本文包含已实现协议和未来路线。当前事实以第 1.1 节及 [ARCHITECTURE.md](../../ARCHITECTURE.md) 为准；后文出现的 GeoFilter、自动图例、历史资源直读、增量 MapLibre diff 等属于目标设计，不能当作现有能力。
 
 ## 1. 结论先行
 

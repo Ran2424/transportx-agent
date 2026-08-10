@@ -5,11 +5,11 @@
  * thrown; the kernel stores never see raw Error instances.
  */
 
-import type { LiveSession, ModelRecord, PendingImage, SessionSnapshot } from '../app-types.js';
+import type { LiveSession, ModelRecord, SessionAttachment, SessionAttachmentSource, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 
-export type HttpInit = { method?: string; body?: unknown };
+export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
 /** Minimal structural subset of fetch()'s Response used by the kernel. */
 export type HttpResponse = {
@@ -27,9 +27,9 @@ export type CommandDeps = {
   isStreaming: (sessionId: string) => boolean;
 };
 
-export type SendPromptInput = { sessionId: string; message: string; images?: PendingImage[] };
+export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[] };
 export type SetTaskModeInput = { sessionId: string; enabled: boolean };
-export type SteerInput = { sessionId: string; message: string };
+export type SteerInput = { sessionId: string; message: string; attachmentIds?: string[] };
 export type FollowUpInput = { sessionId: string; message: string };
 export type SetModelInput = { sessionId: string; model: string };
 export type SetThinkingLevelInput = { sessionId: string; level: string };
@@ -84,6 +84,8 @@ export type WorkspaceFile = {
 
 export type WorkspaceFileContent = { content: string; size: number; encoding?: 'utf8' | 'base64' };
 
+export type UploadAttachmentInput = { sessionId: string; file: File; source: SessionAttachmentSource };
+
 export type AgentState = {
   model?: ModelRecord | null;
   thinkingLevel?: string;
@@ -132,6 +134,9 @@ export type SessionCommands = {
   loadHistory(filePath: string): Promise<SessionSnapshot>;
   listFiles(sessionId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
   readFileContent(sessionId: string, path: string): Promise<WorkspaceFileContent>;
+  listAttachments(sessionId: string): Promise<SessionAttachment[]>;
+  uploadAttachment(input: UploadAttachmentInput): Promise<SessionAttachment>;
+  deleteAttachment(sessionId: string, attachmentId: string): Promise<void>;
   close(sessionId: string): Promise<void>;
   deleteHistory(filePath: string): Promise<void>;
 };
@@ -220,15 +225,15 @@ async function rpcCommand(http: HttpClient, command: Record<string, unknown>): P
 
 export function createAgentCommands(deps: CommandDeps): AgentCommands {
   return {
-    async sendPrompt({ sessionId, message, images }) {
+    async sendPrompt({ sessionId, message, attachmentIds }) {
       // While streaming, prompts queue per session instead of hitting the
       // transport; the kernel flushes them when the run ends.
       if (deps.isStreaming(sessionId)) {
-        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, images });
+        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds });
         return;
       }
-      deps.transport.send({ type: 'prompt', sessionId, message, ...(images?.length ? { images } : {}) });
-      deps.dispatch({ type: 'conversation/promptSent', sessionId, message, images });
+      deps.transport.send({ type: 'prompt', sessionId, message, ...(attachmentIds?.length ? { attachmentIds } : {}) });
+      deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds });
     },
 
     async setTaskMode({ sessionId, enabled }) {
@@ -243,8 +248,8 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       deps.transport.send({ type: 'abort', sessionId });
     },
 
-    async steer({ sessionId, message }) {
-      deps.transport.send({ type: 'steer', sessionId, message });
+    async steer({ sessionId, message, attachmentIds }) {
+      deps.transport.send({ type: 'steer', sessionId, message, ...(attachmentIds?.length ? { attachmentIds } : {}) });
     },
 
     async followUp({ sessionId, message }) {
@@ -324,6 +329,24 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       const params = new URLSearchParams({ sessionId, path });
       const data = await httpJson(deps.http, `/api/file/content?${params}`, undefined, { ...context, sessionId });
       return data as WorkspaceFileContent;
+    },
+
+    async listAttachments(sessionId) {
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments`, undefined, { ...context, sessionId });
+      return ((data as { attachments?: SessionAttachment[] }).attachments ?? []);
+    },
+
+    async uploadAttachment({ sessionId, file, source }) {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments?source=${encodeURIComponent(source)}`, { method: 'POST', body: form }, { ...context, sessionId });
+      const attachment = (data as { attachments?: SessionAttachment[] }).attachments?.[0];
+      if (!attachment) throw appError({ code: 'attachment_upload_invalid_response', category: 'transport', message: '附件上传响应无效', sessionId, retryable: false });
+      return attachment;
+    },
+
+    async deleteAttachment(sessionId, attachmentId) {
+      await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }, { ...context, sessionId });
     },
 
     async close(sessionId) {

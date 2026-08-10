@@ -77,10 +77,10 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         stores.conversation.appendEntry(action.sessionId, action.entry);
         break;
       case 'conversation/promptSent':
-        stores.conversation.promptSent(action.sessionId, { message: action.message, images: action.images });
+        stores.conversation.promptSent(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds });
         break;
       case 'conversation/promptQueued':
-        stores.conversation.promptQueued(action.sessionId, { message: action.message, images: action.images });
+        stores.conversation.promptQueued(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds });
         break;
       case 'conversation/queueItemRemoved':
         stores.conversation.removeQueued(action.sessionId, action.index);

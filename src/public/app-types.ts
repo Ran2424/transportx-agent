@@ -10,6 +10,7 @@
  */
 import type { ContractDiagnostic } from '../contracts/diagnostic.js';
 import type { CapabilityMismatchReason, RuntimeCapabilities } from '../contracts/capabilities.js';
+export type { SessionAttachment, SessionAttachmentKind, SessionAttachmentSource, SessionAttachmentStatus } from '../contracts/attachments.js';
 
 export type SessionSnapshot = {
   schemaVersion: 1;
@@ -104,7 +105,7 @@ export type AppMessage = {
   role?: string;
   content?: string | MessageContentBlock[];
   usage?: UsageRecord;
-  images?: PendingImage[];
+  attachmentIds?: string[];
   toolCallId?: string;
   toolName?: string;
   details?: unknown;
@@ -134,9 +135,8 @@ export type AppEvent = {
   [key: string]: unknown;
 };
 
-export type PendingImage = { data: string; mimeType: string };
 export type PendingFilePath = { path: string; name: string; ext: string; sessionId?: string | null };
-export type QueuedCommand = { type: string; message?: string; images?: PendingImage[]; sessionId?: string };
+export type QueuedCommand = { type: string; message?: string; attachmentIds?: string[]; sessionId?: string };
 export type ExtensionUIRequest = { sessionId: string; event: AppEvent };
 export type RpcCommand = { type: string; sessionId?: string; filePath?: string; [key: string]: unknown };
 

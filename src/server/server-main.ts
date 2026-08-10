@@ -26,6 +26,7 @@ import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import { addPiModel } from './pi-model-config.js';
 import { platformOverview } from './platform-overview.js';
+import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, buildAttachmentContext, attachmentFilePath } from './session-attachments.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -166,7 +167,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   if (command.type === 'get_available_models') return success({ models: await getAvailableModels() });
   if (command.type === 'add_model') {
     try {
-      const model = addPiModel(command, PI_AGENT_DIR);
+      const model = addPiModel(command as Omit<Partial<import('./pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, PI_AGENT_DIR);
       _clearModelListCacheForTest();
       return success({ model });
     } catch (error) { return failure(errorMessage(error)); }
@@ -228,13 +229,38 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   if (!native.has(command.type || '')) return failure(`Unknown command: ${command.type}`);
   const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
   if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
+  let trackedPromptAttachments: string[] | null = null;
   try {
-    const response = await session.send(command, { timeoutMs: command.type === 'prompt' ? 10000 : 60000 });
+    let rpcCommand = command;
+    if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
+      const rawIds = command.attachmentIds;
+      const attachmentIds = rawIds === undefined ? [] : Array.isArray(rawIds) ? rawIds.filter((id): id is string => typeof id === 'string') : null;
+      if (!attachmentIds) return failure('attachmentIds must be an array');
+      const attachments = resolveSessionAttachments(session.cwd, attachmentIds);
+      const message = typeof command.message === 'string' ? command.message : '';
+      const context = buildAttachmentContext(attachments);
+      const imageInputs = session.model && ((session.model as Record<string, unknown>).images === true || (Array.isArray((session.model as Record<string, unknown>).input) && ((session.model as Record<string, unknown>).input as unknown[]).includes('image')))
+        ? attachments.filter((attachment) => attachment.kind === 'image').map((attachment) => ({ type: 'image', data: fs.readFileSync(attachmentFilePath(session.cwd, attachment)).toString('base64'), mimeType: attachment.mimeType }))
+        : [];
+      rpcCommand = { ...command, message: `${message}${context}`, ...(imageInputs.length ? { images: imageInputs } : {}) } as unknown as RpcCommand;
+      delete rpcCommand.attachmentIds;
+    }
+    if (command.type === 'set_model' && (!command.provider || !command.modelId)) {
+      const parsed = parseModelSpecToModel(command.model);
+      if (!parsed.model?.provider || !parsed.model.id) return failure('模型格式无效，请使用 provider/model');
+      rpcCommand = { ...command, provider: parsed.model.provider, modelId: parsed.model.id };
+    }
+    if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
+      trackedPromptAttachments = Array.isArray(command.attachmentIds) ? command.attachmentIds.filter((id): id is string => typeof id === 'string') : [];
+      session.registerPromptAttachments(trackedPromptAttachments);
+    }
+    const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 10000 : 60000 });
     if (response.success === false && previousLevel !== null) session.thinkingLevel = previousLevel;
     return { ...response, success: response.success !== false };
   } catch (error) {
     if (previousLevel !== null) session.thinkingLevel = previousLevel;
     if (/^RPC command timed out:/.test(errorMessage(error)) && ['prompt', 'abort', 'extension_ui_response'].includes(command.type || '')) return success();
+    if (trackedPromptAttachments) session.discardPromptAttachments(trackedPromptAttachments);
     return failure(errorMessage(error));
   }
 }
@@ -257,6 +283,9 @@ const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projec
 const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
 const apiRouter = createApiRouter({
   sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Traffic Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
+  listAttachments: listSessionAttachments,
+  uploadAttachments: saveUploadedAttachments,
+  deleteAttachment: deleteSessionAttachment,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {

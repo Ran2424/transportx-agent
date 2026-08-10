@@ -42,7 +42,7 @@
 
 ### P1-2 关键交互命令在断线时被静默丢弃
 
-- **位置**：`src/public/websocket-client.ts:123-129`；`src/public/kernel/commands.ts:189-217`；现有任务文档也在 `docs/TASK_MODE_INTERACTION_PLAN.md:411` 标注 pending interaction 重连恢复未实现。
+- **位置**：`src/public/websocket-client.ts:123-129`；`src/public/kernel/commands.ts:189-217`；现有任务文档也在 `docs/archive/future/TASK_MODE_INTERACTION_PLAN.md:411` 标注 pending interaction 重连恢复未实现。
 - **当前问题**：`WebSocketClient.send()` 在非 OPEN 状态仅 `console.error`，不返回失败；调用方仍立即写入 optimistic prompt，或在 `extensionUi.respond()` 后把 dialog 标为已解决。重连没有 outbox、交付确认或 pending Extension request 的服务端快照。
 - **影响**：网络抖动期间，用户看到消息已发送但 Pi 从未收到；用户回答可能被 UI 清除而 Pi 永久等待。对任务模式而言，这是可导致任务卡与实际 Agent 状态分叉的核心稳定性问题。
 - **推荐方案**：最小修复先让 transport `send` 返回成功/失败并在未连接时抛出可展示的 `AppError`，只在成功写入后更新 optimistic/resolve 状态。随后为有副作用命令加入 client command ID 与服务端确认；只对幂等的 UI response/控制命令维护有界 outbox。对于 pending Extension UI，将请求 ID 与会话关联后纳入 live snapshot 或提供查询端点，重连后重新入队；服务端拒绝过期和重复 response。
@@ -92,7 +92,7 @@
 
 ### P2-4 测试治理文档与实际基线不一致，并以测试数量设硬上限
 
-- **位置**：`docs/TEST_BASELINES.md:5,14`、`docs/ARCHITECTURE.md` 演进规则第 2 条、`docs/REACT_UI_MIGRATION_PLAN.md:16`。
+- **位置**：`docs/archive/implemented/TEST_BASELINES.md:5,14`、`docs/ARCHITECTURE.md` 演进规则第 2 条、`docs/archive/implemented/REACT_UI_MIGRATION_PLAN.md:16`。
 - **当前问题**：文档声称默认测试固定 49 项，但本次 `npm test` 实际为 56 项；“不超过 50 项”的规则也已失效。项目虽已有质量很高的单元/集成/浏览器 smoke，但数量配额会阻碍为 P1 风险补回归测试。
 - **影响**：维护者无法从文档判断真实质量门槛，且可能为了满足数量而删除仍有效的覆盖。
 - **推荐方案**：删除固定数量限制，改为风险覆盖清单与执行时间预算，例如：默认测试须覆盖协议、权限、状态转换和恢复；浏览器/Pi smoke 在发布前运行。更新实际 56 项或不再记录易过期数字。
@@ -100,7 +100,7 @@
 
 ### P3-1 Geo resource 的 manifest SHA-256 未在读取时复算
 
-- **位置**：`src/server/geo-resources.ts:69-96`；现有设计文档 `docs/GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md:590` 已明确承认该边界。
+- **位置**：`src/server/geo-resources.ts:69-96`；现有设计文档 `docs/archive/future/GIS_WEB_VISUALIZATION_TECHNICAL_PLAN.md:590` 已明确承认该边界。
 - **当前问题**：读取时校验 resourceId、hash 格式和 bytes，但不会校验 data 文件内容是否仍匹配 manifest hash；同大小篡改无法被发现。
 - **影响**：本机任务目录被其他进程改写时，浏览器可能展示与声明资源不一致的数据。
 - **推荐方案**：不要在每次 GET 同步重算 20 MiB 文件 hash。若完整性成为实际需求，发布后将资源设为只读并在首次读取/mtime 变化时异步或缓存校验；失败返回 409。先补篡改 fixture。

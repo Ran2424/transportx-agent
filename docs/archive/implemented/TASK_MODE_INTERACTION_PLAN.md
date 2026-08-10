@@ -1,12 +1,12 @@
 # Pi 任务模式与 Web 人机交互实施方案
 
-> 历史实施记录：本文保留旧阶段的方案与取舍；当前运行架构以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准，文中已删除的 DOM 层路径不再适用。
+> 历史实施记录：本文保留旧阶段的方案与取舍；当前运行架构以 [ARCHITECTURE.md](../../ARCHITECTURE.md) 为准，文中已删除的 DOM 层路径不再适用。
 
 更新时间：2026-07-21
 
 状态：Agent Extension、Web Adapter、版本化状态恢复和基础冒烟测试已完成；pending interaction 断线恢复、超时区分和完整浏览器任务回归仍待实现
 
-校对说明：本文同时保留设计理由和后续路线。关于当前已经交付的能力，以“当前实现”段落和 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准；带“建议”“阶段 3/4”或“待实现”的内容不能当作现有功能。
+校对说明：本文同时保留设计理由和后续路线。关于当前已经交付的能力，以“当前实现”段落和 [ARCHITECTURE.md](../../ARCHITECTURE.md) 为准；带“建议”“阶段 3/4”或“待实现”的内容不能当作现有功能。
 
 ## 1. 结论
 
@@ -562,7 +562,7 @@ Web 不把以下内容作为权威状态：
 - React 迁移后只替换为 `TaskStore + TaskCard React Component`。
 - RPC event、TaskSnapshot、Extension 和测试 fixture 保持不变。
 
-如果 React 阶段 1 已经开始，TaskCard 可以作为第一个垂直业务组件进入 React；否则不应为了一个 TaskCard 提前启动全量 React 重写。完整 UI 迁移边界见 [React UI 迁移评估与实施方案](./REACT_UI_MIGRATION_PLAN.md)。
+如果 React 阶段 1 已经开始，TaskCard 可以作为第一个垂直业务组件进入 React；否则不应为了一个 TaskCard 提前启动全量 React 重写。完整 UI 迁移边界见 [React UI 迁移评估与实施方案](../implemented/REACT_UI_MIGRATION_PLAN.md)。
 
 ## 17. 已落实的实施决策
 

@@ -28,4 +28,4 @@
 - 不拆成多仓库或微服务。单包部署仍然最适合本地 Pi 工作台。
 - 不因删除 legacy 改变 HTTP、WebSocket、JSONL 或 Extension 协议。
 
-旧的阶段计划至此归档；当前架构以 [ARCHITECTURE.md](./ARCHITECTURE.md) 为准。
+旧的阶段计划至此归档；当前架构以 [ARCHITECTURE.md](../../ARCHITECTURE.md) 为准。

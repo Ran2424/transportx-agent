@@ -5,7 +5,7 @@
 ## 目录结构
 
 ```
-docs/report/
+docs/archive/implemented/report/
 ├── README.md                                  本文件
 ├── .gitignore                                 忽略 build/ 与 .DS_Store
 ├── build.sh                                   编译脚本（封装 latexmk + PDF 拷回根目录）
@@ -51,7 +51,7 @@ docs/report/
 依赖：TeX Live（含 `xelatex` + `ctex` 宏包）+ 系统 CJK 字体。
 
 ```bash
-cd docs/report
+cd docs/archive/implemented/report
 ./build.sh                       # 编译两个版本
 ./build.sh internal | 内部      # 只编译内部完整版
 ./build.sh external | 对外      # 只编译外部汇报版
@@ -74,7 +74,7 @@ cp -f build/report.pdf 重大活动交通态势洞察及辅助决策智能体集
 
 - `build/` 收容所有 LaTeX 中间产物，被 `.gitignore` 忽略，不污染仓库
 - 最终 PDF 自动拷回当前目录，与 `.tex` 源同级，方便查看与提交
-- `tex` 源通过 `\graphicspath{{./assets/…}}` 引用截图，**必须在 `docs/report/` 下编译**
+- `tex` 源通过 `\graphicspath{{./assets/…}}` 引用截图，**必须在 `docs/archive/implemented/report/` 下编译**
 
 ## 命名约定
 

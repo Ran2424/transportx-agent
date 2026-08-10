@@ -1,6 +1,6 @@
 # TransportX Traffic Agent 架构与目录治理
 
-- 产品版本：3.0.1
+- 产品版本：3.0.3
 - 架构状态：已实现基线
 - 更新时间：2026-08-09
 - 当前正式目标：macOS 12+ Apple Silicon；Windows x64 保留构建配置，尚待实机发布验收

@@ -74,7 +74,8 @@ const PresentVisualizationCommandSchema = Type.Object({
     Type.Literal('create_map'), Type.Literal('add_layer'), Type.Literal('set_constant'), Type.Literal('set_step'),
     Type.Literal('set_continuous'), Type.Literal('set_categorical'), Type.Literal('set_popup'),
     Type.Literal('set_controls'), Type.Literal('set_metadata'), Type.Literal('set_camera'),
-    Type.Literal('fit_bounds'), Type.Literal('set_visibility'), Type.Literal('select'), Type.Literal('clear'),
+    Type.Literal('fit_bounds'), Type.Literal('set_visibility'), Type.Literal('remove_layer'),
+    Type.Literal('reorder_layers'), Type.Literal('select'), Type.Literal('clear'),
     Type.Literal('add_chart_layer'), Type.Literal('set_chart'),
   ], { description: 'One atomic scene mutation: create/add content, change one style or popup/control/metadata concern, focus/select, or clear. create_map starts a visualizationId; later commands update it.' }),
   visualizationId: VisualizationIdSchema,
@@ -108,6 +109,7 @@ const PresentVisualizationCommandSchema = Type.Object({
   zoom: Type.Optional(Type.Number()),
   bounds: Type.Optional(Type.Tuple([Type.Number(), Type.Number(), Type.Number(), Type.Number()])),
   padding: Type.Optional(Type.Number()),
+  layerIds: Type.Optional(Type.Array(ItemIdSchema, { minItems: 1, maxItems: 64 })),
   featureIds: Type.Optional(Type.Array(Type.Union([Type.Number(), Type.String()]), { maxItems: 5000 })),
   chartType: Type.Optional(ChartTypeSchema),
   valueFields: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
@@ -131,6 +133,8 @@ const COMMAND_REQUIRED_PARAMS: Record<string, string[]> = {
   set_camera: ['center', 'zoom'],
   fit_bounds: ['bounds'],
   set_visibility: ['layerId', 'visible'],
+  remove_layer: ['layerId'],
+  reorder_layers: ['layerIds'],
   select: ['sourceId', 'featureIds'],
   add_chart_layer: ['sourceId', 'layerId', 'chartType', 'valueFields'],
   set_chart: ['layerId', 'chartType', 'valueFields'],
@@ -400,6 +404,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       'Reuse the same visualizationId for follow-up requests about the same analysis. Create another visualizationId only when the user explicitly asks for a separate map.',
       'Use the channel names color, radius, opacity, strokeColor, strokeWidth, width, dash, outlineColor, textField, size, haloColor, and haloWidth exactly as declared by the command schema.',
       'Use add_chart_layer for point-based pie, donut, or bar symbols. valueFields drive the chart; bar charts also require maxValue. Charts default to collisionMode=show-all so every point remains visible; use hide-overlap only when occlusion is acceptable. Use labelFormat=text for name fields. Use set_chart to replace one chart layer configuration without rebuilding the map.',
+      'Use remove_layer to remove one layer while retaining its data source, and use reorder_layers with the complete current layerId list to control draw order from bottom to top. Do not omit an existing layer from reorder_layers; it must be a complete permutation.',
       'Reuse the current visualizationId when the user asks to add or overlay content. If the same styling target fails validation twice, preserve the last successful map and stop retrying that command.',
       `Project root: ${PROJECT_ROOT}`,
       `Project skills directory: ${PROJECT_SKILLS_DIR}`,
@@ -501,6 +506,23 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
           operation = 'focus';
         } else if (params.command === 'set_visibility') {
           candidate = updateLayer(base, params.layerId, (layer) => ({ ...layer, visible: params.visible }));
+        } else if (params.command === 'remove_layer') {
+          if (!base.layers.some((layer) => layer.id === params.layerId)) throw new Error(`Layer not found: ${params.layerId}`);
+          const layers = base.layers.filter((layer) => layer.id !== params.layerId);
+          const selection = (base.selection || []).filter((entry) => entry.layerId !== params.layerId);
+          candidate = {
+            ...base,
+            layers,
+            ...(selection.length ? { selection } : { selection: [] }),
+          };
+        } else if (params.command === 'reorder_layers') {
+          const currentIds = base.layers.map((layer) => layer.id);
+          const requestedIds = params.layerIds as string[];
+          if (requestedIds.length !== currentIds.length || new Set(requestedIds).size !== currentIds.length || requestedIds.some((id) => !currentIds.includes(id))) {
+            throw new Error('reorder_layers requires layerIds to contain every existing layer exactly once, ordered from bottom to top.');
+          }
+          const layersById = new Map(base.layers.map((layer) => [layer.id, layer]));
+          candidate = { ...base, layers: requestedIds.map((id) => layersById.get(id)!) };
         } else if (params.command === 'select') {
           candidate = {
             ...base,
