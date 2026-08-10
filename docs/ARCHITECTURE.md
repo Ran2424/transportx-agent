@@ -1,8 +1,8 @@
 # TransportX Traffic Agent 架构与目录治理
 
-- 产品版本：3.0.3
+- 产品版本：3.0.4
 - 架构状态：已实现基线
-- 更新时间：2026-08-09
+- 更新时间：2026-08-10
 - 当前正式目标：macOS 12+ Apple Silicon；Windows x64 保留构建配置，尚待实机发布验收
 
 TransportX Traffic Agent 是一个本地优先的交通分析 Agent 桌面产品。项目保持单仓库、单 npm 包和模块化单体，不拆分远程微服务，也不维护第二套 Web UI。Electron 管理桌面生命周期，Node Agent Host 是唯一业务服务，Pi 负责 Agent 推理和工具调用，Python 执行交通数据脚本，React Workspace 负责全部用户交互。
@@ -20,7 +20,7 @@ TransportX Traffic Agent.app
 │
 ├─ Agent Host（Node）
 │  ├─ HTTP / WebSocket / 同源认证
-│  ├─ Session、File、Citation、Geo、Report
+│  ├─ Session、Attachment、File、Citation、Geo、Report
 │  ├─ Model 配置
 │  ├─ Module Registry / Installer / Asset Resolver
 │  ├─ Session Assembly
@@ -32,11 +32,11 @@ TransportX Traffic Agent.app
 │  └─ 模型供应商连接
 │
 ├─ Python 3.10 Process
-│  └─ 数据查询、分析和制图脚本
+│  └─ 数据查询、空间分析和制图脚本
 │
 └─ React Workspace
    ├─ Browser Application Kernel
-   ├─ Conversation / Session / Model / Settings / File
+   ├─ Conversation / Session / Attachment / Model / Settings / File
    └─ Task / Citation / Geo 功能界面
 ```
 
@@ -64,6 +64,7 @@ Electron Main 不管理 Session、Task、Citation、Geo、模型或模块业务�
 `src/server/server-main.ts` 是业务组合入口，只装配依赖、认证、RPC 和生命周期。具体 HTTP 行为由 route/handler 负责：
 
 - Session：Pi RPC 子进程、实时状态、历史恢复和分支投影；
+- Attachment：Session 范围的上传、元数据、消息引用与受控 Agent 上下文；
 - File：会话工作区文件、预览和本机打开；
 - Citation：原件注册、会话隔离、摘要校验和只读访问；
 - Geo：受会话约束的 GeoJSON 资源；
@@ -77,7 +78,7 @@ Agent Host 是 Electron、命令行 Web 启动方式共用的唯一业务核心�
 
 桌面安装包固定使用内置 Pi CLI 和可重定位 Python 3.10，不回退到目标机器的全局命令。开发模式可以用受控环境变量覆盖运行时。
 
-Pi 以 RPC 模式启动，每个 Session 注入本次解析出的 Extension、Skill、Prompt、模型和资产根目录。Python 统一通过 `PythonRunner` 执行，负责工作目录、UTF-8、超时、取消和进程清理。Python 缓存定向到用户缓存目录，并禁止在只读 `.app` 中生成字节码。
+Pi 以 RPC 模式启动，每个 Session 注入本次解析出的 Extension、Skill、Prompt、模型、资产根目录及 `TAU_PYTHON_COMMAND`。交通查询与空间分析脚本必须使用该内置 Python 入口，不回退到机器全局解释器。内置 runtime 固定提供 NumPy、Matplotlib、Pandas、PyProj 与 Shapely；其中后两者用于坐标投影、米制距离和几何运算。`PythonRunner` 为 Agent Host 侧受控 Python 作业提供工作目录、UTF-8、超时、取消和进程清理能力。Python 缓存定向到用户缓存目录，并禁止在只读 `.app` 中生成字节码。
 
 ### 2.4 React Workspace 与 Browser Kernel
 
@@ -90,6 +91,8 @@ React 是唯一生产 UI。`src/public/kernel/` 负责传输事件标准化、�
 | Session、Task、Geo、Citation、Module 协议 | `src/contracts/` | Extension、Server、Kernel、React |
 | 历史对话 | Pi Session JSONL | Session Projection、React Snapshot |
 | 实时对话 | Agent Host live overlay | WebSocket 客户端；刷新后回归 Snapshot |
+| Session 附件元数据与消息引用 | `<session cwd>/.tau/attachments.json` | Attachment API、Session Projection、React 对话区 |
+| Session 附件内容 | `<session cwd>/attachments/<attachment-id>/` | Agent、File Preview；仅经 Session 范围校验读取 |
 | 模型定义 | `models.json` | Pi、模型选择器、设置页 |
 | 模型密钥 | `auth.json` | Pi；服务端不把密钥返回前端 |
 | 模块声明 | `manifest.json` | Module Registry、Installer、Session Assembly |
@@ -124,6 +127,8 @@ Pi RPC Session
 每个新任务必须显式选择模型。默认任务根目录是 `~/.transportx/traffic-agent/scenario/`，每个任务使用独立子目录。创建和恢复时都保存确定的装配计划，避免后续模块升级改变历史任务的解释。
 
 Pi JSONL 是历史事实来源。服务端通过 `SessionProjection` 选择最后叶节点所属分支；浏览器只维护降低延迟的实时 overlay，重连或刷新后由服务端 Snapshot 重新校正。
+
+附件不写入 Pi 对话内容。浏览器先通过同源 multipart API 上传文件，Agent Host 将其保存到当前 Session cwd，并以 `attachmentIds` 关联后续消息。发送时服务端重新验证 ID、归属、状态、真实路径和文件存在性，再向 Agent 注入文件名、MIME 类型和安全相对路径；仅当模型声明支持视觉输入时，图片内容才额外作为视觉块传入。Session Projection 依据附件索引补全历史用户消息的附件引用。
 
 ## 5. Module 模型
 
@@ -191,6 +196,7 @@ src/
   public/                     Browser Kernel、Markdown、Geo runtime 源码
   web/                        React Workspace
 test/                          Contract、Server、Module、Desktop 回归测试
+docs/archive/                  已实施方案、未来计划、评审和历史报告
 dist/、dist-desktop/、bin/     本地构建产物，不提交
 release/                       本地安装包交付目录，不提交
 ```
@@ -223,6 +229,17 @@ TransportX Traffic Agent.app/Contents/Resources/
 └─ auth.json                   Pi 密钥，权限 0600
 ```
 
+每个 `scenario/<task>/` 工作区可包含：
+
+```text
+attachments/
+  att_<id>/<原始文件名>         Session 私有附件内容
+.tau/
+  attachments.json              附件元数据与用户消息引用
+  geo-resources/                已发布的会话内 GeoJSON 资源
+  resolved-session-plan.json    实际会话装配记录
+```
+
 `TAU_USER_DATA_DIR` 只用于开发和受控部署覆盖。应用升级不得覆盖用户目录；卸载单个 Module 只删除 `modules/<module-id>/` 中的受管副本。
 
 ## 7. 安全边界
@@ -230,7 +247,7 @@ TransportX Traffic Agent.app/Contents/Resources/
 1. Agent Host 只监听随机回环端口，不对局域网开放。
 2. HTTP/WebSocket 使用同源检查和本地认证，跨源升级被拒绝。
 3. Renderer 禁用 Node 集成并启用上下文隔离和沙箱。
-4. File、Preview、Citation 和 Geo 都以 active Session cwd 为路径边界，拒绝路径穿越、符号链接越界和跨会话读取。
+4. Attachment、File、Preview、Citation 和 Geo 都以 active Session cwd 为路径边界，拒绝路径穿越、符号链接越界和跨会话读取。附件上传清理文件名、限制单文件大小、记录 SHA-256，并以原子方式写入索引；已被消息引用的附件不可删除。
 5. Module 安装拒绝符号链接、绝对入口、包路径逃逸、重复 ID 和缺失入口；复制时过滤 `.git`、缓存和 macOS 垃圾文件。
 6. API Key 与模型定义分离，写入采用临时文件原子替换，密钥文件限制为当前用户读写。
 7. Runtime Manifest 在桌面启动前校验 Agent Host、Pi CLI 和 Python 的路径与 SHA-256。
@@ -240,7 +257,7 @@ TransportX Traffic Agent.app/Contents/Resources/
 
 ## 8. macOS 打包与分发
 
-当前构建基线：Electron 43.3.0、Pi 0.80.10、Python 3.10.x、macOS 12+ Apple Silicon。构建顺序为：
+当前构建基线：Electron 43.3.0、Pi 0.80.10、Python 3.10.x（NumPy、Matplotlib、Pandas、PyProj、Shapely）、macOS 12+ Apple Silicon。构建顺序为：
 
 ```text
 check-mac-release
@@ -270,7 +287,7 @@ React Geo runtime ───────────> contracts + maplibre-gl
 ## 10. 验证基线
 
 - `npm run typecheck`：Server、Public、React 和 Desktop 类型检查；
-- `npm test`：30 项必要默认回归，覆盖进程、契约、持久化、安全边界、模块生命周期和桌面打包；
+- `npm test`：默认回归，覆盖进程、契约、附件持久化、安全边界、模块生命周期和桌面打包；
 - `npm run test:react-smoke`：真实 Server、fake Pi 和浏览器工作台；
 - `npm run test:desktop-smoke`：Electron、Agent Host、模型入口、模块设置、内置 Python、PDF 和退出清理；
 - `TRANSPORTX_PACKAGED_APP=... npm run test:desktop-smoke`：真实 `.app`/DMG 运行时验证；
@@ -282,6 +299,7 @@ React Geo runtime ───────────> contracts + maplibre-gl
 
 - 正式验收平台目前是 macOS Apple Silicon；Intel Mac 和 Windows 安装包尚未完成发布验证。
 - 仓库不分发实际 Knowledge/Data 资产，换机后需要重新安装或迁移用户 Module。
+- Python runtime 已具备表格、投影与几何库，但尚未实现独立的空间分析 Module/结果契约；当前 Geo 仍只负责受控 GeoJSON 资源与地图呈现。
 - 当前不提供在线模块市场、任意第三方 UI Bundle、远程 Agent、SSH/WSL 或第二种 Agent Runtime。
 - Module 权限建立在本机可信来源之上；若未来开放第三方市场，必须另行设计签名、权限声明和执行隔离。
 
