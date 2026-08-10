@@ -2,30 +2,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-import { diagnosticMessage, parseModuleManifestStructured, type ModuleManifest, type ModuleType } from '../contracts/index.js';
+import { diagnosticMessage, parseModuleManifestStructured, type ModuleManifest } from '../contracts/index.js';
 import type { ModuleRegistry, ModuleSource } from './module-registry.js';
 import { verifyChecksumFile } from './asset-integrity.js';
 
-export type InstallKind = 'module' | 'skill' | 'extension' | 'data' | 'knowledge';
-const INSTALL_KINDS = new Set<InstallKind>(['module', 'skill', 'extension', 'data', 'knowledge']);
+export type InstallKind = 'module';
 
 function within(root: string, target: string) {
   const relative = path.relative(path.resolve(root), path.resolve(target));
   return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function slug(value: string) {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
-  return normalized || crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
-}
-
-function sourceName(sourcePath: string) {
-  let name = path.basename(sourcePath).replace(/\.[^.]+$/, '');
-  if (['asset', 'assets', 'data', 'databases', 'knowledge'].includes(name.toLowerCase())) {
-    name = path.basename(path.dirname(sourcePath));
-    if (['asset', 'assets'].includes(name.toLowerCase())) name = path.basename(path.dirname(path.dirname(sourcePath)));
-  }
-  return name;
 }
 
 function readManifest(manifestPath: string) {
@@ -79,37 +64,27 @@ export function validateModulePackage(packageRoot: string, manifest: ModuleManif
   }
 }
 
-function normalizeStandaloneKnowledgeChecksum(assetRoot: string) {
-  const checksumPath = path.join(assetRoot, 'SHA256SUMS.txt');
-  if (!fs.existsSync(checksumPath)) return;
-  const lines = fs.readFileSync(checksumPath, 'utf8').split(/\r?\n/);
-  let changed = false;
-  const normalized = lines.map((line: string) => {
-    const match = line.match(/^([a-f0-9]{64}\s+\*?)knowledge\/(.+)$/i);
-    if (!match || !fs.existsSync(path.join(assetRoot, match[2]))) return line;
-    changed = true;
-    return `${match[1]}${match[2]}`;
-  });
-  if (changed) fs.writeFileSync(checksumPath, `${normalized.join('\n').replace(/\n+$/, '')}\n`);
+function versionParts(version: string) {
+  return version.split(/[.+-]/).map((part) => Number(part)).map((part) => Number.isFinite(part) ? part : 0);
 }
 
-function standaloneManifest(kind: Exclude<InstallKind, 'module'>, sourcePath: string): ModuleManifest {
-  const name = sourceName(sourcePath);
-  const localName = slug(name);
-  const type: ModuleType = kind === 'extension' ? 'capability' : kind;
-  const base: ModuleManifest = {
-    manifestVersion: 1,
-    id: `local.${kind}.${localName}`,
-    name,
-    version: '1.0.0',
-    type,
-    platformVersion: '>=3.0.0 <4.0.0',
-    dependencies: [],
-  };
-  if (kind === 'skill') return { ...base, entrypoints: { skills: ['skill/SKILL.md'] } };
-  if (kind === 'extension') return { ...base, entrypoints: { piExtensions: [`extension/${fs.statSync(sourcePath).isDirectory() ? ['index.ts', 'index.js', 'index.mjs'].find((file) => fs.existsSync(path.join(sourcePath, file))) : path.basename(sourcePath)}`] } };
-  const integrityFile = kind === 'knowledge' && fs.statSync(sourcePath).isDirectory() && fs.existsSync(path.join(sourcePath, 'SHA256SUMS.txt')) ? 'asset/SHA256SUMS.txt' : undefined;
-  return { ...base, contributes: { assets: [{ id: `${kind}:local.${localName}`, kind, path: 'asset', ...(integrityFile ? { integrityFile } : {}) }] } };
+function newestVersion(versions: string[]) {
+  return [...versions].sort((left, right) => {
+    const a = versionParts(left), b = versionParts(right);
+    for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+      const difference = (a[index] || 0) - (b[index] || 0);
+      if (difference) return difference;
+    }
+    return left.localeCompare(right);
+  }).at(-1)!;
+}
+
+function migrateManifestV1(manifestPath: string) {
+  const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+  if (raw.manifestVersion !== 1) return;
+  raw.manifestVersion = 2;
+  raw.type = raw.type === 'capability' || raw.type === 'domain' ? raw.type : 'module';
+  fs.writeFileSync(manifestPath, `${JSON.stringify(raw, null, 2)}\n`);
 }
 
 export class ModuleInstaller {
@@ -117,51 +92,68 @@ export class ModuleInstaller {
     fs.mkdirSync(modulesDir, { recursive: true });
   }
 
+  migrateLegacyPackages() {
+    const migrated: string[] = [];
+    for (const entry of fs.readdirSync(this.modulesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const legacyRoot = path.join(this.modulesDir, entry.name);
+      const manifestPath = path.join(legacyRoot, 'manifest.json');
+      if (!fs.existsSync(manifestPath)) continue;
+      const staging = path.join(this.modulesDir, `.migrating-${crypto.randomUUID()}`);
+      try {
+        const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { id?: string; version?: string };
+        const id = raw.id;
+        const version = raw.version;
+        if (!id || id !== entry.name || !version) throw new Error(`Legacy module directory is invalid: ${entry.name}`);
+        fs.renameSync(legacyRoot, staging);
+        migrateManifestV1(path.join(staging, 'manifest.json'));
+        fs.mkdirSync(legacyRoot);
+        fs.renameSync(staging, path.join(legacyRoot, version));
+        migrated.push(id);
+      } catch (error) {
+        if (fs.existsSync(staging) && !fs.existsSync(legacyRoot)) fs.renameSync(staging, legacyRoot);
+        throw error;
+      }
+    }
+    return migrated;
+  }
+
   sources(): ModuleSource[] {
     if (!fs.existsSync(this.modulesDir)) return [];
-    return fs.readdirSync(this.modulesDir, { withFileTypes: true })
-      .filter((entry: { isDirectory(): boolean }) => entry.isDirectory())
-      .map((entry: { name: string }) => path.join(this.modulesDir, entry.name, 'manifest.json'))
-      .filter((manifestPath: string) => fs.existsSync(manifestPath))
-      .map((manifestPath: string) => ({ manifestPath, packageRoot: path.dirname(manifestPath), origin: 'installed' as const }));
+    const sources: ModuleSource[] = [];
+    for (const entry of fs.readdirSync(this.modulesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const moduleRoot = path.join(this.modulesDir, entry.name);
+      const versions = fs.readdirSync(moduleRoot, { withFileTypes: true })
+        .filter((candidate: { isDirectory(): boolean; name: string }) => candidate.isDirectory() && fs.existsSync(path.join(moduleRoot, candidate.name, 'manifest.json')))
+        .map((candidate: { name: string }) => candidate.name);
+      if (!versions.length) continue;
+      const version = newestVersion(versions);
+      sources.push({ manifestPath: path.join(moduleRoot, version, 'manifest.json'), packageRoot: path.join(moduleRoot, version), origin: 'installed', moduleId: entry.name });
+    }
+    return sources;
   }
 
   install(source: string, kind: InstallKind = 'module') {
-    if (!INSTALL_KINDS.has(kind)) throw new Error(`Unsupported install kind: ${kind}`);
+    if (kind !== 'module') throw new Error('Only self-contained Module packages can be installed.');
     const sourcePath = path.resolve(source);
     if (!fs.existsSync(sourcePath)) throw new Error(`Install source not found: ${source}`);
-    let packageRoot = sourcePath;
-    let manifest: ModuleManifest;
-    if (kind === 'module') {
-      const manifestPath = fs.statSync(sourcePath).isDirectory() ? path.join(sourcePath, 'manifest.json') : sourcePath;
-      if (path.basename(manifestPath) !== 'manifest.json' || !fs.statSync(manifestPath).isFile()) throw new Error('A module source must be a directory containing manifest.json');
-      packageRoot = path.dirname(manifestPath);
-      manifest = readManifest(manifestPath);
-      validateModulePackage(packageRoot, manifest);
-    } else {
-      if (kind === 'skill') {
-        packageRoot = fs.statSync(sourcePath).isDirectory() ? sourcePath : path.dirname(sourcePath);
-        if (!fs.existsSync(path.join(packageRoot, 'SKILL.md'))) throw new Error('A standalone Skill must contain SKILL.md');
-      }
-      if (kind === 'extension' && fs.statSync(sourcePath).isDirectory() && !['index.ts', 'index.js', 'index.mjs'].some((file) => fs.existsSync(path.join(sourcePath, file)))) throw new Error('A standalone extension directory must contain index.ts, index.js or index.mjs');
-      manifest = standaloneManifest(kind, sourcePath);
-    }
-    const target = path.join(this.modulesDir, manifest.id);
+    const manifestPath = fs.statSync(sourcePath).isDirectory() ? path.join(sourcePath, 'manifest.json') : sourcePath;
+    if (path.basename(manifestPath) !== 'manifest.json' || !fs.existsSync(manifestPath) || !fs.statSync(manifestPath).isFile()) throw new Error('A module source must be a directory containing manifest.json');
+    const packageRoot = path.dirname(manifestPath);
+    const manifest = readManifest(manifestPath);
+    validateModulePackage(packageRoot, manifest);
+    const moduleRoot = path.join(this.modulesDir, manifest.id);
+    const target = path.join(moduleRoot, manifest.version);
     if (!within(this.modulesDir, target)) throw new Error(`Invalid module id: ${manifest.id}`);
-    if (fs.existsSync(target)) throw new Error(`Module is already installed: ${manifest.id}`);
+    if (fs.existsSync(target)) throw new Error(`Module version is already installed: ${manifest.id}@${manifest.version}`);
     const staging = path.join(this.modulesDir, `.install-${crypto.randomUUID()}`);
     try {
       fs.mkdirSync(staging, { recursive: true });
-      if (kind === 'module') copyInstallSource(packageRoot, staging);
-      else {
-        const destination = path.join(staging, kind === 'skill' ? 'skill' : kind === 'extension' ? 'extension' : 'asset');
-        if (fs.statSync(sourcePath).isDirectory()) copyInstallSource(sourcePath, destination);
-        else { fs.mkdirSync(destination, { recursive: true }); fs.copyFileSync(sourcePath, path.join(destination, path.basename(sourcePath))); }
-        if (kind === 'knowledge' && fs.statSync(sourcePath).isDirectory()) normalizeStandaloneKnowledgeChecksum(destination);
-        fs.writeFileSync(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-      }
+      copyInstallSource(packageRoot, staging);
       const installedManifest = readManifest(path.join(staging, 'manifest.json'));
       validateModulePackage(staging, installedManifest);
+      fs.mkdirSync(moduleRoot, { recursive: true });
       fs.renameSync(staging, target);
       return { id: installedManifest.id, name: installedManifest.name, version: installedManifest.version, path: target };
     } catch (error) {
@@ -175,10 +167,8 @@ export class ModuleInstaller {
     if (module && module.origin !== 'installed') throw new Error(`Built-in or external modules cannot be uninstalled: ${id}`);
     const dependent = registry?.enabled().find((candidate) => candidate.manifest.id !== id && candidate.manifest.dependencies.includes(id));
     if (dependent) throw new Error(`Module ${id} is required by ${dependent.manifest.id}`);
-    const installed = this.sources().map((source) => ({ source, manifest: readManifest(source.manifestPath) })).find((item) => item.manifest.id === id);
-    if (!installed) throw new Error(`Installed module not found: ${id}`);
-    const target = path.dirname(installed.source.manifestPath);
-    if (!within(this.modulesDir, target) || target === path.resolve(this.modulesDir)) throw new Error('Refusing to remove a path outside the managed module directory');
+    const target = path.join(this.modulesDir, id);
+    if (!fs.existsSync(target) || !within(this.modulesDir, target) || target === path.resolve(this.modulesDir)) throw new Error('Installed module not found');
     fs.rmSync(target, { recursive: true, force: true });
     return { id };
   }

@@ -36,7 +36,7 @@ test('TaskSnapshot contract is shared by Extension and Web and diagnoses version
   const task = fixture('task');
   const contract = await import('../src/contracts/task.ts');
   const web = await import('../src/contracts/task.ts');
-  const extension = await import('../extensions/pi-task-mode/task-state.ts');
+  const extension = await import('../modules/capabilities/task/extensions/pi-task-mode/task-state.ts');
 
   const valid = contract.parseTaskSnapshotStructured(task.valid);
   assert.equal(valid.ok, true);
@@ -87,30 +87,39 @@ test('Geo envelope contract is shared by Extension/Web and diagnoses version/rev
   assert.equal(regression.diagnostic?.code, 'revision_regression');
 });
 
-test('Citation envelope accepts knowledge and session artifacts and rejects broken references', async () => {
+test('Citation v2 envelope separates work, resource, locator and occurrence identity', async () => {
   const { parseCitationEnvelopeStructured } = await import('../src/contracts/citation.ts');
   const valid = {
     protocol: 'pi-citation',
-    version: '1.0',
+    version: '2.0',
     citationSetId: 'citations:test',
     generatedAt: '2026-07-26T00:00:00.000Z',
-    sources: [{
-      sourceId: 'artifact:report',
-      kind: 'document',
-      scope: 'session',
+    works: [{
+      workId: 'work:traffic-report',
+      type: 'report',
       title: '交通分析报告',
+      author: ['TransportX'],
+    }],
+    resources: [{
+      resourceId: 'resource:report',
+      workId: 'work:traffic-report',
+      kind: 'document',
+      scope: 'artifact',
       relativePath: 'reports/traffic.md',
       mimeType: 'text/markdown',
       sha256: 'a'.repeat(64),
     }],
-    locators: [{ locatorId: 'locator:report', sourceId: 'artifact:report', section: '结论', quote: '拥堵集中在入口。' }],
-    citations: [{ citationId: 'report', sourceId: 'artifact:report', locatorId: 'locator:report' }],
+    locators: [{ locatorId: 'locator:report-conclusion', resourceId: 'resource:report', section: '结论', quote: '拥堵集中在入口。' }],
+    occurrences: [{ occurrenceId: 'occ:report-conclusion', locatorId: 'locator:report-conclusion', containerType: 'document', containerId: 'reports/traffic.md', role: 'support' }],
+    provenance: [],
   };
   const parsed = parseCitationEnvelopeStructured(valid);
   assert.equal(parsed.ok, true);
+  if (!parsed.ok) throw new Error('valid Citation v2 envelope was rejected');
+  assert.equal(parsed.value.occurrences[0].occurrenceId, 'occ:report-conclusion');
   const broken = parseCitationEnvelopeStructured({
     ...valid,
-    citations: [{ citationId: 'report', sourceId: 'artifact:missing', locatorId: 'locator:report' }],
+    occurrences: [{ occurrenceId: 'occ:report-conclusion', locatorId: 'locator:missing', containerType: 'document', containerId: 'reports/traffic.md' }],
   });
   assert.equal(broken.ok, false);
   assert.ok(diagnosticCodes(broken).includes('invalid_type'));

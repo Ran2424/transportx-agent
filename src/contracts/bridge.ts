@@ -1,5 +1,5 @@
 /**
- * Pi Web Bridge envelope shared between the Pi extension (`extensions/pi-web-bridge/`)
+ * Pi Web Bridge envelope shared between the Pi extension (`modules/capabilities/web-bridge/extensions/pi-web-bridge/`)
  * and the Server (`src/server/sessions.ts`). The extension emits a revised
  * manifest every time Pi's tool set, model or thinking level changes; the
  * server records the latest revision so the Browser Kernel can hydrate the

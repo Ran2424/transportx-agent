@@ -46,17 +46,20 @@ test('desktop Agent Host binds a random loopback port and publishes ready/health
   const health = await (await fetch(`http://127.0.0.1:${ready.port}/api/health`)).json();
   assert.equal(health.product, 'TransportX Traffic Agent');
   assert.equal(health.protocolVersion, 1);
-  const skillSource = path.join(userData, 'install-source');
-  fs.mkdirSync(skillSource);
-  fs.writeFileSync(path.join(skillSource, 'SKILL.md'), '# Local test skill');
+  const moduleSource = path.join(userData, 'install-source');
+  fs.mkdirSync(path.join(moduleSource, 'skill'), { recursive: true });
+  fs.writeFileSync(path.join(moduleSource, 'skill', 'SKILL.md'), '# Local test skill');
+  fs.writeFileSync(path.join(moduleSource, 'manifest.json'), JSON.stringify({ manifestVersion: 2, id: 'local.test-skill', name: 'Local test skill', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['skill/SKILL.md'] } }));
   const rpc = async (command: Record<string, unknown>) => (await (await fetch(`http://127.0.0.1:${ready.port}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command) })).json()) as any;
-  const installed = await rpc({ type: 'install_module', kind: 'skill', sourcePath: skillSource });
+  const installed = await rpc({ type: 'install_module', sourcePath: moduleSource });
   assert.equal(installed.success, true);
-  assert.equal(installed.data.installed.id, 'local.skill.install-source');
-  assert.equal(installed.data.overview.modules.some((module: any) => module.id === 'local.skill.install-source' && module.removable), true);
-  const removed = await rpc({ type: 'uninstall_module', moduleId: 'local.skill.install-source' });
+  assert.equal(installed.data.installed.id, 'local.test-skill');
+  assert.equal(installed.data.overview.modules.some((module: any) => module.id === 'local.test-skill' && module.removable && module.enabled), true);
+  const skillModule = installed.data.overview.modules.find((module: any) => module.id === 'local.test-skill');
+  assert.deepEqual(skillModule.skillFiles, [{ entryPath: 'skill/SKILL.md', name: 'SKILL.md', content: '# Local test skill', truncated: false }]);
+  const removed = await rpc({ type: 'uninstall_module', moduleId: 'local.test-skill' });
   assert.equal(removed.success, true);
-  assert.equal(removed.data.overview.modules.some((module: any) => module.id === 'local.skill.install-source'), false);
+  assert.equal(removed.data.overview.modules.some((module: any) => module.id === 'local.test-skill'), false);
   child.kill('SIGTERM');
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Agent Host did not exit after SIGTERM')), 5000);

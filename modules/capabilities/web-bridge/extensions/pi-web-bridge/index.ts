@@ -6,7 +6,7 @@ import {
   runtimeCapabilities,
   type ModelIdentity,
   type PiToolManifestItem,
-} from '../../src/contracts/index.ts';
+} from '../../../../../src/contracts/index.ts';
 
 type BridgeModel = ModelIdentity & { provider: string; id: string };
 

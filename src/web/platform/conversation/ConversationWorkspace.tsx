@@ -4,6 +4,8 @@ import type { AppMessage, MessageContentBlock, SessionAttachment, SessionAttachm
 import { messageText, messageThinking } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown, renderUserMarkdown } from '../../../public/markdown.js';
+import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
+import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork } from '../../../contracts/citation.ts';
 import { useAppServices } from '../../app/AppProviders';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
 import { BrandMark } from '../../components/BrandMark';
@@ -102,12 +104,12 @@ const CITATION_CATEGORY_LABELS: Record<string, string> = {
 };
 
 function citationCategory(item: ResolvedCitation) {
-  if (item.source.scope === 'session') return '任务产物';
-  return CITATION_CATEGORY_LABELS[item.citation.documentClass || ''] || '参考资料';
+  if (item.resource.scope === 'artifact') return '任务产物';
+  return CITATION_CATEGORY_LABELS[item.work.type] || '参考资料';
 }
 
-function citationSourceUrl(sessionId: string, sourceId: string, view: 'content' | 'preview' = 'content') {
-  return `/api/live-sessions/${encodeURIComponent(sessionId)}/citation-sources/${encodeURIComponent(sourceId)}/${view}`;
+function citationResourceUrl(sessionId: string, resourceId: string, view: 'content' | 'preview' = 'content') {
+  return `/api/live-sessions/${encodeURIComponent(sessionId)}/citation-resources/${encodeURIComponent(resourceId)}/${view}`;
 }
 
 type CitationPeek = { item: ResolvedCitation; anchor: DOMRect };
@@ -115,19 +117,19 @@ type CitationPeek = { item: ResolvedCitation; anchor: DOMRect };
 function CitationEvidencePeek({ peek, sessionId }: { peek: CitationPeek; sessionId: string }) {
   const { item, anchor } = peek;
   const width = Math.min(720, window.innerWidth - 24);
-  const height = item.source.kind === 'pdf' || item.source.kind === 'image' ? Math.min(680, window.innerHeight - 24) : 260;
+  const height = item.resource.kind === 'pdf' || item.resource.kind === 'image' ? Math.min(680, window.innerHeight - 24) : 260;
   const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.left + Math.min(22, anchor.width / 4)));
   const top = anchor.top > height + 24 ? anchor.top - height - 10 : Math.min(window.innerHeight - height - 12, anchor.bottom + 10);
-  const visualUrl = item.source.kind === 'pdf' && item.locator.page
-    ? `${citationSourceUrl(sessionId, item.source.sourceId, 'preview')}?page=${item.locator.page}`
-    : item.source.kind === 'image'
-      ? citationSourceUrl(sessionId, item.source.sourceId, 'preview')
+  const visualUrl = item.resource.kind === 'pdf' && item.locator.page
+    ? `${citationResourceUrl(sessionId, item.resource.resourceId, 'preview')}?page=${item.locator.page}`
+    : item.resource.kind === 'image'
+      ? citationResourceUrl(sessionId, item.resource.resourceId, 'preview')
       : '';
   return createPortal(
     <aside className="citation-evidence-peek" role="tooltip" style={{ width, height, left, top }}>
-      <header><strong>{item.source.title}</strong><span>{citationPosition(item)}</span></header>
+      <header><strong>{item.work.title}</strong><span>{citationPosition(item)}</span></header>
       {visualUrl
-        ? <img src={visualUrl} alt={`${item.source.title}，${citationPosition(item)}`} />
+        ? <img src={visualUrl} alt={`${item.work.title}，${citationPosition(item)}`} />
         : <div className="citation-evidence-text"><span>原文定位</span><p>{item.locator.quote || '当前来源没有可显示的原文片段。'}</p></div>}
     </aside>,
     document.body,
@@ -135,7 +137,8 @@ function CitationEvidencePeek({ peek, sessionId }: { peek: CitationPeek; session
 }
 
 function artifactPreviewKind(item: ResolvedCitation) {
-  return item.source.mimeType === 'text/markdown' || /\.mdx?$/i.test(item.source.relativePath) ? 'report' : item.source.kind;
+  if (item.resource.mimeType === 'text/markdown' || /\.mdx?$/i.test(item.resource.relativePath)) return 'report';
+  return item.resource.kind === 'pdf' || item.resource.kind === 'image' ? item.resource.kind : 'document';
 }
 
 function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
@@ -144,24 +147,24 @@ function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitat
   return <section className="message-artifacts">
     <header><strong>本次产出</strong><span>{projection.artifacts.length} 项</span></header>
     <div>{projection.artifacts.map((item) => {
-      const name = item.source.relativePath.replaceAll('\\', '/').split('/').pop() || item.source.title;
-      const presentation = filePresentation({ name, path: item.source.relativePath, isDirectory: false });
-      return <button key={item.citation.citationId} type="button" onClick={() => setPreview(item)}>
+      const name = item.resource.relativePath.replaceAll('\\', '/').split('/').pop() || item.work.title;
+      const presentation = filePresentation({ name, path: item.resource.relativePath, isDirectory: false });
+      return <button key={item.occurrence.occurrenceId} type="button" onClick={() => setPreview(item)}>
         <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
-        <span><strong>{item.source.title}</strong><small>{presentation.label}</small></span>
+        <span><strong>{item.work.title}</strong><small>{presentation.label}</small></span>
         <Icon name="chevron" />
       </button>;
     })}</div>
     {preview ? <FilePreview
-      item={{ name: preview.source.title, path: preview.source.relativePath, isDirectory: false }}
+      item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }}
       sessionId={sessionId}
       stackIndex={0}
       initialOffset={0}
       citationProjection={projection}
       externalSource={{
-        url: citationSourceUrl(sessionId, preview.source.sourceId),
+        url: citationResourceUrl(sessionId, preview.resource.resourceId),
         kind: artifactPreviewKind(preview),
-        mimeType: preview.source.mimeType,
+        mimeType: preview.resource.mimeType,
         page: preview.locator.page,
       }}
       onActivate={() => {}}
@@ -175,21 +178,21 @@ function CitationFooter({ projection, sessionId }: { projection?: MessageCitatio
   const [peek, setPeek] = useState<CitationPeek | null>(null);
   if (!projection || (!projection.citations.length && !projection.unavailableIds.length)) return null;
   const groups = [...projection.citations.reduce((map, item) => {
-    map.set(item.source.sourceId, [...(map.get(item.source.sourceId) || []), item]);
+    map.set(item.resource.resourceId, [...(map.get(item.resource.resourceId) || []), item]);
     return map;
   }, new Map<string, ResolvedCitation[]>()).values()];
   return <section className="citation-footer"><header><strong>引用依据</strong><span>{projection.citations.length} 条</span></header><ol>{groups.map((items) => {
     const first = items[0];
-    return <li key={first.source.sourceId}>
+    return <li key={first.resource.resourceId}>
       <header className="citation-source-heading">
-        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => setPreview(first)} title="在工作台中查看原始资料"><Icon name="file" />{first.source.title}</button></div>
+        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => setPreview(first)} title="在工作台中查看原始资料"><Icon name="file" />{first.work.title}</button></div>
         <span>{items.length} 条引用</span>
       </header>
       <div className="citation-locator-list">{items.map((item) => <button
         className="citation-locator"
         type="button"
-        key={item.citation.citationId}
-        data-citation-card={item.citation.citationId}
+        key={item.occurrence.occurrenceId}
+        data-citation-card={item.occurrence.occurrenceId}
         onMouseEnter={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
         onMouseLeave={() => setPeek(null)}
         onFocus={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
@@ -204,14 +207,14 @@ function CitationFooter({ projection, sessionId }: { projection?: MessageCitatio
     {projection.unavailableIds.length ? <p className="citation-warning">引用不可用：{projection.unavailableIds.join('、')}</p> : null}
     {peek ? <CitationEvidencePeek peek={peek} sessionId={sessionId} /> : null}
     {preview ? <FilePreview
-      item={{ name: preview.source.title, path: preview.source.relativePath, isDirectory: false }}
+      item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }}
       sessionId={sessionId}
       stackIndex={0}
       initialOffset={0}
       externalSource={{
-        url: citationSourceUrl(sessionId, preview.source.sourceId),
-        kind: preview.source.kind,
-        mimeType: preview.source.mimeType,
+        url: citationResourceUrl(sessionId, preview.resource.resourceId),
+        kind: artifactPreviewKind(preview),
+        mimeType: preview.resource.mimeType,
         page: preview.locator.page,
       }}
       onActivate={() => {}}
@@ -373,6 +376,63 @@ function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolC
 }
 
 type PendingAttachment = { localId: string; file: File; attachment?: SessionAttachment; status: 'uploading' | 'ready' | 'error'; error?: string };
+type CiteCandidate = { locatorId: string; title: string; position: string; quote?: string };
+
+function downloadCitationExport(envelope: CitationEnvelope, format: 'bibtex' | 'csl-json' | 'ris') {
+  const extensions = { bibtex: 'bib', 'csl-json': 'json', ris: 'ris' } as const;
+  const mimeTypes = { bibtex: 'application/x-bibtex', 'csl-json': 'application/json', ris: 'application/x-research-info-systems' } as const;
+  const anchor = document.createElement('a');
+  anchor.href = URL.createObjectURL(new Blob([exportCitationBibliography(envelope, format)], { type: mimeTypes[format] }));
+  anchor.download = `citations.${extensions[format]}`;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
+}
+
+function CitationManager({ sessionId, onClose }: { sessionId: string; onClose(): void }) {
+  const [envelope, setEnvelope] = useState<CitationEnvelope | null>(null);
+  const [scope, setScope] = useState<'all' | CitationResource['scope']>('all');
+  const [query, setQuery] = useState('');
+  const [error, setError] = useState('');
+  const [preview, setPreview] = useState<ResolvedCitation | null>(null);
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`).then(async (response) => {
+      const payload = await response.json() as { citations?: CitationEnvelope; error?: string };
+      if (!response.ok || !payload.citations) throw new Error(payload.error || '引用来源暂不可用');
+      if (active) setEnvelope(payload.citations);
+    }).catch((cause) => { if (active) setError((cause as Error).message || '引用来源暂不可用'); });
+    return () => { active = false; };
+  }, [sessionId]);
+  const rows = useMemo(() => {
+    if (!envelope) return [];
+    const works = new Map(envelope.works.map((work) => [work.workId, work]));
+    const locators = new Map<string, CitationLocator[]>();
+    for (const locator of envelope.locators) locators.set(locator.resourceId, [...(locators.get(locator.resourceId) || []), locator]);
+    const uses = new Map<string, number>();
+    for (const occurrence of envelope.occurrences) {
+      const locator = envelope.locators.find((item) => item.locatorId === occurrence.locatorId);
+      if (locator) uses.set(locator.resourceId, (uses.get(locator.resourceId) || 0) + 1);
+    }
+    const normalized = query.trim().toLowerCase();
+    return envelope.resources.flatMap((resource) => {
+      const work = works.get(resource.workId);
+      if (!work || (scope !== 'all' && resource.scope !== scope) || (normalized && !`${work.title} ${work.citekey || ''} ${resource.scope}`.toLowerCase().includes(normalized))) return [];
+      return [{ resource, work, locators: locators.get(resource.resourceId) || [], uses: uses.get(resource.resourceId) || 0 }];
+    });
+  }, [envelope, query, scope]);
+  const previewCitation = (resource: CitationResource, work: CitationWork, locator?: CitationLocator) => {
+    if (!locator) return;
+    setPreview({ occurrence: { occurrenceId: `manager:${locator.locatorId}`, locatorId: locator.locatorId, containerType: 'document', containerId: 'citation-manager' }, resource, work, locator, number: 0 });
+  };
+  return createPortal(<div className="citation-manager-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="citation-manager" role="dialog" aria-modal="true" aria-label="引用管理器" onMouseDown={(event) => event.stopPropagation()}>
+      <header><div><strong>引用管理器</strong><span>{envelope ? `${envelope.resources.length} 个资源 · ${envelope.occurrences.length} 次使用` : '读取会话证据图'}</span></div><button type="button" aria-label="关闭引用管理器" onClick={onClose}><Icon name="close" /></button></header>
+      <div className="citation-manager-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="筛选标题或 citekey" aria-label="筛选引用" /><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)} aria-label="引用范围"><option value="all">全部来源</option><option value="knowledge">知识库</option><option value="attachment">附件</option><option value="artifact">任务产物</option><option value="web">网页快照</option><option value="dataset">数据集</option></select><div>{(['bibtex', 'csl-json', 'ris'] as const).map((format) => <button key={format} type="button" disabled={!envelope} onClick={() => envelope && downloadCitationExport(envelope, format)}>{format === 'csl-json' ? 'CSL-JSON' : format.toUpperCase()}</button>)}</div></div>
+      <div className="citation-manager-body">{error ? <p className="citation-manager-status is-error">{error}</p> : !envelope ? <p className="citation-manager-status">正在读取会话证据图…</p> : rows.length ? rows.map(({ resource, work, locators, uses }) => <article key={resource.resourceId}><div><span className="citation-manager-scope">{resource.scope}</span><strong>{work.title}</strong><small>{work.citekey || resource.resourceId} · {uses} 次使用 · {locators.length} 个定位</small></div><button type="button" disabled={!locators.length} onClick={() => previewCitation(resource, work, locators[0])}>查看证据</button>{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).length ? <p>溯源关系：{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).map((edge) => edge.relation).join('、')}</p> : null}</article>) : <p className="citation-manager-status">没有符合条件的引用资源。</p>}</div>
+    </section>
+    {preview ? <FilePreview item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }} sessionId={sessionId} stackIndex={0} initialOffset={0} externalSource={{ url: citationResourceUrl(sessionId, preview.resource.resourceId), kind: artifactPreviewKind(preview), mimeType: preview.resource.mimeType, page: preview.locator.page }} onActivate={() => {}} onClose={() => setPreview(null)} /> : null}
+  </div>, document.body);
+}
 
 function clipboardFileName(index: number) {
   const now = new Date();
@@ -380,15 +440,46 @@ function clipboardFileName(index: number) {
   return `clipboard-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${index + 1}.png`;
 }
 
-function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, onAttachment }: { sessionId: string; streaming: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; }) {
+function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, onAttachment, onOpenCitationManager }: { sessionId: string; streaming: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; onOpenCitationManager(): void; }) {
   const { kernel } = useAppServices();
   const [value, setValue] = useState('');
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [error, setError] = useState('');
   const [taskModeBusy, setTaskModeBusy] = useState(false);
+  const [citeOpen, setCiteOpen] = useState(false);
+  const [citeLoading, setCiteLoading] = useState(false);
+  const [citeCandidates, setCiteCandidates] = useState<CiteCandidate[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
   useEffect(resize, [value]);
+  async function openCitePicker() {
+    setCiteOpen(true); setCiteLoading(true); setError('');
+    try {
+      const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`);
+      const payload = await response.json() as { citations?: CitationEnvelope; error?: string };
+      if (!response.ok || !payload.citations) throw new Error(payload.error || '引用来源暂不可用');
+      const works = new Map(payload.citations.works.map((item) => [item.workId, item]));
+      const resources = new Map(payload.citations.resources.map((item) => [item.resourceId, item]));
+      setCiteCandidates(payload.citations.locators.flatMap((locator) => {
+        const resource = resources.get(locator.resourceId);
+        const work = resource ? works.get(resource.workId) : null;
+        if (!resource || !work) return [];
+        const position = locator.page ? `第 ${locator.page} 页` : locator.clause || locator.section || locator.sourceUnit || locator.nodeId || '来源位置';
+        return [{ locatorId: locator.locatorId, title: work.title, position, quote: locator.quote }];
+      }));
+    } catch (cause) { setError((cause as Error).message || '引用来源暂不可用'); setCiteCandidates([]); }
+    finally { setCiteLoading(false); }
+  }
+  async function insertCitation(locatorId: string) {
+    try {
+      const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations/occurrences`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locatorId, role: 'support' }) });
+      const payload = await response.json() as { marker?: string; error?: string };
+      if (!response.ok || !payload.marker) throw new Error(payload.error || '创建引用失败');
+      setValue((current) => current.replace('/cite', payload.marker!));
+      setCiteOpen(false);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } catch (cause) { setError((cause as Error).message || '创建引用失败'); }
+  }
   async function addAttachments(files: FileList | File[], source: SessionAttachmentSource) {
     const unique = Array.from(files).filter((file, index, all) => all.findIndex((candidate) => `${candidate.name}:${candidate.size}:${candidate.lastModified}:${candidate.type}` === `${file.name}:${file.size}:${file.lastModified}:${file.type}`) === index);
     for (const [index, original] of unique.entries()) {
@@ -441,7 +532,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
         <textarea
           ref={inputRef}
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => { const next = event.target.value; setValue(next); if (next.includes('/cite') && !citeOpen) void openCitePicker(); if (!next.includes('/cite')) setCiteOpen(false); }}
           onPaste={(event) => {
             const files = [...event.clipboardData.files];
             const images = [...event.clipboardData.items].filter((item) => item.type.startsWith('image/')).map((item) => item.getAsFile()).filter((file): file is File => !!file);
@@ -450,10 +541,14 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
           }}
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files, 'drop'); } }}
           onDragOver={(event) => event.preventDefault()}
-          onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }}
+          onKeyDown={(event) => { if (event.key === 'Escape' && citeOpen) { event.preventDefault(); setCiteOpen(false); return; } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }}
           placeholder={streaming ? '输入内容以引导当前任务…' : '输入交通问题…'}
           aria-label="消息输入"
         />
+        {citeOpen ? <section className="composer-cite-picker" role="listbox" aria-label="选择引用位置">
+          <header><strong>插入精确引用</strong><button type="button" onClick={() => setCiteOpen(false)} aria-label="关闭引用选择器">×</button></header>
+          {citeLoading ? <p>正在读取会话引用…</p> : citeCandidates.length ? <div>{citeCandidates.map((candidate) => <button key={candidate.locatorId} type="button" role="option" onClick={() => void insertCitation(candidate.locatorId)}><strong>{candidate.title}</strong><span>{candidate.position}</span>{candidate.quote ? <small>{candidate.quote}</small> : null}</button>)}</div> : <p>当前会话还没有可插入的引用。请先让 Agent 解析来源。</p>}
+        </section> : null}
         <div className="composer-toolbar">
           <div className="composer-action-rail">
             <label className="composer-attach">
@@ -466,6 +561,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
               <Icon name="task" />
               <span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? '关闭任务模式' : '开启任务模式'}</span>
             </button>
+            <button className="composer-task-toggle" type="button" aria-label="打开引用管理器" onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">引用管理器</span></button>
           </div>
           {streaming
             ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label="发送引导" onClick={() => void submit('steer')}>发送引导</button><button className="composer-abort" type="button" aria-label="终止当前任务" onClick={() => void kernel.commands.agent.abort(sessionId)}>终止</button></div>
@@ -485,6 +581,7 @@ export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: 
   const nearBottom = useRef(true);
   const data = conversation.bySession[sessionId];
   const [attachments, setAttachments] = useState<Record<string, SessionAttachment>>({});
+  const [citationManagerOpen, setCitationManagerOpen] = useState(false);
   useEffect(() => { let active = true; void kernel.commands.session.listAttachments(sessionId).then((items) => { if (active) setAttachments(Object.fromEntries(items.map((item) => [item.id, item]))); }).catch(() => {}); return () => { active = false; }; }, [kernel, sessionId]);
   const entries = data?.snapshotEntries || [];
   const liveTools = tools.bySession[sessionId] || {};
@@ -493,5 +590,5 @@ export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: 
   const citationProjection = useMemo(() => projectMessageCitations(entries), [entries]);
   const liveCitationProjection = useMemo(() => projectCitationText(data?.live.streamingText || '', citationProjection.available), [data?.live.streamingText, citationProjection]);
   useLayoutEffect(() => { const viewport = viewportRef.current; if (viewport && nearBottom.current) viewport.scrollTop = viewport.scrollHeight; }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
-  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>开始分析交通问题</h1><p>描述路段、时间或出行需求，Agent 会在独立会话中完成分析。</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} /> : null}{data?.live.active ? <AssistantMessage streaming showThinking={showThinking} projection={liveCitationProjection} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data.live.streamingThinking }, { type: 'text', text: data.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} /></main>;
+  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>开始分析交通问题</h1><p>描述路段、时间或出行需求，Agent 会在独立会话中完成分析。</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} /> : null}{data?.live.active ? <AssistantMessage streaming showThinking={showThinking} projection={liveCitationProjection} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data.live.streamingThinking }, { type: 'text', text: data.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
 }

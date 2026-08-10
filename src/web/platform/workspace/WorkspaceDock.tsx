@@ -47,7 +47,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
     if (!session) return result;
     const entries = conversation.bySession[session.id]?.snapshotEntries || [];
     for (const projection of projectMessageCitations(entries).byEntry.values()) {
-      for (const artifact of projection.artifacts) result.set(artifact.source.relativePath.replaceAll('\\', '/'), projection);
+      for (const artifact of projection.artifacts) result.set(artifact.resource.relativePath.replaceAll('\\', '/'), projection);
     }
     return result;
   }, [conversation.bySession, session]);

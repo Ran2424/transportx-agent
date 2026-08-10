@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { WebSocket } = require('ws');
 
@@ -7,16 +8,11 @@ import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, PendingCommand, RpcCommand, RpcResponse } from './types.js';
 import {
   APP_PATHS,
-  BUILTIN_EXTENSION_PATHS,
-  BUILTIN_SKILL_PATHS,
   DEFAULT_DOMAIN_ID,
   PI_COMMAND,
   PI_COMMAND_ARGS,
   PI_AGENT_DIR,
   PROJECT_SYSTEM_PROMPT_PATH,
-  PROJECT_PROMPT_PATH,
-  PROJECT_ROOT,
-  PROJECT_SKILLS_DIR,
   SESSION_ASSEMBLER,
   SESSIONS_DIR,
   TAU_SETTINGS,
@@ -38,6 +34,7 @@ import {
   matchCapabilities,
   parsePiWebBridgeEnvelopeStructured,
   protocolError,
+  parseCitationRegistry,
   runtimeCapabilities,
   type CapabilityMismatchReason,
   type ContractDiagnostic,
@@ -94,14 +91,31 @@ function stripAttachmentContext(text: string) {
   return text.replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
 }
 
+function moduleResourceGuide(plan: ResolvedSessionPlan | null) {
+  if (!plan) return '- 未解析 Module 会话计划；不能假定任何外部 Skill 或资产可用。';
+  const skills = plan.skills.length
+    ? plan.skills.map((skillPath) => `- Skill 根目录：\`${path.dirname(skillPath)}\`（入口：\`${skillPath}\`；脚本和参考文件均相对此目录）`).join('\n')
+    : '- 本会话没有加载 Skill。';
+  const assets = plan.assets.length
+    ? plan.assets.map((asset) => {
+      const environment = asset.kind === 'knowledge'
+        ? '；运行时目录映射：`TRANSPORTX_KNOWLEDGE_ASSETS_JSON`'
+        : asset.kind === 'data'
+          ? '；运行时目录映射：`TRANSPORTX_DATA_ASSETS_JSON`'
+          : '';
+      return `- ${asset.kind} 资产 \`${asset.id}\`：\`${asset.path}\`${environment}`;
+    }).join('\n')
+    : '- 本会话没有选中的 Data、Knowledge 或 Template 资产。';
+  return `### 已加载 Skill\n${skills}\n\n### 已选资产\n${assets}`;
+}
+
 const PROJECT_PROMPT_PLACEHOLDERS: Record<string, (cwd: string, plan: ResolvedSessionPlan | null) => string> = {
-  PROJECT_ROOT: () => PROJECT_ROOT,
+  PROJECT_ROOT: () => APP_PATHS.appRoot,
   TASK_WORKING_DIRECTORY: (cwd) => cwd,
-  PROJECT_SKILLS_DIR: () => PROJECT_SKILLS_DIR,
-  PROJECT_PROMPT_PATH: () => PROJECT_PROMPT_PATH,
   PYTHON_COMMAND: () => PYTHON_COMMAND,
-  KNOWLEDGE_ROOT: (_cwd, plan) => plan?.assets.find((asset) => asset.kind === 'knowledge')?.path || '<not installed>',
-  DATA_ROOT: (_cwd, plan) => plan?.assets.find((asset) => asset.kind === 'data')?.path || '<not installed>',
+  KNOWLEDGE_ROOT: (_cwd, plan) => plan?.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => `${asset.id}=${asset.path}`).join('\n') || '<not installed>',
+  DATA_ROOT: (_cwd, plan) => plan?.assets.filter((asset) => asset.kind === 'data').map((asset) => `${asset.id}=${asset.path}`).join('\n') || '<not installed>',
+  MODULE_RESOURCE_GUIDE: (_cwd, plan) => moduleResourceGuide(plan),
 };
 
 export function renderProjectPrompt(template: string, cwd: string, plan: ResolvedSessionPlan | null = null) {
@@ -114,7 +128,8 @@ export function renderProjectPrompt(template: string, cwd: string, plan: Resolve
   return rendered.trim();
 }
 
-function loadProjectPrompt(cwd: string, promptPath = PROJECT_PROMPT_PATH, plan: ResolvedSessionPlan | null = null) {
+function loadProjectPrompt(cwd: string, promptPath: string | undefined, plan: ResolvedSessionPlan | null = null) {
+  if (!promptPath) throw new Error('Resolved session plan has no domain prompt.');
   if (!fs.existsSync(promptPath)) throw new Error(`Project prompt not found: ${promptPath}`);
   return renderProjectPrompt(fs.readFileSync(promptPath, 'utf8'), cwd, plan);
 }
@@ -129,6 +144,9 @@ function loadSystemPrompt() {
 export function makeId() {
   return `tau_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 }
+
+let citationEndpoint = process.env.TAU_CITATION_ENDPOINT || '';
+export function setCitationEndpoint(value: string) { citationEndpoint = value; }
 
 export function isGenericSessionName(name: unknown) {
   const normalized = String(name || '').trim().toLowerCase();
@@ -217,6 +235,8 @@ export class PiRpcSession {
   contractDiagnostics: ContractDiagnostic[];
   resolvedSessionPlan: ResolvedSessionPlan | null;
   pendingAttachmentRefs: string[][];
+  citationToken: string;
+  citationRegistryId: string;
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -249,6 +269,8 @@ export class PiRpcSession {
     this.contractDiagnostics = [];
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.pendingAttachmentRefs = [];
+    this.citationToken = crypto.randomUUID();
+    this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.applyLatestBridgeEnvelope();
   }
 
@@ -300,8 +322,9 @@ export class PiRpcSession {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
     const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
-    const extensionPaths = this.resolvedSessionPlan?.piExtensions || BUILTIN_EXTENSION_PATHS;
-    const skillPaths = this.resolvedSessionPlan?.skills || BUILTIN_SKILL_PATHS;
+    if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
+    const extensionPaths = this.resolvedSessionPlan.piExtensions;
+    const skillPaths = this.resolvedSessionPlan.skills;
     for (const extensionPath of extensionPaths) {
       if (!fs.existsSync(extensionPath)) throw new Error(`Built-in extension not found: ${extensionPath}`);
       args.push('--extension', extensionPath);
@@ -310,7 +333,7 @@ export class PiRpcSession {
       if (!fs.existsSync(skillPath)) throw new Error(`Built-in skill not found: ${skillPath}`);
       args.push('--skill', skillPath);
     }
-    args.push('--append-system-prompt', loadProjectPrompt(this.cwd, this.resolvedSessionPlan?.promptPath, this.resolvedSessionPlan));
+    args.push('--append-system-prompt', loadProjectPrompt(this.cwd, this.resolvedSessionPlan.promptPath, this.resolvedSessionPlan));
     if (this.sessionFile) args.push('--session', this.sessionFile);
     if (this.modelSpec) args.push('--model', this.modelSpec);
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
@@ -321,10 +344,13 @@ export class PiRpcSession {
         PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
         TAU_DISABLED: '1',
         TAU_PYTHON_COMMAND: PYTHON_COMMAND,
+        TAU_CITATION_ENDPOINT: citationEndpoint,
+        TAU_CITATION_SESSION_ID: this.id,
+        TAU_CITATION_TOKEN: this.citationToken,
         MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
         PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
-        ...(this.resolvedSessionPlan?.assets.find((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ROOT: this.resolvedSessionPlan.assets.find((asset) => asset.kind === 'knowledge')!.path } : {}),
-        ...(this.resolvedSessionPlan?.assets.find((asset) => asset.kind === 'data') ? { TRANSPORTX_TRAFFIC_DATA_ROOT: this.resolvedSessionPlan.assets.find((asset) => asset.kind === 'data')!.path } : {}),
+        ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => [asset.id, asset.path]))) } : {}),
+        ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'data') ? { TRANSPORTX_DATA_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'data').map((asset) => [asset.id, asset.path]))) } : {}),
       }),
       detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -653,6 +679,11 @@ export class PiRpcSession {
     this.pending.clear();
     this.manager.removeExited(this.id, err?.message || `process_exit:${signal || code}`);
   }
+}
+
+function existingCitationRegistryId(cwd: string) {
+  try { return parseCitationRegistry(JSON.parse(fs.readFileSync(path.join(cwd, '.tau', 'citations.json'), 'utf8')))?.sessionId || null; }
+  catch { return null; }
 }
 
 export class LiveSessionManager {

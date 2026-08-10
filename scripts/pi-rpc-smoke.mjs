@@ -8,8 +8,8 @@ const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-pi-rpc-smoke-'));
 const command = process.env.TAU_PI_COMMAND || 'pi';
 const child = spawn(command, [
   '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--approve',
-  '--extension', path.resolve('extensions/pi-task-mode/index.ts'),
-  '--extension', path.resolve('extensions/pi-web-bridge/index.ts'),
+  '--extension', path.resolve('modules/capabilities/task/extensions/pi-task-mode/index.ts'),
+  '--extension', path.resolve('modules/capabilities/web-bridge/extensions/pi-web-bridge/index.ts'),
 ], {
   cwd: process.cwd(),
   env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, TAU_DISABLED: '1' },

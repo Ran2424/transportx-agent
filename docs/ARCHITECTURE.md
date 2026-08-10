@@ -142,17 +142,17 @@ Module 可以组合贡献：
 - Knowledge：法规、预案、项目资料、索引与引用映射；
 - Template：报告和导出模板。
 
-Skill、Extension、Data、Knowledge 也可以单独安装。安装器会把单独资源包装为只有一个贡献项的受管 Module，因此发现、版本校验、装配和卸载始终只有一套逻辑。
+Skill、Extension、Data、Knowledge 不是可安装的一等对象；它们只能作为 Module 的贡献存在。安装器只接受自包含 Module 包，避免“有数据但没有查询 Skill”或“有工具但没有依赖声明”的旁路状态。
 
 ### 5.2 Manifest 与来源
 
-Manifest v1 支持 `module`、`capability`、`domain`、`skill`、`knowledge`、`data`、`template` 类型，声明平台版本、依赖、Pi 入口和资产。Registry 区分三种来源：
+Manifest v2 仅支持 `module`、`capability`、`domain` 三种包分类；Skill、Extension、Prompt 与 Asset 均通过 `entrypoints` / `contributes` 声明。Registry 区分三种来源：
 
 - `builtin`：仓库随应用发布的官方模块；
 - `installed`：复制到用户 `modules/` 目录的受管模块；
 - `external`：开发或受控部署显式传入的只读 Manifest。
 
-Registry 拒绝重复 ID 和不兼容平台版本，按依赖顺序装配；缺失依赖会禁用相关模块，但单个可选模块损坏不阻止平台启动。
+官方 Module 随应用只读预装；用户 Module 按 `modules/<module-id>/<version>/` 受管存储。用户安装 Module 后必须在设置页显式启用，才能进入新任务的 Session Plan。Registry 拒绝重复 ID 和不兼容平台版本，按依赖顺序装配；缺失依赖会禁用相关模块，但单个可选模块损坏不阻止平台启动。
 
 平台与用户模块按“机制”和“内容”分层：
 
@@ -168,14 +168,14 @@ Registry 拒绝重复 ID 和不兼容平台版本，按依赖顺序装配；缺�
 
 ### 5.3 Data / Knowledge 与 Skill 解耦
 
-Data 和 Knowledge 不再存放于 Skill 相邻目录。Skill 只包含行为与查询工具，不拥有资产路径。Asset Resolver 从 Module Manifest 解析资产，并在 Session 启动时注入：
+Data 和 Knowledge 都是 Asset，但保留不同的运行时契约：Data 关注 schema、时间覆盖与计算；Knowledge 必须保留原始文件、检索索引及页码/段落定位，以便 Citation 打开原始 PDF 或文档。Skill 只包含行为与查询工具，不拥有资产路径。Asset Resolver 从 Module Manifest 解析资产，并在 Session 启动时注入：
 
 - `TRANSPORTX_TRAFFIC_DATA_ROOT`；
 - `TRANSPORTX_KNOWLEDGE_ROOT`。
 
-查询脚本不得回退到开发机绝对路径或 Skill 相邻目录。Knowledge/Data 的实体资产不进入 Git 仓库和应用安装包，由用户单独安装或迁移。
+查询脚本不得回退到开发机绝对路径或 Skill 相邻目录。Knowledge/Data 的实体资产不进入 Git 仓库和应用安装包，必须作为用户 Module 的一部分交付。内置 `create-transportx-module` Skill 负责在 Agent 对话中按用户意图创建这类包。
 
-若同类资产同时存在，Session Assembly 优先选择用户安装资产，其次是外部资产，最后是内置资产；同一优先级存在多个候选时停止创建任务，并要求通过 `TAU_DATA_ASSET_ID` 或 `TAU_KNOWLEDGE_ASSET_ID` 明确选择。设置页显示当前生效资产。带 `integrityFile` 的资产在安装及每次解析时执行 SHA-256 校验，内容不一致会被拒绝。
+Session Assembly 仅装配已启用 Module；同类资产冲突时拒绝创建任务，用户应停用不适用于该任务的 Module。带 `integrityFile` 的资产在安装及每次解析时执行 SHA-256 校验，内容不一致会被拒绝。
 
 ## 6. 目录治理
 
@@ -183,13 +183,11 @@ Data 和 Knowledge 不再存放于 Skill 相邻目录。Skill 只包含行为与
 
 ```text
 desktop/                       Electron、Supervisor、打包配置和运行时准备脚本
-extensions/                    官方 Pi Extension 源码
 modules/
-  capabilities/               Task、Citation、Geo、Web Bridge
-  official/                   Workbench 与通用 Template
+  capabilities/               自包含的 Task、Citation、Geo、Web Bridge Module
+  official/                   自包含的 Workbench、Template、Module Authoring Module
   installable/                独立交付、不随应用打包的用户模块源码
 prompts/                       会话 Prompt 源文件
-skills/                        不属于领域 Module 的通用 Skill
 src/
   contracts/                  跨层纯协议
   server/                     Agent Host 和本地平台服务
@@ -206,7 +204,7 @@ release/                       本地安装包交付目录，不提交
 ```text
 TransportX Traffic Agent.app/Contents/Resources/
 ├─ app.asar                    Agent Host、Pi CLI、React 和平台内置模块
-├─ app.asar.unpacked/          需要由 Python/外部进程直接读取的 Skill 与脚本
+├─ app.asar.unpacked/          Module 内需要由 Python/外部进程直接读取的 Skill 与脚本
 ├─ runtime-manifest.json       产品、Agent Host、Pi、Python 版本和 SHA-256
 └─ runtimes/python/            可重定位 Python 3.10
 ```
@@ -221,7 +219,7 @@ TransportX Traffic Agent.app/Contents/Resources/
 ~/.transportx/traffic-agent/
 ├─ scenario/                   新任务工作区
 ├─ sessions/                   Pi Session JSONL
-├─ modules/                    用户安装的受管 Module
+├─ modules/<id>/<version>/     用户安装的受管 Module
 ├─ settings/                   平台设置
 ├─ logs/                       Agent Host 等本地日志
 ├─ cache/                      Python、Matplotlib 等可清理缓存

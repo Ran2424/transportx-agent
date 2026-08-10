@@ -14,7 +14,6 @@ type SessionSidebarProps = {
   onClose(): void;
   onGoHome(): void;
   onNewSession(): void;
-  onOpenSettings(): void;
   onSelectLive(sessionId: string): void;
   onSelectHistory(session: HistorySession, project: HistoryProject): void;
 };
@@ -55,7 +54,6 @@ export function SessionSidebar({
   onClose,
   onGoHome,
   onNewSession,
-  onOpenSettings,
   onSelectLive,
   onSelectHistory,
 }: SessionSidebarProps) {
@@ -135,23 +133,26 @@ export function SessionSidebar({
         </div>
 
         <div className="sidebar-split">
-          <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} onOpenSettings={onOpenSettings} />
-          <div className="session-scroll">
-            {loading ? <div className="session-empty">正在读取会话索引…</div> : null}
-            {error ? <div className="session-empty is-error">{error}</div> : null}
-            {!loading && !error && scenarioSessions.map((item) => (
-              <button
-                className={`session-row${item.live?.id === activeSessionId ? ' is-active' : ''}`}
-                type="button"
-                key={item.key}
-                onClick={() => item.live ? onSelectLive(item.live.id) : onSelectHistory(item.history!, item.project!)}
-              >
-                <span className="session-row-main"><strong>{item.title}</strong><small>{relativeTime(item.timestamp)}</small></span>
-                {item.live?.isStreaming ? <span className="session-row-meta"><i className="streaming-beacon" /></span> : null}
-              </button>
-            ))}
-            {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">暂无场景会话。新建任务后，它会出现在这里。</div> : null}
-          </div>
+          <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} />
+          <section className="conversation-section" aria-label="对话列表">
+            <header className="sidebar-section-heading"><strong>对话</strong>{scenarioSessions.length ? <small>{scenarioSessions.length}</small> : null}</header>
+            <div className="session-scroll">
+              {loading ? <div className="session-empty">正在读取会话索引…</div> : null}
+              {error ? <div className="session-empty is-error">{error}</div> : null}
+              {!loading && !error && scenarioSessions.map((item) => (
+                <button
+                  className={`session-row${item.live?.id === activeSessionId ? ' is-active' : ''}`}
+                  type="button"
+                  key={item.key}
+                  onClick={() => item.live ? onSelectLive(item.live.id) : onSelectHistory(item.history!, item.project!)}
+                >
+                  <span className="session-row-main"><strong>{item.title}</strong><small>{relativeTime(item.timestamp)}</small></span>
+                  {item.live?.isStreaming ? <span className="session-row-meta"><i className="streaming-beacon" /></span> : null}
+                </button>
+              ))}
+              {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">暂无场景会话。新建任务后，它会出现在这里。</div> : null}
+            </div>
+          </section>
         </div>
 
       </aside>

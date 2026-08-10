@@ -4,7 +4,7 @@ const path = require('node:path');
 import { diagnosticMessage, parseModuleManifestStructured, type ContractDiagnostic, type ModuleManifest } from '../contracts/index.js';
 
 export type ModuleOrigin = 'builtin' | 'installed' | 'external';
-export type ModuleSource = { manifestPath: string; packageRoot?: string; enabled?: boolean; origin?: ModuleOrigin };
+export type ModuleSource = { manifestPath: string; packageRoot?: string; enabled?: boolean; origin?: ModuleOrigin; moduleId?: string };
 export type RegisteredModule = {
   manifest: ModuleManifest;
   manifestPath: string;

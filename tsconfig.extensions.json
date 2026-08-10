@@ -11,7 +11,7 @@
     "allowImportingTsExtensions": true
   },
   "include": [
-    "extensions/**/*.ts",
+    "modules/**/extensions/**/*.ts",
     "src/contracts/**/*.ts"
   ]
 }

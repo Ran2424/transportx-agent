@@ -3,7 +3,7 @@
  * resource layer and the Browser Geo Workspace.
  *
  * Modules re-exporting this contract:
- *   - `extensions/pi-geo-visualization/index.ts` builds and validates Envelopes.
+ *   - `modules/capabilities/geo/extensions/pi-geo-visualization/index.ts` builds and validates Envelopes.
  *   - The React Geo feature consumes envelopes through its session projection.
  */
 import {

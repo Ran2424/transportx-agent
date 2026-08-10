@@ -1,12 +1,12 @@
 {
   "manifestVersion": 2,
-  "id": "com.transportx.web-bridge",
-  "name": "Pi Web Bridge",
+  "id": "com.transportx.module-authoring",
+  "name": "Module Authoring",
   "version": "1.0.0",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-web-bridge/index.ts"]
+    "skills": ["skill/SKILL.md"]
   }
 }

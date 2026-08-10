@@ -1,5 +1,5 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "id": "com.transportx.workbench",
   "name": "TransportX Workbench",
   "version": "1.0.0",
@@ -10,7 +10,8 @@
     "com.transportx.task",
     "com.transportx.citation",
     "com.transportx.geo",
-    "com.transportx.traffic.report-template"
+    "com.transportx.traffic.report-template",
+    "com.transportx.module-authoring"
   ],
   "entrypoints": {
     "prompts": ["prompts/PI_SESSION_CONTEXT.md"]

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, ty
 
 const DEFAULT_CONVERSATION_WIDTH = 440;
 const SPLITTER_WIDTH = 10;
+const MAP_TRANSITION_MS = 420;
 
 function clampConversationWidth(containerWidth: number, requestedWidth: number) {
   const width = Math.max(0, containerWidth);
@@ -32,17 +33,42 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const [preferredWidth, setPreferredWidth] = useState(savedConversationWidth);
   const [conversationWidth, setConversationWidth] = useState(savedConversationWidth);
+  const [mainWidth, setMainWidth] = useState(() => window.innerWidth);
   const [resizing, setResizing] = useState(false);
+  const [mapPhase, setMapPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>(mapOpen ? 'opening' : 'closed');
+
+  const mapState = mapOpen ? (mapPhase === 'open' ? 'open' : 'opening') : (mapPhase === 'closed' ? 'closed' : 'closing');
+  const mapVisible = mapState !== 'closed';
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setMapPhase(mapOpen ? 'open' : 'closed');
+      return;
+    }
+    if (mapOpen) {
+      setMapPhase('opening');
+      const frame = window.requestAnimationFrame(() => setMapPhase('open'));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (mapPhase === 'closed') return;
+    setMapPhase('closing');
+    const timer = window.setTimeout(() => setMapPhase('closed'), MAP_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
+  }, [mapOpen]);
 
   useEffect(() => {
     const main = mainRef.current;
-    if (!main || !mapOpen) return;
-    const resize = () => setConversationWidth(clampConversationWidth(main.getBoundingClientRect().width, preferredWidth));
+    if (!main) return;
+    const resize = () => {
+      const width = main.getBoundingClientRect().width;
+      setMainWidth(width);
+      if (mapVisible) setConversationWidth(clampConversationWidth(width, preferredWidth));
+    };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(main);
     return () => observer.disconnect();
-  }, [mapOpen, preferredWidth]);
+  }, [mapVisible, preferredWidth]);
 
   useEffect(() => {
     window.localStorage.setItem('tau-conversation-pane-width', String(preferredWidth));
@@ -95,7 +121,10 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
       : conversationWidth + (event.key === 'ArrowLeft' ? 24 : -24));
   }
 
-  const mainStyle = { '--conversation-pane-width': `${conversationWidth}px` } as CSSProperties;
+  const mainStyle = {
+    '--conversation-pane-width': `${conversationWidth}px`,
+    '--conversation-full-width': `${mainWidth}px`,
+  } as CSSProperties;
 
   return (
     <div className="agent-shell" data-testid="react-shell">
@@ -103,7 +132,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
       {header}
       <div className="agent-shell-body">
         {sidebar}
-        <section ref={mainRef} className={`agent-main-column${mapOpen ? ' is-map-focused' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
+        <section ref={mainRef} className={`agent-main-column${mapVisible ? ' is-map-focused' : ''}${mapState === 'opening' ? ' is-map-entering' : ''}${mapState === 'closing' ? ' is-map-closing' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
           <section className="map-focus-panel">{mapPanel}</section>
           <div
             className="conversation-resizer"
@@ -111,7 +140,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
             aria-label="调整聊天区域宽度"
             aria-orientation="vertical"
             aria-valuenow={conversationWidth}
-            tabIndex={mapOpen ? 0 : -1}
+            tabIndex={mapVisible ? 0 : -1}
             data-testid="conversation-resizer"
             onDoubleClick={() => updateWidth(DEFAULT_CONVERSATION_WIDTH)}
             onKeyDown={resizeWithKeyboard}
