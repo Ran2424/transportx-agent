@@ -108,37 +108,77 @@ test('Geo resources cannot be read through another live session', async (t: Test
   assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/geo-resources/${resourceId}/data`)).status, 404);
 });
 
-test('serves registered citation artifacts without exposing arbitrary session files', async (t: TestContext) => {
+test('serves Registry-backed citation resources without exposing arbitrary session files', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-resource-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const report = Buffer.from('# 交通报告\n\n拥堵集中在入口。');
   fs.writeFileSync(path.join(cwd, 'report.md'), report);
   fs.writeFileSync(path.join(cwd, 'secret.txt'), 'not cited');
   const sha256 = crypto.createHash('sha256').update(report).digest('hex');
-  const sourceId = `artifact:${sha256.slice(0, 24)}`;
-  const envelope = {
+  const resourceId = `resource:${sha256.slice(0, 24)}`;
+  const registry = {
     protocol: 'pi-citation',
-    version: '1.0',
+    version: '2.0',
+    schemaVersion: 1,
+    sessionId: 'tau_citation_owner',
     citationSetId: 'citations:http',
     generatedAt: '2026-07-26T00:00:00.000Z',
-    sources: [{ sourceId, kind: 'document', scope: 'session', title: '交通报告', relativePath: 'report.md', mimeType: 'text/markdown', sha256 }],
-    locators: [{ locatorId: 'locator:report', sourceId, section: '结论' }],
-    citations: [{ citationId: 'report', sourceId, locatorId: 'locator:report' }],
+    updatedAt: '2026-07-26T00:00:00.000Z',
+    works: [{ workId: 'work:report', type: 'report', title: '交通报告' }],
+    resources: [{ resourceId, workId: 'work:report', kind: 'document', scope: 'artifact', relativePath: 'report.md', mimeType: 'text/markdown', sha256 }],
+    locators: [{ locatorId: 'locator:report', resourceId, section: '结论' }],
+    occurrences: [{ occurrenceId: 'occ:report', locatorId: 'locator:report', containerType: 'document', containerId: 'report.md' }],
+    provenance: [],
   };
+  fs.mkdirSync(path.join(cwd, '.tau'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.tau', 'citations.json'), JSON.stringify(registry));
   const owner = fakeSession('tau_citation_owner');
   owner.cwd = cwd;
-  (owner as any).entries = [{ type: 'message', message: { role: 'toolResult', toolName: 'tau_cite', details: { kind: 'tau-citations', citations: envelope } } }];
   const other = fakeSession('tau_citation_other');
   other.cwd = cwd;
   liveManager.sessions.set(owner.id, owner);
   liveManager.sessions.set(other.id, other);
-  const url = `${base}/api/live-sessions/${owner.id}/citation-sources/${encodeURIComponent(sourceId)}/content`;
+  const url = `${base}/api/live-sessions/${owner.id}/citation-resources/${encodeURIComponent(resourceId)}/content`;
   const response = await fetch(url);
   assert.equal(response.status, 200);
   assert.equal(await response.text(), report.toString());
   assert.equal(response.headers.get('etag'), `"${sha256}"`);
-  assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/citation-sources/${encodeURIComponent(sourceId)}/content`)).status, 404);
-  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citation-sources/${encodeURIComponent('artifact:secret')}/content`)).status, 404);
+  assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/citation-resources/${encodeURIComponent(resourceId)}/content`)).status, 404);
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citation-resources/${encodeURIComponent('resource:secret')}/content`)).status, 404);
+  const citations = await jsonBody(await fetch(`${base}/api/live-sessions/${owner.id}/citations`));
+  assert.equal(citations.citations.locators[0].locatorId, 'locator:report');
+  const occurrence = await jsonBody(await fetch(`${base}/api/live-sessions/${owner.id}/citations/occurrences`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locatorId: 'locator:report', role: 'support' }),
+  }));
+  assert.match(occurrence.marker, /^\[\[cite:occurrence_/);
+});
+
+test('serves a knowledge citation from the selected asset root instead of a task copy', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-knowledge-session-'));
+  const knowledgeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-knowledge-root-'));
+  t.after(() => { fs.rmSync(cwd, { recursive: true, force: true }); fs.rmSync(knowledgeRoot, { recursive: true, force: true }); });
+  const original = Buffer.from('%PDF-original-source');
+  const relativePath = 'knowledge:test/standard/source/original.pdf';
+  fs.mkdirSync(path.join(knowledgeRoot, 'standard', 'source'), { recursive: true });
+  fs.writeFileSync(path.join(knowledgeRoot, 'standard', 'source', 'original.pdf'), original);
+  const sha256 = crypto.createHash('sha256').update(original).digest('hex');
+  const resourceId = 'resource:knowledge-original';
+  fs.mkdirSync(path.join(cwd, '.tau'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.tau', 'citations.json'), JSON.stringify({
+    protocol: 'pi-citation', version: '2.0', schemaVersion: 1, sessionId: 'tau_knowledge_owner', citationSetId: 'citations:knowledge', generatedAt: '2026-08-10T00:00:00.000Z', updatedAt: '2026-08-10T00:00:00.000Z',
+    works: [{ workId: 'work:knowledge', type: 'standard', title: '原始规范' }],
+    resources: [{ resourceId, workId: 'work:knowledge', kind: 'pdf', scope: 'knowledge', relativePath, mimeType: 'application/pdf', sha256 }],
+    locators: [{ locatorId: 'locator:knowledge', resourceId, page: 12 }], occurrences: [], provenance: [],
+  }));
+  const owner = fakeSession('tau_knowledge_owner');
+  owner.cwd = cwd;
+  (owner as any).resolvedSessionPlan = { assets: [{ id: 'knowledge:test', kind: 'knowledge', path: knowledgeRoot }] };
+  liveManager.sessions.set(owner.id, owner);
+
+  const response = await fetch(`${base}/api/live-sessions/${owner.id}/citation-resources/${encodeURIComponent(resourceId)}/content`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/pdf');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), original);
 });
 
 test('projects the selected history branch and sorts sessions by conversation time', async () => {

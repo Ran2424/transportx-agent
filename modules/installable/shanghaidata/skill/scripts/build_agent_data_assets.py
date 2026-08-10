@@ -25,8 +25,19 @@ def required_environment_path(name: str) -> Path:
     return Path(value).expanduser().resolve()
 
 
+def required_data_asset_path(asset_id: str) -> Path:
+    try:
+        assets = json.loads(os.environ.get("TRANSPORTX_DATA_ASSETS_JSON", "{}"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit("TRANSPORTX_DATA_ASSETS_JSON must be a JSON object") from exc
+    value = assets.get(asset_id) if isinstance(assets, dict) else None
+    if not isinstance(value, str) or not value:
+        raise SystemExit(f"{asset_id} is required in TRANSPORTX_DATA_ASSETS_JSON")
+    return Path(value).expanduser().resolve()
+
+
 SOURCE_DB = required_environment_path("SHANGHAI_TRAFFIC_SOURCE_DB")
-DB_DIR = required_environment_path("TRANSPORTX_TRAFFIC_DATA_ROOT")
+DB_DIR = required_data_asset_path("data:shanghai-traffic")
 DB_NAMES = ("common", "road", "metro", "bus", "ridehail")
 PYTHON = sys.executable
 BUILT_AT = datetime.now().replace(microsecond=0).isoformat()

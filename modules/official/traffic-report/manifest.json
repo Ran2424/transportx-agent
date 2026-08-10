@@ -1,9 +1,9 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "id": "com.transportx.traffic.report-template",
   "name": "Traffic Analysis Report Template",
   "version": "1.0.0",
-  "type": "template",
+  "type": "module",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "contributes": {
@@ -11,7 +11,7 @@
       {
         "id": "template:traffic-analysis-report",
         "kind": "template",
-        "path": "modules/official/traffic-report/templates/traffic-analysis-report.md"
+        "path": "templates/traffic-analysis-report.md"
       }
     ]
   }

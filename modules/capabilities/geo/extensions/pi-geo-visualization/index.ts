@@ -16,26 +16,14 @@ import {
   type GeoVisualValue,
   type GeoView,
   type VisualizationEnvelope,
-} from '../../src/contracts/index.ts';
+} from '../../../../../src/contracts/index.ts';
 
 type SceneState = { revision: number; scene: GeoSceneSnapshot | null };
 type PresentCommand = { command: string; visualizationId: string; [key: string]: any };
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
-const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_RUNTIME_ID = 'pi-geo-visualization-command-v2';
-const PROJECT_ROOT = path.resolve(EXTENSION_DIR, '..', '..');
-const preferUnpackedPath = (filePath: string) => {
-  const marker = `${path.sep}app.asar${path.sep}`;
-  if (!filePath.includes(marker)) return filePath;
-  const unpacked = filePath.replace(marker, `${path.sep}app.asar.unpacked${path.sep}`);
-  return fs.existsSync(unpacked) ? unpacked : filePath;
-};
-const PROJECT_SKILLS_DIR = preferUnpackedPath(path.join(PROJECT_ROOT, 'skills'));
-const TRAFFIC_SKILL_DIR = preferUnpackedPath(path.join(PROJECT_ROOT, 'modules', 'official', 'traffic-data', 'skill'));
-const TRAFFIC_TOOLS_DIR = path.join(TRAFFIC_SKILL_DIR, 'scripts');
-const TRAFFIC_DATA_DIR = process.env.TRANSPORTX_TRAFFIC_DATA_ROOT || '<Data module not installed>';
 
 const BasemapIdSchema = Type.Union(
   [Type.Literal('default'), Type.Literal('light'), Type.Literal('dark'), Type.Literal('none')],
@@ -343,9 +331,6 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       'Read the geo-visualization-explanation skill before first using publish_geodata or present_visualization for a map task.',
       'Write generated GeoJSON in the current task working directory, then call publish_geodata with a path relative to that directory.',
-      `Project skills directory: ${PROJECT_SKILLS_DIR}`,
-      `Shanghai traffic query tools directory: ${TRAFFIC_TOOLS_DIR}`,
-      `Shanghai traffic SQLite data directory: ${TRAFFIC_DATA_DIR}`,
     ],
     parameters: Type.Object({
       path: Type.String({ description: 'GeoJSON path inside the current task directory' }),
@@ -406,10 +391,6 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       'Use add_chart_layer for point-based pie, donut, or bar symbols. valueFields drive the chart; bar charts also require maxValue. Charts default to collisionMode=show-all so every point remains visible; use hide-overlap only when occlusion is acceptable. Use labelFormat=text for name fields. Use set_chart to replace one chart layer configuration without rebuilding the map.',
       'Use remove_layer to remove one layer while retaining its data source, and use reorder_layers with the complete current layerId list to control draw order from bottom to top. Do not omit an existing layer from reorder_layers; it must be a complete permutation.',
       'Reuse the current visualizationId when the user asks to add or overlay content. If the same styling target fails validation twice, preserve the last successful map and stop retrying that command.',
-      `Project root: ${PROJECT_ROOT}`,
-      `Project skills directory: ${PROJECT_SKILLS_DIR}`,
-      `Shanghai traffic query tools directory: ${TRAFFIC_TOOLS_DIR}`,
-      `Shanghai traffic SQLite data directory: ${TRAFFIC_DATA_DIR}`,
     ],
     parameters: PresentVisualizationCommandSchema,
     async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {

@@ -14,7 +14,7 @@ import {
   updateTaskStep,
   type TaskSnapshot,
   type TaskStatus,
-} from '../../src/contracts/index.ts';
+} from '../../../../../src/contracts/task.ts';
 
 const STATE_ENTRY = 'pi-task-mode';
 const STATE_SCHEMA_VERSION = 1 as const;

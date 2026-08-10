@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { createPortal } from 'react-dom';
 import 'katex/dist/katex.min.css';
 import { renderMarkdown } from '../../../public/markdown.js';
+import { compileCitations } from '../../../contracts/citation-compiler.js';
+import { parseCitationEnvelope } from '../../../contracts/citation.js';
 import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Icon } from '../../components/icons';
-import { citationReferenceMarkdown, projectCitationText, stripManualCitationReferenceTail, type MessageCitationProjection } from '../../features/citation/citation-projection';
+import type { MessageCitationProjection } from '../../features/citation/citation-projection';
 
 type FileIcon = 'workspace' | 'file' | 'report' | 'code' | 'image' | 'table';
 type PreviewKind = 'code' | 'table' | 'report' | 'image' | 'pdf' | 'document' | null;
@@ -106,14 +108,18 @@ export function sessionReportImageUrl(url: string, reportPath: string, sessionId
   return `${origin}/api/file/preview?${new URLSearchParams({ sessionId, path: imagePath })}`;
 }
 
-async function renderReport(source: string, reportPath: string, sessionId: string, citationProjection?: MessageCitationProjection) {
-  const reportCitationProjection = citationProjection
-    ? projectCitationText(source, citationProjection.available)
-    : undefined;
+async function renderReport(source: string, reportPath: string, sessionId: string, _citationProjection?: MessageCitationProjection) {
+  let compiled: ReturnType<typeof compileCitations> | undefined;
+  try {
+    const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`);
+    const payload = await response.json() as { citations?: unknown };
+    const envelope = response.ok ? parseCitationEnvelope(payload.citations) : null;
+    if (envelope) compiled = compileCitations(source, envelope, 'gbt7714-numeric');
+  } catch { /* A report without citations remains renderable offline. */ }
   const replacements: Array<{ token: string; value: string }> = [];
   let index = 0;
   const token = () => `FILE_PREVIEW_RENDER_${index++}`;
-  let markdown = source.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_, chart) => {
+  let markdown = (compiled?.markdown || source).replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_, chart) => {
     const placeholder = token();
     replacements.push({ token: placeholder, value: chart.trim() });
     return placeholder;
@@ -126,14 +132,9 @@ async function renderReport(source: string, reportPath: string, sessionId: strin
   };
   markdown = markdown.replace(/\$\$([\s\S]+?)\$\$/g, (_, expression) => addMath(expression, true));
   markdown = markdown.replace(/(^|[^\\])\$([^$\n]+)\$/g, (_, prefix, expression) => `${prefix}${addMath(expression, false)}`);
-  if (reportCitationProjection?.citations.length) markdown = stripManualCitationReferenceTail(markdown);
-  const hasReferenceIndex = /^#{1,3}\s+引用依据（逐条出处）\s*$/m.test(markdown);
-  if (reportCitationProjection?.citations.length && !hasReferenceIndex) {
-    markdown += `\n\n---\n\n${citationReferenceMarkdown(reportCitationProjection)}`;
-  }
   let html = renderMarkdown(
     markdown,
-    reportCitationProjection?.numbers,
+    compiled?.numbers,
     (url) => sessionReportImageUrl(url, reportPath, sessionId, window.location.origin),
   );
   for (const replacement of replacements) {

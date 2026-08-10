@@ -2,8 +2,8 @@ import { asRecord, asString, type JsonRecord } from './common.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 import { unknownVersionDiagnostic } from './version.ts';
 
-export const MODULE_MANIFEST_VERSION = 1 as const;
-export const MODULE_TYPES = ['module', 'capability', 'domain', 'skill', 'knowledge', 'data', 'template'] as const;
+export const MODULE_MANIFEST_VERSION = 2 as const;
+export const MODULE_TYPES = ['module', 'capability', 'domain'] as const;
 export type ModuleType = typeof MODULE_TYPES[number];
 
 export type ModuleAsset = {
@@ -15,7 +15,7 @@ export type ModuleAsset = {
 };
 
 export type ModuleManifest = {
-  manifestVersion: 1;
+  manifestVersion: 2;
   id: string;
   name: string;
   version: string;
@@ -95,7 +95,7 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
     ok: true,
     diagnostics: [],
     value: {
-      manifestVersion: 1,
+      manifestVersion: 2,
       id,
       name,
       version,

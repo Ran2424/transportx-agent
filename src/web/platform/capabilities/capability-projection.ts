@@ -2,11 +2,11 @@ import type { PlatformModule, PlatformOverview } from '../../../public/kernel/co
 
 /**
  * 能力扩展区投影：将 PlatformOverview 中的模块元数据投影为
- * 模块 / 技能 / 数据 / 知识 四类只读条目。
+ * 技能 / 数据 / 知识三类能力条目。
  * 视觉层不得自行推测服务端状态，这里只消费 PlatformOverview 已有字段。
  */
 
-export type CapabilityCategory = 'module' | 'skill' | 'data' | 'knowledge';
+export type CapabilityCategory = 'skill' | 'data' | 'knowledge';
 
 export type CapabilityItem = {
   id: string;
@@ -15,10 +15,20 @@ export type CapabilityItem = {
   source: string;
   status: 'ready' | 'attention' | 'disabled';
   statusLabel: string;
+  moduleId: string;
+  moduleName: string;
+  moduleVersion: string;
+  moduleType: PlatformModule['type'];
+  moduleRemovable: boolean;
+  moduleOrigin: PlatformModule['origin'];
+  moduleExtensions: number;
+  moduleSkills: number;
+  moduleAssets: PlatformModule['assets'];
+  skillFiles: PlatformModule['skillFiles'];
+  assetId?: string;
 };
 
 export const CAPABILITY_CATEGORIES: Array<{ id: CapabilityCategory; label: string }> = [
-  { id: 'module', label: '模块' },
   { id: 'skill', label: '技能' },
   { id: 'data', label: '数据' },
   { id: 'knowledge', label: '知识' },
@@ -57,27 +67,25 @@ export function projectCapabilities(overview: PlatformOverview): CapabilityItem[
     };
     const source = `${module.version} · ${moduleOriginLabel(module)}`;
 
-    // 模块：module / capability / domain 包本体
-    if (module.type === 'module' || module.type === 'capability' || module.type === 'domain') {
-      items.push({
-        id: `module:${module.id}`,
-        name: module.name,
-        category: 'module',
-        source,
-        status: itemStatus(),
-        statusLabel: itemStatusLabel(),
-      });
-    }
-
     // 技能：模块声明的 Skill 数量
     if (module.skills > 0) {
       items.push({
         id: `skill:${module.id}`,
         name: `${module.name} Skill`,
         category: 'skill',
-        source: `${module.skills} 项技能 · ${module.id}`,
+        source: `${module.skills} 项技能 · ${source}`,
         status: itemStatus(),
         statusLabel: itemStatusLabel(),
+        moduleId: module.id,
+        moduleName: module.name,
+        moduleVersion: module.version,
+        moduleType: module.type,
+        moduleRemovable: module.removable,
+        moduleOrigin: module.origin,
+        moduleExtensions: module.extensions,
+        moduleSkills: module.skills,
+        moduleAssets: module.assets,
+        skillFiles: module.skillFiles || [],
       });
     }
 
@@ -89,9 +97,20 @@ export function projectCapabilities(overview: PlatformOverview): CapabilityItem[
         id: `${category}:${module.id}:${asset.id}`,
         name: readableName(asset.id) || module.name,
         category,
-        source: module.name,
+        source: `${module.name} · ${source}`,
         status: disabled ? 'disabled' : !asset.configured && !activeKinds.has(asset.kind) ? 'attention' : 'ready',
         statusLabel: disabled ? '不可用' : !asset.configured && !activeKinds.has(asset.kind) ? '待配置' : '已启用',
+        moduleId: module.id,
+        moduleName: module.name,
+        moduleVersion: module.version,
+        moduleType: module.type,
+        moduleRemovable: module.removable,
+        moduleOrigin: module.origin,
+        moduleExtensions: module.extensions,
+        moduleSkills: module.skills,
+        moduleAssets: module.assets,
+        skillFiles: module.skillFiles || [],
+        assetId: asset.id,
       });
     }
   }

@@ -96,12 +96,13 @@ export type PlatformModule = {
   id: string;
   name: string;
   version: string;
-  type: 'module' | 'capability' | 'domain' | 'skill' | 'knowledge' | 'data' | 'template';
+  type: 'module' | 'capability' | 'domain';
   origin: 'builtin' | 'installed' | 'external';
   removable: boolean;
   enabled: boolean;
   extensions: number;
   skills: number;
+  skillFiles: Array<{ entryPath: string; name: string; content?: string; truncated?: boolean; error?: string }>;
   assets: Array<{ id: string; kind: 'knowledge' | 'data' | 'template'; configured: boolean; active: boolean; error?: string }>;
 };
 
@@ -145,8 +146,10 @@ export type PlatformCommands = {
   getAvailableModels(sessionId?: string | null): Promise<Array<ModelRecord | string>>;
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
   getOverview(): Promise<PlatformOverview>;
-  installModule(sourcePath: string, kind: 'module' | 'skill' | 'extension' | 'data' | 'knowledge'): Promise<PlatformOverview>;
+  installModule(sourcePath: string): Promise<PlatformOverview>;
   uninstallModule(moduleId: string): Promise<PlatformOverview>;
+  setModuleEnabled(moduleId: string, enabled: boolean): Promise<PlatformOverview>;
+  migrateLegacyModules(): Promise<PlatformOverview>;
   getAuth(): Promise<{ configured: boolean; enabled: boolean }>;
   setAuth(enabled: boolean): Promise<{ enabled: boolean }>;
 };
@@ -379,13 +382,23 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
       return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '' }, modules: [], errors: [] });
     },
 
-    async installModule(sourcePath, kind) {
-      const data = await rpcCommand(deps.http, { type: 'install_module', sourcePath, kind });
+    async installModule(sourcePath) {
+      const data = await rpcCommand(deps.http, { type: 'install_module', sourcePath });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 
     async uninstallModule(moduleId) {
       const data = await rpcCommand(deps.http, { type: 'uninstall_module', moduleId });
+      return (data as { data: { overview: PlatformOverview } }).data.overview;
+    },
+
+    async setModuleEnabled(moduleId, enabled) {
+      const data = await rpcCommand(deps.http, { type: 'set_module_enabled', moduleId, enabled });
+      return (data as { data: { overview: PlatformOverview } }).data.overview;
+    },
+
+    async migrateLegacyModules() {
+      const data = await rpcCommand(deps.http, { type: 'migrate_legacy_modules' });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 

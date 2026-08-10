@@ -8,7 +8,7 @@ description: |
 
 # Plot Style Playbook
 
-This is an optional experience-and-style Skill, not a platform plotting capability. Generate a paper-quality figure by picking a style template and filling it with user data. The bundled templates save `dpi=300` PNG files after their output path is adapted to the current task.
+This is an optional experience-and-style Skill, not a platform plotting capability. The session context's “已装载 Module 资源” section lists this Skill root; every `scripts/` and `references/` path below is relative to that root, never the current task directory. Generate a paper-quality figure by picking a style template and filling it with user data. The bundled templates save `dpi=300` PNG files after their output path is adapted to the current task.
 
 The scripts are imported templates, not directly runnable project commands. Their default PNG outputs are relative to the current working directory. Always copy the selected script into the current task directory and replace its data section and, when needed, its output filename before execution. Never edit the template in place.
 

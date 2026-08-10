@@ -21,7 +21,7 @@ export const TASK_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 export const GEO_ENVELOPE_PROTOCOL = 'pi-visualization' as const;
 export const GEO_ENVELOPE_VERSION = '1.0' as const;
 export const CITATION_ENVELOPE_PROTOCOL = 'pi-citation' as const;
-export const CITATION_ENVELOPE_VERSION = '1.0' as const;
+export const CITATION_ENVELOPE_VERSION = '2.0' as const;
 export const BRIDGE_ENVELOPE_SCHEMA_VERSION = 1 as const;
 
 export type SchemaVersion<T extends number | string> = { readonly schemaVersion: T };

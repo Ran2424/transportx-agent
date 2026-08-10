@@ -14,8 +14,9 @@ import sys
 from pathlib import Path
 
 
-DATA_ROOT = os.environ.get("TRANSPORTX_TRAFFIC_DATA_ROOT")
-DEFAULT_ROOT = Path(DATA_ROOT) if DATA_ROOT else None
+DATA_ASSETS = json.loads(os.environ.get("TRANSPORTX_DATA_ASSETS_JSON", "{}"))
+DATA_ROOT = DATA_ASSETS.get("data:shanghai-traffic")
+DEFAULT_ROOT = Path(DATA_ROOT) if isinstance(DATA_ROOT, str) and DATA_ROOT else None
 DATABASES = ("common", "road", "metro", "bus", "ridehail")
 MAX_ROWS_LIMIT = 5000
 
@@ -107,7 +108,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.data_root is None:
-        raise SystemExit("TRANSPORTX_TRAFFIC_DATA_ROOT or --data-root is required; install a Data module or provide an explicit root.")
+        raise SystemExit("data:shanghai-traffic is not available in TRANSPORTX_DATA_ASSETS_JSON; install this Data module or provide --data-root explicitly.")
 
     if not 1 <= args.max_rows <= MAX_ROWS_LIMIT:
         raise SystemExit(f"--max-rows must be between 1 and {MAX_ROWS_LIMIT}")

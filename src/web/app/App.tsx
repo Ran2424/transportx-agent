@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { HistoryProject, HistorySession } from '../../public/kernel/commands.js';
 import { useAppServices } from './AppProviders';
 import { AppShell } from './AppShell';
@@ -65,6 +66,15 @@ export function App() {
   const [dismissedRuntimeError, setDismissedRuntimeError] = useState('');
   const restoredRef = useRef(false);
 
+  const runPanelTransition = useCallback((update: () => void) => {
+    const startViewTransition = (document as Document & { startViewTransition?: (callback: () => void) => unknown }).startViewTransition;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !startViewTransition) {
+      update();
+      return;
+    }
+    startViewTransition.call(document, () => flushSync(update));
+  }, []);
+
   const activeSession = sessionState.sessions.find((session) => session.id === sessionState.activeSessionId) || null;
   const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
   const taskState = useMemo(() => activeSession ? projectTaskState(
@@ -116,12 +126,18 @@ export function App() {
   useEffect(() => { if (visualizations.length === 0) setMapOpen(false); }, [visualizations.length]);
 
   const toggleTasks = useCallback(() => {
-    if (taskAvailable) setTasksOpen((value) => !value);
-  }, [taskAvailable]);
+    if (taskAvailable) runPanelTransition(() => setTasksOpen((value) => !value));
+  }, [runPanelTransition, taskAvailable]);
 
   const toggleMap = useCallback(() => {
     if (visualizations.length > 0) setMapOpen((value) => !value);
   }, [visualizations.length]);
+
+  const toggleSidebar = useCallback(() => runPanelTransition(() => setSidebarOpen((value) => !value)), [runPanelTransition]);
+  const closeSidebar = useCallback(() => runPanelTransition(() => setSidebarOpen(false)), [runPanelTransition]);
+  const toggleFiles = useCallback(() => runPanelTransition(() => setFilesOpen((value) => !value)), [runPanelTransition]);
+  const closeFiles = useCallback(() => runPanelTransition(() => setFilesOpen(false)), [runPanelTransition]);
+  const closeMap = useCallback(() => setMapOpen(false), []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -163,7 +179,7 @@ export function App() {
     window.localStorage.setItem('tau-active-live-session-id', sessionId);
     setSessionLoading(true);
     setNotice('');
-    if (window.innerWidth <= 860) setSidebarOpen(false);
+    if (window.innerWidth <= 860) closeSidebar();
     try {
       const snapshot = await kernel.commands.session.loadSnapshot(sessionId);
       kernel.dispatch({ type: 'session/snapshotReceived', sessionId, snapshot });
@@ -172,16 +188,16 @@ export function App() {
     } finally {
       setSessionLoading(false);
     }
-  }, [kernel]);
+  }, [closeSidebar, kernel]);
 
   const goHome = useCallback(() => {
     kernel.dispatch({ type: 'session/activated', sessionId: null });
     window.localStorage.removeItem('tau-active-live-session-id');
-    setFilesOpen(false);
+    closeFiles();
     setTasksOpen(false);
-    setMapOpen(false);
+    closeMap();
     setNotice('');
-  }, [kernel]);
+  }, [closeFiles, closeMap, kernel]);
 
   useEffect(() => {
     if (restoredRef.current || sessionState.sessions.length === 0) return;
@@ -229,7 +245,7 @@ export function App() {
 
   const commandItems = useMemo<CommandItem[]>(() => [
     { id: 'new', label: '新建交通任务', description: '启动独立 Pi RPC 会话', shortcut: '⌘N', action: () => setNewSessionOpen(true) },
-    { id: 'files', label: filesOpen ? '关闭文件栏' : '打开文件栏', description: '浏览当前任务的工作目录', shortcut: '⌘⇧W', action: () => setFilesOpen((value) => !value) },
+    { id: 'files', label: filesOpen ? '关闭文件栏' : '打开文件栏', description: '浏览当前任务的工作目录', shortcut: '⌘⇧W', action: toggleFiles },
     { id: 'tasks', label: tasksOpen ? '关闭任务面板' : '打开任务面板', description: taskAvailable ? '查看当前任务的执行计划' : '当前任务未开启任务模式', disabled: !taskAvailable, action: toggleTasks },
     { id: 'map', label: mapOpen ? '关闭地图视图' : '打开地图视图', description: visualizations.length ? '聚焦当前任务的 GIS 可视化' : '当前任务暂无地图结果', disabled: visualizations.length === 0, action: toggleMap },
     { id: 'model', label: '切换模型', description: activeSession ? '设置当前任务的模型与思考级别' : '需要先选择运行中的任务', disabled: !activeSession, action: () => setModelOpen(true) },
@@ -239,7 +255,7 @@ export function App() {
       catch (cause) { setNotice((cause as { message?: string })?.message || '压缩上下文失败'); }
     } },
     { id: 'settings', label: '工作台设置', description: '主题、Agent 与访问控制', shortcut: '⌘,', action: () => setSettingsOpen(true) },
-  ], [activeSession, filesOpen, kernel, mapOpen, taskAvailable, tasksOpen, toggleMap, toggleTasks, visualizations.length]);
+  ], [activeSession, filesOpen, kernel, mapOpen, taskAvailable, tasksOpen, toggleFiles, toggleMap, toggleTasks, visualizations.length]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -262,13 +278,13 @@ export function App() {
       const hasOverlay = newSessionOpen || settingsOpen || modelOpen || modelSetupOpen || commandsOpen || !!extensionUi.current;
       if (event.key === 'Escape' && !hasOverlay) {
         if (mapOpen) {
-          setMapOpen(false);
+          closeMap();
         } else if (tasksOpen) {
           setTasksOpen(false);
         } else if (filesOpen) {
-          setFilesOpen(false);
+          closeFiles();
         } else if (window.innerWidth <= 860 && sidebarOpen) {
-          setSidebarOpen(false);
+          closeSidebar();
         } else if (activeSession && kernel.stores.session.isStreaming(activeSession.id)) {
           void kernel.commands.agent.abort(activeSession.id);
           setNotice('已请求中止当前任务');
@@ -277,7 +293,7 @@ export function App() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [activeSession, commandsOpen, extensionUi.current, filesOpen, kernel, mapOpen, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, tasksOpen]);
+  }, [activeSession, closeFiles, closeMap, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, mapOpen, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, tasksOpen]);
 
   const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
   const runtimeErrorMessage = runtime.lastError?.message || '';
@@ -285,13 +301,13 @@ export function App() {
 
   return (
     <AppShell
-      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={visualizations.length > 0} onToggleSidebar={() => setSidebarOpen((value) => !value)} onToggleFiles={() => setFilesOpen((value) => !value)} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
-      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={() => setSidebarOpen(false)} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
+      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={visualizations.length > 0} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
+      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} />}
-      workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={() => setFilesOpen(false)} />}
+      workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
       taskFloat={<WorkspaceFloat kind="tasks" open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
-      mapPanel={<WorkspaceFloat kind="map" open={mapOpen} session={activeSession} onClose={() => setMapOpen(false)} />}
+      mapPanel={<WorkspaceFloat kind="map" open={mapOpen} session={activeSession} onClose={closeMap} />}
       mapOpen={mapOpen}
       overlays={<>
         <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} onAddModel={() => openModelSetup('new')} />

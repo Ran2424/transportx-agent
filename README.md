@@ -61,7 +61,7 @@ npm run desktop:dev
 
 macOS 首次启动会创建 `~/.transportx/traffic-agent/`。任务工作目录统一位于 `scenario/`，Pi 的 `models.json`、`auth.json`、会话、日志和缓存也都保存在该应用目录下。应用不会预设模型；请在“新建交通任务”或“设置”中点击“添加模型”，填写 Pi 兼容的供应商、模型、API 协议和密钥后再创建任务。
 
-设置页以 Module 为统一安装单元。一个 Module 可以同时包含 Skill、Extension、Data 和 Knowledge；也可以选择“单独 Skill / Extension / Data / Knowledge”，系统会自动包装为单一贡献项的受管 Module。安装时填写本地模块目录、`manifest.json` 或单独资源路径，内容会复制到 `~/.transportx/traffic-agent/modules/`；卸载只删除该受管副本，内置模块不可卸载。
+设置页以 Module 为唯一安装单元。一个 Module 可以同时包含 Skill、Extension、Data 和 Knowledge；安装时填写包含 `manifest.json` 的模块目录，内容会复制到 `~/.transportx/traffic-agent/modules/<module-id>/<version>/`。用户模块需显式启用后才会进入新任务；卸载只删除该受管副本，内置模块不可卸载。Agent 对话中的 `create-transportx-module` 官方 Skill 可按用户意图创建模块包。
 
 平台内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用应用与功能能力。仓库中的用户模块源码位于 `modules/installable/`：`shanghaidata` 负责上海数据及其口径，`traffic-assurance-knowledge` 负责交通保障知识，`plot-style` 负责可替换的绘图经验与风格。它们不会进入桌面应用安装包，也不属于平台启动依赖。
 
@@ -75,7 +75,7 @@ TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:p
 
 `desktop:pack` 在缺少签名或公证凭据时会直接停止，避免误发未签名 DMG。仅做本机结构验收时可显式设置 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。macOS 目标为 macOS 12 及以上的 Apple Silicon DMG，Windows 目标为 x64 NSIS；发布凭据不写入仓库。
 
-交通知识库和数据库作为大体积外部资产，不写入应用安装包，也不放在 Skill 相邻目录。推荐在设置页将它们安装为受管 Module；运行时会从安装清单解析资产，并分别注入 `TRANSPORTX_KNOWLEDGE_ROOT` 与 `TRANSPORTX_TRAFFIC_DATA_ROOT`。`TAU_KNOWLEDGE_ROOT` 和 `TAU_DATA_ROOT` 仅用于开发及受控外部部署，并须分别配合 `TAU_KNOWLEDGE_ASSET_ID` 和 `TAU_DATA_ASSET_ID`；外部 Manifest 使用 `TAU_MODULE_MANIFESTS` 加载。
+交通知识库和数据库作为大体积 Module Asset，不写入应用安装包，也不放在 Skill 相邻目录。Knowledge Module 必须同时保存原始 PDF/文档、检索索引和精确定位映射，Citation 才能打开原始来源。运行时从已启用 Module 的安装清单解析资产，并分别向相关工具提供 `TRANSPORTX_KNOWLEDGE_ROOT` 与 `TRANSPORTX_TRAFFIC_DATA_ROOT`。
 
 ## 验证
 

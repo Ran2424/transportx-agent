@@ -80,7 +80,7 @@
 
 ```bash
 "<Python interpreter>" \
-  "<Shanghai traffic query tools directory>/query_assets.py" \
+  "<本 Skill 根目录>/scripts/query_assets.py" \
   --sql "SELECT r.severity,q.* FROM catalog.meta_quality_result q JOIN catalog.meta_quality_rule r USING(rule_code) ORDER BY r.severity,q.rule_code"
 ```
 
@@ -99,7 +99,7 @@ EVDATA 路段 GeoJSON 与速度 CSV 使用独立导入脚本，脚本会校验 C
 
 ```bash
 "<Python interpreter>" \
-  "<Shanghai traffic query tools directory>/import_evdata_road_speed.py" \
+  "<本 Skill 根目录>/scripts/import_evdata_road_speed.py" \
   --db-dir "/absolute/path/to/installed/data/module/asset" \
   --csv "/absolute/path/时代少年团数据.csv" \
   --geojson "/absolute/path/road_segment_80000.geojson"
@@ -115,11 +115,11 @@ EVDATA 路段 GeoJSON 与速度 CSV 使用独立导入脚本，脚本会校验 C
 
 ```bash
 SHANGHAI_TRAFFIC_SOURCE_DB=/absolute/source/traffic_governance.sqlite \
-TRANSPORTX_TRAFFIC_DATA_ROOT=/absolute/path/to/installed/data/module/asset \
+TRANSPORTX_DATA_ASSETS_JSON='{"data:shanghai-traffic":"/absolute/path/to/installed/data/module/asset"}' \
 SHANGHAI_TRAFFIC_EVDATA_SPEED_CSV=/absolute/path/时代少年团数据.csv \
 SHANGHAI_TRAFFIC_EVDATA_ROAD_GEOJSON=/absolute/path/road_segment_80000.geojson \
 "<Python interpreter>" \
-  "<Shanghai traffic query tools directory>/build_agent_data_assets.py"
+  "<本 Skill 根目录>/scripts/build_agent_data_assets.py"
 ```
 
 两个 EVDATA 环境变量必须同时提供或同时省略。省略时只重建原治理库资产；提供时会在基础资产验证后接入 EVDATA。
@@ -128,7 +128,7 @@ SHANGHAI_TRAFFIC_EVDATA_ROAD_GEOJSON=/absolute/path/road_segment_80000.geojson \
 
 ```bash
 PYTHON="<Python interpreter>"
-QUERY="<Shanghai traffic query tools directory>/query_assets.py"
+QUERY="<本 Skill 根目录>/scripts/query_assets.py"
 
 "$PYTHON" "$QUERY" --coverage
 "$PYTHON" "$QUERY" --order-sources

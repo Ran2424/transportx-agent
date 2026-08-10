@@ -5,6 +5,7 @@ import type { JsonRecord, RpcCommand, RpcResponse } from './types.js';
 import type { LiveSessionManager, PiRpcSession } from './sessions.js';
 import type { SessionAttachmentSource } from '../contracts/attachments.js';
 import { ServerRouter } from './router.js';
+import type { CitationService } from './citation-service.js';
 
 type ApiRouteServices = {
   sessions: LiveSessionManager;
@@ -35,6 +36,7 @@ type ApiRouteServices = {
   listAttachments(cwd: string): unknown[];
   uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource): Promise<unknown[]>;
   deleteAttachment(cwd: string, id: string): void;
+  citation: CitationService;
 };
 
 export function createApiRouter(services: ApiRouteServices) {
@@ -75,6 +77,30 @@ export function createApiRouter(services: ApiRouteServices) {
     .get(/^\/api\/live-sessions\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (session) deps.json(res, 200, { attachments: deps.listAttachments(session.cwd) });
+    })
+    .get(/^\/api\/live-sessions\/([^/]+)\/citations$/, ({ res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try {
+        const registry = deps.citation.registry(session).load();
+        if (registry.sessionId !== (session.citationRegistryId || session.id)) return deps.json(res, 404, { error: 'Citation registry not found in this session' });
+        deps.json(res, 200, { citations: registry });
+      } catch (error) { deps.json(res, 409, { error: deps.errorMessage(error) }); }
+    })
+    .post(/^\/api\/live-sessions\/([^/]+)\/citations\/occurrences$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try {
+        const body = await deps.readBody(req);
+        if (typeof body.locatorId !== 'string') return deps.json(res, 400, { error: 'locatorId required' });
+        const result = deps.citation.cite(session, {
+          locatorId: body.locatorId,
+          containerType: 'message',
+          containerId: `composer:${session.id}`,
+          ...(typeof body.role === 'string' ? { role: body.role as import('../contracts/citation.js').CitationRole } : {}),
+        });
+        deps.json(res, 200, { marker: `[[cite:${result.occurrence.occurrenceId}]]`, occurrence: result.occurrence, citations: result.envelope });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post(/^\/api\/live-sessions\/([^/]+)\/attachments$/, async ({ req, res, url, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
@@ -159,6 +185,31 @@ export function createApiRouter(services: ApiRouteServices) {
         res.end(pdf);
       } catch (error) { deps.json(res, 500, { error: deps.errorMessage(error) }); }
     })
+    .post('/api/internal/citations/resolve', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveCitationSession(res, body, deps);
+        if (!session) return;
+        const results = [];
+        if (Array.isArray(body.knowledgeIds) && body.knowledgeIds.length) results.push(deps.citation.resolveKnowledge(session, body.knowledgeIds as string[]));
+        if (Array.isArray(body.attachmentIds) && body.attachmentIds.length) results.push(deps.citation.resolveAttachments(session, body.attachmentIds as string[]));
+        if (Array.isArray(body.artifacts) && body.artifacts.length) results.push(deps.citation.resolveArtifacts(session, body.artifacts as import('./citation-service.js').CitationArtifactInput[]));
+        if (Array.isArray(body.datasets) && body.datasets.length) results.push(deps.citation.resolveDatasets(session, body.datasets as import('./citation-service.js').CitationDatasetInput[]));
+        if (Array.isArray(body.webUrls) && body.webUrls.length) results.push(await deps.citation.resolveWeb(session, body.webUrls as string[]));
+        if (!results.length) return deps.json(res, 400, { error: 'A citation source is required' });
+        deps.json(res, 200, { citations: results.at(-1) });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/citations/cite', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveCitationSession(res, body, deps);
+        if (!session) return;
+        if (typeof body.locatorId !== 'string' || typeof body.containerType !== 'string' || typeof body.containerId !== 'string') return deps.json(res, 400, { error: 'locatorId, containerType and containerId are required' });
+        const result = deps.citation.cite(session, { locatorId: body.locatorId, containerType: body.containerType as import('../contracts/citation.js').CitationContainerType, containerId: body.containerId, ...(typeof body.anchorId === 'string' ? { anchorId: body.anchorId } : {}), ...(typeof body.role === 'string' ? { role: body.role as import('../contracts/citation.js').CitationRole } : {}) });
+        deps.json(res, 200, { occurrence: result.occurrence, citations: result.envelope });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
     .post('/api/rpc', async ({ req, res, deps }) => {
       try { deps.json(res, 200, await deps.handleRpc(await deps.readBody(req))); }
       catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
@@ -179,6 +230,14 @@ export function createApiRouter(services: ApiRouteServices) {
     })
     .get(/^\/api\/sessions\/([^/]+)\/([^/]+)$/, ({ res, params, deps }) => deps.serveSessionFile(res, params[0], params[1]));
   return router;
+}
+
+function resolveCitationSession(res: ServerResponse, body: RpcCommand, services: ApiRouteServices) {
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+  const token = typeof body.token === 'string' ? body.token : '';
+  const session = services.sessions.get(sessionId);
+  if (!session || !token || token !== session.citationToken) { services.json(res, 403, { error: 'Citation host access denied' }); return null; }
+  return session;
 }
 
 function resolveLiveSessionParam(res: ServerResponse, value: string, services: ApiRouteServices) {

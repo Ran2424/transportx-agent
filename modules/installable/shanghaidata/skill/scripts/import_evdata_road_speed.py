@@ -535,17 +535,20 @@ def main() -> None:
         type=Path,
         help="EVDATA road segment GeoJSON; omit to retain existing geometry and replace speeds only",
     )
+    try:
+        data_assets = json.loads(os.environ.get("TRANSPORTX_DATA_ASSETS_JSON", "{}"))
+    except json.JSONDecodeError as exc:
+        parser.error(f"TRANSPORTX_DATA_ASSETS_JSON must be valid JSON: {exc.msg}")
+    runtime_root = data_assets.get("data:shanghai-traffic") if isinstance(data_assets, dict) else None
     parser.add_argument(
         "--db-dir",
         type=Path,
-        default=Path(os.environ["TRANSPORTX_TRAFFIC_DATA_ROOT"])
-        if os.environ.get("TRANSPORTX_TRAFFIC_DATA_ROOT")
-        else None,
-        help="Installed Data module directory; defaults to TRANSPORTX_TRAFFIC_DATA_ROOT",
+        default=Path(runtime_root) if isinstance(runtime_root, str) and runtime_root else None,
+        help="Shanghai traffic asset directory; defaults to data:shanghai-traffic in TRANSPORTX_DATA_ASSETS_JSON",
     )
     args = parser.parse_args()
     if args.db_dir is None:
-        parser.error("--db-dir or TRANSPORTX_TRAFFIC_DATA_ROOT is required")
+        parser.error("--db-dir or data:shanghai-traffic in TRANSPORTX_DATA_ASSETS_JSON is required")
     if args.geojson:
         import_evdata(args.csv.resolve(), args.geojson.resolve(), args.db_dir.resolve())
         action = "Imported EVDATA geometry and speeds"

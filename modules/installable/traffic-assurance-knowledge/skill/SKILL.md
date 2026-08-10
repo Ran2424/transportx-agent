@@ -10,8 +10,8 @@ description: Search and cite the local major-event traffic-assurance knowledge b
 ## 运行环境
 
 - Python：使用 TransportX 会话上下文给出的内置解释器。
-- 检索脚本：使用本 Skill 根目录下的 `scripts/search_knowledge.py`。
-- 知识库由独立 Knowledge 资产提供，运行时通过 `TRANSPORTX_KNOWLEDGE_ROOT` 注入；Skill 不包含知识正文，也不从相邻目录回退。
+- 检索脚本：会话上下文“已装载 Module 资源”会列出本 Skill 根目录；使用该目录下的 `scripts/search_knowledge.py`。
+- 知识库由独立 Knowledge 资产提供，运行时通过 `TRANSPORTX_KNOWLEDGE_ASSETS_JSON` 注入全部 Knowledge 资产；本 Skill 只读取其中 `knowledge:traffic-assurance` 的目录。Skill 不包含知识正文，也不从相邻目录回退。
 - 替代知识库：仅在需要检索另一套同结构知识资产时使用 `--knowledge-root /absolute/path` 覆盖；该参数也可在没有环境变量时独立使用。
 
 先运行：
@@ -75,14 +75,14 @@ Knowledge 模块可包含原件、页级记录、层级树、知识卡、验收�
 
 ## Web 引用
 
-需要在回答中正式引用知识条目时：
+需要在回答中正式引用知识条目时，严格遵循 Citation v2：
 
-1. 先用 `cite <knowledge_id> --json` 并打开原件复核；
-2. 调用 `tau_cite`，将准备使用的 `knowledge_id` 注册为可信引用；
-3. 只使用 `tau_cite` 成功返回的 ID；
-4. 在对应结论后写 `[[cite:<knowledge_id>]]`，多个依据写成 `[[cite:<id1>,<id2>]]`；
-5. 不在回答中输出知识库绝对路径。Web 会将标记显示为行内编号，并在消息末尾生成引用依据。
-6. 生成独立 Markdown 报告时，只在正文保留 `[[cite:...]]` 标记，不得手写“参考依据”“参考文献”或引用表格；完成正文后用 `tau_cite` 的 `artifacts` 注册文件，由系统按正文首次引用顺序生成唯一的逐条出处列表。
+1. 先用 `cite <knowledge_id> --json` 复核知识卡、`source_refs`、原件类型和页码；它只用于检索与核验，**不会**创建引用。
+2. 调用 `tau_resolve_citation({ knowledgeIds: ["<knowledge_id>"] })`。Host 会以已选 Knowledge 资产中的原始 PDF/HTML 建立受控 Resource 与一个或多个精确 Locator；不得把 JSONL、Markdown 或绝对本地路径作为 artifact 传入。
+3. 从返回的 Locator 中选择支持当前论断的页码、条款或来源单元，调用 `tau_cite({ locatorId: "<locatorId>", role: "support" })`。
+4. 只使用 `tau_cite` 成功返回的 occurrence 标记，并紧跟在对应结论后：`[[cite:<occurrenceId>]]`。多个结论分别创建 occurrence；不要复用 `knowledge_id`、`locatorId` 或手写编号作为标记。
+5. 不在回答中输出知识库绝对路径。Web 会将 occurrence 标记渲染为行内编号，并在消息末尾生成引用依据。
+6. 生成独立 Markdown 报告时，正文只保留 `[[cite:<occurrenceId>]]` 标记，不得手写“参考依据”“参考文献”或引用表格。引用编译器会按正文首次使用顺序生成唯一的逐条出处列表。
 
 ## 输出规则
 
@@ -94,7 +94,7 @@ Knowledge 模块可包含原件、页级记录、层级树、知识卡、验收�
 - FHWA 内容属于国外方法指南，必须说明适用性转换。
 - 不确定、冲突或跨版本内容回到原件，不根据相似条款补写。
 - `manual_review_required=true` 或 `quality_warnings` 非空时，必须回到原件复核；不得把页面占位节点或页眉残片直接写成正式结论。
-- 报告产物保留正文中的 `[[cite:...]]` 标记；参考依据由 `tau_cite` 自动注入，模型不得自行生成或维护索引。
+- 报告产物保留正文中的 `[[cite:<occurrenceId>]]` 标记；参考依据由 Citation 编译器生成，模型不得自行生成或维护索引。
 
 ## 正式方案安全门
 

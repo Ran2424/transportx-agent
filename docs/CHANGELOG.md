@@ -11,6 +11,25 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0.5 — Citation 服务与模块装配收敛
+
+- 日期：2026-08-11
+- GitHub 操作：直接提交并推送至 `origin/main`。
+
+主要修改：
+
+- 将 Citation、Geo、Task 与 Web Bridge 的 Pi Extension、Skill 和 Prompt 贡献收敛至模块目录，由 Module Registry 统一发现和装配；移除旧的顶层 Extension、Skill 与 Session Context 入口。
+- 新增 Citation compiler、registry 与 service，补齐会话引用资源、证据定位、溯源关系和工作台引用管理界面；文件预览与对话投影同步使用新的引用契约。
+- 更新平台能力投影、模块作者材料、安装模块清单与相关安全校验；同步调整 HTTP、桌面运行时、模块系统与任务生命周期回归用例。
+- 工作台补充地图/对话分栏及侧栏面板的统一过渡效果，地图模式中的对话区采用 420ms 压缩/展开，其余面板保持 240ms。
+- npm 包与平台版本同步更新为 `3.0.5`。
+
+验证：
+
+- `npm run typecheck:react` 通过。
+- `npm run test:react-smoke` 通过。
+- 本次提交前执行完整 `npm test` 回归。
+
 ## v3.0.4 — 附件系统与空间分析基础
 
 - 日期：2026-08-10

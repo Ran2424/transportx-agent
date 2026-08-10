@@ -5,7 +5,7 @@ description: Power the Major Event Traffic Situation Insight and Decision Suppor
 
 # 重大活动交通态势数据资产
 
-本资产服务于“重大活动交通态势洞察及辅助决策智能体”，以上海体育场时代少年团演唱会为内置案例。使用系统提示给出的 `query_assets.py` 查询已安装 Data 模块中的分域 SQLite 资产。正常会话由运行时注入 `TRANSPORTX_TRAFFIC_DATA_ROOT`；独立诊断时也可显式传入 `--data-root <Data 资产目录>`。脚本不会从 Skill 相邻目录寻找数据。
+本资产服务于“重大活动交通态势洞察及辅助决策智能体”，以上海体育场时代少年团演唱会为内置案例。会话上下文“已装载 Module 资源”会列出本 Skill 根目录和本资产 `data:shanghai-traffic` 的目录；使用该 Skill 根目录下的 `scripts/query_assets.py` 查询分域 SQLite 资产。正常会话通过 `TRANSPORTX_DATA_ASSETS_JSON` 注入全部 Data 资产，脚本只读取其中 `data:shanghai-traffic` 的目录；独立诊断时也可显式传入 `--data-root <Data 资产目录>`。脚本不会从 Skill 相邻目录寻找数据。
 
 ## 内置案例
 
@@ -27,8 +27,8 @@ description: Power the Major Event Traffic Situation Insight and Decision Suppor
 先发现，再查询。不要凭表名猜粒度、覆盖范围或坐标系。
 
 ```bash
-PYTHON="<Python interpreter>"
-QUERY="<Shanghai traffic query tools directory>/query_assets.py"
+PYTHON="<会话上下文中的 Python 解释器>"
+QUERY="<本 Skill 根目录>/scripts/query_assets.py"
 
 "$PYTHON" "$QUERY" --coverage
 "$PYTHON" "$QUERY" --business

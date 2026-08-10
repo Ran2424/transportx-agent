@@ -6,7 +6,7 @@ import type { ModuleRegistry } from './module-registry.js';
 import type { AssetResolver, ResolvedAsset } from './asset-resolver.js';
 
 export type ResolvedSessionPlan = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   platform: { name: 'TransportX Traffic Agent'; version: string };
   domain: { id: string; version: string };
   modules: Array<{ id: string; version: string; type: string }>;
@@ -34,20 +34,6 @@ export function preferUnpackedPath(filePath: string) {
   return fs.existsSync(unpacked) ? unpacked : filePath;
 }
 
-function selectAsset(candidates: ResolvedAsset[], kind: 'knowledge' | 'data', preferredId?: string) {
-  if (!candidates.length) return null;
-  if (preferredId) {
-    const preferred = candidates.find((asset) => asset.id === preferredId);
-    if (!preferred) throw new Error(`Configured ${kind} asset is unavailable: ${preferredId}`);
-    return preferred;
-  }
-  const priority = { builtin: 0, external: 1, installed: 2 } as const;
-  const highest = Math.max(...candidates.map((asset) => priority[asset.moduleOrigin]));
-  const winners = candidates.filter((asset) => priority[asset.moduleOrigin] === highest);
-  if (winners.length > 1) throw new Error(`Multiple ${kind} assets are active (${winners.map((asset) => asset.id).join(', ')}); configure TAU_${kind.toUpperCase()}_ASSET_ID`);
-  return winners[0];
-}
-
 export class SessionAssembler {
   constructor(
     private registry: ModuleRegistry,
@@ -55,7 +41,6 @@ export class SessionAssembler {
     private platformVersion: string,
     private pi: Executable,
     private python: Executable,
-    private preferredAssets: Partial<Record<'knowledge' | 'data', string>> = {},
   ) {}
 
   assemble(domainId: string, workspace: string): ResolvedSessionPlan {
@@ -83,13 +68,9 @@ export class SessionAssembler {
       }
     }
     if (prompts.length !== 1) throw new Error(`Domain ${domainId} must contribute exactly one prompt`);
-    const selectedAssets = assets.filter((asset) => asset.kind === 'template');
-    for (const kind of ['knowledge', 'data'] as const) {
-      const selected = selectAsset(assets.filter((asset) => asset.kind === kind), kind, this.preferredAssets[kind]);
-      if (selected) selectedAssets.push(selected);
-    }
+    const selectedAssets = assets.filter((asset) => asset.kind === 'template' || asset.kind === 'data' || asset.kind === 'knowledge');
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       platform: { name: 'TransportX Traffic Agent', version: this.platformVersion },
       domain: { id: domain.manifest.id, version: domain.manifest.version },
       modules: modules.map((module) => ({ id: module.manifest.id, version: module.manifest.version, type: module.manifest.type })),

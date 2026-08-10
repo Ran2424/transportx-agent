@@ -26,6 +26,7 @@ export type TauSettingsFile = {
     authEnabled?: boolean;
     cookieSecret?: string;
     projectsDir?: string;
+    enabledModuleIds?: string[];
     [key: string]: unknown;
   };
 };
@@ -38,6 +39,7 @@ export type TauSettings = {
   authEnabled?: boolean;
   cookieSecret?: string;
   projectsDir: string;
+  enabledModuleIds: string[];
 };
 
 export type RpcCommand = {

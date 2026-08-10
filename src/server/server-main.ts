@@ -8,10 +8,10 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { APP_PATHS, ARGS, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, GEO_EXTENSION_PATH, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting } from './config.js';
+import { APP_PATHS, ARGS, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
-import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, _setSpawnPiForTest } from './sessions.js';
+import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, setCitationEndpoint, _setSpawnPiForTest } from './sessions.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
 import { renderReportPdf } from './report-pdf.js';
@@ -27,10 +27,12 @@ import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import { addPiModel } from './pi-model-config.js';
 import { platformOverview } from './platform-overview.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, buildAttachmentContext, attachmentFilePath } from './session-attachments.js';
+import { CitationService } from './citation-service.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
 let tailscaleUrl = '';
+const citationService = new CitationService();
 
 type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
 
@@ -177,9 +179,10 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
     if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
     let installed: { id: string; name: string; version: string; path: string } | null = null;
     try {
-      installed = MODULE_INSTALLER.install(String(command.sourcePath || ''), String(command.kind || 'module') as import('./module-installer.js').InstallKind);
+      installed = MODULE_INSTALLER.install(String(command.sourcePath || ''));
       reloadModules();
       if (MODULE_REGISTRY.get(installed.id)?.origin !== 'installed') throw new Error(`Module id conflicts with an existing module: ${installed.id}`);
+      setModuleEnabled(installed.id, true);
       return success({ installed, overview: currentPlatformOverview() });
     } catch (error) {
       if (installed) {
@@ -197,6 +200,21 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       MODULE_INSTALLER.uninstall(moduleId, MODULE_REGISTRY);
       reloadModules();
       return success({ overview: currentPlatformOverview() });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'set_module_enabled') {
+    if (!DESKTOP_MODE) return failure('Module selection is only available in the desktop app');
+    try {
+      setModuleEnabled(String(command.moduleId || ''), command.enabled === true);
+      return success({ overview: currentPlatformOverview() });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'migrate_legacy_modules') {
+    if (!DESKTOP_MODE) return failure('Module migration is only available in the desktop app');
+    try {
+      const migrated = MODULE_INSTALLER.migrateLegacyPackages();
+      reloadModules();
+      return success({ migrated, overview: currentPlatformOverview() });
     } catch (error) { return failure(errorMessage(error)); }
   }
   if (command.type === 'set_session_name') {
@@ -286,6 +304,7 @@ const apiRouter = createApiRouter({
   listAttachments: listSessionAttachments,
   uploadAttachments: saveUploadedAttachments,
   deleteAttachment: deleteSessionAttachment,
+  citation: citationService,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -294,7 +313,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
   const parsed = new URL(`http://localhost${req.url || urlPath}`);
   if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
-  if (handleCitationResourceRoute(req, res, parsed.pathname, { knowledgeRoot: (session) => session.resolvedSessionPlan?.assets?.find((asset) => asset.kind === 'knowledge')?.path || '', getSession: (id) => liveManager.get(id) })) return;
+  if (handleCitationResourceRoute(req, res, parsed.pathname, { knowledgeRoots: (session) => (session.resolvedSessionPlan?.assets || []).filter((asset): asset is { id: string; kind: 'knowledge'; path: string } => asset.kind === 'knowledge' && typeof asset.id === 'string' && typeof asset.path === 'string').map((asset) => ({ id: asset.id, path: asset.path })), getSession: (id) => liveManager.get(id) })) return;
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
 
@@ -313,6 +332,7 @@ function computeUrls(port: number) {
     for (const name of Object.keys(nets)) for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal && net.address.startsWith('100.')) tailscaleIp = net.address;
   }
   lanUrl = `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
+  setCitationEndpoint(`http://127.0.0.1:${port}`);
 }
 
 function listen(port: number, attemptsLeft = 10) {
@@ -356,4 +376,4 @@ function _setAuthForTest(enabled: boolean) { authEnabled = !!enabled; }
 function _setCredentialsForTest(user: string, pass: string) { TAU_SETTINGS.user = user; TAU_SETTINGS.pass = pass; }
 function _issueSessionTokenForTest(expiresAtSeconds?: number) { return issueSessionToken(expiresAtSeconds); }
 
-module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, GEO_EXTENSION_PATH, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, _clearModelListCacheForTest };
+module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, _clearModelListCacheForTest };

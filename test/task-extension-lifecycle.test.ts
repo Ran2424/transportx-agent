@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 test('task extension persists mode, restores an unfinished task, and interrupts it at agent end', async () => {
-  const taskModeExtension = require('../extensions/pi-task-mode/index.ts').default;
+  const taskModeExtension = require('../modules/capabilities/task/extensions/pi-task-mode/index.ts').default;
   const handlers = new Map<string, any>();
   const commands = new Map<string, any>();
   const tools = new Map<string, any>();
@@ -28,7 +28,7 @@ test('task extension persists mode, restores an unfinished task, and interrupts 
 });
 
 test('task extension exposes task prompt content only while task mode is enabled', async () => {
-  const taskModeExtension = require('../extensions/pi-task-mode/index.ts').default;
+  const taskModeExtension = require('../modules/capabilities/task/extensions/pi-task-mode/index.ts').default;
   const handlers = new Map<string, any>();
   const commands = new Map<string, any>();
   const tools = new Map<string, any>();

@@ -53,7 +53,7 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   const prepareRuntime = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
   const smoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'desktop-smoke.mjs'), 'utf8');
   assert.match(builder, /afterPack: desktop\/scripts\/after-pack\.cjs/);
-  assert.match(builder, /asarUnpack:[\s\S]*skills\/\*\*/);
+  assert.match(builder, /asarUnpack:[\s\S]*modules\/\*\*\/skills\/\*\*/);
   assert.match(builder, /"!modules\/installable\/\*\*"/);
   assert.match(builder, /prompts\/\*\*/);
   assert.match(main, /titleBarStyle: process\.platform === 'darwin' \? 'hiddenInset'/);

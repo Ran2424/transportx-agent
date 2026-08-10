@@ -49,10 +49,6 @@ const moduleLabels: Record<PlatformModule['type'], string> = {
   module: '模块包',
   capability: '插件',
   domain: '领域',
-  skill: 'Skill',
-  knowledge: '知识',
-  data: '数据',
-  template: '模板',
 };
 
 export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showThinking, onShowThinkingChange, session, onAddModel }: SettingsDialogProps) {
@@ -63,7 +59,6 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
   const [error, setError] = useState('');
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
-  const [installKind, setInstallKind] = useState<'module' | 'skill' | 'extension' | 'data' | 'knowledge'>('module');
   const [moduleSource, setModuleSource] = useState('');
   const [swatches, setSwatches] = useState<Record<ThemeId, string[]> | null>(null);
 
@@ -123,7 +118,7 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
     setBusy('module-install');
     setError('');
     try {
-      setOverview(await kernel.commands.platform.installModule(moduleSource.trim(), installKind));
+      setOverview(await kernel.commands.platform.installModule(moduleSource.trim()));
       setModuleSource('');
     } catch (cause) {
       setError((cause as { message?: string })?.message || '安装模块失败');
@@ -140,6 +135,30 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
       setOverview(await kernel.commands.platform.uninstallModule(module.id));
     } catch (cause) {
       setError((cause as { message?: string })?.message || '卸载模块失败');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function setModuleEnabled(module: PlatformModule, enabled: boolean) {
+    setBusy(`module-enable:${module.id}`);
+    setError('');
+    try {
+      setOverview(await kernel.commands.platform.setModuleEnabled(module.id, enabled));
+    } catch (cause) {
+      setError((cause as { message?: string })?.message || '更新模块状态失败');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function migrateLegacyModules() {
+    setBusy('module-migrate');
+    setError('');
+    try {
+      setOverview(await kernel.commands.platform.migrateLegacyModules());
+    } catch (cause) {
+      setError((cause as { message?: string })?.message || '迁移旧模块失败');
     } finally {
       setBusy('');
     }
@@ -185,17 +204,11 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
       <section className="settings-section">
         <h3>模块</h3>
         <div className="module-installer">
-          <select aria-label="添加类型" value={installKind} onChange={(event) => setInstallKind(event.target.value as typeof installKind)}>
-            <option value="module">模块包</option>
-            <option value="skill">单独 Skill</option>
-            <option value="extension">单独 Extension</option>
-            <option value="data">单独 Data</option>
-            <option value="knowledge">单独 Knowledge</option>
-          </select>
-          <input aria-label="本地资源路径" value={moduleSource} onChange={(event) => setModuleSource(event.target.value)} placeholder="本地目录或 manifest.json 的绝对路径" />
+          <input aria-label="模块包路径" value={moduleSource} onChange={(event) => setModuleSource(event.target.value)} placeholder="包含 manifest.json 的模块包目录" />
           <Button type="button" variant="outline" disabled={!moduleSource.trim() || busy === 'module-install'} onClick={installModule}>{busy === 'module-install' ? '安装中…' : '安装'}</Button>
+          <Button type="button" variant="outline" disabled={busy === 'module-migrate'} onClick={migrateLegacyModules}>{busy === 'module-migrate' ? '迁移中…' : '迁移旧模块'}</Button>
         </div>
-        <p className="module-installer-help">模块包可同时包含 Skill、Extension、Data 和 Knowledge；单独资源安装后也会成为一个受管模块。</p>
+        <p className="module-installer-help">仅安装自包含模块包。一个模块可同时包含 Skill、Extension、Data 和 Knowledge；使用“Module Authoring”官方 Skill 创建新包。</p>
         {overviewLoading && !overview ? <div className="settings-loading" aria-label="正在读取模块"><span /><span /><span /></div> : overview?.modules.length ? (
           <div className="module-list module-list-root">
             {overview.modules.map((module) => {
@@ -205,7 +218,7 @@ export function SettingsDialog({ open, onOpenChange, theme, onThemeChange, showT
               const substituted = module.assets.length > 0 && module.assets.every((asset) => asset.configured || activeKinds.has(asset.kind));
               const status = !module.enabled ? '不可用' : hasActiveAsset ? '当前生效' : missingAssets.length ? '待配置资产' : substituted && module.assets.some((asset) => !asset.configured) ? '由其他模块提供' : '已启用';
               const contributions = [module.skills ? `${module.skills} Skill` : '', module.extensions ? `${module.extensions} Extension` : '', ...module.assets.map((asset) => asset.kind === 'data' ? 'Data' : asset.kind === 'knowledge' ? 'Knowledge' : 'Template')].filter(Boolean);
-              return <div className="module-row" key={module.id}><span><strong>{module.name}</strong><small>{module.version} · {moduleLabels[module.type]} · {module.origin === 'installed' ? '用户安装' : module.origin === 'external' ? '外部加载' : '内置'} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>卸载</Button> : null}</span></div>;
+              return <div className="module-row" key={module.id}><span><strong>{module.name}</strong><small>{module.version} · {moduleLabels[module.type]} · {module.origin === 'installed' ? '用户安装' : module.origin === 'external' ? '外部加载' : '内置'} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-enable:${module.id}`} onClick={() => setModuleEnabled(module, !module.enabled)}>{module.enabled ? '停用' : '启用'}</Button> : null}{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>卸载</Button> : null}</span></div>;
             })}
           </div>
         ) : <p className="settings-empty">暂无已注册模块。</p>}

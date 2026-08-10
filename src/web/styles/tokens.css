@@ -40,6 +40,11 @@
   --tx-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --tx-font-display: "Iowan Old Style", "Baskerville", Georgia, serif;
 
+  /* 工作台面板状态切换：克制、连贯，避免打断分析节奏 */
+  --tx-motion-panel: 240ms;
+  --tx-motion-map-focus: 420ms;
+  --tx-motion-ease: cubic-bezier(.16, 1, .3, 1);
+
   /* 字号（功能文字下限 11px） */
   --tx-text-xs: 11px;
   --tx-text-sm: 12px;

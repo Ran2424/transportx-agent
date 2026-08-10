@@ -1,6 +1,6 @@
 /**
  * Re-export shim. The contract authority for task-mode state is
- * `src/contracts/task.ts`. `extensions/pi-task-mode/index.ts` imports its
+ * `src/contracts/task.ts`. The Task Module extension imports its
  * `parseTaskSnapshot`, mutation helpers and types from this module to keep
  * the original import surface.
  */
@@ -22,7 +22,7 @@ export {
   cancelTask,
   interruptTask,
   setTaskWaiting,
-} from '../../src/contracts/task.ts';
+} from '../../../../../src/contracts/task.ts';
 
 export type {
   TaskStatus,
@@ -32,4 +32,4 @@ export type {
   TaskStepInput,
   TaskParseDiagnostic,
   TaskParseResult,
-} from '../../src/contracts/task.ts';
+} from '../../../../../src/contracts/task.ts';

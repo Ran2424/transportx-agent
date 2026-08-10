@@ -14,10 +14,10 @@
 默认知识库根目录：
 
 ```text
-由运行时环境变量 `TRANSPORTX_KNOWLEDGE_ROOT` 指定的 Knowledge 模块资产目录
+由运行时环境变量 `TRANSPORTX_KNOWLEDGE_ASSETS_JSON` 中的 `knowledge:traffic-assurance` 条目指定。该 JSON 对象可同时包含多个 Knowledge 资产；本 Skill 只读取自己的资产 ID。
 ```
 
-`search_knowledge.py` 根据脚本自身位置解析 `<skill-root>`，因此移动或分发整个 Skill 后无需修改路径。
+会话上下文“已装载 Module 资源”会给出本 Skill 根目录；`search_knowledge.py` 根据脚本自身位置解析 `<skill-root>`，因此移动或分发整个 Skill 后无需修改路径。
 
 全局入口：
 
@@ -107,6 +107,8 @@ cite KNOWLEDGE_ID
 ```
 
 返回知识正文、规范强度、节点信息、原件路径和可复制引用。
+
+`cite` 不创建 Web/报告引用 occurrence。正式输出须再调用 `tau_resolve_citation({ knowledgeIds })`，选择返回的 `locatorId` 后调用 `tau_cite({ locatorId })`，并使用返回的 `[[cite:<occurrenceId>]]` 标记。
 
 ## 4. 查询设计
 

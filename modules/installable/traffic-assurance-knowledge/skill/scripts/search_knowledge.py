@@ -16,8 +16,9 @@ from typing import Any, Iterable
 import yaml
 
 
-KNOWLEDGE_ROOT = os.environ.get("TRANSPORTX_KNOWLEDGE_ROOT")
-DEFAULT_ROOT = Path(KNOWLEDGE_ROOT) if KNOWLEDGE_ROOT else None
+KNOWLEDGE_ASSETS = json.loads(os.environ.get("TRANSPORTX_KNOWLEDGE_ASSETS_JSON", "{}"))
+KNOWLEDGE_ROOT = KNOWLEDGE_ASSETS.get("knowledge:traffic-assurance")
+DEFAULT_ROOT = Path(KNOWLEDGE_ROOT) if isinstance(KNOWLEDGE_ROOT, str) and KNOWLEDGE_ROOT else None
 CLASS_ALIASES = {
     "法律": "LEGAL_GOVERNANCE",
     "法规": "LEGAL_GOVERNANCE",
@@ -594,7 +595,7 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     if args.knowledge_root is None:
-        raise SystemExit("TRANSPORTX_KNOWLEDGE_ROOT or --knowledge-root is required; install a Knowledge module or provide an explicit root.")
+        raise SystemExit("knowledge:traffic-assurance is not available in TRANSPORTX_KNOWLEDGE_ASSETS_JSON; install this Knowledge module or provide --knowledge-root explicitly.")
     kb = KnowledgeBase(args.knowledge_root, include_all_status=args.all_status)
     commands = {
         "stats": command_stats,
