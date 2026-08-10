@@ -17,15 +17,15 @@
 
 首页提供交通问数、地图分析和报告生成入口：
 
-![TransportX Traffic Agent 首页](./docs/images/view.png)
+![TransportX Traffic Agent 首页](./docs/archive/implemented/images/view.png)
 
 Agent 可在同一工作台中完成 GIS 分析、地图增量编辑和结果说明。下图展示上海体育场周边地铁线路、站点与工具执行过程：
 
-![上海体育场周边地铁线路分析与地图增量编辑](./docs/images/geo-analysis-transit-network.png)
+![上海体育场周边地铁线路分析与地图增量编辑](./docs/archive/implemented/images/geo-analysis-transit-network.png)
 
 地图可以叠加交通需求热力、重要场站标签和地铁线路，并在右侧保留分析说明：
 
-![网约车下车热力、重要场站与地铁线路叠加分析](./docs/images/geo-analysis-demand-heatmap.png)
+![网约车下车热力、重要场站与地铁线路叠加分析](./docs/archive/implemented/images/geo-analysis-demand-heatmap.png)
 
 ## 快速开始
 
@@ -106,11 +106,11 @@ npm run test:pi-smoke
 ## 文档
 
 - [架构与目录治理](./docs/ARCHITECTURE.md)：当前系统边界、依赖方向和模块职责。
-- [桌面化与模块化实施记录](./docs/AGENT_PLATFORM_PRODUCTIZATION.md)：3.0 改造范围、落地结果、macOS 分发修复与待发布事项。
-- [引用板块功能设计](./docs/CITATION_FEATURE_TECHNICAL_PLAN.md)：知识库引用、任务产物与报告参考依据的实现和验收记录。
-- [React UI 改造 ADR](./docs/REACT_UI_MIGRATION_PLAN.md)：已完成的迁移决策与删除 legacy 的记录。
+- [桌面化与模块化实施记录](./docs/archive/implemented/AGENT_PLATFORM_PRODUCTIZATION.md)：3.0 改造范围、落地结果、macOS 分发修复与待发布事项。
+- [引用板块功能设计](./docs/archive/implemented/CITATION_FEATURE_TECHNICAL_PLAN.md)：知识库引用、任务产物与报告参考依据的实现和验收记录。
+- [React UI 改造 ADR](./docs/archive/implemented/REACT_UI_MIGRATION_PLAN.md)：已完成的迁移决策与删除 legacy 的记录。
 - [版本修改与 GitHub 操作日志](./docs/CHANGELOG.md)：发布与提交历史。
-- [测试基线](./docs/TEST_BASELINES.md)：默认测试与浏览器验证范围。
+- [测试基线](./docs/archive/implemented/TEST_BASELINES.md)：默认测试与浏览器验证范围。
 
 ## License
 

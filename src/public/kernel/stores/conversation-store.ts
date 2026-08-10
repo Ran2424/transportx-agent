@@ -10,11 +10,11 @@
  *   entries that already exist (dedup by entry id / message content key).
  */
 
-import type { AppMessage, MessageContentBlock, PendingImage, SessionEntry, SessionSnapshot } from '../../app-types.js';
+import type { AppMessage, MessageContentBlock, SessionEntry, SessionSnapshot } from '../../app-types.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
 
-export type QueuedPrompt = { message: string; images?: PendingImage[] };
-export type OptimisticPrompt = { message: string; images?: PendingImage[] };
+export type QueuedPrompt = { message: string; attachmentIds?: string[] };
+export type OptimisticPrompt = { message: string; attachmentIds?: string[] };
 
 export type LiveOverlay = {
   runId: string | null;
@@ -47,9 +47,9 @@ const emptyConversation = (): ConversationState => ({ snapshotEntries: [], live:
 
 export function messageText(message: AppMessage | undefined): string {
   if (!message) return '';
-  if (typeof message.content === 'string') return message.content;
+  if (typeof message.content === 'string') return message.content.replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
   if (Array.isArray(message.content)) {
-    return message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n');
+    return message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n').replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
   }
   return '';
 }
@@ -139,17 +139,21 @@ export class ConversationStore {
       }
       if (message?.role === 'user') {
         const text = messageText(message);
+        const optimistic = conv.live.optimisticPrompt;
+        const enrichedMessage = message.attachmentIds?.length || optimistic?.message !== text || !optimistic?.attachmentIds?.length
+          ? message
+          : { ...message, attachmentIds: optimistic.attachmentIds };
         // Replace the optimistic prompt with the authoritative event. Keeping
         // the event in the stable entries is essential until the next snapshot
         // arrives; otherwise a fast user echo makes the prompt disappear.
-        if (conv.live.optimisticPrompt && conv.live.optimisticPrompt.message === text) {
+        if (optimistic && optimistic.message === text) {
           return {
             ...conv,
-            snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message }),
+            snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message: enrichedMessage }),
             live: { ...conv.live, optimisticPrompt: null },
           };
         }
-        return { ...conv, snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message }) };
+        return { ...conv, snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message: enrichedMessage }) };
       }
       return conv;
     });

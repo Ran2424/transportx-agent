@@ -408,8 +408,16 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .message-copy { position: absolute; right: 0; top: 0; border: 0; border-radius: 4px; padding: 4px 6px; color: var(--text-tertiary); background: transparent; cursor: pointer; font-size: 11px; opacity: 0; }
 .conversation-message:hover .message-copy { opacity: 1; }
 .message-copy:hover { color: var(--text-primary); background: var(--surface-hover); }
-.message-images { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 9px; }
-.message-images img { width: min(180px, 100%); max-height: 180px; object-fit: cover; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); }
+.user-message-group { width: min(860px, 88%); max-width: 100%; margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.user-message-group .message-attachments { justify-content: flex-end; margin-bottom: 0; }
+.user-message-group .user-message { max-width: 100%; }
+.message-attachments { display: flex; flex-wrap: wrap; gap: 7px; }
+.message-attachment-card { min-width: 180px; max-width: 300px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--interactive-primary-fg) 24%, transparent); border-radius: var(--tx-radius-sm); background: color-mix(in srgb, var(--interactive-primary-bg) 78%, transparent); }
+.message-attachment-card img { width: 38px; height: 38px; object-fit: cover; border-radius: 4px; }
+.message-attachment-icon { width: 38px; height: 38px; display: grid; place-items: center; color: currentColor; }
+.message-attachment-card > span:last-child, .pending-attachment-copy { min-width: 0; display: grid; gap: 2px; }
+.message-attachment-card strong, .pending-attachment-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.message-attachment-card small, .pending-attachment-copy small { overflow: hidden; color: inherit; font-size: 10px; opacity: .72; text-overflow: ellipsis; white-space: nowrap; }
 .thinking-block { width: min(900px, 100%); max-width: 100%; margin: 2px 0 4px; border: 0; background: transparent; }
 .thinking-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; padding: 2px 0; border: 0; color: var(--text-secondary); background: transparent; cursor: pointer; text-align: left; font-size: 12px; }
 .thinking-toggle svg { width: 12px; transition: transform 160ms; }
@@ -441,6 +449,12 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .tool-pending { color: var(--text-tertiary); font-size: 11px; }
 .tool-image-preview { display: inline-block; margin-top: 8px; }
 .tool-image-preview img { display: block; max-width: 240px; max-height: 180px; border: 1px solid var(--border-default); border-radius: 5px; }
+.tool-read-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 9px 8px; }
+.tool-read-image-button { display: block; padding: 0; border: 1px solid var(--border-default); border-radius: 5px; background: transparent; cursor: zoom-in; }
+.tool-read-image-button img { display: block; width: 180px; max-height: 130px; object-fit: contain; border-radius: 4px; }
+.tool-read-open { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 5px 8px; border: 1px solid var(--border-default); border-radius: 5px; color: var(--text-secondary); background: var(--surface-default); cursor: pointer; font-size: 11px; }
+.tool-read-open:hover, .tool-read-open:focus-visible { border-color: var(--selection-border); color: var(--selection-fg); background: var(--selection-bg); outline: 0; }
+.tool-read-unavailable { display: inline-flex; align-items: center; gap: 6px; color: var(--text-tertiary); font-size: 11px; }
 .conversation-empty { padding: 15vh 20px; text-align: center; }
 .conversation-empty-mark { width: 64px; height: 64px; color: var(--selection-fg); }
 .conversation-empty h1 { margin: 16px 0 8px; font: 400 30px/1.1 var(--tx-font-display); }
@@ -475,9 +489,12 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .composer-abort { color: var(--status-danger); background: color-mix(in srgb, var(--status-danger) 10%, transparent); }
 .composer-file-input { display: none; }
 .composer-attach input { display: none; }
-.attachment-list { display: flex; gap: 6px; padding: 0 0 8px; }
-.attachment-list > div { position: relative; width: 42px; height: 42px; }
-.attachment-list img { width: 100%; height: 100%; border: 1px solid var(--border-default); border-radius: 5px; object-fit: cover; }
+.attachment-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.attachment-list--cards .pending-attachment { min-width: 180px; max-width: 280px; position: relative; display: flex; align-items: center; gap: 7px; padding: 6px 25px 6px 7px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); background: var(--surface-raised); }
+.pending-attachment > img, .pending-attachment-icon { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; object-fit: cover; border-radius: 4px; }
+.pending-attachment-icon { color: var(--text-secondary); }
+.pending-attachment.is-uploading { opacity: .72; }
+.pending-attachment.is-error { border-color: var(--status-danger); }
 .attachment-list button, .queued-prompts button { position: absolute; right: -5px; top: -5px; width: 16px; height: 16px; padding: 0; border: 1px solid var(--border-default); border-radius: 50%; color: var(--text-primary); background: var(--surface-raised); cursor: pointer; }
 .queued-prompts { display: grid; gap: 5px; padding-bottom: 7px; }
 .queued-prompts > div { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 28px 7px 9px; border-left: 2px solid var(--status-warning); background: var(--selection-bg); }

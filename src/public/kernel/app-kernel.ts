@@ -67,8 +67,8 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     for (const [sessionId, conv] of Object.entries(bySession)) {
       if (streamingBySession[sessionId] || conv.live.queued.length === 0) continue;
       for (const queued of conv.live.queued) {
-        transport.send({ type: 'prompt', sessionId, message: queued.message, ...(queued.images?.length ? { images: queued.images } : {}) });
-        apply({ type: 'conversation/promptSent', sessionId, message: queued.message, images: queued.images });
+        transport.send({ type: 'prompt', sessionId, message: queued.message, ...(queued.attachmentIds?.length ? { attachmentIds: queued.attachmentIds } : {}) });
+        apply({ type: 'conversation/promptSent', sessionId, message: queued.message, attachmentIds: queued.attachmentIds });
       }
       apply({ type: 'conversation/queueDrained', sessionId });
     }

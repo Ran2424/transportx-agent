@@ -14,7 +14,7 @@ process.env.PI_CODING_AGENT_SESSION_DIR = path.join(process.env.PI_CODING_AGENT_
 const PROJECTS_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'projects');
 process.env.TAU_PROJECTS_DIR = PROJECTS_DIR;
 
-const { server, computeUrls, liveManager, SESSIONS_DIR, _setSpawnPiForTest } = require('../bin/tau.js');
+const { server, computeUrls, handleRpcCommand, liveManager, SESSIONS_DIR, _setSpawnPiForTest } = require('../bin/tau.js');
 let base = '';
 const PROJ_DIR = path.join(SESSIONS_DIR, '--tmp--httpproj');
 
@@ -202,6 +202,23 @@ test('reads files within the live-session directory but blocks static traversal'
   assert.equal(content.content, '# Report\n\nTraffic analysis');
   assert.equal((await fetch(`${base}/%2e%2e%2fsecret`)).status, 403);
   assert.equal((await fetch(`${base}/api/health`)).status, 200);
+});
+
+test('normalizes model references before sending Pi set_model commands', async () => {
+  const commands: Array<Record<string, unknown>> = [];
+  const session = {
+    ...fakeSession('tau_set_model'),
+    send: async (command: Record<string, unknown>) => {
+      commands.push(command);
+      return { success: true, data: { model: { provider: 'deepseek', id: 'deepseek-v4-flash' } } };
+    },
+  };
+  liveManager.sessions.set(session.id, session);
+
+  const response = await handleRpcCommand({ type: 'set_model', sessionId: session.id, model: 'deepseek/deepseek-v4-flash' });
+  assert.equal(response.success, true);
+  assert.equal(commands[0].provider, 'deepseek');
+  assert.equal(commands[0].modelId, 'deepseek-v4-flash');
 });
 
 test('resuming a stored session publishes the persisted conversation snapshot', async (t: TestContext) => {

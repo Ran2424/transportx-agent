@@ -34,8 +34,8 @@ test('runtime manifest validates relative paths and checksums', (t: any) => {
   const entry = (relative: string, version: string) => ({ version, path: relative, sha256: digest(path.join(root, relative)) });
   fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
     manifestVersion: 1,
-    product: { name: 'TransportX Traffic Agent', version: '2.14.0' },
-    agentHost: { ...entry('agent-host/tau.js', '2.14.0'), protocolVersion: 1 },
+    product: { name: 'TransportX Traffic Agent', version: '3.0.3' },
+    agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 1 },
     pi: entry('runtimes/pi/cli.js', '0.80.10'),
     python: entry('runtimes/python/python', '3.10.0'),
   }));

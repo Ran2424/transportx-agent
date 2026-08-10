@@ -24,6 +24,7 @@ description: 在 Tau 中使用 publish_geodata 和 present_visualization 构建�
 | 增加可解释属性 | `set_popup`、`set_metadata` | 不要把完整属性表塞进标题或说明 |
 | 改变地图视角 | `set_camera` 或 `fit_bounds` | 不要通过重新创建地图改变视角 |
 | 控制图层或高亮结果 | `set_visibility` 或 `select` | 不要把临时 hover 当成 Scene 事实 |
+| 删除或排序图层 | `remove_layer` 或 `reorder_layers` | 不要通过重建整个地图来改变图层顺序 |
 | 清除当前可视化 | `clear` | 不要创建空 GeoJSON 来模拟清除 |
 
 每条 `present_visualization` 命令只修改一个关注点。工具成功后会返回完整、递增 revision 的 GeoScene Snapshot；后续命令继续使用同一个 `visualizationId`。
@@ -80,10 +81,11 @@ grid["id"] = grid.index.astype(str)
 
 1. 使用 `set_step`、`set_continuous`、`set_categorical` 或 `set_constant` 设置一个通道。
 2. 使用 `add_layer` 添加第二个数据源/图层或参考 POI 图层。
-3. 使用 `set_popup` 添加详情。
-4. 仅在需要改变导航、全屏或“回到范围”按钮时使用 `set_controls`。`fitToData: false` 会隐藏该按钮；`legend` 和 `layerSwitcher` 仍为预留标志，图层列表始终显示且尚无自动图例。
-5. 使用 `set_metadata` 添加说明和警告。
-6. 仅当根据资源范围自动推导的视图不合适时，使用 `set_camera` 或 `fit_bounds`。
+3. 必要时使用 `reorder_layers` 调整图层绘制顺序，`layerIds` 必须包含当前所有图层 ID，顺序为从底到顶。
+4. 使用 `set_popup` 添加详情。
+5. 仅在需要改变导航、全屏或“回到范围”按钮时使用 `set_controls`。`fitToData: false` 会隐藏该按钮；`legend` 和 `layerSwitcher` 仍为预留标志，图层列表始终显示且尚无自动图例。
+6. 使用 `set_metadata` 添加说明和警告。
+7. 仅当根据资源范围自动推导的视图不合适时，使用 `set_camera` 或 `fit_bounds`。
 
 优化地图时复用同一个 `visualizationId`。当用户要求在当前地图中“添加”“叠加”“标注”或“包含”内容时，更新该可视化，不要新建第二张地图。仅当用户明确要求单独地图时才创建新 ID。
 
@@ -112,6 +114,8 @@ grid["id"] = grid.index.astype(str)
 - 图式字段、比例分母和 `maxValue` 必须在发布前根据分析口径确定；不要把“当前视图最大值”无说明地称为百分比。
 
 - 重叠的填充图层默认只让一个图层设置为 `visible: true`，其他备选图层设为 `visible: false`。Web 地图始终显示当前图层可见性列表；不要依赖预留的 `layerSwitcher` 标志。
+- `remove_layer` 只删除图层，不删除数据源；如果该数据源不再被其他图层使用，它会作为无可见用途的资源保留在 Scene 中。
+- `reorder_layers` 使用完整的图层 ID 排列，顺序为从底到顶；不能只传需要移动的两个图层。
 - 当用户需要理解热点与场馆或车站的相对位置时，添加参考 POI 或标签图层。
 - 当地图展示场馆、车站、机场等可命名 POI 点时，除非点位极其密集或用户明确不要标注，否则应同时添加 `label` 图层，并以名称字段设置 `textField`；不要只画无名称的圆点。
 - 使用清晰的图层标题和简短的弹窗字段。

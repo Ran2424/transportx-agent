@@ -54,7 +54,8 @@ export type RpcCommand = {
   baseUrl?: string;
   apiKey?: string;
   reasoning?: boolean;
-  images?: boolean;
+  images?: boolean | Array<{ type: string; data: string; mimeType: string }>;
+  attachmentIds?: string[];
   level?: string;
   name?: string;
   enabled?: boolean;

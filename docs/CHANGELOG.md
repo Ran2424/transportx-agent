@@ -11,6 +11,26 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0.4 — 附件系统与空间分析基础
+
+- 日期：2026-08-10
+- GitHub 操作：直接提交并推送至 `origin/main`。
+
+主要修改：
+
+- 将原有图片临时输入升级为 Session 级统一附件系统。文件经独立 multipart 上传接口保存至当前 Session，消息仅保留 `attachmentIds`；支持选择、拖拽和剪贴板入口，以及图片、PDF、Office、表格、文本和未知后缀文件。
+- 附件元数据与消息引用支持历史恢复；服务端执行归属、路径、符号链接、哈希和大小校验，并向 Agent 注入安全相对路径上下文。具备视觉输入能力的模型额外接收图片内容。
+- 文件工作区补充附件预览和附件卡片展示；Geo 场景新增 `remove_layer`、`reorder_layers` 原子操作。
+- 桌面内置 Python runtime 新增 `pandas`、`pyproj` 和 `shapely`，并在打包前验证模块可导入，为后续交通空间分析提供表格处理、坐标投影与几何计算基础。
+- 将历史实施资料、测试基线、评审与报告归档至 `docs/archive/`，根目录仅保留当前架构与变更记录；同步更新 README 链接与发布文件包含规则。
+- npm 包与平台版本同步更新为 `3.0.4`。
+
+验证：
+
+- 持久化自包含 Python runtime 使用 `-I -B` 隔离模式导入三项空间分析库通过。
+- `npm run typecheck` 通过；`npm test` 的 33 项中 31 项通过，附件与版本同步用例通过。
+- 两项既有 Task Extension 用例在本机 Node 24.2.0 加载 TypeScript 的 CommonJS/ESM 边界时触发 `ERR_INTERNAL_ASSERTION`；启用 `--experimental-transform-types` 后仍复现，待 Node 运行时问题处理。
+
 ## v3.0.3 — 本地应用启动、会话恢复与平台模块边界修复
 
 - 日期：2026-08-09

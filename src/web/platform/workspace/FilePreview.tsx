@@ -19,6 +19,7 @@ export type ExternalPreviewSource = {
 };
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'ico']);
+const PDF_EXTENSIONS = new Set(['pdf']);
 const TABLE_EXTENSIONS = new Set(['csv', 'tsv', 'xlsx', 'xls', 'ods']);
 const CODE_EXTENSIONS = new Set(['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'sh', 'bash', 'zsh', 'css', 'scss', 'html', 'sql', 'json', 'yaml', 'yml', 'xml', 'java', 'c', 'h', 'cpp', 'hpp', 'go', 'rs']);
 
@@ -27,6 +28,7 @@ export function filePresentation(item: WorkspaceFile): FilePresentation {
   const extension = item.name.split('.').pop()?.toLowerCase() || '';
   if (extension === 'md' || extension === 'mdx') return { kind: 'report', icon: 'report', label: 'Markdown 报告', preview: 'report', extension };
   if (IMAGE_EXTENSIONS.has(extension)) return { kind: 'image', icon: 'image', label: '图片', preview: 'image', extension };
+  if (PDF_EXTENSIONS.has(extension)) return { kind: 'pdf', icon: 'file', label: 'PDF 文件', preview: 'pdf', extension };
   if (TABLE_EXTENSIONS.has(extension)) return { kind: 'table', icon: 'table', label: '表格', preview: 'table', extension };
   if (CODE_EXTENSIONS.has(extension)) return { kind: 'code', icon: 'code', label: '代码', preview: 'code', extension };
   return { kind: 'document', icon: 'file', label: '文档', preview: null, extension };

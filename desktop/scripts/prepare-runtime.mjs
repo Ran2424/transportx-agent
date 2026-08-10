@@ -24,7 +24,7 @@ const stagedPython = path.join(stagedPythonRoot, pythonRelative);
 
 const probeSource = [
   'import importlib.util, json, platform, sys',
-  "required = ['ssl', 'sqlite3', 'yaml', 'numpy', 'matplotlib']",
+  "required = ['ssl', 'sqlite3', 'yaml', 'numpy', 'matplotlib', 'pandas', 'pyproj', 'shapely']",
   'print(json.dumps({',
   "  'version': platform.python_version(),",
   "  'machine': platform.machine(),",

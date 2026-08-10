@@ -26,6 +26,7 @@ import {
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import { piProcessEnv } from './pi-runtime.js';
 import { SessionProjection } from './session-projection.js';
+import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { signalProcessTree } from './process-tree.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import {
@@ -45,8 +46,8 @@ import {
 } from '../contracts/index.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
-type PiMessageContent = string | Array<{ type: string; text?: string }>;
-type PiMessage = { role?: string; content?: PiMessageContent; usage?: JsonRecord; model?: string; timestamp?: unknown };
+type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
+type PiMessage = { role?: string; content?: PiMessageContent; usage?: JsonRecord; model?: string; timestamp?: unknown; attachmentIds?: string[]; [key: string]: unknown };
 type PiRpcPayload = {
   command?: string;
   id?: string;
@@ -87,6 +88,10 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
     if (timestamp && (!latest || timestamp > latest)) latest = timestamp;
   }
   return latest;
+}
+
+function stripAttachmentContext(text: string) {
+  return text.replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
 }
 
 const PROJECT_PROMPT_PLACEHOLDERS: Record<string, (cwd: string, plan: ResolvedSessionPlan | null) => string> = {
@@ -211,6 +216,7 @@ export class PiRpcSession {
   lastBridgeRevision: number | null;
   contractDiagnostics: ContractDiagnostic[];
   resolvedSessionPlan: ResolvedSessionPlan | null;
+  pendingAttachmentRefs: string[][];
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -222,7 +228,7 @@ export class PiRpcSession {
     this.createdAt = new Date().toISOString();
     this.lastActiveAt = this.createdAt;
     this.isStreaming = false;
-    this.projection = new SessionProjection(opts.entries || []);
+    this.projection = new SessionProjection(opts.entries || [], readAttachmentMessageRefs(this.cwd));
     this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
@@ -242,6 +248,7 @@ export class PiRpcSession {
     this.capabilityMismatches = [];
     this.contractDiagnostics = [];
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
+    this.pendingAttachmentRefs = [];
     this.applyLatestBridgeEnvelope();
   }
 
@@ -561,16 +568,36 @@ export class PiRpcSession {
     if (message.role === 'user' && eventType === 'message_start') {
       const text = this.messageText(message);
       if (text) this.userMessages.push(text.slice(0, 300));
-      this.projection.appendMessage(message as JsonRecord);
+      const attachmentIds = this.pendingAttachmentRefs.shift() || [];
+      const enriched = attachmentIds.length
+        ? { ...message, attachmentIds, content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
+        : (typeof message.content === 'string' && message.content !== text ? { ...message, content: text } : message);
+      if (attachmentIds.length) recordAttachmentMessageRefs(this.cwd, { text, timestamp: typeof message.timestamp === 'number' ? message.timestamp : undefined, attachmentIds });
+      this.projection.setMessageRefs(readAttachmentMessageRefs(this.cwd));
+      this.projection.appendMessage(enriched as JsonRecord);
       this.maybeTitle();
     } else if (message.role !== 'user' && eventType === 'message_end') {
       this.projection.appendMessage(message as JsonRecord);
     }
   }
 
+  registerPromptAttachments(attachmentIds: string[]) {
+    this.pendingAttachmentRefs.push([...attachmentIds]);
+  }
+
+  discardPromptAttachments(attachmentIds: string[]) {
+    for (let index = this.pendingAttachmentRefs.length - 1; index >= 0; index -= 1) {
+      const pending = this.pendingAttachmentRefs[index];
+      if (pending.length === attachmentIds.length && pending.every((id, itemIndex) => id === attachmentIds[itemIndex])) {
+        this.pendingAttachmentRefs.splice(index, 1);
+        return;
+      }
+    }
+  }
+
   messageText(message: PiMessage) {
-    if (typeof message.content === 'string') return message.content;
-    if (Array.isArray(message.content)) return message.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    if (typeof message.content === 'string') return stripAttachmentContext(message.content);
+    if (Array.isArray(message.content)) return stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n'));
     return '';
   }
 
