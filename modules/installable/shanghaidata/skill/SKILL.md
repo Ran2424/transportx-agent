@@ -138,6 +138,7 @@ GeoJSON 明确为 CRS84，按 `EPSG:4326` 发布。EVDATA `roadid` 与原有 89 
 - 线路制图使用关系表中的线路上下文站序坐标，不用物理站质心替代所有站台位置。
 - 米制缓冲和距离先投影到 `EPSG:32651`；Web 显示可投影到 `EPSG:3857`。不要在经纬度上直接计算平面米制距离。
 - 轨交客流只通过统一 `line_id`、`station_id` 连接；高德方向 ID 不能替代统一线路 ID。
+- 轨交客流事实和日集市都是“线路—物理站”粒度。回答“某站”客流、峰值或排名时，必须先按 `station_id` 聚合其全部 `line_id`，再排序或取峰值；**严禁**直接对 `fact_metro_station_hour.total_flow`、`outbound_flow` 或 `mart_metro_station_day.peak_hour_flow` 排序后称为“某站”结果。站点小时问题用 `fact_metro_station_hour` 按 `date_key, hour, station_id` 聚合；站点日问题用 `mart_metro_station_day` 按 `date_key, station_id` 聚合。只有用户明确问“某线路在某站”时才保留 `line_id`。除非用户询问计算口径，否则不在题目或答案中暴露这一实现细节；具体 SQL 模板见 `references/metro.md`。
 - 公交交易数、轨交人次、网约车事件和订单是不同量纲，不得相加为“综合总客流”。
 - `rainfall_1h_mm` 是滚动一小时累计值；小时统计取最大值或平均值，不逐条求和。
 - 四场演唱会均为 19:00—22:00；进场、交通管制和疏散窗口不得冒充演出开始/结束时间。

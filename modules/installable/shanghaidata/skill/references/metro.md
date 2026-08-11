@@ -88,6 +88,9 @@
 
 `record_key INTEGER`，`date_key INTEGER`，`hour INTEGER`，`minute_key INTEGER`，`line_id INTEGER`，`station_id INTEGER`，`inbound_flow INTEGER`，`outbound_flow INTEGER`，`total_flow INTEGER`，`source_table TEXT`，`source_row_id INTEGER`
 
+> [!IMPORTANT]
+> 此表的一行是“日期—小时—线路—物理站”，**不是一个物理站的小时总客流**。回答“某站/单站/站点排名/站点峰值”前，必须按 `date_key, hour, station_id` 对全部 `line_id` 行做 `SUM(inbound_flow)`、`SUM(outbound_flow)` 和 `SUM(total_flow)`；只按 `station_id` 分组只能回答整个期间累计值，不能回答小时峰值。`MAX(f.total_flow)`、`ORDER BY f.total_flow` 或单行 `outbound_flow` 的结果只能称为“线路—站点记录”，严禁称为“全站”。
+
 ### `mart_metro_station_day`
 
 `date_key INTEGER`，`line_id INTEGER`，`station_id INTEGER`，`observed_hours INTEGER`，`inbound_flow INTEGER`，`outbound_flow INTEGER`，`total_flow INTEGER`，`peak_hour INTEGER`，`peak_hour_flow INTEGER`
@@ -98,15 +101,69 @@
 
 - 客流只通过统一 `line_id`、`station_id` 连接维表。
 - 站点名称可重名或包含线路语境，不应作为事实连接键。
+- `fact_metro_station_hour` 和 `mart_metro_station_day` 都是“线路—物理站”粒度，不是“物理站”粒度。同一物理站的多条线路会有多行记录。
+- 当问题对象是“站”“车站”“单站”或“站点排名/峰值”时，必须先按 `station_id` 汇总全部线路，再排序或取峰值。不得直接对单行 `total_flow`、`inbound_flow`、`outbound_flow` 或 `peak_hour_flow` 排序后回答全站问题。
+- 当问题对象明确为“某线路在某站”时，才按 `line_id, station_id` 查询。回答中未明确线路时，默认按物理站口径。
 - “上海体育场站”和“上海体育馆站”是两个轨交站；不要与场馆 POI 混淆。
 - 线路几何和已确认坐标均为 `EPSG:4326`；米制距离计算前投影到 `EPSG:32651`。
 - 日集市适合活动日对比；活动前后小时态势直接使用小时事实。
 - 没有客流行不代表零客流，先确认该站是否在19个客流组合内。
 
+## 站点客流强制聚合模板
+
+先判断问题问的是“物理站”还是“线路—站点”。以下模板仅用于物理站问题。
+
+```sql
+-- 单站单小时总客流 / 全部物理站的小时峰值
+WITH station_hour AS (
+  SELECT date_key, hour, station_id,
+         SUM(inbound_flow) AS inbound_flow,
+         SUM(outbound_flow) AS outbound_flow,
+         SUM(total_flow) AS total_flow
+  FROM metro.fact_metro_station_hour
+  GROUP BY date_key, hour, station_id
+)
+SELECT h.date_key, h.hour, s.station_name,
+       h.inbound_flow, h.outbound_flow, h.total_flow
+FROM station_hour h
+JOIN metro.dim_metro_station s USING (station_id)
+ORDER BY h.total_flow DESC
+LIMIT 1;
+
+-- 单站单小时出站客流峰值
+WITH station_hour AS (
+  SELECT date_key, hour, station_id,
+         SUM(inbound_flow) AS inbound_flow,
+         SUM(outbound_flow) AS outbound_flow,
+         SUM(total_flow) AS total_flow
+  FROM metro.fact_metro_station_hour
+  GROUP BY date_key, hour, station_id
+)
+SELECT h.date_key, h.hour, s.station_name,
+       h.inbound_flow, h.outbound_flow, h.total_flow
+FROM station_hour h
+JOIN metro.dim_metro_station s USING (station_id)
+ORDER BY h.outbound_flow DESC
+LIMIT 1;
+
+-- 监测期物理站累计客流排名
+SELECT s.station_name,
+       SUM(f.inbound_flow) AS inbound_flow,
+       SUM(f.outbound_flow) AS outbound_flow,
+       SUM(f.total_flow) AS total_flow
+FROM metro.fact_metro_station_hour f
+JOIN metro.dim_metro_station s USING (station_id)
+GROUP BY f.station_id, s.station_name
+ORDER BY total_flow DESC;
+```
+
+自检规则：站点小时汇总后的进站、出站和总客流必须分别等于该 `station_id` 在同一日期小时所有 `line_id` 事实行的和；不要将线路行最大值当作站点峰值。对日集市做物理站日排名时，同样必须按 `date_key, station_id` 汇总多个 `line_id`。
+
 ## 样例查询
 
 ```sql
--- 活动日相关站点逐小时进出站客流
+-- 线路—站点逐小时明细：仅用于用户明确询问某条线路在某站的客流。
+-- 严禁将此查询的单行排序、MAX(total_flow)或outbound_flow作为全站峰值/排名。
 SELECT f.date_key, f.hour, l.line_name, s.station_name,
        f.inbound_flow, f.outbound_flow, f.total_flow
 FROM metro.fact_metro_station_hour f

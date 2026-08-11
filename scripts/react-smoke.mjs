@@ -56,30 +56,34 @@ try {
   await reactPage.locator('[data-testid="agent-status"][data-state="connected"]').waitFor({ timeout: 10_000 });
   await reactPage.getByRole('heading', { name: /从一个清晰的/ }).waitFor();
 
-  // Settings: focus enters the dialog, theme applies, Esc closes and restores focus.
+  // Settings: categories replace the workspace, theme applies, and Esc returns.
   const settingsButton = reactPage.getByRole('button', { name: '打开设置' });
   await settingsButton.click();
-  await reactPage.getByRole('dialog', { name: '设置' }).waitFor();
-  const focusInSettings = await reactPage.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null);
-  if (!focusInSettings) throw new Error('Settings dialog did not capture focus');
-  await reactPage.getByRole('dialog', { name: '设置' }).getByLabel('添加类型').waitFor();
-  await reactPage.getByRole('dialog', { name: '设置' }).getByLabel('本地资源路径').waitFor();
-  await reactPage.getByRole('dialog', { name: '设置' }).getByText(ready.tempRoot, { exact: false }).first().waitFor();
-  await reactPage.locator('[role="radio"][aria-checked="false"]').first().click();
+  const settings = reactPage.getByTestId('settings-workspace');
+  await settings.waitFor();
+  await settings.getByRole('heading', { name: '常规', exact: true }).waitFor();
+  await settings.getByText(ready.tempRoot, { exact: false }).first().waitFor();
+  await settings.getByRole('button', { name: '模块', exact: true }).click();
+  await settings.getByLabel('模块包路径').waitFor();
+  await settings.getByRole('button', { name: '常规', exact: true }).click();
+  await settings.locator('[role="radio"][aria-checked="false"]').first().click();
   const selectedTheme = await reactPage.evaluate(() => document.documentElement.dataset.theme);
   await reactPage.keyboard.press('Escape');
-  await reactPage.getByRole('dialog', { name: '设置' }).waitFor({ state: 'hidden' });
-  if (!await settingsButton.evaluate((node) => node === document.activeElement)) throw new Error('Settings dialog did not restore trigger focus');
+  await settings.waitFor({ state: 'hidden' });
+  const mainWidthAfterSettings = await reactPage.locator('.agent-main-column').evaluate((node) => node.getBoundingClientRect().width);
+  if (mainWidthAfterSettings < 600) throw new Error(`Workspace width was not restored after settings (${mainWidthAfterSettings}px)`);
 
   await settingsButton.click();
-  await reactPage.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '添加模型' }).click();
+  await settings.getByRole('button', { name: 'Agent', exact: true }).click();
+  await settings.getByText('kimi-coding', { exact: true }).waitFor();
+  await settings.getByRole('button', { name: '添加模型' }).click();
   const addModel = reactPage.getByRole('dialog', { name: '添加 Pi 模型' });
   await addModel.getByLabel('Provider ID').fill('smoke-provider');
   await addModel.getByLabel('Model ID').fill('smoke-model');
   await addModel.getByLabel('API Base URL').fill('http://127.0.0.1:1/v1');
   await addModel.getByLabel('API Key').fill('smoke-key');
   await addModel.getByRole('button', { name: '保存模型' }).click();
-  await reactPage.getByRole('dialog', { name: '设置' }).waitFor();
+  await settings.waitFor();
   await reactPage.keyboard.press('Escape');
 
   // Command palette keyboard path.
@@ -116,6 +120,12 @@ try {
   if (!await reactPage.getByTitle(primaryTask.cwd, { exact: true }).evaluate((node) => node.closest('.live-tab')?.classList.contains('is-active'))) {
     throw new Error('Primary timestamped task did not become active');
   }
+  await settingsButton.click();
+  await settings.waitFor();
+  await reactPage.keyboard.press('Escape');
+  await settings.waitFor({ state: 'hidden' });
+  const activeWorkspaceWidth = await reactPage.locator('.agent-main-column').evaluate((node) => node.getBoundingClientRect().width);
+  if (activeWorkspaceWidth < 600) throw new Error(`Active workspace width was not restored after settings (${activeWorkspaceWidth}px)`);
 
   // Conversation: React composer sends through the command port; optimistic
   // user message and streaming/final assistant rendering share the Kernel.

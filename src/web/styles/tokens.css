@@ -39,6 +39,7 @@
   --tx-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
   --tx-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --tx-font-display: "Iowan Old Style", "Baskerville", Georgia, serif;
+  --tx-font-brand: "Bauhaus 93", Futura, "Arial Rounded MT Bold", sans-serif;
 
   /* 工作台面板状态切换：克制、连贯，避免打断分析节奏 */
   --tx-motion-panel: 240ms;
