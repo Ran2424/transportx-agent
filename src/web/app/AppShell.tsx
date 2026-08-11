@@ -18,7 +18,7 @@ function savedConversationWidth() {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_CONVERSATION_WIDTH;
 }
 
-export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, mapOpen, overlays }: {
+export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, mapOpen, settings, settingsOpen, overlays }: {
   header: ReactNode;
   sidebar: ReactNode;
   tabs: ReactNode;
@@ -27,6 +27,8 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   taskFloat: ReactNode;
   mapPanel: ReactNode;
   mapOpen: boolean;
+  settings: ReactNode;
+  settingsOpen: boolean;
   overlays: ReactNode;
 }) {
   const mainRef = useRef<HTMLElement>(null);
@@ -68,7 +70,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
     const observer = new ResizeObserver(resize);
     observer.observe(main);
     return () => observer.disconnect();
-  }, [mapVisible, preferredWidth]);
+  }, [mapVisible, preferredWidth, settingsOpen]);
 
   useEffect(() => {
     window.localStorage.setItem('tau-conversation-pane-width', String(preferredWidth));
@@ -131,28 +133,30 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
       <div className="react-grain" aria-hidden="true" />
       {header}
       <div className="agent-shell-body">
-        {sidebar}
-        <section ref={mainRef} className={`agent-main-column${mapVisible ? ' is-map-focused' : ''}${mapState === 'opening' ? ' is-map-entering' : ''}${mapState === 'closing' ? ' is-map-closing' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
-          <section className="map-focus-panel">{mapPanel}</section>
-          <div
-            className="conversation-resizer"
-            role="separator"
-            aria-label="调整聊天区域宽度"
-            aria-orientation="vertical"
-            aria-valuenow={conversationWidth}
-            tabIndex={mapVisible ? 0 : -1}
-            data-testid="conversation-resizer"
-            onDoubleClick={() => updateWidth(DEFAULT_CONVERSATION_WIDTH)}
-            onKeyDown={resizeWithKeyboard}
-            onPointerDown={startResize}
-          />
-          <section className="conversation-pane">
-            {tabs}
-            {conversation}
+        {settings || <>
+          {sidebar}
+          <section ref={mainRef} className={`agent-main-column${mapVisible ? ' is-map-focused' : ''}${mapState === 'opening' ? ' is-map-entering' : ''}${mapState === 'closing' ? ' is-map-closing' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
+            <section className="map-focus-panel">{mapPanel}</section>
+            <div
+              className="conversation-resizer"
+              role="separator"
+              aria-label="调整聊天区域宽度"
+              aria-orientation="vertical"
+              aria-valuenow={conversationWidth}
+              tabIndex={mapVisible ? 0 : -1}
+              data-testid="conversation-resizer"
+              onDoubleClick={() => updateWidth(DEFAULT_CONVERSATION_WIDTH)}
+              onKeyDown={resizeWithKeyboard}
+              onPointerDown={startResize}
+            />
+            <section className="conversation-pane">
+              {tabs}
+              {conversation}
+            </section>
+            {taskFloat}
           </section>
-          {taskFloat}
-        </section>
-        {workspace}
+          {workspace}
+        </>}
       </div>
       {overlays}
     </div>

@@ -35,7 +35,7 @@ export const PI_COMMAND = PI_EXECUTABLE.command;
 export const PI_COMMAND_ARGS = PI_EXECUTABLE.args;
 export const PYTHON_EXECUTABLE = resolvePythonExecutable({ resourcesDir: APP_PATHS.resourcesDir, desktop: DESKTOP_MODE });
 export const PYTHON_COMMAND = PYTHON_EXECUTABLE.command;
-export const PLATFORM_VERSION = '3.0.5';
+export const PLATFORM_VERSION = '3.0.6';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;

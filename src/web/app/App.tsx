@@ -13,7 +13,7 @@ import { ModelSetupDialog } from '../platform/model/ModelSetupDialog';
 import { NewSessionDialog } from '../platform/sessions/NewSessionDialog';
 import { LiveTabs } from '../platform/sessions/LiveTabs';
 import { SessionSidebar } from '../platform/sessions/SessionSidebar';
-import { SettingsDialog, themes, type ThemeId } from '../platform/settings/SettingsDialog';
+import { SettingsPage, themes, type SettingsSectionId, type ThemeId } from '../platform/settings/SettingsDialog';
 import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDock';
 import { projectVisualizations } from '../features/geo/geo-projection';
 import { projectTaskState } from '../features/task/task-projection';
@@ -57,6 +57,7 @@ export function App() {
   const [mapOpen, setMapOpen] = useState(false);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general');
   const [modelOpen, setModelOpen] = useState(false);
   const [modelSetupOpen, setModelSetupOpen] = useState(false);
   const [modelSetupOrigin, setModelSetupOrigin] = useState<'new' | 'picker' | 'settings' | null>(null);
@@ -275,7 +276,11 @@ export function App() {
         setSettingsOpen(true);
         return;
       }
-      const hasOverlay = newSessionOpen || settingsOpen || modelOpen || modelSetupOpen || commandsOpen || !!extensionUi.current;
+      if (event.key === 'Escape' && settingsOpen) {
+        setSettingsOpen(false);
+        return;
+      }
+      const hasOverlay = newSessionOpen || modelOpen || modelSetupOpen || commandsOpen || !!extensionUi.current;
       if (event.key === 'Escape' && !hasOverlay) {
         if (mapOpen) {
           closeMap();
@@ -309,11 +314,12 @@ export function App() {
       taskFloat={<WorkspaceFloat kind="tasks" open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
       mapPanel={<WorkspaceFloat kind="map" open={mapOpen} session={activeSession} onClose={closeMap} />}
       mapOpen={mapOpen}
+      settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
+      settingsOpen={settingsOpen}
       overlays={<>
         <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} onAddModel={() => openModelSetup('new')} />
         <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(`已添加模型 ${reference}`); changeModelSetupOpen(false); }} />
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
         {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label="关闭状态通知" onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}

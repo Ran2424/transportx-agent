@@ -1,10 +1,11 @@
-import xRibbonUrl from '../assets/x-ribbon-icon.svg';
+import xIconUrl from '../assets/x-icon.svg';
 
 export function BrandMark({ className = '' }: { className?: string }) {
   return (
-    <span
+    <img
       className={`transportx-mark${className ? ` ${className}` : ''}`}
-      style={{ WebkitMaskImage: `url("${xRibbonUrl}")`, maskImage: `url("${xRibbonUrl}")` }}
+      src={xIconUrl}
+      alt=""
       aria-hidden="true"
     />
   );

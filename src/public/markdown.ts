@@ -213,38 +213,11 @@ export function renderMarkdown(text: string, citationNumbers: Record<string, num
 }
 
 /**
- * Lightweight user-message renderer — inline formatting + blockquotes only.
- * Preserves whitespace/newlines for everything else.
+ * Render user messages with the same block and inline Markdown support as
+ * assistant messages so pasted tables and line breaks remain readable.
  */
 export function renderUserMarkdown(text: string) {
-  if (!text) return '';
-  text = text.replace(/\r\n/g, '\n');
-
-  const lines = text.split('\n');
-  let html = '';
-  let inBlockquote = false;
-  let bqLines: string[] = [];
-
-  function flushBq() {
-    if (inBlockquote) {
-      html += '<blockquote>' + bqLines.map(l => renderInline(l)).join('<br>') + '</blockquote>';
-      inBlockquote = false;
-      bqLines = [];
-    }
-  }
-
-  for (const line of lines) {
-    if (/^>\s?/.test(line)) {
-      if (!inBlockquote) { inBlockquote = true; bqLines = []; }
-      bqLines.push(line.replace(/^>\s?/, ''));
-      continue;
-    }
-    flushBq();
-    html += renderInline(line) + '\n';
-  }
-  flushBq();
-
-  return html.replace(/\n$/, '');
+  return renderMarkdown(text);
 }
 
 function renderInline(text: string, citationNumbers?: Record<string, number>, imageResolver?: MarkdownImageResolver) {
