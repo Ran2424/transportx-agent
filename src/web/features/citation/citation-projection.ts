@@ -1,4 +1,5 @@
 import type { SessionEntry } from '../../../public/app-types.js';
+import i18n from '../../i18n';
 import {
   parseCitationEnvelope,
   type CitationLocator,
@@ -102,27 +103,29 @@ export function citationDisplayText(text: string, _projection?: MessageCitationP
 
 function locatorText(locator: CitationLocator) {
   const positions: string[] = [];
-  if (locator.page) positions.push(`PDF 第 ${locator.page} 页`);
-  if (locator.printedPage && locator.printedPage !== String(locator.page ?? '')) positions.push(`正文第 ${locator.printedPage} 页`);
+  const english = i18n.language === 'en-US';
+  if (locator.page) positions.push(english ? `PDF page ${locator.page}` : `PDF 第 ${locator.page} 页`);
+  if (locator.printedPage && locator.printedPage !== String(locator.page ?? '')) positions.push(english ? `printed page ${locator.printedPage}` : `正文第 ${locator.printedPage} 页`);
   if (locator.clause) positions.push(locator.clause);
   if (locator.sourceUnit) positions.push(locator.sourceUnit);
   else if (locator.nodeId) positions.push(locator.nodeId);
   else if (locator.section) positions.push(locator.section);
-  if (locator.lineStart) positions.push(locator.lineEnd && locator.lineEnd !== locator.lineStart ? `第 ${locator.lineStart}–${locator.lineEnd} 行` : `第 ${locator.lineStart} 行`);
-  return positions.join('，') || '原始资料';
+  if (locator.lineStart) positions.push(locator.lineEnd && locator.lineEnd !== locator.lineStart ? (english ? `lines ${locator.lineStart}–${locator.lineEnd}` : `第 ${locator.lineStart}–${locator.lineEnd} 行`) : (english ? `line ${locator.lineStart}` : `第 ${locator.lineStart} 行`));
+  return positions.join(english ? ', ' : '，') || i18n.t('workspace.type.source');
 }
 
 export function citationReferenceMarkdown(projection?: MessageCitationProjection) {
   if (!projection?.citations.length) return '';
-  return ['## 参考文献', '', ...projection.citations.map(({ number, work, locator }) => {
+  const english = i18n.language === 'en-US';
+  return [english ? '## References' : '## 参考文献', '', ...projection.citations.map(({ number, work, locator }) => {
     const quote = locator.quote?.replace(/\s+/g, ' ').trim() || '';
-    return `${number}. **《${work.title}》** — ${locatorText(locator)}${quote ? `。原文摘录：“${quote.length > 240 ? `${quote.slice(0, 240)}…` : quote}”` : ''}`;
+    return `${number}. **${english ? work.title : `《${work.title}》`}** — ${locatorText(locator)}${quote ? (english ? `. Excerpt: “${quote.length > 240 ? `${quote.slice(0, 240)}…` : quote}”` : `。原文摘录：“${quote.length > 240 ? `${quote.slice(0, 240)}…` : quote}”`) : ''}`;
   })].join('\n');
 }
 
 export function citationCopyText(text: string, projection?: MessageCitationProjection) {
   if (!projection) return text;
-  let output = text.replace(MARKER_RE, (_marker, raw: string) => raw.split(',').map((id) => projection.numbers[id.trim()] ? `[${projection.numbers[id.trim()]}]` : '[引用不可用]').join(''));
+  let output = text.replace(MARKER_RE, (_marker, raw: string) => raw.split(',').map((id) => projection.numbers[id.trim()] ? `[${projection.numbers[id.trim()]}]` : `[${i18n.language === 'en-US' ? 'citation unavailable' : '引用不可用'}]`).join(''));
   if (projection.citations.length) output += `\n\n${citationReferenceMarkdown(projection)}`;
   return output;
 }

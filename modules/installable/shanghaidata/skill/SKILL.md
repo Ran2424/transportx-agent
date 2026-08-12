@@ -7,6 +7,13 @@ description: Power the Major Event Traffic Situation Insight and Decision Suppor
 
 本资产服务于“重大活动交通态势洞察及辅助决策智能体”，以上海体育场时代少年团演唱会为内置案例。会话上下文“已装载 Module 资源”会列出本 Skill 根目录和本资产 `data:shanghai-traffic` 的目录；使用该 Skill 根目录下的 `scripts/query_assets.py` 查询分域 SQLite 资产。正常会话通过 `TRANSPORTX_DATA_ASSETS_JSON` 注入全部 Data 资产，脚本只读取其中 `data:shanghai-traffic` 的目录；独立诊断时也可显式传入 `--data-root <Data 资产目录>`。脚本不会从 Skill 相邻目录寻找数据。
 
+## Reference 文件位置（必须遵守）
+
+- `<Skill 根目录>` 是会话上下文中此 `SKILL.md` 所在的目录。
+- 所有 Reference 文件都位于 `<Skill 根目录>/references/`，例如 `<Skill 根目录>/references/metro.md`。
+- `data:shanghai-traffic` 的资产根目录只包含数据库文件；**不得**从 `<Data 资产目录>/references/`、`assets/references/` 或当前任务目录读取 Reference。
+- 读取 Reference 前，先以会话上下文给出的实际 Skill 根目录拼接路径；不要根据模块安装目录或资产目录自行猜测。
+
 ## 内置案例
 
 活动名称：时代少年团「加冠礼」演唱会—「冠军」上海站。场馆：上海体育场。
@@ -158,7 +165,7 @@ GeoJSON 明确为 CRS84，按 `EPSG:4326` 发布。EVDATA `roadid` 与原有 89 
 
 ## 参考文件
 
-先读整体说明，再只加载本次查询涉及的分库 Reference：
+先读整体说明，再只加载本次查询涉及的分库 Reference。以下路径均相对于 `<Skill 根目录>`，不是 Data 资产目录：
 
 - `references/coverage.md`：实际覆盖、行数和已知缺口。
 - `references/schema.md`：表粒度、字段、主键和连接方式。

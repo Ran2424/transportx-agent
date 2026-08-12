@@ -1,5 +1,6 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useRef, type ComponentProps, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 type DialogProps = ComponentProps<typeof DialogPrimitive.Root> & {
   title: string;
@@ -15,6 +16,7 @@ export function Dialog({
   className = '',
   ...rootProps
 }: DialogProps) {
+  const { t } = useTranslation();
   const previousFocus = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(false);
   const isOpen = rootProps.open ?? rootProps.defaultOpen ?? false;
@@ -38,8 +40,8 @@ export function Dialog({
         >
           <div className="dialog-heading">
             <DialogPrimitive.Title className="dialog-title">{title}</DialogPrimitive.Title>
-            <DialogPrimitive.Description className="sr-only">{title}对话框</DialogPrimitive.Description>
-            <DialogPrimitive.Close className="icon-button dialog-close" aria-label="关闭">
+            <DialogPrimitive.Description className="sr-only">{t('dialog.description', { title })}</DialogPrimitive.Description>
+            <DialogPrimitive.Close className="icon-button dialog-close" aria-label={t('common.close')}>
               <span aria-hidden="true">×</span>
             </DialogPrimitive.Close>
           </div>

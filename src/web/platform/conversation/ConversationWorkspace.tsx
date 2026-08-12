@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import type { AppMessage, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
 import { messageText, messageThinking } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
@@ -12,6 +13,7 @@ import { BrandMark } from '../../components/BrandMark';
 import { Icon, type IconName } from '../../components/icons';
 import { projectTaskState } from '../../features/task/task-projection';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
+import i18n from '../../i18n';
 import {
   citationCopyText,
   citationDisplayText,
@@ -38,7 +40,7 @@ function copy(text: string) {
 
 function html(markdown: string, user = false, citationNumbers: Record<string, number> = {}) {
   const template = document.createElement('template');
-  template.innerHTML = user ? renderUserMarkdown(markdown) : renderMarkdown(markdown, citationNumbers);
+  template.innerHTML = user ? renderUserMarkdown(markdown) : renderMarkdown(markdown, citationNumbers, undefined, i18n.language);
   const allowed = new Set(['A', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL']);
   template.content.querySelectorAll('*').forEach((node) => {
     if (!allowed.has(node.tagName)) { node.replaceWith(document.createTextNode(node.textContent || '')); return; }
@@ -77,35 +79,37 @@ function formatBytes(size: number) {
 }
 
 const UserMessage = memo(function UserMessage({ message, sessionId, attachments }: { message: AppMessage; sessionId: string; attachments: Record<string, SessionAttachment> }) {
+  const { t } = useTranslation();
   const text = messageText(message);
   const [copied, setCopied] = useState(false);
-  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message"><div className="message-content"><div dangerouslySetInnerHTML={html(text, true)} /></div><button className="message-copy" type="button" aria-label="复制消息" onClick={() => void copy(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? '已复制' : '复制'}</button></article></div>;
+  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message"><div className="message-content"><div dangerouslySetInnerHTML={html(text, true)} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
 });
 
 function Thinking({ text, visible }: { text: string; visible: boolean }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   if (!text || !visible) return null;
-  return <section className="thinking-block"><button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="chevron" /> 思考过程</button>{open ? <pre>{text}</pre> : null}</section>;
+  return <section className="thinking-block"><button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="chevron" /> {t('conversation.thinking')}</button>{open ? <pre>{text}</pre> : null}</section>;
 }
 
 function citationPosition(item: ResolvedCitation) {
   const { locator } = item;
-  if (locator.page) return `PDF 第${locator.page}页${locator.printedPage ? `（正文第${locator.printedPage}页）` : ''}`;
-  return locator.section || locator.sourceUnit || locator.nodeId || '来源位置';
+  if (locator.page) return i18n.language === 'en-US' ? `PDF page ${locator.page}${locator.printedPage ? ` (printed page ${locator.printedPage})` : ''}` : `PDF 第${locator.page}页${locator.printedPage ? `（正文第${locator.printedPage}页）` : ''}`;
+  return locator.section || locator.sourceUnit || locator.nodeId || i18n.t('conversation.sourceLocation');
 }
 
 const CITATION_CATEGORY_LABELS: Record<string, string> = {
-  LEGAL_GOVERNANCE: '法律法规与制度',
-  STANDARD_SPEC: '标准规范',
-  PLAN_PROCEDURE: '预案与作业规程',
-  CASE_PRACTICE: '案例与实践',
-  METHOD_RESEARCH: '方法指南与研究',
-  PROJECT_DATA: '项目资料',
+  LEGAL_GOVERNANCE: 'conversation.category.legal',
+  STANDARD_SPEC: 'conversation.category.standard',
+  PLAN_PROCEDURE: 'conversation.category.plan',
+  CASE_PRACTICE: 'conversation.category.case',
+  METHOD_RESEARCH: 'conversation.category.research',
+  PROJECT_DATA: 'conversation.category.project',
 };
 
 function citationCategory(item: ResolvedCitation) {
-  if (item.resource.scope === 'artifact') return '任务产物';
-  return CITATION_CATEGORY_LABELS[item.work.type] || '参考资料';
+  if (item.resource.scope === 'artifact') return i18n.t('conversation.category.artifact');
+  return i18n.t(CITATION_CATEGORY_LABELS[item.work.type] || 'conversation.category.reference');
 }
 
 function citationResourceUrl(sessionId: string, resourceId: string, view: 'content' | 'preview' = 'content') {
@@ -115,6 +119,7 @@ function citationResourceUrl(sessionId: string, resourceId: string, view: 'conte
 type CitationPeek = { item: ResolvedCitation; anchor: DOMRect };
 
 function CitationEvidencePeek({ peek, sessionId }: { peek: CitationPeek; sessionId: string }) {
+  const { t } = useTranslation();
   const { item, anchor } = peek;
   const width = Math.min(720, window.innerWidth - 24);
   const height = item.resource.kind === 'pdf' || item.resource.kind === 'image' ? Math.min(680, window.innerHeight - 24) : 260;
@@ -130,7 +135,7 @@ function CitationEvidencePeek({ peek, sessionId }: { peek: CitationPeek; session
       <header><strong>{item.work.title}</strong><span>{citationPosition(item)}</span></header>
       {visualUrl
         ? <img src={visualUrl} alt={`${item.work.title}，${citationPosition(item)}`} />
-        : <div className="citation-evidence-text"><span>原文定位</span><p>{item.locator.quote || '当前来源没有可显示的原文片段。'}</p></div>}
+        : <div className="citation-evidence-text"><span>{t('conversation.originalLocation')}</span><p>{item.locator.quote || t('conversation.noQuote')}</p></div>}
     </aside>,
     document.body,
   );
@@ -142,10 +147,11 @@ function artifactPreviewKind(item: ResolvedCitation) {
 }
 
 function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
+  const { t } = useTranslation();
   const [preview, setPreview] = useState<ResolvedCitation | null>(null);
   if (!projection?.artifacts.length) return null;
   return <section className="message-artifacts">
-    <header><strong>本次产出</strong><span>{projection.artifacts.length} 项</span></header>
+    <header><strong>{t('conversation.artifacts')}</strong><span>{t('common.itemCount', { count: projection.artifacts.length })}</span></header>
     <div>{projection.artifacts.map((item) => {
       const name = item.resource.relativePath.replaceAll('\\', '/').split('/').pop() || item.work.title;
       const presentation = filePresentation({ name, path: item.resource.relativePath, isDirectory: false });
@@ -174,6 +180,7 @@ function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitat
 }
 
 function CitationFooter({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
+  const { t } = useTranslation();
   const [preview, setPreview] = useState<ResolvedCitation | null>(null);
   const [peek, setPeek] = useState<CitationPeek | null>(null);
   if (!projection || (!projection.citations.length && !projection.unavailableIds.length)) return null;
@@ -181,12 +188,12 @@ function CitationFooter({ projection, sessionId }: { projection?: MessageCitatio
     map.set(item.resource.resourceId, [...(map.get(item.resource.resourceId) || []), item]);
     return map;
   }, new Map<string, ResolvedCitation[]>()).values()];
-  return <section className="citation-footer"><header><strong>引用依据</strong><span>{projection.citations.length} 条</span></header><ol>{groups.map((items) => {
+  return <section className="citation-footer"><header><strong>{t('conversation.citations')}</strong><span>{t('common.referenceCount', { count: projection.citations.length })}</span></header><ol>{groups.map((items) => {
     const first = items[0];
     return <li key={first.resource.resourceId}>
       <header className="citation-source-heading">
-        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => setPreview(first)} title="在工作台中查看原始资料"><Icon name="file" />{first.work.title}</button></div>
-        <span>{items.length} 条引用</span>
+        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => setPreview(first)} title={t('conversation.viewSource')}><Icon name="file" />{first.work.title}</button></div>
+        <span>{t('common.referenceCount', { count: items.length })}</span>
       </header>
       <div className="citation-locator-list">{items.map((item) => <button
         className="citation-locator"
@@ -200,11 +207,11 @@ function CitationFooter({ projection, sessionId }: { projection?: MessageCitatio
       >
         <span className="citation-number">{item.number}</span>
         <span className="citation-locator-copy"><strong>{citationPosition(item)}</strong>{item.locator.quote ? <span>{item.locator.quote}</span> : null}</span>
-        <span className="citation-locator-hint">悬浮查看</span>
+        <span className="citation-locator-hint">{t('conversation.hover')}</span>
       </button>)}</div>
     </li>;
   })}</ol>
-    {projection.unavailableIds.length ? <p className="citation-warning">引用不可用：{projection.unavailableIds.join('、')}</p> : null}
+    {projection.unavailableIds.length ? <p className="citation-warning">{t('conversation.unavailable', { ids: projection.unavailableIds.join(', ') })}</p> : null}
     {peek ? <CitationEvidencePeek peek={peek} sessionId={sessionId} /> : null}
     {preview ? <FilePreview
       item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }}
@@ -224,6 +231,7 @@ function CitationFooter({ projection, sessionId }: { projection?: MessageCitatio
 }
 
 const AssistantMessage = memo(function AssistantMessage({ message, streaming, showThinking, projection, sessionId }: { message: AppMessage; streaming?: boolean; showThinking: boolean; projection?: MessageCitationProjection; sessionId: string }) {
+  const { t } = useTranslation();
   const text = messageText(message);
   const displayText = citationDisplayText(text, projection);
   const thinking = messageThinking(message);
@@ -237,7 +245,7 @@ const AssistantMessage = memo(function AssistantMessage({ message, streaming, sh
     card?.focus({ preventScroll: true });
   }
   const copyText = citationCopyText(text, projection);
-  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={citationClick}><div className="message-content"><Thinking text={thinking} visible={showThinking} />{text ? <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label="正在生成" /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label="复制消息" onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? '已复制' : '复制'}</button> : null}</article>;
+  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={citationClick}><div className="message-content"><Thinking text={thinking} visible={showThinking} />{text ? <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
 });
 
 function preview(args: Record<string, unknown>) {
@@ -246,36 +254,36 @@ function preview(args: Record<string, unknown>) {
 }
 
 const TOOL_LABELS: Record<string, string> = {
-  read: '文件读取',
-  bash: '命令执行',
-  shell: '命令执行',
-  command: '命令执行',
-  exec: '命令执行',
-  edit: '文件编辑',
-  write: '文件写入',
-  create: '文件创建',
-  apply_patch: '文件修改',
-  tau_task: '任务状态',
-  tau_ask_user: '用户询问',
-  publish_geodata: '数据发布',
-  present_visualization: '地图展示',
-  tau_cite: '引用注册',
+  read: 'conversation.tool.read',
+  bash: 'conversation.tool.command',
+  shell: 'conversation.tool.command',
+  command: 'conversation.tool.command',
+  exec: 'conversation.tool.command',
+  edit: 'conversation.tool.edit',
+  write: 'conversation.tool.write',
+  create: 'conversation.tool.create',
+  apply_patch: 'conversation.tool.patch',
+  tau_task: 'conversation.tool.taskStatus',
+  tau_ask_user: 'conversation.tool.ask',
+  publish_geodata: 'conversation.tool.publish',
+  present_visualization: 'conversation.tool.mapDisplay',
+  tau_cite: 'conversation.tool.citation',
 };
 
 function toolLabel(name: string) {
   const normalized = name.trim().toLowerCase().replaceAll('-', '_');
-  if (TOOL_LABELS[normalized]) return TOOL_LABELS[normalized];
-  if (normalized.includes('task')) return '任务执行';
-  if (normalized.includes('geo') || normalized.includes('map')) return '地图工具';
-  if (normalized.includes('visualization')) return '图形展示';
-  if (normalized.startsWith('read_') || normalized.includes('fetch')) return '文件读取';
-  if (normalized.startsWith('write_') || normalized.startsWith('create_')) return '文件写入';
-  if (normalized.startsWith('edit_') || normalized.includes('patch')) return '文件修改';
-  if (normalized.includes('search') || normalized.includes('find') || normalized.includes('query')) return '内容搜索';
-  if (normalized.includes('ask') || normalized.includes('input')) return '用户询问';
-  if (normalized.includes('browser') || normalized.startsWith('web_')) return '网页工具';
-  if (normalized.includes('image')) return '图像工具';
-  return '通用工具';
+  if (TOOL_LABELS[normalized]) return i18n.t(TOOL_LABELS[normalized]);
+  if (normalized.includes('task')) return i18n.t('conversation.tool.task');
+  if (normalized.includes('geo') || normalized.includes('map')) return i18n.t('conversation.tool.map');
+  if (normalized.includes('visualization')) return i18n.t('conversation.tool.visualization');
+  if (normalized.startsWith('read_') || normalized.includes('fetch')) return i18n.t('conversation.tool.read');
+  if (normalized.startsWith('write_') || normalized.startsWith('create_')) return i18n.t('conversation.tool.write');
+  if (normalized.startsWith('edit_') || normalized.includes('patch')) return i18n.t('conversation.tool.patch');
+  if (normalized.includes('search') || normalized.includes('find') || normalized.includes('query')) return i18n.t('conversation.tool.search');
+  if (normalized.includes('ask') || normalized.includes('input')) return i18n.t('conversation.tool.ask');
+  if (normalized.includes('browser') || normalized.startsWith('web_')) return i18n.t('conversation.tool.web');
+  if (normalized.includes('image')) return i18n.t('conversation.tool.image');
+  return i18n.t('conversation.tool.general');
 }
 
 function toolIconName(name: string): IconName {
@@ -289,7 +297,7 @@ function toolIconName(name: string): IconName {
 }
 
 function imagePaths(value: unknown) {
-  const text = formatToolResultText(value);
+  const text = formatToolResultText(value, i18n.language);
   const paths = new Set<string>();
   for (const match of text.matchAll(IMAGE_PATH_RE)) paths.add(match[1]);
   return [...paths].slice(0, 3);
@@ -309,31 +317,33 @@ function toolFileName(path: string) {
 }
 
 function ToolFilePreview({ sessionId, path }: { sessionId: string; path: string }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const item = { name: toolFileName(path), path, isDirectory: false };
   const presentation = filePresentation(item);
   const previewUrl = `/api/file/preview?${new URLSearchParams({ sessionId, path })}`;
   return <div className={`tool-read-preview is-${presentation.kind}`}>
-    {presentation.preview === 'image' ? <button className="tool-read-image-button" type="button" onClick={() => setOpen(true)} title={`预览 ${item.name}`}><img src={previewUrl} alt={`读取的图片：${item.name}`} /></button> : null}
-    {presentation.preview && presentation.preview !== 'image' ? <button className="tool-read-open" type="button" onClick={() => setOpen(true)}><Icon name={presentation.icon} /><span>预览读取的{presentation.label}：{item.name}</span></button> : presentation.preview ? null : <span className="tool-read-unavailable"><Icon name={presentation.icon} />当前类型暂不支持预览：{item.name}</span>}
+    {presentation.preview === 'image' ? <button className="tool-read-image-button" type="button" onClick={() => setOpen(true)} title={t('conversation.tool.preview', { name: item.name })}><img src={previewUrl} alt={t('conversation.tool.imageAlt', { name: item.name })} /></button> : null}
+    {presentation.preview && presentation.preview !== 'image' ? <button className="tool-read-open" type="button" onClick={() => setOpen(true)}><Icon name={presentation.icon} /><span>{t('conversation.tool.previewRead', { type: presentation.label, name: item.name })}</span></button> : presentation.preview ? null : <span className="tool-read-unavailable"><Icon name={presentation.icon} />{t('conversation.tool.previewUnsupported', { name: item.name })}</span>}
     {open ? <FilePreview item={item} sessionId={sessionId} stackIndex={0} initialOffset={0} onActivate={() => {}} onClose={() => setOpen(false)} /> : null}
   </div>;
 }
 
 const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; sessionId: string }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(tool.status === 'running');
   useEffect(() => {
     if (tool.status !== 'running') setOpen(false);
   }, [tool.status]);
-  const output = tool.result === undefined ? '' : formatToolResultText(tool.result);
+  const output = tool.result === undefined ? '' : formatToolResultText(tool.result, i18n.language);
   const isEdit = tool.name.toLowerCase() === 'edit' && (typeof tool.args.oldText === 'string' || typeof tool.args.old_text === 'string');
   const oldText = String(tool.args.oldText ?? tool.args.old_text ?? '');
   const newText = String(tool.args.newText ?? tool.args.new_text ?? '');
   const normalizedToolName = tool.name.toLowerCase().replaceAll('-', '_');
   const readPath = normalizedToolName === 'read' || normalizedToolName.startsWith('read_') ? toolFilePath(tool.args) : '';
-  const status = tool.status === 'running' ? '执行中' : tool.status === 'error' || tool.isError ? '出错' : '已完成';
+  const status = tool.status === 'running' ? t('conversation.tool.running') : tool.status === 'error' || tool.isError ? t('conversation.tool.failed') : t('conversation.tool.completed');
   const iconName = toolIconName(tool.name);
-  return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon className="tool-chevron" name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}</button><span className={`tool-status ${tool.status}`} data-tool-kind={iconName} title={status}><Icon name={iconName} /><span className="sr-only">{status}</span></span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(tool.args, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>输出</span><button type="button" onClick={() => void copy(output)}>复制</button></div><pre className="tool-output">{output}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={`工具图片预览：${path.split('/').pop()}`} /></a>)}{readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : null}</> : readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : tool.status === 'running' ? <span className="tool-pending">等待工具输出…</span> : null}</div> : null}</section>;
+  return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon className="tool-chevron" name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}</button><span className={`tool-status ${tool.status}`} data-tool-kind={iconName} title={status}><Icon name={iconName} /><span className="sr-only">{status}</span></span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(tool.args, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>{t('conversation.tool.output')}</span><button type="button" onClick={() => void copy(output)}>{t('common.copy')}</button></div><pre className="tool-output">{output}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={t('conversation.tool.imagePreview', { name: path.split('/').pop() })} /></a>)}{readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : null}</> : readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : tool.status === 'running' ? <span className="tool-pending">{t('conversation.tool.waiting')}</span> : null}</div> : null}</section>;
 });
 
 function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolCallId: string; toolName?: string; args?: Record<string, unknown>; result?: unknown; partialResult?: unknown; isError?: boolean; status: 'running' | 'completed' | 'error' }>) {
@@ -389,6 +399,7 @@ function downloadCitationExport(envelope: CitationEnvelope, format: 'bibtex' | '
 }
 
 function CitationManager({ sessionId, onClose }: { sessionId: string; onClose(): void }) {
+  const { t } = useTranslation();
   const [envelope, setEnvelope] = useState<CitationEnvelope | null>(null);
   const [scope, setScope] = useState<'all' | CitationResource['scope']>('all');
   const [query, setQuery] = useState('');
@@ -398,11 +409,11 @@ function CitationManager({ sessionId, onClose }: { sessionId: string; onClose():
     let active = true;
     void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`).then(async (response) => {
       const payload = await response.json() as { citations?: CitationEnvelope; error?: string };
-      if (!response.ok || !payload.citations) throw new Error(payload.error || '引用来源暂不可用');
+      if (!response.ok || !payload.citations) throw new Error(payload.error || t('conversation.citationUnavailable'));
       if (active) setEnvelope(payload.citations);
-    }).catch((cause) => { if (active) setError((cause as Error).message || '引用来源暂不可用'); });
+    }).catch((cause) => { if (active) setError((cause as Error).message || t('conversation.citationUnavailable')); });
     return () => { active = false; };
-  }, [sessionId]);
+  }, [sessionId, t]);
   const rows = useMemo(() => {
     if (!envelope) return [];
     const works = new Map(envelope.works.map((work) => [work.workId, work]));
@@ -425,10 +436,10 @@ function CitationManager({ sessionId, onClose }: { sessionId: string; onClose():
     setPreview({ occurrence: { occurrenceId: `manager:${locator.locatorId}`, locatorId: locator.locatorId, containerType: 'document', containerId: 'citation-manager' }, resource, work, locator, number: 0 });
   };
   return createPortal(<div className="citation-manager-backdrop" role="presentation" onMouseDown={onClose}>
-    <section className="citation-manager" role="dialog" aria-modal="true" aria-label="引用管理器" onMouseDown={(event) => event.stopPropagation()}>
-      <header><div><strong>引用管理器</strong><span>{envelope ? `${envelope.resources.length} 个资源 · ${envelope.occurrences.length} 次使用` : '读取会话证据图'}</span></div><button type="button" aria-label="关闭引用管理器" onClick={onClose}><Icon name="close" /></button></header>
-      <div className="citation-manager-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="筛选标题或 citekey" aria-label="筛选引用" /><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)} aria-label="引用范围"><option value="all">全部来源</option><option value="knowledge">知识库</option><option value="attachment">附件</option><option value="artifact">任务产物</option><option value="web">网页快照</option><option value="dataset">数据集</option></select><div>{(['bibtex', 'csl-json', 'ris'] as const).map((format) => <button key={format} type="button" disabled={!envelope} onClick={() => envelope && downloadCitationExport(envelope, format)}>{format === 'csl-json' ? 'CSL-JSON' : format.toUpperCase()}</button>)}</div></div>
-      <div className="citation-manager-body">{error ? <p className="citation-manager-status is-error">{error}</p> : !envelope ? <p className="citation-manager-status">正在读取会话证据图…</p> : rows.length ? rows.map(({ resource, work, locators, uses }) => <article key={resource.resourceId}><div><span className="citation-manager-scope">{resource.scope}</span><strong>{work.title}</strong><small>{work.citekey || resource.resourceId} · {uses} 次使用 · {locators.length} 个定位</small></div><button type="button" disabled={!locators.length} onClick={() => previewCitation(resource, work, locators[0])}>查看证据</button>{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).length ? <p>溯源关系：{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).map((edge) => edge.relation).join('、')}</p> : null}</article>) : <p className="citation-manager-status">没有符合条件的引用资源。</p>}</div>
+    <section className="citation-manager" role="dialog" aria-modal="true" aria-label={t('conversation.citationManager')} onMouseDown={(event) => event.stopPropagation()}>
+      <header><div><strong>{t('conversation.citationManager')}</strong><span>{envelope ? t('common.resourceCount', { resources: envelope.resources.length, uses: envelope.occurrences.length }) : t('conversation.loadingEvidenceGraph')}</span></div><button type="button" aria-label={t('conversation.closeCitationManager')} onClick={onClose}><Icon name="close" /></button></header>
+      <div className="citation-manager-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('conversation.filterCitation')} aria-label={t('conversation.filterCitationLabel')} /><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)} aria-label={t('conversation.citationScope')}><option value="all">{t('conversation.scope.all')}</option><option value="knowledge">{t('conversation.scope.knowledge')}</option><option value="attachment">{t('conversation.scope.attachment')}</option><option value="artifact">{t('conversation.scope.artifact')}</option><option value="web">{t('conversation.scope.web')}</option><option value="dataset">{t('conversation.scope.dataset')}</option></select><div>{(['bibtex', 'csl-json', 'ris'] as const).map((format) => <button key={format} type="button" disabled={!envelope} onClick={() => envelope && downloadCitationExport(envelope, format)}>{format === 'csl-json' ? 'CSL-JSON' : format.toUpperCase()}</button>)}</div></div>
+      <div className="citation-manager-body">{error ? <p className="citation-manager-status is-error">{error}</p> : !envelope ? <p className="citation-manager-status">{t('conversation.loadingEvidence')}</p> : rows.length ? rows.map(({ resource, work, locators, uses }) => <article key={resource.resourceId}><div><span className="citation-manager-scope">{resource.scope}</span><strong>{work.title}</strong><small>{work.citekey || resource.resourceId} · {t('common.locationCount', { uses, locations: locators.length })}</small></div><button type="button" disabled={!locators.length} onClick={() => previewCitation(resource, work, locators[0])}>{t('conversation.viewEvidence')}</button>{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).length ? <p>{t('conversation.provenance', { relations: envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).map((edge) => edge.relation).join(', ') })}</p> : null}</article>) : <p className="citation-manager-status">{t('conversation.noCitations')}</p>}</div>
     </section>
     {preview ? <FilePreview item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }} sessionId={sessionId} stackIndex={0} initialOffset={0} externalSource={{ url: citationResourceUrl(sessionId, preview.resource.resourceId), kind: artifactPreviewKind(preview), mimeType: preview.resource.mimeType, page: preview.locator.page }} onActivate={() => {}} onClose={() => setPreview(null)} /> : null}
   </div>, document.body);
@@ -441,6 +452,7 @@ function clipboardFileName(index: number) {
 }
 
 function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, onAttachment, onOpenCitationManager }: { sessionId: string; streaming: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; onOpenCitationManager(): void; }) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const [value, setValue] = useState('');
   const [pending, setPending] = useState<PendingAttachment[]>([]);
@@ -457,28 +469,28 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
     try {
       const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`);
       const payload = await response.json() as { citations?: CitationEnvelope; error?: string };
-      if (!response.ok || !payload.citations) throw new Error(payload.error || '引用来源暂不可用');
+      if (!response.ok || !payload.citations) throw new Error(payload.error || t('conversation.citationUnavailable'));
       const works = new Map(payload.citations.works.map((item) => [item.workId, item]));
       const resources = new Map(payload.citations.resources.map((item) => [item.resourceId, item]));
       setCiteCandidates(payload.citations.locators.flatMap((locator) => {
         const resource = resources.get(locator.resourceId);
         const work = resource ? works.get(resource.workId) : null;
         if (!resource || !work) return [];
-        const position = locator.page ? `第 ${locator.page} 页` : locator.clause || locator.section || locator.sourceUnit || locator.nodeId || '来源位置';
+        const position = locator.page ? (i18n.language === 'en-US' ? `Page ${locator.page}` : `第 ${locator.page} 页`) : locator.clause || locator.section || locator.sourceUnit || locator.nodeId || t('conversation.sourceLocation');
         return [{ locatorId: locator.locatorId, title: work.title, position, quote: locator.quote }];
       }));
-    } catch (cause) { setError((cause as Error).message || '引用来源暂不可用'); setCiteCandidates([]); }
+    } catch (cause) { setError((cause as Error).message || t('conversation.citationUnavailable')); setCiteCandidates([]); }
     finally { setCiteLoading(false); }
   }
   async function insertCitation(locatorId: string) {
     try {
       const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations/occurrences`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locatorId, role: 'support' }) });
       const payload = await response.json() as { marker?: string; error?: string };
-      if (!response.ok || !payload.marker) throw new Error(payload.error || '创建引用失败');
+      if (!response.ok || !payload.marker) throw new Error(payload.error || t('conversation.createCitationFailed'));
       setValue((current) => current.replace('/cite', payload.marker!));
       setCiteOpen(false);
       requestAnimationFrame(() => inputRef.current?.focus());
-    } catch (cause) { setError((cause as Error).message || '创建引用失败'); }
+    } catch (cause) { setError((cause as Error).message || t('conversation.createCitationFailed')); }
   }
   async function addAttachments(files: FileList | File[], source: SessionAttachmentSource) {
     const unique = Array.from(files).filter((file, index, all) => all.findIndex((candidate) => `${candidate.name}:${candidate.size}:${candidate.lastModified}:${candidate.type}` === `${file.name}:${file.size}:${file.lastModified}:${file.type}`) === index);
@@ -494,7 +506,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
         setPending((current) => current.map((item) => item.localId === localId ? { ...item, attachment, status: 'ready' } : item));
         window.dispatchEvent(new Event('transportx-attachments-changed'));
       } catch (cause) {
-        setPending((current) => current.map((item) => item.localId === localId ? { ...item, status: 'error', error: (cause as Error).message || '上传失败' } : item));
+        setPending((current) => current.map((item) => item.localId === localId ? { ...item, status: 'error', error: (cause as Error).message || t('conversation.uploadFailed') } : item));
       }
     }
     if (unique.length) setError('');
@@ -507,10 +519,10 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
   }
   async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
     const attachmentIds = pending.filter((item) => item.status === 'ready' && item.attachment).map((item) => item.attachment!.id);
-    if (pending.some((item) => item.status === 'uploading')) { setError('附件仍在上传，请稍候'); return; }
-    const message = value.trim() || (attachmentIds.length ? '（见附件）' : '');
+    if (pending.some((item) => item.status === 'uploading')) { setError(t('conversation.uploadingWait')); return; }
+    const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : '');
     if (!message) return;
-    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds }); setValue(''); setPending([]); } catch (cause) { setError((cause as Error).message || '发送失败'); }
+    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds }); setValue(''); setPending([]); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
   }
   async function toggleTaskMode() {
     if (streaming || taskModeBusy) return;
@@ -519,14 +531,14 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
     try {
       await kernel.commands.agent.setTaskMode({ sessionId, enabled: !taskModeEnabled });
     } catch (cause) {
-      setError((cause as Error).message || '切换任务模式失败');
+      setError((cause as Error).message || t('conversation.toggleTaskFailed'));
     } finally {
       setTaskModeBusy(false);
     }
   }
   return <footer className="conversation-composer">
-    <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>排队中</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label="取消排队消息" onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
-    {pending.length ? <div className="attachment-list attachment-list--cards">{pending.map((item) => { const attachment = item.attachment; const presentation = attachment ? filePresentation({ name: attachment.name, path: attachment.relativePath, isDirectory: false }) : null; return <div className={`pending-attachment is-${item.status}`} key={item.localId}>{attachment?.kind === 'image' ? <img src={attachmentPreviewUrl(sessionId, attachment)} alt={attachment.name} /> : <span className="pending-attachment-icon"><Icon name={presentation?.icon || 'file'} /></span>}<span className="pending-attachment-copy"><strong title={attachment?.name || item.file.name}>{attachment?.name || item.file.name}</strong><small>{item.status === 'uploading' ? '上传中…' : item.status === 'error' ? item.error : attachment ? `${presentation?.label} · ${formatBytes(attachment.size)}` : '就绪'}</small></span><button type="button" aria-label={`移除附件 ${attachment?.name || item.file.name}`} onClick={() => void removeAttachment(item)}>×</button></div>; })}</div> : null}
+    <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
+    {pending.length ? <div className="attachment-list attachment-list--cards">{pending.map((item) => { const attachment = item.attachment; const presentation = attachment ? filePresentation({ name: attachment.name, path: attachment.relativePath, isDirectory: false }) : null; const name = attachment?.name || item.file.name; return <div className={`pending-attachment is-${item.status}`} key={item.localId}>{attachment?.kind === 'image' ? <img src={attachmentPreviewUrl(sessionId, attachment)} alt={attachment.name} /> : <span className="pending-attachment-icon"><Icon name={presentation?.icon || 'file'} /></span>}<span className="pending-attachment-copy"><strong title={name}>{name}</strong><small>{item.status === 'uploading' ? t('conversation.uploading') : item.status === 'error' ? item.error : attachment ? `${presentation?.label} · ${formatBytes(attachment.size)}` : t('conversation.ready')}</small></span><button type="button" aria-label={t('conversation.removeAttachment', { name })} onClick={() => void removeAttachment(item)}>×</button></div>; })}</div> : null}
     <div className="composer-row">
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <textarea
@@ -542,30 +554,30 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files, 'drop'); } }}
           onDragOver={(event) => event.preventDefault()}
           onKeyDown={(event) => { if (event.key === 'Escape' && citeOpen) { event.preventDefault(); setCiteOpen(false); return; } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }}
-          placeholder={streaming ? '输入内容以引导当前任务…' : '输入交通问题…'}
-          aria-label="消息输入"
+          placeholder={streaming ? t('conversation.steerPlaceholder') : t('conversation.promptPlaceholder')}
+          aria-label={t('conversation.messageInput')}
         />
-        {citeOpen ? <section className="composer-cite-picker" role="listbox" aria-label="选择引用位置">
-          <header><strong>插入精确引用</strong><button type="button" onClick={() => setCiteOpen(false)} aria-label="关闭引用选择器">×</button></header>
-          {citeLoading ? <p>正在读取会话引用…</p> : citeCandidates.length ? <div>{citeCandidates.map((candidate) => <button key={candidate.locatorId} type="button" role="option" onClick={() => void insertCitation(candidate.locatorId)}><strong>{candidate.title}</strong><span>{candidate.position}</span>{candidate.quote ? <small>{candidate.quote}</small> : null}</button>)}</div> : <p>当前会话还没有可插入的引用。请先让 Agent 解析来源。</p>}
+        {citeOpen ? <section className="composer-cite-picker" role="listbox" aria-label={t('conversation.chooseCitation')}>
+          <header><strong>{t('conversation.insertCitation')}</strong><button type="button" onClick={() => setCiteOpen(false)} aria-label={t('conversation.closeCitationPicker')}>×</button></header>
+          {citeLoading ? <p>{t('conversation.loadingCitations')}</p> : citeCandidates.length ? <div>{citeCandidates.map((candidate) => <button key={candidate.locatorId} type="button" role="option" onClick={() => void insertCitation(candidate.locatorId)}><strong>{candidate.title}</strong><span>{candidate.position}</span>{candidate.quote ? <small>{candidate.quote}</small> : null}</button>)}</div> : <p>{t('conversation.noInsertableCitation')}</p>}
         </section> : null}
         <div className="composer-toolbar">
           <div className="composer-action-rail">
             <label className="composer-attach">
               <Icon name="plus" />
-              <span className="composer-action-hint" aria-hidden="true">添加附件</span>
-              <span className="sr-only">添加附件</span>
+              <span className="composer-action-hint" aria-hidden="true">{t('conversation.addAttachment')}</span>
+              <span className="sr-only">{t('conversation.addAttachment')}</span>
               <input type="file" accept="*/*" multiple onChange={(event) => { if (event.currentTarget.files) void addAttachments(event.currentTarget.files, 'picker'); event.currentTarget.value = ''; }} />
             </label>
-            <button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? '关闭任务模式' : '开启任务模式'} disabled={streaming || taskModeBusy} onClick={() => void toggleTaskMode()}>
+            <button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? t('task.mode.disable') : t('task.mode.enable')} disabled={streaming || taskModeBusy} onClick={() => void toggleTaskMode()}>
               <Icon name="task" />
-              <span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? '关闭任务模式' : '开启任务模式'}</span>
+              <span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? t('task.mode.disable') : t('task.mode.enable')}</span>
             </button>
-            <button className="composer-task-toggle" type="button" aria-label="打开引用管理器" onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">引用管理器</span></button>
+            <button className="composer-task-toggle" type="button" aria-label={t('conversation.openCitationManager')} onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">{t('conversation.citationManager')}</span></button>
           </div>
           {streaming
-            ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label="发送引导" onClick={() => void submit('steer')}>发送引导</button><button className="composer-abort" type="button" aria-label="终止当前任务" onClick={() => void kernel.commands.agent.abort(sessionId)}>终止</button></div>
-            : <button className="composer-send" type="submit" aria-label="发送消息" disabled={!value.trim() && pending.length === 0}>↑</button>}
+            ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId)}>{t('conversation.abortShort')}</button></div>
+            : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0}>↑</button>}
         </div>
       </form>
     </div>
@@ -574,6 +586,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
 }
 
 export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: string; showThinking: boolean }) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const conversation = useConversationState();
   const tools = useToolExecutionState();
@@ -590,5 +603,5 @@ export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: 
   const citationProjection = useMemo(() => projectMessageCitations(entries), [entries]);
   const liveCitationProjection = useMemo(() => projectCitationText(data?.live.streamingText || '', citationProjection.available), [data?.live.streamingText, citationProjection]);
   useLayoutEffect(() => { const viewport = viewportRef.current; if (viewport && nearBottom.current) viewport.scrollTop = viewport.scrollHeight; }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
-  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>开始分析交通问题</h1><p>描述路段、时间或出行需求，Agent 会在独立会话中完成分析。</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} /> : null}{data?.live.active ? <AssistantMessage streaming showThinking={showThinking} projection={liveCitationProjection} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data.live.streamingThinking }, { type: 'text', text: data.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
+  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} /> : null}{data?.live.active ? <AssistantMessage streaming showThinking={showThinking} projection={liveCitationProjection} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data.live.streamingThinking }, { type: 'text', text: data.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
 }

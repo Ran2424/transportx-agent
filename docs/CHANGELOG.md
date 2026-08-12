@@ -11,6 +11,25 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0.6 后续维护 — 双语工作台与 Shanghai Data Module v2.0.1
+
+- 日期：2026-08-12
+- GitHub 操作：已在本地统一提交，尚未推送。
+
+主要修改：
+
+- 明确 Reference 只能从 `<Skill 根目录>/references/` 读取，禁止将 Data 资产目录误作 Reference 根目录。
+- 将模块版本提升至 `2.0.1`，使已安装的 `2.0.0` 可通过标准模块安装流程升级，并带上源码中已补充的轨交物理站跨线路汇总规则。
+- 为工作台新增简体中文与英文界面，支持跟随系统、实时切换和本地持久化；平台文案、无障碍标签、日期、数字、引用及工具输出按界面语言显示，用户内容保持原文。
+- 将语言设置优化为与主题选择一致的紧凑分段控件，并覆盖 Light、Dark、Sand 三主题及窄屏布局。
+- 平台与 npm 版本保持 `3.0.6` 不变。
+
+验证：
+
+- `npm run typecheck:server`、`node --test test/module-installer.test.ts` 与 `git diff --check` 通过。
+- 已通过标准安装器安装至 `~/.transportx/traffic-agent/modules/com.transportx.shanghaidata/2.0.1`；由于源码包不携带大型 SQLite 资产，已从受控的本机 `2.0.0` 安装保留数据库至新版本。`query_assets.py --coverage` 查询成功。
+- `npm run typecheck`、`npm test`、双语资源完整性测试与真实页面中英文切换、持久化及三主题视觉验收通过。
+
 ## v3.0.6 — 设置工作台与上海数据问答口径
 
 - 日期：2026-08-11

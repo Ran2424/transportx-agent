@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css';
 import { renderMarkdown } from '../../../public/markdown.js';
 import { compileCitations } from '../../../contracts/citation-compiler.js';
@@ -8,6 +9,7 @@ import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel
 import { useAppServices } from '../../app/AppProviders';
 import { Icon } from '../../components/icons';
 import type { MessageCitationProjection } from '../../features/citation/citation-projection';
+import i18n from '../../i18n';
 
 type FileIcon = 'workspace' | 'file' | 'report' | 'code' | 'image' | 'table';
 type PreviewKind = 'code' | 'table' | 'report' | 'image' | 'pdf' | 'document' | null;
@@ -26,21 +28,21 @@ const TABLE_EXTENSIONS = new Set(['csv', 'tsv', 'xlsx', 'xls', 'ods']);
 const CODE_EXTENSIONS = new Set(['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'sh', 'bash', 'zsh', 'css', 'scss', 'html', 'sql', 'json', 'yaml', 'yml', 'xml', 'java', 'c', 'h', 'cpp', 'hpp', 'go', 'rs']);
 
 export function filePresentation(item: WorkspaceFile): FilePresentation {
-  if (item.isDirectory) return { kind: 'directory', icon: 'workspace', label: '文件夹', preview: null, extension: '' };
+  if (item.isDirectory) return { kind: 'directory', icon: 'workspace', label: i18n.t('workspace.type.directory'), preview: null, extension: '' };
   const extension = item.name.split('.').pop()?.toLowerCase() || '';
-  if (extension === 'md' || extension === 'mdx') return { kind: 'report', icon: 'report', label: 'Markdown 报告', preview: 'report', extension };
-  if (IMAGE_EXTENSIONS.has(extension)) return { kind: 'image', icon: 'image', label: '图片', preview: 'image', extension };
-  if (PDF_EXTENSIONS.has(extension)) return { kind: 'pdf', icon: 'file', label: 'PDF 文件', preview: 'pdf', extension };
-  if (TABLE_EXTENSIONS.has(extension)) return { kind: 'table', icon: 'table', label: '表格', preview: 'table', extension };
-  if (CODE_EXTENSIONS.has(extension)) return { kind: 'code', icon: 'code', label: '代码', preview: 'code', extension };
-  return { kind: 'document', icon: 'file', label: '文档', preview: null, extension };
+  if (extension === 'md' || extension === 'mdx') return { kind: 'report', icon: 'report', label: i18n.t('workspace.type.report'), preview: 'report', extension };
+  if (IMAGE_EXTENSIONS.has(extension)) return { kind: 'image', icon: 'image', label: i18n.t('workspace.type.image'), preview: 'image', extension };
+  if (PDF_EXTENSIONS.has(extension)) return { kind: 'pdf', icon: 'file', label: i18n.t('workspace.type.pdf'), preview: 'pdf', extension };
+  if (TABLE_EXTENSIONS.has(extension)) return { kind: 'table', icon: 'table', label: i18n.t('workspace.type.table'), preview: 'table', extension };
+  if (CODE_EXTENSIONS.has(extension)) return { kind: 'code', icon: 'code', label: i18n.t('workspace.type.code'), preview: 'code', extension };
+  return { kind: 'document', icon: 'file', label: i18n.t('workspace.type.document'), preview: null, extension };
 }
 
 function externalPresentation(source: ExternalPreviewSource): FilePresentation {
-  if (source.kind === 'pdf') return { kind: 'pdf', icon: 'file', label: 'PDF 原件', preview: 'pdf', extension: 'pdf' };
-  if (source.kind === 'image') return { kind: 'image', icon: 'image', label: '图片原件', preview: 'image', extension: '' };
-  if (source.kind === 'report') return { kind: 'report', icon: 'report', label: 'Markdown 报告', preview: 'report', extension: 'md' };
-  return { kind: 'document', icon: 'file', label: '原始资料', preview: 'document', extension: '' };
+  if (source.kind === 'pdf') return { kind: 'pdf', icon: 'file', label: i18n.t('workspace.type.originalPdf'), preview: 'pdf', extension: 'pdf' };
+  if (source.kind === 'image') return { kind: 'image', icon: 'image', label: i18n.t('workspace.type.originalImage'), preview: 'image', extension: '' };
+  if (source.kind === 'report') return { kind: 'report', icon: 'report', label: i18n.t('workspace.type.report'), preview: 'report', extension: 'md' };
+  return { kind: 'document', icon: 'file', label: i18n.t('workspace.type.source'), preview: 'document', extension: '' };
 }
 
 function syntaxLanguage(extension: string) {
@@ -77,6 +79,7 @@ function CodePreview({ source, extension }: { source: string; extension: string 
 }
 
 function TablePreview({ file, content }: { file: FilePresentation; content: WorkspaceFileContent }) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<string[][]>([]);
   const [sheetName, setSheetName] = useState('');
   const [error, setError] = useState('');
@@ -90,13 +93,13 @@ function TablePreview({ file, content }: { file: FilePresentation; content: Work
       const sheet = name ? workbook.Sheets[name] : null;
       const next = sheet ? (XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][]).map((row) => row.map((cell) => String(cell))) : [];
       if (active) { setSheetName(name || ''); setRows(next); }
-    }).catch((cause) => { if (active) setError((cause as Error).message || '无法解析表格'); });
+    }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.tableParseFailed')); });
     return () => { active = false; };
-  }, [content, file.extension]);
+  }, [content, file.extension, t]);
   if (error) return <p className="file-preview-error">{error}</p>;
-  if (!rows.length) return <p className="file-preview-empty">表格没有可展示的数据。</p>;
+  if (!rows.length) return <p className="file-preview-empty">{t('workspace.tableEmpty')}</p>;
   const header = rows[0];
-  return <div className="file-preview-table-wrap">{sheetName ? <p className="file-preview-sheet">工作表：{sheetName}</p> : null}<table className="file-preview-table"><thead><tr>{header.map((cell, index) => <th key={`${cell}-${index}`}>{cell}</th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex}>{header.map((_, cellIndex) => <td key={cellIndex}>{row[cellIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
+  return <div className="file-preview-table-wrap">{sheetName ? <p className="file-preview-sheet">{t('workspace.sheet', { name: sheetName })}</p> : null}<table className="file-preview-table"><thead><tr>{header.map((cell, index) => <th key={`${cell}-${index}`}>{cell}</th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex}>{header.map((_, cellIndex) => <td key={cellIndex}>{row[cellIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
 }
 
 export function sessionReportImageUrl(url: string, reportPath: string, sessionId: string, origin: string) {
@@ -136,6 +139,7 @@ async function renderReport(source: string, reportPath: string, sessionId: strin
     markdown,
     compiled?.numbers,
     (url) => sessionReportImageUrl(url, reportPath, sessionId, window.location.origin),
+    i18n.language,
   );
   for (const replacement of replacements) {
     let value = replacement.value;
@@ -152,16 +156,17 @@ async function renderReport(source: string, reportPath: string, sessionId: strin
 }
 
 function ReportPreview({ source, reportPath, sessionId, citationProjection }: { source: string; reportPath: string; sessionId: string; citationProjection?: MessageCitationProjection }) {
+  const { t } = useTranslation();
   const [html, setHtml] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
     setHtml(''); setError('');
-    void renderReport(source, reportPath, sessionId, citationProjection).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || '报告渲染失败'); });
+    void renderReport(source, reportPath, sessionId, citationProjection).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportRenderFailed')); });
     return () => { active = false; };
-  }, [citationProjection, reportPath, sessionId, source]);
+  }, [citationProjection, reportPath, sessionId, source, t]);
   if (error) return <p className="file-preview-error">{error}</p>;
-  return html ? <article className="file-preview-report" dangerouslySetInnerHTML={{ __html: html }} /> : <p className="file-preview-loading">正在渲染报告…</p>;
+  return html ? <article className="file-preview-report" dangerouslySetInnerHTML={{ __html: html }} /> : <p className="file-preview-loading">{t('workspace.renderingReport')}</p>;
 }
 
 type PreviewCorner = 'nw' | 'ne' | 'se' | 'sw';
@@ -174,6 +179,7 @@ function previewSize() {
 }
 
 export function FilePreview({ item, sessionId, stackIndex, initialOffset, externalSource, citationProjection, onActivate, onClose }: { item: WorkspaceFile; sessionId: string; stackIndex: number; initialOffset: number; externalSource?: ExternalPreviewSource; citationProjection?: MessageCitationProjection; onActivate(): void; onClose(): void }) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const presentation = useMemo(() => externalSource ? externalPresentation(externalSource) : filePresentation(item), [externalSource, item]);
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
@@ -193,16 +199,16 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
     if (externalSource) {
       if (presentation.preview !== 'report') return;
       void fetch(externalSource.url).then(async (response) => {
-        if (!response.ok) throw new Error('报告内容加载失败');
+        if (!response.ok) throw new Error(t('workspace.reportLoadFailed'));
         const next = await response.text();
         if (active) setContent({ content: next, encoding: 'utf8', size: new Blob([next]).size });
-      }).catch((cause) => { if (active) setError((cause as Error).message || '报告内容加载失败'); });
+      }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportLoadFailed')); });
       return () => { active = false; };
     }
     if (!presentation.preview || presentation.preview === 'image') return;
-    void kernel.commands.session.readFileContent(sessionId, item.path).then((next) => { if (active) setContent(next); }).catch((cause) => { if (active) setError((cause as Error).message || '文件预览加载失败'); });
+    void kernel.commands.session.readFileContent(sessionId, item.path).then((next) => { if (active) setContent(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.previewLoadFailed')); });
     return () => { active = false; };
-  }, [externalSource, item.path, kernel, presentation.preview, sessionId]);
+  }, [externalSource, item.path, kernel, presentation.preview, sessionId, t]);
 
   function startDrag(event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
@@ -252,11 +258,11 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
       await Promise.all(sourceImages.map(async (image, index) => {
         if (!image.src || image.src.startsWith('data:')) return;
         const response = await fetch(image.src);
-        if (!response.ok) throw new Error(`图片加载失败：${image.alt || index + 1}`);
+        if (!response.ok) throw new Error(t('workspace.imageLoadFailed', { name: image.alt || index + 1 }));
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () => reject(new Error('图片转换失败'));
+          reader.onerror = () => reject(new Error(t('workspace.imageConvertFailed')));
           void response.blob().then((blob) => reader.readAsDataURL(blob), reject);
         });
         clonedImages[index]?.setAttribute('src', dataUrl);
@@ -268,7 +274,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
       });
       if (!response.ok) {
         const detail = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(detail.error || 'PDF 生成失败');
+        throw new Error(detail.error || t('workspace.pdfFailed'));
       }
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement('a');
@@ -280,7 +286,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
       setPdfStatus('idle');
     } catch (cause) {
-      setPdfError((cause as Error).message || 'PDF 生成失败');
+      setPdfError((cause as Error).message || t('workspace.pdfFailed'));
       setPdfStatus('error');
     }
   }
@@ -288,25 +294,25 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
   const body = presentation.preview === 'image'
     ? <img className="file-preview-image" src={previewUrl} alt={item.name} />
     : presentation.preview === 'pdf'
-      ? <iframe className="file-preview-document" src={`${previewUrl}#page=${externalSource?.page || 1}&view=FitH`} title={`PDF 原件：${item.name}`} />
+      ? <iframe className="file-preview-document" src={`${previewUrl}#page=${externalSource?.page || 1}&view=FitH`} title={t('workspace.originalPdfTitle', { name: item.name })} />
       : presentation.preview === 'document'
-        ? <iframe className="file-preview-document" src={previewUrl} title={`原始资料：${item.name}`} />
+        ? <iframe className="file-preview-document" src={previewUrl} title={t('workspace.sourceTitle', { name: item.name })} />
         : error
           ? <p className="file-preview-error">{error}</p>
           : !content
-            ? <p className="file-preview-loading">正在读取文件…</p>
+            ? <p className="file-preview-loading">{t('workspace.reading')}</p>
             : presentation.preview === 'code'
               ? <CodePreview source={content.content} extension={presentation.extension} />
               : presentation.preview === 'table'
                 ? <TablePreview file={presentation} content={content} />
                 : <ReportPreview source={content.content} reportPath={item.path} sessionId={sessionId} citationProjection={citationProjection} />;
 
-  return createPortal(<section className="file-preview-card" role="dialog" aria-modal="false" aria-label={`预览 ${item.name}`} style={{ width: size.width, height: size.height, zIndex: 80 + stackIndex, transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))` }} onPointerDownCapture={onActivate}>
+  return createPortal(<section className="file-preview-card" role="dialog" aria-modal="false" aria-label={t('workspace.preview', { name: item.name })} style={{ width: size.width, height: size.height, zIndex: 80 + stackIndex, transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))` }} onPointerDownCapture={onActivate}>
     <header className={`file-preview-header${presentation.preview === 'report' ? ' has-export' : ''}`} onPointerDown={startDrag} onPointerMove={dragPreview} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
       <span className={`file-preview-type is-${presentation.kind}`}><Icon name={presentation.icon} />{presentation.label}</span>
       <strong title={item.path}>{item.name}</strong>
-      {presentation.preview === 'report' ? <button className={`file-preview-export${pdfStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={pdfStatus === 'loading'} title={pdfError || '生成并下载 PDF'} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadPdf()}>{pdfStatus === 'loading' ? '生成中…' : pdfStatus === 'error' ? '重试 PDF' : '下载 PDF'}</button> : null}
-      <button className="icon-button" type="button" aria-label="关闭文件预览" onPointerDown={(event) => event.stopPropagation()} onClick={onClose}><Icon name="close" /></button>
+      {presentation.preview === 'report' ? <button className={`file-preview-export${pdfStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={pdfStatus === 'loading'} title={pdfError || t('workspace.downloadPdf')} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadPdf()}>{pdfStatus === 'loading' ? t('workspace.generating') : pdfStatus === 'error' ? t('workspace.retryPdf') : t('workspace.download')}</button> : null}
+      <button className="icon-button" type="button" aria-label={t('workspace.previewClose')} onPointerDown={(event) => event.stopPropagation()} onClick={onClose}><Icon name="close" /></button>
     </header>
     <div ref={bodyRef} className={`file-preview-body is-${presentation.kind}`}>{body}</div>
     {(['nw', 'ne', 'se', 'sw'] as PreviewCorner[]).map((corner) => <span key={corner} className={`file-preview-resize is-${corner}`} aria-hidden="true" onPointerDown={(event) => startResize(corner, event)} onPointerMove={resizePreview} onPointerUp={stopResize} onPointerCancel={stopResize} />)}

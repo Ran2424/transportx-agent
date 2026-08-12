@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog } from '../../components/ui/dialog';
 import { Icon } from '../../components/icons';
 
@@ -12,6 +13,7 @@ export type CommandItem = {
 };
 
 export function CommandPalette({ open, onOpenChange, commands }: { open: boolean; onOpenChange(open: boolean): void; commands: CommandItem[] }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -37,15 +39,15 @@ export function CommandPalette({ open, onOpenChange, commands }: { open: boolean
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="命令" className="command-dialog">
+    <Dialog open={open} onOpenChange={onOpenChange} title={t('commands.title')} className="command-dialog">
       <label className="command-search">
         <Icon name="search" />
         <input
           autoFocus
           value={query}
           onChange={(event) => { setQuery(event.target.value); setActiveIndex(0); }}
-          placeholder="搜索工作台命令…"
-          aria-label="搜索命令"
+          placeholder={t('commands.searchPlaceholder')}
+          aria-label={t('commands.search')}
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
@@ -64,7 +66,7 @@ export function CommandPalette({ open, onOpenChange, commands }: { open: boolean
           }}
         />
       </label>
-      <div className="command-list" role="listbox" aria-label="工作台命令">
+      <div className="command-list" role="listbox" aria-label={t('commands.list')}>
         {filtered.map((command, index) => (
           <button
             className={`command-row${index === activeIndex ? ' is-active' : ''}`}
@@ -89,7 +91,7 @@ export function CommandPalette({ open, onOpenChange, commands }: { open: boolean
             {command.shortcut ? <kbd>{command.shortcut}</kbd> : <span className="command-arrow">↗</span>}
           </button>
         ))}
-        {filtered.length === 0 ? <div className="command-empty">没有匹配的命令</div> : null}
+        {filtered.length === 0 ? <div className="command-empty">{t('commands.empty')}</div> : null}
       </div>
     </Dialog>
   );

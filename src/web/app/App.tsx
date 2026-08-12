@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import type { HistoryProject, HistorySession } from '../../public/kernel/commands.js';
 import { useAppServices } from './AppProviders';
 import { AppShell } from './AppShell';
@@ -43,6 +44,7 @@ function mostRecentSessionId(sessions: ReturnType<typeof useSessionState>['sessi
 }
 
 export function App() {
+  const { t } = useTranslation();
   const { kernel, reconnect } = useAppServices();
   const runtime = useRuntimeState();
   const sessionState = useSessionState();
@@ -154,9 +156,9 @@ export function App() {
       const sessions = await kernel.commands.session.list();
       kernel.dispatch({ type: 'session/listReceived', sessions });
     } catch (cause) {
-      setNotice((cause as { message?: string })?.message || '无法读取运行中的任务');
+      setNotice((cause as { message?: string })?.message || t('app.error.loadLiveSessions'));
     }
-  }, [kernel]);
+  }, [kernel, t]);
 
   useEffect(() => {
     if (runtime.connection !== 'connected') return;
@@ -185,11 +187,11 @@ export function App() {
       const snapshot = await kernel.commands.session.loadSnapshot(sessionId);
       kernel.dispatch({ type: 'session/snapshotReceived', sessionId, snapshot });
     } catch (cause) {
-      setNotice((cause as { message?: string })?.message || '加载任务快照失败');
+      setNotice((cause as { message?: string })?.message || t('app.error.loadSnapshot'));
     } finally {
       setSessionLoading(false);
     }
-  }, [closeSidebar, kernel]);
+  }, [closeSidebar, kernel, t]);
 
   const goHome = useCallback(() => {
     kernel.dispatch({ type: 'session/activated', sessionId: null });
@@ -222,7 +224,7 @@ export function App() {
       kernel.dispatch({ type: 'session/created', session: resumed });
       await selectSession(resumed.id);
     } catch (cause) {
-      setNotice((cause as { message?: string })?.message || '恢复会话失败');
+      setNotice((cause as { message?: string })?.message || t('app.error.resumeSession'));
     } finally {
       setSessionLoading(false);
     }
@@ -230,7 +232,7 @@ export function App() {
 
   async function closeSession(sessionId: string) {
     const isStreaming = !!kernel.stores.session.get().streamingBySession[sessionId];
-    if (isStreaming && !window.confirm('这个交通任务正在执行。确定关闭任务并终止 Pi 会话吗？')) return;
+    if (isStreaming && !window.confirm(t('app.confirm.closeStreaming'))) return;
     try {
       await kernel.commands.session.close(sessionId);
       kernel.dispatch({ type: 'session/closed', sessionId });
@@ -240,23 +242,23 @@ export function App() {
         if (next) await selectSession(next);
       }
     } catch (cause) {
-      setNotice((cause as { message?: string })?.message || '关闭任务失败');
+      setNotice((cause as { message?: string })?.message || t('app.error.closeSession'));
     }
   }
 
   const commandItems = useMemo<CommandItem[]>(() => [
-    { id: 'new', label: '新建交通任务', description: '启动独立 Pi RPC 会话', shortcut: '⌘N', action: () => setNewSessionOpen(true) },
-    { id: 'files', label: filesOpen ? '关闭文件栏' : '打开文件栏', description: '浏览当前任务的工作目录', shortcut: '⌘⇧W', action: toggleFiles },
-    { id: 'tasks', label: tasksOpen ? '关闭任务面板' : '打开任务面板', description: taskAvailable ? '查看当前任务的执行计划' : '当前任务未开启任务模式', disabled: !taskAvailable, action: toggleTasks },
-    { id: 'map', label: mapOpen ? '关闭地图视图' : '打开地图视图', description: visualizations.length ? '聚焦当前任务的 GIS 可视化' : '当前任务暂无地图结果', disabled: visualizations.length === 0, action: toggleMap },
-    { id: 'model', label: '切换模型', description: activeSession ? '设置当前任务的模型与思考级别' : '需要先选择运行中的任务', disabled: !activeSession, action: () => setModelOpen(true) },
-    { id: 'compact', label: '压缩上下文', description: activeSession ? '请求 Pi 整理当前会话上下文' : '需要先选择运行中的任务', disabled: !activeSession, action: async () => {
+    { id: 'new', label: t('app.command.new.label'), description: t('app.command.new.description'), shortcut: '⌘N', action: () => setNewSessionOpen(true) },
+    { id: 'files', label: filesOpen ? t('app.command.files.close') : t('app.command.files.open'), description: t('app.command.files.description'), shortcut: '⌘⇧W', action: toggleFiles },
+    { id: 'tasks', label: tasksOpen ? t('app.command.tasks.close') : t('app.command.tasks.open'), description: taskAvailable ? t('app.command.tasks.description') : t('app.command.tasks.unavailable'), disabled: !taskAvailable, action: toggleTasks },
+    { id: 'map', label: mapOpen ? t('app.command.map.close') : t('app.command.map.open'), description: visualizations.length ? t('app.command.map.description') : t('app.command.map.unavailable'), disabled: visualizations.length === 0, action: toggleMap },
+    { id: 'model', label: t('app.command.model.label'), description: activeSession ? t('app.command.model.description') : t('app.command.requiresSession'), disabled: !activeSession, action: () => setModelOpen(true) },
+    { id: 'compact', label: t('app.command.compact.label'), description: activeSession ? t('app.command.compact.description') : t('app.command.requiresSession'), disabled: !activeSession, action: async () => {
       if (!activeSession) return;
-      try { await kernel.commands.agent.compact(activeSession.id); setNotice('上下文压缩请求已完成'); }
-      catch (cause) { setNotice((cause as { message?: string })?.message || '压缩上下文失败'); }
+      try { await kernel.commands.agent.compact(activeSession.id); setNotice(t('app.notice.compacted')); }
+      catch (cause) { setNotice((cause as { message?: string })?.message || t('app.error.compact')); }
     } },
-    { id: 'settings', label: '工作台设置', description: '主题、Agent 与访问控制', shortcut: '⌘,', action: () => setSettingsOpen(true) },
-  ], [activeSession, filesOpen, kernel, mapOpen, taskAvailable, tasksOpen, toggleFiles, toggleMap, toggleTasks, visualizations.length]);
+    { id: 'settings', label: t('app.command.settings.label'), description: t('app.command.settings.description'), shortcut: '⌘,', action: () => setSettingsOpen(true) },
+  ], [activeSession, filesOpen, kernel, mapOpen, t, taskAvailable, tasksOpen, toggleFiles, toggleMap, toggleTasks, visualizations.length]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -292,13 +294,13 @@ export function App() {
           closeSidebar();
         } else if (activeSession && kernel.stores.session.isStreaming(activeSession.id)) {
           void kernel.commands.agent.abort(activeSession.id);
-          setNotice('已请求中止当前任务');
+          setNotice(t('app.notice.aborted'));
         }
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [activeSession, closeFiles, closeMap, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, mapOpen, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, tasksOpen]);
+  }, [activeSession, closeFiles, closeMap, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, mapOpen, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t, tasksOpen]);
 
   const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
   const runtimeErrorMessage = runtime.lastError?.message || '';
@@ -319,10 +321,10 @@ export function App() {
       overlays={<>
         <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} onAddModel={() => openModelSetup('new')} />
         <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
-        <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(`已添加模型 ${reference}`); changeModelSetupOpen(false); }} />
+        <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
-        {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label="关闭状态通知" onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
+        {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label={t('app.notice.close')} onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
       </>}
     />
   );

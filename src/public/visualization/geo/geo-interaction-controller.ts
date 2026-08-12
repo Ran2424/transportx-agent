@@ -78,8 +78,9 @@ export class GeoInteractionController {
 function formatPopupValue(value: unknown, format?: string) {
   if (value === null || value === undefined) return '—';
   if (typeof value !== 'number') return String(value);
-  if (format === 'integer') return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(value);
-  if (format === 'decimal') return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value);
-  if (format === 'percent') return new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 1 }).format(value);
+  const locale = document.documentElement.lang || 'zh-CN';
+  if (format === 'integer') return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
+  if (format === 'decimal') return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
+  if (format === 'percent') return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(value);
   return String(value);
 }
