@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { HistoryProject, HistorySession } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
@@ -6,6 +7,7 @@ import { BrandMark } from '../../components/BrandMark';
 import { Icon } from '../../components/icons';
 import { relativeTime, sessionTitle } from '../../lib/formatting';
 import { CapabilityPane } from '../capabilities/CapabilityPane';
+import i18n from '../../i18n';
 
 type SessionSidebarProps = {
   open: boolean;
@@ -19,7 +21,7 @@ type SessionSidebarProps = {
 };
 
 function historyTitle(session: HistorySession) {
-  return session.sessionName || session.name || session.firstMessage || '空会话';
+  return session.sessionName || session.name || session.firstMessage || i18n.t('sessions.emptyTask');
 }
 
 function isScenarioSession(cwd?: string) {
@@ -57,6 +59,7 @@ export function SessionSidebar({
   onSelectLive,
   onSelectHistory,
 }: SessionSidebarProps) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const [projects, setProjects] = useState<HistoryProject[]>([]);
   const [query, setQuery] = useState('');
@@ -71,10 +74,10 @@ export function SessionSidebar({
     setError('');
     kernel.commands.session.listHistory()
       .then((next) => { if (current) setProjects(next); })
-      .catch(() => { if (current) setError('会话加载失败'); })
+      .catch(() => { if (current) setError(t('sessions.loadFailed')); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [kernel, refreshKey]);
+  }, [kernel, refreshKey, t]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const scenarioSessions = useMemo(() => {
@@ -118,26 +121,26 @@ export function SessionSidebar({
 
   return (
     <>
-      <aside className={`session-sidebar${open ? ' is-open' : ''}`} aria-label="会话侧栏" data-testid="session-sidebar">
+      <aside className={`session-sidebar${open ? ' is-open' : ''}`} aria-label={t('sessions.sidebar')} data-testid="session-sidebar">
         <div className="sidebar-tools">
-          <button className="sidebar-home-mark" type="button" aria-label="返回主页" onClick={onGoHome}>
+          <button className="sidebar-home-mark" type="button" aria-label={t('sessions.goHome')} onClick={onGoHome}>
             <BrandMark className="sidebar-home-icon" />
           </button>
           <label className="sidebar-search">
             <Icon name="search" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索会话…" aria-label="搜索会话" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('sessions.searchPlaceholder')} aria-label={t('sessions.search')} />
           </label>
-          <button className="icon-button accent-button" type="button" aria-label="新建交通任务" onClick={onNewSession}><Icon name="plus" /></button>
-          <button className="icon-button" type="button" aria-label="刷新会话" onClick={() => setRefreshKey((value) => value + 1)}><Icon name="refresh" /></button>
-          <button className="icon-button mobile-only" type="button" aria-label="关闭侧栏" onClick={onClose}><Icon name="close" /></button>
+          <button className="icon-button accent-button" type="button" aria-label={t('sessions.newTask')} onClick={onNewSession}><Icon name="plus" /></button>
+          <button className="icon-button" type="button" aria-label={t('sessions.refresh')} onClick={() => setRefreshKey((value) => value + 1)}><Icon name="refresh" /></button>
+          <button className="icon-button mobile-only" type="button" aria-label={t('sessions.closeSidebar')} onClick={onClose}><Icon name="close" /></button>
         </div>
 
         <div className="sidebar-split">
           <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} />
-          <section className="conversation-section" aria-label="对话列表">
-            <header className="sidebar-section-heading"><strong>对话</strong>{scenarioSessions.length ? <small>{scenarioSessions.length}</small> : null}</header>
+          <section className="conversation-section" aria-label={t('sessions.conversationList')}>
+            <header className="sidebar-section-heading"><strong>{t('sessions.conversations')}</strong>{scenarioSessions.length ? <small>{scenarioSessions.length}</small> : null}</header>
             <div className="session-scroll">
-              {loading ? <div className="session-empty">正在读取会话索引…</div> : null}
+              {loading ? <div className="session-empty">{t('sessions.loadingIndex')}</div> : null}
               {error ? <div className="session-empty is-error">{error}</div> : null}
               {!loading && !error && scenarioSessions.map((item) => (
                 <button
@@ -150,13 +153,13 @@ export function SessionSidebar({
                   {item.live?.isStreaming ? <span className="session-row-meta"><i className="streaming-beacon" /></span> : null}
                 </button>
               ))}
-              {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">暂无场景会话。新建任务后，它会出现在这里。</div> : null}
+              {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">{t('sessions.emptyScenario')}</div> : null}
             </div>
           </section>
         </div>
 
       </aside>
-      <button className={`mobile-scrim${open ? ' is-visible' : ''}`} type="button" aria-label="关闭会话侧栏" onClick={onClose} />
+      <button className={`mobile-scrim${open ? ' is-visible' : ''}`} type="button" aria-label={t('sessions.toggleCloseSidebar')} onClick={onClose} />
     </>
   );
 }

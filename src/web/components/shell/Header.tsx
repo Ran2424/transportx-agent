@@ -1,4 +1,5 @@
 import type { LiveSession } from '../../../public/app-types.js';
+import { useTranslation } from 'react-i18next';
 import type { ConnectionState } from '../../../public/kernel/stores/runtime-store.js';
 import { BrandMark } from '../BrandMark';
 import { Icon } from '../icons';
@@ -43,15 +44,16 @@ export function Header({
   onOpenCommands,
   onOpenSettings,
 }: HeaderProps) {
+  const { t } = useTranslation();
   const status = connection === 'connected' && streaming ? 'streaming' : connection;
-  const statusLabel = status === 'streaming' ? '处理中' : status === 'connected' ? '已连接' : status === 'connecting' ? '连接中' : '已断开';
-  const model = modelReference(activeSession?.model) || activeSession?.modelSpec || '选择模型';
+  const statusLabel = status === 'streaming' ? t('header.status.streaming') : status === 'connected' ? t('header.status.connected') : status === 'connecting' ? t('header.status.connecting') : t('header.status.disconnected');
+  const model = modelReference(activeSession?.model) || activeSession?.modelSpec || t('header.selectModel');
   const thinking = activeSession?.thinkingLevel || 'off';
 
   return (
     <header className={`workspace-header${activeSession ? ' has-task' : ''}`}>
       <div className="workspace-header-left">
-        <button className="icon-button" type="button" aria-label="展开或收起会话侧栏" aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
+        <button className="icon-button" type="button" aria-label={t('header.toggleSidebar')} aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
           <Icon name="menu" />
         </button>
         <button
@@ -59,7 +61,7 @@ export function Header({
           type="button"
           disabled={!activeSession}
           onClick={onOpenModel}
-          aria-label="选择模型与思考级别"
+          aria-label={t('header.modelAndThinking')}
         >
           <span>{model}</span>
           {activeSession ? <small>{thinking}</small> : null}
@@ -69,12 +71,12 @@ export function Header({
 
       <div className="workspace-header-center">
         {activeSession ? (
-          <button className="workspace-task" type="button" aria-label="返回 TransportX 主界面" title={sessionTitle(activeSession)} onClick={onGoHome}>
+          <button className="workspace-task" type="button" aria-label={t('header.goHome')} title={sessionTitle(activeSession)} onClick={onGoHome}>
             <span className="workspace-task-name">{sessionTitle(activeSession)}</span>
-            <span className={`workspace-task-status${streaming ? ' is-streaming' : ''}`}>{streaming ? '处理中' : '已就绪'}</span>
+            <span className={`workspace-task-status${streaming ? ' is-streaming' : ''}`}>{streaming ? t('header.status.streaming') : t('header.status.ready')}</span>
           </button>
         ) : (
-          <button className="workspace-brand" type="button" aria-label="返回 TransportX 主界面" onClick={onGoHome}>
+          <button className="workspace-brand" type="button" aria-label={t('header.goHome')} onClick={onGoHome}>
             <BrandMark className="workspace-brand-mark" />
             <span><strong>TransportX</strong><small>TRAFFIC AGENT</small></span>
           </button>
@@ -86,19 +88,19 @@ export function Header({
           <span className="agent-status-dot" />
           <span>{statusLabel}</span>
         </div>
-        <button className="icon-button header-command" type="button" aria-label="打开命令面板" onClick={onOpenCommands}>
+        <button className="icon-button header-command" type="button" aria-label={t('header.openCommands')} onClick={onOpenCommands}>
           <Icon name="command" /><kbd>⌘K</kbd>
         </button>
-        <button className="icon-button" type="button" aria-label="打开或关闭文件栏" aria-pressed={fileOpen} onClick={onToggleFiles}>
+        <button className="icon-button" type="button" aria-label={t('header.toggleFiles')} aria-pressed={fileOpen} onClick={onToggleFiles}>
           <Icon name="workspace" />
         </button>
-        <button className="icon-button" type="button" aria-label="打开或关闭任务面板" aria-pressed={taskOpen} disabled={!taskAvailable} title={taskAvailable ? '打开任务面板' : '当前任务未开启任务模式'} onClick={onToggleTasks}>
+        <button className="icon-button" type="button" aria-label={t('header.toggleTasks')} aria-pressed={taskOpen} disabled={!taskAvailable} title={taskAvailable ? t('app.command.tasks.open') : t('app.command.tasks.unavailable')} onClick={onToggleTasks}>
           <Icon name="task" />
         </button>
-        <button className="icon-button" type="button" aria-label="打开或关闭地图视图" aria-pressed={mapOpen} disabled={!mapAvailable} title={mapAvailable ? '打开地图视图' : '当前任务暂无地图结果'} onClick={onToggleMap}>
+        <button className="icon-button" type="button" aria-label={t('header.toggleMap')} aria-pressed={mapOpen} disabled={!mapAvailable} title={mapAvailable ? t('app.command.map.open') : t('app.command.map.unavailable')} onClick={onToggleMap}>
           <Icon name="map" />
         </button>
-        <button className="icon-button" type="button" aria-label="打开设置" onClick={onOpenSettings}>
+        <button className="icon-button" type="button" aria-label={t('header.openSettings')} onClick={onOpenSettings}>
           <Icon name="settings" />
         </button>
       </div>

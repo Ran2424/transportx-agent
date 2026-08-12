@@ -7,9 +7,9 @@
 
 export type MarkdownImageResolver = (url: string) => string;
 
-export function renderMarkdown(text: string, citationNumbers: Record<string, number> = {}, imageResolver?: MarkdownImageResolver) {
+export function renderMarkdown(text: string, citationNumbers: Record<string, number> = {}, imageResolver?: MarkdownImageResolver, locale = 'zh-CN') {
   if (!text) return '';
-  const inline = (value: string) => renderInline(value, citationNumbers, imageResolver);
+  const inline = (value: string) => renderInline(value, citationNumbers, imageResolver, locale);
 
   // Normalize line endings
   text = text.replace(/\r\n/g, '\n');
@@ -44,7 +44,7 @@ export function renderMarkdown(text: string, citationNumbers: Record<string, num
 
   // Check if a line is a table separator (e.g. |---|---|)
   function isTableSeparator(line: string) {
-    return /^\|?(\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line);
+    return /^\|?(\s*:?-{1,}:?\s*\|)+\s*:?-{1,}:?\s*\|?\s*$/.test(line);
   }
 
   // Check if a line looks like a table row
@@ -220,7 +220,7 @@ export function renderUserMarkdown(text: string) {
   return renderMarkdown(text);
 }
 
-function renderInline(text: string, citationNumbers?: Record<string, number>, imageResolver?: MarkdownImageResolver) {
+function renderInline(text: string, citationNumbers?: Record<string, number>, imageResolver?: MarkdownImageResolver, locale = 'zh-CN') {
   text = escapeHtml(text);
   // Inline code (must come first to protect content)
   const codeSpans: string[] = [];
@@ -234,8 +234,8 @@ function renderInline(text: string, citationNumbers?: Record<string, number>, im
     text = text.replace(/\[\[cite:([A-Za-z0-9_.:-]+(?:\s*,\s*[A-Za-z0-9_.:-]+)*)\]\]/g, (_marker, raw: string) => {
       const ids = [...new Set(raw.split(',').map((id) => id.trim()))];
       return `<span class="citation-group">${ids.map((id) => citationNumbers[id]
-        ? `<button type="button" class="citation-marker" data-citation-id="${id}" aria-label="查看引用 ${citationNumbers[id]}">${citationNumbers[id]}</button>`
-        : '<span class="citation-unavailable">引用不可用</span>').join('')}</span>`;
+        ? `<button type="button" class="citation-marker" data-citation-id="${id}" aria-label="${locale === 'en-US' ? 'View citation' : '查看引用'} ${citationNumbers[id]}">${citationNumbers[id]}</button>`
+        : `<span class="citation-unavailable">${locale === 'en-US' ? 'Citation unavailable' : '引用不可用'}</span>`).join('')}</span>`;
     });
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { LiveSession } from '../../../public/app-types.js';
+import { useTranslation } from 'react-i18next';
 import type { VisualizationEnvelope } from '../../../contracts/geo.js';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
 import { FeatureEmpty } from '../task/TaskBoard';
@@ -15,6 +16,7 @@ type GeoRuntime = {
 type RuntimeModule = { createGeoMapRuntime(container: HTMLElement, onError: (message: string) => void): GeoRuntime };
 
 export function GeoWorkspace({ session, active }: { session: LiveSession | null; active: boolean }) {
+  const { t } = useTranslation();
   const conversation = useConversationState();
   const tools = useToolExecutionState();
   const entries = session ? conversation.bySession[session.id]?.snapshotEntries : undefined;
@@ -30,19 +32,19 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
     if (selected && selected.visualizationId !== selectedId) setSelectedId(selected.visualizationId);
   }, [selected, selectedId]);
 
-  if (!session) return <FeatureEmpty mark="04" title="等待任务上下文" description="选择任务后，GIS 结果会按会话显示。" />;
-  if (!selected?.scene) return <FeatureEmpty mark="04" title="当前任务还没有地图" description="Agent 发布 GIS 可视化后，地图和图层控制会在这里出现。" />;
+  if (!session) return <FeatureEmpty mark="04" title={t('task.waitingContext')} description={t('geo.waitingDescription')} />;
+  if (!selected?.scene) return <FeatureEmpty mark="04" title={t('geo.emptyTitle')} description={t('geo.emptyDescription')} />;
 
   return (
     <div className="geo-workspace">
       <div className="geo-toolbar">
-        <select aria-label="选择地图" value={selected.visualizationId} onChange={(event) => setSelectedId(event.target.value)}>
+        <select aria-label={t('geo.select')} value={selected.visualizationId} onChange={(event) => setSelectedId(event.target.value)}>
           {items.map((item) => <option key={item.visualizationId} value={item.visualizationId}>{item.summary.title}</option>)}
         </select>
         {selected.scene.controls?.fitToData !== false
-          ? <button type="button" onClick={() => runtime.current?.fitToScene()}>回到范围</button>
+          ? <button type="button" onClick={() => runtime.current?.fitToScene()}>{t('geo.fit')}</button>
           : null}
-        <small>revision {selected.revision} · {selected.scene.layers.length} 个图层</small>
+        <small>revision {selected.revision} · {t('geo.layerCount', { count: selected.scene.layers.length })}</small>
       </div>
       <GeoMap
         key={`${session.id}:${selected.visualizationId}`}
@@ -51,7 +53,7 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
         active={active}
         runtime={runtime}
       />
-      <div className="geo-layers" role="group" aria-label="地图图层" tabIndex={0}>
+      <div className="geo-layers" role="group" aria-label={t('geo.layers')} tabIndex={0}>
         {[...selected.scene.layers].reverse().map((layer) => (
           <GeoLayer
             key={`${selected.visualizationId}:${layer.id}`}
@@ -61,7 +63,7 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
         ))}
       </div>
       {selected.scene.metadata.description
-        ? <p className="geo-description" role="region" aria-label="地图说明" tabIndex={0}>{selected.scene.metadata.description}</p>
+        ? <p className="geo-description" role="region" aria-label={t('geo.description')} tabIndex={0}>{selected.scene.metadata.description}</p>
         : null}
     </div>
   );
@@ -78,6 +80,7 @@ function GeoMap({
   active: boolean;
   runtime: RefObject<GeoRuntime | null>;
 }) {
+  const { t } = useTranslation();
   const container = useRef<HTMLDivElement>(null);
   const latestEnvelope = useRef(envelope);
   const [error, setError] = useState('');
@@ -137,8 +140,8 @@ function GeoMap({
 
   return (
     <>
-      <div ref={container} className="geo-map" aria-label="GIS 地图" />
-      {error ? <p className="geo-error">地图加载失败：{error}</p> : null}
+      <div ref={container} className="geo-map" aria-label={t('geo.map')} />
+      {error ? <p className="geo-error">{t('geo.loadFailed', { error })}</p> : null}
     </>
   );
 }

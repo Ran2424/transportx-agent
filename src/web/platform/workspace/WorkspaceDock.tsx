@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
@@ -34,6 +35,7 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
 
 /** The resource dock intentionally exposes only session files. */
 export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: LiveSession | null; onClose(): void }) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const conversation = useConversationState();
   const [path, setPath] = useState('');
@@ -59,12 +61,12 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
       const response = await kernel.commands.session.listFiles(session.id, nextPath);
       setPath(response.path); setItems(response.items);
     } catch (cause) {
-      setError((cause as Error).message || '文件加载失败');
+      setError((cause as Error).message || t('workspace.loadFailed'));
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [kernel, session]);
+  }, [kernel, session, t]);
 
   useEffect(() => { if (open) void load(); }, [load, open]);
   useEffect(() => {
@@ -82,18 +84,18 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
     window.setTimeout(() => setCopiedPath((current) => current === item.path ? '' : current), 1_500);
   }
 
-  return <aside className={`workspace-dock${open ? ' is-open' : ''}`} aria-label="文件栏" data-testid="workspace-dock">
+  return <aside className={`workspace-dock${open ? ' is-open' : ''}`} aria-label={t('workspace.filePanel')} data-testid="workspace-dock">
     <div className="workspace-dock-header">
-      <strong>文件</strong>
-      <button className="icon-button" type="button" aria-label="关闭文件栏" onClick={onClose}><Icon name="close" /></button>
+      <strong>{t('workspace.files')}</strong>
+      <button className="icon-button" type="button" aria-label={t('workspace.closeFiles')} onClick={onClose}><Icon name="close" /></button>
     </div>
     <div className="workspace-file-toolbar">
-      <button className="icon-button" type="button" aria-label="返回上级目录" disabled={!path || !parentPath(path)} onClick={() => { const parent = parentPath(path); if (parent) void load(parent); }}><Icon name="chevron" /></button>
-      <span title={path}>{session ? (path || basename(session.cwd || '')) : '未选择任务'}</span>
-      <button className="icon-button" type="button" aria-label="刷新文件" disabled={!session || loading} onClick={() => void load(path || undefined)}><Icon name="refresh" /></button>
+      <button className="icon-button" type="button" aria-label={t('workspace.parent')} disabled={!path || !parentPath(path)} onClick={() => { const parent = parentPath(path); if (parent) void load(parent); }}><Icon name="chevron" /></button>
+      <span title={path}>{session ? (path || basename(session.cwd || '')) : t('workspace.noTask')}</span>
+      <button className="icon-button" type="button" aria-label={t('workspace.refresh')} disabled={!session || loading} onClick={() => void load(path || undefined)}><Icon name="refresh" /></button>
     </div>
-    <div className="workspace-file-list" role="tabpanel" aria-label="任务文件">
-      {!session ? <WorkspaceEmpty mark="01" title="等待任务上下文" description="选择一个运行中的任务后，可以浏览其工作目录。" /> : loading ? <p className="workspace-file-status">正在读取文件…</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty mark="01" title="目录为空" description="当前工作目录中没有可显示的文件。" /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">已复制路径：{basename(copiedPath)}</p> : null}</>}
+    <div className="workspace-file-list" role="tabpanel" aria-label={t('workspace.taskFiles')}>
+      {!session ? <WorkspaceEmpty mark="01" title={t('task.waitingContext')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty mark="01" title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
     </div>
     <footer className="workspace-dock-footer"><span>SESSION SCOPED</span><span>{session?.id.slice(-8) || 'NO SESSION'}</span></footer>
     {session ? previewFiles.map((file, index) => {
@@ -105,6 +107,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
 }
 
 export function WorkspaceFloat({ kind, open, session, fileOpen = false, onClose }: { kind: 'tasks' | 'map'; open: boolean; session: LiveSession | null; fileOpen?: boolean; onClose(): void }) {
+  const { t } = useTranslation();
   const map = kind === 'map';
   const panelRef = useRef<HTMLElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -160,8 +163,8 @@ export function WorkspaceFloat({ kind, open, session, fileOpen = false, onClose 
     setDragging(false);
   }
 
-  return <aside ref={panelRef} className={`workspace-float workspace-float--${kind}${open ? ' is-open' : ''}${!map && fileOpen ? ' is-file-offset' : ''}${dragging ? ' is-dragging' : ''}`} aria-label={map ? '地图视图' : '任务面板'} data-testid={`workspace-float-${kind}`}>
-    <header className="workspace-float-header" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><strong>{map ? '地图' : '任务'}</strong><button className="icon-button" type="button" aria-label={`关闭${map ? '地图视图' : '任务面板'}`} onClick={onClose}><Icon name="close" /></button></header>
+  return <aside ref={panelRef} className={`workspace-float workspace-float--${kind}${open ? ' is-open' : ''}${!map && fileOpen ? ' is-file-offset' : ''}${dragging ? ' is-dragging' : ''}`} aria-label={map ? t('workspace.mapView') : t('workspace.taskPanel')} data-testid={`workspace-float-${kind}`}>
+    <header className="workspace-float-header" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><strong>{map ? t('workspace.map') : t('workspace.task')}</strong><button className="icon-button" type="button" aria-label={map ? t('workspace.closeMap') : t('workspace.closeTasks')} onClick={onClose}><Icon name="close" /></button></header>
     <div className="workspace-float-body">{map ? <GeoWorkspace session={session} active={open} /> : <TaskBoard session={session} />}</div>
   </aside>;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { AppEvent } from '../../../public/app-types.js';
 import type { ExtensionUiPending } from '../../../public/kernel/stores/extension-ui-store.js';
 import { useAppServices } from '../../app/AppProviders';
@@ -30,10 +31,11 @@ function splitOption(value: string) {
 }
 
 function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const request = pending.request as Request;
   const method = request.method || '';
-  const fallback = method === 'select' ? '请选择' : method === 'confirm' ? '请确认' : '请输入信息';
+  const fallback = method === 'select' ? t('extension.select') : method === 'confirm' ? t('extension.confirm') : t('extension.input');
   const heading = splitHeading(request.title, fallback);
   const message = request.message || heading.message;
   const [value, setValue] = useState(request.prefill || '');
@@ -70,15 +72,15 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
 
   const footer = method === 'confirm' ? (
     <>
-      <Button variant="quiet" onClick={() => void respond({ confirmed: false })}>否</Button>
-      <Button onClick={() => void respond({ confirmed: true })}>是</Button>
+      <Button variant="quiet" onClick={() => void respond({ confirmed: false })}>{t('common.no')}</Button>
+      <Button onClick={() => void respond({ confirmed: true })}>{t('common.yes')}</Button>
     </>
   ) : method === 'select' ? (
-    <Button variant="quiet" onClick={() => void respond({ cancelled: true })}>取消</Button>
+    <Button variant="quiet" onClick={() => void respond({ cancelled: true })}>{t('common.cancel')}</Button>
   ) : (
     <>
-      <Button variant="quiet" onClick={() => void respond({ cancelled: true })}>取消</Button>
-      <Button onClick={() => void respond(value ? { value } : { cancelled: true })}>提交回答</Button>
+      <Button variant="quiet" onClick={() => void respond({ cancelled: true })}>{t('common.cancel')}</Button>
+      <Button onClick={() => void respond(value ? { value } : { cancelled: true })}>{t('common.submit')}</Button>
     </>
   );
 
@@ -101,12 +103,13 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
       ) : null}
       {method === 'input' ? <input className="extension-input" autoFocus value={value} placeholder={request.placeholder} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void respond(value ? { value } : { cancelled: true }); }} /> : null}
       {method === 'editor' ? <textarea className="extension-input extension-editor" autoFocus value={value} onChange={(event) => setValue(event.target.value)} /> : null}
-      {!['select', 'confirm', 'input', 'editor'].includes(method) ? <div className="inline-error">不支持的 Extension UI 类型：{method || 'unknown'}</div> : null}
+      {!['select', 'confirm', 'input', 'editor'].includes(method) ? <div className="inline-error">{t('extension.unsupported', { method: method || 'unknown' })}</div> : null}
     </Dialog>
   );
 }
 
 export function ExtensionDialogLayer({ pending }: { pending: ExtensionUiPending | null }) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const [notification, setNotification] = useState<Request | null>(null);
   const notificationKey = useRef('');
@@ -130,7 +133,7 @@ export function ExtensionDialogLayer({ pending }: { pending: ExtensionUiPending 
   return (
     <>
       {pending && request?.method !== 'notify' ? <ExtensionDialog key={`${pending.sessionId || ''}:${request?.id || ''}`} pending={pending} /> : null}
-      {notification ? <div className={`extension-toast is-${notification.notifyType || 'info'}`} role="status"><strong>{notification.notifyType === 'error' ? '通知失败' : 'Pi 通知'}</strong><span>{notification.message}</span><button type="button" aria-label="关闭通知" onClick={() => setNotification(null)}>×</button></div> : null}
+      {notification ? <div className={`extension-toast is-${notification.notifyType || 'info'}`} role="status"><strong>{notification.notifyType === 'error' ? t('extension.notificationFailed') : t('extension.notification')}</strong><span>{notification.message}</span><button type="button" aria-label={t('extension.closeNotification')} onClick={() => setNotification(null)}>×</button></div> : null}
     </>
   );
 }

@@ -14,6 +14,10 @@ function isHttpUrl(value: string) {
   try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; }
 }
 
+function nativeText(zh: string, en: string) {
+  return app.getLocale().toLowerCase().startsWith('zh') ? zh : en;
+}
+
 async function renderPdf(_title: string, html: string) {
   const window = new BrowserWindow({
     show: false,
@@ -75,7 +79,7 @@ function createWindow(url: string) {
   window.once('ready-to-show', () => window.show());
   window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
   window.loadURL(windowUrl.toString()).catch((error: Error) => {
-    dialog.showErrorBox('TransportX Traffic Agent', `无法加载本地工作台：${error.message}`);
+    dialog.showErrorBox('TransportX Traffic Agent', `${nativeText('无法加载本地工作台', 'Could not load the local workbench')}: ${error.message}`);
     app.quit();
   });
   mainWindow = window;
@@ -95,14 +99,14 @@ else {
     supervisor = new AgentHostSupervisor({
       paths,
       onUnexpectedExit: (message) => {
-        dialog.showErrorBox('TransportX Traffic Agent', `${message}\n请查看 ${paths.logsDir} 中的日志。`);
+        dialog.showErrorBox('TransportX Traffic Agent', `${message}\n${nativeText(`请查看 ${paths.logsDir} 中的日志。`, `See the logs in ${paths.logsDir}.`)}`);
         app.quit();
       },
       renderPdf,
     });
     try { createWindow(await supervisor.start()); }
     catch (error) {
-      dialog.showErrorBox('TransportX Traffic Agent 启动失败', error instanceof Error ? error.message : String(error));
+      dialog.showErrorBox(nativeText('TransportX Traffic Agent 启动失败', 'TransportX Traffic Agent failed to start'), error instanceof Error ? error.message : String(error));
       app.quit();
     }
   });

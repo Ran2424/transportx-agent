@@ -348,6 +348,15 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .theme-option:hover, .theme-option.is-active { border-color: var(--selection-border); color: var(--text-primary); background: var(--selection-bg); }
 .theme-colors { display: flex; margin-bottom: 8px; }
 .theme-colors i { width: 22px; height: 10px; border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent); }
+.settings-language-control { display: grid; gap: 9px; }
+.settings-language-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-md); background: var(--surface-default); }
+.settings-language-option { position: relative; min-width: 0; cursor: pointer; }
+.settings-language-option input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.settings-language-option span { min-height: 36px; padding: 0 12px; display: flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: var(--tx-radius-sm); color: var(--text-secondary); font-size: 12px; font-weight: 600; line-height: 1.2; white-space: nowrap; transition: color 140ms ease, border-color 140ms ease, background 140ms ease; }
+.settings-language-option:hover span { color: var(--text-primary); background: var(--surface-hover); }
+.settings-language-option.is-active span { border-color: var(--selection-border); color: var(--text-primary); background: var(--selection-bg); }
+.settings-language-option input:focus-visible + span { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.settings-language-help { margin: 0 2px; color: var(--text-tertiary); font-size: 11px; line-height: 1.6; }
 .settings-row { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .settings-row strong, .settings-row small { display: block; }
 .settings-row strong { font-size: 12px; }
@@ -577,7 +586,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .composer-stream-actions .composer-send:hover { background: var(--interactive-primary-bg-hover); transform: translateY(-1px); }
 .composer-stream-actions .composer-abort:hover { border-color: color-mix(in srgb, var(--status-danger) 30%, var(--border-default)); color: var(--status-danger); background: color-mix(in srgb, var(--status-danger) 7%, transparent); }
 .composer-stream-actions button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.composer-send[aria-label="发送消息"] { width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: 18px; }
+.composer-toolbar > .composer-send { width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: 18px; }
 .composer-send { color: var(--interactive-primary-fg); background: var(--interactive-primary-bg); }
 .composer-send:disabled { cursor: default; opacity: .42; }
 .composer-abort { color: var(--status-danger); background: color-mix(in srgb, var(--status-danger) 10%, transparent); }

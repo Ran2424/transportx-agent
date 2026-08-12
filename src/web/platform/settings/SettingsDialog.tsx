@@ -1,8 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
 import type { PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
+import { useLocale } from '../../i18n/LocaleProvider';
+import type { LocalePreference } from '../../i18n';
+import i18n from '../../i18n';
 
 export const themes = [
   { id: 'light', label: 'Light' },
@@ -13,9 +17,9 @@ export const themes = [
 export type ThemeId = (typeof themes)[number]['id'];
 
 export const settingsSections = [
-  { id: 'general', label: '常规' },
-  { id: 'agent', label: 'Agent' },
-  { id: 'modules', label: '模块' },
+  { id: 'general', labelKey: 'settings.section.general' },
+  { id: 'agent', labelKey: 'settings.section.agent' },
+  { id: 'modules', labelKey: 'settings.section.modules' },
 ] as const;
 
 export type SettingsSectionId = (typeof settingsSections)[number]['id'];
@@ -53,23 +57,19 @@ type SettingsPageProps = {
   onBack(): void;
 };
 
-const moduleLabels: Record<PlatformModule['type'], string> = {
-  module: '模块包',
-  capability: '插件',
-  domain: '领域',
-};
-
 function modelDetails(model: ModelRecord | string) {
   if (typeof model === 'string') {
     const slash = model.indexOf('/');
-    return { provider: slash > 0 ? model.slice(0, slash) : '未指定供应商', name: slash > 0 ? model.slice(slash + 1) : model, details: '' };
+    return { provider: slash > 0 ? model.slice(0, slash) : i18n.t('settings.model.unknownProvider'), name: slash > 0 ? model.slice(slash + 1) : model, details: '' };
   }
-  const name = model.name || model.label || model.id || model.model || '未命名模型';
-  const details = [model.contextWindow || model.context || model.context_window ? '支持上下文配置' : '', model.thinking ? '推理' : '', model.images ? '图像' : ''].filter(Boolean).join(' · ');
-  return { provider: model.provider || '未指定供应商', name, details };
+  const name = model.name || model.label || model.id || model.model || i18n.t('settings.model.unnamed');
+  const details = [model.contextWindow || model.context || model.context_window ? i18n.t('settings.model.context') : '', model.thinking ? i18n.t('settings.model.reasoning') : '', model.images ? i18n.t('settings.model.images') : ''].filter(Boolean).join(' · ');
+  return { provider: model.provider || i18n.t('settings.model.unknownProvider'), name, details };
 }
 
 export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
+  const { t } = useTranslation();
+  const { preference, setPreference } = useLocale();
   const { kernel } = useAppServices();
   const [autoCompact, setAutoCompact] = useState(true);
   const [auth, setAuth] = useState({ configured: false, enabled: false });
@@ -98,9 +98,9 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
         if (current && state.autoCompactionEnabled !== undefined) setAutoCompact(state.autoCompactionEnabled);
       }));
     }
-    Promise.all(requests).catch(() => { if (current) setError('部分设置暂时无法读取。'); }).finally(() => { if (current) { setOverviewLoading(false); setModelsLoading(false); } });
+    Promise.all(requests).catch(() => { if (current) setError(t('settings.error.partial')); }).finally(() => { if (current) { setOverviewLoading(false); setModelsLoading(false); } });
     return () => { current = false; };
-  }, [kernel, session]);
+  }, [kernel, session, t]);
 
   async function toggleAutoCompact() {
     if (!session) return;
@@ -111,7 +111,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
       await kernel.commands.agent.setAutoCompaction(session.id, next);
     } catch (cause) {
       setAutoCompact(!next);
-      setError((cause as { message?: string })?.message || '更新自动压缩失败');
+      setError((cause as { message?: string })?.message || t('settings.error.autoCompact'));
     } finally {
       setBusy('');
     }
@@ -124,7 +124,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
       const value = await kernel.commands.platform.setAuth(next);
       setAuth((current) => ({ ...current, enabled: value.enabled }));
     } catch (cause) {
-      setError((cause as { message?: string })?.message || '更新登录验证失败');
+      setError((cause as { message?: string })?.message || t('settings.error.auth'));
     } finally {
       setBusy('');
     }
@@ -138,20 +138,20 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
       setOverview(await kernel.commands.platform.installModule(moduleSource.trim()));
       setModuleSource('');
     } catch (cause) {
-      setError((cause as { message?: string })?.message || '安装模块失败');
+      setError((cause as { message?: string })?.message || t('settings.error.installModule'));
     } finally {
       setBusy('');
     }
   }
 
   async function uninstallModule(module: PlatformModule) {
-    if (!module.removable || !window.confirm(`卸载“${module.name}”？模块内的 Skill、插件和资产将一并移除。`)) return;
+    if (!module.removable || !window.confirm(t('settings.confirm.uninstall', { name: module.name }))) return;
     setBusy(`module-uninstall:${module.id}`);
     setError('');
     try {
       setOverview(await kernel.commands.platform.uninstallModule(module.id));
     } catch (cause) {
-      setError((cause as { message?: string })?.message || '卸载模块失败');
+      setError((cause as { message?: string })?.message || t('settings.error.uninstallModule'));
     } finally {
       setBusy('');
     }
@@ -163,7 +163,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     try {
       setOverview(await kernel.commands.platform.setModuleEnabled(module.id, enabled));
     } catch (cause) {
-      setError((cause as { message?: string })?.message || '更新模块状态失败');
+      setError((cause as { message?: string })?.message || t('settings.error.moduleStatus'));
     } finally {
       setBusy('');
     }
@@ -175,14 +175,20 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     try {
       setOverview(await kernel.commands.platform.migrateLegacyModules());
     } catch (cause) {
-      setError((cause as { message?: string })?.message || '迁移旧模块失败');
+      setError((cause as { message?: string })?.message || t('settings.error.migrateModules'));
     } finally {
       setBusy('');
     }
   }
 
   const activeSection = section;
-  const navigation = settingsSections;
+  const navigation = settingsSections.map((item) => ({ ...item, label: t(item.labelKey) }));
+  const moduleLabels: Record<PlatformModule['type'], string> = { module: t('settings.module.package'), capability: t('settings.module.plugin'), domain: t('settings.module.domain') };
+  const localeOptions = [
+    { value: 'system', label: t('settings.language.system') },
+    { value: 'zh-CN', label: t('settings.language.zhCN') },
+    { value: 'en-US', label: t('settings.language.enUS') },
+  ];
   const modelsByProvider = models.map(modelDetails).reduce<Record<string, ReturnType<typeof modelDetails>[]>>((groups, model) => {
     (groups[model.provider] ||= []).push(model);
     return groups;
@@ -193,8 +199,8 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     case 'general':
       content = <div className="settings-page-stack">
         <section className="settings-section">
-          <h2>外观主题</h2>
-          <div className="theme-grid" role="radiogroup" aria-label="外观主题">
+          <h2>{t('settings.appearance')}</h2>
+          <div className="theme-grid" role="radiogroup" aria-label={t('settings.appearance')}>
             {themes.map((option) => (
               <button className={`theme-option${theme === option.id ? ' is-active' : ''}`} type="button" role="radio" aria-checked={theme === option.id} key={option.id} onClick={() => onThemeChange(option.id)}>
                 <span className="theme-colors">{(swatches?.[option.id] ?? ['#CCCCCC', '#DDDDDD', '#888888']).map((color) => <i style={{ background: color }} key={color} />)}</span>
@@ -204,72 +210,87 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
           </div>
         </section>
         <section className="settings-section">
-          <h2>显示</h2>
-          <div className="settings-row"><span><strong>显示思考过程</strong><small>在会话中显示模型的思考过程</small></span><button className={`switch${showThinking ? ' is-on' : ''}`} type="button" role="switch" aria-checked={showThinking} onClick={() => onShowThinkingChange(!showThinking)}><span /></button></div>
-        </section>
-        {auth.configured ? <section className="settings-section"><h2>访问控制</h2><div className="settings-row"><span><strong>要求登录</strong><small>启用后当前未认证连接会被关闭</small></span><button className={`switch${auth.enabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={auth.enabled} disabled={busy === 'auth'} onClick={toggleAuth}><span /></button></div></section> : null}
-        <section className="settings-section">
-          <h2>本地目录</h2>
-          {overviewLoading && !overview ? <div className="settings-loading" aria-label="正在读取本地目录"><span /><span /></div> : overview ? (
-            <div className="storage-list">
-              <span><strong>应用数据</strong><code>{overview.storage.root}</code></span>
-              <span><strong>任务工作区</strong><code>{overview.storage.scenario}</code></span>
-              <span><strong>模型配置</strong><code>{overview.storage.models}</code></span>
-              <span><strong>已装模块</strong><code>{overview.storage.modules}</code></span>
+          <h2>{t('settings.language')}</h2>
+          <div className="settings-language-control">
+            <div className="settings-language-options" role="radiogroup" aria-label={t('settings.language')} aria-describedby="settings-language-help">
+              {localeOptions.map((option) => (
+                <label className={`settings-language-option${preference === option.value ? ' is-active' : ''}`} key={option.value}>
+                  <input type="radio" name="interface-language" value={option.value} checked={preference === option.value} onChange={() => setPreference(option.value as LocalePreference)} />
+                  <span>{option.label}</span>
+                </label>
+              ))}
             </div>
-          ) : <p className="settings-empty">暂时无法读取本地目录。</p>}
+            <p className="settings-language-help" id="settings-language-help">{t('settings.languageHelp')}</p>
+          </div>
+        </section>
+        <section className="settings-section">
+          <h2>{t('settings.display')}</h2>
+          <div className="settings-row"><span><strong>{t('settings.showThinking')}</strong><small>{t('settings.showThinkingHelp')}</small></span><button className={`switch${showThinking ? ' is-on' : ''}`} type="button" role="switch" aria-checked={showThinking} onClick={() => onShowThinkingChange(!showThinking)}><span /></button></div>
+        </section>
+        {auth.configured ? <section className="settings-section"><h2>{t('settings.accessControl')}</h2><div className="settings-row"><span><strong>{t('settings.requireLogin')}</strong><small>{t('settings.requireLoginHelp')}</small></span><button className={`switch${auth.enabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={auth.enabled} disabled={busy === 'auth'} onClick={toggleAuth}><span /></button></div></section> : null}
+        <section className="settings-section">
+          <h2>{t('settings.localDirectories')}</h2>
+          {overviewLoading && !overview ? <div className="settings-loading" aria-label={t('settings.loadingDirectories')}><span /><span /></div> : overview ? (
+            <div className="storage-list">
+              <span><strong>{t('settings.appData')}</strong><code>{overview.storage.root}</code></span>
+              <span><strong>{t('settings.taskWorkspace')}</strong><code>{overview.storage.scenario}</code></span>
+              <span><strong>{t('settings.modelConfig')}</strong><code>{overview.storage.models}</code></span>
+              <span><strong>{t('settings.installedModules')}</strong><code>{overview.storage.modules}</code></span>
+            </div>
+          ) : <p className="settings-empty">{t('settings.directoriesUnavailable')}</p>}
         </section>
       </div>;
       break;
     case 'agent':
       content = <div className="settings-page-stack">
         <section className="settings-section">
-          <h2>会话</h2>
-          <div className="settings-row"><span><strong>自动压缩上下文</strong><small>{session ? '接近上下文上限时由 Pi 自动整理' : '选择运行中的任务后可设置'}</small></span><button className={`switch${autoCompact ? ' is-on' : ''}`} type="button" role="switch" aria-checked={autoCompact} disabled={!session || busy === 'compact'} onClick={toggleAutoCompact}><span /></button></div>
+          <h2>{t('settings.session')}</h2>
+          <div className="settings-row"><span><strong>{t('settings.autoCompact')}</strong><small>{session ? t('settings.autoCompactHelp') : t('settings.autoCompactNoSession')}</small></span><button className={`switch${autoCompact ? ' is-on' : ''}`} type="button" role="switch" aria-checked={autoCompact} disabled={!session || busy === 'compact'} onClick={toggleAutoCompact}><span /></button></div>
         </section>
         <section className="settings-section">
-          <h2>模型接入</h2>
-          <div className="settings-row"><span><strong>已接入模型</strong><small>模型按供应商归组，API Key 仅保存在本机</small></span><Button type="button" variant="outline" onClick={onAddModel}>添加模型</Button></div>
-          {modelsLoading ? <div className="settings-loading" aria-label="正在读取模型"><span /></div> : Object.keys(modelsByProvider).length ? <div className="model-provider-list">{Object.entries(modelsByProvider).map(([provider, providerModels]) => <section className="model-provider" key={provider}><h3>{provider}</h3>{providerModels.map((model) => <div className="model-provider-row" key={`${provider}:${model.name}`}><strong>{model.name}</strong>{model.details ? <small>{model.details}</small> : null}</div>)}</section>)}</div> : <p className="settings-empty">暂无已接入模型。</p>}
+          <h2>{t('settings.modelAccess')}</h2>
+          <div className="settings-row"><span><strong>{t('settings.connectedModels')}</strong><small>{t('settings.connectedModelsHelp')}</small></span><Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button></div>
+          {modelsLoading ? <div className="settings-loading" aria-label={t('settings.loadingModels')}><span /></div> : Object.keys(modelsByProvider).length ? <div className="model-provider-list">{Object.entries(modelsByProvider).map(([provider, providerModels]) => <section className="model-provider" key={provider}><h3>{provider}</h3>{providerModels.map((model) => <div className="model-provider-row" key={`${provider}:${model.name}`}><strong>{model.name}</strong>{model.details ? <small>{model.details}</small> : null}</div>)}</section>)}</div> : <p className="settings-empty">{t('settings.noConnectedModels')}</p>}
         </section>
       </div>;
       break;
     case 'modules':
       content = <div className="settings-page-stack">
         <section className="settings-section">
-          <h2>能力概览</h2>
-          {overviewLoading && !overview ? <div className="settings-loading" aria-label="正在读取模块"><span /><span /><span /></div> : overview ? <div className="module-summary-grid">{[
+          <h2>{t('settings.capabilityOverview')}</h2>
+          {overviewLoading && !overview ? <div className="settings-loading" aria-label={t('settings.loadingModules')}><span /><span /><span /></div> : overview ? <div className="module-summary-grid">{[
             ['Modules', overview.modules.length],
             ['Extensions', overview.modules.reduce((total, module) => total + module.extensions, 0)],
             ['Skills', overview.modules.reduce((total, module) => total + module.skills, 0)],
             ['Data', overview.modules.flatMap((module) => module.assets).filter((asset) => asset.kind === 'data').length],
             ['Knowledge', overview.modules.flatMap((module) => module.assets).filter((asset) => asset.kind === 'knowledge').length],
-          ].map(([label, total]) => <div key={label}><strong>{total}</strong><span>{label}</span></div>)}</div> : <p className="settings-empty">暂时无法读取模块信息。</p>}
+          ].map(([label, total]) => <div key={label}><strong>{total}</strong><span>{label}</span></div>)}</div> : <p className="settings-empty">{t('settings.modulesUnavailable')}</p>}
         </section>
         <section className="settings-section">
-          <h2>模块设置</h2>
+          <h2>{t('settings.moduleSettings')}</h2>
           <div className="module-installer">
-            <input aria-label="模块包路径" value={moduleSource} onChange={(event) => setModuleSource(event.target.value)} placeholder="包含 manifest.json 的模块包目录" />
-            <Button type="button" variant="outline" disabled={!moduleSource.trim() || busy === 'module-install'} onClick={installModule}>{busy === 'module-install' ? '安装中…' : '安装'}</Button>
-            <Button type="button" variant="outline" disabled={busy === 'module-migrate'} onClick={migrateLegacyModules}>{busy === 'module-migrate' ? '迁移中…' : '迁移旧模块'}</Button>
+            <input aria-label={t('settings.modulePath')} value={moduleSource} onChange={(event) => setModuleSource(event.target.value)} placeholder={t('settings.modulePathPlaceholder')} />
+            <Button type="button" variant="outline" disabled={!moduleSource.trim() || busy === 'module-install'} onClick={installModule}>{busy === 'module-install' ? t('settings.installing') : t('settings.install')}</Button>
+            <Button type="button" variant="outline" disabled={busy === 'module-migrate'} onClick={migrateLegacyModules}>{busy === 'module-migrate' ? t('settings.migrating') : t('settings.migrateLegacy')}</Button>
           </div>
-          <p className="module-installer-help">模块可贡献 Skill、Extension、Data 和 Knowledge。</p>
+          <p className="module-installer-help">{t('settings.moduleHelp')}</p>
         </section>
         <section className="settings-section">
-          <h2>已接入模块</h2>
-          {overviewLoading && !overview ? <div className="settings-loading" aria-label="正在读取模块"><span /><span /><span /></div> : overview?.modules.length ? (
+          <h2>{t('settings.connectedModules')}</h2>
+          {overviewLoading && !overview ? <div className="settings-loading" aria-label={t('settings.loadingModules')}><span /><span /><span /></div> : overview?.modules.length ? (
             <div className="module-list module-list-root">
               {overview.modules.map((module) => {
                 const activeKinds = new Set(overview.modules.flatMap((item) => item.assets.filter((asset) => asset.active).map((asset) => asset.kind)));
                 const missingAssets = module.assets.filter((asset) => !asset.configured && !activeKinds.has(asset.kind));
                 const hasActiveAsset = module.assets.some((asset) => asset.active);
                 const substituted = module.assets.length > 0 && module.assets.every((asset) => asset.configured || activeKinds.has(asset.kind));
-                const status = !module.enabled ? '不可用' : hasActiveAsset ? '当前生效' : missingAssets.length ? '待配置资产' : substituted && module.assets.some((asset) => !asset.configured) ? '由其他模块提供' : '已启用';
+                const status = !module.enabled ? t('settings.module.status.disabled') : hasActiveAsset ? t('settings.module.status.active') : missingAssets.length ? t('settings.module.status.missing') : substituted && module.assets.some((asset) => !asset.configured) ? t('settings.module.status.substituted') : t('settings.module.status.enabled');
                 const contributions = [module.skills ? `${module.skills} Skill` : '', module.extensions ? `${module.extensions} Extension` : '', ...module.assets.map((asset) => asset.kind === 'data' ? 'Data' : asset.kind === 'knowledge' ? 'Knowledge' : 'Template')].filter(Boolean);
-                return <div className="module-row" key={module.id}><span><strong>{module.name}</strong><small>{module.version} · {moduleLabels[module.type]} · {module.origin === 'installed' ? '用户安装' : module.origin === 'external' ? '外部加载' : '内置'} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-enable:${module.id}`} onClick={() => setModuleEnabled(module, !module.enabled)}>{module.enabled ? '停用' : '启用'}</Button> : null}{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>卸载</Button> : null}</span></div>;
+                const origin = module.origin === 'installed' ? t('settings.module.origin.installed') : module.origin === 'external' ? t('settings.module.origin.external') : t('settings.module.origin.builtin');
+                return <div className="module-row" key={module.id}><span><strong>{module.name}</strong><small>{module.version} · {moduleLabels[module.type]} · {origin} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-enable:${module.id}`} onClick={() => setModuleEnabled(module, !module.enabled)}>{module.enabled ? t('common.disable') : t('common.enable')}</Button> : null}{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>{t('settings.module.uninstall')}</Button> : null}</span></div>;
               })}
             </div>
-          ) : <p className="settings-empty">暂无已注册模块。</p>}
+          ) : <p className="settings-empty">{t('settings.noModules')}</p>}
           {overview?.errors.length ? <div className="inline-error" role="alert">{overview.errors.map((item) => item.message).join('；')}</div> : null}
         </section>
       </div>;
@@ -277,16 +298,16 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   }
 
   return (
-    <section className="settings-workspace" aria-label="设置" data-testid="settings-workspace">
-      <aside className="settings-navigation" aria-label="设置分类">
-        <button className="settings-return" type="button" onClick={onBack}>返回工作台</button>
-        <nav className="settings-navigation-list" aria-label="设置分类列表">
+    <section className="settings-workspace" aria-label={t('settings.title')} data-testid="settings-workspace">
+      <aside className="settings-navigation" aria-label={t('settings.categories')}>
+        <button className="settings-return" type="button" onClick={onBack}>{t('settings.back')}</button>
+        <nav className="settings-navigation-list" aria-label={t('settings.categoryList')}>
           {navigation.map((item) => <button className={`settings-navigation-item${activeSection === item.id ? ' is-active' : ''}`} type="button" aria-current={activeSection === item.id ? 'page' : undefined} key={item.id} onClick={() => onSectionChange(item.id)}>{item.label}</button>)}
         </nav>
       </aside>
       <main className="settings-page-scroll">
         <div className="settings-page">
-          <h1>{settingsSections.find((item) => item.id === activeSection)?.label}</h1>
+          <h1>{navigation.find((item) => item.id === activeSection)?.label}</h1>
           {content}
           {error ? <div className="inline-error" role="alert">{error}</div> : null}
         </div>

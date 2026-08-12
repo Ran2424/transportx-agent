@@ -1,4 +1,5 @@
 import type { PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
+import type { TFunction } from 'i18next';
 
 /**
  * 能力扩展区投影：将 PlatformOverview 中的模块元数据投影为
@@ -28,10 +29,10 @@ export type CapabilityItem = {
   assetId?: string;
 };
 
-export const CAPABILITY_CATEGORIES: Array<{ id: CapabilityCategory; label: string }> = [
-  { id: 'skill', label: '技能' },
-  { id: 'data', label: '数据' },
-  { id: 'knowledge', label: '知识' },
+export const CAPABILITY_CATEGORIES: Array<{ id: CapabilityCategory; labelKey: string }> = [
+  { id: 'skill', labelKey: 'capability.category.skill' },
+  { id: 'data', labelKey: 'capability.category.data' },
+  { id: 'knowledge', labelKey: 'capability.category.knowledge' },
 ];
 
 function readableName(value: string) {
@@ -41,11 +42,11 @@ function readableName(value: string) {
     .trim();
 }
 
-function moduleOriginLabel(module: PlatformModule) {
-  return module.origin === 'installed' ? '用户安装' : module.origin === 'external' ? '外部加载' : '内置';
+function moduleOriginLabel(module: PlatformModule, t: TFunction) {
+  return module.origin === 'installed' ? t('settings.module.origin.installed') : module.origin === 'external' ? t('settings.module.origin.external') : t('settings.module.origin.builtin');
 }
 
-export function projectCapabilities(overview: PlatformOverview): CapabilityItem[] {
+export function projectCapabilities(overview: PlatformOverview, t: TFunction): CapabilityItem[] {
   const items: CapabilityItem[] = [];
   const activeKinds = new Set(
     overview.modules.flatMap((item) => item.assets.filter((asset) => asset.active).map((asset) => asset.kind)),
@@ -61,11 +62,11 @@ export function projectCapabilities(overview: PlatformOverview): CapabilityItem[
       return 'ready';
     };
     const itemStatusLabel = () => {
-      if (disabled) return '不可用';
-      if (missingAssets.length) return '待配置';
-      return '已启用';
+      if (disabled) return t('settings.module.status.disabled');
+      if (missingAssets.length) return t('capability.pendingConfig');
+      return t('settings.module.status.enabled');
     };
-    const source = `${module.version} · ${moduleOriginLabel(module)}`;
+    const source = `${module.version} · ${moduleOriginLabel(module, t)}`;
 
     // 技能：模块声明的 Skill 数量
     if (module.skills > 0) {
@@ -73,7 +74,7 @@ export function projectCapabilities(overview: PlatformOverview): CapabilityItem[
         id: `skill:${module.id}`,
         name: `${module.name} Skill`,
         category: 'skill',
-        source: `${module.skills} 项技能 · ${source}`,
+        source: `${t('common.skillCount', { count: module.skills })} · ${source}`,
         status: itemStatus(),
         statusLabel: itemStatusLabel(),
         moduleId: module.id,
@@ -99,7 +100,7 @@ export function projectCapabilities(overview: PlatformOverview): CapabilityItem[
         category,
         source: `${module.name} · ${source}`,
         status: disabled ? 'disabled' : !asset.configured && !activeKinds.has(asset.kind) ? 'attention' : 'ready',
-        statusLabel: disabled ? '不可用' : !asset.configured && !activeKinds.has(asset.kind) ? '待配置' : '已启用',
+        statusLabel: disabled ? t('settings.module.status.disabled') : !asset.configured && !activeKinds.has(asset.kind) ? t('capability.pendingConfig') : t('settings.module.status.enabled'),
         moduleId: module.id,
         moduleName: module.name,
         moduleVersion: module.version,

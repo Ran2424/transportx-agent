@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const DEFAULT_CONVERSATION_WIDTH = 440;
 const SPLITTER_WIDTH = 10;
@@ -31,6 +32,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   settingsOpen: boolean;
   overlays: ReactNode;
 }) {
+  const { t } = useTranslation();
   const mainRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const [preferredWidth, setPreferredWidth] = useState(savedConversationWidth);
@@ -140,7 +142,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
             <div
               className="conversation-resizer"
               role="separator"
-              aria-label="调整聊天区域宽度"
+              aria-label={t('shell.resizeConversation')}
               aria-orientation="vertical"
               aria-valuenow={conversationWidth}
               tabIndex={mapVisible ? 0 : -1}

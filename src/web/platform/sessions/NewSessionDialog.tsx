@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ModelRecord } from '../../../public/app-types.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
 import { modelReference } from '../../lib/formatting';
+import i18n from '../../i18n';
 
 type NewSessionDialogProps = {
   open: boolean;
@@ -17,7 +19,7 @@ function normalizeModel(model: ModelRecord | string) {
   if (typeof model === 'string') return { value: model, label: model, metadata: '' };
   const reference = modelReference(model);
   const context = model.contextWindow || model.context || model.context_window;
-  const abilities = [model.thinking ? '思考' : '', model.images ? '图像' : ''].filter(Boolean).join(' · ');
+  const abilities = [model.thinking ? i18n.t('model.ability.thinking') : '', model.images ? i18n.t('model.ability.images') : ''].filter(Boolean).join(' · ');
   return {
     value: reference,
     label: reference,
@@ -26,6 +28,7 @@ function normalizeModel(model: ModelRecord | string) {
 }
 
 export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: NewSessionDialogProps) {
+  const { t } = useTranslation();
   const { kernel } = useAppServices();
   const [model, setModel] = useState('');
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
@@ -56,7 +59,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
       onOpenChange(false);
       onCreated(session.id);
     } catch (cause) {
-      setError((cause as { message?: string })?.message || '创建任务失败');
+      setError((cause as { message?: string })?.message || t('sessions.createFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -68,28 +71,28 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title="新建交通任务"
+      title={t('sessions.newTask')}
       className="new-session-dialog"
       footer={null}
     >
       <form className="form-stack" onSubmit={submit}>
         <div className="field-with-action">
           <MenuSelect
-            label="模型"
+            label={t('sessions.model')}
             value={model}
             options={modelOptions}
-            placeholder={loadingModels ? '正在读取模型…' : '尚未添加模型'}
+            placeholder={loadingModels ? t('sessions.loadingModels') : t('sessions.noModels')}
             disabled={loadingModels || modelOptions.length === 0}
             autoFocus={modelOptions.length > 0}
             onChange={setModel}
           />
-          <Button type="button" variant="outline" onClick={onAddModel}>添加模型</Button>
+          <Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button>
         </div>
-        <p className="field-help">工作区自动创建在 ~/.transportx/traffic-agent/scenario。创建前必须选择模型。</p>
+        <p className="field-help">{t('sessions.workspaceHelp')}</p>
         {error ? <div className="inline-error" role="alert">{error}</div> : null}
         <div className="form-actions">
-          <DialogClose asChild><Button type="button" variant="quiet">取消</Button></DialogClose>
-          <Button type="submit" disabled={submitting || !model}>{submitting ? '正在启动…' : '创建任务'}</Button>
+          <DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose>
+          <Button type="submit" disabled={submitting || !model}>{submitting ? t('sessions.starting') : t('sessions.create')}</Button>
         </div>
       </form>
     </Dialog>

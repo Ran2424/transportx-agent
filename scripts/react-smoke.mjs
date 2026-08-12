@@ -45,6 +45,7 @@ try {
   const baseUrl = ready.baseUrl;
   browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await context.addInitScript(() => window.localStorage.setItem('tau-locale', 'zh-CN'));
 
   const reactPage = await context.newPage();
   const reactErrors = [];
@@ -61,6 +62,13 @@ try {
   await settingsButton.click();
   const settings = reactPage.getByTestId('settings-workspace');
   await settings.waitFor();
+  await settings.getByRole('heading', { name: '常规', exact: true }).waitFor();
+  if (await reactPage.locator('html').getAttribute('lang') !== 'zh-CN') throw new Error('Chinese locale was not applied to the document');
+  await settings.getByRole('radio', { name: 'English', exact: true }).check();
+  await settings.getByRole('heading', { name: 'General', exact: true }).waitFor();
+  if (await reactPage.locator('html').getAttribute('lang') !== 'en-US') throw new Error('English locale was not applied to the document');
+  if (await reactPage.evaluate(() => window.localStorage.getItem('tau-locale')) !== 'en-US') throw new Error('English locale preference was not persisted');
+  await settings.getByRole('radio', { name: '简体中文', exact: true }).check();
   await settings.getByRole('heading', { name: '常规', exact: true }).waitFor();
   await settings.getByText(ready.tempRoot, { exact: false }).first().waitFor();
   await settings.getByRole('button', { name: '模块', exact: true }).click();
