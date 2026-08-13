@@ -15,6 +15,7 @@
         "id": "data:shanghai-traffic",
         "kind": "data",
         "path": "assets/databases",
+        "integrityFile": "assets/databases/SHA256SUMS.txt",
         "required": false
       }
     ]

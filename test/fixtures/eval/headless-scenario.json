@@ -1,0 +1,6 @@
+{
+  "rules": [
+    {"match":"执行终端完整链路测试","steps":[{"streamText":{"text":"终端 Headless Agent 已完成查询，交易量为 42 笔。","chunks":2}}]}
+  ],
+  "fallback": {"steps":[{"streamText":{"text":"终端 Headless Agent 已完成查询，交易量为 42 笔。","chunks":2}}]}
+}

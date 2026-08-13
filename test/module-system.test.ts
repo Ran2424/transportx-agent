@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const { ModuleRegistry } = require('../bin/module-registry.js');
 const { AssetResolver } = require('../bin/asset-resolver.js');
-const { SessionAssembler } = require('../bin/session-assembly.js');
+const { SessionAssembler, SessionPlanError, planExtensions, planSkills } = require('../bin/session-assembly.js');
 const { ModuleInstaller } = require('../bin/module-installer.js');
 const { renderProjectPrompt } = require('../bin/sessions.js');
 
@@ -16,6 +16,7 @@ const MANIFESTS = [
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',
+  'modules/capabilities/spatial-analysis/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
   'modules/official/workbench/manifest.json',
@@ -36,7 +37,7 @@ function registry(extra: Array<{ manifestPath: string; packageRoot?: string; ori
 test('built-in manifests register only platform capabilities', () => {
   const modules = registry();
   assert.deepEqual(modules.errors, []);
-  assert.equal(modules.enabled().length, 7);
+  assert.equal(modules.enabled().length, 8);
   assert.equal(modules.get('com.transportx.shanghaidata'), undefined);
   assert.equal(modules.get('com.transportx.traffic-assurance-knowledge'), undefined);
   const order = modules.dependencyOrder('com.transportx.workbench');
@@ -57,9 +58,9 @@ test('data, knowledge and plot-style packages install independently from the pla
   assert.deepEqual(modules.get('com.transportx.shanghaidata').manifest.dependencies, ['com.transportx.geo']);
   assert.deepEqual(modules.get('com.transportx.traffic-assurance-knowledge').manifest.dependencies, ['com.transportx.citation']);
   const plan = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [] }, { command: 'python', args: [] }).assemble('com.transportx.workbench', managed);
-  assert.equal(plan.skills.length, 5);
-  assert.ok(plan.piExtensions.every((entry: string) => entry.includes(`${path.sep}modules${path.sep}`)));
-  assert.ok(plan.skills.some((entry: string) => entry.includes(path.join('modules', 'official', 'module-authoring'))));
+  assert.equal(planSkills(plan).length, 6);
+  assert.ok(planExtensions(plan).every((entry: string) => entry.includes(`${path.sep}modules${path.sep}`)));
+  assert.ok(planSkills(plan).some((entry: string) => entry.includes(path.join('modules', 'official', 'module-authoring'))));
   assert.equal(plan.assets.some((asset: any) => asset.kind === 'data' || asset.kind === 'knowledge'), false);
 });
 
@@ -76,13 +77,21 @@ test('Session Assembly resolves extensions, skills, assets and persists a versio
   const modules = registry([{ manifestPath: path.join(installed, 'manifest.json'), packageRoot: installed, origin: 'installed' }]);
   const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [], version: '0.80.10' }, { command: 'python', args: [], version: '3.10' });
   const plan = assembler.assemble('com.transportx.workbench', workspace);
-  assert.equal(plan.piExtensions.length, 4);
-  assert.equal(plan.skills.length, 3);
+  assert.equal(planExtensions(plan).length, 5);
+  assert.equal(planSkills(plan).length, 4);
   assert.ok(plan.assets.some((asset: any) => asset.id === 'data:installed-test'));
   assert.ok(plan.assets.some((asset: any) => asset.id === 'template:traffic-analysis-report'));
   assert.ok(plan.modules.some((module: any) => module.id === 'local.installed.test'));
   const saved = assembler.save(plan);
-  assert.equal(JSON.parse(fs.readFileSync(saved, 'utf8')).domain.id, 'com.transportx.workbench');
+  const persisted = JSON.parse(fs.readFileSync(saved, 'utf8'));
+  assert.equal(persisted.schemaVersion, 3);
+  assert.equal(persisted.domain.id, 'com.transportx.workbench');
+  assert.equal(persisted.profile.modules.selectionMode, 'compat-default');
+  assert.ok(persisted.modules.every((module: any) => /^[a-f0-9]{64}$/.test(module.manifestSha256)));
+  assert.deepEqual(assembler.load(workspace), plan);
+
+  fs.writeFileSync(path.join(installed, 'skill', 'SKILL.md'), '# Tampered Skill');
+  assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_content_mismatch');
 });
 
 test('Session Assembly keeps every active Data and Knowledge asset in one session plan', (t: any) => {
@@ -107,12 +116,12 @@ test('Session Assembly keeps every active Data and Knowledge asset in one sessio
   const plan = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [] }, { command: 'python', args: [] }).assemble('com.transportx.workbench', workspace);
   assert.deepEqual(plan.assets.filter((asset: any) => asset.kind === 'data').map((asset: any) => asset.id).sort(), ['data:first', 'data:second']);
   assert.deepEqual(plan.assets.filter((asset: any) => asset.kind === 'knowledge').map((asset: any) => asset.id).sort(), ['knowledge:first', 'knowledge:second']);
-  assert.equal(plan.schemaVersion, 2);
+  assert.equal(plan.schemaVersion, 3);
 });
 
 test('project prompt makes resolved Module skills and assets discoverable to the Agent', () => {
   const prompt = renderProjectPrompt('{{MODULE_RESOURCE_GUIDE}}', '/tmp/transportx-task', {
-    skills: ['/tmp/modules/com.example.city/1.0.0/skill/SKILL.md'],
+    modules: [{ entrypoints: [{ kind: 'skill', path: '/tmp/modules/com.example.city/1.0.0/skill/SKILL.md' }] }],
     assets: [
       { id: 'data:city-traffic', kind: 'data', moduleId: 'com.example.city', moduleVersion: '1.0.0', path: '/tmp/modules/com.example.city/1.0.0/assets/databases' },
       { id: 'knowledge:city-policy', kind: 'knowledge', moduleId: 'com.example.policy', moduleVersion: '1.0.0', path: '/tmp/modules/com.example.policy/1.0.0/assets/policy-library' },

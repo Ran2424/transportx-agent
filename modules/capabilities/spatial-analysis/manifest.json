@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.spatial-analysis",
+  "name": "Controlled Spatial Analysis",
+  "version": "1.0.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": ["com.transportx.geo"],
+  "entrypoints": {
+    "piExtensions": ["extensions/pi-spatial-analysis/index.ts"],
+    "skills": ["skills/SKILL.md"]
+  },
+  "contributes": {
+    "artifactTypes": ["spatial.analysis-result"]
+  }
+}

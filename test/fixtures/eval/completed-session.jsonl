@@ -1,0 +1,3 @@
+{"type":"session","id":"eval-fixture","timestamp":"2026-08-14T00:00:00.000Z","cwd":"/tmp/eval-fixture"}
+{"type":"message","message":{"role":"user","content":"样本期内公交上客交易量最高的是哪一天？"}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"2025-08-29，上客交易 215,066 笔。"}]}}

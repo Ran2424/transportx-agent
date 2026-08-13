@@ -1,6 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModelRecord } from '../../../public/app-types.js';
+import type { SessionModuleOption } from '../../../public/kernel/commands.js';
+import type { SessionOutputKind, SessionTaskKind } from '../../../contracts/session-profile.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
@@ -31,7 +33,17 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
   const { t } = useTranslation();
   const { kernel } = useAppServices();
   const [model, setModel] = useState('');
+  const [name, setName] = useState('');
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
+  const [moduleOptions, setModuleOptions] = useState<SessionModuleOption[]>([]);
+  const [selectedModules, setSelectedModules] = useState<Record<string, string>>({});
+  const [taskKind, setTaskKind] = useState<SessionTaskKind>('data-query');
+  const [expectedOutput, setExpectedOutput] = useState<SessionOutputKind>('answer');
+  const [city, setCity] = useState('');
+  const [project, setProject] = useState('');
+  const [spatialScope, setSpatialScope] = useState('');
+  const [timeStart, setTimeStart] = useState('');
+  const [timeEnd, setTimeEnd] = useState('');
   const [loadingModels, setLoadingModels] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -41,9 +53,16 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
     let current = true;
     setError('');
     setLoadingModels(true);
-    kernel.commands.platform.getAvailableModels(kernel.stores.session.get().activeSessionId)
-      .then((items) => { if (current) setModels(items); })
-      .catch(() => { if (current) setModels([]); })
+    Promise.all([
+      kernel.commands.platform.getAvailableModels(kernel.stores.session.get().activeSessionId).catch(() => []),
+      kernel.commands.platform.getSessionOptions().catch(() => ({ schemaVersion: 1 as const, modules: [] })),
+    ])
+      .then(([items, options]) => {
+        if (!current) return;
+        setModels(items);
+        setModuleOptions(options.modules);
+        setSelectedModules(Object.fromEntries(options.modules.filter((item) => item.selectedByDefault).map((item) => [item.id, item.version])));
+      })
       .finally(() => { if (current) setLoadingModels(false); });
     return () => { current = false; };
   }, [kernel, open]);
@@ -53,9 +72,26 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
     setSubmitting(true);
     setError('');
     try {
-      const session = await kernel.commands.session.create({ model });
+      const selected = Object.entries(selectedModules).map(([id, version]) => ({ id, version }));
+      const session = await kernel.commands.session.create({
+        model,
+        name: name.trim(),
+        profile: {
+          schemaVersion: 1,
+          task: {
+            kind: taskKind,
+            expectedOutputs: [expectedOutput],
+            ...(city.trim() ? { city: city.trim() } : {}),
+            ...(project.trim() ? { project: project.trim() } : {}),
+            ...(spatialScope.trim() ? { spatialScope: { label: spatialScope.trim() } } : {}),
+            ...(timeStart && timeEnd ? { timeRange: { start: timeStart, end: timeEnd, timezone: 'Asia/Shanghai' } } : {}),
+          },
+          modules: { selectionMode: 'explicit', selected },
+        },
+      });
       kernel.dispatch({ type: 'session/created', session });
       setModel('');
+      setName('');
       onOpenChange(false);
       onCreated(session.id);
     } catch (cause) {
@@ -66,6 +102,13 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
   }
 
   const modelOptions = models.map(normalizeModel).filter((item) => item.value);
+  const moduleGroups = useMemo(() => {
+    const groups = new Map<string, SessionModuleOption[]>();
+    for (const option of moduleOptions.filter((item) => item.enabledForNewSessions)) groups.set(option.id, [...(groups.get(option.id) || []), option]);
+    return [...groups.entries()];
+  }, [moduleOptions]);
+  const selectedModuleOptions = Object.entries(selectedModules).map(([id, version]) => moduleOptions.find((item) => item.id === id && item.version === version)).filter((item): item is SessionModuleOption => !!item);
+  const moduleBlockers = selectedModuleOptions.flatMap((item) => item.assets.flatMap((asset) => !asset.configured ? [`${item.name}: ${asset.id} ${t('sessions.assetMissing')}`] : asset.integrity === 'missing' ? [`${item.name}: ${asset.id} ${t('sessions.integrityMissing')}`] : []));
 
   return (
     <Dialog
@@ -76,6 +119,80 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
       footer={null}
     >
       <form className="form-stack" onSubmit={submit}>
+        <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} required maxLength={120} autoFocus placeholder={t('sessions.taskNamePlaceholder')} onChange={(event) => setName(event.target.value)} /></label>
+        <div className="form-grid-two">
+          <MenuSelect
+            label={t('sessions.taskKind')}
+            value={taskKind}
+            options={[
+              { value: 'data-query', label: t('sessions.taskKind.dataQuery') },
+              { value: 'spatial-analysis', label: t('sessions.taskKind.spatialAnalysis') },
+              { value: 'assurance-analysis', label: t('sessions.taskKind.assuranceAnalysis') },
+              { value: 'report', label: t('sessions.taskKind.report') },
+            ]}
+            placeholder={t('sessions.taskKind')}
+            onChange={(value) => setTaskKind(value as SessionTaskKind)}
+          />
+          <MenuSelect
+            label={t('sessions.expectedOutput')}
+            value={expectedOutput}
+            options={[
+              { value: 'answer', label: t('sessions.output.answer') },
+              { value: 'table', label: t('sessions.output.table') },
+              { value: 'map', label: t('sessions.output.map') },
+              { value: 'report', label: t('sessions.output.report') },
+            ]}
+            placeholder={t('sessions.expectedOutput')}
+            onChange={(value) => setExpectedOutput(value as SessionOutputKind)}
+          />
+        </div>
+        {moduleGroups.length ? (
+          <fieldset className="session-module-fieldset">
+            <legend>{t('sessions.modules')}</legend>
+            {moduleGroups.map(([id, versions]) => (
+              <div className="session-module-row" key={id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={id in selectedModules}
+                    onChange={(event) => setSelectedModules((current) => {
+                      if (event.target.checked) return { ...current, [id]: versions.find((item) => item.selectedByDefault)?.version || versions.at(-1)!.version };
+                      const next = { ...current };
+                      delete next[id];
+                      return next;
+                    })}
+                  />
+                  <span>{versions[0].name}</span>
+                  <small className="session-module-status">{versions.flatMap((item) => item.assets).length ? versions.find((item) => item.version === selectedModules[id])?.assets.map((asset) => `${asset.kind}: ${asset.configured ? t(`sessions.integrity.${asset.integrity}`) : t('sessions.assetMissing')}`).join(' · ') : t('sessions.noAssets')}</small>
+                </label>
+                <select
+                  aria-label={t('sessions.moduleVersion', { name: versions[0].name })}
+                  value={selectedModules[id] || versions.find((item) => item.selectedByDefault)?.version || versions.at(-1)!.version}
+                  disabled={!(id in selectedModules)}
+                  onChange={(event) => setSelectedModules((current) => ({ ...current, [id]: event.target.value }))}
+                >
+                  {versions.map((item) => <option value={item.version} key={item.version}>{item.version}</option>)}
+                </select>
+              </div>
+            ))}
+          </fieldset>
+        ) : null}
+        {selectedModuleOptions.length ? <p className="session-profile-summary">{t('sessions.profileSummary', { modules: selectedModuleOptions.map((item) => `${item.name} ${item.version}`).join(' + '), output: t(`sessions.output.${expectedOutput}`) })}</p> : null}
+        {moduleBlockers.length ? <div className="inline-error" role="alert">{moduleBlockers.join('；')}</div> : null}
+        <details className="session-profile-details">
+          <summary>{t('sessions.taskContext')}</summary>
+          <div className="form-stack">
+            <div className="form-grid-two">
+              <label className="field-label"><span>{t('sessions.city')}</span><input value={city} onChange={(event) => setCity(event.target.value)} /></label>
+              <label className="field-label"><span>{t('sessions.project')}</span><input value={project} onChange={(event) => setProject(event.target.value)} /></label>
+            </div>
+            <label className="field-label"><span>{t('sessions.spatialScope')}</span><input value={spatialScope} onChange={(event) => setSpatialScope(event.target.value)} /></label>
+            <div className="form-grid-two">
+              <label className="field-label"><span>{t('sessions.timeStart')}</span><input type="datetime-local" value={timeStart} onChange={(event) => setTimeStart(event.target.value)} /></label>
+              <label className="field-label"><span>{t('sessions.timeEnd')}</span><input type="datetime-local" min={timeStart} value={timeEnd} onChange={(event) => setTimeEnd(event.target.value)} /></label>
+            </div>
+          </div>
+        </details>
         <div className="field-with-action">
           <MenuSelect
             label={t('sessions.model')}
@@ -83,7 +200,6 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
             options={modelOptions}
             placeholder={loadingModels ? t('sessions.loadingModels') : t('sessions.noModels')}
             disabled={loadingModels || modelOptions.length === 0}
-            autoFocus={modelOptions.length > 0}
             onChange={setModel}
           />
           <Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button>
@@ -92,7 +208,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
         {error ? <div className="inline-error" role="alert">{error}</div> : null}
         <div className="form-actions">
           <DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose>
-          <Button type="submit" disabled={submitting || !model}>{submitting ? t('sessions.starting') : t('sessions.create')}</Button>
+          <Button type="submit" disabled={submitting || !model || !name.trim() || moduleBlockers.length > 0}>{submitting ? t('sessions.starting') : t('sessions.create')}</Button>
         </div>
       </form>
     </Dialog>

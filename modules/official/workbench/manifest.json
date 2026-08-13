@@ -10,6 +10,7 @@
     "com.transportx.task",
     "com.transportx.citation",
     "com.transportx.geo",
+    "com.transportx.spatial-analysis",
     "com.transportx.traffic.report-template",
     "com.transportx.module-authoring"
   ],

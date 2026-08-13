@@ -9,6 +9,7 @@ import { ModuleRegistry } from './module-registry.js';
 import { AssetResolver } from './asset-resolver.js';
 import { SessionAssembler } from './session-assembly.js';
 import { ModuleInstaller } from './module-installer.js';
+import { parseSessionProfileStructured, type SessionProfileV1 } from '../contracts/index.js';
 
 export function parseArgs(argv: string[]): TauArgs {
   const out: TauArgs = {};
@@ -35,7 +36,7 @@ export const PI_COMMAND = PI_EXECUTABLE.command;
 export const PI_COMMAND_ARGS = PI_EXECUTABLE.args;
 export const PYTHON_EXECUTABLE = resolvePythonExecutable({ resourcesDir: APP_PATHS.resourcesDir, desktop: DESKTOP_MODE });
 export const PYTHON_COMMAND = PYTHON_EXECUTABLE.command;
-export const PLATFORM_VERSION = '3.0.6';
+export const PLATFORM_VERSION = '3.0.7';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -73,6 +74,7 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',
+  'modules/capabilities/spatial-analysis/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
   'modules/official/workbench/manifest.json',
@@ -95,11 +97,30 @@ export function moduleSources() {
   ];
 }
 export const MODULE_REGISTRY = new ModuleRegistry(PLATFORM_VERSION).load(moduleSources());
-export const ASSET_RESOLVER = new AssetResolver(MODULE_REGISTRY, {
+export const ASSET_OVERRIDES = {
   ...(process.env.TAU_KNOWLEDGE_ROOT && process.env.TAU_KNOWLEDGE_ASSET_ID ? { [process.env.TAU_KNOWLEDGE_ASSET_ID]: process.env.TAU_KNOWLEDGE_ROOT } : {}),
   ...(process.env.TAU_DATA_ROOT && process.env.TAU_DATA_ASSET_ID ? { [process.env.TAU_DATA_ASSET_ID]: process.env.TAU_DATA_ROOT } : {}),
-});
+};
+export const ASSET_RESOLVER = new AssetResolver(MODULE_REGISTRY, ASSET_OVERRIDES);
 export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RESOLVER, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE);
+export function sessionAssemblerForProfile(profile: SessionProfileV1) {
+  const parsed = parseSessionProfileStructured(profile);
+  if (!parsed.ok) throw new Error(parsed.diagnostics.map((item) => item.message).join('; '));
+  const allowed = new Set(TAU_SETTINGS.enabledModuleIds);
+  for (const selection of parsed.value.modules.selected) if (!allowed.has(selection.id)) throw new Error(`Selected Module is not enabled for new tasks: ${selection.id}`);
+  const registry = new ModuleRegistry(PLATFORM_VERSION).load([
+    ...BUILTIN_MODULE_MANIFESTS,
+    ...MODULE_INSTALLER.sourcesForSelections(parsed.value.modules.selected),
+    ...LOCAL_MODULE_MANIFESTS,
+  ]);
+  if (registry.errors.length) throw new Error(registry.errors.map((item) => item.message).join('; '));
+  const assets = new AssetResolver(registry, ASSET_OVERRIDES);
+  for (const selection of parsed.value.modules.selected) {
+    const module = registry.get(selection.id)!;
+    for (const asset of module.manifest.contributes?.assets || []) if ((asset.kind === 'data' || asset.kind === 'knowledge') && !assets.resolve(asset.id)) throw new Error(`Selected Module asset is not configured: ${asset.id}`);
+  }
+  return new SessionAssembler(registry, assets, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE);
+}
 export function reloadModules() {
   MODULE_REGISTRY.reload(moduleSources());
   ASSET_RESOLVER.reload(MODULE_REGISTRY);
