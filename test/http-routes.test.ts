@@ -37,6 +37,7 @@ function fakeSession(id: string) {
     sessionName: null,
     contextUsage: null,
     entries: [],
+    pendingExtensionUiRequests: new Map(),
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
@@ -261,6 +262,41 @@ test('normalizes model references before sending Pi set_model commands', async (
   assert.equal(commands[0].modelId, 'deepseek-v4-flash');
 });
 
+test('reliable prompt command IDs are acknowledged and executed once', async () => {
+  let calls = 0;
+  const session = {
+    ...fakeSession('tau_reliable_prompt'),
+    send: async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { success: true };
+    },
+    registerPromptAttachments: () => {},
+    discardPromptAttachments: () => {},
+  };
+  liveManager.sessions.set(session.id, session);
+  const command = { type: 'prompt', sessionId: session.id, message: '一次即可', clientCommandId: 'client-command-one' };
+  const [first, duplicate] = await Promise.all([handleRpcCommand(command), handleRpcCommand(command)]);
+  assert.equal(calls, 1);
+  assert.equal(first.success, true);
+  assert.equal(first.delivery, 'accepted');
+  assert.equal(first.clientCommandId, 'client-command-one');
+  assert.deepEqual(duplicate, first);
+});
+
+test('Pi RPC prompt timeout is reported instead of optimistic success', async () => {
+  const session = {
+    ...fakeSession('tau_prompt_timeout'),
+    send: async () => { throw new Error('RPC command timed out: prompt'); },
+    registerPromptAttachments: () => {},
+    discardPromptAttachments: () => {},
+  };
+  liveManager.sessions.set(session.id, session);
+  const response = await handleRpcCommand({ type: 'prompt', sessionId: session.id, message: '不要假成功', clientCommandId: 'client-command-timeout' });
+  assert.equal(response.success, false);
+  assert.match(String(response.error), /timed out/);
+});
+
 test('resuming a stored session publishes the persisted conversation snapshot', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-resume-http-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
@@ -278,11 +314,19 @@ test('resuming a stored session publishes the persisted conversation snapshot', 
     return child;
   });
   t.after(() => _setSpawnPiForTest(null));
-  const resumed = await jsonBody(await fetch(`${base}/api/live-sessions/resume`, {
+  const blockedResponse = await fetch(`${base}/api/live-sessions/resume`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
     body: JSON.stringify({ filePath }),
+  });
+  assert.equal(blockedResponse.status, 409);
+  assert.equal((await jsonBody(blockedResponse)).code, 'legacy_plan_requires_confirmation');
+  const resumed = await jsonBody(await fetch(`${base}/api/live-sessions/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: base, Host: new URL(base).host },
+    body: JSON.stringify({ filePath, useCurrentConfiguration: true }),
   }));
+  assert.ok(resumed.session, JSON.stringify(resumed));
   const snapshot = await jsonBody(await fetch(`${base}/api/live-sessions/${encodeURIComponent(resumed.session.id)}/snapshot`));
   assert.equal(snapshot.session.sessionName, 'Snapshot Chat');
   assert.equal(snapshot.session.sessionFile, path.resolve(filePath));

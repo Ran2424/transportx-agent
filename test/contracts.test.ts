@@ -11,6 +11,16 @@ function diagnosticCodes(result: { diagnostics?: Array<{ code: string }> }) {
   return result.diagnostics?.map((item) => item.code) || [];
 }
 
+test('SessionProfile v1 validates task range, outputs and exact Module versions', async () => {
+  const { parseSessionProfileStructured } = await import('../src/contracts/session-profile.ts');
+  const valid = parseSessionProfileStructured({ schemaVersion: 1, task: { kind: 'spatial-analysis', city: '上海', timeRange: { start: '2025-08-22T00:00:00+08:00', end: '2025-08-21T15:00:00+08:00', timezone: 'Asia/Shanghai' }, expectedOutputs: ['map', 'report'] }, modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.shanghaidata', version: '2.0.1' }] } });
+  assert.equal(valid.ok, false, 'end time cannot precede start time');
+  const accepted = parseSessionProfileStructured({ schemaVersion: 1, task: { kind: 'data-query', timeRange: { start: '2025-08-21T15:00:00+08:00', end: '2025-08-22T00:00:00+08:00', timezone: 'Asia/Shanghai' }, expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.shanghaidata', version: '2.0.1' }] } });
+  assert.equal(accepted.ok, true);
+  const duplicate = parseSessionProfileStructured({ schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected: [{ id: 'module', version: '1' }, { id: 'module', version: '2' }] } });
+  assert.equal(duplicate.ok, false);
+});
+
 test('SessionSnapshot contract accepts v1 and diagnoses unknown versions explicitly', async () => {
   const session = fixture('session');
   const contract = await import('../src/contracts/session.ts');

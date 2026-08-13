@@ -43,30 +43,37 @@
             "kind": "tau-citations",
             "citations": {
               "protocol": "pi-citation",
-              "version": "1.0",
+              "version": "2.0",
               "citationSetId": "citations:smoke",
               "generatedAt": "2026-07-26T00:00:00.000Z",
-              "sources": [{
-                "sourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
+              "works": [{
+                "workId": "work:artifact:9cb29a6d1b0aeaa561c9f319",
+                "type": "REPORT",
+                "title": "引用报告"
+              }],
+              "resources": [{
+                "resourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
+                "workId": "work:artifact:9cb29a6d1b0aeaa561c9f319",
                 "kind": "document",
-                "scope": "session",
-                "title": "引用报告",
+                "scope": "artifact",
                 "relativePath": "output/citation-report.md",
                 "mimeType": "text/markdown",
                 "sha256": "9cb29a6d1b0aeaa561c9f319b5dd7faf90b631ea80782b667cbfa7aa53cd0bb3"
               }],
               "locators": [{
                 "locatorId": "locator:artifact:9cb29a6d1b0aeaa561c9f319",
-                "sourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
+                "resourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
                 "section": "结论",
                 "quote": "入口拥堵。"
               }],
-              "citations": [{
-                "citationId": "artifact:9cb29a6d1b0aeaa561c9f319",
-                "sourceId": "artifact:9cb29a6d1b0aeaa561c9f319",
+              "occurrences": [{
+                "occurrenceId": "artifact:9cb29a6d1b0aeaa561c9f319",
                 "locatorId": "locator:artifact:9cb29a6d1b0aeaa561c9f319",
-                "verificationStatus": "session_artifact"
-              }]
+                "containerType": "message",
+                "containerId": "smoke-artifact",
+                "role": "artifact-source"
+              }],
+              "provenance": []
             }
           }
         } } },
@@ -76,41 +83,47 @@
     {
       "match": "基线-citation-pdf",
       "steps": [
+        { "writeFile": { "path": "references/traffic-evidence.pdf", "base64": "JVBERi0xLjQKJVBERgoxIDAgb2JqCjw8IC9UeXBlIC9DYXRhbG9nIC9QYWdlcyAyIDAgUiA+PgplbmRvYmoKMiAwIG9iago8PCAvVHlwZSAvUGFnZXMgL0tpZHMgWzMgMCBSXSAvQ291bnQgMSA+PgplbmRvYmoKMyAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiA+PgplbmRvYmoKNCAwIG9iago8PCAvTGVuZ3RoIDAgPj4Kc3RyZWFtCgplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNCAwMDAwMCBuIAowMDAwMDAwMDYzIDAwMDAwIG4gCjAwMDAwMDAxMjAgMDAwMDAgbiAKMDAwMDAwMDIwNyAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDUgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjI1NgolJUVPRgo=" } },
         { "tool": { "name": "tau_cite", "args": { "knowledgeIds": ["K-GBT33170.2-2016-000058"] }, "result": {
           "content": [{ "type": "text", "text": "Registered 1 citation. Use [[cite:K-GBT33170.2-2016-000058]]" }],
           "details": {
             "kind": "tau-citations",
             "citations": {
               "protocol": "pi-citation",
-              "version": "1.0",
+              "version": "2.0",
               "citationSetId": "citations:smoke-pdf",
               "generatedAt": "2026-07-26T00:00:00.000Z",
-              "sources": [{
-                "sourceId": "knowledge:GBT33170.2-2016",
-                "kind": "pdf",
-                "scope": "knowledge",
+              "works": [{
+                "workId": "work:GBT33170.2-2016",
+                "type": "STANDARD_SPEC",
                 "title": "大型活动安全要求 第2部分：人员管控",
-                "relativePath": "02_标准规范/GBT33170.2-2016/source/original.pdf",
+                "standardNumber": "GBT33170.2-2016"
+              }],
+              "resources": [{
+                "resourceId": "knowledge:GBT33170.2-2016",
+                "workId": "work:GBT33170.2-2016",
+                "kind": "pdf",
+                "scope": "attachment",
+                "relativePath": "references/traffic-evidence.pdf",
                 "mimeType": "application/pdf",
-                "sha256": "b1d0b1f4438ca4e22b1d23aa19387a1e541d59207f554817b7adc083a1575140"
+                "sha256": "4f3bc2cd61b4197fa238d068a3d4ceaf44482fba92d569420cd7c25d3c439fa9"
               }],
               "locators": [{
                 "locatorId": "locator:K-GBT33170.2-2016-000058",
-                "sourceId": "knowledge:GBT33170.2-2016",
+                "resourceId": "knowledge:GBT33170.2-2016",
                 "nodeId": "GBT33170.2-2016@8.4",
-                "page": 9,
-                "printedPage": "6",
+                "page": 1,
+                "printedPage": "1",
                 "quote": "发现人群聚集和拥挤现象时，活动承办者应及时派工作人员予以疏导。"
               }],
-              "citations": [{
-                "citationId": "K-GBT33170.2-2016-000058",
-                "knowledgeId": "K-GBT33170.2-2016-000058",
-                "sourceId": "knowledge:GBT33170.2-2016",
+              "occurrences": [{
+                "occurrenceId": "K-GBT33170.2-2016-000058",
                 "locatorId": "locator:K-GBT33170.2-2016-000058",
-                "documentClass": "STANDARD_SPEC",
-                "normativeForce": "recommended",
-                "verificationStatus": "page_aligned"
-              }]
+                "containerType": "message",
+                "containerId": "smoke-knowledge",
+                "role": "support"
+              }],
+              "provenance": []
             }
           }
         } } },

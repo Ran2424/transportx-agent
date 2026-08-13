@@ -86,3 +86,20 @@ test('installer rejects loose resources, unsafe paths, symlinks and duplicate ve
   installer.install(source);
   assert.throws(() => installer.install(source), /already installed/);
 });
+
+test('catalog exposes every installed version and selections resolve exactly', (t: any) => {
+  const root = temp(t, 'transportx-module-catalog-');
+  const managed = path.join(root, 'managed');
+  const first = path.join(root, 'first');
+  const second = path.join(root, 'second');
+  writeAggregatePackage(first, 'local.catalog', '1.0.0');
+  writeAggregatePackage(second, 'local.catalog', '2.0.0');
+  const installer = new ModuleInstaller(managed);
+  installer.install(first);
+  installer.install(second);
+  assert.deepEqual(installer.catalog().map((entry: any) => entry.version), ['1.0.0', '2.0.0']);
+  const selected = installer.sourcesForSelections([{ id: 'local.catalog', version: '1.0.0' }]);
+  assert.match(selected[0].manifestPath, /1\.0\.0\/manifest\.json$/);
+  assert.match(installer.sources()[0].manifestPath, /2\.0\.0\/manifest\.json$/);
+  assert.throws(() => installer.sourcesForSelections([{ id: 'local.catalog', version: '3.0.0' }]), /not installed/);
+});

@@ -117,3 +117,13 @@ test('WebSocket disconnect does not terminate backend live sessions', async () =
   assert.equal(liveManager.sessions.has('tau_1'), true);
   assert.equal(liveManager.clients.size, 0);
 });
+
+test('WebSocket is event-only and rejects side-effecting commands', async () => {
+  const ws = connect();
+  await nextMessage(ws);
+  ws.send(JSON.stringify({ type: 'prompt', sessionId: 'missing', message: 'must use HTTP' }));
+  const response = await nextMessage(ws);
+  assert.equal(response.type, 'error');
+  assert.equal(response.code, 'websocket_event_only');
+  ws.close();
+});

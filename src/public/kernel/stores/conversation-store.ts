@@ -13,7 +13,7 @@
 import type { AppMessage, MessageContentBlock, SessionEntry, SessionSnapshot } from '../../app-types.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
 
-export type QueuedPrompt = { message: string; attachmentIds?: string[] };
+export type QueuedPrompt = { message: string; attachmentIds?: string[]; clientCommandId: string };
 export type OptimisticPrompt = { message: string; attachmentIds?: string[] };
 
 export type LiveOverlay = {
@@ -212,7 +212,14 @@ export class ConversationStore {
   }
 
   promptSent(sessionId: string, prompt: OptimisticPrompt) {
-    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, optimisticPrompt: prompt } }));
+    this.update(sessionId, (conv) => {
+      const latestMessage = [...conv.snapshotEntries].reverse().find((entry) => Boolean(entry.message))?.message;
+      const alreadyEchoed = latestMessage?.role === 'user' && messageText(latestMessage) === prompt.message;
+      return {
+        ...conv,
+        live: { ...conv.live, optimisticPrompt: alreadyEchoed ? null : prompt },
+      };
+    });
   }
 
   promptQueued(sessionId: string, prompt: QueuedPrompt) {

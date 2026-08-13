@@ -167,12 +167,6 @@ function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitat
       stackIndex={0}
       initialOffset={0}
       citationProjection={projection}
-      externalSource={{
-        url: citationResourceUrl(sessionId, preview.resource.resourceId),
-        kind: artifactPreviewKind(preview),
-        mimeType: preview.resource.mimeType,
-        page: preview.locator.page,
-      }}
       onActivate={() => {}}
       onClose={() => setPreview(null)}
     /> : null}

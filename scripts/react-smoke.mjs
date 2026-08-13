@@ -64,11 +64,11 @@ try {
   await settings.waitFor();
   await settings.getByRole('heading', { name: '常规', exact: true }).waitFor();
   if (await reactPage.locator('html').getAttribute('lang') !== 'zh-CN') throw new Error('Chinese locale was not applied to the document');
-  await settings.getByRole('radio', { name: 'English', exact: true }).check();
+  await settings.locator('label.settings-language-option', { hasText: 'English' }).click();
   await settings.getByRole('heading', { name: 'General', exact: true }).waitFor();
   if (await reactPage.locator('html').getAttribute('lang') !== 'en-US') throw new Error('English locale was not applied to the document');
   if (await reactPage.evaluate(() => window.localStorage.getItem('tau-locale')) !== 'en-US') throw new Error('English locale preference was not persisted');
-  await settings.getByRole('radio', { name: '简体中文', exact: true }).check();
+  await settings.locator('label.settings-language-option', { hasText: '简体中文' }).click();
   await settings.getByRole('heading', { name: '常规', exact: true }).waitFor();
   await settings.getByText(ready.tempRoot, { exact: false }).first().waitFor();
   await settings.getByRole('button', { name: '模块', exact: true }).click();
@@ -104,7 +104,8 @@ try {
     const previousCount = await reactPage.locator('.live-tab-select').count();
     await reactPage.getByRole('button', { name: '新建交通任务' }).first().click();
     const dialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
-    await dialog.locator('.menu-select-trigger').click();
+    await dialog.getByLabel('任务名称').fill(`Smoke task ${previousCount + 1}`);
+    await dialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger').click();
     await dialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
     await dialog.getByRole('button', { name: '创建任务' }).click();
     await reactPage.locator('.live-tab-select').nth(previousCount).waitFor({ timeout: 10_000 });
@@ -115,12 +116,13 @@ try {
   }
 
   const primaryTask = await createTask();
-  if (!/^\d{8}-\d{6}(?:-\d+)?$/.test(path.basename(primaryTask.cwd))) {
-    throw new Error(`New task workspace should use only a timestamp: ${primaryTask.cwd}`);
+  if (!/^\d{8}-\d{6}-Smoke-task-1(?:-\d+)?$/.test(path.basename(primaryTask.cwd))) {
+    throw new Error(`New task workspace should include the task name: ${primaryTask.cwd}`);
   }
   await reactPage.getByRole('button', { name: '新建交通任务' }).last().click();
   const secondDialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
-  await secondDialog.locator('.menu-select-trigger').click();
+  await secondDialog.getByLabel('任务名称').fill('Smoke task 2');
+  await secondDialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger').click();
   await secondDialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
   await secondDialog.getByRole('button', { name: '创建任务' }).click();
   await reactPage.locator('.live-tab-select').nth(1).waitFor({ timeout: 10_000 });
@@ -198,18 +200,24 @@ try {
   await pdfCitationMessage.locator('.citation-locator').hover();
   const pdfPageImage = reactPage.locator('.citation-evidence-peek img');
   await pdfPageImage.waitFor();
-  await pdfPageImage.evaluate((image) => new Promise((resolve, reject) => {
+  const pdfImageLoaded = await pdfPageImage.evaluate((image) => new Promise((resolve) => {
     const target = image;
     if (target.complete && target.naturalWidth > 0) return resolve(true);
+    if (target.complete) return resolve(false);
     target.addEventListener('load', () => resolve(true), { once: true });
-    target.addEventListener('error', () => reject(new Error('PDF citation page image failed to load')), { once: true });
+    target.addEventListener('error', () => resolve(false), { once: true });
   }));
+  if (!pdfImageLoaded) {
+    const src = await pdfPageImage.getAttribute('src');
+    const response = await reactPage.request.get(new URL(src, baseUrl).href);
+    throw new Error(`PDF citation page image failed to load (${response.status()}): ${(await response.text()).slice(0, 300)}`);
+  }
   if (process.env.TAU_SMOKE_SCREENSHOT) await reactPage.screenshot({ path: process.env.TAU_SMOKE_SCREENSHOT, fullPage: true });
   await pdfCitationMessage.getByRole('button', { name: /大型活动安全要求/ }).click();
   const pdfPreview = reactPage.locator('.file-preview-card', { hasText: '大型活动安全要求' });
   await pdfPreview.waitFor();
   const pdfPreviewSrc = await pdfPreview.locator('iframe').getAttribute('src');
-  if (!pdfPreviewSrc?.includes('#page=9')) throw new Error(`PDF preview did not open at cited page: ${pdfPreviewSrc}`);
+  if (!pdfPreviewSrc?.includes('#page=1')) throw new Error(`PDF preview did not open at cited page: ${pdfPreviewSrc}`);
   await pdfPreview.getByRole('button', { name: '关闭文件预览' }).click();
 
   // Task mode is a silent control action: it changes state without adding a
@@ -250,7 +258,7 @@ try {
   await composer.press('Enter');
   const runningTool = reactPage.locator('.tool-card', { hasText: 'traffic-summary.json' });
   await runningTool.locator('.tool-status.running').waitFor({ timeout: 10_000 });
-  const toolToggle = runningTool.getByRole('button', { name: /读取/ });
+  const toolToggle = runningTool.locator('.tool-card-toggle');
   if (await toolToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Running tool should be expanded');
   await runningTool.locator('.tool-status.completed').waitFor({ timeout: 10_000 });
   if (await toolToggle.getAttribute('aria-expanded') !== 'false') throw new Error('Completed tool should collapse automatically');

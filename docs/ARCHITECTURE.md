@@ -1,8 +1,8 @@
 # TransportX Traffic Agent 架构与目录治理
 
-- 产品版本：3.0.4
+- 产品版本：3.0.7
 - 架构状态：已实现基线
-- 更新时间：2026-08-10
+- 更新时间：2026-08-14
 - 当前正式目标：macOS 12+ Apple Silicon；Windows x64 保留构建配置，尚待实机发布验收
 
 TransportX Traffic Agent 是一个本地优先的交通分析 Agent 桌面产品。项目保持单仓库、单 npm 包和模块化单体，不拆分远程微服务，也不维护第二套 Web UI。Electron 管理桌面生命周期，Node Agent Host 是唯一业务服务，Pi 负责 Agent 推理和工具调用，Python 执行交通数据脚本，React Workspace 负责全部用户交互。
@@ -20,14 +20,14 @@ TransportX Traffic Agent.app
 │
 ├─ Agent Host（Node）
 │  ├─ HTTP / WebSocket / 同源认证
-│  ├─ Session、Attachment、File、Citation、Geo、Report
+│  ├─ Session、Attachment、File、Citation、Geo、Spatial Analysis、Report
 │  ├─ Model 配置
 │  ├─ Module Registry / Installer / Asset Resolver
 │  ├─ Session Assembly
 │  └─ Pi / Python 进程管理
 │
 ├─ Pi CLI Process
-│  ├─ Task / Citation / Geo / Web Bridge Extensions
+│  ├─ Task / Citation / Geo / Spatial Analysis / Web Bridge Extensions
 │  ├─ Skills 与 Session Prompt
 │  └─ 模型供应商连接
 │
@@ -70,7 +70,7 @@ Electron Main 不管理 Session、Task、Citation、Geo、模型或模块业务�
 - Geo：受会话约束的 GeoJSON 资源；
 - Report：桌面模式调用 Electron PDF 桥，Web 模式使用受控后端；
 - Platform：模型、模块、路径和运行时状态；
-- WebSocket：同源升级、连接、心跳与命令端口。
+- WebSocket：同源升级、连接、心跳与实时事件；有副作用命令只通过可确认的 HTTP RPC 提交。
 
 Agent Host 是 Electron、命令行 Web 启动方式共用的唯一业务核心。
 
@@ -98,13 +98,15 @@ React 是唯一生产 UI。`src/public/kernel/` 负责传输事件标准化、�
 | 模块声明 | `manifest.json` | Module Registry、Installer、Session Assembly |
 | 桌面运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
 | 会话实际装配 | `ResolvedSessionPlan` | Session 启动、恢复和审计 |
+| 任务范围与精确 Module 选择 | `SessionProfile v1` | Session API、Assembler、新建任务 UI、Eval |
+| 受控空间分析结果 | `SpatialAnalysisResult v1` | Spatial Extension、Agent Host、Geo、Eval |
 
 `src/contracts/` 不依赖 Node、Electron、React、DOM 或 MapLibre。跨进程或跨层新增字段时，先更新契约和解析测试，再实现适配器。
 
 ## 4. 会话启动与装配
 
 ```text
-用户选择模型和领域模块
+用户提交 SessionProfile（模型、任务范围、Module 精确版本）
         │
         ▼
 Module Registry 解析依赖与启用状态
@@ -113,7 +115,7 @@ Module Registry 解析依赖与启用状态
 Asset Resolver 解析 Skill / Extension / Data / Knowledge / Template
         │
         ▼
-Session Assembly 生成 ResolvedSessionPlan
+Session Assembly 生成 ResolvedSessionPlan v3
         │
         ├─ Pi CLI + model
         ├─ Pi Extensions
@@ -124,7 +126,11 @@ Session Assembly 生成 ResolvedSessionPlan
 Pi RPC Session
 ```
 
-每个新任务必须显式选择模型。默认任务根目录是 `~/.transportx/traffic-agent/scenario/`，每个任务使用独立子目录。创建和恢复时都保存确定的装配计划，避免后续模块升级改变历史任务的解释。
+每个新任务必须显式选择模型，并以 `SessionProfile v1` 固定任务类型、预期交付和 Module 精确版本。默认任务根目录是 `~/.transportx/traffic-agent/scenario/`，每个任务使用独立子目录。创建时原子写入 `ResolvedSessionPlan v3`，恢复时验证 Module manifest、入口点、资产路径与完整性哈希，不再重新选择当前最新 Module。旧 plan 只能经用户明确确认后按当前配置派生 v3。
+
+用户命令的交付与实时事件分离：Prompt、Steer、Follow-up、Abort 和 Extension UI Response 使用带 `clientCommandId` 的 HTTP RPC，Agent Host 在会话内去重并返回 ACK；WebSocket 只传输 Pi 事件和 Snapshot 更新。前端仅在 ACK 后将命令视为已交付，断线、超时和 pending Extension UI 都保持可见、可重试状态。
+
+Spatial Analysis capability 通过会话专用 endpoint/token 调用 Agent Host，只接受会话内 GeoJSON，由受控 Python 实现 buffer、nearest 和 spatial join。结果统一输出 WGS84 GeoJSON 与带输入/参数/计数/哈希的 manifest，再交由 Geo capability 发布。
 
 Pi JSONL 是历史事实来源。服务端通过 `SessionProjection` 选择最后叶节点所属分支；浏览器只维护降低延迟的实时 overlay，重连或刷新后由服务端 Snapshot 重新校正。
 

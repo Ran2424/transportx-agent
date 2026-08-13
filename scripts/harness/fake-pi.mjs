@@ -18,7 +18,7 @@
 //   { "streamText": { text, chunks, delayMs, thinking? } }
 //   { "tool": { name, args?, result, partialResults?, isError? } }
 //   { "ui": { method: select|confirm|input, id, title, options?|message? } }
-//   { "writeFile": { path, json?|content? } }           相对会话 cwd 写文件（geo 资源等）
+//   { "writeFile": { path, json?|content?|base64? } }   相对会话 cwd 写文件（geo 资源等）
 // 任意字符串值可用 "$fixture": "<相对 test/fixtures 的路径>#<顶层键>" 深替换。
 import fs from 'node:fs';
 import path from 'node:path';
@@ -103,6 +103,23 @@ function chunkText(text, chunks) {
   return parts;
 }
 
+function registerFakeCitations(envelope) {
+  const sessionId = process.env.TAU_CITATION_SESSION_ID;
+  if (!sessionId || !envelope) return;
+  const registryPath = path.join(process.cwd(), '.tau', 'citations.json');
+  const timestamp = new Date().toISOString();
+  const registry = fs.existsSync(registryPath)
+    ? JSON.parse(fs.readFileSync(registryPath, 'utf8'))
+    : { schemaVersion: 1, sessionId, protocol: envelope.protocol, version: envelope.version, citationSetId: envelope.citationSetId, generatedAt: envelope.generatedAt || timestamp, updatedAt: timestamp, works: [], resources: [], locators: [], occurrences: [], provenance: [] };
+  for (const [collection, id] of [['works', 'workId'], ['resources', 'resourceId'], ['locators', 'locatorId'], ['occurrences', 'occurrenceId'], ['provenance', 'provenanceId']]) {
+    const known = new Set(registry[collection].map((item) => item[id]));
+    for (const item of envelope[collection] || []) if (!known.has(item[id])) registry[collection].push(item);
+  }
+  registry.updatedAt = timestamp;
+  fs.mkdirSync(path.dirname(registryPath), { recursive: true });
+  fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+}
+
 // ---- 回放引擎 ----
 let aborted = false;
 let replaying = null;
@@ -159,7 +176,9 @@ async function runSteps(steps, promptMessage) {
     if (step.writeFile) {
       const target = path.resolve(process.cwd(), step.writeFile.path);
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      const body = step.writeFile.json !== undefined ? JSON.stringify(step.writeFile.json, null, 2) : String(step.writeFile.content ?? '');
+      const body = step.writeFile.base64 !== undefined
+        ? Buffer.from(String(step.writeFile.base64), 'base64')
+        : step.writeFile.json !== undefined ? JSON.stringify(step.writeFile.json, null, 2) : String(step.writeFile.content ?? '');
       fs.writeFileSync(target, body);
       diag(`wrote ${target}`);
       continue;
@@ -208,6 +227,7 @@ async function runSteps(steps, promptMessage) {
 
     if (step.tool) {
       const toolCallId = step.tool.toolCallId || `call_fake_${(++entryCounter).toString(16)}`;
+      if (step.tool.result?.details?.kind === 'tau-citations') registerFakeCitations(step.tool.result.details.citations);
       emit({ type: 'tool_execution_start', toolCallId, toolName: step.tool.name, args: step.tool.args || {} });
       for (const partial of step.tool.partialResults || []) {
         if (aborted) { finalizeAborted(); return; }

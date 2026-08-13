@@ -162,6 +162,7 @@ GeoJSON 明确为 CRS84，按 `EPSG:4326` 发布。EVDATA `roadid` 与原有 89 
 4. 指标单位；
 5. CRS 及 `UNKNOWN`/推定记录处理；
 6. 是否包含场馆补齐端点。
+7. 将支撑最终结论的查询结果保存为会话目录内的 CSV、JSON、JSONL 或表格文件，调用 `tau_resolve_citation` 的 `datasets` 参数（`assetId` 为 `data:shanghai-traffic`）后再调用 `tau_cite`，把返回的 `[[cite:...]]` 放在结论后。
 
 ## 参考文件
 
