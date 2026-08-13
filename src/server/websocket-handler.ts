@@ -3,7 +3,6 @@ const { WebSocketServer, WebSocket } = require('ws');
 import type { Server } from 'node:http';
 import type { Socket } from 'node:net';
 import type { WebSocket as WsType } from 'ws';
-import type { RpcCommand, RpcResponse } from './types.js';
 import type { LiveSessionManager } from './sessions.js';
 
 type TauWs = WsType & { isAlive?: boolean };
@@ -14,8 +13,6 @@ type WebSocketHandlerOptions = {
   isAllowedOrigin(request: import('node:http').IncomingMessage): boolean;
   authEnabled(): boolean;
   isAuthenticated(request: import('node:http').IncomingMessage): boolean;
-  handleRpc(command: RpcCommand): Promise<RpcResponse>;
-  errorMessage(error: unknown): string;
 };
 
 export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
@@ -41,13 +38,8 @@ export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     ws.send(JSON.stringify({ type: 'state', liveSessions: options.sessions.list() }));
-    ws.on('message', async (data: Buffer) => {
-      try {
-        const response = await options.handleRpc(JSON.parse(data.toString()));
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(response));
-      } catch (error) {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', message: options.errorMessage(error) }));
-      }
+    ws.on('message', () => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', code: 'websocket_event_only', message: 'Use HTTP /api/rpc for commands.' }));
     });
     ws.on('close', () => options.sessions.removeClient(ws));
     ws.on('error', () => options.sessions.removeClient(ws));

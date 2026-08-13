@@ -14,6 +14,7 @@ import {
   PI_AGENT_DIR,
   PROJECT_SYSTEM_PROMPT_PATH,
   SESSION_ASSEMBLER,
+  sessionAssemblerForProfile,
   SESSIONS_DIR,
   TAU_SETTINGS,
   PYTHON_COMMAND,
@@ -24,7 +25,7 @@ import { piProcessEnv } from './pi-runtime.js';
 import { SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { signalProcessTree } from './process-tree.js';
-import type { ResolvedSessionPlan } from './session-assembly.js';
+import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
@@ -40,6 +41,7 @@ import {
   type ContractDiagnostic,
   type PiWebBridgeEnvelope,
   type RuntimeCapabilities,
+  type SessionProfileV1,
 } from '../contracts/index.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
@@ -93,8 +95,9 @@ function stripAttachmentContext(text: string) {
 
 function moduleResourceGuide(plan: ResolvedSessionPlan | null) {
   if (!plan) return '- 未解析 Module 会话计划；不能假定任何外部 Skill 或资产可用。';
-  const skills = plan.skills.length
-    ? plan.skills.map((skillPath) => `- Skill 根目录：\`${path.dirname(skillPath)}\`（入口：\`${skillPath}\`；脚本和参考文件均相对此目录）`).join('\n')
+  const resolvedSkills = planSkills(plan);
+  const skills = resolvedSkills.length
+    ? resolvedSkills.map((skillPath) => `- Skill 根目录：\`${path.dirname(skillPath)}\`（入口：\`${skillPath}\`；脚本和参考文件均相对此目录）`).join('\n')
     : '- 本会话没有加载 Skill。';
   const assets = plan.assets.length
     ? plan.assets.map((asset) => {
@@ -147,6 +150,8 @@ export function makeId() {
 
 let citationEndpoint = process.env.TAU_CITATION_ENDPOINT || '';
 export function setCitationEndpoint(value: string) { citationEndpoint = value; }
+let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
+export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
 
 export function isGenericSessionName(name: unknown) {
   const normalized = String(name || '').trim().toLowerCase();
@@ -236,7 +241,9 @@ export class PiRpcSession {
   resolvedSessionPlan: ResolvedSessionPlan | null;
   pendingAttachmentRefs: string[][];
   citationToken: string;
+  spatialToken: string;
   citationRegistryId: string;
+  pendingExtensionUiRequests: Map<string, PiRpcMessage>;
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -270,7 +277,9 @@ export class PiRpcSession {
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.pendingAttachmentRefs = [];
     this.citationToken = crypto.randomUUID();
+    this.spatialToken = crypto.randomUUID();
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
+    this.pendingExtensionUiRequests = new Map();
     this.applyLatestBridgeEnvelope();
   }
 
@@ -290,6 +299,7 @@ export class PiRpcSession {
       lastActiveAt: this.lastActiveAt,
       lastConversationAt: this.lastConversationAt,
       contextUsage: this.contextUsage,
+      pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()],
       capabilities: {
         ...this.capabilities,
         ok: this.capabilityMismatches.length === 0 && this.contractDiagnostics.length === 0,
@@ -323,8 +333,8 @@ export class PiRpcSession {
     }
     const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
     if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
-    const extensionPaths = this.resolvedSessionPlan.piExtensions;
-    const skillPaths = this.resolvedSessionPlan.skills;
+    const extensionPaths = planExtensions(this.resolvedSessionPlan);
+    const skillPaths = planSkills(this.resolvedSessionPlan);
     for (const extensionPath of extensionPaths) {
       if (!fs.existsSync(extensionPath)) throw new Error(`Built-in extension not found: ${extensionPath}`);
       args.push('--extension', extensionPath);
@@ -333,7 +343,7 @@ export class PiRpcSession {
       if (!fs.existsSync(skillPath)) throw new Error(`Built-in skill not found: ${skillPath}`);
       args.push('--skill', skillPath);
     }
-    args.push('--append-system-prompt', loadProjectPrompt(this.cwd, this.resolvedSessionPlan.promptPath, this.resolvedSessionPlan));
+    args.push('--append-system-prompt', loadProjectPrompt(this.cwd, planPromptPath(this.resolvedSessionPlan), this.resolvedSessionPlan));
     if (this.sessionFile) args.push('--session', this.sessionFile);
     if (this.modelSpec) args.push('--model', this.modelSpec);
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
@@ -347,6 +357,9 @@ export class PiRpcSession {
         TAU_CITATION_ENDPOINT: citationEndpoint,
         TAU_CITATION_SESSION_ID: this.id,
         TAU_CITATION_TOKEN: this.citationToken,
+        TAU_SPATIAL_ENDPOINT: spatialEndpoint,
+        TAU_SPATIAL_SESSION_ID: this.id,
+        TAU_SPATIAL_TOKEN: this.spatialToken,
         MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
         PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
         ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => [asset.id, asset.path]))) } : {}),
@@ -492,11 +505,18 @@ export class PiRpcSession {
   handleEvent(event: PiRpcMessage) {
     this.touch(false);
     const type = event.type;
+    if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
     // agent_end is only a single low-level run. Keep the live session marked
     // busy while Pi is about to retry; agent_settled is the final boundary.
-    if (type === 'agent_end' && event.willRetry !== true) this.isStreaming = false;
-    if (type === 'agent_settled') this.isStreaming = false;
+    if (type === 'agent_end' && event.willRetry !== true) {
+      this.isStreaming = false;
+      this.pendingExtensionUiRequests.clear();
+    }
+    if (type === 'agent_settled') {
+      this.isStreaming = false;
+      this.pendingExtensionUiRequests.clear();
+    }
     if (event.contextUsage) this.contextUsage = event.contextUsage;
     if (event.sessionFile) this.sessionFile = event.sessionFile;
     if (type === 'session_name' && event.name) {
@@ -745,18 +765,19 @@ export class LiveSessionManager {
   }
   hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
-  async create({ cwd, model, sessionName }: { cwd?: string; model?: string; sessionName?: string | null }) {
+  async create({ cwd, model, sessionName, profile }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1 }) {
     if (!model?.trim()) throw new Error('请先添加并选择模型');
     const resolved = createSessionWorkingDirectory(cwd, sessionName);
-    const resolvedSessionPlan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, resolved);
-    SESSION_ASSEMBLER.save(resolvedSessionPlan);
+    const assembler = profile ? sessionAssemblerForProfile(profile) : SESSION_ASSEMBLER;
+    const resolvedSessionPlan = assembler.assemble(DEFAULT_DOMAIN_ID, resolved, profile);
+    assembler.save(resolvedSessionPlan);
     const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), sessionName, piVersion: this.piVersion, resolvedSessionPlan });
     await session.start();
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
     return session;
   }
-  async resume({ sessionFile, cwd, model, entries, sessionName }: { sessionFile: string; cwd: string; model?: string; entries?: JsonRecord[]; sessionName?: string | null }) {
+  async resume({ sessionFile, cwd, model, entries, sessionName, useCurrentConfiguration = false }: { sessionFile: string; cwd: string; model?: string; entries?: JsonRecord[]; sessionName?: string | null; useCurrentConfiguration?: boolean }) {
     const resolved = path.resolve(sessionFile);
     const existing = this.findBySessionFile(resolved);
     if (existing) return existing;
@@ -764,12 +785,20 @@ export class LiveSessionManager {
     if (pending) return pending;
     const resumePromise = (async () => {
       try {
+        await Promise.resolve();
         const terminating = this.terminatingResumes.get(resolved);
         if (terminating) await terminating.catch(() => {});
         const afterTerminationExisting = this.findBySessionFile(resolved);
         if (afterTerminationExisting) return afterTerminationExisting;
-        const resolvedSessionPlan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, cwd);
-        SESSION_ASSEMBLER.save(resolvedSessionPlan);
+        const migratedPlanPath = path.join(cwd, '.tau', 'resolved-session-plan.v3.json');
+        let resolvedSessionPlan: ResolvedSessionPlan;
+        try {
+          resolvedSessionPlan = SESSION_ASSEMBLER.load(cwd, fs.existsSync(migratedPlanPath) ? 'resolved-session-plan.v3.json' : 'resolved-session-plan.json');
+        } catch (error) {
+          if (!useCurrentConfiguration || !(error instanceof Error) || !('code' in error) || error.code !== 'legacy_plan_requires_confirmation') throw error;
+          resolvedSessionPlan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, cwd);
+          SESSION_ASSEMBLER.save(resolvedSessionPlan, 'resolved-session-plan.v3.json');
+        }
         const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
         await session.start();
         this.sessions.set(session.id, session);

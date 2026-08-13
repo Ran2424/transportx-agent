@@ -72,12 +72,14 @@ export function projectMessageCitations(entries: SessionEntry[]) {
     if (message?.role !== 'assistant') continue;
     const ids = citationIdsInText(messageText(message));
     if (!ids.length) continue;
-    const numbers = Object.fromEntries(ids.filter((id) => available.has(id)).map((id, index) => [id, index + 1]));
-    const citations = ids.flatMap((id) => {
+    const resolved = ids.flatMap((id) => {
       const citation = available.get(id);
-      return citation ? [{ ...citation, number: numbers[id] }] : [];
+      return citation ? [citation] : [];
     });
-    byEntry.set(entry, { citations, artifacts: [], numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) });
+    const citations = resolved.filter((item) => item.resource.scope !== 'artifact').map((item, index) => ({ ...item, number: index + 1 }));
+    const artifacts = resolved.filter((item) => item.resource.scope === 'artifact').map((item) => ({ ...item, number: 0 }));
+    const numbers = Object.fromEntries(citations.map((item) => [item.occurrence.occurrenceId, item.number]));
+    byEntry.set(entry, { citations, artifacts, numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) });
   }
   return { byEntry, available };
 }
@@ -85,9 +87,11 @@ export function projectMessageCitations(entries: SessionEntry[]) {
 export function projectCitationText(text: string, available: Map<string, AvailableCitation>): MessageCitationProjection | undefined {
   const ids = citationIdsInText(text);
   if (!ids.length) return undefined;
-  const numbers = Object.fromEntries(ids.filter((id) => available.has(id)).map((id, index) => [id, index + 1]));
-  const citations = ids.flatMap((id) => available.get(id) ? [{ ...available.get(id)!, number: numbers[id] }] : []);
-  return { citations, artifacts: [], numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) };
+  const resolved = ids.flatMap((id) => available.get(id) ? [available.get(id)!] : []);
+  const citations = resolved.filter((item) => item.resource.scope !== 'artifact').map((item, index) => ({ ...item, number: index + 1 }));
+  const artifacts = resolved.filter((item) => item.resource.scope === 'artifact').map((item) => ({ ...item, number: 0 }));
+  const numbers = Object.fromEntries(citations.map((item) => [item.occurrence.occurrenceId, item.number]));
+  return { citations, artifacts, numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) };
 }
 
 export function stripManualCitationReferenceTail(markdown: string) {

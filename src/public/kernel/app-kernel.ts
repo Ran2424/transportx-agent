@@ -15,6 +15,7 @@ import { RuntimeStore } from './stores/runtime-store.js';
 import { SessionStore } from './stores/session-store.js';
 import { ToolExecutionStore } from './stores/tool-execution-store.js';
 import { eventTargetTransport, type EventTargetTransportSource, type KernelTransport } from './transport.js';
+import { toAppError } from '../../contracts/errors.ts';
 
 export type AppKernelOptions = {
   transport: KernelTransport | EventTargetTransportSource;
@@ -59,18 +60,32 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   const apply = createDispatcher(stores);
   const normalizer = createEventNormalizer({ getActiveSessionId: () => stores.session.get().activeSessionId });
 
-  // Flush prompts that were queued while a session was streaming, in order,
-  // once that session's run ends.
+  let commands: KernelCommands;
+  const flushingSessions = new Set<string>();
+
+  // Flush prompts that were queued while a session was streaming. A prompt is
+  // removed only after the Agent Host acknowledges it; failures leave it in
+  // the queue for an explicit retry.
   const flushQueuedPrompts = () => {
     const { streamingBySession } = stores.session.get();
     const { bySession } = stores.conversation.get();
     for (const [sessionId, conv] of Object.entries(bySession)) {
-      if (streamingBySession[sessionId] || conv.live.queued.length === 0) continue;
-      for (const queued of conv.live.queued) {
-        transport.send({ type: 'prompt', sessionId, message: queued.message, ...(queued.attachmentIds?.length ? { attachmentIds: queued.attachmentIds } : {}) });
-        apply({ type: 'conversation/promptSent', sessionId, message: queued.message, attachmentIds: queued.attachmentIds });
-      }
-      apply({ type: 'conversation/queueDrained', sessionId });
+      if (streamingBySession[sessionId] || conv.live.queued.length === 0 || flushingSessions.has(sessionId)) continue;
+      flushingSessions.add(sessionId);
+      void (async () => {
+        try {
+          while (!stores.session.isStreaming(sessionId)) {
+            const queued = stores.conversation.get().bySession[sessionId]?.live.queued[0];
+            if (!queued) break;
+            await commands.agent.sendPrompt({ sessionId, message: queued.message, attachmentIds: queued.attachmentIds, clientCommandId: queued.clientCommandId });
+            apply({ type: 'conversation/queueItemRemoved', sessionId, index: 0 });
+          }
+        } catch (cause) {
+          apply({ type: 'error/raised', error: toAppError(cause, { code: 'queued_prompt_failed', category: 'transport', sessionId, retryable: true }) });
+        } finally {
+          flushingSessions.delete(sessionId);
+        }
+      })();
     }
   };
 
@@ -79,7 +94,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     flushQueuedPrompts();
   };
 
-  const commands = createCommands({
+  commands = createCommands({
     transport,
     http: options.http,
     dispatch,

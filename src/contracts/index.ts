@@ -21,3 +21,6 @@ export * from './bridge.ts';
 export * from './capabilities.ts';
 export * from './module.ts';
 export * from './attachments.ts';
+export * from './session-profile.ts';
+export * from './resolved-session-plan.ts';
+export * from './spatial.ts';

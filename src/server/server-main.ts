@@ -8,10 +8,10 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { APP_PATHS, ARGS, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
+import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
-import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, setCitationEndpoint, _setSpawnPiForTest } from './sessions.js';
+import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, setCitationEndpoint, setSpatialEndpoint, _setSpawnPiForTest } from './sessions.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
 import { renderReportPdf } from './report-pdf.js';
@@ -28,11 +28,17 @@ import { addPiModel } from './pi-model-config.js';
 import { platformOverview } from './platform-overview.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, buildAttachmentContext, attachmentFilePath } from './session-attachments.js';
 import { CitationService } from './citation-service.js';
+import { RpcCommandLedger } from './rpc-command-ledger.js';
+import { SpatialAnalysisService } from './spatial-analysis-service.js';
+import { verifyChecksumFile } from './asset-integrity.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
+const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
+const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
+const reliableCommandTypes = new Set(['prompt', 'steer', 'follow_up', 'abort', 'extension_ui_response']);
 
 type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
 
@@ -155,7 +161,33 @@ function currentPlatformOverview() {
   }
 }
 
-async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
+function currentSessionOptions() {
+  const enabled = new Set(TAU_SETTINGS.enabledModuleIds);
+  const defaultVersions = new Set(MODULE_INSTALLER.sources().map((source) => `${source.moduleId}:${path.basename(source.packageRoot!)}`));
+  return {
+    schemaVersion: 1,
+    modules: MODULE_INSTALLER.catalog().map((entry) => ({
+      id: entry.id,
+      name: entry.manifest.name,
+      version: entry.version,
+      type: entry.manifest.type,
+      origin: 'installed',
+      compatible: true,
+      enabledForNewSessions: enabled.has(entry.id),
+      selectedByDefault: enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
+      dependencies: entry.manifest.dependencies,
+      assets: (entry.manifest.contributes?.assets || []).map((asset) => {
+        const assetPath = path.resolve((ASSET_OVERRIDES as Record<string, string>)[asset.id] || path.resolve(entry.source.packageRoot!, asset.path));
+        const integrityFile = asset.integrityFile ? (fs.existsSync(path.resolve(entry.source.packageRoot!, asset.integrityFile)) ? path.resolve(entry.source.packageRoot!, asset.integrityFile) : path.join(assetPath, path.basename(asset.integrityFile))) : '';
+        let integrity: 'verified' | 'unverified' | 'missing' = asset.integrityFile ? 'missing' : 'unverified';
+        if (asset.integrityFile && fs.existsSync(assetPath) && fs.existsSync(integrityFile)) try { verifyChecksumFile(assetPath, integrityFile); integrity = 'verified'; } catch { integrity = 'missing'; }
+        return { id: asset.id, kind: asset.kind, configured: fs.existsSync(assetPath), integrity };
+      }),
+    })),
+  };
+}
+
+async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
   if (command.type === 'get_auth') return success({ configured: AUTH_CONFIGURED, enabled: authEnabled });
@@ -246,10 +278,14 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response']);
   if (!native.has(command.type || '')) return failure(`Unknown command: ${command.type}`);
   const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
+  if (command.type === 'extension_ui_response' && (typeof command.id !== 'string' || !session.pendingExtensionUiRequests.has(command.id))) {
+    return failure('Extension UI request is no longer pending');
+  }
   if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
   let trackedPromptAttachments: string[] | null = null;
   try {
-    let rpcCommand = command;
+    let rpcCommand = { ...command };
+    delete rpcCommand.clientCommandId;
     if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
       const rawIds = command.attachmentIds;
       const attachmentIds = rawIds === undefined ? [] : Array.isArray(rawIds) ? rawIds.filter((id): id is string => typeof id === 'string') : null;
@@ -272,15 +308,30 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       trackedPromptAttachments = Array.isArray(command.attachmentIds) ? command.attachmentIds.filter((id): id is string => typeof id === 'string') : [];
       session.registerPromptAttachments(trackedPromptAttachments);
     }
-    const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 10000 : 60000 });
+    const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 300000 : 60000 });
+    if (command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
     if (response.success === false && previousLevel !== null) session.thinkingLevel = previousLevel;
     return { ...response, success: response.success !== false };
   } catch (error) {
     if (previousLevel !== null) session.thinkingLevel = previousLevel;
-    if (/^RPC command timed out:/.test(errorMessage(error)) && ['prompt', 'abort', 'extension_ui_response'].includes(command.type || '')) return success();
     if (trackedPromptAttachments) session.discardPromptAttachments(trackedPromptAttachments);
     return failure(errorMessage(error));
   }
+}
+
+async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
+  const clientCommandId = typeof command.clientCommandId === 'string' && command.clientCommandId.trim() ? command.clientCommandId.trim() : '';
+  if (!clientCommandId || !reliableCommandTypes.has(command.type || '')) return handleRpcCommandOnce(command);
+  const key = `${command.sessionId || ''}:${command.type}:${clientCommandId}`;
+  return rpcCommandLedger.run(key, async () => {
+    const response = await handleRpcCommandOnce(command);
+    return response.success === false ? { ...response, clientCommandId } : {
+      ...response,
+      clientCommandId,
+      delivery: 'accepted',
+      acceptedAt: new Date().toISOString(),
+    };
+  });
 }
 
 function isAllowedApiOrigin(req: IncomingMessage) {
@@ -300,11 +351,12 @@ function setCorsForAllowedOrigin(req: IncomingMessage, res: ServerResponse) {
 const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projectsDir: TAU_SETTINGS.projectsDir, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, expandHome, json, errorMessage, readBranch: readSessionBranch, isGenericSessionName, sessions: liveManager });
 const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
 const apiRouter = createApiRouter({
-  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Traffic Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
+  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Traffic Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), sessionOptions: currentSessionOptions, json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
   listAttachments: listSessionAttachments,
   uploadAttachments: saveUploadedAttachments,
   deleteAttachment: deleteSessionAttachment,
   citation: citationService,
+  spatial: spatialAnalysisService,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -319,7 +371,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
 
 const staticHandler = createStaticHandler({ reactStaticDir: REACT_STATIC_DIR, mimeTypes: MIME_TYPES as Record<string, string>, authEnabled: () => authEnabled, checkAuth, sendAuthRequired, maybeSetSessionCookie, handleApi: handleApiRoute });
 const server = http.createServer(staticHandler.serveStaticFile);
-const socketHandler = attachWebSocketHandler({ server, sessions: liveManager, isAllowedOrigin: isAllowedApiOrigin, authEnabled: () => authEnabled, isAuthenticated: (request) => checkAuth(request).ok, handleRpc: handleRpcCommand, errorMessage });
+const socketHandler = attachWebSocketHandler({ server, sessions: liveManager, isAllowedOrigin: isAllowedApiOrigin, authEnabled: () => authEnabled, isAuthenticated: (request) => checkAuth(request).ok });
 const { wss } = socketHandler;
 
 function computeUrls(port: number) {
@@ -333,6 +385,7 @@ function computeUrls(port: number) {
   }
   lanUrl = `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
   setCitationEndpoint(`http://127.0.0.1:${port}`);
+  setSpatialEndpoint(`http://127.0.0.1:${port}`);
 }
 
 function listen(port: number, attemptsLeft = 10) {
@@ -356,7 +409,7 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true; console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
   socketHandler.close(); try { wss.close(); } catch {}
-  await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
+  spatialAnalysisService.terminateAll(); await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
 }
 function startCli() {
   const runtime = inspectPiRuntime(PI_COMMAND, PI_COMMAND_ARGS); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);

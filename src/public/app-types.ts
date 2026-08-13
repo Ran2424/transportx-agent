@@ -10,6 +10,7 @@
  */
 import type { ContractDiagnostic } from '../contracts/diagnostic.js';
 import type { CapabilityMismatchReason, RuntimeCapabilities } from '../contracts/capabilities.js';
+import type { ResolvedSessionPlanV3 } from '../contracts/resolved-session-plan.js';
 export type { SessionAttachment, SessionAttachmentKind, SessionAttachmentSource, SessionAttachmentStatus } from '../contracts/attachments.js';
 
 export type SessionSnapshot = {
@@ -21,6 +22,7 @@ export type SessionSnapshot = {
   isStreaming?: boolean;
   model?: ModelRecord | null;
   thinkingLevel?: string;
+  pendingExtensionUiRequests?: AppEvent[];
 };
 
 export type SessionEntry = {
@@ -65,6 +67,7 @@ export type LiveSession = {
   lastActiveAt?: string;
   lastConversationAt?: string;
   contextUsage?: UsageRecord;
+  resolvedSessionPlan?: ResolvedSessionPlanV3;
   capabilities?: RuntimeCapabilities & {
     ok: boolean;
     mismatches: CapabilityMismatchReason[];

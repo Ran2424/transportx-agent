@@ -29,7 +29,8 @@ const CODE_EXTENSIONS = new Set(['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', '
 
 export function filePresentation(item: WorkspaceFile): FilePresentation {
   if (item.isDirectory) return { kind: 'directory', icon: 'workspace', label: i18n.t('workspace.type.directory'), preview: null, extension: '' };
-  const extension = item.name.split('.').pop()?.toLowerCase() || '';
+  const pathName = item.path.replaceAll('\\', '/').split('/').pop() || item.name;
+  const extension = pathName.split('.').pop()?.toLowerCase() || '';
   if (extension === 'md' || extension === 'mdx') return { kind: 'report', icon: 'report', label: i18n.t('workspace.type.report'), preview: 'report', extension };
   if (IMAGE_EXTENSIONS.has(extension)) return { kind: 'image', icon: 'image', label: i18n.t('workspace.type.image'), preview: 'image', extension };
   if (PDF_EXTENSIONS.has(extension)) return { kind: 'pdf', icon: 'file', label: i18n.t('workspace.type.pdf'), preview: 'pdf', extension };
