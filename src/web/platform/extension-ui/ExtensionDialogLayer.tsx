@@ -39,21 +39,29 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
   const heading = splitHeading(request.title, fallback);
   const message = request.message || heading.message;
   const [value, setValue] = useState(request.prefill || '');
+  const [error, setError] = useState('');
   const resolvedRef = useRef(false);
 
   useEffect(() => {
     setValue(request.prefill || '');
+    setError('');
     resolvedRef.current = false;
   }, [request.id, request.prefill]);
 
   async function respond(response?: Record<string, unknown>) {
     if (resolvedRef.current) return;
     resolvedRef.current = true;
-    await kernel.commands.extensionUi.respond({
-      sessionId: pending.sessionId,
-      id: request.id,
-      response,
-    });
+    setError('');
+    try {
+      await kernel.commands.extensionUi.respond({
+        sessionId: pending.sessionId,
+        id: request.id,
+        response,
+      });
+    } catch (cause) {
+      resolvedRef.current = false;
+      setError((cause as Error).message || t('conversation.sendFailed'));
+    }
   }
 
   useEffect(() => {
@@ -65,7 +73,7 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
         sessionId: pending.sessionId,
         id: request.id,
         response: { cancelled: true },
-      });
+      }).catch(() => { resolvedRef.current = false; });
     }, request.timeout);
     return () => window.clearTimeout(timer);
   }, [kernel, pending.sessionId, request.id, request.timeout]);
@@ -93,6 +101,7 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
       footer={footer}
     >
       {message ? <p className="extension-prompt">{message}</p> : null}
+      {error ? <div className="inline-error">{error}</div> : null}
       {method === 'select' ? (
         <div className="extension-options">
           {(request.options || []).map((option) => {

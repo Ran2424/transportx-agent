@@ -11,6 +11,27 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0.7 — Traffic Agent 可靠任务与 Headless Eval
+
+- 日期：2026-08-14
+- GitHub 操作：通过 `codex/traffic-agent-reliability-3.0.7` 分支提交 PR，合并至 `main`。
+
+主要修改：
+
+- 实现 Headless Traffic Agent Eval：机器可读的 25 道上海交通题、3 道空间题和 3 个完整任务，真实 Agent Host/Pi runner、确定性评分、重复运行与审计结果输出。
+- 引入 `SessionProfile v1` 和 `ResolvedSessionPlan v3`：新建任务固定任务范围、预期交付、Module 精确版本及资产完整性；恢复时验证原 plan，不再默默切换到当前版本。
+- 将有副作用命令收敛到带 `clientCommandId` 的 HTTP RPC，服务端 ledger 实现进行中/已完成去重；WebSocket 只传输事件，Extension UI pending 状态可持久和恢复。
+- 新增受控 Spatial Analysis capability，支持 buffer、nearest 和 spatial join，强制 CRS、会话路径、输入限额、输出哈希与 `SpatialAnalysisResult v1`。
+- 修复 ACK/事件竞态产生的重复用户消息、会话产物 Markdown 预览的类型判定，并将真实数据结论收敛到受控 dataset citation 闭环。
+- npm 包与平台版本同步提升为 `3.0.7`。
+
+验证：
+
+- `npm run typecheck` 通过；`npm test` 通过 70 项回归。
+- React phase 7 smoke 通过，覆盖会话、任务、Geo、引用/产物、5 类 Extension UI 和移动端。
+- Desktop smoke 通过，覆盖 Electron 安全偏好、Agent Host 生命周期、PDF 桥和统一 Module 设置入口；Pi RPC smoke 通过。
+- Headless fake-Pi 端到端通过；真实 `deepseek/deepseek-v4-flash` + Shanghai Data 的 `SH-001` 评测 1/1 通过，同时验证 plan v3 与 dataset citation。
+
 ## v3.0.6 后续维护 — 双语工作台与 Shanghai Data Module v2.0.1
 
 - 日期：2026-08-12

@@ -8,6 +8,7 @@
 import type { LiveSession, ModelRecord, SessionAttachment, SessionAttachmentSource, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
+import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
 
 export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
@@ -27,7 +28,7 @@ export type CommandDeps = {
   isStreaming: (sessionId: string) => boolean;
 };
 
-export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[] };
+export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; clientCommandId?: string };
 export type SetTaskModeInput = { sessionId: string; enabled: boolean };
 export type SteerInput = { sessionId: string; message: string; attachmentIds?: string[] };
 export type FollowUpInput = { sessionId: string; message: string };
@@ -44,8 +45,8 @@ export type AddModelInput = {
   reasoning?: boolean;
   images?: boolean;
 };
-export type CreateSessionInput = { cwd?: string; name?: string; model?: string };
-export type ResumeSessionInput = { filePath: string; model?: string; cwd?: string };
+export type CreateSessionInput = { cwd?: string; name?: string; model?: string; profile?: SessionProfileV1 };
+export type ResumeSessionInput = { filePath: string; model?: string; cwd?: string; useCurrentConfiguration?: boolean };
 export type ExtensionUiResponseInput = {
   sessionId: string | null;
   id?: string;
@@ -112,6 +113,21 @@ export type PlatformOverview = {
   errors: Array<{ moduleId?: string; message: string }>;
 };
 
+export type SessionModuleOption = {
+  id: string;
+  name: string;
+  version: string;
+  type: 'module' | 'capability' | 'domain';
+  origin: 'installed';
+  compatible: boolean;
+  enabledForNewSessions: boolean;
+  selectedByDefault: boolean;
+  dependencies: string[];
+  assets: Array<{ id: string; kind: 'knowledge' | 'data' | 'template'; configured: boolean; integrity: 'verified' | 'unverified' | 'missing' }>;
+};
+
+export type SessionOptions = { schemaVersion: 1; modules: SessionModuleOption[] };
+
 export type AgentCommands = {
   sendPrompt(input: SendPromptInput): Promise<void>;
   setTaskMode(input: SetTaskModeInput): Promise<void>;
@@ -144,6 +160,7 @@ export type SessionCommands = {
 
 export type PlatformCommands = {
   getAvailableModels(sessionId?: string | null): Promise<Array<ModelRecord | string>>;
+  getSessionOptions(): Promise<SessionOptions>;
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
   getOverview(): Promise<PlatformOverview>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
@@ -184,10 +201,11 @@ async function httpJson(
     // Non-JSON body; status decides success below.
   }
   if (!response.ok) {
-    const message = (data as { error?: string } | null)?.error ?? `HTTP ${response.status}`;
+    const errorPayload = data as { error?: string; code?: string } | null;
+    const message = errorPayload?.error ?? `HTTP ${response.status}`;
     throw appError({
-      code: 'http_error',
-      category: 'transport',
+      code: errorPayload?.code || 'http_error',
+      category: context.category,
       message,
       sessionId: context.sessionId,
       retryable: response.status >= 500,
@@ -214,10 +232,12 @@ async function rpcCommand(http: HttpClient, command: Record<string, unknown>): P
   const sessionId = command.sessionId as string | undefined;
   const data = await httpJson(http, '/api/rpc', { method: 'POST', body: command }, { category: 'session', sessionId });
   if (data && typeof data === 'object' && (data as { success?: unknown }).success === false) {
+    const message = String((data as { error?: unknown }).error ?? 'RPC command failed');
+    const deliveryUnknown = message.startsWith('RPC command timed out:');
     throw appError({
-      code: 'rpc_command_failed',
+      code: deliveryUnknown ? 'delivery_unknown' : 'rpc_command_failed',
       category: 'session',
-      message: String((data as { error?: unknown }).error ?? 'RPC command failed'),
+      message,
       sessionId,
       retryable: false,
       diagnostics: { command: String(command.type) },
@@ -226,37 +246,47 @@ async function rpcCommand(http: HttpClient, command: Record<string, unknown>): P
   return data;
 }
 
+function clientCommandId() {
+  return globalThis.crypto?.randomUUID?.() ?? `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
 export function createAgentCommands(deps: CommandDeps): AgentCommands {
+  const pendingPromptIds = new Map<string, string>();
   return {
-    async sendPrompt({ sessionId, message, attachmentIds }) {
+    async sendPrompt({ sessionId, message, attachmentIds, clientCommandId: requestedId }) {
+      const promptKey = `${sessionId}\0${message}\0${(attachmentIds || []).join(',')}`;
+      const commandId = requestedId || pendingPromptIds.get(promptKey) || clientCommandId();
+      pendingPromptIds.set(promptKey, commandId);
       // While streaming, prompts queue per session instead of hitting the
       // transport; the kernel flushes them when the run ends.
       if (deps.isStreaming(sessionId)) {
-        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds });
+        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, clientCommandId: commandId });
         return;
       }
-      deps.transport.send({ type: 'prompt', sessionId, message, ...(attachmentIds?.length ? { attachmentIds } : {}) });
+      await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}) });
+      pendingPromptIds.delete(promptKey);
       deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds });
     },
 
     async setTaskMode({ sessionId, enabled }) {
-      deps.transport.send({
+      await rpcCommand(deps.http, {
         type: 'prompt',
         sessionId,
+        clientCommandId: clientCommandId(),
         message: `/task ${enabled ? 'on' : 'off'} --silent`,
       });
     },
 
     async abort(sessionId) {
-      deps.transport.send({ type: 'abort', sessionId });
+      await rpcCommand(deps.http, { type: 'abort', sessionId, clientCommandId: clientCommandId() });
     },
 
     async steer({ sessionId, message, attachmentIds }) {
-      deps.transport.send({ type: 'steer', sessionId, message, ...(attachmentIds?.length ? { attachmentIds } : {}) });
+      await rpcCommand(deps.http, { type: 'steer', sessionId, message, clientCommandId: clientCommandId(), ...(attachmentIds?.length ? { attachmentIds } : {}) });
     },
 
     async followUp({ sessionId, message }) {
-      deps.transport.send({ type: 'follow_up', sessionId, message });
+      await rpcCommand(deps.http, { type: 'follow_up', sessionId, message, clientCommandId: clientCommandId() });
     },
 
     async compact(sessionId) {
@@ -372,6 +402,11 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
       return ((data as { data?: { models?: Array<ModelRecord | string> } }).data?.models ?? []);
     },
 
+    async getSessionOptions() {
+      const data = await httpJson(deps.http, '/api/platform/session-options', undefined, { category: 'session' });
+      return data as SessionOptions;
+    },
+
     async addModel(input) {
       const data = await rpcCommand(deps.http, { type: 'add_model', ...input });
       return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
@@ -420,9 +455,10 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
 export function createExtensionUiCommands(deps: CommandDeps): ExtensionUiCommands {
   return {
     async respond({ sessionId, id, response }) {
-      deps.transport.send({
+      await rpcCommand(deps.http, {
         type: 'extension_ui_response',
         id,
+        clientCommandId: clientCommandId(),
         ...(sessionId ? { sessionId } : {}),
         ...(response ?? { cancelled: true }),
       });

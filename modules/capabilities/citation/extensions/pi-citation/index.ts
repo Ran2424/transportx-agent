@@ -67,7 +67,7 @@ export default function citationExtension(pi: ExtensionAPI) {
   pi.on('before_agent_start', async (event) => ({
     systemPrompt: `${event.systemPrompt}
 
-When a final answer relies on knowledge, attachments, or task artifacts, call tau_resolve_citation first. Use knowledgeIds for knowledge cards so the Host can retain the original PDF or HTML source; do not cite copied knowledge JSONL or Markdown files as artifacts. Artifact and dataset paths must be relative to the active session directory, never absolute local paths. Select the precise locator that supports the claim, then call tau_cite and place its returned [[cite:occurrenceId]] marker after the claim. Never use local paths as citations or write reference lists into Markdown reports.`,
+When a final answer relies on knowledge, attachments, task artifacts, or queried datasets, call tau_resolve_citation first. For a queried dataset, persist the supporting result as a session-relative CSV, JSON, JSONL, or spreadsheet, resolve it through the datasets parameter with its assetId, then call tau_cite. Use knowledgeIds for knowledge cards so the Host can retain the original PDF or HTML source; do not cite copied knowledge JSONL or Markdown files as artifacts. Artifact and dataset paths must be relative to the active session directory, never absolute local paths. Select the precise locator that supports the claim, then call tau_cite and place its returned [[cite:occurrenceId]] marker after the claim. Never use local paths as citations or write reference lists into Markdown reports.`,
   }));
 
   pi.registerTool({

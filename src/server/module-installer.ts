@@ -118,20 +118,36 @@ export class ModuleInstaller {
     return migrated;
   }
 
-  sources(): ModuleSource[] {
+  catalog() {
     if (!fs.existsSync(this.modulesDir)) return [];
-    const sources: ModuleSource[] = [];
+    const versions: Array<{ id: string; version: string; manifest: ModuleManifest; source: ModuleSource }> = [];
     for (const entry of fs.readdirSync(this.modulesDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
       const moduleRoot = path.join(this.modulesDir, entry.name);
-      const versions = fs.readdirSync(moduleRoot, { withFileTypes: true })
-        .filter((candidate: { isDirectory(): boolean; name: string }) => candidate.isDirectory() && fs.existsSync(path.join(moduleRoot, candidate.name, 'manifest.json')))
-        .map((candidate: { name: string }) => candidate.name);
-      if (!versions.length) continue;
-      const version = newestVersion(versions);
-      sources.push({ manifestPath: path.join(moduleRoot, version, 'manifest.json'), packageRoot: path.join(moduleRoot, version), origin: 'installed', moduleId: entry.name });
+      for (const candidate of fs.readdirSync(moduleRoot, { withFileTypes: true })) {
+        const manifestPath = path.join(moduleRoot, candidate.name, 'manifest.json');
+        if (!candidate.isDirectory() || !fs.existsSync(manifestPath)) continue;
+        const manifest = readManifest(manifestPath);
+        if (manifest.id !== entry.name || manifest.version !== candidate.name) throw new Error(`Installed Module path does not match manifest: ${entry.name}/${candidate.name}`);
+        versions.push({ id: manifest.id, version: manifest.version, manifest, source: { manifestPath, packageRoot: path.dirname(manifestPath), origin: 'installed', moduleId: manifest.id } });
+      }
     }
-    return sources;
+    return versions.sort((left, right) => left.id.localeCompare(right.id) || versionParts(left.version).join('.').localeCompare(versionParts(right.version).join('.')));
+  }
+
+  sources(): ModuleSource[] {
+    const byId = new Map<string, ReturnType<ModuleInstaller['catalog']>>();
+    for (const entry of this.catalog()) byId.set(entry.id, [...(byId.get(entry.id) || []), entry]);
+    return [...byId.values()].map((entries) => entries.find((entry) => entry.version === newestVersion(entries.map((entry) => entry.version)))!.source);
+  }
+
+  sourcesForSelections(selections: Array<{ id: string; version: string }>): ModuleSource[] {
+    const catalog = this.catalog();
+    return selections.map((selection) => {
+      const entry = catalog.find((candidate) => candidate.id === selection.id && candidate.version === selection.version);
+      if (!entry) throw new Error(`Selected Module version is not installed: ${selection.id}@${selection.version}`);
+      return entry.source;
+    });
   }
 
   install(source: string, kind: InstallKind = 'module') {

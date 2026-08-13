@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "3.0.6",
+  "version": "3.0.7",
   "description": "TransportX Traffic Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
@@ -57,6 +57,9 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "npm run build && node --test",
     "test:pi-smoke": "npm run build:server && node scripts/pi-rpc-smoke.mjs",
+    "eval:traffic": "npm run build && node scripts/eval/run-traffic-agent-eval.mjs --mode headless",
+    "eval:traffic:tasks": "npm run build && node scripts/eval/run-traffic-agent-eval.mjs --mode headless --kind task",
+    "eval:traffic:grade": "node scripts/eval/grade-traffic-agent-eval.mjs",
     "test:react-smoke": "npm run build && node scripts/react-smoke.mjs",
     "test:desktop-smoke": "npm run build && node scripts/desktop-smoke.mjs"
   },

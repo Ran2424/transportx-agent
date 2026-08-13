@@ -6,11 +6,14 @@ import type { LiveSessionManager, PiRpcSession } from './sessions.js';
 import type { SessionAttachmentSource } from '../contracts/attachments.js';
 import { ServerRouter } from './router.js';
 import type { CitationService } from './citation-service.js';
+import type { SpatialAnalysisService } from './spatial-analysis-service.js';
+import { parseSessionProfileStructured } from '../contracts/index.js';
 
 type ApiRouteServices = {
   sessions: LiveSessionManager;
   snapshotSchemaVersion: number;
   health(): JsonRecord;
+  sessionOptions(): JsonRecord;
   json(res: ServerResponse, status: number, data: unknown): void;
   errorMessage(error: unknown): string;
   errorStatus(error: unknown): number;
@@ -37,20 +40,24 @@ type ApiRouteServices = {
   uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource): Promise<unknown[]>;
   deleteAttachment(cwd: string, id: string): void;
   citation: CitationService;
+  spatial: SpatialAnalysisService;
 };
 
 export function createApiRouter(services: ApiRouteServices) {
   const router = new ServerRouter(services);
   router
     .get('/api/health', ({ res, deps }) => deps.json(res, 200, deps.health()))
+    .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))
     .get('/api/live-sessions', ({ res, deps }) => deps.json(res, 200, { sessions: deps.sessions.list() }))
     .post('/api/live-sessions', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const name = typeof body.name === 'string' ? body.name.trim() : '';
-        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null });
-        deps.json(res, 200, { session: session.metadata() });
-      } catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
+        const profile = body.profile === undefined ? undefined : parseSessionProfileStructured(body.profile);
+        if (profile && !profile.ok) return deps.json(res, 400, { error: profile.diagnostics.map((item) => item.message).join('; '), diagnostics: profile.diagnostics });
+        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null, ...(profile?.ok ? { profile: profile.value } : {}) });
+        deps.json(res, 200, { session: session.metadata(), ...(body.profile === undefined ? { diagnostics: [{ code: 'profile_compat_default', path: 'profile', severity: 'warning', message: 'profile was omitted; the current Module selection was frozen as compat-default.' }] } : {}) });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
     })
     .post('/api/live-sessions/resume', async ({ req, res, deps }) => {
       try {
@@ -66,9 +73,9 @@ export function createApiRouter(services: ApiRouteServices) {
         const entries = deps.readSessionEntries(resolvedFile) as JsonRecord[];
         const sessionName = deps.deriveSessionName(entries);
         const reusedPending = deps.sessions.hasPendingResume(resolvedFile);
-        const session = await deps.sessions.resume({ sessionFile: resolvedFile, cwd, model: body.model || '', entries, sessionName });
+        const session = await deps.sessions.resume({ sessionFile: resolvedFile, cwd, model: body.model || '', entries, sessionName, useCurrentConfiguration: body.useCurrentConfiguration === true });
         deps.json(res, 200, { session: session.metadata(), ...(reusedPending ? { reused: true } : {}) });
-      } catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
     })
     .get(/^\/api\/live-sessions\/([^/]+)\/snapshot$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
@@ -208,6 +215,16 @@ export function createApiRouter(services: ApiRouteServices) {
         if (typeof body.locatorId !== 'string' || typeof body.containerType !== 'string' || typeof body.containerId !== 'string') return deps.json(res, 400, { error: 'locatorId, containerType and containerId are required' });
         const result = deps.citation.cite(session, { locatorId: body.locatorId, containerType: body.containerType as import('../contracts/citation.js').CitationContainerType, containerId: body.containerId, ...(typeof body.anchorId === 'string' ? { anchorId: body.anchorId } : {}), ...(typeof body.role === 'string' ? { role: body.role as import('../contracts/citation.js').CitationRole } : {}) });
         deps.json(res, 200, { occurrence: result.occurrence, citations: result.envelope });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+        const token = typeof body.token === 'string' ? body.token : '';
+        const session = deps.sessions.get(sessionId);
+        if (!session || !token || token !== session.spatialToken) return deps.json(res, 403, { error: 'Spatial Analysis Host access denied' });
+        deps.json(res, 200, { result: await deps.spatial.analyze(session, body) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/rpc', async ({ req, res, deps }) => {

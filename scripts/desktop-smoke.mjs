@@ -33,7 +33,8 @@ try {
   const title = await window.title();
   const brand = await window.locator('.workspace-brand').innerText();
   if (title !== 'TransportX Traffic Agent') throw new Error(`Unexpected title: ${title}`);
-  if (!brand.includes('TRANSPORTX') || !brand.includes('TRAFFIC AGENT')) throw new Error(`Unexpected brand: ${brand}`);
+  const normalizedBrand = brand.toUpperCase();
+  if (!normalizedBrand.includes('TRANSPORTX') || !normalizedBrand.includes('TRAFFIC AGENT')) throw new Error(`Unexpected brand: ${brand}`);
   const preferences = await app.evaluate(({ BrowserWindow }) => {
     const current = BrowserWindow.getAllWindows()[0];
     return current.webContents.getLastWebPreferences();
@@ -52,12 +53,12 @@ try {
   const pdf = Buffer.from(await pdfResponse.arrayBuffer());
   if (!pdfResponse.ok || pdf.subarray(0, 4).toString() !== '%PDF') throw new Error(`Desktop PDF bridge failed: ${pdfResponse.status} ${pdf.toString('utf8', 0, 200)}`);
   await window.getByRole('button', { name: '打开设置' }).click();
-  const settings = window.getByRole('dialog', { name: '设置' });
+  const settings = window.getByTestId('settings-workspace');
   await settings.waitFor();
   await settings.getByText(dataRoot, { exact: true }).waitFor();
   await settings.getByText(path.join(dataRoot, 'modules'), { exact: true }).waitFor();
-  await settings.getByLabel('添加类型').waitFor();
-  await settings.getByLabel('本地资源路径').waitFor();
+  await settings.getByRole('button', { name: '模块', exact: true }).click();
+  await settings.getByLabel('模块包路径').waitFor();
   await window.keyboard.press('Escape');
   await window.getByRole('button', { name: '新建交通任务' }).first().click();
   const newTask = window.getByRole('dialog', { name: '新建交通任务' });

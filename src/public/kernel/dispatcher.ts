@@ -54,6 +54,9 @@ export function createDispatcher(stores: KernelStores): Dispatch {
       case 'session/snapshotReceived':
         stores.session.applySnapshot(action.sessionId, action.snapshot);
         stores.conversation.hydrate(action.sessionId, action.snapshot);
+        for (const request of action.snapshot.pendingExtensionUiRequests || []) {
+          stores.extensionUi.requested(action.sessionId, request, stores.session.get().activeSessionId);
+        }
         break;
 
       case 'conversation/streamStarted':
@@ -80,7 +83,7 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         stores.conversation.promptSent(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds });
         break;
       case 'conversation/promptQueued':
-        stores.conversation.promptQueued(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds });
+        stores.conversation.promptQueued(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, clientCommandId: action.clientCommandId });
         break;
       case 'conversation/queueItemRemoved':
         stores.conversation.removeQueued(action.sessionId, action.index);

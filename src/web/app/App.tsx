@@ -224,6 +224,17 @@ export function App() {
       kernel.dispatch({ type: 'session/created', session: resumed });
       await selectSession(resumed.id);
     } catch (cause) {
+      if ((cause as { code?: string })?.code === 'legacy_plan_requires_confirmation' && window.confirm(t('app.confirm.resumeCurrentConfiguration'))) {
+        try {
+          const resumed = await kernel.commands.session.resume({ filePath: session.filePath, ...(project.path ? { cwd: project.path } : {}), useCurrentConfiguration: true });
+          kernel.dispatch({ type: 'session/created', session: resumed });
+          await selectSession(resumed.id);
+          return;
+        } catch (retryCause) {
+          setNotice((retryCause as { message?: string })?.message || t('app.error.resumeSession'));
+          return;
+        }
+      }
       setNotice((cause as { message?: string })?.message || t('app.error.resumeSession'));
     } finally {
       setSessionLoading(false);

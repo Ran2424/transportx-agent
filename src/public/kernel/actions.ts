@@ -46,7 +46,7 @@ export type AppAction =
   | { type: 'conversation/streamEnded'; sessionId: string }
   | { type: 'conversation/messageAppended'; sessionId: string; entry: SessionEntry }
   | { type: 'conversation/promptSent'; sessionId: string; message: string; attachmentIds?: string[] }
-  | { type: 'conversation/promptQueued'; sessionId: string; message: string; attachmentIds?: string[] }
+  | { type: 'conversation/promptQueued'; sessionId: string; message: string; attachmentIds?: string[]; clientCommandId: string }
   | { type: 'conversation/queueItemRemoved'; sessionId: string; index: number }
   | { type: 'conversation/queueDrained'; sessionId: string }
   // tool execution
