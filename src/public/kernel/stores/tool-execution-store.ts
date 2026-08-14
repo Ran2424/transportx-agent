@@ -37,18 +37,24 @@ export class ToolExecutionStore {
   }
 
   started(sessionId: string, execution: ToolExecution) {
-    this.patch(sessionId, execution.toolCallId, execution);
+    this.patch(sessionId, execution.toolCallId, { ...execution, startedAt: execution.startedAt ?? Date.now() });
   }
 
   updated(sessionId: string, toolCallId: string, partialResult: unknown) {
     this.patch(sessionId, toolCallId, { partialResult });
   }
 
-  ended(sessionId: string, toolCallId: string, update: { toolName?: string; result?: unknown; isError?: boolean }) {
+  ended(sessionId: string, toolCallId: string, update: { toolName?: string; result?: unknown; isError?: boolean; startedAt?: number; endedAt?: number; durationMs?: number }) {
+    const existing = this.store.get().bySession[sessionId]?.[toolCallId];
+    const endedAt = update.endedAt ?? Date.now();
+    const startedAt = update.startedAt ?? existing?.startedAt;
     this.patch(sessionId, toolCallId, {
       toolName: update.toolName,
       result: update.result,
       isError: update.isError,
+      startedAt,
+      endedAt,
+      durationMs: update.durationMs ?? (startedAt === undefined ? undefined : Math.max(0, endedAt - startedAt)),
       status: update.isError ? 'error' : 'completed',
     });
   }

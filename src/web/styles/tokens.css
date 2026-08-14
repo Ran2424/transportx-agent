@@ -42,8 +42,8 @@
   --tx-font-brand: "Bauhaus 93", Futura, "Arial Rounded MT Bold", sans-serif;
 
   /* 工作台面板状态切换：克制、连贯，避免打断分析节奏 */
-  --tx-motion-panel: 240ms;
-  --tx-motion-map-focus: 420ms;
+  --tx-motion-panel: 320ms;
+  --tx-motion-map-focus: 400ms;
   --tx-motion-ease: cubic-bezier(.16, 1, .3, 1);
 
   /* 字号（功能文字下限 11px） */

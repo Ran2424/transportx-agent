@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { createAgentCommands, createExtensionUiCommands } = require('../public/kernel/commands.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
+const { ToolExecutionStore } = require('../public/kernel/stores/tool-execution-store.js');
 
 function deps(handler: (command: Record<string, unknown>) => unknown, streaming = false) {
   const commands: Record<string, unknown>[] = [];
@@ -76,4 +77,44 @@ test('an identical prompt remains optimistic when the latest authoritative messa
   store.streamCompleted('session-1', { role: 'assistant', content: '上一次结果' });
   store.promptSent('session-1', { message: '再次分析' });
   assert.equal(store.get().bySession['session-1'].live.optimisticPrompt?.message, '再次分析');
+});
+
+test('thinking duration freezes on the first answer text and stays on the completed message', () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const store = new ConversationStore();
+    store.messageStarted('session-1', { role: 'assistant', content: [] });
+    now = 2_500;
+    store.streamDelta('session-1', 'thinking', '分析路段状态');
+    now = 4_000;
+    store.streamDelta('session-1', 'text', '结论');
+    assert.equal(store.get().bySession['session-1'].live.thinkingDurationMs, 3_000);
+
+    now = 8_000;
+    store.streamCompleted('session-1', { role: 'assistant', content: [{ type: 'thinking', thinking: '分析路段状态' }, { type: 'text', text: '结论' }] });
+    const message = store.get().bySession['session-1'].snapshotEntries.at(-1)?.message;
+    const thinking = Array.isArray(message?.content) ? message.content.find((block: { type?: string; durationMs?: number }) => block.type === 'thinking') : undefined;
+    assert.equal(thinking?.durationMs, 3_000);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('tool execution duration freezes at completion', () => {
+  const originalNow = Date.now;
+  let now = 2_000;
+  Date.now = () => now;
+  try {
+    const store = new ToolExecutionStore();
+    store.started('session-1', { toolCallId: 'tool-1', toolName: 'read', status: 'running' });
+    now = 5_500;
+    store.ended('session-1', 'tool-1', { toolName: 'read', result: 'ok' });
+    const execution = store.get().bySession['session-1']['tool-1'];
+    assert.equal(execution.durationMs, 3_500);
+    assert.equal(execution.status, 'completed');
+  } finally {
+    Date.now = originalNow;
+  }
 });

@@ -21,6 +21,9 @@ export type ToolExecution = {
   partialResult?: unknown;
   result?: unknown;
   isError?: boolean;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
   status: 'running' | 'completed' | 'error';
 };
 
@@ -52,7 +55,7 @@ export type AppAction =
   // tool execution
   | { type: 'tool/started'; sessionId: string; execution: ToolExecution }
   | { type: 'tool/updated'; sessionId: string; toolCallId: string; partialResult: unknown }
-  | { type: 'tool/ended'; sessionId: string; toolCallId: string; toolName?: string; result?: unknown; isError?: boolean }
+  | { type: 'tool/ended'; sessionId: string; toolCallId: string; toolName?: string; result?: unknown; isError?: boolean; startedAt?: number; endedAt?: number; durationMs?: number }
   // extension UI
   | { type: 'extensionUi/requested'; sessionId: string | null; request: AppEvent }
   | { type: 'extensionUi/resolved'; sessionId: string | null; requestId?: string }
