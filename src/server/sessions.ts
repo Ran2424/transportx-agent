@@ -22,8 +22,9 @@ import {
 } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import { piProcessEnv } from './pi-runtime.js';
-import { SessionProjection } from './session-projection.js';
+import { readSessionFileEntries, SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
+import { TimingMetricsStore } from './timing-metrics.js';
 import { signalProcessTree } from './process-tree.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import {
@@ -67,6 +68,7 @@ type PiRpcMessage = PiRpcPayload & {
   data?: PiRpcPayload;
   result?: PiRpcPayload;
   message?: PiMessage;
+  assistantMessageEvent?: { type?: string; delta?: string };
 };
 
 function isoTimestamp(value: unknown) {
@@ -244,6 +246,10 @@ export class PiRpcSession {
   spatialToken: string;
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
+  timingMetrics: TimingMetricsStore;
+  assistantThinkingStartedAt: number | null;
+  assistantThinkingDurationMs: number | null;
+  toolStartedAt: Map<string, number>;
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -255,7 +261,8 @@ export class PiRpcSession {
     this.createdAt = new Date().toISOString();
     this.lastActiveAt = this.createdAt;
     this.isStreaming = false;
-    this.projection = new SessionProjection(opts.entries || [], readAttachmentMessageRefs(this.cwd));
+    this.timingMetrics = new TimingMetricsStore(this.cwd);
+    this.projection = new SessionProjection(this.timingMetrics.enrichEntries(opts.entries || []), readAttachmentMessageRefs(this.cwd));
     this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
@@ -280,6 +287,9 @@ export class PiRpcSession {
     this.spatialToken = crypto.randomUUID();
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.pendingExtensionUiRequests = new Map();
+    this.assistantThinkingStartedAt = null;
+    this.assistantThinkingDurationMs = null;
+    this.toolStartedAt = new Map();
     this.applyLatestBridgeEnvelope();
   }
 
@@ -505,6 +515,42 @@ export class PiRpcSession {
   handleEvent(event: PiRpcMessage) {
     this.touch(false);
     const type = event.type;
+    const now = Date.now();
+    if (type === 'message_start' && event.message?.role === 'assistant') {
+      this.assistantThinkingStartedAt = now;
+      this.assistantThinkingDurationMs = null;
+    }
+    if (type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && this.assistantThinkingStartedAt !== null && this.assistantThinkingDurationMs === null) {
+      this.assistantThinkingDurationMs = Math.max(0, now - this.assistantThinkingStartedAt);
+    }
+    if (type === 'tool_execution_start' && typeof event.toolCallId === 'string' && event.toolCallId) {
+      this.toolStartedAt.set(event.toolCallId, now);
+      event.startedAt = now;
+    }
+    if (type === 'tool_execution_end' && typeof event.toolCallId === 'string' && event.toolCallId) {
+      const startedAt = this.toolStartedAt.get(event.toolCallId);
+      if (startedAt !== undefined) {
+        const durationMs = Math.max(0, now - startedAt);
+        event.startedAt = startedAt;
+        event.endedAt = now;
+        event.durationMs = durationMs;
+        this.timingMetrics.recordTool(event.toolCallId, startedAt, now, durationMs);
+        this.toolStartedAt.delete(event.toolCallId);
+      }
+    }
+    if (type === 'message_end' && event.message?.role === 'assistant') {
+      const startedAt = this.assistantThinkingStartedAt;
+      const hasThinking = Array.isArray(event.message.content) && event.message.content.some((block) => block.type === 'thinking');
+      if (startedAt !== null && hasThinking) {
+        const durationMs = this.assistantThinkingDurationMs ?? Math.max(0, now - startedAt);
+        event.message = this.timingMetrics.recordThinking(event.message, startedAt, startedAt + durationMs, durationMs);
+      }
+      this.assistantThinkingStartedAt = null;
+      this.assistantThinkingDurationMs = null;
+    }
+    if (type === 'message_end' && event.message?.role === 'toolResult') {
+      event.message = this.timingMetrics.enrichToolResult(event.message);
+    }
     if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
     // agent_end is only a single low-level run. Keep the live session marked
@@ -600,7 +646,8 @@ export class PiRpcSession {
   }
 
   reconcileProjection() {
-    if (!this.projection.reconcile(this.sessionFile)) return false;
+    if (!this.sessionFile || !fs.existsSync(this.sessionFile)) return false;
+    this.projection.replace(this.timingMetrics.enrichEntries(readSessionFileEntries(this.sessionFile)));
     const lastConversationAt = latestConversationTimestamp(this.projection.entries);
     if (lastConversationAt) this.lastConversationAt = lastConversationAt;
     this.applyLatestBridgeEnvelope();

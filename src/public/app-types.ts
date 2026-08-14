@@ -114,6 +114,7 @@ export type AppMessage = {
   details?: unknown;
   isError?: boolean;
   timestamp?: number;
+  durationMs?: number;
 };
 
 export type AppEvent = {
@@ -128,6 +129,9 @@ export type AppEvent = {
   partialResult?: unknown;
   result?: unknown;
   isError?: boolean;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
   method?: string;
   id?: string;
   name?: string;
