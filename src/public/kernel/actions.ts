@@ -24,7 +24,8 @@ export type ToolExecution = {
   startedAt?: number;
   endedAt?: number;
   durationMs?: number;
-  status: 'running' | 'completed' | 'error';
+  argumentChars?: number;
+  status: 'preparing' | 'running' | 'completed' | 'error';
 };
 
 export type StreamChannel = 'text' | 'thinking';
@@ -53,6 +54,8 @@ export type AppAction =
   | { type: 'conversation/queueItemRemoved'; sessionId: string; index: number }
   | { type: 'conversation/queueDrained'; sessionId: string }
   // tool execution
+  | { type: 'tool/preparing'; sessionId: string; execution: ToolExecution }
+  | { type: 'tool/argumentsUpdated'; sessionId: string; toolCallId: string; toolName?: string; args?: Record<string, unknown>; argumentChars: number }
   | { type: 'tool/started'; sessionId: string; execution: ToolExecution }
   | { type: 'tool/updated'; sessionId: string; toolCallId: string; partialResult: unknown }
   | { type: 'tool/ended'; sessionId: string; toolCallId: string; toolName?: string; result?: unknown; isError?: boolean; startedAt?: number; endedAt?: number; durationMs?: number }
