@@ -122,7 +122,13 @@ export type AppEvent = {
   sessionId?: string;
   session?: LiveSession;
   message?: AppMessage | string;
-  assistantMessageEvent?: { type?: string; delta?: string };
+  assistantMessageEvent?: {
+    type?: string;
+    delta?: string;
+    contentIndex?: number;
+    partial?: AppMessage;
+    toolCall?: MessageContentBlock;
+  };
   toolCallId?: string;
   toolName?: string;
   args?: Record<string, unknown>;

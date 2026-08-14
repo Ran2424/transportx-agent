@@ -40,6 +40,20 @@ export class ToolExecutionStore {
     this.patch(sessionId, execution.toolCallId, { ...execution, startedAt: execution.startedAt ?? Date.now() });
   }
 
+  preparing(sessionId: string, execution: ToolExecution) {
+    this.patch(sessionId, execution.toolCallId, { ...execution, status: 'preparing', argumentChars: execution.argumentChars ?? 0 });
+  }
+
+  argumentsUpdated(sessionId: string, toolCallId: string, update: { toolName?: string; args?: Record<string, unknown>; argumentChars: number }) {
+    const existing = this.store.get().bySession[sessionId]?.[toolCallId];
+    this.patch(sessionId, toolCallId, {
+      toolName: update.toolName ?? existing?.toolName,
+      args: update.args ?? existing?.args,
+      argumentChars: (existing?.argumentChars ?? 0) + update.argumentChars,
+      status: existing?.status === 'running' ? 'running' : 'preparing',
+    });
+  }
+
   updated(sessionId: string, toolCallId: string, partialResult: unknown) {
     this.patch(sessionId, toolCallId, { partialResult });
   }

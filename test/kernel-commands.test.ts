@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createAgentCommands, createExtensionUiCommands } = require('../public/kernel/commands.js');
+const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
 const { ToolExecutionStore } = require('../public/kernel/stores/tool-execution-store.js');
 
@@ -116,5 +117,102 @@ test('tool execution duration freezes at completion', () => {
     assert.equal(execution.status, 'completed');
   } finally {
     Date.now = originalNow;
+  }
+});
+
+test('kernel batches text deltas to one animation frame and flushes before message completion', () => {
+  const animationGlobal = globalThis as typeof globalThis & {
+    requestAnimationFrame?: (callback: (time: number) => void) => number;
+    cancelAnimationFrame?: (frame: number) => void;
+  };
+  const originalRequestAnimationFrame = animationGlobal.requestAnimationFrame;
+  const originalCancelAnimationFrame = animationGlobal.cancelAnimationFrame;
+  let frameCallback: ((time: number) => void) | null = null;
+  let listener: ((signal: Record<string, unknown>) => void) | null = null;
+  animationGlobal.requestAnimationFrame = (callback) => {
+    frameCallback = callback;
+    return 1;
+  };
+  animationGlobal.cancelAnimationFrame = () => {};
+  const kernel = createAppKernel({
+    transport: {
+      send() {},
+      subscribe(next: (signal: Record<string, unknown>) => void) {
+        listener = next;
+        return () => {};
+      },
+    },
+    http: async () => ({ ok: true, status: 200, async json() { return {}; } }),
+  });
+  const emit = (event: Record<string, unknown>) => listener?.({ kind: 'message', message: { type: 'event', sessionId: 'session-1', event } });
+  try {
+    emit({ type: 'agent_start' });
+    emit({ type: 'message_start', message: { role: 'assistant', content: [] } });
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '长' } });
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '文本' } });
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '流' } });
+    assert.equal(kernel.stores.conversation.get().bySession['session-1'].live.streamingText, '');
+
+    assert.ok(frameCallback);
+    frameCallback!(16);
+    assert.equal(kernel.stores.conversation.get().bySession['session-1'].live.streamingText, '长文本流');
+
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '结束' } });
+    emit({ type: 'message_end', message: { role: 'assistant', content: '长文本流结束' } });
+    const finalMessage = kernel.stores.conversation.get().bySession['session-1'].snapshotEntries.at(-1)?.message;
+    assert.equal(finalMessage?.content, '长文本流结束');
+  } finally {
+    kernel.dispose();
+    animationGlobal.requestAnimationFrame = originalRequestAnimationFrame;
+    animationGlobal.cancelAnimationFrame = originalCancelAnimationFrame;
+  }
+});
+
+test('kernel projects streamed tool arguments before execution without exposing partial JSON', () => {
+  const animationGlobal = globalThis as typeof globalThis & {
+    requestAnimationFrame?: (callback: (time: number) => void) => number;
+    cancelAnimationFrame?: (frame: number) => void;
+  };
+  const originalRequestAnimationFrame = animationGlobal.requestAnimationFrame;
+  const originalCancelAnimationFrame = animationGlobal.cancelAnimationFrame;
+  let frameCallback: ((time: number) => void) | null = null;
+  let listener: ((signal: Record<string, unknown>) => void) | null = null;
+  animationGlobal.requestAnimationFrame = (callback) => {
+    frameCallback = callback;
+    return 1;
+  };
+  animationGlobal.cancelAnimationFrame = () => {};
+  const kernel = createAppKernel({
+    transport: {
+      send() {},
+      subscribe(next: (signal: Record<string, unknown>) => void) {
+        listener = next;
+        return () => {};
+      },
+    },
+    http: async () => ({ ok: true, status: 200, async json() { return {}; } }),
+  });
+  const emit = (event: Record<string, unknown>) => listener?.({ kind: 'message', message: { type: 'event', sessionId: 'session-1', event } });
+  const partial = (args: Record<string, unknown>) => ({ role: 'assistant', content: [{ type: 'toolCall', id: 'write-1', name: 'write', arguments: args }] });
+  try {
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 0, partial: partial({}) } });
+    assert.equal(kernel.stores.toolExecution.get().bySession['session-1']['write-1'].status, 'preparing');
+
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', delta: '{"path":', contentIndex: 0, partial: partial({}) } });
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', delta: '"report.md"}', contentIndex: 0, partial: partial({ path: 'report.md' }) } });
+    assert.ok(frameCallback);
+    frameCallback!(16);
+    const preparing = kernel.stores.toolExecution.get().bySession['session-1']['write-1'];
+    assert.equal(preparing.argumentChars, 20);
+    assert.deepEqual(preparing.args, { path: 'report.md' });
+
+    emit({ type: 'tool_execution_start', toolCallId: 'write-1', toolName: 'write', args: { path: 'report.md' } });
+    const running = kernel.stores.toolExecution.get().bySession['session-1']['write-1'];
+    assert.equal(running.status, 'running');
+    assert.equal(running.argumentChars, 20);
+  } finally {
+    kernel.dispose();
+    animationGlobal.requestAnimationFrame = originalRequestAnimationFrame;
+    animationGlobal.cancelAnimationFrame = originalCancelAnimationFrame;
   }
 });

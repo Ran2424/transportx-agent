@@ -15,7 +15,7 @@
 //   { "delay": ms }
 //   { "event": {...} }                                  原样发出一条 pi 事件
 //   { "entryAppended": {entry} }                        发 entry_appended 并写入会话文件
-//   { "streamText": { text, chunks, delayMs, thinking? } }
+//   { "streamText": { text, repeat?, chunks, delayMs, thinking? } }
 //   { "tool": { name, args?, result, partialResults?, isError? } }
 //   { "ui": { method: select|confirm|input, id, title, options?|message? } }
 //   { "writeFile": { path, json?|content?|base64? } }   相对会话 cwd 写文件（geo 资源等）
@@ -185,7 +185,8 @@ async function runSteps(steps, promptMessage) {
     }
 
     if (step.streamText) {
-      const { text, thinking } = step.streamText;
+      const { thinking } = step.streamText;
+      const text = String(step.streamText.text ?? '').repeat(Math.max(1, step.streamText.repeat ?? 1));
       const chunks = step.streamText.chunks ?? 8;
       const delayMs = step.streamText.delayMs ?? 10;
       streamOpen = true;
