@@ -52,6 +52,53 @@ try {
   const requestedUrls = [];
   reactPage.on('pageerror', (error) => reactErrors.push(error.message));
   reactPage.on('request', (request) => requestedUrls.push(request.url()));
+
+  async function measureMotion(triggerSelector, targetSelector, metric, duration) {
+    const samples = await reactPage.evaluate(async ({ triggerSelector, targetSelector, metric, duration }) => {
+      const trigger = document.querySelector(triggerSelector);
+      const target = document.querySelector(targetSelector);
+      if (!(trigger instanceof HTMLElement) || !(target instanceof HTMLElement)) {
+        throw new Error(`Motion target unavailable: ${triggerSelector} -> ${targetSelector}`);
+      }
+      const read = () => {
+        const rect = target.getBoundingClientRect();
+        return metric === 'width' ? rect.width : rect.left;
+      };
+      const startedAt = performance.now();
+      const values = [{ time: 0, value: read() }];
+      trigger.click();
+      await new Promise((resolve) => {
+        const sample = (now) => {
+          values.push({ time: now - startedAt, value: read() });
+          if (now - startedAt >= duration) resolve();
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+      return values;
+    }, { triggerSelector, targetSelector, metric, duration });
+    return { duration, samples };
+  }
+
+  function assertSmoothMotion({ duration, samples }, direction, label) {
+    const first = samples[0].value;
+    const last = samples.at(-1).value;
+    const delta = last - first;
+    if ((direction === 'increasing' && delta < 20) || (direction === 'decreasing' && delta > -20)) {
+      throw new Error(`${label} did not travel in the expected direction: ${JSON.stringify({ first, last })}`);
+    }
+    for (let index = 1; index < samples.length; index += 1) {
+      const step = samples[index].value - samples[index - 1].value;
+      if ((direction === 'increasing' && step < -1) || (direction === 'decreasing' && step > 1)) {
+        throw new Error(`${label} reversed direction during its transition: ${JSON.stringify(samples.slice(Math.max(0, index - 2), index + 2))}`);
+      }
+    }
+    const settled = samples.filter((sample) => sample.time >= duration - 80).map((sample) => sample.value);
+    if (Math.max(...settled) - Math.min(...settled) > 1) {
+      throw new Error(`${label} did not settle cleanly: ${JSON.stringify(settled)}`);
+    }
+  }
+
   await reactPage.goto(baseUrl, { waitUntil: 'networkidle' });
   await reactPage.locator('[data-testid="react-shell"]').waitFor({ timeout: 10_000 });
   await reactPage.locator('[data-testid="agent-status"][data-state="connected"]').waitFor({ timeout: 10_000 });
@@ -73,6 +120,7 @@ try {
   await settings.getByText(ready.tempRoot, { exact: false }).first().waitFor();
   await settings.getByRole('button', { name: '模块', exact: true }).click();
   await settings.getByLabel('模块包路径').waitFor();
+  await settings.getByText('耗时统计', { exact: true }).waitFor();
   await settings.getByRole('button', { name: '常规', exact: true }).click();
   await settings.locator('[role="radio"][aria-checked="false"]').first().click();
   const selectedTheme = await reactPage.evaluate(() => document.documentElement.dataset.theme);
@@ -100,11 +148,14 @@ try {
   await reactPage.getByRole('option', { name: /工作台设置/ }).waitFor();
   await reactPage.keyboard.press('Escape');
 
-  async function createTask() {
+  async function createTask(name = '') {
     const previousCount = await reactPage.locator('.live-tab-select').count();
     await reactPage.getByRole('button', { name: '新建交通任务' }).first().click();
     const dialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
-    await dialog.getByLabel('任务名称').fill(`Smoke task ${previousCount + 1}`);
+    if (await dialog.getByText('任务类型', { exact: true }).count() || await dialog.getByText('预期交付', { exact: true }).count()) {
+      throw new Error('New task dialog should not expose task type or expected output fields');
+    }
+    if (name) await dialog.getByLabel('任务名称（可选）').fill(name);
     await dialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger').click();
     await dialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
     await dialog.getByRole('button', { name: '创建任务' }).click();
@@ -116,12 +167,12 @@ try {
   }
 
   const primaryTask = await createTask();
-  if (!/^\d{8}-\d{6}-Smoke-task-1(?:-\d+)?$/.test(path.basename(primaryTask.cwd))) {
-    throw new Error(`New task workspace should include the task name: ${primaryTask.cwd}`);
+  if (!/^\d{8}-\d{6}(?:-\d+)?$/.test(path.basename(primaryTask.cwd))) {
+    throw new Error(`Unnamed task workspace should use only its creation timestamp: ${primaryTask.cwd}`);
   }
   await reactPage.getByRole('button', { name: '新建交通任务' }).last().click();
   const secondDialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
-  await secondDialog.getByLabel('任务名称').fill('Smoke task 2');
+  await secondDialog.getByLabel('任务名称（可选）').fill('Smoke task 2');
   await secondDialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger').click();
   await secondDialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
   await secondDialog.getByRole('button', { name: '创建任务' }).click();
@@ -137,14 +188,40 @@ try {
   const activeWorkspaceWidth = await reactPage.locator('.agent-main-column').evaluate((node) => node.getBoundingClientRect().width);
   if (activeWorkspaceWidth < 600) throw new Error(`Active workspace width was not restored after settings (${activeWorkspaceWidth}px)`);
 
+  const sidebarClosedMotion = await measureMotion('button[aria-label="展开或收起会话侧栏"]', '.agent-main-column', 'left', 460);
+  assertSmoothMotion(sidebarClosedMotion, 'decreasing', 'Desktop sidebar close');
+  await reactPage.locator('[data-testid="session-sidebar"]:not(.is-open)').waitFor();
+  const sidebarOpenedMotion = await measureMotion('button[aria-label="展开或收起会话侧栏"]', '.agent-main-column', 'left', 460);
+  assertSmoothMotion(sidebarOpenedMotion, 'increasing', 'Desktop sidebar open');
+  await reactPage.locator('[data-testid="session-sidebar"].is-open').waitFor();
+
   // Conversation: React composer sends through the command port; optimistic
   // user message and streaming/final assistant rendering share the Kernel.
   const composer = reactPage.getByLabel('消息输入');
   await composer.fill('基线-happy');
   await composer.press('Enter');
   await reactPage.locator('.user-message', { hasText: '基线-happy' }).waitFor();
-  await reactPage.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).waitFor({ timeout: 10_000 });
-  const thinkingToggle = reactPage.locator('.thinking-toggle', { hasText: '思考过程' });
+  await reactPage.locator('.live-tab-select', { hasText: '基线-happy' }).waitFor({ timeout: 10_000 });
+  const activeThinking = reactPage.locator('.assistant-message.is-streaming .thinking-toggle', { hasText: '正在思考中' });
+  await activeThinking.waitFor({ timeout: 10_000 });
+  const clockSamples = await activeThinking.evaluate((node) => new Promise((resolve) => {
+    const values = [];
+    const startedAt = performance.now();
+    const sample = (now) => {
+      values.push(node.textContent?.trim() || '');
+      if (now - startedAt >= 220) resolve(values);
+      else requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }));
+  const visibleClockSamples = clockSamples.filter((value) => value.startsWith('正在思考中（'));
+  if (!visibleClockSamples.length || visibleClockSamples.some((value) => !/^正在思考中（\d+\.\d 秒）$/.test(value))) {
+    throw new Error(`Live thinking clock should always show one decimal place: ${JSON.stringify(clockSamples)}`);
+  }
+  if (new Set(visibleClockSamples).size < 2) throw new Error(`Live thinking clock did not update within 220ms: ${JSON.stringify(clockSamples)}`);
+  const baselineMessage = reactPage.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).last();
+  await baselineMessage.waitFor({ timeout: 10_000 });
+  const thinkingToggle = baselineMessage.locator('.thinking-toggle', { hasText: '已思考' });
   await thinkingToggle.waitFor();
   if (await thinkingToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Thinking block should be expanded by default');
   const thinkingChrome = await reactPage.locator('.thinking-block pre').evaluate((node) => {
@@ -154,6 +231,68 @@ try {
   if (thinkingChrome.background !== 'rgba(0, 0, 0, 0)' || thinkingChrome.border !== 'none') {
     throw new Error(`Thinking block should use plain gray text: ${JSON.stringify(thinkingChrome)}`);
   }
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+
+  await composer.fill('基线-long-stream');
+  await composer.press('Enter');
+  const longStream = reactPage.locator('.assistant-message.is-streaming .streaming-text');
+  await longStream.waitFor({ timeout: 10_000 });
+  const streamProbe = await reactPage.evaluate(async () => {
+    const thread = document.querySelector('.conversation-thread');
+    if (!thread) throw new Error('Conversation thread is unavailable');
+    const lengths = [];
+    const capture = () => {
+      const length = document.querySelector('.assistant-message.is-streaming .streaming-text')?.textContent?.length ?? 0;
+      if (length) lengths.push(length);
+    };
+    const observer = new MutationObserver(capture);
+    observer.observe(thread, { childList: true, characterData: true, subtree: true });
+    capture();
+    const startedAt = performance.now();
+    let previousFrame = startedAt;
+    let frames = 0;
+    let maxFrameGap = 0;
+    await new Promise((resolve) => {
+      const sample = (now) => {
+        frames += 1;
+        maxFrameGap = Math.max(maxFrameGap, now - previousFrame);
+        previousFrame = now;
+        if (now - startedAt >= 350) resolve();
+        else requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    observer.disconnect();
+    return { frames, maxFrameGap, lengths: [...new Set(lengths)] };
+  });
+  if (streamProbe.lengths.length < 4) throw new Error(`Long response did not render incrementally: ${JSON.stringify(streamProbe)}`);
+  if (streamProbe.frames < 8 || streamProbe.maxFrameGap > 150) throw new Error(`Long response blocked browser frames: ${JSON.stringify(streamProbe)}`);
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+  const completedLongMessage = reactPage.locator('.assistant-message').last();
+  const completedLongLength = await completedLongMessage.locator('.message-content').evaluate((node) => node.textContent?.length ?? 0);
+  if (completedLongLength < 40_000) throw new Error(`Long response was truncated after streaming (${completedLongLength} characters)`);
+
+  await settingsButton.click();
+  await settings.getByRole('button', { name: '常规', exact: true }).click();
+  const expandThinkingSwitch = settings.getByRole('switch', { name: '默认展开思考内容' });
+  if (await expandThinkingSwitch.getAttribute('aria-checked') !== 'true') throw new Error('Thinking content should default to expanded');
+  await expandThinkingSwitch.click();
+  if (await reactPage.evaluate(() => window.localStorage.getItem('tau-expand-thinking')) !== 'false') throw new Error('Collapsed thinking preference was not persisted');
+  await reactPage.keyboard.press('Escape');
+  await settings.waitFor({ state: 'hidden' });
+
+  await composer.fill('基线-happy-collapsed');
+  await composer.press('Enter');
+  await reactPage.locator('.assistant-message.is-streaming .thinking-toggle', { hasText: '正在思考中' }).waitFor({ timeout: 10_000 });
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+  const collapsedMessage = reactPage.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).last();
+  await collapsedMessage.waitFor({ timeout: 10_000 });
+  const collapsedThinking = collapsedMessage.locator('.thinking-toggle');
+  if (await collapsedThinking.getAttribute('aria-expanded') !== 'false') throw new Error('Thinking block should honor the collapsed preference');
+  if (!/^已思考（\d+\.\d 秒）$/.test((await collapsedThinking.textContent())?.trim() || '')) throw new Error(`Completed thinking duration was not shown with one decimal place: ${await collapsedThinking.textContent()}`);
+  if (await collapsedMessage.locator('.thinking-block pre').count()) throw new Error('Collapsed thinking text should not be rendered');
+  await collapsedThinking.click();
+  await collapsedMessage.locator('.thinking-block pre', { hasText: '用户在请求基线 happy path' }).waitFor();
   await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
 
   await reactPage.getByLabel('消息输入').fill('基线-citation-document');
@@ -262,6 +401,13 @@ try {
   if (await toolToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Running tool should be expanded');
   await runningTool.locator('.tool-status.completed').waitFor({ timeout: 10_000 });
   if (await toolToggle.getAttribute('aria-expanded') !== 'false') throw new Error('Completed tool should collapse automatically');
+  const toolDuration = (await runningTool.locator('.tool-duration').textContent())?.trim() || '';
+  if (!/^\d+\.\d 秒$/.test(toolDuration)) throw new Error(`Completed tool duration was not shown with one decimal place: ${toolDuration}`);
+  const timingSnapshot = await reactPage.evaluate(async (sessionId) => (await fetch(`/api/live-sessions/${sessionId}/snapshot`)).json(), primaryTask.id);
+  const timedThinking = timingSnapshot.entries.find((entry) => entry.message?.role === 'assistant' && entry.message.content?.some?.((block) => block.type === 'thinking' && typeof block.durationMs === 'number'));
+  const timedTool = timingSnapshot.entries.find((entry) => entry.message?.role === 'toolResult' && entry.message.toolName === 'read' && typeof entry.message.durationMs === 'number');
+  if (!timedThinking || !timedTool) throw new Error('Persisted timing metadata was not merged into the live snapshot');
+  if (!fs.existsSync(path.join(primaryTask.cwd, '.tau', 'timing-metrics.v1.json'))) throw new Error('Timing metadata sidecar was not persisted');
   await reactPage.evaluate(() => { document.documentElement.dataset.theme = 'sand'; });
   const toolChrome = await runningTool.evaluate((node) => {
     const card = getComputedStyle(node);
@@ -398,10 +544,12 @@ try {
     }
     if ((node.textContent || '').includes('PI TASK')) throw new Error('Task content still exposes the retired PI TASK label');
   });
-  await reactPage.getByRole('button', { name: '打开或关闭文件栏' }).click();
+  const filesOpenedMotion = await measureMotion('button[aria-label="打开或关闭文件栏"]', '.agent-main-column', 'width', 460);
+  assertSmoothMotion(filesOpenedMotion, 'decreasing', 'Desktop file panel open');
   await reactPage.locator('[data-testid="workspace-dock"].is-open').waitFor();
   await reactPage.locator('.workspace-file-list').waitFor();
-  await reactPage.getByTestId('workspace-dock').getByRole('button', { name: '关闭文件栏', exact: true }).click();
+  const filesClosedMotion = await measureMotion('[data-testid="workspace-dock"] button[aria-label="关闭文件栏"]', '.agent-main-column', 'width', 460);
+  assertSmoothMotion(filesClosedMotion, 'increasing', 'Desktop file panel close');
   await reactPage.locator('[data-testid="workspace-dock"]:not(.is-open)').waitFor();
   if (requestedUrls.some((url) => url.includes('geo-runtime-entry') || url.includes('maplibre'))) {
     throw new Error('Task feature loaded the Geo Runtime before the Geo workspace was activated');
@@ -484,7 +632,9 @@ try {
   if (!requestedUrls.some((url) => url.includes('geo-runtime-entry') || url.includes('maplibre'))) {
     throw new Error('Geo workspace did not load its runtime on demand');
   }
-  await geoView.getByRole('button', { name: '关闭地图视图', exact: true }).click();
+  const mapClosedMotion = await measureMotion('[data-testid="workspace-float-map"] button[aria-label="关闭地图视图"]', '.conversation-pane', 'left', 540);
+  assertSmoothMotion(mapClosedMotion, 'decreasing', 'Desktop map close');
+  await reactPage.locator('.agent-main-column:not(.is-map-focused)').waitFor();
 
   await triggerPrompt('React-dialog-confirm');
   const confirmDialog = reactPage.getByRole('dialog', { name: '确认发布报告' });

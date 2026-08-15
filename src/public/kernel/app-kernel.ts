@@ -59,6 +59,62 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   };
   const apply = createDispatcher(stores);
   const normalizer = createEventNormalizer({ getActiveSessionId: () => stores.session.get().activeSessionId });
+  const pendingStreamDeltas = new Map<string, Array<Extract<AppAction, { type: 'conversation/streamDelta' }>>>();
+  const pendingToolArguments = new Map<string, Extract<AppAction, { type: 'tool/argumentsUpdated' }>>();
+  let cancelScheduledFlush: (() => void) | null = null;
+
+  const flushBufferedActions = () => {
+    if (cancelScheduledFlush) cancelScheduledFlush();
+    cancelScheduledFlush = null;
+    for (const segments of pendingStreamDeltas.values()) {
+      for (const action of segments) apply(action);
+    }
+    pendingStreamDeltas.clear();
+    for (const action of pendingToolArguments.values()) apply(action);
+    pendingToolArguments.clear();
+  };
+
+  const scheduleBufferedFlush = () => {
+    if (cancelScheduledFlush) return;
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      const frame = globalThis.requestAnimationFrame(() => {
+        cancelScheduledFlush = null;
+        flushBufferedActions();
+      });
+      cancelScheduledFlush = () => globalThis.cancelAnimationFrame(frame);
+      return;
+    }
+    const timer = setTimeout(() => {
+      cancelScheduledFlush = null;
+      flushBufferedActions();
+    }, 16);
+    cancelScheduledFlush = () => clearTimeout(timer);
+  };
+
+  const bufferAction = (action: AppAction) => {
+    if (action.type === 'conversation/streamDelta') {
+      const segments = pendingStreamDeltas.get(action.sessionId) ?? [];
+      const previous = segments.at(-1);
+      if (previous?.channel === action.channel) previous.delta += action.delta;
+      else segments.push({ ...action });
+      pendingStreamDeltas.set(action.sessionId, segments);
+      scheduleBufferedFlush();
+      return true;
+    }
+    if (action.type === 'tool/argumentsUpdated') {
+      const key = `${action.sessionId}:${action.toolCallId}`;
+      const previous = pendingToolArguments.get(key);
+      pendingToolArguments.set(key, previous ? {
+        ...action,
+        toolName: action.toolName ?? previous.toolName,
+        args: action.args ?? previous.args,
+        argumentChars: previous.argumentChars + action.argumentChars,
+      } : action);
+      scheduleBufferedFlush();
+      return true;
+    }
+    return false;
+  };
 
   let commands: KernelCommands;
   const flushingSessions = new Set<string>();
@@ -113,7 +169,11 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   };
 
   const unsubscribe = transport.subscribe((signal) => {
-    for (const action of normalizer.normalizeSignal(signal)) apply(action);
+    for (const action of normalizer.normalizeSignal(signal)) {
+      if (bufferAction(action)) continue;
+      flushBufferedActions();
+      apply(action);
+    }
     flushQueuedPrompts();
     if (signal.kind !== 'message') return;
     const message = signal.message as { type?: unknown; sessionId?: unknown; event?: AppEvent } | null;
@@ -141,6 +201,10 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     },
     dispose() {
       unsubscribe();
+      if (cancelScheduledFlush) cancelScheduledFlush();
+      cancelScheduledFlush = null;
+      pendingStreamDeltas.clear();
+      pendingToolArguments.clear();
       uiListeners.clear();
     },
   };
