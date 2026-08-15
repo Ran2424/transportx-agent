@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "description": "TransportX Traffic Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
