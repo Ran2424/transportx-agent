@@ -6,7 +6,7 @@ import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
-import { modelReference } from '../../lib/formatting';
+import { formatContextWindow, modelReference } from '../../lib/formatting';
 import i18n from '../../i18n';
 
 type NewSessionDialogProps = {
@@ -19,7 +19,7 @@ type NewSessionDialogProps = {
 function normalizeModel(model: ModelRecord | string) {
   if (typeof model === 'string') return { value: model, label: model, metadata: '' };
   const reference = modelReference(model);
-  const context = model.contextWindow || model.context || model.context_window;
+  const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
   const abilities = [model.thinking ? i18n.t('model.ability.thinking') : '', model.images ? i18n.t('model.ability.images') : ''].filter(Boolean).join(' · ');
   return {
     value: reference,
@@ -57,6 +57,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
       .then(([items, options]) => {
         if (!current) return;
         setModels(items);
+        setModel(items.map(normalizeModel).find((item) => item.value)?.value || '');
         setModuleOptions(options.modules);
         setSelectedModules(Object.fromEntries(options.modules.filter((item) => item.selectedByDefault).map((item) => [item.id, item.version])));
       })

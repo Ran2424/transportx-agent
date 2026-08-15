@@ -17,6 +17,12 @@ export function modelReference(model: ModelRecord | string | null | undefined): 
   return provider && id ? `${provider}/${id}` : id;
 }
 
+export function formatContextWindow(value: string | number | null | undefined): string {
+  const tokens = Number(value);
+  if (!Number.isFinite(tokens) || tokens <= 0) return '';
+  return `${Math.round(tokens / 1_000)}K`;
+}
+
 export function compactModelLabel(session: LiveSession): string {
   const raw = session.modelLabel || session.modelSpec || modelReference(session.model) || i18n.t('common.default');
   return String(raw).replace(/^.*\//, '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
