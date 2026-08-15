@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createAgentCommands, createExtensionUiCommands } = require('../public/kernel/commands.js');
+const { createAgentCommands, createExtensionUiCommands, createPlatformCommands } = require('../public/kernel/commands.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
 
 function deps(handler: (command: Record<string, unknown>) => unknown, streaming = false) {
@@ -59,6 +59,22 @@ test('extension response remains pending until HTTP RPC acknowledges it', async 
   assert.deepEqual(fixture.actions, []);
   assert.equal(fixture.commands[0].type, 'extension_ui_response');
   assert.equal(typeof fixture.commands[0].clientCommandId, 'string');
+});
+
+test('platform model provider commands preserve provider credentials behind RPC ports', async () => {
+  const fixture = deps((command) => {
+    if (command.type === 'get_model_providers') return { type: 'response', success: true, data: { providers: [{ id: 'xiaomi-token-plan-cn', name: 'Xiaomi Token Plan', connected: false, credentialStored: false, authMethods: ['api_key'], modelCount: 2 }] } };
+    if (command.type === 'connect_model_provider') return { type: 'response', success: true, data: { provider: { id: command.provider, name: 'Xiaomi Token Plan', connected: true, credentialStored: true, authMethods: ['api_key'], modelCount: 2 } } };
+    return { type: 'response', success: true };
+  });
+  const platform = createPlatformCommands(fixture.value);
+  const providers = await platform.getModelProviders();
+  assert.equal(providers[0].id, 'xiaomi-token-plan-cn');
+  const connected = await platform.connectModelProvider('xiaomi-token-plan-cn', 'secret-key');
+  assert.equal(connected.credentialStored, true);
+  await platform.disconnectModelProvider('xiaomi-token-plan-cn');
+  assert.deepEqual(fixture.commands.map((command) => command.type), ['get_model_providers', 'connect_model_provider', 'disconnect_model_provider']);
+  assert.equal(fixture.commands[1].apiKey, 'secret-key');
 });
 
 test('authoritative user echo arriving before HTTP acknowledgement is not duplicated', () => {
