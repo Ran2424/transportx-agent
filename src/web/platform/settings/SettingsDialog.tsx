@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
-import type { PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
+import type { ModelProviderAccess, PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
 import { useLocale } from '../../i18n/LocaleProvider';
@@ -80,6 +80,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
+  const [modelProviders, setModelProviders] = useState<ModelProviderAccess[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [moduleSource, setModuleSource] = useState('');
   const [swatches, setSwatches] = useState<Record<ThemeId, string[]> | null>(null);
@@ -94,6 +95,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
       kernel.commands.platform.getAuth().then((value) => { if (current) setAuth(value); }),
       kernel.commands.platform.getOverview().then((value) => { if (current) setOverview(value); }),
       kernel.commands.platform.getAvailableModels(session?.id).then((value) => { if (current) setModels(value); }),
+      kernel.commands.platform.getModelProviders().then((value) => { if (current) setModelProviders(value); }),
     ];
     if (session) {
       requests.push(kernel.commands.agent.getState(session.id).then((state) => {
@@ -183,6 +185,25 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     }
   }
 
+  async function disconnectModelProvider(providerId: string, providerName: string) {
+    if (!window.confirm(t('settings.confirm.disconnectProvider', { name: providerName }))) return;
+    setBusy(`model-disconnect:${providerId}`);
+    setError('');
+    try {
+      await kernel.commands.platform.disconnectModelProvider(providerId);
+      const [nextModels, nextProviders] = await Promise.all([
+        kernel.commands.platform.getAvailableModels(),
+        kernel.commands.platform.getModelProviders(),
+      ]);
+      setModels(nextModels);
+      setModelProviders(nextProviders);
+    } catch (cause) {
+      setError((cause as { message?: string })?.message || t('settings.error.disconnectProvider'));
+    } finally {
+      setBusy('');
+    }
+  }
+
   const activeSection = section;
   const navigation = settingsSections.map((item) => ({ ...item, label: t(item.labelKey) }));
   const moduleLabels: Record<PlatformModule['type'], string> = { module: t('settings.module.package'), capability: t('settings.module.plugin'), domain: t('settings.module.domain') };
@@ -195,6 +216,13 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     (groups[model.provider] ||= []).push(model);
     return groups;
   }, {});
+  const providerMetadata = new Map(modelProviders.map((provider) => [provider.id, provider]));
+  const connectedProviders = Object.entries(modelsByProvider).map(([id, providerModels]) => ({
+    id,
+    models: providerModels,
+    metadata: providerMetadata.get(id),
+    name: providerMetadata.get(id)?.name || id,
+  })).sort((left, right) => left.name.localeCompare(right.name));
   let content: ReactNode;
 
   switch (activeSection) {
@@ -253,7 +281,17 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
         <section className="settings-section">
           <h2>{t('settings.modelAccess')}</h2>
           <div className="settings-row"><span><strong>{t('settings.connectedModels')}</strong><small>{t('settings.connectedModelsHelp')}</small></span><Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button></div>
-          {modelsLoading ? <div className="settings-loading" aria-label={t('settings.loadingModels')}><span /></div> : Object.keys(modelsByProvider).length ? <div className="model-provider-list">{Object.entries(modelsByProvider).map(([provider, providerModels]) => <section className="model-provider" key={provider}><h3>{provider}</h3>{providerModels.map((model) => <div className="model-provider-row" key={`${provider}:${model.name}`}><strong>{model.name}</strong>{model.details ? <small>{model.details}</small> : null}</div>)}</section>)}</div> : <p className="settings-empty">{t('settings.noConnectedModels')}</p>}
+          {modelsLoading ? <div className="settings-loading" aria-label={t('settings.loadingModels')}><span /></div> : connectedProviders.length ? <div className="model-provider-list">{connectedProviders.map((provider) => <details className="model-provider" key={provider.id}>
+            <summary>
+              <span className="model-provider-identity"><strong>{provider.name}</strong><code>{provider.id}</code></span>
+              <span className="model-provider-meta"><small>{t('settings.modelCount', { count: provider.models.length })}</small><i>{t('settings.providerConnected')}</i></span>
+            </summary>
+            <div className="model-provider-content">
+              {provider.models.map((model, index) => <div className="model-provider-row" key={`${provider.id}:${model.name}:${index}`}><strong>{model.name}</strong>{model.details ? <small>{model.details}</small> : null}</div>)}
+              {provider.metadata?.credentialStored ? <div className="model-provider-actions"><Button type="button" variant="quiet" disabled={busy === `model-disconnect:${provider.id}`} onClick={() => disconnectModelProvider(provider.id, provider.name)}>{t('settings.disconnectProvider')}</Button></div> : null}
+            </div>
+          </details>)}</div> : <p className="settings-empty">{t('settings.noConnectedModels')}</p>}
+          <p className="settings-model-restart-note">{t('settings.modelRestartNote')}</p>
         </section>
       </div>;
       break;
