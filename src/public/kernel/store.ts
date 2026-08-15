@@ -1,6 +1,5 @@
 /**
- * Minimal external store — same shape as runtime/runtime-store.ts:
- * a snapshot getter plus subscribe/unsubscribe. Listeners are isolated so a
+ * Minimal external store: a snapshot getter plus subscribe/unsubscribe. Listeners are isolated so a
  * throwing subscriber cannot break state fan-out for the others.
  */
 

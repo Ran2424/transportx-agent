@@ -14,7 +14,7 @@
 | `sessions/branch-session.jsonl` | 同上，另加 parentId 旁路分支与无 id 的 custom/session_info 条目 | `selectCurrentSessionBranch`：从最后一个树条目沿 parentId 回溯，丢弃放弃分支（`bb000004`/`bb000005`），保留无 id sideband 条目 |
 | `features/task-entries.json` | pi-task-mode custom entry + tau_task/tau_ask_user toolResult | `src/public/features/task/task-protocol.ts`：`parseTaskStateEntry`（versioned 与 legacy 两种）、`parseTaskModeEntry`、`parseTaskToolResult`（`tau-task` 与 `tau-interaction`） |
 | `features/geo-tool-result.json` | present_visualization toolResult（真实 GIS smoke 会话同款形状） | `src/public/visualization/geo/protocol.ts`：`getVisualizationFromToolResult` 解析出 envelope，`parseGeoScene` 接受内联 GeoJSON scene |
-| `features/bridge-envelope.json` | pi-web-bridge custom entry（`entry_appended` 的 entry 内层） | `bin/pi-web-bridge.js` 的 `parsePiWebBridgeEnvelope`：schemaVersion/revision/model/thinkingLevel/tools |
+| `features/bridge-envelope.json` | pi-web-bridge custom entry（`entry_appended` 的 entry 内层） | `src/contracts/bridge.ts` 的 `parsePiWebBridgeEnvelope`：schemaVersion/revision/model/thinkingLevel/tools |
 | `contracts/session.json` | SessionSnapshot v1 合法/非法 wire shape | `src/contracts/session.ts` 与 Server compatibility：合法 v1、unknown schemaVersion、非法 entries |
 | `contracts/task.json` | TaskSnapshot v1 与 revision 样例 | Extension/Web 共用 parser：合法/非法 schemaVersion、非法 revision、revision regression |
 | `contracts/geo.json` | VisualizationEnvelope 1.0 与最小 GeoScene | Extension/Web 共用 parser：合法/非法 version、非法 revision、revision regression |

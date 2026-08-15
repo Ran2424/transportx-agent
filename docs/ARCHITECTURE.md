@@ -303,7 +303,7 @@ React Geo runtime ───────────> contracts + maplibre-gl
 
 - 正式验收平台目前是 macOS Apple Silicon；Intel Mac 和 Windows 安装包尚未完成发布验证。
 - 仓库不分发实际 Knowledge/Data 资产，换机后需要重新安装或迁移用户 Module。
-- Python runtime 已具备表格、投影与几何库，但尚未实现独立的空间分析 Module/结果契约；当前 Geo 仍只负责受控 GeoJSON 资源与地图呈现。
+- 空间分析已实现为内置 capability module（受控 Python + `SpatialAnalysisResult v1` 契约，见 §4），不作为可安装的用户 Module 分发。
 - 当前不提供在线模块市场、任意第三方 UI Bundle、远程 Agent、SSH/WSL 或第二种 Agent Runtime。
 - Module 权限建立在本机可信来源之上；若未来开放第三方市场，必须另行设计签名、权限声明和执行隔离。
 

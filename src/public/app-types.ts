@@ -75,12 +75,6 @@ export type LiveSession = {
   };
 };
 
-export type LiveInstance = {
-  sessionFile?: string | null;
-  cwd?: string;
-  port: string;
-};
-
 export type UsageRecord = {
   input?: number;
   output?: number;
@@ -148,19 +142,5 @@ export type AppEvent = {
   [key: string]: unknown;
 };
 
-export type PendingFilePath = { path: string; name: string; ext: string; sessionId?: string | null };
-export type QueuedCommand = { type: string; message?: string; attachmentIds?: string[]; sessionId?: string };
 export type ExtensionUIRequest = { sessionId: string; event: AppEvent };
 export type RpcCommand = { type: string; sessionId?: string; filePath?: string; [key: string]: unknown };
-
-/**
- * The Server still emits the pure wire format
- * (`{schemaVersion: 1, entries: SessionEntry[]}`) when callers hit
- * `/api/sessions/{file}/entries`. Map it into the Browser-internal shape.
- */
-export function asBrowserSessionSnapshot(snapshot: {
-  schemaVersion: 1;
-  entries: SessionEntry[];
-}): SessionSnapshot {
-  return { ...snapshot };
-}

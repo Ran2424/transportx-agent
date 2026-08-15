@@ -1,5 +1,5 @@
 {
-  "description": "pi-web-bridge 扩展写入会话的 custom entry（entry_appended 事件的 entry 内层形状），其 data 可被 src/server/pi-web-bridge.ts 的 parsePiWebBridgeEnvelope 解析。",
+  "description": "pi-web-bridge 扩展写入会话的 custom entry（entry_appended 事件的 entry 内层形状），其 data 可被 src/contracts/bridge.ts 的 parsePiWebBridgeEnvelope 解析。",
   "entry": {
     "type": "custom",
     "customType": "pi-web-bridge",
