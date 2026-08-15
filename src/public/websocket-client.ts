@@ -1,29 +1,50 @@
 /**
- * WebSocket Client - Handles connection to backend WebSocket server
+ * WebSocket Client - Handles connection to backend WebSocket server.
+ *
+ * Implements the KernelTransport contract directly: parsed JSON messages are
+ * delivered to subscribers as TransportSignals without an intermediate
+ * DOM CustomEvent protocol.
  */
 
-export class WebSocketClient extends EventTarget {
+import type { KernelTransport, TransportSignal } from './kernel/transport.js';
+
+export class WebSocketClient implements KernelTransport {
   url: string;
   ws: WebSocket | null;
   reconnectAttempts: number;
-  maxReconnectAttempts: number;
   reconnectDelay: number;
   maxReconnectDelay: number;
   isIntentionallyClosed: boolean;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   connectionState: 'idle' | 'connecting' | 'open' | 'closed';
+  private readonly listeners = new Set<(signal: TransportSignal) => void>();
 
   constructor(url: string) {
-    super();
     this.url = url;
     this.ws = null;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = Infinity;
     this.reconnectDelay = 1000;
     this.maxReconnectDelay = 10000;
     this.isIntentionallyClosed = false;
     this.reconnectTimer = null;
     this.connectionState = 'idle';
+  }
+
+  subscribe(listener: (signal: TransportSignal) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private emit(signal: TransportSignal) {
+    for (const listener of this.listeners) {
+      try {
+        listener(signal);
+      } catch {
+        // A throwing consumer must not break transport fan-out.
+      }
+    }
   }
 
   connect() {
@@ -47,13 +68,12 @@ export class WebSocketClient extends EventTarget {
       console.log('[WS] Connected');
       this.reconnectAttempts = 0;
       this.connectionState = 'open';
-      this.dispatchEvent(new CustomEvent('connected'));
+      this.emit({ kind: 'connected' });
     };
 
     this.ws.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data);
-        this.handleMessage(message);
+        this.emit({ kind: 'message', message: JSON.parse(event.data) });
       } catch (error) {
         console.error('[WS] Failed to parse message:', error);
       }
@@ -61,30 +81,17 @@ export class WebSocketClient extends EventTarget {
 
     this.ws.onerror = (error) => {
       console.error('[WS] Error:', error);
-      this.dispatchEvent(new CustomEvent('error', { detail: error }));
     };
 
     this.ws.onclose = (event) => {
       console.log(`[WS] Disconnected (code=${event.code}, reason=${event.reason || 'n/a'})`);
       this.connectionState = 'closed';
-      this.dispatchEvent(new CustomEvent('disconnected'));
+      this.emit({ kind: 'disconnected', reason: event.reason || undefined });
 
       if (!this.isIntentionallyClosed) {
         this.attemptReconnect();
       }
     };
-  }
-
-  disconnect() {
-    this.isIntentionallyClosed = true;
-    this.connectionState = 'closed';
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-    }
   }
 
   // Force reconnect — resets attempt counter and connects fresh
@@ -103,17 +110,11 @@ export class WebSocketClient extends EventTarget {
   }
 
   attemptReconnect() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[WS] Max reconnection attempts reached');
-      this.dispatchEvent(new CustomEvent('reconnectFailed'));
-      return;
-    }
-
     this.reconnectAttempts++;
     const delay = Math.min(this.maxReconnectDelay, this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1));
-    
-    console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-    
+
+    console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
@@ -125,41 +126,6 @@ export class WebSocketClient extends EventTarget {
       this.ws.send(JSON.stringify(data));
     } else {
       console.error('[WS] Cannot send, not connected');
-    }
-  }
-
-  handleMessage(message: { type?: string; [key: string]: unknown }) {
-    // Emit events based on message type
-    switch (message.type) {
-      case 'event':
-        this.dispatchEvent(new CustomEvent('rpcEvent', { detail: { sessionId: message.sessionId, event: message.event } }));
-        break;
-      case 'state':
-        this.dispatchEvent(new CustomEvent('stateUpdate', { detail: message }));
-        break;
-      case 'error':
-        this.dispatchEvent(new CustomEvent('serverError', { detail: message }));
-        break;
-      case 'session_switch':
-        // Legacy UI hint; the kernel treats it as a no-op.
-        break;
-      case 'live_session_snapshot':
-        this.dispatchEvent(new CustomEvent('liveSessionSnapshot', { detail: message }));
-        break;
-      case 'response':
-        // RPC responses are consumed via HTTP command ports; nothing listens.
-        break;
-      case 'live_session_created':
-        this.dispatchEvent(new CustomEvent('liveSessionCreated', { detail: message.session }));
-        break;
-      case 'live_session_updated':
-        this.dispatchEvent(new CustomEvent('liveSessionUpdated', { detail: message.session }));
-        break;
-      case 'live_session_closed':
-        this.dispatchEvent(new CustomEvent('liveSessionClosed', { detail: message }));
-        break;
-      default:
-        console.warn('[WS] Unknown message type:', message.type);
     }
   }
 }
