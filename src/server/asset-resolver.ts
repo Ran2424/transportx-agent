@@ -3,14 +3,9 @@ const path = require('node:path');
 
 import type { ModuleAsset } from '../contracts/index.js';
 import type { ModuleRegistry, RegisteredModule } from './module-registry.js';
-import { verifyChecksumFile } from './asset-integrity.js';
+import { verifyChecksumFile, within } from './asset-integrity.js';
 
 export type ResolvedAsset = ModuleAsset & { moduleId: string; moduleVersion: string; moduleOrigin: RegisteredModule['origin']; resolvedPath: string };
-
-function within(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
-}
 
 export class AssetResolver {
   private assets = new Map<string, { asset: ModuleAsset; module: RegisteredModule }>();
