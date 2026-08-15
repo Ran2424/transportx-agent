@@ -50,6 +50,8 @@ type SettingsPageProps = {
   onThemeChange(theme: ThemeId): void;
   showThinking: boolean;
   onShowThinkingChange(value: boolean): void;
+  expandThinking: boolean;
+  onExpandThinkingChange(value: boolean): void;
   session: LiveSession | null;
   onAddModel(): void;
   section: SettingsSectionId;
@@ -67,7 +69,7 @@ function modelDetails(model: ModelRecord | string) {
   return { provider: model.provider || i18n.t('settings.model.unknownProvider'), name, details };
 }
 
-export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
+export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, expandThinking, onExpandThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
   const { t } = useTranslation();
   const { preference, setPreference } = useLocale();
   const { kernel } = useAppServices();
@@ -253,7 +255,8 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
         </section>
         <section className="settings-section">
           <h2>{t('settings.display')}</h2>
-          <div className="settings-row"><span><strong>{t('settings.showThinking')}</strong><small>{t('settings.showThinkingHelp')}</small></span><button className={`switch${showThinking ? ' is-on' : ''}`} type="button" role="switch" aria-checked={showThinking} onClick={() => onShowThinkingChange(!showThinking)}><span /></button></div>
+          <div className="settings-row"><span><strong>{t('settings.showThinking')}</strong><small>{t('settings.showThinkingHelp')}</small></span><button className={`switch${showThinking ? ' is-on' : ''}`} type="button" role="switch" aria-label={t('settings.showThinking')} aria-checked={showThinking} onClick={() => onShowThinkingChange(!showThinking)}><span /></button></div>
+          <div className="settings-row"><span><strong>{t('settings.expandThinking')}</strong><small>{t('settings.expandThinkingHelp')}</small></span><button className={`switch${expandThinking ? ' is-on' : ''}`} type="button" role="switch" aria-label={t('settings.expandThinking')} aria-checked={expandThinking} disabled={!showThinking} onClick={() => onExpandThinkingChange(!expandThinking)}><span /></button></div>
         </section>
         {auth.configured ? <section className="settings-section"><h2>{t('settings.accessControl')}</h2><div className="settings-row"><span><strong>{t('settings.requireLogin')}</strong><small>{t('settings.requireLoginHelp')}</small></span><button className={`switch${auth.enabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={auth.enabled} disabled={busy === 'auth'} onClick={toggleAuth}><span /></button></div></section> : null}
         <section className="settings-section">

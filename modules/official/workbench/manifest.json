@@ -7,6 +7,7 @@
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [
     "com.transportx.web-bridge",
+    "com.transportx.timing",
     "com.transportx.task",
     "com.transportx.citation",
     "com.transportx.geo",

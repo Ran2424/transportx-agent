@@ -83,20 +83,28 @@ function GeoMap({
   const { t } = useTranslation();
   const container = useRef<HTMLDivElement>(null);
   const latestEnvelope = useRef(envelope);
+  const resizeFrame = useRef<number | null>(null);
   const [error, setError] = useState('');
   const runtimeKey = `${sessionId}:${envelope.visualizationId}`;
   latestEnvelope.current = envelope;
-  const resize = () => requestAnimationFrame(() => {
-    runtime.current?.resize();
-    requestAnimationFrame(() => runtime.current?.resize());
-  });
+  const resize = () => {
+    if (resizeFrame.current !== null) return;
+    resizeFrame.current = requestAnimationFrame(() => {
+      resizeFrame.current = null;
+      runtime.current?.resize();
+    });
+  };
 
   useEffect(() => {
     const node = container.current;
     if (!node) return;
     const observer = new ResizeObserver(resize);
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current);
+      resizeFrame.current = null;
+    };
   }, []);
 
   useEffect(() => {

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModelRecord } from '../../../public/app-types.js';
 import type { SessionModuleOption } from '../../../public/kernel/commands.js';
-import type { SessionOutputKind, SessionTaskKind } from '../../../contracts/session-profile.js';
 import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
@@ -37,8 +36,6 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
   const [moduleOptions, setModuleOptions] = useState<SessionModuleOption[]>([]);
   const [selectedModules, setSelectedModules] = useState<Record<string, string>>({});
-  const [taskKind, setTaskKind] = useState<SessionTaskKind>('data-query');
-  const [expectedOutput, setExpectedOutput] = useState<SessionOutputKind>('answer');
   const [city, setCity] = useState('');
   const [project, setProject] = useState('');
   const [spatialScope, setSpatialScope] = useState('');
@@ -79,8 +76,8 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
         profile: {
           schemaVersion: 1,
           task: {
-            kind: taskKind,
-            expectedOutputs: [expectedOutput],
+            kind: 'data-query',
+            expectedOutputs: ['answer'],
             ...(city.trim() ? { city: city.trim() } : {}),
             ...(project.trim() ? { project: project.trim() } : {}),
             ...(spatialScope.trim() ? { spatialScope: { label: spatialScope.trim() } } : {}),
@@ -119,33 +116,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
       footer={null}
     >
       <form className="form-stack" onSubmit={submit}>
-        <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} required maxLength={120} autoFocus placeholder={t('sessions.taskNamePlaceholder')} onChange={(event) => setName(event.target.value)} /></label>
-        <div className="form-grid-two">
-          <MenuSelect
-            label={t('sessions.taskKind')}
-            value={taskKind}
-            options={[
-              { value: 'data-query', label: t('sessions.taskKind.dataQuery') },
-              { value: 'spatial-analysis', label: t('sessions.taskKind.spatialAnalysis') },
-              { value: 'assurance-analysis', label: t('sessions.taskKind.assuranceAnalysis') },
-              { value: 'report', label: t('sessions.taskKind.report') },
-            ]}
-            placeholder={t('sessions.taskKind')}
-            onChange={(value) => setTaskKind(value as SessionTaskKind)}
-          />
-          <MenuSelect
-            label={t('sessions.expectedOutput')}
-            value={expectedOutput}
-            options={[
-              { value: 'answer', label: t('sessions.output.answer') },
-              { value: 'table', label: t('sessions.output.table') },
-              { value: 'map', label: t('sessions.output.map') },
-              { value: 'report', label: t('sessions.output.report') },
-            ]}
-            placeholder={t('sessions.expectedOutput')}
-            onChange={(value) => setExpectedOutput(value as SessionOutputKind)}
-          />
-        </div>
+        <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} maxLength={120} autoFocus placeholder={t('sessions.taskNamePlaceholder')} onChange={(event) => setName(event.target.value)} /></label>
         {moduleGroups.length ? (
           <fieldset className="session-module-fieldset">
             <legend>{t('sessions.modules')}</legend>
@@ -177,7 +148,6 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
             ))}
           </fieldset>
         ) : null}
-        {selectedModuleOptions.length ? <p className="session-profile-summary">{t('sessions.profileSummary', { modules: selectedModuleOptions.map((item) => `${item.name} ${item.version}`).join(' + '), output: t(`sessions.output.${expectedOutput}`) })}</p> : null}
         {moduleBlockers.length ? <div className="inline-error" role="alert">{moduleBlockers.join('；')}</div> : null}
         <details className="session-profile-details">
           <summary>{t('sessions.taskContext')}</summary>
@@ -208,7 +178,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
         {error ? <div className="inline-error" role="alert">{error}</div> : null}
         <div className="form-actions">
           <DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose>
-          <Button type="submit" disabled={submitting || !model || !name.trim() || moduleBlockers.length > 0}>{submitting ? t('sessions.starting') : t('sessions.create')}</Button>
+          <Button type="submit" disabled={submitting || !model || moduleBlockers.length > 0}>{submitting ? t('sessions.starting') : t('sessions.create')}</Button>
         </div>
       </form>
     </Dialog>

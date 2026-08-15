@@ -58,6 +58,18 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       return [protocolError('missing_session_id', `Cannot route event "${eventType}" without a session id`)];
     }
     const runId = () => currentRunBySession.get(sessionId) ?? null;
+    const streamedToolCall = () => {
+      const streamEvent = event.assistantMessageEvent;
+      const content = Array.isArray(streamEvent?.partial?.content) ? streamEvent.partial.content : [];
+      const indexed = typeof streamEvent?.contentIndex === 'number' ? content[streamEvent.contentIndex] : undefined;
+      const block = streamEvent?.toolCall?.type === 'toolCall'
+        ? streamEvent.toolCall
+        : indexed?.type === 'toolCall'
+          ? indexed
+          : content.find((item) => item.type === 'toolCall');
+      if (!block?.id) return null;
+      return { id: block.id, name: block.name, args: block.arguments };
+    };
 
     switch (eventType) {
       case 'agent_start':
@@ -88,12 +100,19 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       case 'message_update': {
         const deltaType = event.assistantMessageEvent?.type;
         const delta = event.assistantMessageEvent?.delta;
-        if (typeof delta !== 'string') return [];
-        if (deltaType === 'text_delta') {
+        if (deltaType === 'text_delta' && typeof delta === 'string') {
           return [{ type: 'conversation/streamDelta', sessionId, runId: runId(), channel: 'text', delta }];
         }
-        if (deltaType === 'thinking_delta') {
+        if (deltaType === 'thinking_delta' && typeof delta === 'string') {
           return [{ type: 'conversation/streamDelta', sessionId, runId: runId(), channel: 'thinking', delta }];
+        }
+        if (deltaType === 'toolcall_start') {
+          const tool = streamedToolCall();
+          return tool ? [{ type: 'tool/preparing', sessionId, execution: { toolCallId: tool.id, toolName: tool.name, args: tool.args, argumentChars: 0, status: 'preparing' } }] : [];
+        }
+        if (deltaType === 'toolcall_delta' || deltaType === 'toolcall_end') {
+          const tool = streamedToolCall();
+          return tool ? [{ type: 'tool/argumentsUpdated', sessionId, toolCallId: tool.id, toolName: tool.name, args: tool.args, argumentChars: typeof delta === 'string' ? delta.length : 0 }] : [];
         }
         return [];
       }
@@ -102,7 +121,7 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         const actions: AppAction[] = [{ type: 'conversation/streamCompleted', sessionId, message }];
         // Tool results also arrive as messages; keep the execution map in sync.
         if (message?.toolCallId) {
-          actions.push({ type: 'tool/ended', sessionId, toolCallId: message.toolCallId, toolName: message.toolName, result: { content: message.content, details: message.details }, isError: message.isError });
+          actions.push({ type: 'tool/ended', sessionId, toolCallId: message.toolCallId, toolName: message.toolName, result: { content: message.content, details: message.details }, isError: message.isError, durationMs: message.durationMs });
         }
         return actions;
       }
@@ -114,6 +133,7 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
             toolCallId: String(event.toolCallId ?? ''),
             toolName: event.toolName,
             args: event.args,
+            startedAt: event.startedAt,
             status: 'running',
           },
         }];
@@ -127,6 +147,9 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
           toolName: event.toolName,
           result: event.result,
           isError: event.isError,
+          startedAt: event.startedAt,
+          endedAt: event.endedAt,
+          durationMs: event.durationMs,
         }];
       case 'auto_compaction_start':
       case 'auto_compaction_end':
