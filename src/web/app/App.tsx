@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HistoryProject, HistorySession } from '../../public/kernel/commands.js';
-import { useAppServices } from './AppProviders';
+import { appKernel, reconnectBrowserApplication } from './composition-root';
 import { AppShell } from './AppShell';
 import { useConversationState, useExtensionUiState, useRuntimeState, useSessionState, useToolExecutionState } from './store-hooks';
 import { Header } from '../components/shell/Header';
@@ -44,7 +44,7 @@ function mostRecentSessionId(sessions: ReturnType<typeof useSessionState>['sessi
 
 export function App() {
   const { t } = useTranslation();
-  const { kernel, reconnect } = useAppServices();
+  const kernel = appKernel; const reconnect = reconnectBrowserApplication;
   const runtime = useRuntimeState();
   const sessionState = useSessionState();
   const extensionUi = useExtensionUiState();

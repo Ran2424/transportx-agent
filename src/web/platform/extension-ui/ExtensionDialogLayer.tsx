@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppEvent } from '../../../public/app-types.js';
 import type { ExtensionUiPending } from '../../../public/kernel/stores/extension-ui-store.js';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog } from '../../components/ui/dialog';
 
@@ -32,7 +32,7 @@ function splitOption(value: string) {
 
 function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const request = pending.request as Request;
   const method = request.method || '';
   const fallback = method === 'select' ? t('extension.select') : method === 'confirm' ? t('extension.confirm') : t('extension.input');
@@ -119,7 +119,7 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
 
 export function ExtensionDialogLayer({ pending }: { pending: ExtensionUiPending | null }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const [notification, setNotification] = useState<Request | null>(null);
   const notificationKey = useRef('');
   const request = pending?.request as Request | undefined;

@@ -4,7 +4,7 @@ import type { ExtensionUiState } from '../../public/kernel/stores/extension-ui-s
 import type { RuntimeStoreState } from '../../public/kernel/stores/runtime-store.js';
 import type { SessionStoreState } from '../../public/kernel/stores/session-store.js';
 import type { ToolExecutionStoreState } from '../../public/kernel/stores/tool-execution-store.js';
-import { useAppServices } from './AppProviders';
+import { appKernel, reconnectBrowserApplication } from './composition-root';
 
 type ExternalStore<T> = {
   get(): T;
@@ -20,21 +20,21 @@ function useStore<T>(store: ExternalStore<T>): T {
 }
 
 export function useRuntimeState(): RuntimeStoreState {
-  return useStore(useAppServices().kernel.stores.runtime);
+  return useStore(appKernel.stores.runtime);
 }
 
 export function useSessionState(): SessionStoreState {
-  return useStore(useAppServices().kernel.stores.session);
+  return useStore(appKernel.stores.session);
 }
 
 export function useExtensionUiState(): ExtensionUiState {
-  return useStore(useAppServices().kernel.stores.extensionUi);
+  return useStore(appKernel.stores.extensionUi);
 }
 
 export function useConversationState(): ConversationStoreState {
-  return useStore(useAppServices().kernel.stores.conversation);
+  return useStore(appKernel.stores.conversation);
 }
 
 export function useToolExecutionState(): ToolExecutionStoreState {
-  return useStore(useAppServices().kernel.stores.toolExecution);
+  return useStore(appKernel.stores.toolExecution);
 }

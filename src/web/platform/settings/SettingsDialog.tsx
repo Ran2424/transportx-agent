@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
 import type { ModelProviderAccess, PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { LocalePreference } from '../../i18n';
@@ -74,7 +74,7 @@ function modelDetails(model: ModelRecord | string) {
 export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, expandThinking, onExpandThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
   const { t } = useTranslation();
   const { preference, setPreference } = useLocale();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const [autoCompact, setAutoCompact] = useState(true);
   const [auth, setAuth] = useState({ configured: false, enabled: false });
   const [busy, setBusy] = useState('');

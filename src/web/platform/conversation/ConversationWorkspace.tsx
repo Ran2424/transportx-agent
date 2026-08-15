@@ -7,7 +7,7 @@ import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown, renderUserMarkdown } from '../../../public/markdown.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
 import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork } from '../../../contracts/citation.ts';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
 import { BrandMark } from '../../components/BrandMark';
 import { Icon, type IconName } from '../../components/icons';
@@ -509,7 +509,7 @@ function clipboardFileName(index: number) {
 
 function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, onAttachment, onOpenCitationManager }: { sessionId: string; streaming: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const [value, setValue] = useState('');
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [error, setError] = useState('');
@@ -643,7 +643,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
 
 export function ConversationWorkspace({ sessionId, showThinking, expandThinking }: { sessionId: string; showThinking: boolean; expandThinking: boolean }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const conversation = useConversationState();
   const tools = useToolExecutionState();
   const viewportRef = useRef<HTMLDivElement>(null);

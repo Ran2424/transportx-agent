@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModelProviderAccess, PiModelApi } from '../../../public/kernel/commands.js';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
@@ -14,7 +14,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
   onConfigured(reference: string): void;
 }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const [mode, setMode] = useState<SetupMode>('provider');
   const [providers, setProviders] = useState<ModelProviderAccess[]>([]);
   const [provider, setProvider] = useState('');

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PlatformOverview } from '../../../public/kernel/commands.js';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
@@ -12,7 +12,7 @@ export function CapabilityPane({ collapsed, onToggleCollapsed }: {
   onToggleCollapsed(): void;
 }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const [category, setCategory] = useState<CapabilityCategory>('skill');
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
   const [loading, setLoading] = useState(true);

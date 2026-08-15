@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
-import { AppProviders } from './app/AppProviders';
 import { startBrowserApplication } from './app/composition-root';
+import { LocaleProvider } from './i18n/LocaleProvider';
 import './styles.css';
 
 const root = document.getElementById('root');
@@ -15,8 +15,8 @@ startBrowserApplication();
 
 createRoot(root).render(
   <StrictMode>
-    <AppProviders>
+    <LocaleProvider>
       <App />
-    </AppProviders>
+    </LocaleProvider>
   </StrictMode>,
 );

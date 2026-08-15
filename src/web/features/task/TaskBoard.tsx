@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { LiveSession } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
 import { projectTaskState } from './task-projection';
 
 export function TaskBoard({ session }: { session: LiveSession | null }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const conversation = useConversationState();
   const tools = useToolExecutionState();
   const [collapsed, setCollapsed] = useState(false);
