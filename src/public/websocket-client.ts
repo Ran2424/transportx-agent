@@ -143,13 +143,11 @@ export class WebSocketClient extends EventTarget {
       case 'session_switch':
         // Legacy UI hint; the kernel treats it as a no-op.
         break;
-        break;
       case 'live_session_snapshot':
         this.dispatchEvent(new CustomEvent('liveSessionSnapshot', { detail: message }));
         break;
       case 'response':
         // RPC responses are consumed via HTTP command ports; nothing listens.
-        break;
         break;
       case 'live_session_created':
         this.dispatchEvent(new CustomEvent('liveSessionCreated', { detail: message.session }));

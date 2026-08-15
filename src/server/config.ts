@@ -150,12 +150,7 @@ function findPublicDir() {
     const pkgPath = require.resolve('pi-traffic-workspace/package.json');
     add(path.join(path.dirname(pkgPath), 'public'));
   } catch {}
-  try {
-    const pkgPath = require.resolve('pi-tau-web-server/package.json');
-    add(path.join(path.dirname(pkgPath), 'public'));
-  } catch {}
   add(path.join(process.cwd(), 'node_modules', 'pi-traffic-workspace', 'public'));
-  add(path.join(process.cwd(), 'node_modules', 'pi-tau-web-server', 'public'));
   return candidates.find((c) => fs.existsSync(path.join(c, 'index.html'))) || candidates[0];
 }
 

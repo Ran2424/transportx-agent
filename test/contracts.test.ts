@@ -135,15 +135,14 @@ test('Citation v2 envelope separates work, resource, locator and occurrence iden
   assert.ok(diagnosticCodes(broken).includes('invalid_type'));
 });
 
-test('Bridge contract and Server parser share fixtures, capabilities, and structured diagnostics', async () => {
+test('Bridge compat parser and structured parser share fixtures, capabilities, and diagnostics', async () => {
   const bridge = fixture('bridge');
   const contract = await import('../src/contracts/bridge.ts');
-  const server = require('../bin/pi-web-bridge.js');
 
   const valid = contract.parsePiWebBridgeEnvelopeStructured(bridge.valid);
   assert.equal(valid.ok, true);
   if (!valid.ok) throw new Error('valid Bridge envelope fixture was rejected');
-  assert.deepEqual(server.parsePiWebBridgeEnvelope(bridge.valid), valid.value);
+  assert.deepEqual(contract.parsePiWebBridgeEnvelope(bridge.valid), valid.value);
   assert.equal(valid.value.capabilities.bridgeVersion, 1);
   assert.equal(valid.value.capabilities.geoSceneVersion, '1.0');
 
