@@ -1,8 +1,8 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { AppMessage, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
-import { messageText, messageThinking } from '../../../public/kernel/stores/conversation-store.js';
+import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown, renderUserMarkdown } from '../../../public/markdown.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
@@ -17,14 +17,13 @@ import i18n from '../../i18n';
 import {
   citationCopyText,
   citationDisplayText,
-  projectCitationText,
   projectMessageCitations,
   type MessageCitationProjection,
   type ResolvedCitation,
 } from '../../features/citation/citation-projection';
 
 const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
-type ToolData = { id: string; name: string; args: Record<string, unknown>; result?: unknown; isError?: boolean; status: 'running' | 'completed' | 'error' };
+type ToolData = { id: string; name: string; args: Record<string, unknown>; result?: unknown; isError?: boolean; startedAt?: number; durationMs?: number; argumentChars?: number; status: 'preparing' | 'running' | 'completed' | 'error' };
 
 function copy(text: string) {
   if (navigator.clipboard) return navigator.clipboard.writeText(text);
@@ -85,11 +84,54 @@ const UserMessage = memo(function UserMessage({ message, sessionId, attachments 
   return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message"><div className="message-content"><div dangerouslySetInnerHTML={html(text, true)} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
 });
 
-function Thinking({ text, visible }: { text: string; visible: boolean }) {
+function useElapsedMilliseconds(startedAt: number | null, durationMs: number | null) {
+  const [elapsed, setElapsed] = useState<number | null>(() => durationMs ?? (startedAt === null ? null : Math.max(0, Date.now() - startedAt)));
+  useEffect(() => {
+    if (durationMs !== null || startedAt === null) {
+      setElapsed(durationMs);
+      return;
+    }
+    let frame = 0;
+    let displayedTenth = -1;
+    const update = () => {
+      const next = Math.max(0, Date.now() - startedAt);
+      const tenth = Math.floor(next / 100);
+      if (tenth !== displayedTenth) {
+        displayedTenth = tenth;
+        setElapsed(next);
+      }
+      frame = window.requestAnimationFrame(update);
+    };
+    update();
+    return () => window.cancelAnimationFrame(frame);
+  }, [durationMs, startedAt]);
+  return durationMs ?? elapsed;
+}
+
+function durationSeconds(durationMs: number) {
+  return (durationMs / 1_000).toFixed(1);
+}
+
+function ThinkingStatus({ active, startedAt, durationMs }: { active: boolean; startedAt: number | null; durationMs: number | null }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(true);
-  if (!text || !visible) return null;
-  return <section className="thinking-block"><button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="chevron" /> {t('conversation.thinking')}</button>{open ? <pre>{text}</pre> : null}</section>;
+  const elapsedMs = useElapsedMilliseconds(active ? startedAt : null, durationMs);
+  const duration = elapsedMs === null ? '' : t('conversation.thinkingDuration', { count: durationSeconds(elapsedMs) });
+  return <span>{active
+    ? duration ? t('conversation.thinkingActiveWithDuration', { duration }) : t('conversation.thinkingActive')
+    : duration ? t('conversation.thinkingCompleteWithDuration', { duration }) : t('conversation.thinking')}</span>;
+}
+
+function ToolDuration({ startedAt, durationMs }: { startedAt?: number; durationMs?: number }) {
+  const { t } = useTranslation();
+  const elapsedMs = useElapsedMilliseconds(startedAt ?? null, durationMs ?? null);
+  return elapsedMs === null ? null : <span className="tool-duration">{t('conversation.thinkingDuration', { count: durationSeconds(elapsedMs) })}</span>;
+}
+
+function Thinking({ text, visible, active, startedAt = null, durationMs = null, defaultExpanded }: { text: string; visible: boolean; active: boolean; startedAt?: number | null; durationMs?: number | null; defaultExpanded: boolean }) {
+  const [open, setOpen] = useState(defaultExpanded);
+  useEffect(() => setOpen(defaultExpanded), [defaultExpanded]);
+  if (!visible || (!text && !active)) return null;
+  return <section className={`thinking-block${active ? ' is-active' : ''}`}><button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="chevron" /><ThinkingStatus active={active} startedAt={startedAt} durationMs={durationMs} /></button>{open && text ? <pre>{text}</pre> : null}</section>;
 }
 
 function citationPosition(item: ResolvedCitation) {
@@ -224,10 +266,10 @@ function CitationFooter({ projection, sessionId }: { projection?: MessageCitatio
   </section>;
 }
 
-const AssistantMessage = memo(function AssistantMessage({ message, streaming, showThinking, projection, sessionId }: { message: AppMessage; streaming?: boolean; showThinking: boolean; projection?: MessageCitationProjection; sessionId: string }) {
+const AssistantMessage = memo(function AssistantMessage({ message, streaming, showThinking, expandThinking, thinkingStartedAt, thinkingDurationMs, projection, sessionId }: { message: AppMessage; streaming?: boolean; showThinking: boolean; expandThinking: boolean; thinkingStartedAt?: number | null; thinkingDurationMs?: number | null; projection?: MessageCitationProjection; sessionId: string }) {
   const { t } = useTranslation();
   const text = messageText(message);
-  const displayText = citationDisplayText(text, projection);
+  const displayText = streaming ? text : citationDisplayText(text, projection);
   const thinking = messageThinking(message);
   const [copied, setCopied] = useState(false);
   function citationClick(event: MouseEvent<HTMLElement>) {
@@ -239,7 +281,8 @@ const AssistantMessage = memo(function AssistantMessage({ message, streaming, sh
     card?.focus({ preventScroll: true });
   }
   const copyText = citationCopyText(text, projection);
-  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={citationClick}><div className="message-content"><Thinking text={thinking} visible={showThinking} />{text ? <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
+  const resolvedThinkingDuration = thinkingDurationMs ?? messageThinkingDurationMs(message);
+  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={citationClick}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
 });
 
 function preview(args: Record<string, unknown>) {
@@ -323,24 +366,43 @@ function ToolFilePreview({ sessionId, path }: { sessionId: string; path: string 
   </div>;
 }
 
+const TOOL_TEXT_PREVIEW_LIMIT = 4_000;
+const TOOL_OUTPUT_PREVIEW_LIMIT = 12_000;
+
+function truncateToolText(value: string, limit: number) {
+  if (value.length <= limit) return value;
+  const tailLength = Math.min(600, Math.floor(limit / 4));
+  return `${value.slice(0, limit - tailLength)}\n\n…\n\n${value.slice(-tailLength)}\n\n${i18n.t('conversation.tool.truncated', { count: value.length.toLocaleString() })}`;
+}
+
+function compactToolArgs(args: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(args).map(([key, value]) => [key, typeof value === 'string' ? truncateToolText(value, TOOL_TEXT_PREVIEW_LIMIT) : value]));
+}
+
+function compactCharacterCount(count: number) {
+  return count < 1_000 ? String(count) : `${(count / 1_000).toFixed(count < 10_000 ? 1 : 0)}k`;
+}
+
 const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; sessionId: string }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(tool.status === 'running');
   useEffect(() => {
-    if (tool.status !== 'running') setOpen(false);
+    setOpen(tool.status === 'running');
   }, [tool.status]);
   const output = tool.result === undefined ? '' : formatToolResultText(tool.result, i18n.language);
   const isEdit = tool.name.toLowerCase() === 'edit' && (typeof tool.args.oldText === 'string' || typeof tool.args.old_text === 'string');
-  const oldText = String(tool.args.oldText ?? tool.args.old_text ?? '');
-  const newText = String(tool.args.newText ?? tool.args.new_text ?? '');
+  const oldText = truncateToolText(String(tool.args.oldText ?? tool.args.old_text ?? ''), TOOL_TEXT_PREVIEW_LIMIT);
+  const newText = truncateToolText(String(tool.args.newText ?? tool.args.new_text ?? ''), TOOL_TEXT_PREVIEW_LIMIT);
+  const displayedArgs = compactToolArgs(tool.args);
+  const displayedOutput = truncateToolText(output, TOOL_OUTPUT_PREVIEW_LIMIT);
   const normalizedToolName = tool.name.toLowerCase().replaceAll('-', '_');
   const readPath = normalizedToolName === 'read' || normalizedToolName.startsWith('read_') ? toolFilePath(tool.args) : '';
-  const status = tool.status === 'running' ? t('conversation.tool.running') : tool.status === 'error' || tool.isError ? t('conversation.tool.failed') : t('conversation.tool.completed');
+  const status = tool.status === 'preparing' ? t('conversation.tool.preparing') : tool.status === 'running' ? t('conversation.tool.running') : tool.status === 'error' || tool.isError ? t('conversation.tool.failed') : t('conversation.tool.completed');
   const iconName = toolIconName(tool.name);
-  return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon className="tool-chevron" name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}</button><span className={`tool-status ${tool.status}`} data-tool-kind={iconName} title={status}><Icon name={iconName} /><span className="sr-only">{status}</span></span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(tool.args, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>{t('conversation.tool.output')}</span><button type="button" onClick={() => void copy(output)}>{t('common.copy')}</button></div><pre className="tool-output">{output}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={t('conversation.tool.imagePreview', { name: path.split('/').pop() })} /></a>)}{readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : null}</> : readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : tool.status === 'running' ? <span className="tool-pending">{t('conversation.tool.waiting')}</span> : null}</div> : null}</section>;
+  return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon className="tool-chevron" name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}{tool.status === 'preparing' && tool.argumentChars ? <span className="tool-argument-size">{t('conversation.tool.argumentChars', { count: compactCharacterCount(tool.argumentChars) })}</span> : null}{tool.startedAt !== undefined || tool.durationMs !== undefined ? <ToolDuration startedAt={tool.status === 'running' ? tool.startedAt : undefined} durationMs={tool.durationMs} /> : null}</button><span className={`tool-status ${tool.status}`} data-tool-kind={iconName} title={status}><Icon name={iconName} /><span className="sr-only">{status}</span></span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(displayedArgs, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>{t('conversation.tool.output')}</span><button type="button" onClick={() => void copy(output)}>{t('common.copy')}</button></div><pre className="tool-output">{displayedOutput}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={t('conversation.tool.imagePreview', { name: path.split('/').pop() })} /></a>)}{readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : null}</> : readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : tool.status === 'running' ? <span className="tool-pending">{t('conversation.tool.waiting')}</span> : null}</div> : null}</section>;
 });
 
-function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolCallId: string; toolName?: string; args?: Record<string, unknown>; result?: unknown; partialResult?: unknown; isError?: boolean; status: 'running' | 'completed' | 'error' }>) {
+function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolCallId: string; toolName?: string; args?: Record<string, unknown>; result?: unknown; partialResult?: unknown; isError?: boolean; startedAt?: number; durationMs?: number; argumentChars?: number; status: 'preparing' | 'running' | 'completed' | 'error' }>) {
   const results = new Map<string, AppMessage>();
   const resultEntries = new Map<string, SessionEntry>();
   entries.forEach((entry) => {
@@ -358,13 +420,13 @@ function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolC
       known.add(id);
       const live = liveTools[id];
       const result = results.get(id);
-      const tool = { id, name: live?.toolName || block.name || '', args: live?.args || block.arguments || {}, result: live?.result ?? live?.partialResult ?? (result ? { content: result.content, details: result.details } : undefined), isError: live?.isError ?? result?.isError, status: live?.status || (result?.isError ? 'error' : result ? 'completed' : 'running') } satisfies ToolData;
+      const tool = { id, name: live?.toolName || block.name || '', args: live?.args || block.arguments || {}, result: live?.result ?? live?.partialResult ?? (result ? { content: result.content, details: result.details } : undefined), isError: live?.isError ?? result?.isError, startedAt: live?.startedAt, durationMs: live?.durationMs ?? result?.durationMs, argumentChars: live?.argumentChars, status: live?.status || (result?.isError ? 'error' : result ? 'completed' : 'running') } satisfies ToolData;
       byEntry.set(entry, [...(byEntry.get(entry) || []), tool]);
     });
   });
   const liveOnly: ToolData[] = [];
   Object.values(liveTools).filter((tool) => !known.has(tool.toolCallId)).forEach((tool) => {
-    const projected = { id: tool.toolCallId, name: tool.toolName || '', args: tool.args || {}, result: tool.result ?? tool.partialResult, isError: tool.isError, status: tool.status } satisfies ToolData;
+    const projected = { id: tool.toolCallId, name: tool.toolName || '', args: tool.args || {}, result: tool.result ?? tool.partialResult, isError: tool.isError, startedAt: tool.startedAt, durationMs: tool.durationMs, argumentChars: tool.argumentChars, status: tool.status } satisfies ToolData;
     const resultEntry = resultEntries.get(tool.toolCallId);
     if (resultEntry) byEntry.set(resultEntry, [projected]);
     else liveOnly.push(projected);
@@ -374,7 +436,7 @@ function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolC
     if (known.has(id)) return;
     const resultEntry = resultEntries.get(id);
     if (!resultEntry) return;
-    byEntry.set(resultEntry, [{ id, name: result.toolName || '', args: {}, result: { content: result.content, details: result.details }, isError: result.isError, status: result.isError ? 'error' : 'completed' }]);
+    byEntry.set(resultEntry, [{ id, name: result.toolName || '', args: {}, result: { content: result.content, details: result.details }, isError: result.isError, durationMs: result.durationMs, status: result.isError ? 'error' : 'completed' }]);
   });
   return { byEntry, liveOnly };
 }
@@ -579,7 +641,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
   </footer>;
 }
 
-export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: string; showThinking: boolean }) {
+export function ConversationWorkspace({ sessionId, showThinking, expandThinking }: { sessionId: string; showThinking: boolean; expandThinking: boolean }) {
   const { t } = useTranslation();
   const { kernel } = useAppServices();
   const conversation = useConversationState();
@@ -591,11 +653,18 @@ export function ConversationWorkspace({ sessionId, showThinking }: { sessionId: 
   const [citationManagerOpen, setCitationManagerOpen] = useState(false);
   useEffect(() => { let active = true; void kernel.commands.session.listAttachments(sessionId).then((items) => { if (active) setAttachments(Object.fromEntries(items.map((item) => [item.id, item]))); }).catch(() => {}); return () => { active = false; }; }, [kernel, sessionId]);
   const entries = data?.snapshotEntries || [];
-  const liveTools = tools.bySession[sessionId] || {};
-  const taskState = useMemo(() => projectTaskState(entries, Object.values(liveTools)), [entries, liveTools]);
-  const toolProjection = useMemo(() => projectTools(entries, liveTools), [entries, liveTools]);
+  const liveTools = tools.bySession[sessionId];
+  const taskState = useMemo(() => projectTaskState(entries, Object.values(liveTools || {})), [entries, liveTools]);
+  const toolProjection = useMemo(() => projectTools(entries, liveTools || {}), [entries, liveTools]);
   const citationProjection = useMemo(() => projectMessageCitations(entries), [entries]);
-  const liveCitationProjection = useMemo(() => projectCitationText(data?.live.streamingText || '', citationProjection.available), [data?.live.streamingText, citationProjection]);
-  useLayoutEffect(() => { const viewport = viewportRef.current; if (viewport && nearBottom.current) viewport.scrollTop = viewport.scrollHeight; }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
-  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} /> : null}{data?.live.active ? <AssistantMessage streaming showThinking={showThinking} projection={liveCitationProjection} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data.live.streamingThinking }, { type: 'text', text: data.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
+  useEffect(() => {
+    if (!nearBottom.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = viewportRef.current;
+      if (viewport && nearBottom.current) viewport.scrollTop = viewport.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
+  const showLiveAssistant = !!data?.live.active && (data.live.thinkingStartedAt !== null || !!data.live.streamingThinking || !!data.live.streamingText);
+  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} expandThinking={expandThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} /> : null}{showLiveAssistant ? <AssistantMessage streaming showThinking={showThinking} expandThinking={expandThinking} thinkingStartedAt={data?.live.thinkingStartedAt} thinkingDurationMs={data?.live.thinkingDurationMs} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data?.live.streamingThinking }, { type: 'text', text: data?.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
 }

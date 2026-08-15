@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { HistoryProject, HistorySession } from '../../public/kernel/commands.js';
 import { useAppServices } from './AppProviders';
@@ -53,6 +52,7 @@ export function App() {
   const tools = useToolExecutionState();
   const [theme, setTheme] = useState<ThemeId>(initialTheme);
   const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-thinking') !== 'false');
+  const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') !== 'false');
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -68,15 +68,6 @@ export function App() {
   const [notice, setNotice] = useState('');
   const [dismissedRuntimeError, setDismissedRuntimeError] = useState('');
   const restoredRef = useRef(false);
-
-  const runPanelTransition = useCallback((update: () => void) => {
-    const startViewTransition = (document as Document & { startViewTransition?: (callback: () => void) => unknown }).startViewTransition;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !startViewTransition) {
-      update();
-      return;
-    }
-    startViewTransition.call(document, () => flushSync(update));
-  }, []);
 
   const activeSession = sessionState.sessions.find((session) => session.id === sessionState.activeSessionId) || null;
   const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
@@ -129,17 +120,17 @@ export function App() {
   useEffect(() => { if (visualizations.length === 0) setMapOpen(false); }, [visualizations.length]);
 
   const toggleTasks = useCallback(() => {
-    if (taskAvailable) runPanelTransition(() => setTasksOpen((value) => !value));
-  }, [runPanelTransition, taskAvailable]);
+    if (taskAvailable) setTasksOpen((value) => !value);
+  }, [taskAvailable]);
 
   const toggleMap = useCallback(() => {
     if (visualizations.length > 0) setMapOpen((value) => !value);
   }, [visualizations.length]);
 
-  const toggleSidebar = useCallback(() => runPanelTransition(() => setSidebarOpen((value) => !value)), [runPanelTransition]);
-  const closeSidebar = useCallback(() => runPanelTransition(() => setSidebarOpen(false)), [runPanelTransition]);
-  const toggleFiles = useCallback(() => runPanelTransition(() => setFilesOpen((value) => !value)), [runPanelTransition]);
-  const closeFiles = useCallback(() => runPanelTransition(() => setFilesOpen(false)), [runPanelTransition]);
+  const toggleSidebar = useCallback(() => setSidebarOpen((value) => !value), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const toggleFiles = useCallback(() => setFilesOpen((value) => !value), []);
+  const closeFiles = useCallback(() => setFilesOpen(false), []);
   const closeMap = useCallback(() => setMapOpen(false), []);
 
   useEffect(() => {
@@ -150,6 +141,10 @@ export function App() {
   useEffect(() => {
     window.localStorage.setItem('tau-show-thinking', String(showThinking));
   }, [showThinking]);
+
+  useEffect(() => {
+    window.localStorage.setItem('tau-expand-thinking', String(expandThinking));
+  }, [expandThinking]);
 
   const refreshLiveSessions = useCallback(async () => {
     try {
@@ -322,12 +317,12 @@ export function App() {
       header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={visualizations.length > 0} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
-      conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} />}
+      conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
       taskFloat={<WorkspaceFloat kind="tasks" open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
       mapPanel={<WorkspaceFloat kind="map" open={mapOpen} session={activeSession} onClose={closeMap} />}
       mapOpen={mapOpen}
-      settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
+      settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}
       overlays={<>
         <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} onAddModel={() => openModelSetup('new')} />

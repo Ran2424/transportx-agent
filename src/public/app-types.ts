@@ -114,6 +114,7 @@ export type AppMessage = {
   details?: unknown;
   isError?: boolean;
   timestamp?: number;
+  durationMs?: number;
 };
 
 export type AppEvent = {
@@ -121,13 +122,22 @@ export type AppEvent = {
   sessionId?: string;
   session?: LiveSession;
   message?: AppMessage | string;
-  assistantMessageEvent?: { type?: string; delta?: string };
+  assistantMessageEvent?: {
+    type?: string;
+    delta?: string;
+    contentIndex?: number;
+    partial?: AppMessage;
+    toolCall?: MessageContentBlock;
+  };
   toolCallId?: string;
   toolName?: string;
   args?: Record<string, unknown>;
   partialResult?: unknown;
   result?: unknown;
   isError?: boolean;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
   method?: string;
   id?: string;
   name?: string;

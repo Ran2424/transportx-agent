@@ -6,6 +6,7 @@ import type { Dirent } from 'node:fs';
 import type { ServerResponse } from 'node:http';
 import type { JsonRecord } from './types.js';
 import type { LiveSessionManager } from './sessions.js';
+import { TimingMetricsStore } from './timing-metrics.js';
 
 type HistoryHandlersOptions = {
   sessionsDir: string;
@@ -41,7 +42,12 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
     return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
   };
   const normalizeSessionCwd = (cwd: unknown) => typeof cwd === 'string' && cwd.trim() ? path.resolve(options.expandHome(cwd)) : null;
-  const readSessionEntries = (filePath: string) => options.readBranch(filePath);
+  const readSessionEntries = (filePath: string) => {
+    const entries = options.readBranch(filePath) as JsonRecord[];
+    const header = entries.find((entry) => entry.type === 'session');
+    const cwd = normalizeSessionCwd(header?.cwd);
+    return cwd ? new TimingMetricsStore(cwd).enrichEntries(entries) : entries;
+  };
   const titleFromMessageContent = (content: unknown) => {
     const text = typeof content === 'string' ? content : Array.isArray(content)
       ? content.filter((block): block is { type?: unknown; text?: unknown } => !!block && typeof block === 'object').filter((block) => block.type === 'text').map((block) => typeof block.text === 'string' ? block.text : '').join('\n')

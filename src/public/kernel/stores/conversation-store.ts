@@ -21,6 +21,8 @@ export type LiveOverlay = {
   optimisticPrompt: OptimisticPrompt | null;
   streamingText: string;
   streamingThinking: string;
+  thinkingStartedAt: number | null;
+  thinkingDurationMs: number | null;
   active: boolean;
   queued: QueuedPrompt[];
 };
@@ -39,6 +41,8 @@ const emptyOverlay = (): LiveOverlay => ({
   optimisticPrompt: null,
   streamingText: '',
   streamingThinking: '',
+  thinkingStartedAt: null,
+  thinkingDurationMs: null,
   active: false,
   queued: [],
 });
@@ -61,6 +65,12 @@ export function messageThinking(message: AppMessage | undefined): string {
     .map((b) => b.thinking || b.text || '')
     .filter(Boolean)
     .join('\n');
+}
+
+export function messageThinkingDurationMs(message: AppMessage | undefined): number | null {
+  if (!message || !Array.isArray(message.content)) return null;
+  const duration = message.content.find((block) => block?.type === 'thinking' && Number.isFinite(block.durationMs))?.durationMs;
+  return typeof duration === 'number' && duration >= 0 ? duration : null;
 }
 
 /**
@@ -109,6 +119,22 @@ function overrideBlock(message: AppMessage, blockType: 'text' | 'thinking', fiel
   return { ...message, content };
 }
 
+function withThinkingDuration(message: AppMessage, durationMs: number | null): AppMessage {
+  if (durationMs === null || !Array.isArray(message.content)) return message;
+  let attached = false;
+  const content = message.content.map((block) => {
+    if (attached || block?.type !== 'thinking') return block;
+    attached = true;
+    return { ...block, durationMs };
+  });
+  return attached ? { ...message, content } : message;
+}
+
+function currentThinkingDuration(live: LiveOverlay): number | null {
+  if (live.thinkingDurationMs !== null) return live.thinkingDurationMs;
+  return live.thinkingStartedAt === null ? null : Math.max(0, Date.now() - live.thinkingStartedAt);
+}
+
 export class ConversationStore {
   private readonly store: Store<ConversationStoreState> = createStore<ConversationStoreState>({ bySession: {} });
 
@@ -135,7 +161,7 @@ export class ConversationStore {
     this.update(sessionId, (conv) => {
       if (message?.role === 'assistant') {
         // A new assistant message within the same run resets the buffers.
-        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '' } };
+        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: Date.now(), thinkingDurationMs: null } };
       }
       if (message?.role === 'user') {
         const text = messageText(message);
@@ -160,14 +186,18 @@ export class ConversationStore {
   }
 
   streamDelta(sessionId: string, channel: 'text' | 'thinking', delta: string) {
-    this.update(sessionId, (conv) => ({
-      ...conv,
-      live: {
-        ...conv.live,
-        streamingText: channel === 'text' ? conv.live.streamingText + delta : conv.live.streamingText,
-        streamingThinking: channel === 'thinking' ? conv.live.streamingThinking + delta : conv.live.streamingThinking,
-      },
-    }));
+    this.update(sessionId, (conv) => {
+      const freezeThinking = channel === 'text' && conv.live.thinkingDurationMs === null && conv.live.thinkingStartedAt !== null;
+      return {
+        ...conv,
+        live: {
+          ...conv.live,
+          streamingText: channel === 'text' ? conv.live.streamingText + delta : conv.live.streamingText,
+          streamingThinking: channel === 'thinking' ? conv.live.streamingThinking + delta : conv.live.streamingThinking,
+          thinkingDurationMs: freezeThinking ? currentThinkingDuration(conv.live) : conv.live.thinkingDurationMs,
+        },
+      };
+    });
   }
 
   /**
@@ -187,9 +217,10 @@ export class ConversationStore {
         if (localThinking.length > messageThinking(message).length) {
           finalMessage = overrideBlock(finalMessage, 'thinking', 'thinking', localThinking);
         }
+        finalMessage = withThinkingDuration(finalMessage, messageThinkingDurationMs(finalMessage) ?? currentThinkingDuration(conv.live));
         return {
           snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message: finalMessage }),
-          live: { ...conv.live, streamingText: '', streamingThinking: '' },
+          live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: null, thinkingDurationMs: null },
         };
       }
       if (message) {
@@ -247,7 +278,7 @@ export class ConversationStore {
       && messageThinking(entry.message).includes(streamingThinking));
     if (covered) return entries;
     const content: MessageContentBlock[] = [];
-    if (streamingThinking) content.push({ type: 'thinking', thinking: streamingThinking });
+    if (streamingThinking) content.push({ type: 'thinking', thinking: streamingThinking, durationMs: currentThinkingDuration(conv.live) ?? undefined });
     if (streamingText) content.push({ type: 'text', text: streamingText });
     return appendDedup(entries, { type: 'message', message: { role: 'assistant', content } });
   }

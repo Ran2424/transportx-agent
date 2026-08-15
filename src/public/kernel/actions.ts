@@ -21,7 +21,11 @@ export type ToolExecution = {
   partialResult?: unknown;
   result?: unknown;
   isError?: boolean;
-  status: 'running' | 'completed' | 'error';
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  argumentChars?: number;
+  status: 'preparing' | 'running' | 'completed' | 'error';
 };
 
 export type StreamChannel = 'text' | 'thinking';
@@ -50,9 +54,11 @@ export type AppAction =
   | { type: 'conversation/queueItemRemoved'; sessionId: string; index: number }
   | { type: 'conversation/queueDrained'; sessionId: string }
   // tool execution
+  | { type: 'tool/preparing'; sessionId: string; execution: ToolExecution }
+  | { type: 'tool/argumentsUpdated'; sessionId: string; toolCallId: string; toolName?: string; args?: Record<string, unknown>; argumentChars: number }
   | { type: 'tool/started'; sessionId: string; execution: ToolExecution }
   | { type: 'tool/updated'; sessionId: string; toolCallId: string; partialResult: unknown }
-  | { type: 'tool/ended'; sessionId: string; toolCallId: string; toolName?: string; result?: unknown; isError?: boolean }
+  | { type: 'tool/ended'; sessionId: string; toolCallId: string; toolName?: string; result?: unknown; isError?: boolean; startedAt?: number; endedAt?: number; durationMs?: number }
   // extension UI
   | { type: 'extensionUi/requested'; sessionId: string | null; request: AppEvent }
   | { type: 'extensionUi/resolved'; sessionId: string | null; requestId?: string }

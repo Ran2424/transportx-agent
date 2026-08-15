@@ -95,6 +95,12 @@ export function createDispatcher(stores: KernelStores): Dispatch {
       case 'tool/started':
         stores.toolExecution.started(action.sessionId, action.execution);
         break;
+      case 'tool/preparing':
+        stores.toolExecution.preparing(action.sessionId, action.execution);
+        break;
+      case 'tool/argumentsUpdated':
+        stores.toolExecution.argumentsUpdated(action.sessionId, action.toolCallId, action);
+        break;
       case 'tool/updated':
         stores.toolExecution.updated(action.sessionId, action.toolCallId, action.partialResult);
         break;

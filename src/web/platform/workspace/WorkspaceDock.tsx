@@ -95,7 +95,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
       <button className="icon-button" type="button" aria-label={t('workspace.refresh')} disabled={!session || loading} onClick={() => void load(path || undefined)}><Icon name="refresh" /></button>
     </div>
     <div className="workspace-file-list" role="tabpanel" aria-label={t('workspace.taskFiles')}>
-      {!session ? <WorkspaceEmpty mark="01" title={t('task.waitingContext')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty mark="01" title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
+      {!session ? <WorkspaceEmpty title={t('task.waitingContext')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
     </div>
     <footer className="workspace-dock-footer"><span>SESSION SCOPED</span><span>{session?.id.slice(-8) || 'NO SESSION'}</span></footer>
     {session ? previewFiles.map((file, index) => {
@@ -169,6 +169,6 @@ export function WorkspaceFloat({ kind, open, session, fileOpen = false, onClose 
   </aside>;
 }
 
-function WorkspaceEmpty({ mark, title, description }: { mark: string; title: string; description: string }) {
-  return <section className="workspace-empty"><span>{mark}</span><strong>{title}</strong><p>{description}</p></section>;
+function WorkspaceEmpty({ title, description }: { title: string; description: string }) {
+  return <section className="workspace-empty"><strong>{title}</strong><p>{description}</p></section>;
 }
