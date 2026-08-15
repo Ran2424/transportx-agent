@@ -6,18 +6,10 @@ import type { JsonRecord } from './types.js';
 import type { PiRpcSession } from './sessions.js';
 import { PythonRunner } from './python-runner.js';
 import { diagnosticMessage, parseSpatialAnalysisResultStructured, type SpatialAnalysisResultV1 } from '../contracts/index.js';
+import { sha256File, within } from './asset-integrity.js';
 
 const MAX_INPUT_BYTES = 20 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
-
-function within(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function sha256File(filePath: string) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
-}
 
 function requiredString(body: JsonRecord, key: string, max = 1000) {
   const value = typeof body[key] === 'string' ? body[key].trim() : '';

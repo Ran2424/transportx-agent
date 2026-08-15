@@ -4,14 +4,9 @@ const crypto = require('node:crypto');
 
 import { diagnosticMessage, parseModuleManifestStructured, type ModuleManifest } from '../contracts/index.js';
 import type { ModuleRegistry, ModuleSource } from './module-registry.js';
-import { verifyChecksumFile } from './asset-integrity.js';
+import { verifyChecksumFile, within } from './asset-integrity.js';
 
 export type InstallKind = 'module';
-
-function within(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
-}
 
 function readManifest(manifestPath: string) {
   const result = parseModuleManifestStructured(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));

@@ -2,9 +2,23 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-function within(root: string, target: string) {
+/**
+ * Filesystem safety primitives shared by every server-side path boundary
+ * (ARCHITECTURE.md §7): module install/assembly, asset resolution, session
+ * attachments, live file/preview/export routes and spatial inputs.
+ *
+ * `within` is pure lexical containment: root itself counts as inside. It does
+ * NOT resolve symlinks — call sites protecting existing files must realpath()
+ * both root and target first (see resolveLiveSessionPath / spatial safeInput),
+ * and non-existent targets keep their own parent/symlink checks.
+ */
+export function within(root: string, target: string) {
   const relative = path.relative(path.resolve(root), path.resolve(target));
   return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+export function sha256File(filePath: string) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
 export function verifyChecksumFile(assetRoot: string, integrityFile: string) {
@@ -18,7 +32,7 @@ export function verifyChecksumFile(assetRoot: string, integrityFile: string) {
     if (!match) throw new Error(`Invalid asset integrity entry: ${line}`);
     const target = path.resolve(path.dirname(checksumPath), match[2]);
     if (!within(root, target) || !fs.existsSync(target) || !fs.statSync(target).isFile()) throw new Error(`Asset integrity target is missing or unsafe: ${match[2]}`);
-    const actual = crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex');
+    const actual = sha256File(target);
     if (actual !== match[1].toLowerCase()) throw new Error(`Asset integrity mismatch: ${match[2]}`);
   }
   return entries.length;

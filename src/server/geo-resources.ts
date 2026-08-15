@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { within } from './asset-integrity.js';
 
 type GeoResourceSession = { cwd: string };
 type GeoResourceRouteDeps = { getSession(sessionId: string): GeoResourceSession | null | undefined };
@@ -18,11 +19,6 @@ const GEO_RESOURCE_ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/geo-resources\/([
 function sendJson(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(data));
-}
-
-function within(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 export function handleGeoResourceRoute(

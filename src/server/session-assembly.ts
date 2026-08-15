@@ -1,4 +1,3 @@
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -12,7 +11,7 @@ import {
 import type { Executable } from './runtime-resolver.js';
 import type { ModuleRegistry, RegisteredModule } from './module-registry.js';
 import type { AssetResolver, ResolvedAsset } from './asset-resolver.js';
-import { verifyChecksumFile } from './asset-integrity.js';
+import { verifyChecksumFile, sha256File, within } from './asset-integrity.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
 
@@ -21,14 +20,9 @@ export class SessionPlanError extends Error {
   constructor(readonly code: string, message: string, readonly details: Array<Record<string, string>> = []) { super(message); }
 }
 
-function sha256File(filePath: string) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
-}
-
 function resolvePackagePath(packageRoot: string, relativePath: string, label: string) {
   const resolved = path.resolve(packageRoot, relativePath);
-  const relative = path.relative(path.resolve(packageRoot), resolved);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`${label} escapes package root: ${relativePath}`);
+  if (!within(packageRoot, resolved)) throw new Error(`${label} escapes package root: ${relativePath}`);
   if (!fs.existsSync(resolved)) throw new Error(`${label} is missing: ${resolved}`);
   return preferUnpackedPath(resolved);
 }

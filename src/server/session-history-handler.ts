@@ -7,6 +7,7 @@ import type { ServerResponse } from 'node:http';
 import type { JsonRecord } from './types.js';
 import type { LiveSessionManager } from './sessions.js';
 import { TimingMetricsStore } from './timing-metrics.js';
+import { within } from './asset-integrity.js';
 
 type HistoryHandlersOptions = {
   sessionsDir: string;
@@ -37,10 +38,7 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
     }
     return files;
   };
-  const isWithinPath = (root: string, target: string) => {
-    const relative = path.relative(path.resolve(root), path.resolve(target));
-    return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
-  };
+  const isWithinPath = within;
   const normalizeSessionCwd = (cwd: unknown) => typeof cwd === 'string' && cwd.trim() ? path.resolve(options.expandHome(cwd)) : null;
   const readSessionEntries = (filePath: string) => {
     const entries = options.readBranch(filePath) as JsonRecord[];

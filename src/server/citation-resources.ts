@@ -6,6 +6,7 @@ const path = require('node:path');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CitationResource } from '../contracts/index.js';
 import { CitationRegistryStore } from './citation-registry.js';
+import { within } from './asset-integrity.js';
 
 type CitationResourceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: { assets?: Array<{ id?: string; kind?: string; path?: string }> } | null };
 type CitationResourceDeps = {
@@ -20,11 +21,6 @@ const PDF_PAGE_CACHE_LIMIT = 24;
 function json(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(data));
-}
-
-function within(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 export function handleCitationResourceRoute(

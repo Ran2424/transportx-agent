@@ -8,6 +8,7 @@ import type {
   SessionAttachmentKind,
   SessionAttachmentSource,
 } from '../contracts/attachments.js';
+import { within } from './asset-integrity.js';
 
 const INDEX_VERSION = 1;
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
@@ -89,8 +90,8 @@ function writeIndex(cwd: string, index: AttachmentIndex) {
 }
 
 function ensureWithin(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw error('Attachment path escapes the session directory', 403);
+  // Stricter than within(): the attachment root itself is not a valid target.
+  if (path.resolve(root) === path.resolve(target) || !within(root, target)) throw error('Attachment path escapes the session directory', 403);
 }
 
 function resolveReadyAttachment(cwd: string, attachment: SessionAttachment) {
