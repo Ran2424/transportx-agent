@@ -5,7 +5,7 @@ import { useAppServices } from '../../app/AppProviders';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
-import { modelReference } from '../../lib/formatting';
+import { formatContextWindow, modelReference } from '../../lib/formatting';
 import i18n from '../../i18n';
 
 const thinkingLevels = [
@@ -20,7 +20,7 @@ const thinkingLevels = [
 function normalizeModel(model: ModelRecord | string) {
   const reference = modelReference(model);
   if (typeof model === 'string') return { reference, label: reference, metadata: '' };
-  const context = model.contextWindow || model.context || model.context_window;
+  const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
   const abilities = [model.thinking ? i18n.t('model.ability.thinking') : '', model.images ? i18n.t('model.ability.images') : ''].filter(Boolean).join(' · ');
   const metadata = [context ? `${context} context` : '', abilities].filter(Boolean).join(' · ');
   return { reference, label: reference, metadata };
