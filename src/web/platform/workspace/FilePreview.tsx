@@ -6,7 +6,7 @@ import { renderMarkdown } from '../../../public/markdown.js';
 import { compileCitations } from '../../../contracts/citation-compiler.js';
 import { parseCitationEnvelope } from '../../../contracts/citation.js';
 import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel/commands.js';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
 import type { MessageCitationProjection } from '../../features/citation/citation-projection';
 import i18n from '../../i18n';
@@ -181,7 +181,7 @@ function previewSize() {
 
 export function FilePreview({ item, sessionId, stackIndex, initialOffset, externalSource, citationProjection, onActivate, onClose }: { item: WorkspaceFile; sessionId: string; stackIndex: number; initialOffset: number; externalSource?: ExternalPreviewSource; citationProjection?: MessageCitationProjection; onActivate(): void; onClose(): void }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const presentation = useMemo(() => externalSource ? externalPresentation(externalSource) : filePresentation(item), [externalSource, item]);
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [error, setError] = useState('');

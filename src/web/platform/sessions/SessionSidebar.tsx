@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { HistoryProject, HistorySession } from '../../../public/kernel/commands.js';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { BrandMark } from '../../components/BrandMark';
 import { Icon } from '../../components/icons';
 import { relativeTime, sessionTitle } from '../../lib/formatting';
@@ -60,7 +60,7 @@ export function SessionSidebar({
   onSelectHistory,
 }: SessionSidebarProps) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const [projects, setProjects] = useState<HistoryProject[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);

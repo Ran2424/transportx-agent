@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
-import { useAppServices } from '../../app/AppProviders';
+import { appKernel } from '../../app/composition-root';
 import { useConversationState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
 import { projectMessageCitations, type MessageCitationProjection } from '../../features/citation/citation-projection';
@@ -36,7 +36,7 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
 /** The resource dock intentionally exposes only session files. */
 export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: LiveSession | null; onClose(): void }) {
   const { t } = useTranslation();
-  const { kernel } = useAppServices();
+  const kernel = appKernel;
   const conversation = useConversationState();
   const [path, setPath] = useState('');
   const [items, setItems] = useState<WorkspaceFile[]>([]);
