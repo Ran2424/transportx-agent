@@ -71,6 +71,7 @@ export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(APP_PATHS.appRoot, 'promp
 export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.workbench';
 export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
+  'modules/capabilities/timing/manifest.json',
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',

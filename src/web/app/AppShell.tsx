@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 const DEFAULT_CONVERSATION_WIDTH = 440;
 const SPLITTER_WIDTH = 10;
-const MAP_TRANSITION_MS = 420;
+const MAP_TRANSITION_MS = 400;
 
 function clampConversationWidth(containerWidth: number, requestedWidth: number) {
   const width = Math.max(0, containerWidth);
@@ -37,7 +37,6 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const [preferredWidth, setPreferredWidth] = useState(savedConversationWidth);
   const [conversationWidth, setConversationWidth] = useState(savedConversationWidth);
-  const [mainWidth, setMainWidth] = useState(() => window.innerWidth);
   const [resizing, setResizing] = useState(false);
   const [mapPhase, setMapPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>(mapOpen ? 'opening' : 'closed');
 
@@ -65,7 +64,6 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
     if (!main) return;
     const resize = () => {
       const width = main.getBoundingClientRect().width;
-      setMainWidth(width);
       if (mapVisible) setConversationWidth(clampConversationWidth(width, preferredWidth));
     };
     resize();
@@ -127,7 +125,6 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
 
   const mainStyle = {
     '--conversation-pane-width': `${conversationWidth}px`,
-    '--conversation-full-width': `${mainWidth}px`,
   } as CSSProperties;
 
   return (

@@ -4,7 +4,7 @@ import { BrandMark } from '../../components/BrandMark';
 import { Button } from '../../components/ui/button';
 import { ConversationWorkspace } from './ConversationWorkspace';
 
-export function ConversationStage({ session, loading, onNewSession, showThinking }: { session: LiveSession | null; loading: boolean; onNewSession(): void; showThinking: boolean }) {
+export function ConversationStage({ session, loading, onNewSession, showThinking, expandThinking }: { session: LiveSession | null; loading: boolean; onNewSession(): void; showThinking: boolean; expandThinking: boolean }) {
   const { t } = useTranslation();
   if (loading) {
     return <main className="conversation-stage" aria-busy="true"><div className="stage-loader"><span /><strong>{t('welcome.syncing')}</strong><small>{t('welcome.syncingDetail')}</small></div></main>;
@@ -23,5 +23,5 @@ export function ConversationStage({ session, loading, onNewSession, showThinking
     );
   }
 
-  return <ConversationWorkspace sessionId={session.id} showThinking={showThinking} />;
+  return <ConversationWorkspace sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} />;
 }
