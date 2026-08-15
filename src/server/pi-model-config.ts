@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 import type { JsonRecord } from './types.js';
+import { connectPiModelProvider } from './pi-model-access.js';
 
 export const PI_MODEL_APIS = ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'] as const;
 export type PiModelApi = typeof PI_MODEL_APIS[number];
@@ -32,11 +33,6 @@ function writeSecureJson(filePath: string, value: unknown) {
   fs.chmodSync(filePath, 0o600);
 }
 
-function configLiteral(value: string) {
-  const escaped = value.replace(/\$/g, '$$$$');
-  return escaped.startsWith('!') ? `$!${escaped.slice(1)}` : escaped;
-}
-
 function validated(input: AddPiModelPayload): AddPiModelInput {
   const provider = String(input.provider || '').trim().toLowerCase();
   const modelId = String(input.modelId || '').trim();
@@ -55,10 +51,9 @@ function validated(input: AddPiModelPayload): AddPiModelInput {
   return { provider, modelId, api, baseUrl, apiKey, ...(name ? { name } : {}), reasoning: !!input.reasoning, images: !!input.images };
 }
 
-export function addPiModel(input: AddPiModelPayload, agentDir: string) {
+export async function addPiModel(input: AddPiModelPayload, agentDir: string) {
   const model = validated(input);
   const modelsPath = path.join(agentDir, 'models.json');
-  const authPath = path.join(agentDir, 'auth.json');
   const modelsFile = readObject(modelsPath, { providers: {} });
   const providers = modelsFile.providers && typeof modelsFile.providers === 'object' && !Array.isArray(modelsFile.providers)
     ? modelsFile.providers as JsonRecord
@@ -84,8 +79,7 @@ export function addPiModel(input: AddPiModelPayload, agentDir: string) {
       models: nextModels,
     },
   };
-  const authFile = readObject(authPath, {});
-  writeSecureJson(authPath, { ...authFile, [model.provider]: { type: 'api_key', key: configLiteral(model.apiKey) } });
   writeSecureJson(modelsPath, { ...modelsFile, providers: nextProviders });
+  await connectPiModelProvider(model.provider, model.apiKey, agentDir);
   return { provider: model.provider, modelId: model.modelId, reference: `${model.provider}/${model.modelId}` };
 }

@@ -85,7 +85,8 @@ try {
   await settings.getByRole('button', { name: 'Agent', exact: true }).click();
   await settings.getByText('kimi-coding', { exact: true }).waitFor();
   await settings.getByRole('button', { name: '添加模型' }).click();
-  const addModel = reactPage.getByRole('dialog', { name: '添加 Pi 模型' });
+  const addModel = reactPage.getByRole('dialog', { name: '模型接入' });
+  await addModel.getByRole('tab', { name: '自定义服务' }).click();
   await addModel.getByLabel('Provider ID').fill('smoke-provider');
   await addModel.getByLabel('Model ID').fill('smoke-model');
   await addModel.getByLabel('API Base URL').fill('http://127.0.0.1:1/v1');
