@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { LocalePreference } from '../../i18n';
 import i18n from '../../i18n';
+import { formatContextWindow } from '../../lib/formatting';
 
 export const themes = [
   { id: 'light', label: 'Light' },
@@ -65,7 +66,8 @@ function modelDetails(model: ModelRecord | string) {
     return { provider: slash > 0 ? model.slice(0, slash) : i18n.t('settings.model.unknownProvider'), name: slash > 0 ? model.slice(slash + 1) : model, details: '' };
   }
   const name = model.name || model.label || model.id || model.model || i18n.t('settings.model.unnamed');
-  const details = [model.contextWindow || model.context || model.context_window ? i18n.t('settings.model.context') : '', model.thinking ? i18n.t('settings.model.reasoning') : '', model.images ? i18n.t('settings.model.images') : ''].filter(Boolean).join(' · ');
+  const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
+  const details = [context ? `${context} context` : '', model.thinking ? i18n.t('settings.model.reasoning') : '', model.images ? i18n.t('settings.model.images') : ''].filter(Boolean).join(' · ');
   return { provider: model.provider || i18n.t('settings.model.unknownProvider'), name, details };
 }
 

@@ -45,7 +45,7 @@ const sessionsDir = path.join(agentDir, 'sessions');
 const projectsDir = path.join(tempRoot, 'projects');
 fs.mkdirSync(sessionsDir, { recursive: true });
 fs.mkdirSync(projectsDir, { recursive: true });
-fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { 'kimi-coding': { baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', models: [{ id: 'k2p7', name: 'Fake K2P7', reasoning: true }] } } }));
+fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { 'kimi-coding': { baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', models: [{ id: 'k2p7', name: 'Fake K2P7', contextWindow: 262144, reasoning: true }] } } }));
 fs.writeFileSync(path.join(agentDir, 'auth.json'), JSON.stringify({ 'kimi-coding': { type: 'api_key', key: 'fake-smoke-key' } }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.PI_CODING_AGENT_SESSION_DIR = sessionsDir;

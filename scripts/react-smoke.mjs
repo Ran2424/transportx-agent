@@ -157,8 +157,8 @@ try {
       throw new Error('New task dialog should not expose task type or expected output fields');
     }
     if (name) await dialog.getByLabel('任务名称（可选）').fill(name);
-    await dialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger').click();
-    await dialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
+    await dialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
+    await dialog.locator('.menu-select-trigger', { hasText: '262K context' }).waitFor();
     await dialog.getByRole('button', { name: '创建任务' }).click();
     await reactPage.locator('.live-tab-select').nth(previousCount).waitFor({ timeout: 10_000 });
     return reactPage.evaluate(async () => {
@@ -174,8 +174,8 @@ try {
   await reactPage.getByRole('button', { name: '新建交通任务' }).last().click();
   const secondDialog = reactPage.getByRole('dialog', { name: '新建交通任务' });
   await secondDialog.getByLabel('任务名称（可选）').fill('Smoke task 2');
-  await secondDialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger').click();
-  await secondDialog.getByRole('option', { name: /kimi-coding\/k2p7/ }).click();
+  await secondDialog.getByText('模型', { exact: true }).locator('..').locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
+  await secondDialog.locator('.menu-select-trigger', { hasText: '262K context' }).waitFor();
   await secondDialog.getByRole('button', { name: '创建任务' }).click();
   await reactPage.locator('.live-tab-select').nth(1).waitFor({ timeout: 10_000 });
   await reactPage.getByTitle(primaryTask.cwd, { exact: true }).click();
