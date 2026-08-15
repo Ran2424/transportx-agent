@@ -25,6 +25,7 @@ import { createStaticHandler } from './static-handler.js';
 import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import { addPiModel } from './pi-model-config.js';
+import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders } from './pi-model-access.js';
 import { platformOverview } from './platform-overview.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, buildAttachmentContext, attachmentFilePath } from './session-attachments.js';
 import { CitationService } from './citation-service.js';
@@ -199,9 +200,27 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
     return success({ enabled: authEnabled });
   }
   if (command.type === 'get_available_models') return success({ models: await getAvailableModels() });
+  if (command.type === 'get_model_providers') {
+    try { return success({ providers: await listPiModelProviders(PI_AGENT_DIR) }); }
+    catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'connect_model_provider') {
+    try {
+      const provider = await connectPiModelProvider(String(command.provider || ''), String(command.apiKey || ''), PI_AGENT_DIR);
+      _clearModelListCacheForTest();
+      return success({ provider });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'disconnect_model_provider') {
+    try {
+      await disconnectPiModelProvider(String(command.provider || ''), PI_AGENT_DIR);
+      _clearModelListCacheForTest();
+      return success();
+    } catch (error) { return failure(errorMessage(error)); }
+  }
   if (command.type === 'add_model') {
     try {
-      const model = addPiModel(command as Omit<Partial<import('./pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, PI_AGENT_DIR);
+      const model = await addPiModel(command as Omit<Partial<import('./pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, PI_AGENT_DIR);
       _clearModelListCacheForTest();
       return success({ model });
     } catch (error) { return failure(errorMessage(error)); }

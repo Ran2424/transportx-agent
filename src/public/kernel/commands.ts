@@ -45,6 +45,15 @@ export type AddModelInput = {
   reasoning?: boolean;
   images?: boolean;
 };
+export type ModelProviderAccess = {
+  id: string;
+  name: string;
+  connected: boolean;
+  credentialStored: boolean;
+  authMethods: Array<'api_key' | 'oauth'>;
+  authSource?: string;
+  modelCount: number;
+};
 export type CreateSessionInput = { cwd?: string; name?: string; model?: string; profile?: SessionProfileV1 };
 export type ResumeSessionInput = { filePath: string; model?: string; cwd?: string; useCurrentConfiguration?: boolean };
 export type ExtensionUiResponseInput = {
@@ -160,6 +169,9 @@ export type SessionCommands = {
 
 export type PlatformCommands = {
   getAvailableModels(sessionId?: string | null): Promise<Array<ModelRecord | string>>;
+  getModelProviders(): Promise<ModelProviderAccess[]>;
+  connectModelProvider(provider: string, apiKey: string): Promise<ModelProviderAccess>;
+  disconnectModelProvider(provider: string): Promise<void>;
   getSessionOptions(): Promise<SessionOptions>;
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
   getOverview(): Promise<PlatformOverview>;
@@ -405,6 +417,20 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     async getSessionOptions() {
       const data = await httpJson(deps.http, '/api/platform/session-options', undefined, { category: 'session' });
       return data as SessionOptions;
+    },
+
+    async getModelProviders() {
+      const data = await rpcCommand(deps.http, { type: 'get_model_providers' });
+      return ((data as { data?: { providers?: ModelProviderAccess[] } }).data?.providers ?? []);
+    },
+
+    async connectModelProvider(provider, apiKey) {
+      const data = await rpcCommand(deps.http, { type: 'connect_model_provider', provider, apiKey });
+      return (data as { data: { provider: ModelProviderAccess } }).data.provider;
+    },
+
+    async disconnectModelProvider(provider) {
+      await rpcCommand(deps.http, { type: 'disconnect_model_provider', provider });
     },
 
     async addModel(input) {
