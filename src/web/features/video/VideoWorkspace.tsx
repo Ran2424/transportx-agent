@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import { formatVideoTimestamp, parseVideoTimestamp, type VideoSceneItemV1 } from '../../../contracts/video.js';
@@ -34,7 +34,9 @@ export function VideoWorkspace({ session, active }: { session: LiveSession | nul
   );
   const items = scene?.scene.videos ?? [];
   const activeItem = items.find((item) => item.id === scene?.scene.activeVideoId) ?? items.at(-1) ?? null;
+  const compareItem = scene?.scene.compareVideoId ? items.find((item) => item.id === scene.scene.compareVideoId) ?? null : null;
   const [selectedId, setSelectedId] = useState('');
+  const [dismissedCompareKey, setDismissedCompareKey] = useState('');
   const selected = items.find((item) => item.id === selectedId) ?? activeItem;
   useEffect(() => {
     if (activeItem && activeItem.id !== selectedId) setSelectedId(activeItem.id);
@@ -42,6 +44,41 @@ export function VideoWorkspace({ session, active }: { session: LiveSession | nul
 
   if (!session) return <FeatureEmpty mark="05" title={t('task.waitingContext')} description={t('video.waitingDescription')} />;
   if (!selected) return <FeatureEmpty mark="05" title={t('video.emptyTitle')} description={t('video.emptyDescription')} />;
+
+  const compareKey = compareItem && scene ? `${scene.revision}:${compareItem.id}` : '';
+  const showCompare = !!compareItem && compareItem.id !== selected.id && compareKey !== dismissedCompareKey;
+
+  if (showCompare && compareItem) {
+    return (
+      <div className="video-workspace">
+        <div className="video-compare">
+          <div className="video-compare-pane">
+            <VideoPlayer
+              key={`${session.id}:${selected.id}:${selected.initialSeekSeconds ?? 'start'}:${scene?.revision ?? 0}`}
+              sessionId={session.id}
+              item={selected}
+              items={[]}
+              active={active}
+              onSelect={setSelectedId}
+              compact
+            />
+          </div>
+          <div className="video-compare-pane">
+            <VideoPlayer
+              key={`${session.id}:${compareItem.id}:${compareItem.initialSeekSeconds ?? 'start'}:${scene?.revision ?? 0}`}
+              sessionId={session.id}
+              item={compareItem}
+              items={[]}
+              active={active}
+              onSelect={() => {}}
+              compact
+              trailingAction={<button className="video-exit-compare" type="button" onClick={() => setDismissedCompareKey(compareKey)}>{t('video.exitCompare')}</button>}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="video-workspace">
@@ -57,12 +94,14 @@ export function VideoWorkspace({ session, active }: { session: LiveSession | nul
   );
 }
 
-function VideoPlayer({ sessionId, item, items, active, onSelect }: {
+function VideoPlayer({ sessionId, item, items, active, onSelect, compact = false, trailingAction }: {
   sessionId: string;
   item: VideoSceneItemV1;
   items: VideoSceneItemV1[];
   active: boolean;
   onSelect(id: string): void;
+  compact?: boolean;
+  trailingAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -93,6 +132,7 @@ function VideoPlayer({ sessionId, item, items, active, onSelect }: {
         ) : (
           <strong className="video-toolbar-title">{item.title}</strong>
         )}
+        {trailingAction}
         <span className="video-toolbar-clock" title={clock ? `${item.recordingStartTime.slice(0, 10)} ${clock}` : ''}>
           {clock ? t('video.currentTime', { time: clock }) : ''}
         </span>
@@ -100,12 +140,14 @@ function VideoPlayer({ sessionId, item, items, active, onSelect }: {
           {item.kind === 'derived' ? t('video.derivedClip') : t('video.sourceRecording')}
         </span>
       </div>
-      <div className="video-subbar">
-        <span>
-          {item.cameraId ? `${t('video.camera')} ${item.cameraId} · ` : ''}
-          {t('video.recording')} {item.recordingStartTime.slice(0, 10)} {item.recordingStartTime.slice(11, 19)} – {item.recordingEndTime.slice(11, 19)} · {formatDuration(item.durationSeconds)}
-        </span>
-      </div>
+      {compact ? null : (
+        <div className="video-subbar">
+          <span>
+            {item.cameraId ? `${t('video.camera')} ${item.cameraId} · ` : ''}
+            {t('video.recording')} {item.recordingStartTime.slice(0, 10)} {item.recordingStartTime.slice(11, 19)} – {item.recordingEndTime.slice(11, 19)} · {formatDuration(item.durationSeconds)}
+          </span>
+        </div>
+      )}
       <div className="video-stage">
         {loading && !error ? <p className="video-status" role="status">{t('video.loading')}</p> : null}
         {error ? <p className="video-status is-error" role="alert">{error}</p> : null}

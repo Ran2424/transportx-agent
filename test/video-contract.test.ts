@@ -63,6 +63,13 @@ test('video scene parser accepts a valid scene and rejects malformed ones', () =
   assert.equal(ok.ok, true);
   assert.equal(ok.value.videos[0].initialSeekSeconds, 32);
 
+  // Optional comparison pane: valid pair parses, dangling or self-referencing pairs are rejected.
+  const pair = parseVideoSceneStructured({ schemaVersion: 1, revision: 4, videos: [sceneItem, { ...sceneItem, id: 'video_def', resourceId: 'video_def' }], activeVideoId: 'video_abc', compareVideoId: 'video_def' });
+  assert.equal(pair.ok, true);
+  assert.equal(pair.value.compareVideoId, 'video_def');
+  assert.equal(parseVideoSceneStructured({ schemaVersion: 1, revision: 4, videos: [sceneItem], activeVideoId: 'video_abc', compareVideoId: 'missing' }).ok, false, 'dangling compareVideoId');
+  assert.equal(parseVideoSceneStructured({ schemaVersion: 1, revision: 4, videos: [sceneItem, { ...sceneItem, id: 'video_def', resourceId: 'video_def' }], activeVideoId: 'video_abc', compareVideoId: 'video_abc' }).ok, false, 'compare must differ from active');
+
   for (const [name, candidate] of Object.entries({
     wrongSchema: { schemaVersion: 2, revision: 1, videos: [] },
     badActive: { schemaVersion: 1, revision: 1, videos: [sceneItem], activeVideoId: 'missing' },
@@ -74,6 +81,51 @@ test('video scene parser accepts a valid scene and rejects malformed ones', () =
     const result = parseVideoSceneStructured(candidate);
     assert.equal(result.ok, false, name);
   }
+});
+
+test('present reducer builds comparison pairs, keeps seek variants distinct and evicts safely', () => {
+  const { reduceVideoScenePresent, videoSceneItemId, VIDEO_SCENE_MAX_ITEMS } = require('../bin/contracts/video.js');
+  const item = (resourceId: string, seek?: number) => ({ ...sceneItem, id: videoSceneItemId(resourceId, seek), resourceId, ...(seek ? { initialSeekSeconds: seek } : {}) });
+  const empty = { schemaVersion: 1, revision: 0, videos: [] };
+
+  assert.equal(videoSceneItemId('video_a'), 'video_a');
+  assert.equal(videoSceneItemId('video_a', 1320), 'video_a@1320');
+
+  const first = reduceVideoScenePresent(empty, item('video_a'));
+  assert.equal(first.activeVideoId, 'video_a');
+  assert.equal(first.compareVideoId, undefined);
+
+  // compare=true keeps the active pane and fills the comparison pane.
+  const compared = reduceVideoScenePresent(first, item('video_b'), { compare: true });
+  assert.equal(compared.activeVideoId, 'video_a');
+  assert.equal(compared.compareVideoId, 'video_b');
+
+  // Same recording at two absolute times becomes two items (image comparison).
+  const t1 = reduceVideoScenePresent(empty, item('video_a', 1200));
+  const t2 = reduceVideoScenePresent(t1, item('video_a', 2400), { compare: true });
+  assert.equal(t2.videos.length, 2);
+  assert.equal(t2.activeVideoId, 'video_a@1200');
+  assert.equal(t2.compareVideoId, 'video_a@2400');
+
+  // Presenting a new primary keeps the comparison pane; presenting the compared item as primary clears the duplicate role.
+  const replaced = reduceVideoScenePresent(compared, item('video_c'));
+  assert.equal(replaced.activeVideoId, 'video_c');
+  assert.equal(replaced.compareVideoId, 'video_b');
+  const promoted = reduceVideoScenePresent(compared, item('video_b'));
+  assert.equal(promoted.activeVideoId, 'video_b');
+  assert.equal(promoted.compareVideoId, undefined);
+
+  // compare=true on the very first present degrades to a normal present.
+  const degraded = reduceVideoScenePresent(empty, item('video_a'), { compare: true });
+  assert.equal(degraded.activeVideoId, 'video_a');
+  assert.equal(degraded.compareVideoId, undefined);
+
+  // Eviction never removes the visible pair and clears dangling comparisons.
+  let scene = compared;
+  for (let index = 0; index < VIDEO_SCENE_MAX_ITEMS + 2; index += 1) scene = reduceVideoScenePresent(scene, item(`video_x${index}`));
+  assert.ok(scene.videos.length <= VIDEO_SCENE_MAX_ITEMS);
+  assert.ok(scene.videos.some((entry: any) => entry.id === scene.activeVideoId));
+  if (scene.compareVideoId) assert.ok(scene.videos.some((entry: any) => entry.id === scene.compareVideoId));
 });
 
 test('video envelope projects from tool results and ignores other messages', () => {

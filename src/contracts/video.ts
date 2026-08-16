@@ -34,6 +34,8 @@ export type VideoSceneSnapshotV1 = {
   revision: number;
   videos: VideoSceneItemV1[];
   activeVideoId?: string;
+  /** Optional comparison pane item (side-by-side with the active item). */
+  compareVideoId?: string;
 };
 
 /** Tool-result envelope persisted in Pi JSONL as details.video. */
@@ -215,8 +217,11 @@ export function parseVideoSceneStructured(value: unknown, diagnostics: ContractD
   }
   const activeVideoId = record.activeVideoId === undefined ? undefined : asString(record.activeVideoId, 120) ?? undefined;
   if (activeVideoId && !videos.some((item) => item.id === activeVideoId)) diagnostics.push(diagnostic({ code: 'unknown_reference', path: 'videoScene.activeVideoId', message: 'activeVideoId does not reference a scene item.' }));
+  const compareVideoId = record.compareVideoId === undefined ? undefined : asString(record.compareVideoId, 120) ?? undefined;
+  if (compareVideoId && !videos.some((item) => item.id === compareVideoId)) diagnostics.push(diagnostic({ code: 'unknown_reference', path: 'videoScene.compareVideoId', message: 'compareVideoId does not reference a scene item.' }));
+  if (compareVideoId && compareVideoId === activeVideoId) diagnostics.push(diagnostic({ code: 'unsupported_value', path: 'videoScene.compareVideoId', message: 'compareVideoId must differ from activeVideoId.' }));
   if (!rawVideos || revision === null || revision < 0) return { ok: false, value: null, diagnostics };
-  return finish({ schemaVersion: 1, revision, videos, ...(activeVideoId ? { activeVideoId } : {}) }, diagnostics);
+  return finish({ schemaVersion: 1, revision, videos, ...(activeVideoId ? { activeVideoId } : {}), ...(compareVideoId ? { compareVideoId } : {}) }, diagnostics);
 }
 
 export function parseVideoScene(value: unknown): { ok: true; value: VideoSceneSnapshotV1 } | { ok: false; diagnostics: ContractDiagnostic[] } {
@@ -355,4 +360,48 @@ export function parseVideoCatalogStructured(value: unknown, diagnostics: Contrac
 
 export function videoDiagnosticsMessage(diagnostics: ContractDiagnostic[]): string {
   return diagnostics.map(diagnosticMessage).join('; ');
+}
+
+/** Maximum items retained in a video scene; oldest non-visible items are evicted. */
+export const VIDEO_SCENE_MAX_ITEMS = 6;
+
+/**
+ * Scene identity of a presented item. Presenting the same resource at a
+ * specific timestamp creates a distinct item so two absolute times of one
+ * recording can be compared side by side.
+ */
+export function videoSceneItemId(resourceId: string, initialSeekSeconds?: number): string {
+  return initialSeekSeconds !== undefined && initialSeekSeconds > 0 ? `${resourceId}@${Math.round(initialSeekSeconds)}` : resourceId;
+}
+
+/**
+ * Pure scene reducer for video_present. Upserts the item, then:
+ * - compare: the item takes the comparison pane, the current active item stays;
+ * - otherwise: the item becomes active; an existing comparison pane is kept.
+ */
+export function reduceVideoScenePresent(scene: VideoSceneSnapshotV1, presented: VideoSceneItemV1, opts: { compare?: boolean } = {}): VideoSceneSnapshotV1 {
+  const revision = scene.revision + 1;
+  let videos = scene.videos.filter((item) => item.id !== presented.id);
+  videos.push(presented);
+
+  let activeVideoId: string | undefined;
+  let compareVideoId: string | undefined;
+  if (opts.compare && scene.activeVideoId && scene.activeVideoId !== presented.id) {
+    activeVideoId = scene.activeVideoId;
+    compareVideoId = presented.id;
+  } else {
+    activeVideoId = presented.id;
+    compareVideoId = scene.compareVideoId && scene.compareVideoId !== presented.id ? scene.compareVideoId : undefined;
+  }
+
+  if (videos.length > VIDEO_SCENE_MAX_ITEMS) {
+    const keep = new Set([activeVideoId, compareVideoId].filter((id): id is string => !!id));
+    const evictable = videos.filter((item) => !keep.has(item.id));
+    const evictCount = videos.length - VIDEO_SCENE_MAX_ITEMS;
+    const evicted = new Set(evictable.slice(0, evictCount).map((item) => item.id));
+    videos = videos.filter((item) => !evicted.has(item.id));
+  }
+  if (compareVideoId && !videos.some((item) => item.id === compareVideoId)) compareVideoId = undefined;
+
+  return { schemaVersion: 1, revision, videos, ...(activeVideoId ? { activeVideoId } : {}), ...(compareVideoId ? { compareVideoId } : {}) };
 }
