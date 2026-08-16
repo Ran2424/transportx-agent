@@ -132,6 +132,8 @@ export class AgentHostSupervisor {
     const developmentRuntime = fs.existsSync(runtimeManifest) ? {} : {
       TAU_PI_ENTRYPOINT: path.join(paths.appRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
       TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
+      TAU_FFMPEG_COMMAND: process.env.TAU_FFMPEG_COMMAND || 'ffmpeg',
+      TAU_FFPROBE_COMMAND: process.env.TAU_FFPROBE_COMMAND || 'ffprobe',
     };
     const args = ['--desktop', '--parent-pid', String(process.pid)];
     const env = {

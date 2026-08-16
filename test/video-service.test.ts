@@ -60,6 +60,9 @@ test('video search filters by location, camera and time overlap', { skip: !ffmpe
   assert.ok(!('file' in all.candidates[0]) && !('path' in all.candidates[0]), 'candidates never expose paths');
 
   assert.equal(video.search(session, { location: '人民路' }).candidates[0].videoId, 'video_001');
+  assert.equal(video.search(session, { location: '人民路 中山' }).candidates[0].videoId, 'video_001', 'multi-keyword location uses AND matching');
+  assert.equal(video.search(session, { location: 'camera_001' }).candidates[0].videoId, 'video_001', 'location keywords also match the camera id');
+  assert.equal(video.search(session, { location: '人民路 张杨' }).candidates.length, 0, 'all keywords must match');
   assert.equal(video.search(session, { cameraId: 'camera_002' }).candidates[0].videoId, 'video_002');
   assert.equal(video.search(session, { location: '不存在的地方' }).candidates.length, 0);
 
