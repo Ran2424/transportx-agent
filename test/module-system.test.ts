@@ -96,6 +96,38 @@ test('Session Assembly resolves extensions, skills, assets and persists a versio
   assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_content_mismatch');
 });
 
+test('Session Resume tolerates builtin module drift but still enforces installed modules', (t: any) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-plan-builtin-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const geoManifest = path.join(ROOT, 'modules/capabilities/geo/manifest.json');
+  const geoSkill = path.join(ROOT, 'modules/capabilities/geo/skills/SKILL.md');
+  const originalManifest = fs.readFileSync(geoManifest, 'utf8');
+  const originalSkill = fs.readFileSync(geoSkill, 'utf8');
+  t.after(() => {
+    fs.writeFileSync(geoManifest, originalManifest);
+    fs.writeFileSync(geoSkill, originalSkill);
+  });
+  const modules = registry();
+  const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [], version: '0.80.10' }, { command: 'python', args: [], version: '3.10' });
+  const plan = assembler.assemble('com.transportx.workbench', workspace);
+  const geoPlan = plan.modules.find((module: any) => module.id === 'com.transportx.geo');
+  assert.equal(geoPlan.origin, 'builtin');
+  assembler.save(plan);
+  assert.equal(assembler.load(workspace).modules.find((module: any) => module.id === 'com.transportx.geo').version, geoPlan.version);
+
+  // Builtin modules are replaced in place on platform upgrades: version bumps and
+  // content changes must not make older sessions unloadable.
+  const bumped = JSON.parse(originalManifest);
+  bumped.version = '99.0.0';
+  fs.writeFileSync(geoManifest, JSON.stringify(bumped));
+  fs.writeFileSync(geoSkill, `${originalSkill}\n\nUpgraded in place.\n`);
+  assert.doesNotThrow(() => assembler.load(workspace));
+
+  // A missing builtin package is still a hard failure.
+  fs.rmSync(geoManifest);
+  assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
+});
+
 test('Session Assembly keeps every active Data and Knowledge asset in one session plan', (t: any) => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-multiple-data-'));
   t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));

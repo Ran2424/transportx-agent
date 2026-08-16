@@ -152,9 +152,22 @@ export class SessionAssembler {
     for (const module of plan.modules) {
       const manifestPath = path.join(module.packageRoot, 'manifest.json');
       if (!fs.existsSync(manifestPath)) throw new SessionPlanError('module_version_missing', `Module version is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
-      if (sha256File(manifestPath) !== module.manifestSha256) throw new SessionPlanError('module_content_mismatch', `Module manifest changed: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.manifestSha256, actual: sha256File(manifestPath) }]);
+      // Builtin modules ship with the platform and are replaced in place on upgrade;
+      // their old versions no longer exist, so content drift is tolerated (and logged)
+      // instead of making every older session unloadable. Installed/external modules
+      // keep exact-version enforcement because multiple versions coexist.
+      const builtin = module.origin === 'builtin';
+      if (sha256File(manifestPath) !== module.manifestSha256) {
+        const message = `Module manifest changed: ${module.id}@${module.version}`;
+        if (!builtin) throw new SessionPlanError('module_content_mismatch', message, [{ moduleId: module.id, expected: module.manifestSha256, actual: sha256File(manifestPath) }]);
+        console.warn(`[Tau] Tolerating builtin module drift while resuming a session: ${message}`);
+      }
       for (const entry of module.entrypoints) {
-        if (!fs.existsSync(entry.path) || sha256File(entry.path) !== entry.sha256) throw new SessionPlanError('module_content_mismatch', `Module entrypoint changed: ${module.id}@${module.version}`, [{ moduleId: module.id, path: entry.path, expected: entry.sha256, actual: fs.existsSync(entry.path) ? sha256File(entry.path) : 'missing' }]);
+        if (!fs.existsSync(entry.path) || sha256File(entry.path) !== entry.sha256) {
+          const message = `Module entrypoint changed: ${module.id}@${module.version}`;
+          if (!builtin) throw new SessionPlanError('module_content_mismatch', message, [{ moduleId: module.id, path: entry.path, expected: entry.sha256, actual: fs.existsSync(entry.path) ? sha256File(entry.path) : 'missing' }]);
+          console.warn(`[Tau] Tolerating builtin module drift while resuming a session: ${message} (${entry.path})`);
+        }
       }
     }
     for (const asset of plan.assets) {
