@@ -37,6 +37,13 @@
 - 修复开发桌面模式（`npm run desktop:dev`）下 `video_present` 报 “ffmpeg/ffprobe are not configured for this runtime”：Agent Host supervisor 的开发运行时注入缺少 `TAU_FFMPEG_COMMAND`/`TAU_FFPROBE_COMMAND` 覆盖，导致 dev 桌面模式误走打包 manifest 路径。
 - 修复 `video_search` 地点检索无法命中多关键词查询（如「虹桥 地铁入口」）：改为空白分词 AND 匹配，且关键词同时匹配标题、地点与摄像头编号。
 
+Workspace Focus 抽象与视频工作区形态升级：
+
+- 将 Map Focus 布局抽象为通用 Workspace Focus 机制：`is-map-focused`/`map-focus-panel` 泛化为 `is-workspace-focused`/`workspace-focus-panel`，Geo 与 Video 作为 Focus Area 的不同内容共享停靠规则（分屏、可拖宽分隔条、会话区 25%–45% 可调、约 65:35 默认比例、opening/closing 过渡），为未来 Report/Chart/Evidence 等内容预留统一入口。
+- 视频从「覆盖式媒体浮卡」变为与地图一致的一级停靠工作区：不再遮挡会话；Map ↔ Video 互斥切换时只换内容、不动布局（会话位置、宽度、滚动保持稳定）。
+- Video Toolbar 业务信息层：标题/多视频选择器、**当前绝对录像时间**（recordingStartTime + currentTime，随播放/Seek 实时更新）、原始录像/裁剪片段徽标；Subbar 显示摄像头编号、录像绝对时间范围与时长。播放器保持原生 `<video controls>` 不过度设计。
+- 自动打开策略明确边界：`video_present` 自动打开/切换 Workspace；`video_snapshot`/`video_sample_frames`/`video_clip` 不改变 Workspace；用户手动关闭后不因普通回复重新弹出。
+
 ## v3.0.9 — 工作台 UI 打磨与 Video Capability 设计文档
 
 - 日期：2026-08-16
