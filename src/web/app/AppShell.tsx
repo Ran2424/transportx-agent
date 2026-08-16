@@ -19,7 +19,7 @@ function savedConversationWidth() {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_CONVERSATION_WIDTH;
 }
 
-export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, mapOpen, settings, settingsOpen, overlays }: {
+export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, videoPanel, mapOpen, videoOpen, settings, settingsOpen, overlays }: {
   header: ReactNode;
   sidebar: ReactNode;
   tabs: ReactNode;
@@ -27,7 +27,9 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   workspace: ReactNode;
   taskFloat: ReactNode;
   mapPanel: ReactNode;
+  videoPanel: ReactNode;
   mapOpen: boolean;
+  videoOpen: boolean;
   settings: ReactNode;
   settingsOpen: boolean;
   overlays: ReactNode;
@@ -38,17 +40,18 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   const [preferredWidth, setPreferredWidth] = useState(savedConversationWidth);
   const [conversationWidth, setConversationWidth] = useState(savedConversationWidth);
   const [resizing, setResizing] = useState(false);
-  const [mapPhase, setMapPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>(mapOpen ? 'opening' : 'closed');
+  const focusOpen = mapOpen || videoOpen;
+  const [mapPhase, setMapPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>(focusOpen ? 'opening' : 'closed');
 
-  const mapState = mapOpen ? (mapPhase === 'open' ? 'open' : 'opening') : (mapPhase === 'closed' ? 'closed' : 'closing');
+  const mapState = focusOpen ? (mapPhase === 'open' ? 'open' : 'opening') : (mapPhase === 'closed' ? 'closed' : 'closing');
   const mapVisible = mapState !== 'closed';
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setMapPhase(mapOpen ? 'open' : 'closed');
+      setMapPhase(focusOpen ? 'open' : 'closed');
       return;
     }
-    if (mapOpen) {
+    if (focusOpen) {
       setMapPhase('opening');
       const frame = window.requestAnimationFrame(() => setMapPhase('open'));
       return () => window.cancelAnimationFrame(frame);
@@ -57,7 +60,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
     setMapPhase('closing');
     const timer = window.setTimeout(() => setMapPhase('closed'), MAP_TRANSITION_MS);
     return () => window.clearTimeout(timer);
-  }, [mapOpen]);
+  }, [focusOpen]);
 
   useEffect(() => {
     const main = mainRef.current;
@@ -135,7 +138,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
         {settings || <>
           {sidebar}
           <section ref={mainRef} className={`agent-main-column${mapVisible ? ' is-map-focused' : ''}${mapState === 'opening' ? ' is-map-entering' : ''}${mapState === 'closing' ? ' is-map-closing' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
-            <section className="map-focus-panel">{mapPanel}</section>
+            <section className="map-focus-panel">{mapPanel}{videoPanel}</section>
             <div
               className="conversation-resizer"
               role="separator"

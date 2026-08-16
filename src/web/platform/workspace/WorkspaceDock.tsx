@@ -7,6 +7,7 @@ import { useConversationState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
 import { projectMessageCitations, type MessageCitationProjection } from '../../features/citation/citation-projection';
 import { GeoWorkspace } from '../../features/geo/GeoWorkspace';
+import { VideoWorkspace } from '../../features/video/VideoWorkspace';
 import { TaskBoard } from '../../features/task/TaskBoard';
 import { basename } from '../../lib/formatting';
 import { FilePreview, filePresentation } from './FilePreview';
@@ -106,23 +107,25 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
   </aside>;
 }
 
-export function WorkspaceFloat({ kind, open, session, fileOpen = false, onClose }: { kind: 'tasks' | 'map'; open: boolean; session: LiveSession | null; fileOpen?: boolean; onClose(): void }) {
+export function WorkspaceFloat({ kind, open, session, fileOpen = false, onClose }: { kind: 'tasks' | 'map' | 'video'; open: boolean; session: LiveSession | null; fileOpen?: boolean; onClose(): void }) {
   const { t } = useTranslation();
   const map = kind === 'map';
+  const video = kind === 'video';
+  const fixed = map || video;
   const panelRef = useRef<HTMLElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const dragState = useRef<null | { pointerId: number; startX: number; startY: number; originX: number; originY: number; minX: number; maxX: number; minY: number; maxY: number }>(null);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    if (map) return;
+    if (fixed) return;
     dragOffset.current = { x: 0, y: 0 };
     panelRef.current?.style.setProperty('--workspace-drag-x', '0px');
     panelRef.current?.style.setProperty('--workspace-drag-y', '0px');
-  }, [map, session?.id]);
+  }, [fixed, session?.id]);
 
   function startDrag(event: ReactPointerEvent<HTMLElement>) {
-    if (map || event.button !== 0 || window.matchMedia('(max-width: 760px)').matches || (event.target as HTMLElement).closest('button')) return;
+    if (fixed || event.button !== 0 || window.matchMedia('(max-width: 760px)').matches || (event.target as HTMLElement).closest('button')) return;
     const panel = panelRef.current;
     if (!panel) return;
     const rect = panel.getBoundingClientRect();
@@ -163,9 +166,12 @@ export function WorkspaceFloat({ kind, open, session, fileOpen = false, onClose 
     setDragging(false);
   }
 
-  return <aside ref={panelRef} className={`workspace-float workspace-float--${kind}${open ? ' is-open' : ''}${!map && fileOpen ? ' is-file-offset' : ''}${dragging ? ' is-dragging' : ''}`} aria-label={map ? t('workspace.mapView') : t('workspace.taskPanel')} data-testid={`workspace-float-${kind}`}>
-    <header className="workspace-float-header" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><strong>{map ? t('workspace.map') : t('workspace.task')}</strong><button className="icon-button" type="button" aria-label={map ? t('workspace.closeMap') : t('workspace.closeTasks')} onClick={onClose}><Icon name="close" /></button></header>
-    <div className="workspace-float-body">{map ? <GeoWorkspace session={session} active={open} /> : <TaskBoard session={session} />}</div>
+  const titleKey = map ? 'workspace.map' : video ? 'workspace.video' : 'workspace.task';
+  const closeKey = map ? 'workspace.closeMap' : video ? 'workspace.closeVideo' : 'workspace.closeTasks';
+  const labelKey = map ? 'workspace.mapView' : video ? 'workspace.videoView' : 'workspace.taskPanel';
+  return <aside ref={panelRef} className={`workspace-float workspace-float--${kind}${open ? ' is-open' : ''}${!fixed && fileOpen ? ' is-file-offset' : ''}${dragging ? ' is-dragging' : ''}`} aria-label={t(labelKey)} data-testid={`workspace-float-${kind}`}>
+    <header className="workspace-float-header" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><strong>{t(titleKey)}</strong><button className="icon-button" type="button" aria-label={t(closeKey)} onClick={onClose}><Icon name="close" /></button></header>
+    <div className="workspace-float-body">{map ? <GeoWorkspace session={session} active={open} /> : video ? <VideoWorkspace session={session} active={open} /> : <TaskBoard session={session} />}</div>
   </aside>;
 }
 

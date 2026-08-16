@@ -11,6 +11,23 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## 未发布 — Video Capability V1（开发中）
+
+- 日期：2026-08-16
+- GitHub 操作：本地 `feature/video-capability` 分支，尚未合并或推送。
+
+主要修改：
+
+- 依据 `docs/SPEC_VIDEO.md` 实现 Video Capability V1：新增 `src/contracts/video.ts`（Video Scene V1、资源 Manifest、Catalog 与严格带时区时间解析）、Agent Host Video Service / VideoRunner（受控 ffmpeg/ffprobe）、Session Video Resource（`.tau/video-resources/`）、支持 GET/HEAD/单 Range/416 的同源 Video Resource API。
+- 新增内置 Capability Module `modules/capabilities/video`（`video_search` / `video_present` / `video_snapshot` / `video_clip` / `video_sample_frames` 五个受控工具、Skill 与视觉模型门控）与可安装 Data Module `modules/installable/demo-video`（两段 60 秒合成 Demo 录像）。
+- React 新增 Video Workspace（投影自 Video Scene 的 Float 播放器视图，支持初始定位、Loading/Error），Header 与命令面板增加视频视图开关。
+- 打包运行时扩展为 Pi + Python + ffmpeg/ffprobe：runtime manifest 记录版本/架构/SHA-256，desktop smoke 校验打包二进制与渲染器 H.264 支持（Phase 0）。
+
+验证：
+
+- `npm run typecheck` 通过；`npm test` 通过 94 项回归（新增 Video Contract / Service / HTTP Range 等 16 项）。
+- `npm run test:react-smoke` 在 `main` 基线上即失败（既有问题，与本次改动无关）。
+
 ## v3.0.9 — 工作台 UI 打磨与 Video Capability 设计文档
 
 - 日期：2026-08-16

@@ -8,11 +8,12 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
+import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
-import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, setCitationEndpoint, setSpatialEndpoint, _setSpawnPiForTest } from './sessions.js';
+import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, _setSpawnPiForTest } from './sessions.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
+import { handleVideoResourceRoute } from './video-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
 import { renderReportPdf } from './report-pdf.js';
 import { inspectPiRuntime, piProcessEnv } from './pi-runtime.js';
@@ -31,6 +32,7 @@ import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachmen
 import { CitationService } from './citation-service.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
+import { VideoService } from './video-service.js';
 import { verifyChecksumFile, within } from './asset-integrity.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
@@ -38,6 +40,7 @@ let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
+const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
 const reliableCommandTypes = new Set(['prompt', 'steer', 'follow_up', 'abort', 'extension_ui_response']);
 
@@ -371,6 +374,7 @@ const apiRouter = createApiRouter({
   deleteAttachment: deleteSessionAttachment,
   citation: citationService,
   spatial: spatialAnalysisService,
+  video: videoService,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -379,6 +383,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
   const parsed = new URL(`http://localhost${req.url || urlPath}`);
   if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
+  if (handleVideoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
   if (handleCitationResourceRoute(req, res, parsed.pathname, { knowledgeRoots: (session) => (session.resolvedSessionPlan?.assets || []).filter((asset): asset is { id: string; kind: 'knowledge'; path: string } => asset.kind === 'knowledge' && typeof asset.id === 'string' && typeof asset.path === 'string').map((asset) => ({ id: asset.id, path: asset.path })), getSession: (id) => liveManager.get(id) })) return;
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
@@ -400,6 +405,7 @@ function computeUrls(port: number) {
   lanUrl = `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
   setCitationEndpoint(`http://127.0.0.1:${port}`);
   setSpatialEndpoint(`http://127.0.0.1:${port}`);
+  setVideoEndpoint(`http://127.0.0.1:${port}`);
 }
 
 function listen(port: number, attemptsLeft = 10) {
@@ -423,7 +429,7 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true; console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
   socketHandler.close(); try { wss.close(); } catch {}
-  spatialAnalysisService.terminateAll(); await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
+  spatialAnalysisService.terminateAll(); videoService.terminateAll(); await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
 }
 function startCli() {
   const runtime = inspectPiRuntime(PI_COMMAND, PI_COMMAND_ARGS); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);

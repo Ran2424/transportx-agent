@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-**TransportX Traffic Agent**：可安装的本地交通分析 Agent。产品形态为桌面工作台（Codex / VS Code 式高密度面板），面向交通分析人员，回答路段、时段、出行需求等交通问题，支持地图分析、任务拆解、引用与报告生成。
+**TransportX Traffic Agent**：可安装的本地交通分析 Agent。产品形态为桌面工作台（Codex / VS Code 式高密度面板），面向交通分析人员，回答路段、时段、出行需求等交通问题，支持地图分析、视频查询与受控处理、任务拆解、引用与报告生成。
 
 - **桌面生命周期**：Electron（主进程 + Agent Host Utility Process）
 - **会话与资源边界**：Node Agent Host（Pi RPC、Python、会话、文件、鉴权）
@@ -19,7 +19,7 @@
 | 桌面 | Electron 43、electron-builder 26（DMG arm64 / NSIS x64） |
 | 服务端 | Node.js + TypeScript，`src/server/` |
 | 前端 | React 19、Vite、Tailwind CSS 4、Radix Dialog、MapLibre GL |
-| 运行时 | Pi CLI `@earendil-works/pi-coding-agent` 0.80.10、可重定位 Python 3.10（PyYAML/numpy/matplotlib） |
+| 运行时 | Pi CLI `@earendil-works/pi-coding-agent` 0.80.10、可重定位 Python 3.10（PyYAML/numpy/matplotlib）、静态 ffmpeg/ffprobe 8.0（macOS arm64，Video 受控处理） |
 
 ## 目录结构
 
@@ -75,10 +75,12 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 
    ```bash
    TRANSPORTX_PYTHON_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/python-3.10-runtime" \
+   TRANSPORTX_FFMPEG_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/ffmpeg-runtime" \
    TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 npm run desktop:pack
    ```
 
    - 本机持久化的自包含 Python 3.10 runtime 位于 `~/Library/Application Support/TransportX/python-3.10-runtime`；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
+   - 本机持久化的静态 ffmpeg/ffprobe 8.0（macOS arm64）位于 `~/Library/Application Support/TransportX/ffmpeg-runtime`；如缺失，可从 `desktop/build/runtimes/ffmpeg`（上次构建残留）恢复，或重新下载静态 arm64 二进制（许可证说明见该目录 NOTICES.md）。
    - 产物在 `release/`：DMG、blockmap、sha256、`latest-mac.yml`（自动更新清单）、`README-安装说明.txt`（需同步更新版本与 SHA-256）。
 4. 正式对外分发必须配置 **Developer ID Application 证书 + Apple 公证**（Apple ID / App Store Connect API Key / keychain profile 之一）；`desktop:pack` 在凭据缺失时会停止。测试包使用 ad-hoc 签名，首次启动需右键「打开」。
 

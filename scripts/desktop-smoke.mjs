@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { _electron as electron } from 'playwright';
 
@@ -16,6 +17,19 @@ if (packagedApp) {
   if (python.status !== 0 || !python.stdout.trim().startsWith('3.10.')) {
     throw new Error(`Packaged Python runtime is invalid: ${(python.stderr || python.stdout).trim()}`);
   }
+  // Video runtime: ffmpeg/ffprobe must be present, runnable and integrity-recorded.
+  const resourcesDir = path.join(packagedApp, 'Contents', 'Resources');
+  const manifest = JSON.parse(fs.readFileSync(path.join(resourcesDir, 'runtime-manifest.json'), 'utf8'));
+  for (const name of ['ffmpeg', 'ffprobe']) {
+    const entry = manifest[name];
+    if (!entry || !entry.sha256 || !entry.version) throw new Error(`Packaged runtime manifest is missing the ${name} entry`);
+    const binary = path.join(resourcesDir, entry.path);
+    const digest = crypto.createHash('sha256').update(fs.readFileSync(binary)).digest('hex');
+    if (digest !== entry.sha256) throw new Error(`Packaged ${name} checksum mismatch`);
+    const probe = spawnSync(binary, ['-version'], { encoding: 'utf8' });
+    if (probe.status !== 0 || !probe.stdout.includes(entry.version)) throw new Error(`Packaged ${name} is invalid: ${(probe.stderr || probe.stdout).trim()}`);
+  }
+  console.log(`[desktop-smoke] packaged ffmpeg runtime OK (ffmpeg ${manifest.ffmpeg.version})`);
 }
 const app = await electron.launch({
   ...(packagedApp ? { executablePath: path.join(packagedApp, 'Contents', 'MacOS', 'TransportX Traffic Agent') } : { args: ['.'], cwd: process.cwd() }),
@@ -45,6 +59,16 @@ try {
   const healthUrl = `${new URL(window.url()).origin}/api/health`;
   const health = await (await fetch(healthUrl)).json();
   if (health.product !== 'TransportX Traffic Agent' || health.protocolVersion !== 1) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
+  // Phase 0 playback spike: the packaged renderer must accept the Video Input Spec codec.
+  const codecSupport = await window.evaluate(() => {
+    const probe = document.createElement('video');
+    return {
+      h264: probe.canPlayType('video/mp4; codecs="avc1.42E01E"'),
+      aac: probe.canPlayType('video/mp4; codecs="mp4a.40.2"'),
+    };
+  });
+  if (!codecSupport.h264 || codecSupport.h264 === 'no') throw new Error(`Packaged renderer cannot play H.264 MP4: ${JSON.stringify(codecSupport)}`);
+  console.log(`[desktop-smoke] renderer video codec support OK (${codecSupport.h264})`);
   const pdfResponse = await fetch(`${new URL(window.url()).origin}/api/reports/pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
