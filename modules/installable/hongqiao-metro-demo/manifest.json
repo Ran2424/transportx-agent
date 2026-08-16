@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.hongqiao-metro-demo",
+  "name": "Hongqiao Metro Entrance Demo",
+  "version": "1.0.0",
+  "type": "module",
+  "platformVersion": ">=3.0.9 <4.0.0",
+  "dependencies": ["com.transportx.video"],
+  "entrypoints": {
+    "skills": ["skill/SKILL.md"]
+  },
+  "contributes": {
+    "assets": [
+      {
+        "id": "data:hongqiao-metro-demo",
+        "kind": "data",
+        "path": "data",
+        "required": true
+      }
+    ]
+  }
+}

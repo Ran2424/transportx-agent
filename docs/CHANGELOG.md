@@ -21,6 +21,7 @@
 - 依据 `docs/SPEC_VIDEO.md` 实现 Video Capability V1：新增 `src/contracts/video.ts`（Video Scene V1、资源 Manifest、Catalog 与严格带时区时间解析）、Agent Host Video Service / VideoRunner（受控 ffmpeg/ffprobe）、Session Video Resource（`.tau/video-resources/`）、支持 GET/HEAD/单 Range/416 的同源 Video Resource API。
 - 新增内置 Capability Module `modules/capabilities/video`（`video_search` / `video_present` / `video_snapshot` / `video_clip` / `video_sample_frames` 五个受控工具、Skill 与视觉模型门控）与可安装 Data Module `modules/installable/demo-video`（两段 60 秒合成 Demo 录像）。
 - React 新增 Video Workspace（投影自 Video Scene 的 Float 播放器视图，支持初始定位、Loading/Error），Header 与命令面板增加视频视图开关。
+- 新增可安装数据模块 `modules/installable/hongqiao-metro-demo`：虹桥枢纽高铁 B1 层南通道地铁入口 74.7 分钟真实监控录像（1280x720 H.264 faststart，410MB，不入 Git）+ YOLO（yolo26s + ByteTrack，ROI 进入法）离线识别的每分钟进站客流表与联合分析 Skill。
 - 打包运行时扩展为 Pi + Python + ffmpeg/ffprobe：runtime manifest 记录版本/架构/SHA-256，desktop smoke 校验打包二进制与渲染器 H.264 支持（Phase 0）。
 
 验证：
@@ -28,6 +29,7 @@
 - `npm run typecheck` 通过；`npm test` 通过 95 项回归（新增 Video Contract / Service / HTTP Range / 内部端点鉴权等 17 项）。
 - macOS arm64 打包 smoke 通过：runtime manifest 记录并校验 ffmpeg/ffprobe 8.0 arm64（版本 + SHA-256），渲染器 H.264 `canPlayType` 返回 `probably`（Phase 0 播放钉测）。
 - 基于 demo-video 真实数据的服务级端到端通过：search → present（initialSeek）→ snapshot → sample_frames → clip → present derived。
+- 基于 hongqiao-metro-demo 真实数据（410MB / 74.7 分钟）的服务级端到端通过：地点/时段检索、410MB materialize、峰值分钟定位、截图、抽帧与 2 分钟重编码裁剪。
 - `npm run test:react-smoke` 在 `main` 基线上即失败（既有问题，与本次改动无关）。
 
 ## v3.0.9 — 工作台 UI 打磨与 Video Capability 设计文档

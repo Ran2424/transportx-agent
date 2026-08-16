@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "videos": [
+    {
+      "videoId": "video_hq_b1_metro_001",
+      "cameraId": "31011210071322000777",
+      "title": "虹桥枢纽高铁B1层14南通道地铁入口",
+      "locationName": "虹桥枢纽 B1 层南通道地铁入口（2/10/17 号线进站口南1）",
+      "startTime": "2026-06-30T16:39:58+08:00",
+      "endTime": "2026-06-30T17:54:41+08:00",
+      "file": "videos/hongqiao_b1_metro_entrance_20260630.mp4",
+      "mimeType": "video/mp4",
+      "longitude": 121.3185,
+      "latitude": 31.1933
+    }
+  ]
+}
