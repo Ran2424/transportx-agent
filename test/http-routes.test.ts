@@ -201,7 +201,7 @@ test('video internal endpoints require the session video token', async (t: TestC
     schemaVersion: 1,
     videos: [{ videoId: 'video_001', cameraId: 'camera_001', title: '人民路—中山路口', startTime: '2026-08-16T08:00:00+08:00', endTime: '2026-08-16T08:01:00+08:00', file: 'videos/camera_001.mp4', mimeType: 'video/mp4' }],
   }));
-  const session = fakeSession('tau_video_internal');
+  const session = fakeSession('tau_video_internal') as any;
   session.cwd = cwd;
   session.videoToken = 'video-secret';
   session.resolvedSessionPlan = { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };

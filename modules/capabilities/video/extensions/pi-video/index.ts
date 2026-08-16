@@ -72,7 +72,7 @@ export default function videoExtension(pi: ExtensionAPI) {
     description: 'Search recorded demo videos in the resolved Data Assets of this session by location, camera and recording time-range overlap. Returns candidate metadata only (never absolute paths). startTime/endTime must be provided together as ISO 8601 with an explicit numeric timezone offset.',
     promptSnippet: 'Find recorded videos by location, camera or recording time range',
     parameters: Type.Object({
-      location: Type.Optional(Type.String({ maxLength: 300, description: 'Location or title keyword, e.g. 人民路' })),
+      location: Type.Optional(Type.String({ maxLength: 300, description: 'Location/title keywords, e.g. 人民路 or 虹桥 地铁入口; multiple space-separated keywords must all match' })),
       cameraId: Type.Optional(Type.String({ maxLength: 120 })),
       startTime: Type.Optional(Type.String({ maxLength: 64, description: 'ISO 8601 with numeric offset, e.g. 2026-08-16T08:30:00+08:00' })),
       endTime: Type.Optional(Type.String({ maxLength: 64 })),

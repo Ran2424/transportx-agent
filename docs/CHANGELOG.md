@@ -26,11 +26,16 @@
 
 验证：
 
-- `npm run typecheck` 通过；`npm test` 通过 95 项回归（新增 Video Contract / Service / HTTP Range / 内部端点鉴权等 17 项）。
+- `npm run typecheck` 通过；`npm test` 通过 96 项回归（新增 Video Contract / Service / HTTP Range / 内部端点鉴权 / ffmpeg resolver 等 18 项）。
 - macOS arm64 打包 smoke 通过：runtime manifest 记录并校验 ffmpeg/ffprobe 8.0 arm64（版本 + SHA-256），渲染器 H.264 `canPlayType` 返回 `probably`（Phase 0 播放钉测）。
 - 基于 demo-video 真实数据的服务级端到端通过：search → present（initialSeek）→ snapshot → sample_frames → clip → present derived。
 - 基于 hongqiao-metro-demo 真实数据（410MB / 74.7 分钟）的服务级端到端通过：地点/时段检索、410MB materialize、峰值分钟定位、截图、抽帧与 2 分钟重编码裁剪。
 - `npm run test:react-smoke` 在 `main` 基线上即失败（既有问题，与本次改动无关）。
+
+后续修复（真实会话反馈）：
+
+- 修复开发桌面模式（`npm run desktop:dev`）下 `video_present` 报 “ffmpeg/ffprobe are not configured for this runtime”：Agent Host supervisor 的开发运行时注入缺少 `TAU_FFMPEG_COMMAND`/`TAU_FFPROBE_COMMAND` 覆盖，导致 dev 桌面模式误走打包 manifest 路径。
+- 修复 `video_search` 地点检索无法命中多关键词查询（如「虹桥 地铁入口」）：改为空白分词 AND 匹配，且关键词同时匹配标题、地点与摄像头编号。
 
 ## v3.0.9 — 工作台 UI 打磨与 Video Capability 设计文档
 

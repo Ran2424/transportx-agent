@@ -154,7 +154,8 @@ export class VideoService {
   }
 
   search(session: VideoSessionContext, body: Record<string, unknown>): { candidates: VideoCandidate[] } {
-    const location = optionalString(body, 'location', 300)?.toLowerCase();
+    const location = optionalString(body, 'location', 300);
+    const locationTokens = location ? location.toLowerCase().split(/\s+/).filter(Boolean) : [];
     const cameraId = optionalString(body, 'cameraId', 120);
     const startRaw = optionalString(body, 'startTime', 64);
     const endRaw = optionalString(body, 'endTime', 64);
@@ -170,9 +171,9 @@ export class VideoService {
     const candidates = this.catalog(session)
       .filter(({ entry }) => {
         if (cameraId && entry.cameraId !== cameraId) return false;
-        if (location) {
-          const haystack = `${entry.title} ${entry.locationName || ''}`.toLowerCase();
-          if (!haystack.includes(location)) return false;
+        if (locationTokens.length) {
+          const haystack = `${entry.title} ${entry.locationName || ''} ${entry.cameraId || ''}`.toLowerCase();
+          if (!locationTokens.every((token) => haystack.includes(token))) return false;
         }
         if (range && !recordingIntervalOverlaps(range.startMs, range.endMs, entry.startTime, entry.endTime)) return false;
         return true;
