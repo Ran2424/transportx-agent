@@ -36,6 +36,7 @@
 
 - 修复开发桌面模式（`npm run desktop:dev`）下 `video_present` 报 “ffmpeg/ffprobe are not configured for this runtime”：Agent Host supervisor 的开发运行时注入缺少 `TAU_FFMPEG_COMMAND`/`TAU_FFPROBE_COMMAND` 覆盖，导致 dev 桌面模式误走打包 manifest 路径。
 - 修复 `video_search` 地点检索无法命中多关键词查询（如「虹桥 地铁入口」）：改为空白分词 AND 匹配，且关键词同时匹配标题、地点与摄像头编号。
+- 修复内置模块升版本后旧会话无法恢复（`Module manifest changed: com.transportx.video@1.0.0`）：Session Plan 校验按模块来源区分——`builtin` 模块随平台升级原地替换（旧版本不复存在），内容/版本漂移降级为警告并继续恢复；`installed`/`external` 模块多版本并存，仍严格校验。
 
 Workspace Focus 抽象与视频工作区形态升级：
 
