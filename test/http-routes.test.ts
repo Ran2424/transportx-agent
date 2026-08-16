@@ -193,6 +193,33 @@ test('video resources are bound to their owning session and validated manifests'
   }
 });
 
+test('video internal endpoints require the session video token', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-internal-'));
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-internal-data-'));
+  t.after(() => { fs.rmSync(cwd, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true }); });
+  fs.writeFileSync(path.join(dataRoot, 'videos.json'), JSON.stringify({
+    schemaVersion: 1,
+    videos: [{ videoId: 'video_001', cameraId: 'camera_001', title: '人民路—中山路口', startTime: '2026-08-16T08:00:00+08:00', endTime: '2026-08-16T08:01:00+08:00', file: 'videos/camera_001.mp4', mimeType: 'video/mp4' }],
+  }));
+  const session = fakeSession('tau_video_internal');
+  session.cwd = cwd;
+  session.videoToken = 'video-secret';
+  session.resolvedSessionPlan = { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
+  liveManager.sessions.set(session.id, session);
+
+  const denied = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'wrong', location: '人民路' }) });
+  assert.equal(denied.status, 403);
+  const missing = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, location: '人民路' }) });
+  assert.equal(missing.status, 403);
+
+  const allowed = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'video-secret', location: '人民路' }) });
+  assert.equal(allowed.status, 200);
+  const body = await jsonBody(allowed);
+  assert.equal(body.candidates.length, 1);
+  assert.equal(body.candidates[0].videoId, 'video_001');
+  assert.ok(!('file' in body.candidates[0]), 'candidates never expose file paths');
+});
+
 test('Geo resources cannot be read through another live session', async (t: TestContext) => {
   const firstRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-owner-'));
   const secondRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-other-'));
