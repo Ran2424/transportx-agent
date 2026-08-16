@@ -66,6 +66,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 - **主题纪律（UI 改造后）**：`src/web/styles/tokens.css` 是 Light / Dark / Sand 三主题的**唯一 token 声明源**（primitive + semantic）。组件只消费 semantic token，禁止 `[data-theme] .component` 式覆盖，禁止在组件中写主题专属色值。功能文字不得低于 11px。新的样式修改应直接落在 `src/web/styles.css` 或遵循其分层结构，不要重复定义 token。
 - **会话侧栏**：固定工具栏下方为能力扩展区 30% / 会话列表 70%（能力区可收起，移动端默认收起）。能力数据来自 `platform.getOverview()` 投影（`src/web/platform/capabilities/capability-projection.ts`），不要自行推测或复制服务端状态。
 - **版本同步**：发布前同步 `package.json` 与 `src/server/config.ts` 的 `PLATFORM_VERSION`；`desktop/build/runtime-manifest.json` 由构建脚本自动生成，不要手改。
+- **提交策略**：小型修复与小幅功能改动可直接提交 `main`；涉及新能力、架构调整或多环节联动的较大改动走「分支 → PR → 合并」流程（参考 PR #12 的 Video Capability）。
 - **安全边界**：模块安装拒绝符号链接与路径逃逸；文件/Geo/Citation 资源按会话目录与 SHA-256 校验；Markdown 安全渲染；鉴权 Cookie 与 WebSocket 断连处理均有测试覆盖。
 
 ## 发布流程
