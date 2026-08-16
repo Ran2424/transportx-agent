@@ -154,6 +154,8 @@ let citationEndpoint = process.env.TAU_CITATION_ENDPOINT || '';
 export function setCitationEndpoint(value: string) { citationEndpoint = value; }
 let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
 export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
+let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
+export function setVideoEndpoint(value: string) { videoEndpoint = value; }
 
 export function isGenericSessionName(name: unknown) {
   const normalized = String(name || '').trim().toLowerCase();
@@ -244,6 +246,7 @@ export class PiRpcSession {
   pendingAttachmentRefs: string[][];
   citationToken: string;
   spatialToken: string;
+  videoToken: string;
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
   timingMetrics: TimingMetricsStore;
@@ -285,6 +288,7 @@ export class PiRpcSession {
     this.pendingAttachmentRefs = [];
     this.citationToken = crypto.randomUUID();
     this.spatialToken = crypto.randomUUID();
+    this.videoToken = crypto.randomUUID();
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.assistantThinkingStartedAt = null;
@@ -370,6 +374,9 @@ export class PiRpcSession {
         TAU_SPATIAL_ENDPOINT: spatialEndpoint,
         TAU_SPATIAL_SESSION_ID: this.id,
         TAU_SPATIAL_TOKEN: this.spatialToken,
+        TAU_VIDEO_ENDPOINT: videoEndpoint,
+        TAU_VIDEO_SESSION_ID: this.id,
+        TAU_VIDEO_TOKEN: this.videoToken,
         MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
         PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
         ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => [asset.id, asset.path]))) } : {}),

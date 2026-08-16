@@ -890,6 +890,19 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .workspace-float--map { inset: 58px 16px 14px; transition-duration: var(--tx-motion-map-focus); }
 .workspace-float--map .workspace-float-body { overflow: hidden; }
 .workspace-float--map .geo-map { min-height: 0; }
+.workspace-float--video { inset: 58px 16px 14px; transition-duration: var(--tx-motion-map-focus); }
+.workspace-float--video .workspace-float-body { overflow: hidden; }
+.video-workspace { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.video-toolbar { padding: 10px 13px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border-default); }
+.video-toolbar select { min-width: 0; flex: 1; height: 30px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-primary); background: var(--surface-default); font-size: 12px; }
+.video-player { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.video-meta { padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; border-bottom: 1px solid var(--border-default); }
+.video-meta strong { font-size: 13px; font-weight: 650; }
+.video-meta small { color: var(--text-secondary); font-size: 11px; }
+.video-stage { position: relative; min-height: 0; flex: 1; display: flex; align-items: center; justify-content: center; background: var(--surface-sunken, var(--surface-default)); }
+.video-stage video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; }
+.video-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 12px; pointer-events: none; }
+.video-status.is-error { color: var(--text-danger, #c0392b); }
 .agent-main-column.is-map-focused { grid-template-columns: minmax(0, max(0px, calc(100% - var(--conversation-pane-width) - 10px))) 10px minmax(0, var(--conversation-pane-width, 440px)); min-height: 0; }
 .agent-main-column.is-map-closing { grid-template-columns: 0px 0px minmax(0, 100%); }
 .agent-main-column.is-map-focused .map-focus-panel { min-width: 0; min-height: 0; display: flex; padding: 0; }

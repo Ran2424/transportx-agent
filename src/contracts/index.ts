@@ -24,3 +24,4 @@ export * from './attachments.ts';
 export * from './session-profile.ts';
 export * from './resolved-session-plan.ts';
 export * from './spatial.ts';
+export * from './video.ts';

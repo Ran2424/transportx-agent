@@ -18,6 +18,9 @@ export type RuntimeManifest = {
   agentHost: RuntimeEntry & { protocolVersion: number };
   pi: RuntimeEntry;
   python: RuntimeEntry;
+  /** Optional until the packaged runtime ships ffmpeg; required in desktop Video flows. */
+  ffmpeg?: RuntimeEntry & { arch?: string };
+  ffprobe?: RuntimeEntry & { arch?: string };
 };
 
 export type Executable = { command: string; args: string[]; version?: string };
@@ -80,4 +83,27 @@ export function resolvePythonExecutable(opts: { resourcesDir: string; desktop: b
     return { command: resolveEntry(opts.resourcesDir, manifest.python, 'Python'), args: [], version: manifest.python.version };
   }
   return { command: 'python3', args: [] };
+}
+
+export type VideoExecutables = { ffmpeg: Executable; ffprobe: Executable };
+
+/**
+ * Resolve the controlled ffmpeg/ffprobe pair. Packaged apps must use the
+ * runtime manifest entries (integrity-checked, PATH-independent); development
+ * may override via TAU_FFMPEG_COMMAND/TAU_FFPROBE_COMMAND or fall back to PATH.
+ */
+export function resolveFfmpegExecutables(opts: { resourcesDir: string; desktop: boolean; env?: NodeJS.ProcessEnv }): VideoExecutables {
+  const env = opts.env || process.env;
+  if (env.TAU_FFMPEG_COMMAND && env.TAU_FFPROBE_COMMAND) {
+    return { ffmpeg: { command: env.TAU_FFMPEG_COMMAND, args: [] }, ffprobe: { command: env.TAU_FFPROBE_COMMAND, args: [] } };
+  }
+  if (opts.desktop) {
+    const manifest = loadRuntimeManifest(opts.resourcesDir);
+    if (!manifest.ffmpeg || !manifest.ffprobe) throw new Error('Packaged runtime is missing ffmpeg/ffprobe entries');
+    return {
+      ffmpeg: { command: resolveEntry(opts.resourcesDir, manifest.ffmpeg, 'ffmpeg'), args: [], version: manifest.ffmpeg.version },
+      ffprobe: { command: resolveEntry(opts.resourcesDir, manifest.ffprobe, 'ffprobe'), args: [], version: manifest.ffprobe.version },
+    };
+  }
+  return { ffmpeg: { command: 'ffmpeg', args: [] }, ffprobe: { command: 'ffprobe', args: [] } };
 }

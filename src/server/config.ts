@@ -4,7 +4,7 @@ const os = require('node:os');
 
 import type { TauArgs, TauSettings, TauSettingsFile } from './types.js';
 import { ensureWritableAppPaths, resolveAppPaths } from './app-paths.js';
-import { resolvePiExecutable, resolvePythonExecutable } from './runtime-resolver.js';
+import { resolveFfmpegExecutables, resolvePiExecutable, resolvePythonExecutable, type VideoExecutables } from './runtime-resolver.js';
 import { ModuleRegistry } from './module-registry.js';
 import { AssetResolver } from './asset-resolver.js';
 import { SessionAssembler } from './session-assembly.js';
@@ -36,6 +36,13 @@ export const PI_COMMAND = PI_EXECUTABLE.command;
 export const PI_COMMAND_ARGS = PI_EXECUTABLE.args;
 export const PYTHON_EXECUTABLE = resolvePythonExecutable({ resourcesDir: APP_PATHS.resourcesDir, desktop: DESKTOP_MODE });
 export const PYTHON_COMMAND = PYTHON_EXECUTABLE.command;
+export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
+  try {
+    return resolveFfmpegExecutables({ resourcesDir: APP_PATHS.resourcesDir, desktop: DESKTOP_MODE });
+  } catch {
+    return null; // Video processing reports a clear error when ffmpeg is unavailable.
+  }
+})();
 export const PLATFORM_VERSION = '3.0.9';
 
 export function expandHome(p: string) {
@@ -76,6 +83,7 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',
   'modules/capabilities/spatial-analysis/manifest.json',
+  'modules/capabilities/video/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
   'modules/official/workbench/manifest.json',
