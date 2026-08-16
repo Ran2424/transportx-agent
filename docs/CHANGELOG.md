@@ -11,10 +11,10 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
-## 未发布 — Video Capability V1（开发中）
+## 未发布 — Video Capability V1
 
 - 日期：2026-08-16
-- GitHub 操作：本地 `feature/video-capability` 分支，尚未合并或推送。
+- GitHub 操作：`feature/video-capability` 分支开发，PR #12 已创建并合并至 `main`（merge commit `dc48ca0`）。
 
 主要修改：
 
