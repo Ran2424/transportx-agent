@@ -232,6 +232,12 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .workspace-file-toolbar .icon-button { width: 28px; height: 28px; }
 .workspace-file-toolbar .icon-button:first-child svg { transform: rotate(90deg); }
 .workspace-file-toolbar span { overflow: hidden; color: var(--text-tertiary); font: 11px/1 var(--tx-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-file-location { min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border: 0; border-radius: var(--tx-radius-sm); color: var(--text-tertiary); background: transparent; cursor: pointer; text-align: left; }
+.workspace-file-location span { flex: 1; font: 11px/1 var(--tx-font-mono); }
+.workspace-file-location svg { flex: 0 0 auto; width: 12px; height: 12px; opacity: .55; }
+.workspace-file-location:hover:not(:disabled), .workspace-file-location:focus-visible { color: var(--text-primary); background: var(--selection-bg); }
+.workspace-file-location:hover:not(:disabled) svg, .workspace-file-location:focus-visible svg { opacity: 1; }
+.workspace-file-location:disabled { cursor: default; }
 .workspace-file-list { min-height: 0; flex: 1; overflow: auto; padding: 7px; }
 .workspace-file-row { width: 100%; min-height: 36px; display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 5px 7px; border: 0; border-radius: var(--tx-radius-sm); color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; }
 .workspace-file-row:hover { background: var(--surface-hover); }
