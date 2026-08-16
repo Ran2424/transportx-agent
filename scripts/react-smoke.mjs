@@ -655,7 +655,7 @@ try {
   }
   const mapClosedMotion = await measureMotion('[data-testid="workspace-float-map"] button[aria-label="关闭地图视图"]', '.conversation-pane', 'left', 540);
   assertSmoothMotion(mapClosedMotion, 'decreasing', 'Desktop map close');
-  await reactPage.locator('.agent-main-column:not(.is-map-focused)').waitFor();
+  await reactPage.locator('.agent-main-column:not(.is-workspace-focused)').waitFor();
 
   await triggerPrompt('React-dialog-confirm');
   const confirmDialog = reactPage.getByRole('dialog', { name: '确认发布报告' });
