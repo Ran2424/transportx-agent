@@ -11,6 +11,46 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## 未发布 — Video Capability V1（开发中）
+
+- 日期：2026-08-16
+- GitHub 操作：本地 `feature/video-capability` 分支，尚未合并或推送。
+
+主要修改：
+
+- 依据 `docs/SPEC_VIDEO.md` 实现 Video Capability V1：新增 `src/contracts/video.ts`（Video Scene V1、资源 Manifest、Catalog 与严格带时区时间解析）、Agent Host Video Service / VideoRunner（受控 ffmpeg/ffprobe）、Session Video Resource（`.tau/video-resources/`）、支持 GET/HEAD/单 Range/416 的同源 Video Resource API。
+- 新增内置 Capability Module `modules/capabilities/video`（`video_search` / `video_present` / `video_snapshot` / `video_clip` / `video_sample_frames` 五个受控工具、Skill 与视觉模型门控）与可安装 Data Module `modules/installable/demo-video`（两段 60 秒合成 Demo 录像）。
+- React 新增 Video Workspace（投影自 Video Scene 的 Float 播放器视图，支持初始定位、Loading/Error），Header 与命令面板增加视频视图开关。
+- 新增可安装数据模块 `modules/installable/hongqiao-metro-demo`：虹桥枢纽高铁 B1 层南通道地铁入口 74.7 分钟真实监控录像（1280x720 H.264 faststart，410MB，不入 Git）+ YOLO（yolo26s + ByteTrack，ROI 进入法）离线识别的每分钟进站客流表与联合分析 Skill。
+- 打包运行时扩展为 Pi + Python + ffmpeg/ffprobe：runtime manifest 记录版本/架构/SHA-256，desktop smoke 校验打包二进制与渲染器 H.264 支持（Phase 0）。
+
+验证：
+
+- `npm run typecheck` 通过；`npm test` 通过 96 项回归（新增 Video Contract / Service / HTTP Range / 内部端点鉴权 / ffmpeg resolver 等 18 项）。
+- macOS arm64 打包 smoke 通过：runtime manifest 记录并校验 ffmpeg/ffprobe 8.0 arm64（版本 + SHA-256），渲染器 H.264 `canPlayType` 返回 `probably`（Phase 0 播放钉测）。
+- 基于 demo-video 真实数据的服务级端到端通过：search → present（initialSeek）→ snapshot → sample_frames → clip → present derived。
+- 基于 hongqiao-metro-demo 真实数据（410MB / 74.7 分钟）的服务级端到端通过：地点/时段检索、410MB materialize、峰值分钟定位、截图、抽帧与 2 分钟重编码裁剪。
+- `npm run test:react-smoke` 在 `main` 基线上即失败（既有问题，与本次改动无关）。
+
+后续修复（真实会话反馈）：
+
+- 修复开发桌面模式（`npm run desktop:dev`）下 `video_present` 报 “ffmpeg/ffprobe are not configured for this runtime”：Agent Host supervisor 的开发运行时注入缺少 `TAU_FFMPEG_COMMAND`/`TAU_FFPROBE_COMMAND` 覆盖，导致 dev 桌面模式误走打包 manifest 路径。
+- 修复 `video_search` 地点检索无法命中多关键词查询（如「虹桥 地铁入口」）：改为空白分词 AND 匹配，且关键词同时匹配标题、地点与摄像头编号。
+
+Workspace Focus 抽象与视频工作区形态升级：
+
+- 将 Map Focus 布局抽象为通用 Workspace Focus 机制：`is-map-focused`/`map-focus-panel` 泛化为 `is-workspace-focused`/`workspace-focus-panel`，Geo 与 Video 作为 Focus Area 的不同内容共享停靠规则（分屏、可拖宽分隔条、会话区 25%–45% 可调、约 65:35 默认比例、opening/closing 过渡），为未来 Report/Chart/Evidence 等内容预留统一入口。
+- 视频从「覆盖式媒体浮卡」变为与地图一致的一级停靠工作区：不再遮挡会话；Map ↔ Video 互斥切换时只换内容、不动布局（会话位置、宽度、滚动保持稳定）。
+- Video Toolbar 业务信息层：标题/多视频选择器、**当前绝对录像时间**（recordingStartTime + currentTime，随播放/Seek 实时更新）、原始录像/裁剪片段徽标；Subbar 显示摄像头编号、录像绝对时间范围与时长。播放器保持原生 `<video controls>` 不过度设计。
+- 自动打开策略明确边界：`video_present` 自动打开/切换 Workspace；`video_snapshot`/`video_sample_frames`/`video_clip` 不改变 Workspace；用户手动关闭后不因普通回复重新弹出。
+
+双画面对比（V1.5）：
+
+- Video Scene 新增可选 `compareVideoId`（向后兼容，Session 恢复保持对比对）；契约层新增纯 reducer `reduceVideoScenePresent` 与 `videoSceneItemId`（同一资源 + seek 后缀区分不同时刻画面），scene 上限 6 项且逐出时保护可见对比对。
+- `video_present` 新增 `compare` 参数：Agent 可将第二个画面放入对比窗格，支持两个地点/摄像头并排，或同一录像两个绝对时刻并排（各自暂停在对应时刻，等效两张图片对比）。
+- Video Workspace 对比模式：左右双窗格、各自独立原生播放/Seek/绝对时钟、中缝分隔、右窗格「退出对比」（仅本地视图状态，不篡改 Scene）；移动端上下堆叠。不做九宫格与强制同步播放。
+- 模块版本纪律：`modules/capabilities/video` 因 Extension（compare 参数）与 Skill（对比流程）变更提升为 `1.1.0`；此后每次模块改动必须同步提升其 manifest 版本号。
+
 ## v3.0.9 — 工作台 UI 打磨与 Video Capability 设计文档
 
 - 日期：2026-08-16

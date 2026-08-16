@@ -7,9 +7,10 @@ const MAP_TRANSITION_MS = 400;
 
 function clampConversationWidth(containerWidth: number, requestedWidth: number) {
   const width = Math.max(0, containerWidth);
-  const minimumConversation = Math.min(360, Math.max(180, width * .4));
-  const minimumMap = Math.min(360, Math.max(180, width * .35));
-  const maximumConversation = Math.max(minimumConversation, width - minimumMap - SPLITTER_WIDTH);
+  // Workspace Focus 目标比例约 65:35，会话区可在 25%–45% 之间拖动。
+  const minimumConversation = Math.min(480, Math.max(320, width * 0.25));
+  const minimumWorkspace = Math.min(720, Math.max(320, width * 0.55));
+  const maximumConversation = Math.max(minimumConversation, width - minimumWorkspace - SPLITTER_WIDTH);
   return Math.round(Math.min(maximumConversation, Math.max(minimumConversation, requestedWidth)));
 }
 
@@ -19,7 +20,7 @@ function savedConversationWidth() {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_CONVERSATION_WIDTH;
 }
 
-export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, mapOpen, settings, settingsOpen, overlays }: {
+export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, videoPanel, mapOpen, videoOpen, settings, settingsOpen, overlays }: {
   header: ReactNode;
   sidebar: ReactNode;
   tabs: ReactNode;
@@ -27,7 +28,9 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   workspace: ReactNode;
   taskFloat: ReactNode;
   mapPanel: ReactNode;
+  videoPanel: ReactNode;
   mapOpen: boolean;
+  videoOpen: boolean;
   settings: ReactNode;
   settingsOpen: boolean;
   overlays: ReactNode;
@@ -38,39 +41,40 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   const [preferredWidth, setPreferredWidth] = useState(savedConversationWidth);
   const [conversationWidth, setConversationWidth] = useState(savedConversationWidth);
   const [resizing, setResizing] = useState(false);
-  const [mapPhase, setMapPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>(mapOpen ? 'opening' : 'closed');
+  const focusOpen = mapOpen || videoOpen;
+  const [focusPhase, setFocusPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>(focusOpen ? 'opening' : 'closed');
 
-  const mapState = mapOpen ? (mapPhase === 'open' ? 'open' : 'opening') : (mapPhase === 'closed' ? 'closed' : 'closing');
-  const mapVisible = mapState !== 'closed';
+  const focusState = focusOpen ? (focusPhase === 'open' ? 'open' : 'opening') : (focusPhase === 'closed' ? 'closed' : 'closing');
+  const focusVisible = focusState !== 'closed';
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setMapPhase(mapOpen ? 'open' : 'closed');
+      setFocusPhase(focusOpen ? 'open' : 'closed');
       return;
     }
-    if (mapOpen) {
-      setMapPhase('opening');
-      const frame = window.requestAnimationFrame(() => setMapPhase('open'));
+    if (focusOpen) {
+      setFocusPhase('opening');
+      const frame = window.requestAnimationFrame(() => setFocusPhase('open'));
       return () => window.cancelAnimationFrame(frame);
     }
-    if (mapPhase === 'closed') return;
-    setMapPhase('closing');
-    const timer = window.setTimeout(() => setMapPhase('closed'), MAP_TRANSITION_MS);
+    if (focusPhase === 'closed') return;
+    setFocusPhase('closing');
+    const timer = window.setTimeout(() => setFocusPhase('closed'), MAP_TRANSITION_MS);
     return () => window.clearTimeout(timer);
-  }, [mapOpen]);
+  }, [focusOpen]);
 
   useEffect(() => {
     const main = mainRef.current;
     if (!main) return;
     const resize = () => {
       const width = main.getBoundingClientRect().width;
-      if (mapVisible) setConversationWidth(clampConversationWidth(width, preferredWidth));
+      if (focusVisible) setConversationWidth(clampConversationWidth(width, preferredWidth));
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(main);
     return () => observer.disconnect();
-  }, [mapVisible, preferredWidth, settingsOpen]);
+  }, [focusVisible, preferredWidth, settingsOpen]);
 
   useEffect(() => {
     window.localStorage.setItem('tau-conversation-pane-width', String(preferredWidth));
@@ -134,15 +138,15 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
       <div className="agent-shell-body">
         {settings || <>
           {sidebar}
-          <section ref={mainRef} className={`agent-main-column${mapVisible ? ' is-map-focused' : ''}${mapState === 'opening' ? ' is-map-entering' : ''}${mapState === 'closing' ? ' is-map-closing' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
-            <section className="map-focus-panel">{mapPanel}</section>
+          <section ref={mainRef} className={`agent-main-column${focusVisible ? ' is-workspace-focused' : ''}${focusState === 'opening' ? ' is-workspace-entering' : ''}${focusState === 'closing' ? ' is-workspace-closing' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
+            <section className="workspace-focus-panel">{mapPanel}{videoPanel}</section>
             <div
               className="conversation-resizer"
               role="separator"
               aria-label={t('shell.resizeConversation')}
               aria-orientation="vertical"
               aria-valuenow={conversationWidth}
-              tabIndex={mapVisible ? 0 : -1}
+              tabIndex={focusVisible ? 0 : -1}
               data-testid="conversation-resizer"
               onDoubleClick={() => updateWidth(DEFAULT_CONVERSATION_WIDTH)}
               onKeyDown={resizeWithKeyboard}

@@ -93,6 +93,133 @@ test('serves only session-scoped GeoJSON and supports ETag revalidation', async 
   assert.equal((await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/..%2Fsecret/data`)).status, 400);
 });
 
+function fakeVideoResource(cwd: string, resourceId: string, bytes: Buffer) {
+  const dir = path.join(cwd, '.tau', 'video-resources', resourceId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'video.mp4'), bytes);
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({
+    schemaVersion: 1,
+    resourceId,
+    videoId: 'video_001',
+    kind: 'source',
+    relativePath: 'video.mp4',
+    mimeType: 'video/mp4',
+    bytes: bytes.length,
+    sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+    recordingStartTime: '2026-08-16T08:00:00+08:00',
+    recordingEndTime: '2026-08-16T08:01:00+08:00',
+    durationSeconds: 60,
+    sourceAssetId: 'data:demo-videos',
+    sourceRelativePath: 'videos/camera_001.mp4',
+  }));
+}
+
+test('video resources support GET, HEAD and single byte ranges', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-resource-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const resourceId = `video_${'c'.repeat(16)}`;
+  const payload = crypto.randomBytes(2048);
+  fakeVideoResource(cwd, resourceId, payload);
+  const session = fakeSession('tau_video');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+
+  const url = `${base}/api/live-sessions/${session.id}/video-resources/${resourceId}/data`;
+  const full = await fetch(url);
+  assert.equal(full.status, 200);
+  assert.equal(full.headers.get('content-type'), 'video/mp4');
+  assert.equal(full.headers.get('accept-ranges'), 'bytes');
+  assert.equal(full.headers.get('cache-control'), 'private, no-store');
+  assert.equal(full.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(Number(full.headers.get('content-length')), payload.length);
+  assert.deepEqual(Buffer.from(await full.arrayBuffer()), payload);
+
+  const head = await fetch(url, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(Number(head.headers.get('content-length')), payload.length);
+  assert.equal(await head.text(), '');
+
+  const ranged = await fetch(url, { headers: { Range: 'bytes=100-199' } });
+  assert.equal(ranged.status, 206);
+  assert.equal(ranged.headers.get('content-range'), `bytes 100-199/${payload.length}`);
+  assert.deepEqual(Buffer.from(await ranged.arrayBuffer()), payload.subarray(100, 200));
+
+  const suffix = await fetch(url, { headers: { Range: 'bytes=-50' } });
+  assert.equal(suffix.status, 206);
+  assert.deepEqual(Buffer.from(await suffix.arrayBuffer()), payload.subarray(payload.length - 50));
+
+  const open = await fetch(url, { headers: { Range: 'bytes=2000-' } });
+  assert.equal(open.status, 206);
+  assert.equal(open.headers.get('content-range'), `bytes 2000-${payload.length - 1}/${payload.length}`);
+
+  for (const range of ['bytes=5000-6000', 'bytes=200-100', 'items=0-10', 'bytes=']) {
+    const response = await fetch(url, { headers: { Range: range } });
+    assert.equal(response.status, 416, range);
+    assert.equal(response.headers.get('content-range'), `bytes */${payload.length}`);
+  }
+});
+
+test('video resources are bound to their owning session and validated manifests', async (t: TestContext) => {
+  const firstRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-owner-'));
+  const secondRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-other-'));
+  t.after(() => { fs.rmSync(firstRoot, { recursive: true, force: true }); fs.rmSync(secondRoot, { recursive: true, force: true }); });
+  const resourceId = `video_${'d'.repeat(16)}`;
+  fakeVideoResource(firstRoot, resourceId, crypto.randomBytes(128));
+  const owner = fakeSession('tau_video_owner'); owner.cwd = firstRoot;
+  const other = fakeSession('tau_video_other'); other.cwd = secondRoot;
+  liveManager.sessions.set(owner.id, owner); liveManager.sessions.set(other.id, other);
+
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/${resourceId}/data`)).status, 200);
+  assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/video-resources/${resourceId}/data`)).status, 404, 'cross-session resourceId is rejected');
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/..%2Fsecret/data`)).status, 400);
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/video_xyz/data`)).status, 400, 'malformed resource id');
+
+  // Manifest/bytes mismatch is reported as a conflict, not served silently.
+  const manifestPath = path.join(firstRoot, '.tau', 'video-resources', resourceId, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.bytes = 1;
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/${resourceId}/data`)).status, 409);
+
+  // A symlinked resource dir never escapes the session root.
+  if (process.platform !== 'win32') {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-outside-'));
+    t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(outside, 'video.mp4'), 'secret');
+    fs.writeFileSync(path.join(outside, 'manifest.json'), '{}');
+    const linkId = `video_${'e'.repeat(16)}`;
+    fs.symlinkSync(outside, path.join(firstRoot, '.tau', 'video-resources', linkId), 'dir');
+    assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/${linkId}/data`)).status, 403);
+  }
+});
+
+test('video internal endpoints require the session video token', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-internal-'));
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-internal-data-'));
+  t.after(() => { fs.rmSync(cwd, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true }); });
+  fs.writeFileSync(path.join(dataRoot, 'videos.json'), JSON.stringify({
+    schemaVersion: 1,
+    videos: [{ videoId: 'video_001', cameraId: 'camera_001', title: '人民路—中山路口', startTime: '2026-08-16T08:00:00+08:00', endTime: '2026-08-16T08:01:00+08:00', file: 'videos/camera_001.mp4', mimeType: 'video/mp4' }],
+  }));
+  const session = fakeSession('tau_video_internal') as any;
+  session.cwd = cwd;
+  session.videoToken = 'video-secret';
+  session.resolvedSessionPlan = { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
+  liveManager.sessions.set(session.id, session);
+
+  const denied = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'wrong', location: '人民路' }) });
+  assert.equal(denied.status, 403);
+  const missing = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, location: '人民路' }) });
+  assert.equal(missing.status, 403);
+
+  const allowed = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'video-secret', location: '人民路' }) });
+  assert.equal(allowed.status, 200);
+  const body = await jsonBody(allowed);
+  assert.equal(body.candidates.length, 1);
+  assert.equal(body.candidates[0].videoId, 'video_001');
+  assert.ok(!('file' in body.candidates[0]), 'candidates never expose file paths');
+});
+
 test('Geo resources cannot be read through another live session', async (t: TestContext) => {
   const firstRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-owner-'));
   const secondRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-other-'));

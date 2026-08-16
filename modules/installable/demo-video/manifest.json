@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.demo-video",
+  "name": "Demo Video Data",
+  "version": "1.0.0",
+  "type": "module",
+  "platformVersion": ">=3.0.9 <4.0.0",
+  "dependencies": ["com.transportx.video"],
+  "contributes": {
+    "assets": [
+      {
+        "id": "data:demo-videos",
+        "kind": "data",
+        "path": "data",
+        "required": true
+      }
+    ]
+  }
+}
