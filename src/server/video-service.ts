@@ -30,7 +30,7 @@ const DURATION_TOLERANCE_SECONDS = 1.5;
 
 export type VideoSessionContext = { cwd: string; resolvedSessionPlan: ResolvedSessionPlanV3 | null };
 
-type CatalogRecord = { entry: VideoCatalogEntryV1; assetId: string; assetRoot: string; resolvedFile: string };
+type CatalogRecord = { entry: VideoCatalogEntryV1; assetId: string; assetRoot: string };
 
 export type VideoSearchQuery = { location?: string; cameraId?: string; startTime?: string; endTime?: string };
 
@@ -147,13 +147,7 @@ export class VideoService {
       for (const entry of parsed.value.videos) {
         if (seen.has(entry.videoId)) throw new Error(`Duplicate videoId across Data Assets: ${entry.videoId}`);
         seen.add(entry.videoId);
-        let resolvedFile = '';
-        try {
-          resolvedFile = resolveSafeDataFile(asset.path, entry.file);
-        } catch {
-          continue; // Entries without a safe, existing file are not candidates.
-        }
-        records.push({ entry, assetId: asset.id, assetRoot: asset.path, resolvedFile });
+        records.push({ entry, assetId: asset.id, assetRoot: asset.path });
       }
     }
     return records;
@@ -242,13 +236,14 @@ export class VideoService {
     const runner = this.requireRunner();
     const resourceId = `video_${crypto.createHash('sha256').update(`${record.assetId}:${record.entry.videoId}`).digest('hex').slice(0, 16)}`;
     return (async () => {
+      const resolvedFile = resolveSafeDataFile(record.assetRoot, record.entry.file);
       try {
         const existing = this.loadManifest(session, resourceId);
         if (existing.manifest.kind === 'source' && existing.manifest.sourceAssetId === record.assetId) return existing;
       } catch { /* not materialized yet */ }
-      const stat = fs.statSync(record.resolvedFile);
+      const stat = fs.statSync(resolvedFile);
       if (stat.size > MAX_VIDEO_BYTES) throw new Error(`Video exceeds the ${MAX_VIDEO_BYTES / 1024 / 1024} MiB V1 size limit: ${record.entry.videoId}`);
-      const probedDuration = (await runner.probe(record.resolvedFile)).durationSeconds;
+      const probedDuration = (await runner.probe(resolvedFile)).durationSeconds;
       const start = parseVideoTimestamp(record.entry.startTime)!;
       const end = parseVideoTimestamp(record.entry.endTime)!;
       const metadataDuration = (end.epochMs - start.epochMs) / 1000;
@@ -259,7 +254,7 @@ export class VideoService {
       fs.mkdirSync(stagingDir, { recursive: true });
       try {
         const stagedVideo = path.join(stagingDir, 'video.mp4');
-        fs.copyFileSync(record.resolvedFile, stagedVideo);
+        fs.copyFileSync(resolvedFile, stagedVideo);
         const manifest: VideoResourceManifestV1 = {
           schemaVersion: 1,
           resourceId,

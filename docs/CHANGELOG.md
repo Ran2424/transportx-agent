@@ -25,7 +25,9 @@
 
 验证：
 
-- `npm run typecheck` 通过；`npm test` 通过 94 项回归（新增 Video Contract / Service / HTTP Range 等 16 项）。
+- `npm run typecheck` 通过；`npm test` 通过 95 项回归（新增 Video Contract / Service / HTTP Range / 内部端点鉴权等 17 项）。
+- macOS arm64 打包 smoke 通过：runtime manifest 记录并校验 ffmpeg/ffprobe 8.0 arm64（版本 + SHA-256），渲染器 H.264 `canPlayType` 返回 `probably`（Phase 0 播放钉测）。
+- 基于 demo-video 真实数据的服务级端到端通过：search → present（initialSeek）→ snapshot → sample_frames → clip → present derived。
 - `npm run test:react-smoke` 在 `main` 基线上即失败（既有问题，与本次改动无关）。
 
 ## v3.0.9 — 工作台 UI 打磨与 Video Capability 设计文档
