@@ -49,6 +49,7 @@ Workspace Focus 抽象与视频工作区形态升级：
 - Video Scene 新增可选 `compareVideoId`（向后兼容，Session 恢复保持对比对）；契约层新增纯 reducer `reduceVideoScenePresent` 与 `videoSceneItemId`（同一资源 + seek 后缀区分不同时刻画面），scene 上限 6 项且逐出时保护可见对比对。
 - `video_present` 新增 `compare` 参数：Agent 可将第二个画面放入对比窗格，支持两个地点/摄像头并排，或同一录像两个绝对时刻并排（各自暂停在对应时刻，等效两张图片对比）。
 - Video Workspace 对比模式：左右双窗格、各自独立原生播放/Seek/绝对时钟、中缝分隔、右窗格「退出对比」（仅本地视图状态，不篡改 Scene）；移动端上下堆叠。不做九宫格与强制同步播放。
+- 模块版本纪律：`modules/capabilities/video` 因 Extension（compare 参数）与 Skill（对比流程）变更提升为 `1.1.0`；此后每次模块改动必须同步提升其 manifest 版本号。
 
 ## v3.0.9 — 工作台 UI 打磨与 Video Capability 设计文档
 

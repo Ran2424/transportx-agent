@@ -62,6 +62,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 - **不要用 `sudo` 启动**；桌面安装包使用内置 Pi/Python，Web 开发模式可用环境变量覆盖运行时。
 - **用户数据统一在 `~/.transportx/traffic-agent/`**：任务工作区 `scenario/`、模型 `models.json`、认证 `auth.json`、会话/日志/缓存、受管模块 `modules/`。API Key 不返回前端。
 - **Module 是统一安装单元**：可组合贡献 Skill / Extension / Data / Knowledge。内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用能力；`modules/installable/` 的用户模块不入安装包、不是平台启动依赖。大体积交通知识库/数据库资产不写入仓库与安装包。
+- **模块版本纪律**：每次改动某个 Module（manifest、Skill、Extension、脚本、数据目录内容）后，必须同步提升该模块 `manifest.json` 的 `version`（新能力升 minor、修复升 patch），并在 CHANGELOG 中说明；Resolved Session Plan 按精确版本冻结，版本号是会话可复现性的依据。
 - **主题纪律（UI 改造后）**：`src/web/styles/tokens.css` 是 Light / Dark / Sand 三主题的**唯一 token 声明源**（primitive + semantic）。组件只消费 semantic token，禁止 `[data-theme] .component` 式覆盖，禁止在组件中写主题专属色值。功能文字不得低于 11px。新的样式修改应直接落在 `src/web/styles.css` 或遵循其分层结构，不要重复定义 token。
 - **会话侧栏**：固定工具栏下方为能力扩展区 30% / 会话列表 70%（能力区可收起，移动端默认收起）。能力数据来自 `platform.getOverview()` 投影（`src/web/platform/capabilities/capability-projection.ts`），不要自行推测或复制服务端状态。
 - **版本同步**：发布前同步 `package.json` 与 `src/server/config.ts` 的 `PLATFORM_VERSION`；`desktop/build/runtime-manifest.json` 由构建脚本自动生成，不要手改。
