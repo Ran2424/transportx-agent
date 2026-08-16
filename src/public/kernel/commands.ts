@@ -159,6 +159,7 @@ export type SessionCommands = {
   loadSnapshot(sessionId: string): Promise<SessionSnapshot>;
   loadHistory(filePath: string): Promise<SessionSnapshot>;
   listFiles(sessionId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
+  openInSystem(sessionId: string, path: string): Promise<void>;
   readFileContent(sessionId: string, path: string): Promise<WorkspaceFileContent>;
   listAttachments(sessionId: string): Promise<SessionAttachment[]>;
   uploadAttachment(input: UploadAttachmentInput): Promise<SessionAttachment>;
@@ -374,6 +375,10 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       const params = new URLSearchParams({ sessionId, path });
       const data = await httpJson(deps.http, `/api/file/content?${params}`, undefined, { ...context, sessionId });
       return data as WorkspaceFileContent;
+    },
+
+    async openInSystem(sessionId, path) {
+      await httpJson(deps.http, '/api/open', { method: 'POST', body: { filePath: path, sessionId } }, { ...context, sessionId });
     },
 
     async listAttachments(sessionId) {

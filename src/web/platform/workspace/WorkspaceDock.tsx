@@ -92,7 +92,16 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
     </div>
     <div className="workspace-file-toolbar">
       <button className="icon-button" type="button" aria-label={t('workspace.parent')} disabled={!path || !parentPath(path)} onClick={() => { const parent = parentPath(path); if (parent) void load(parent); }}><Icon name="chevron" /></button>
-      <span title={path}>{session ? (path || basename(session.cwd || '')) : t('workspace.noTask')}</span>
+      <button
+        className="workspace-file-location"
+        type="button"
+        title={t('workspace.openInSystem', { path })}
+        disabled={!session || !path}
+        onClick={() => { if (session && path) void kernel.commands.session.openInSystem(session.id, path).catch((cause) => setError((cause as Error).message || t('workspace.loadFailed'))); }}
+      >
+        <span>{session ? (path || basename(session.cwd || '')) : t('workspace.noTask')}</span>
+        <Icon name="open" />
+      </button>
       <button className="icon-button" type="button" aria-label={t('workspace.refresh')} disabled={!session || loading} onClick={() => void load(path || undefined)}><Icon name="refresh" /></button>
     </div>
     <div className="workspace-file-list" role="tabpanel" aria-label={t('workspace.taskFiles')}>
