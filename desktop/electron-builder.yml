@@ -22,6 +22,8 @@ extraResources:
     to: runtime-manifest.json
   - from: desktop/build/runtimes/python
     to: runtimes/python
+  - from: desktop/build/runtimes/ffmpeg
+    to: runtimes/ffmpeg
 mac:
   category: public.app-category.productivity
   icon: app-icon.svg

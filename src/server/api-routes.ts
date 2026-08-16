@@ -7,6 +7,7 @@ import type { SessionAttachmentSource } from '../contracts/attachments.js';
 import { ServerRouter } from './router.js';
 import type { CitationService } from './citation-service.js';
 import type { SpatialAnalysisService } from './spatial-analysis-service.js';
+import type { VideoService } from './video-service.js';
 import { parseSessionProfileStructured } from '../contracts/index.js';
 
 type ApiRouteServices = {
@@ -41,6 +42,7 @@ type ApiRouteServices = {
   deleteAttachment(cwd: string, id: string): void;
   citation: CitationService;
   spatial: SpatialAnalysisService;
+  video: VideoService;
 };
 
 export function createApiRouter(services: ApiRouteServices) {
@@ -227,6 +229,46 @@ export function createApiRouter(services: ApiRouteServices) {
         deps.json(res, 200, { result: await deps.spatial.analyze(session, body) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
+    .post('/api/internal/video/search', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveVideoSession(res, body, deps);
+        if (!session) return;
+        deps.json(res, 200, deps.video.search(session, body));
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/video/present', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveVideoSession(res, body, deps);
+        if (!session) return;
+        deps.json(res, 200, await deps.video.present(session, body));
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/video/snapshot', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveVideoSession(res, body, deps);
+        if (!session) return;
+        deps.json(res, 200, await deps.video.snapshot(session, body));
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/video/clip', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveVideoSession(res, body, deps);
+        if (!session) return;
+        deps.json(res, 200, await deps.video.clip(session, body));
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/video/sample-frames', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveVideoSession(res, body, deps);
+        if (!session) return;
+        deps.json(res, 200, await deps.video.sampleFrames(session, body));
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
     .post('/api/rpc', async ({ req, res, deps }) => {
       try { deps.json(res, 200, await deps.handleRpc(await deps.readBody(req))); }
       catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
@@ -254,6 +296,14 @@ function resolveCitationSession(res: ServerResponse, body: RpcCommand, services:
   const token = typeof body.token === 'string' ? body.token : '';
   const session = services.sessions.get(sessionId);
   if (!session || !token || token !== session.citationToken) { services.json(res, 403, { error: 'Citation host access denied' }); return null; }
+  return session;
+}
+
+function resolveVideoSession(res: ServerResponse, body: RpcCommand, services: ApiRouteServices) {
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+  const token = typeof body.token === 'string' ? body.token : '';
+  const session = services.sessions.get(sessionId);
+  if (!session || !token || token !== session.videoToken) { services.json(res, 403, { error: 'Video Host access denied' }); return null; }
   return session;
 }
 
