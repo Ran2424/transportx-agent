@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PlatformOverview } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
-import { Icon } from '../../components/icons';
+import { Icon, type IconName } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { CAPABILITY_CATEGORIES, projectCapabilities, type CapabilityCategory } from './capability-projection';
@@ -33,7 +33,8 @@ export function CapabilityPane({ collapsed, onToggleCollapsed }: {
     return () => { current = false; };
   }, [kernel, reloadKey, t]);
 
-  const categories = CAPABILITY_CATEGORIES.map((item) => ({ ...item, label: t(item.labelKey) }));
+  const categoryIcons: Record<CapabilityCategory, IconName> = { skill: 'task', data: 'table', knowledge: 'citation' };
+  const categories = CAPABILITY_CATEGORIES.map((item) => ({ ...item, label: t(item.labelKey), icon: categoryIcons[item.id] }));
   const allItems = useMemo(() => overview ? projectCapabilities(overview, t) : [], [overview, t]);
   const items = useMemo(() => allItems.filter((item) => item.category === category), [allItems, category]);
   const selectedItem = useMemo(() => allItems.find((item) => item.id === selectedItemId) ?? null, [allItems, selectedItemId]);
@@ -61,7 +62,7 @@ export function CapabilityPane({ collapsed, onToggleCollapsed }: {
     <>
     <section className={`capability-pane${collapsed ? ' is-collapsed' : ' is-open'}`} aria-label={t('capability.region')}>
       <header className="capability-header">
-        <strong>{t('capability.title')}</strong>
+        <strong><Icon name="panel" />{t('capability.title')}</strong>
         <button
           className="capability-toggle"
           type="button"
@@ -84,6 +85,7 @@ export function CapabilityPane({ collapsed, onToggleCollapsed }: {
                 key={tab.id}
                 onClick={() => { setCategory(tab.id); setSelectedItemId(null); setActionError(''); }}
               >
+                <Icon name={tab.icon} />
                 {tab.label}
               </button>
             ))}

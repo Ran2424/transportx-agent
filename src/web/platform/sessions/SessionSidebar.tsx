@@ -18,6 +18,8 @@ type SessionSidebarProps = {
   onNewSession(): void;
   onSelectLive(sessionId: string): void;
   onSelectHistory(session: HistorySession, project: HistoryProject): void;
+  onDeleteLive(session: LiveSession): Promise<void>;
+  onDeleteHistory(session: HistorySession): Promise<void>;
 };
 
 function historyTitle(session: HistorySession) {
@@ -49,6 +51,10 @@ function initialCapabilityCollapsed() {
   return window.innerWidth <= 860;
 }
 
+function initialConversationCollapsed() {
+  return typeof window !== 'undefined' && window.localStorage.getItem('tau-conversation-collapsed') === '1';
+}
+
 export function SessionSidebar({
   open,
   sessions,
@@ -58,6 +64,8 @@ export function SessionSidebar({
   onNewSession,
   onSelectLive,
   onSelectHistory,
+  onDeleteLive,
+  onDeleteHistory,
 }: SessionSidebarProps) {
   const { t } = useTranslation();
   const kernel = appKernel;
@@ -67,6 +75,20 @@ export function SessionSidebar({
   const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState('');
   const [capabilityCollapsed, setCapabilityCollapsed] = useState(initialCapabilityCollapsed);
+  const [conversationCollapsed, setConversationCollapsed] = useState(initialConversationCollapsed);
+  const [contextMenu, setContextMenu] = useState<{ item: SidebarSession; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const dismiss = (event?: PointerEvent) => {
+      if (event?.target instanceof Element && event.target.closest('.session-context-menu')) return;
+      setContextMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') dismiss(); };
+    window.addEventListener('pointerdown', dismiss);
+    window.addEventListener('keydown', onKeyDown);
+    return () => { window.removeEventListener('pointerdown', dismiss); window.removeEventListener('keydown', onKeyDown); };
+  }, [contextMenu]);
 
   useEffect(() => {
     let current = true;
@@ -119,6 +141,23 @@ export function SessionSidebar({
     });
   };
 
+  const toggleConversation = () => {
+    setConversationCollapsed((value) => {
+      const next = !value;
+      window.localStorage.setItem('tau-conversation-collapsed', next ? '1' : '0');
+      return next;
+    });
+  };
+
+  async function deleteConversation() {
+    const item = contextMenu?.item;
+    setContextMenu(null);
+    if (!item) return;
+    if (item.live) await onDeleteLive(item.live);
+    else if (item.history) await onDeleteHistory(item.history);
+    setRefreshKey((value) => value + 1);
+  }
+
   return (
     <>
       <aside className={`session-sidebar${open ? ' is-open' : ''}`} aria-label={t('sessions.sidebar')} data-testid="session-sidebar">
@@ -137,9 +176,9 @@ export function SessionSidebar({
 
         <div className="sidebar-split">
           <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} />
-          <section className="conversation-section" aria-label={t('sessions.conversationList')}>
-            <header className="sidebar-section-heading"><strong>{t('sessions.conversations')}</strong>{scenarioSessions.length ? <small>{scenarioSessions.length}</small> : null}</header>
-            <div className="session-scroll">
+          <section className={`conversation-section${conversationCollapsed ? ' is-collapsed' : ''}`} aria-label={t('sessions.conversationList')}>
+            <header className="sidebar-section-heading"><strong><Icon name="workspace" />{t('sessions.conversations')}</strong>{scenarioSessions.length ? <small>{scenarioSessions.length}</small> : null}<button className="sidebar-section-toggle" type="button" aria-expanded={!conversationCollapsed} aria-label={conversationCollapsed ? t('sessions.expandConversations') : t('sessions.collapseConversations')} onClick={toggleConversation}><Icon name="chevron" /></button></header>
+            {!conversationCollapsed ? <div className="session-scroll">
               {loading ? <div className="session-empty">{t('sessions.loadingIndex')}</div> : null}
               {error ? <div className="session-empty is-error">{error}</div> : null}
               {!loading && !error && scenarioSessions.map((item) => (
@@ -148,17 +187,19 @@ export function SessionSidebar({
                   type="button"
                   key={item.key}
                   onClick={() => item.live ? onSelectLive(item.live.id) : onSelectHistory(item.history!, item.project!)}
+                  onContextMenu={(event) => { event.preventDefault(); setContextMenu({ item, x: event.clientX, y: event.clientY }); }}
                 >
                   <span className="session-row-main"><strong>{item.title}</strong><small>{relativeTime(item.timestamp)}</small></span>
                   {item.live?.isStreaming ? <span className="session-row-meta"><i className="streaming-beacon" /></span> : null}
                 </button>
               ))}
               {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">{t('sessions.emptyScenario')}</div> : null}
-            </div>
+            </div> : null}
           </section>
         </div>
 
       </aside>
+      {contextMenu ? <div className="session-context-menu" role="menu" style={{ left: Math.min(contextMenu.x, window.innerWidth - 176), top: Math.min(contextMenu.y, window.innerHeight - 48) }}><button type="button" role="menuitem" onClick={() => void deleteConversation()}>{t('sessions.deleteConversation')}</button></div> : null}
       <button className={`mobile-scrim${open ? ' is-visible' : ''}`} type="button" aria-label={t('sessions.toggleCloseSidebar')} onClick={onClose} />
     </>
   );

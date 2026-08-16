@@ -1,9 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
 import type { ModelProviderAccess, PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
+import { Icon, type IconName } from '../../components/icons';
 import { Button } from '../../components/ui/button';
+import { ConfirmationDialog } from '../../components/ui/confirmation-dialog';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { LocalePreference } from '../../i18n';
 import i18n from '../../i18n';
@@ -18,9 +20,9 @@ export const themes = [
 export type ThemeId = (typeof themes)[number]['id'];
 
 export const settingsSections = [
-  { id: 'general', labelKey: 'settings.section.general' },
-  { id: 'agent', labelKey: 'settings.section.agent' },
-  { id: 'modules', labelKey: 'settings.section.modules' },
+  { id: 'general', labelKey: 'settings.section.general', icon: 'settings' },
+  { id: 'agent', labelKey: 'settings.section.agent', icon: 'tool' },
+  { id: 'modules', labelKey: 'settings.section.modules', icon: 'panel' },
 ] as const;
 
 export type SettingsSectionId = (typeof settingsSections)[number]['id'];
@@ -63,12 +65,11 @@ type SettingsPageProps = {
 function modelDetails(model: ModelRecord | string) {
   if (typeof model === 'string') {
     const slash = model.indexOf('/');
-    return { provider: slash > 0 ? model.slice(0, slash) : i18n.t('settings.model.unknownProvider'), name: slash > 0 ? model.slice(slash + 1) : model, details: '' };
+    return { provider: slash > 0 ? model.slice(0, slash) : i18n.t('settings.model.unknownProvider'), name: slash > 0 ? model.slice(slash + 1) : model, context: '', reasoning: false, images: false };
   }
   const name = model.name || model.label || model.id || model.model || i18n.t('settings.model.unnamed');
   const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
-  const details = [context ? `${context} context` : '', model.thinking ? i18n.t('settings.model.reasoning') : '', model.images ? i18n.t('settings.model.images') : ''].filter(Boolean).join(' · ');
-  return { provider: model.provider || i18n.t('settings.model.unknownProvider'), name, details };
+  return { provider: model.provider || i18n.t('settings.model.unknownProvider'), name, context, reasoning: model.thinking === true || model.thinking === 'true', images: model.images === true || model.images === 'true' };
 }
 
 export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, expandThinking, onExpandThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
@@ -86,6 +87,10 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   const [modelsLoading, setModelsLoading] = useState(false);
   const [moduleSource, setModuleSource] = useState('');
   const [swatches, setSwatches] = useState<Record<ThemeId, string[]> | null>(null);
+  const [modelQuery, setModelQuery] = useState('');
+  const [modelCapability, setModelCapability] = useState<'all' | 'reasoning' | 'images'>('all');
+  const [providerMenu, setProviderMenu] = useState<string | null>(null);
+  const [disconnectTarget, setDisconnectTarget] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     setSwatches(readThemeSwatches());
@@ -187,12 +192,14 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     }
   }
 
-  async function disconnectModelProvider(providerId: string, providerName: string) {
-    if (!window.confirm(t('settings.confirm.disconnectProvider', { name: providerName }))) return;
-    setBusy(`model-disconnect:${providerId}`);
+  async function disconnectModelProvider() {
+    const target = disconnectTarget;
+    setDisconnectTarget(null);
+    if (!target) return;
+    setBusy(`model-disconnect:${target.id}`);
     setError('');
     try {
-      await kernel.commands.platform.disconnectModelProvider(providerId);
+      await kernel.commands.platform.disconnectModelProvider(target.id);
       const [nextModels, nextProviders] = await Promise.all([
         kernel.commands.platform.getAvailableModels(),
         kernel.commands.platform.getModelProviders(),
@@ -207,24 +214,33 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   }
 
   const activeSection = section;
-  const navigation = settingsSections.map((item) => ({ ...item, label: t(item.labelKey) }));
+  const navigation = settingsSections.map((item) => ({ ...item, label: t(item.labelKey), icon: item.icon as IconName }));
   const moduleLabels: Record<PlatformModule['type'], string> = { module: t('settings.module.package'), capability: t('settings.module.plugin'), domain: t('settings.module.domain') };
   const localeOptions = [
     { value: 'system', label: t('settings.language.system') },
     { value: 'zh-CN', label: t('settings.language.zhCN') },
     { value: 'en-US', label: t('settings.language.enUS') },
   ];
-  const modelsByProvider = models.map(modelDetails).reduce<Record<string, ReturnType<typeof modelDetails>[]>>((groups, model) => {
+  const modelDetailsList = useMemo(() => models.map(modelDetails), [models]);
+  const providerMetadata = new Map(modelProviders.map((provider) => [provider.id, provider]));
+  const connectedProviders = Object.entries(modelDetailsList.reduce<Record<string, ReturnType<typeof modelDetails>[]>>((groups, model) => {
     (groups[model.provider] ||= []).push(model);
     return groups;
-  }, {});
-  const providerMetadata = new Map(modelProviders.map((provider) => [provider.id, provider]));
-  const connectedProviders = Object.entries(modelsByProvider).map(([id, providerModels]) => ({
+  }, {})).map(([id, providerModels]) => ({
     id,
     models: providerModels,
     metadata: providerMetadata.get(id),
     name: providerMetadata.get(id)?.name || id,
   })).sort((left, right) => left.name.localeCompare(right.name));
+  const filteredProviders = connectedProviders.map((provider) => ({
+    ...provider,
+    models: provider.models.filter((model) => {
+      const query = modelQuery.trim().toLocaleLowerCase();
+      const matchesQuery = !query || `${provider.name} ${provider.id} ${model.name}`.toLocaleLowerCase().includes(query);
+      const matchesCapability = modelCapability === 'all' || model[modelCapability];
+      return matchesQuery && matchesCapability;
+    }),
+  })).filter((provider) => provider.models.length);
   let content: ReactNode;
 
   switch (activeSection) {
@@ -281,19 +297,17 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
           <div className="settings-row"><span><strong>{t('settings.autoCompact')}</strong><small>{session ? t('settings.autoCompactHelp') : t('settings.autoCompactNoSession')}</small></span><button className={`switch${autoCompact ? ' is-on' : ''}`} type="button" role="switch" aria-checked={autoCompact} disabled={!session || busy === 'compact'} onClick={toggleAutoCompact}><span /></button></div>
         </section>
         <section className="settings-section">
-          <h2>{t('settings.modelAccess')}</h2>
-          <div className="settings-row"><span><strong>{t('settings.connectedModels')}</strong><small>{t('settings.connectedModelsHelp')}</small></span><Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button></div>
-          {modelsLoading ? <div className="settings-loading" aria-label={t('settings.loadingModels')}><span /></div> : connectedProviders.length ? <div className="model-provider-list">{connectedProviders.map((provider) => <details className="model-provider" key={provider.id}>
-            <summary>
-              <span className="model-provider-identity"><strong>{provider.name}</strong><code>{provider.id}</code></span>
-              <span className="model-provider-meta"><small>{t('settings.modelCount', { count: provider.models.length })}</small><i>{t('settings.providerConnected')}</i></span>
-            </summary>
-            <div className="model-provider-content">
-              {provider.models.map((model, index) => <div className="model-provider-row" key={`${provider.id}:${model.name}:${index}`}><strong>{model.name}</strong>{model.details ? <small>{model.details}</small> : null}</div>)}
-              {provider.metadata?.credentialStored ? <div className="model-provider-actions"><Button type="button" variant="quiet" disabled={busy === `model-disconnect:${provider.id}`} onClick={() => disconnectModelProvider(provider.id, provider.name)}>{t('settings.disconnectProvider')}</Button></div> : null}
-            </div>
-          </details>)}</div> : <p className="settings-empty">{t('settings.noConnectedModels')}</p>}
+          <div className="model-access-panel">
+          <header className="model-access-heading"><div><h2>{t('settings.modelAccess')}</h2><p>{t('settings.connectedModelsHelp')}</p><small>{t('settings.modelSummary', { providers: connectedProviders.length, models: modelDetailsList.length })}</small></div><Button type="button" onClick={onAddModel}>{t('sessions.addModel')}</Button></header>
+          {modelsLoading ? <div className="settings-loading" aria-label={t('settings.loadingModels')}><span /></div> : connectedProviders.length ? <>
+            <div className="model-access-toolbar"><label><Icon name="search" /><input value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder={t('settings.searchModelsPlaceholder')} aria-label={t('settings.searchModels')} /></label><select value={modelCapability} onChange={(event) => setModelCapability(event.target.value as typeof modelCapability)} aria-label={t('settings.filterModels')}><option value="all">{t('settings.filter.all')}</option><option value="reasoning">{t('settings.model.reasoning')}</option><option value="images">{t('settings.model.images')}</option></select></div>
+            {filteredProviders.length ? <div className="model-provider-list">{filteredProviders.map((provider) => <article className="model-provider" key={provider.id}>
+              <header className="model-provider-heading"><span className="model-provider-identity"><strong>{provider.name}</strong><code>{provider.id}</code></span><span className="model-provider-meta"><i><b />{t('settings.providerConnected')}</i><small>{t('settings.modelCount', { count: provider.models.length })}</small>{provider.metadata?.credentialStored ? <button className="model-provider-more" type="button" aria-label={t('settings.providerActions')} aria-expanded={providerMenu === provider.id} onClick={() => setProviderMenu((current) => current === provider.id ? null : provider.id)}>•••</button> : null}{providerMenu === provider.id ? <span className="model-provider-menu"><button type="button" disabled={busy === `model-disconnect:${provider.id}`} onClick={() => { setProviderMenu(null); setDisconnectTarget({ id: provider.id, name: provider.name }); }}>{t('settings.disconnectProvider')}</button></span> : null}</span></header>
+              <div className="model-provider-content">{provider.models.map((model, index) => <div className="model-provider-row" key={`${provider.id}:${model.name}:${index}`}><strong>{model.name}</strong><span className="model-badges">{model.context ? <i>{model.context}</i> : null}{model.reasoning ? <i>{t('settings.model.reasoning')}</i> : null}{model.images ? <i>{t('settings.model.images')}</i> : null}</span></div>)}</div>
+            </article>)}</div> : <p className="settings-empty">{t('settings.noMatchingModels')}</p>}
+          </> : <p className="settings-empty">{t('settings.noConnectedModels')}</p>}
           <p className="settings-model-restart-note">{t('settings.modelRestartNote')}</p>
+          </div>
         </section>
       </div>;
       break;
@@ -345,7 +359,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
       <aside className="settings-navigation" aria-label={t('settings.categories')}>
         <button className="settings-return" type="button" onClick={onBack}>{t('settings.back')}</button>
         <nav className="settings-navigation-list" aria-label={t('settings.categoryList')}>
-          {navigation.map((item) => <button className={`settings-navigation-item${activeSection === item.id ? ' is-active' : ''}`} type="button" aria-current={activeSection === item.id ? 'page' : undefined} key={item.id} onClick={() => onSectionChange(item.id)}>{item.label}</button>)}
+          {navigation.map((item) => <button className={`settings-navigation-item${activeSection === item.id ? ' is-active' : ''}`} type="button" aria-current={activeSection === item.id ? 'page' : undefined} key={item.id} onClick={() => onSectionChange(item.id)}><Icon name={item.icon} />{item.label}</button>)}
         </nav>
       </aside>
       <main className="settings-page-scroll">
@@ -355,6 +369,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
           {error ? <div className="inline-error" role="alert">{error}</div> : null}
         </div>
       </main>
+      <ConfirmationDialog open={!!disconnectTarget} onOpenChange={(open) => { if (!open) setDisconnectTarget(null); }} title={t('settings.disconnectProvider')} description={disconnectTarget ? t('settings.confirm.disconnectProvider', { name: disconnectTarget.name }) : ''} confirmLabel={t('settings.disconnectProvider')} onConfirm={() => void disconnectModelProvider()} />
     </section>
   );
 }
