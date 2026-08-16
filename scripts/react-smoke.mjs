@@ -132,6 +132,13 @@ try {
   await settingsButton.click();
   await settings.getByRole('button', { name: 'Agent', exact: true }).click();
   await settings.getByText('kimi-coding', { exact: true }).waitFor();
+  const modelSearch = settings.getByLabel('搜索模型或供应商');
+  await modelSearch.fill('Fake K2P7');
+  await settings.getByText('Fake K2P7', { exact: true }).waitFor();
+  await settings.getByLabel('按能力筛选模型').selectOption('images');
+  await settings.getByText('没有匹配的模型。', { exact: true }).waitFor();
+  await settings.getByLabel('按能力筛选模型').selectOption('all');
+  await modelSearch.fill('');
   await settings.getByRole('button', { name: '添加模型' }).click();
   const addModel = reactPage.getByRole('dialog', { name: '模型接入' });
   await addModel.getByRole('tab', { name: '自定义服务' }).click();
@@ -196,6 +203,22 @@ try {
   assertSmoothMotion(sidebarOpenedMotion, 'increasing', 'Desktop sidebar open');
   await reactPage.locator('[data-testid="session-sidebar"].is-open').waitFor();
 
+  const collapseConversations = reactPage.getByRole('button', { name: '收起对话列表' });
+  await collapseConversations.click();
+  await reactPage.locator('.conversation-section.is-collapsed').waitFor();
+  await reactPage.getByRole('button', { name: '展开对话列表' }).click();
+  await reactPage.locator('.conversation-section:not(.is-collapsed) .session-scroll').waitFor();
+
+  const secondSessionRow = reactPage.locator('.session-row', { hasText: 'Smoke task 2' });
+  await secondSessionRow.click({ button: 'right' });
+  const deleteConversation = reactPage.getByRole('menuitem', { name: '删除对话' });
+  await deleteConversation.waitFor();
+  await deleteConversation.click();
+  const deleteDialog = reactPage.getByRole('dialog', { name: '删除对话' });
+  await deleteDialog.waitFor();
+  await deleteDialog.getByRole('button', { name: '删除对话', exact: true }).click();
+  await secondSessionRow.waitFor({ state: 'detached', timeout: 10_000 });
+
   // Conversation: React composer sends through the command port; optimistic
   // user message and streaming/final assistant rendering share the Kernel.
   const composer = reactPage.getByLabel('消息输入');
@@ -224,14 +247,7 @@ try {
   await baselineMessage.waitFor({ timeout: 10_000 });
   const thinkingToggle = baselineMessage.locator('.thinking-toggle', { hasText: '已思考' });
   await thinkingToggle.waitFor();
-  if (await thinkingToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Thinking block should be expanded by default');
-  const thinkingChrome = await reactPage.locator('.thinking-block pre').evaluate((node) => {
-    const style = getComputedStyle(node);
-    return { background: style.backgroundColor, border: style.borderTopStyle };
-  });
-  if (thinkingChrome.background !== 'rgba(0, 0, 0, 0)' || thinkingChrome.border !== 'none') {
-    throw new Error(`Thinking block should use plain gray text: ${JSON.stringify(thinkingChrome)}`);
-  }
+  if (await thinkingToggle.getAttribute('aria-expanded') !== 'false') throw new Error('Thinking block should be collapsed by default');
   await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
 
   await composer.fill('基线-long-stream');
@@ -276,9 +292,9 @@ try {
   await settingsButton.click();
   await settings.getByRole('button', { name: '常规', exact: true }).click();
   const expandThinkingSwitch = settings.getByRole('switch', { name: '默认展开思考内容' });
-  if (await expandThinkingSwitch.getAttribute('aria-checked') !== 'true') throw new Error('Thinking content should default to expanded');
+  if (await expandThinkingSwitch.getAttribute('aria-checked') !== 'false') throw new Error('Thinking content should default to collapsed');
   await expandThinkingSwitch.click();
-  if (await reactPage.evaluate(() => window.localStorage.getItem('tau-expand-thinking')) !== 'false') throw new Error('Collapsed thinking preference was not persisted');
+  if (await reactPage.evaluate(() => window.localStorage.getItem('tau-expand-thinking')) !== 'true') throw new Error('Expanded thinking preference was not persisted');
   await reactPage.keyboard.press('Escape');
   await settings.waitFor({ state: 'hidden' });
 
@@ -286,14 +302,18 @@ try {
   await composer.press('Enter');
   await reactPage.locator('.assistant-message.is-streaming .thinking-toggle', { hasText: '正在思考中' }).waitFor({ timeout: 10_000 });
   await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
-  const collapsedMessage = reactPage.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).last();
-  await collapsedMessage.waitFor({ timeout: 10_000 });
-  const collapsedThinking = collapsedMessage.locator('.thinking-toggle');
-  if (await collapsedThinking.getAttribute('aria-expanded') !== 'false') throw new Error('Thinking block should honor the collapsed preference');
-  if (!/^已思考（\d+\.\d 秒）$/.test((await collapsedThinking.textContent())?.trim() || '')) throw new Error(`Completed thinking duration was not shown with one decimal place: ${await collapsedThinking.textContent()}`);
-  if (await collapsedMessage.locator('.thinking-block pre').count()) throw new Error('Collapsed thinking text should not be rendered');
-  await collapsedThinking.click();
-  await collapsedMessage.locator('.thinking-block pre', { hasText: '用户在请求基线 happy path' }).waitFor();
+  const expandedMessage = reactPage.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).last();
+  await expandedMessage.waitFor({ timeout: 10_000 });
+  const expandedThinking = expandedMessage.locator('.thinking-toggle');
+  if (await expandedThinking.getAttribute('aria-expanded') !== 'true') throw new Error('Thinking block should honor the expanded preference');
+  if (!/^已思考（\d+\.\d 秒）$/.test((await expandedThinking.textContent())?.trim() || '')) throw new Error(`Completed thinking duration was not shown with one decimal place: ${await expandedThinking.textContent()}`);
+  const thinkingChrome = await expandedMessage.locator('.thinking-block pre').evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { background: style.backgroundColor, border: style.borderTopStyle };
+  });
+  if (thinkingChrome.background !== 'rgba(0, 0, 0, 0)' || thinkingChrome.border !== 'none') {
+    throw new Error(`Thinking block should use plain gray text: ${JSON.stringify(thinkingChrome)}`);
+  }
   await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
 
   await reactPage.getByLabel('消息输入').fill('基线-citation-document');

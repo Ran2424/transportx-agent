@@ -5,6 +5,7 @@ import { appKernel, reconnectBrowserApplication } from './composition-root';
 import { AppShell } from './AppShell';
 import { useConversationState, useExtensionUiState, useRuntimeState, useSessionState, useToolExecutionState } from './store-hooks';
 import { Header } from '../components/shell/Header';
+import { ConfirmationDialog } from '../components/ui/confirmation-dialog';
 import { CommandPalette, type CommandItem } from '../platform/commands/CommandPalette';
 import { ConversationStage } from '../platform/conversation/ConversationStage';
 import { ExtensionDialogLayer } from '../platform/extension-ui/ExtensionDialogLayer';
@@ -52,7 +53,7 @@ export function App() {
   const tools = useToolExecutionState();
   const [theme, setTheme] = useState<ThemeId>(initialTheme);
   const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-thinking') !== 'false');
-  const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') !== 'false');
+  const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -66,10 +67,16 @@ export function App() {
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [notice, setNotice] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'live'; session: typeof sessionState.sessions[number] } | { kind: 'history'; session: HistorySession } | null>(null);
   const [dismissedRuntimeError, setDismissedRuntimeError] = useState('');
   const restoredRef = useRef(false);
 
   const activeSession = sessionState.sessions.find((session) => session.id === sessionState.activeSessionId) || null;
+  const deleteTargetName = deleteTarget
+    ? deleteTarget.kind === 'live'
+      ? deleteTarget.session.sessionName || deleteTarget.session.id
+      : deleteTarget.session.sessionName || deleteTarget.session.name || t('sessions.emptyTask')
+    : '';
   const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
   const taskState = useMemo(() => activeSession ? projectTaskState(
     conversation.bySession[activeSession.id]?.snapshotEntries ?? [],
@@ -252,6 +259,36 @@ export function App() {
     }
   }
 
+  async function deleteLiveSession(session: typeof sessionState.sessions[number]) {
+    setDeleteTarget({ kind: 'live', session });
+  }
+
+  async function deleteHistorySession(session: HistorySession) {
+    if (session.filePath) setDeleteTarget({ kind: 'history', session });
+  }
+
+  async function confirmDeleteSession() {
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (!target) return;
+    try {
+      if (target.kind === 'live') {
+        await kernel.commands.session.close(target.session.id);
+        kernel.dispatch({ type: 'session/closed', sessionId: target.session.id });
+        if (target.session.sessionFile) await kernel.commands.session.deleteHistory(target.session.sessionFile);
+        if (kernel.stores.session.get().activeSessionId === null) {
+          window.localStorage.removeItem('tau-active-live-session-id');
+          const next = mostRecentSessionId(kernel.stores.session.get().sessions);
+          if (next) await selectSession(next);
+        }
+      } else if (target.session.filePath) {
+        await kernel.commands.session.deleteHistory(target.session.filePath);
+      }
+    } catch (cause) {
+      setNotice((cause as { message?: string })?.message || t('app.error.deleteSession'));
+    }
+  }
+
   const commandItems = useMemo<CommandItem[]>(() => [
     { id: 'new', label: t('app.command.new.label'), description: t('app.command.new.description'), shortcut: '⌘N', action: () => setNewSessionOpen(true) },
     { id: 'files', label: filesOpen ? t('app.command.files.close') : t('app.command.files.open'), description: t('app.command.files.description'), shortcut: '⌘⇧W', action: toggleFiles },
@@ -315,7 +352,7 @@ export function App() {
   return (
     <AppShell
       header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={visualizations.length > 0} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
-      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} />}
+      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
@@ -330,6 +367,7 @@ export function App() {
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
+        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={t('sessions.deleteConversation')} description={t('app.confirm.deleteSession', { name: deleteTargetName })} confirmLabel={t('sessions.deleteConversation')} onConfirm={() => void confirmDeleteSession()} />
         {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label={t('app.notice.close')} onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
       </>}
     />
