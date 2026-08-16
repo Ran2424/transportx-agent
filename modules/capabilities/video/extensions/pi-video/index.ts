@@ -3,6 +3,8 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import {
   VIDEO_SCENE_SCHEMA_VERSION,
   getVideoSceneFromToolResult,
+  reduceVideoScenePresent,
+  videoSceneItemId,
   type VideoEnvelopeV1,
   type VideoSceneItemV1,
   type VideoSceneSnapshotV1,
@@ -58,12 +60,10 @@ export default function videoExtension(pi: ExtensionAPI) {
   pi.on('session_start', async (_event, ctx) => restore(ctx));
   pi.on('session_tree', async (_event, ctx) => restore(ctx));
 
-  const presentItem = (item: VideoSceneItemV1): VideoEnvelopeV1 => {
-    const videos = state.scene.videos.filter((existing) => existing.id !== item.id);
-    videos.push(item);
-    const revision = state.revision + 1;
-    state = { revision, scene: { schemaVersion: VIDEO_SCENE_SCHEMA_VERSION, revision, videos, activeVideoId: item.id } };
-    return { schemaVersion: VIDEO_SCENE_SCHEMA_VERSION, revision, scene: state.scene };
+  const presentItem = (item: VideoSceneItemV1, compare: boolean): VideoEnvelopeV1 => {
+    const sceneItem: VideoSceneItemV1 = { ...item, id: videoSceneItemId(item.resourceId, item.initialSeekSeconds) };
+    state = { revision: state.revision + 1, scene: reduceVideoScenePresent(state.scene, sceneItem, { compare }) };
+    return { schemaVersion: VIDEO_SCENE_SCHEMA_VERSION, revision: state.revision, scene: state.scene };
   };
 
   pi.registerTool({
@@ -93,20 +93,22 @@ export default function videoExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'video_present',
     label: '展示录像',
-    description: 'Materialize a recorded video as a session resource and present it in the Video Workspace, optionally seeking to an absolute recording timestamp. Use this when the user wants to view a video; it does not analyze the content. For a derived clip, pass its resourceId instead of videoId.',
+    description: 'Materialize a recorded video as a session resource and present it in the Video Workspace, optionally seeking to an absolute recording timestamp. Use this when the user wants to view a video; it does not analyze the content. For a derived clip, pass its resourceId instead of videoId. Set compare=true to place the video in the comparison pane next to the current one (for side-by-side comparison of two locations or two recording times).',
     promptSnippet: 'Present a recorded video in the workspace, optionally at a specific recording time',
     parameters: Type.Object({
       videoId: Type.Optional(Type.String({ maxLength: 120 })),
       resourceId: Type.Optional(Type.String({ maxLength: 120, description: 'Session video resource id of a derived clip' })),
       timestamp: Type.Optional(Type.String({ maxLength: 64, description: 'Absolute recording time, ISO 8601 with numeric offset' })),
+      compare: Type.Optional(Type.Boolean({ description: 'Present in the comparison pane next to the current video instead of replacing it' })),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params) {
       if (!params.videoId && !params.resourceId) throw new Error('videoId or resourceId is required.');
       const result = await callHost<{ item: VideoSceneItemV1 }>('present', params as Record<string, unknown>);
-      const envelope = presentItem(result.item);
+      const envelope = presentItem(result.item, params.compare === true);
       const seek = result.item.initialSeekSeconds !== undefined ? ` Initial position: ${result.item.initialSeekSeconds.toFixed(1)}s into the recording.` : '';
+      const placement = params.compare === true && envelope.scene.compareVideoId ? ' in the comparison pane' : '';
       return {
-        content: [{ type: 'text' as const, text: `Presenting "${result.item.title}" (${result.item.recordingStartTime} – ${result.item.recordingEndTime}).${seek}` }],
+        content: [{ type: 'text' as const, text: `Presenting "${result.item.title}"${placement} (${result.item.recordingStartTime} – ${result.item.recordingEndTime}).${seek}` }],
         details: { kind: 'tau-video-present' as const, video: envelope },
       };
     },
