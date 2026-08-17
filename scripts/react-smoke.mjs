@@ -352,11 +352,13 @@ try {
   if (!reportDownload.suggestedFilename().endsWith('.pdf')) throw new Error(`Unexpected PDF filename: ${reportDownload.suggestedFilename()}`);
   if (process.env.TAU_SMOKE_PDF) fs.copyFileSync(reportPdfPath, process.env.TAU_SMOKE_PDF);
   await citationPreview.getByRole('button', { name: '关闭文件预览' }).click();
+  if (await reactPage.locator('.session-outputs').count()) throw new Error('Conversation must not enumerate all session files as outputs');
 
   await reactPage.getByLabel('消息输入').fill('基线-citation-pdf');
   await reactPage.getByLabel('消息输入').press('Enter');
   const pdfCitationMessage = reactPage.locator('.assistant-message', { hasText: '发现人员聚集后应及时组织疏导' }).last();
   await pdfCitationMessage.locator('.citation-footer', { hasText: '标准规范' }).waitFor({ timeout: 10_000 });
+  if (await reactPage.locator('.session-outputs').count()) throw new Error('A follow-up response must not retain earlier session files as outputs');
   await pdfCitationMessage.locator('.citation-locator').hover();
   const pdfPageImage = reactPage.locator('.citation-evidence-peek img');
   await pdfPageImage.waitFor();
@@ -418,6 +420,13 @@ try {
   await composer.press('Enter');
   const runningTool = reactPage.locator('.tool-card', { hasText: 'traffic-summary.json' });
   await runningTool.locator('.tool-status.running').waitFor({ timeout: 10_000 });
+  const liveThinking = reactPage.locator('.assistant-message.is-streaming .thinking-block.is-active');
+  await liveThinking.waitFor({ timeout: 10_000 });
+  const streamOrder = await reactPage.locator('.conversation-thread').evaluate((thread) => ({
+    thinking: [...thread.children].indexOf(thread.querySelector('.assistant-message.is-streaming')),
+    tool: [...thread.children].indexOf(thread.querySelector(':scope > .tool-card')),
+  }));
+  if (streamOrder.thinking < 0 || streamOrder.tool < 0 || streamOrder.thinking > streamOrder.tool) throw new Error(`Live thinking must precede its tool card: ${JSON.stringify(streamOrder)}`);
   const toolToggle = runningTool.locator('.tool-card-toggle');
   if (await toolToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Running tool should be expanded');
   await runningTool.locator('.tool-status.completed').waitFor({ timeout: 10_000 });
