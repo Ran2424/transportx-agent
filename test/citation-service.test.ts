@@ -58,6 +58,19 @@ test('Citation Service registers JSONL evidence once with multiple line locators
   assert.deepEqual(citations.locators.map((item: any) => [item.lineStart, item.lineEnd]), [[1, 1], [2, 2]]);
 });
 
+test('Citation Service registers GeoJSON map artifacts as geographic datasets', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-geojson-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(cwd, 'stations_3km.geojson'), JSON.stringify({ type: 'FeatureCollection', features: [] }));
+  const { CitationService } = require('../bin/citation-service.js');
+  const citations = new CitationService().resolveArtifacts({ id: 'session_geojson', cwd }, [
+    { path: 'stations_3km.geojson', title: '场馆三公里轨交站点', section: '空间分析结果' },
+  ]);
+
+  assert.deepEqual(citations.resources.map((item: any) => ({ kind: item.kind, mimeType: item.mimeType })), [{ kind: 'dataset', mimeType: 'application/geo+json' }]);
+  assert.equal(citations.locators[0].section, '空间分析结果');
+});
+
 test('Citation Service reuses an equivalent locator when the same artifact is resolved again', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-repeat-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
