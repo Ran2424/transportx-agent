@@ -14,7 +14,7 @@ process.env.PI_CODING_AGENT_SESSION_DIR = path.join(process.env.PI_CODING_AGENT_
 const PROJECTS_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'projects');
 process.env.TAU_PROJECTS_DIR = PROJECTS_DIR;
 
-const { server, computeUrls, handleRpcCommand, liveManager, SESSIONS_DIR, _setSpawnPiForTest } = require('../bin/tau.js');
+const { server, computeUrls, handleRpcCommand, liveManager, SESSIONS_DIR, PiRpcSession, _setSpawnPiForTest } = require('../bin/tau.js');
 let base = '';
 const PROJ_DIR = path.join(SESSIONS_DIR, '--tmp--httpproj');
 
@@ -422,6 +422,23 @@ test('Pi RPC prompt timeout is reported instead of optimistic success', async ()
   const response = await handleRpcCommand({ type: 'prompt', sessionId: session.id, message: '不要假成功', clientCommandId: 'client-command-timeout' });
   assert.equal(response.success, false);
   assert.match(String(response.error), /timed out/);
+});
+
+test('Pi RPC extension UI responses acknowledge after writing because Pi sends no response envelope', async () => {
+  const manager = new (require('../bin/sessions.js').LiveSessionManager)();
+  const session = new PiRpcSession(manager, { cwd: '/tmp/pi-extension-ui' });
+  const child = makeFakeChild();
+  const received: string[] = [];
+  child.stdin.on('data', (chunk: Buffer) => received.push(chunk.toString()));
+  (session as any).child = child;
+
+  const response = await Promise.race([
+    session.send({ type: 'extension_ui_response', id: 'ui-1', value: 'northbound' }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('extension UI response was not acknowledged')), 100)),
+  ]);
+
+  assert.equal((response as { success: boolean }).success, true);
+  assert.match(received.join(''), /"type":"extension_ui_response"/);
 });
 
 test('resuming a stored session publishes the persisted conversation snapshot', async (t: TestContext) => {
