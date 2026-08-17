@@ -57,6 +57,26 @@ function mergeById<T extends { [key: string]: unknown }>(current: T[], incoming:
   }
 }
 
+function sameLocator(left: CitationEnvelope['locators'][number], right: CitationEnvelope['locators'][number]) {
+  const { locatorId: _leftId, ...leftValue } = left;
+  const { locatorId: _rightId, ...rightValue } = right;
+  return sameEntity(leftValue, rightValue);
+}
+
+function mergeLocators(current: CitationEnvelope['locators'], incoming: CitationEnvelope['locators'], referencedIds: Set<string>) {
+  const byId = new Map(current.map((item) => [item.locatorId, item]));
+  for (const item of incoming) {
+    const previous = byId.get(item.locatorId);
+    if (previous) {
+      if (!sameEntity(previous, item)) throw new Error(`Citation locator ${item.locatorId} conflicts with the existing registry.`);
+      continue;
+    }
+    if (!referencedIds.has(item.locatorId) && current.some((candidate) => sameLocator(candidate, item))) continue;
+    current.push(item);
+    byId.set(item.locatorId, item);
+  }
+}
+
 export class CitationRegistryStore {
   readonly cwd: string;
   readonly sessionId: string;
@@ -91,7 +111,7 @@ export class CitationRegistryStore {
     if (envelope.protocol !== registry.protocol || envelope.version !== registry.version) throw new Error('Citation envelope version is not supported.');
     mergeById(registry.works, envelope.works, 'workId', 'work');
     mergeById(registry.resources, envelope.resources, 'resourceId', 'resource');
-    mergeById(registry.locators, envelope.locators, 'locatorId', 'locator');
+    mergeLocators(registry.locators, envelope.locators, new Set(envelope.occurrences.map((item) => item.locatorId)));
     mergeById(registry.occurrences, envelope.occurrences, 'occurrenceId', 'occurrence');
     mergeById(registry.provenance, envelope.provenance, 'provenanceId', 'provenance edge');
     registry.updatedAt = now();

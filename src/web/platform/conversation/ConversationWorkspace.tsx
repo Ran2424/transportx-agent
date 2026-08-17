@@ -2,11 +2,12 @@ import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'rea
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { AppMessage, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
+import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
-import { renderMarkdown, renderUserMarkdown } from '../../../public/markdown.js';
+import { renderMarkdown } from '../../../public/markdown.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
-import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork } from '../../../contracts/citation.ts';
+import { parseCitationEnvelope, type CitationEnvelope, type CitationLocator, type CitationResource, type CitationWork } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
 import { BrandMark } from '../../components/BrandMark';
@@ -17,6 +18,7 @@ import i18n from '../../i18n';
 import {
   citationCopyText,
   citationDisplayText,
+  projectCitationText,
   projectMessageCitations,
   type MessageCitationProjection,
   type ResolvedCitation,
@@ -39,7 +41,7 @@ function copy(text: string) {
 
 function html(markdown: string, user = false, citationNumbers: Record<string, number> = {}) {
   const template = document.createElement('template');
-  template.innerHTML = user ? renderUserMarkdown(markdown) : renderMarkdown(markdown, citationNumbers, undefined, i18n.language);
+  template.innerHTML = renderMarkdown(markdown, citationNumbers, undefined, i18n.language);
   const allowed = new Set(['A', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL']);
   template.content.querySelectorAll('*').forEach((node) => {
     if (!allowed.has(node.tagName)) { node.replaceWith(document.createTextNode(node.textContent || '')); return; }
@@ -77,11 +79,20 @@ function formatBytes(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const UserMessage = memo(function UserMessage({ message, sessionId, attachments }: { message: AppMessage; sessionId: string; attachments: Record<string, SessionAttachment> }) {
+function focusCitationCard(event: MouseEvent<HTMLElement>) {
+  const button = (event.target as HTMLElement).closest<HTMLElement>('[data-citation-id]');
+  const id = button?.dataset.citationId;
+  if (!id) return;
+  const card = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-citation-card]')].find((candidate) => candidate.dataset.citationCard === id);
+  card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  card?.focus({ preventScroll: true });
+}
+
+const UserMessage = memo(function UserMessage({ message, sessionId, attachments, projection }: { message: AppMessage; sessionId: string; attachments: Record<string, SessionAttachment>; projection?: MessageCitationProjection }) {
   const { t } = useTranslation();
   const text = messageText(message);
   const [copied, setCopied] = useState(false);
-  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message"><div className="message-content"><div dangerouslySetInnerHTML={html(text, true)} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
+  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message" onClick={focusCitationCard}><div className="message-content"><div dangerouslySetInnerHTML={html(text, true, projection?.numbers)} /><CitationFooter projection={projection} sessionId={sessionId} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(citationCopyText(text, projection)).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
 });
 
 function useElapsedMilliseconds(startedAt: number | null, durationMs: number | null) {
@@ -134,11 +145,12 @@ function Thinking({ text, visible, active, startedAt = null, durationMs = null, 
   return <section className={`thinking-block${active ? ' is-active' : ''}`}><button type="button" className="thinking-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon name="chevron" /><ThinkingStatus active={active} startedAt={startedAt} durationMs={durationMs} /></button>{open && text ? <pre>{text}</pre> : null}</section>;
 }
 
-function citationPosition(item: ResolvedCitation) {
-  const { locator } = item;
+function citationLocatorPosition(locator: CitationLocator) {
   if (locator.page) return i18n.language === 'en-US' ? `PDF page ${locator.page}${locator.printedPage ? ` (printed page ${locator.printedPage})` : ''}` : `PDF 第${locator.page}页${locator.printedPage ? `（正文第${locator.printedPage}页）` : ''}`;
   return locator.section || locator.sourceUnit || locator.nodeId || i18n.t('conversation.sourceLocation');
 }
+
+function citationPosition(item: ResolvedCitation) { return citationLocatorPosition(item.locator); }
 
 const CITATION_CATEGORY_LABELS: Record<string, string> = {
   LEGAL_GOVERNANCE: 'conversation.category.legal',
@@ -215,6 +227,43 @@ function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitat
   </section>;
 }
 
+const MAX_SESSION_OUTPUTS = 24;
+async function collectSessionOutputs(sessionId: string, path?: string, depth = 0): Promise<WorkspaceFile[]> {
+  const response = await appKernel.commands.session.listFiles(sessionId, path);
+  const files = response.items.filter((item) => !item.isDirectory);
+  if (depth >= 3 || files.length >= MAX_SESSION_OUTPUTS) return files.slice(0, MAX_SESSION_OUTPUTS);
+  for (const directory of response.items.filter((item) => item.isDirectory)) {
+    if (files.length >= MAX_SESSION_OUTPUTS) break;
+    files.push(...(await collectSessionOutputs(sessionId, directory.path, depth + 1)).slice(0, MAX_SESSION_OUTPUTS - files.length));
+  }
+  return files;
+}
+
+function SessionOutputs({ sessionId, hasAssistantMessage, streaming }: { sessionId: string; hasAssistantMessage: boolean; streaming: boolean }) {
+  const { t } = useTranslation();
+  const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [preview, setPreview] = useState<WorkspaceFile | null>(null);
+  useEffect(() => {
+    if (!hasAssistantMessage || streaming) return;
+    let active = true;
+    void collectSessionOutputs(sessionId).then((items) => { if (active) setFiles(items.sort((left, right) => (right.mtime || 0) - (left.mtime || 0))); }).catch(() => { if (active) setFiles([]); });
+    return () => { active = false; };
+  }, [hasAssistantMessage, sessionId, streaming]);
+  if (!files.length) return null;
+  return <section className="message-artifacts session-outputs">
+    <header><strong>{t('conversation.artifacts')}</strong><span>{t('common.itemCount', { count: files.length })}</span></header>
+    <div>{files.map((file) => {
+      const presentation = filePresentation(file);
+      return <button key={file.path} type="button" onClick={() => presentation.preview ? setPreview(file) : void appKernel.commands.session.openInSystem(sessionId, file.path)}>
+        <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
+        <span><strong>{file.name}</strong><small>{presentation.label}</small></span>
+        <Icon name="chevron" />
+      </button>;
+    })}</div>
+    {preview ? <FilePreview item={preview} sessionId={sessionId} stackIndex={0} initialOffset={0} onActivate={() => setPreview(preview)} onClose={() => setPreview(null)} /> : null}
+  </section>;
+}
+
 function CitationFooter({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<ResolvedCitation | null>(null);
@@ -272,17 +321,9 @@ const AssistantMessage = memo(function AssistantMessage({ message, streaming, sh
   const displayText = streaming ? text : citationDisplayText(text, projection);
   const thinking = messageThinking(message);
   const [copied, setCopied] = useState(false);
-  function citationClick(event: MouseEvent<HTMLElement>) {
-    const button = (event.target as HTMLElement).closest<HTMLElement>('[data-citation-id]');
-    const id = button?.dataset.citationId;
-    if (!id) return;
-    const card = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-citation-card]')].find((candidate) => candidate.dataset.citationCard === id);
-    card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    card?.focus({ preventScroll: true });
-  }
   const copyText = citationCopyText(text, projection);
   const resolvedThinkingDuration = thinkingDurationMs ?? messageThinkingDurationMs(message);
-  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={citationClick}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
+  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={focusCitationCard}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
 });
 
 function preview(args: Record<string, unknown>) {
@@ -461,6 +502,7 @@ function CitationManager({ sessionId, onClose }: { sessionId: string; onClose():
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<ResolvedCitation | null>(null);
+  const [selectedLocators, setSelectedLocators] = useState<Record<string, string>>({});
   useEffect(() => {
     let active = true;
     void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`).then(async (response) => {
@@ -495,7 +537,10 @@ function CitationManager({ sessionId, onClose }: { sessionId: string; onClose():
     <section className="citation-manager" role="dialog" aria-modal="true" aria-label={t('conversation.citationManager')} onMouseDown={(event) => event.stopPropagation()}>
       <header><div><strong>{t('conversation.citationManager')}</strong><span>{envelope ? t('common.resourceCount', { resources: envelope.resources.length, uses: envelope.occurrences.length }) : t('conversation.loadingEvidenceGraph')}</span></div><button type="button" aria-label={t('conversation.closeCitationManager')} onClick={onClose}><Icon name="close" /></button></header>
       <div className="citation-manager-toolbar"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('conversation.filterCitation')} aria-label={t('conversation.filterCitationLabel')} /><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)} aria-label={t('conversation.citationScope')}><option value="all">{t('conversation.scope.all')}</option><option value="knowledge">{t('conversation.scope.knowledge')}</option><option value="attachment">{t('conversation.scope.attachment')}</option><option value="artifact">{t('conversation.scope.artifact')}</option><option value="web">{t('conversation.scope.web')}</option><option value="dataset">{t('conversation.scope.dataset')}</option></select><div>{(['bibtex', 'csl-json', 'ris'] as const).map((format) => <button key={format} type="button" disabled={!envelope} onClick={() => envelope && downloadCitationExport(envelope, format)}>{format === 'csl-json' ? 'CSL-JSON' : format.toUpperCase()}</button>)}</div></div>
-      <div className="citation-manager-body">{error ? <p className="citation-manager-status is-error">{error}</p> : !envelope ? <p className="citation-manager-status">{t('conversation.loadingEvidence')}</p> : rows.length ? rows.map(({ resource, work, locators, uses }) => <article key={resource.resourceId}><div><span className="citation-manager-scope">{resource.scope}</span><strong>{work.title}</strong><small>{work.citekey || resource.resourceId} · {t('common.locationCount', { uses, locations: locators.length })}</small></div><button type="button" disabled={!locators.length} onClick={() => previewCitation(resource, work, locators[0])}>{t('conversation.viewEvidence')}</button>{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).length ? <p>{t('conversation.provenance', { relations: envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).map((edge) => edge.relation).join(', ') })}</p> : null}</article>) : <p className="citation-manager-status">{t('conversation.noCitations')}</p>}</div>
+      <div className="citation-manager-body">{error ? <p className="citation-manager-status is-error">{error}</p> : !envelope ? <p className="citation-manager-status">{t('conversation.loadingEvidence')}</p> : rows.length ? rows.map(({ resource, work, locators, uses }) => {
+        const locator = locators.find((item) => item.locatorId === selectedLocators[resource.resourceId]) || locators[0];
+        return <article key={resource.resourceId}><div><span className="citation-manager-scope">{resource.scope}</span><strong>{work.title}</strong><small>{work.citekey || resource.resourceId} · {t('common.locationCount', { uses, locations: locators.length })}</small></div><div className="citation-manager-locator"><select value={locator?.locatorId || ''} disabled={!locators.length} aria-label={t('conversation.sourceLocation')} onChange={(event) => setSelectedLocators((current) => ({ ...current, [resource.resourceId]: event.target.value }))}>{locators.map((item) => <option key={item.locatorId} value={item.locatorId}>{citationLocatorPosition(item)}</option>)}</select><button type="button" disabled={!locator} onClick={() => previewCitation(resource, work, locator)}>{t('conversation.viewEvidence')}</button></div>{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).length ? <p>{t('conversation.provenance', { relations: envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).map((edge) => edge.relation).join(', ') })}</p> : null}</article>;
+      }) : <p className="citation-manager-status">{t('conversation.noCitations')}</p>}</div>
     </section>
     {preview ? <FilePreview item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }} sessionId={sessionId} stackIndex={0} initialOffset={0} externalSource={{ url: citationResourceUrl(sessionId, preview.resource.resourceId), kind: artifactPreviewKind(preview), mimeType: preview.resource.mimeType, page: preview.locator.page }} onActivate={() => {}} onClose={() => setPreview(null)} /> : null}
   </div>, document.body);
@@ -507,7 +552,7 @@ function clipboardFileName(index: number) {
   return `clipboard-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${index + 1}.png`;
 }
 
-function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, onAttachment, onOpenCitationManager }: { sessionId: string; streaming: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; onOpenCitationManager(): void; }) {
+function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, onAttachment, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; streaming: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const [value, setValue] = useState('');
@@ -541,8 +586,10 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
   async function insertCitation(locatorId: string) {
     try {
       const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations/occurrences`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locatorId, role: 'support' }) });
-      const payload = await response.json() as { marker?: string; error?: string };
+      const payload = await response.json() as { marker?: string; citations?: unknown; error?: string };
       if (!response.ok || !payload.marker) throw new Error(payload.error || t('conversation.createCitationFailed'));
+      const citations = parseCitationEnvelope(payload.citations);
+      if (citations) onCitationEnvelope(citations);
       setValue((current) => current.replace('/cite', payload.marker!));
       setCiteOpen(false);
       requestAnimationFrame(() => inputRef.current?.focus());
@@ -650,13 +697,23 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   const nearBottom = useRef(true);
   const data = conversation.bySession[sessionId];
   const [attachments, setAttachments] = useState<Record<string, SessionAttachment>>({});
+  const [citationEnvelope, setCitationEnvelope] = useState<CitationEnvelope | null>(null);
   const [citationManagerOpen, setCitationManagerOpen] = useState(false);
   useEffect(() => { let active = true; void kernel.commands.session.listAttachments(sessionId).then((items) => { if (active) setAttachments(Object.fromEntries(items.map((item) => [item.id, item]))); }).catch(() => {}); return () => { active = false; }; }, [kernel, sessionId]);
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`).then(async (response) => {
+      const payload = await response.json() as { citations?: unknown };
+      const citations = response.ok ? parseCitationEnvelope(payload.citations) : null;
+      if (active && citations) setCitationEnvelope(citations);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [sessionId]);
   const entries = data?.snapshotEntries || [];
   const liveTools = tools.bySession[sessionId];
   const taskState = useMemo(() => projectTaskState(entries, Object.values(liveTools || {})), [entries, liveTools]);
   const toolProjection = useMemo(() => projectTools(entries, liveTools || {}), [entries, liveTools]);
-  const citationProjection = useMemo(() => projectMessageCitations(entries), [entries]);
+  const citationProjection = useMemo(() => projectMessageCitations(entries, citationEnvelope), [citationEnvelope, entries]);
   useEffect(() => {
     if (!nearBottom.current) return;
     const frame = window.requestAnimationFrame(() => {
@@ -666,5 +723,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
     return () => window.cancelAnimationFrame(frame);
   }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
   const showLiveAssistant = !!data?.live.active && (data.live.thinkingStartedAt !== null || !!data.live.streamingThinking || !!data.live.streamingText);
-  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} expandThinking={expandThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} /> : null}{showLiveAssistant ? <AssistantMessage streaming showThinking={showThinking} expandThinking={expandThinking} thinkingStartedAt={data?.live.thinkingStartedAt} thinkingDurationMs={data?.live.thinkingDurationMs} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data?.live.streamingThinking }, { type: 'text', text: data?.live.streamingText }] as MessageContentBlock[] }} /> : null}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
+  const hasAssistantMessage = entries.some((entry) => entry.message?.role === 'assistant');
+  const optimisticCitationProjection = data?.live.optimisticPrompt ? projectCitationText(data.live.optimisticPrompt.message, citationProjection.available) : undefined;
+  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} projection={citationProjection.byEntry.get(entry)} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} expandThinking={expandThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} projection={optimisticCitationProjection} /> : null}{showLiveAssistant ? <AssistantMessage streaming showThinking={showThinking} expandThinking={expandThinking} thinkingStartedAt={data?.live.thinkingStartedAt} thinkingDurationMs={data?.live.thinkingDurationMs} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data?.live.streamingThinking }, { type: 'text', text: data?.live.streamingText }] as MessageContentBlock[] }} /> : null}<SessionOutputs sessionId={sessionId} hasAssistantMessage={hasAssistantMessage} streaming={!!data?.live.active} /></div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
 }

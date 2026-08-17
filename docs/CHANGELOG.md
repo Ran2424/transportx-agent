@@ -11,10 +11,10 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
-## 未发布 — Video Capability V1
+## v3.0.10 — Video Capability V1 与 Citation Evidence 修复
 
-- 日期：2026-08-16
-- GitHub 操作：`feature/video-capability` 分支开发，PR #12 已创建并合并至 `main`（merge commit `dc48ca0`）。
+- 日期：2026-08-17
+- GitHub 操作：`feature/video-capability` 分支开发，PR #12 已创建并合并至 `main`（merge commit `dc48ca0`）；后续小型修复与文档改动直接提交并推送至 `origin/main`（`2273910`、`bd95a2e`、`9b5fd74`），本版本继续直接提交并推送至 `origin/main`。
 
 主要修改：
 
@@ -37,6 +37,10 @@
 - 修复开发桌面模式（`npm run desktop:dev`）下 `video_present` 报 “ffmpeg/ffprobe are not configured for this runtime”：Agent Host supervisor 的开发运行时注入缺少 `TAU_FFMPEG_COMMAND`/`TAU_FFPROBE_COMMAND` 覆盖，导致 dev 桌面模式误走打包 manifest 路径。
 - 修复 `video_search` 地点检索无法命中多关键词查询（如「虹桥 地铁入口」）：改为空白分词 AND 匹配，且关键词同时匹配标题、地点与摄像头编号。
 - 修复内置模块升版本后旧会话无法恢复（`Module manifest changed: com.transportx.video@1.0.0`）：Session Plan 校验按模块来源区分——`builtin` 模块随平台升级原地替换（旧版本不复存在），内容/版本漂移降级为警告并继续恢复；`installed`/`external` 模块多版本并存，仍严格校验。
+- 文件面板新增「在系统文件管理器中打开」：点击文件面板位置可直接打开当前任务工作区目录（WorkspaceDock 命令 + 桌面 shell 集成）。
+- 提交策略写入 AGENTS.md：小型修复与小幅功能改动可直接提交 `main`，新能力、架构调整或多环节联动的较大改动走「分支 → PR → 合并」流程。
+- Citation Evidence 升级至 `1.0.1`：修复 `/cite` 手动引用在用户消息中无法显示和恢复的问题；聊天编号与报告编译按 Work 去重一致；重复解析 Locator 自动去重；网页快照请求固定到已校验的公网 IP；Agent 首次回复后自动列出会话工作区的本地产物，独立于正式引用。
+- npm 包、桌面安装包与 Agent Host 平台版本同步提升为 `3.0.10`。
 
 Workspace Focus 抽象与视频工作区形态升级：
 

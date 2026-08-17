@@ -1,6 +1,6 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import { enUS, zhCN } from './resources';
+import { enUS, zhCN } from './resources.ts';
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];

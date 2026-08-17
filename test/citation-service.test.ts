@@ -58,6 +58,19 @@ test('Citation Service registers JSONL evidence once with multiple line locators
   assert.deepEqual(citations.locators.map((item: any) => [item.lineStart, item.lineEnd]), [[1, 1], [2, 2]]);
 });
 
+test('Citation Service reuses an equivalent locator when the same artifact is resolved again', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-repeat-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(cwd, 'result.csv'), 'road_id,flow\nA001,1830\n');
+  const { CitationService } = require('../bin/citation-service.js');
+  const service = new CitationService();
+  service.resolveArtifacts({ id: 'session_repeat', cwd }, [{ path: 'result.csv', quote: 'A001 流量 1830', lineStart: 2, lineEnd: 2 }]);
+  const citations = service.resolveArtifacts({ id: 'session_repeat', cwd }, [{ path: 'result.csv', quote: 'A001 流量 1830', lineStart: 2, lineEnd: 2 }]);
+
+  assert.equal(citations.resources.length, 1);
+  assert.equal(citations.locators.length, 1);
+});
+
 test('Citation Service rejects private and non-HTTPS web targets before fetch', async () => {
   const { publicCitationUrl } = require('../bin/citation-service.js');
   await assert.rejects(publicCitationUrl('http://example.com/report'), /public HTTPS/i);
