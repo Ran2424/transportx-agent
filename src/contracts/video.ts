@@ -75,6 +75,16 @@ export type VideoCatalogEntryV1 = {
   mimeType: 'video/mp4';
   longitude?: number;
   latitude?: number;
+  /** Optional time-aligned numeric signals stored in the same Data Asset. */
+  metrics?: VideoMetricDefinitionV1[];
+};
+
+export type VideoMetricDefinitionV1 = {
+  id: string;
+  label: string;
+  unit: string;
+  file: string;
+  sampleIntervalSeconds: number;
 };
 
 export type VideoCatalogV1 = {
@@ -330,6 +340,32 @@ export function parseVideoCatalogStructured(value: unknown, diagnostics: Contrac
     const locationName = item.locationName === undefined ? undefined : asString(item.locationName, 300) ?? undefined;
     const longitude = item.longitude === undefined ? undefined : asFiniteNumber(item.longitude) ?? undefined;
     const latitude = item.latitude === undefined ? undefined : asFiniteNumber(item.latitude) ?? undefined;
+    const rawMetrics = item.metrics;
+    const metrics: VideoMetricDefinitionV1[] = [];
+    if (rawMetrics !== undefined && !Array.isArray(rawMetrics)) diagnostics.push(diagnostic({ code: 'invalid_type', path: `${path}.metrics`, message: 'metrics must be an array.' }));
+    const metricIds = new Set<string>();
+    for (const [metricIndex, candidate] of (Array.isArray(rawMetrics) ? rawMetrics : []).entries()) {
+      const metricPath = `${path}.metrics[${metricIndex}]`;
+      const metric = asRecord(candidate);
+      if (!metric) {
+        diagnostics.push(diagnostic({ code: 'invalid_type', path: metricPath, message: 'Video metric must be an object.' }));
+        continue;
+      }
+      const id = asString(metric.id, 120);
+      const label = asString(metric.label, 120);
+      const unit = asString(metric.unit, 40);
+      const metricFile = asString(metric.file, 1000);
+      const sampleIntervalSeconds = asFiniteNumber(metric.sampleIntervalSeconds);
+      if (!id) diagnostics.push(diagnostic({ code: 'missing_required_field', path: `${metricPath}.id`, message: 'Video metric id is required.' }));
+      if (id && metricIds.has(id)) diagnostics.push(diagnostic({ code: 'duplicate_id', path: `${metricPath}.id`, message: `Duplicate video metric id: ${id}` }));
+      if (!label) diagnostics.push(diagnostic({ code: 'missing_text_field', path: `${metricPath}.label`, message: 'Video metric label is required.' }));
+      if (!unit) diagnostics.push(diagnostic({ code: 'missing_text_field', path: `${metricPath}.unit`, message: 'Video metric unit is required.' }));
+      if (!metricFile || metricFile.startsWith('/') || /^[A-Za-z]:[\\/]/.test(metricFile) || metricFile.split(/[\\/]+/).some((part) => !part || part === '.' || part === '..')) diagnostics.push(diagnostic({ code: 'unsafe_value', path: `${metricPath}.file`, message: 'Video metric file must be a safe relative path inside the Data Root.' }));
+      if (sampleIntervalSeconds === null || !Number.isInteger(sampleIntervalSeconds) || sampleIntervalSeconds <= 0 || sampleIntervalSeconds > 86_400) diagnostics.push(diagnostic({ code: 'out_of_range', path: `${metricPath}.sampleIntervalSeconds`, message: 'sampleIntervalSeconds must be a positive integer no greater than one day.' }));
+      if (!id || metricIds.has(id) || !label || !unit || !metricFile || sampleIntervalSeconds === null || !Number.isInteger(sampleIntervalSeconds) || sampleIntervalSeconds <= 0 || sampleIntervalSeconds > 86_400) continue;
+      metricIds.add(id);
+      metrics.push({ id, label, unit, file: metricFile, sampleIntervalSeconds });
+    }
     if (!videoId) diagnostics.push(diagnostic({ code: 'missing_required_field', path: `${path}.videoId`, message: 'videoId is required.' }));
     if (videoId && ids.has(videoId)) diagnostics.push(diagnostic({ code: 'duplicate_id', path: `${path}.videoId`, message: `Duplicate videoId: ${videoId}` }));
     if (!title) diagnostics.push(diagnostic({ code: 'missing_text_field', path: `${path}.title`, message: 'title is required.' }));
@@ -352,6 +388,7 @@ export function parseVideoCatalogStructured(value: unknown, diagnostics: Contrac
       mimeType: 'video/mp4',
       ...(longitude !== undefined ? { longitude } : {}),
       ...(latitude !== undefined ? { latitude } : {}),
+      ...(rawMetrics !== undefined ? { metrics } : {}),
     });
   }
   if (!rawVideos) return { ok: false, value: null, diagnostics };

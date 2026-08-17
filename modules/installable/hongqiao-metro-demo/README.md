@@ -8,7 +8,7 @@
 |---|---|
 | `data/videos.json` | Video Capability 数据目录（1 段录像） |
 | `data/videos/hongqiao_b1_metro_entrance_20260630.mp4` | 录像本体（**不入 Git**，约 300–500MB，1280x720 H.264 faststart） |
-| `data/flows/entry_counts_minute.csv` | YOLO 离线识别的每分钟进站客流（入 Git，小体积） |
+| `data/metrics/visible_people_second.csv` | YOLO 离线识别的每秒画面可见人数（入 Git，小体积） |
 
 ## 数据来源与加工
 
@@ -20,13 +20,13 @@
     -pix_fmt yuv420p -movflags +faststart -an -y data/videos/hongqiao_b1_metro_entrance_20260630.mp4
   ```
 
-- 客流识别（YOLO yolo26s + ByteTrack，ROI 进入法，5fps 采样）：
+- 时序指标生成（YOLO yolo26s，每秒独立检测，`1280px` 推理、置信度 `0.15`）：
 
   ```bash
-  python process_entry_roi_minute.py --duration 0 --annotate-seconds 0
+  python process_people_count_second.py
   ```
 
-  方法：行人轨迹脚点首次进入闸机前 ROI（1920x1080 坐标 `560,345,1450,520`）且向上（进站方向）移动，记为 1 次进站；每个轨迹只计一次，按绝对分钟（+08:00）聚合。
+  输出采用 Video Capability 的通用时序指标格式：每个视频可在 `videos.json` 中声明任意数量的 `metrics`（指标 ID、名称、单位、数据文件和采样间隔）。本 Demo 的 `visible_people` 每秒记录 YOLO 识别出的画面可见人数；它是人数存量，不是进出站人次。
 
 ## 录像时间口径
 
