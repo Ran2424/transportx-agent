@@ -90,6 +90,7 @@ export type WorkspaceFile = {
   path: string;
   isDirectory: boolean;
   size?: number | null;
+  mtime?: number;
 };
 
 export type WorkspaceFileContent = { content: string; size: number; encoding?: 'utf8' | 'base64' };

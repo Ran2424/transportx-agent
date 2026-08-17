@@ -1,7 +1,8 @@
 import type { SessionEntry } from '../../../public/app-types.js';
-import i18n from '../../i18n';
+import i18n from '../../i18n/index.ts';
 import {
   parseCitationEnvelope,
+  type CitationEnvelope,
   type CitationLocator,
   type CitationOccurrence,
   type CitationResource,
@@ -59,9 +60,25 @@ function resolveEnvelope(envelope: NonNullable<ReturnType<typeof parseCitationEn
   return resolved;
 }
 
-export function projectMessageCitations(entries: SessionEntry[]) {
+function projectionForIds(ids: string[], available: Map<string, AvailableCitation>): MessageCitationProjection {
+  const resolved = ids.flatMap((id) => {
+    const citation = available.get(id);
+    return citation ? [citation] : [];
+  });
+  const workNumbers = new Map<string, number>();
+  const citations = resolved.filter((item) => item.resource.scope !== 'artifact').map((item) => {
+    const number = workNumbers.get(item.work.workId) || workNumbers.size + 1;
+    workNumbers.set(item.work.workId, number);
+    return { ...item, number };
+  });
+  const artifacts = resolved.filter((item) => item.resource.scope === 'artifact').map((item) => ({ ...item, number: 0 }));
+  const numbers = Object.fromEntries(citations.map((item) => [item.occurrence.occurrenceId, item.number]));
+  return { citations, artifacts, numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) };
+}
+
+export function projectMessageCitations(entries: SessionEntry[], registry?: CitationEnvelope | null) {
   const byEntry = new Map<SessionEntry, MessageCitationProjection>();
-  let available = new Map<string, AvailableCitation>();
+  let available = registry ? resolveEnvelope(registry) : new Map<string, AvailableCitation>();
   for (const entry of entries) {
     const message = entry.message;
     if (message?.role === 'toolResult') {
@@ -69,17 +86,10 @@ export function projectMessageCitations(entries: SessionEntry[]) {
       if (envelope) for (const [id, citation] of resolveEnvelope(envelope)) available.set(id, citation);
       continue;
     }
-    if (message?.role !== 'assistant') continue;
+    if (message?.role !== 'assistant' && message?.role !== 'user') continue;
     const ids = citationIdsInText(messageText(message));
     if (!ids.length) continue;
-    const resolved = ids.flatMap((id) => {
-      const citation = available.get(id);
-      return citation ? [citation] : [];
-    });
-    const citations = resolved.filter((item) => item.resource.scope !== 'artifact').map((item, index) => ({ ...item, number: index + 1 }));
-    const artifacts = resolved.filter((item) => item.resource.scope === 'artifact').map((item) => ({ ...item, number: 0 }));
-    const numbers = Object.fromEntries(citations.map((item) => [item.occurrence.occurrenceId, item.number]));
-    byEntry.set(entry, { citations, artifacts, numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) });
+    byEntry.set(entry, projectionForIds(ids, available));
   }
   return { byEntry, available };
 }
@@ -87,11 +97,7 @@ export function projectMessageCitations(entries: SessionEntry[]) {
 export function projectCitationText(text: string, available: Map<string, AvailableCitation>): MessageCitationProjection | undefined {
   const ids = citationIdsInText(text);
   if (!ids.length) return undefined;
-  const resolved = ids.flatMap((id) => available.get(id) ? [available.get(id)!] : []);
-  const citations = resolved.filter((item) => item.resource.scope !== 'artifact').map((item, index) => ({ ...item, number: index + 1 }));
-  const artifacts = resolved.filter((item) => item.resource.scope === 'artifact').map((item) => ({ ...item, number: 0 }));
-  const numbers = Object.fromEntries(citations.map((item) => [item.occurrence.occurrenceId, item.number]));
-  return { citations, artifacts, numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) };
+  return projectionForIds(ids, available);
 }
 
 export function stripManualCitationReferenceTail(markdown: string) {
@@ -121,7 +127,11 @@ function locatorText(locator: CitationLocator) {
 export function citationReferenceMarkdown(projection?: MessageCitationProjection) {
   if (!projection?.citations.length) return '';
   const english = i18n.language === 'en-US';
-  return [english ? '## References' : '## 参考文献', '', ...projection.citations.map(({ number, work, locator }) => {
+  const references = [...projection.citations.reduce((items, item) => {
+    if (!items.has(item.work.workId)) items.set(item.work.workId, item);
+    return items;
+  }, new Map<string, ResolvedCitation>()).values()];
+  return [english ? '## References' : '## 参考文献', '', ...references.map(({ number, work, locator }) => {
     const quote = locator.quote?.replace(/\s+/g, ' ').trim() || '';
     return `${number}. **${english ? work.title : `《${work.title}》`}** — ${locatorText(locator)}${quote ? (english ? `. Excerpt: “${quote.length > 240 ? `${quote.slice(0, 240)}…` : quote}”` : `。原文摘录：“${quote.length > 240 ? `${quote.slice(0, 240)}…` : quote}”`) : ''}`;
   })].join('\n');

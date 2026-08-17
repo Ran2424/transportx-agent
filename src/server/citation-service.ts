@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import fs from 'node:fs';
+import type { IncomingMessage } from 'node:http';
+import https from 'node:https';
 import { isIP } from 'node:net';
 import path from 'node:path';
 
@@ -56,34 +58,54 @@ function isPrivateAddress(address: string) {
   return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb');
 }
 
-export async function publicCitationUrl(rawUrl: string) {
+type PublicCitationTarget = { url: URL; address: string; family: number };
+
+async function publicCitationTarget(rawUrl: string): Promise<PublicCitationTarget> {
   let url: URL;
   try { url = new URL(rawUrl); } catch { throw new Error('Web citation URL is invalid.'); }
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   if (url.protocol !== 'https:' || !hostname || url.username || url.password || isPrivateAddress(hostname)) throw new Error('Only public HTTPS URLs may be cited.');
   const addresses = await lookup(hostname, { all: true, verbatim: true });
   if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) throw new Error('Only public HTTPS URLs may be cited.');
-  return url;
+  return { url, address: addresses[0].address, family: addresses[0].family };
 }
 
-async function readWebSnapshot(response: Response) {
+export async function publicCitationUrl(rawUrl: string) {
+  return (await publicCitationTarget(rawUrl)).url;
+}
+
+function fetchPinnedPublicCitation(target: PublicCitationTarget) {
+  return new Promise<IncomingMessage>((resolve, reject) => {
+    const request = https.request({
+      hostname: target.url.hostname,
+      port: target.url.port || undefined,
+      path: `${target.url.pathname}${target.url.search}`,
+      method: 'GET',
+      headers: { Accept: 'text/html, text/plain, application/xhtml+xml' },
+      servername: target.url.hostname,
+      lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),
+    }, resolve);
+    request.setTimeout(10_000, () => request.destroy(new Error('Web citation fetch timed out.')));
+    request.once('error', reject);
+    request.end();
+  });
+}
+
+async function readWebSnapshot(response: IncomingMessage) {
   const limit = 2 * 1024 * 1024;
-  const contentLength = Number(response.headers.get('content-length'));
+  const contentLength = Number(response.headers['content-length']);
   if (Number.isFinite(contentLength) && contentLength > limit) throw new Error('Web citation snapshot exceeds 2 MB.');
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('Web citation response has no body.');
   const chunks: Buffer[] = [];
   let size = 0;
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
+    for await (const value of response) {
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      size += chunk.length;
       if (size > limit) throw new Error('Web citation snapshot exceeds 2 MB.');
-      chunks.push(Buffer.from(value));
+      chunks.push(chunk);
     }
   } finally {
-    await reader.cancel().catch(() => undefined);
+    response.destroy();
   }
   return Buffer.concat(chunks);
 }
@@ -288,16 +310,16 @@ export class CitationService {
     const works = [], resources = [], locators: CitationLocator[] = [];
     const pending = new Map<string, { work: CitationWork; resource: CitationEnvelope['resources'][number] }>();
     for (const rawUrl of unique) {
-      const url = await publicCitationUrl(rawUrl);
-      const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10_000) });
-      const mimeType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() || '';
-      if (!response.ok || !mimeType.startsWith('text/')) throw new Error(`Web citation fetch failed: ${url.hostname}`);
+      const target = await publicCitationTarget(rawUrl);
+      const response = await fetchPinnedPublicCitation(target);
+      const mimeType = response.headers['content-type']?.split(';')[0].trim().toLowerCase() || '';
+      if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300 || !mimeType.startsWith('text/')) { response.resume(); throw new Error(`Web citation fetch failed: ${target.url.hostname}`); }
       const body = await readWebSnapshot(response);
       const sha256 = hash(body), fileName = `${sha256}.html`, relativePath = `.tau/citation-snapshots/${fileName}`;
-      const target = path.join(session.cwd, relativePath);
-      fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(target, body, { mode: 0o600 });
-      const title = new URL(rawUrl).hostname;
+      const snapshotPath = path.join(session.cwd, relativePath);
+      fs.mkdirSync(path.dirname(snapshotPath), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(snapshotPath, body, { mode: 0o600 });
+      const title = target.url.hostname;
       const entry = this.workAndResource(session, { title, type: 'webpage', scope: 'web', kind: 'web', relativePath, mimeType: 'text/html', sha256, sourceUrl: rawUrl }, pending);
       works.push(entry.work); resources.push(entry.resource); locators.push({ locatorId: newCitationId('locator'), resourceId: entry.resource.resourceId, sourceUnit: rawUrl });
     }

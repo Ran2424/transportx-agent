@@ -515,9 +515,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 /* ============================================================
    Conversation Workspace
    ============================================================ */
-.conversation-workspace { min-height: 0; flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: transparent; }
+.conversation-workspace { --conversation-content-max-width: 1040px; min-height: 0; flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: transparent; }
 .conversation-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
-.conversation-thread { width: 100%; min-width: 0; max-width: 100%; margin: 0; padding: 28px 28px 20px; display: flex; flex-direction: column; gap: 8px; }
+.conversation-thread { width: 100%; min-width: 0; max-width: var(--conversation-content-max-width); margin: 0 auto; padding: 28px 28px 20px; display: flex; flex-direction: column; gap: 8px; }
 .assistant-turn { display: contents; }
 .conversation-message { min-width: 0; max-width: min(860px, 88%); margin: 0; flex: 0 0 auto; color: var(--text-primary); position: relative; }
 .message-content { min-width: 0; max-width: 100%; font-size: 14.5px; line-height: 1.7; overflow-wrap: anywhere; }
@@ -604,7 +604,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .conversation-empty-mark { width: 64px; height: 64px; color: var(--selection-fg); }
 .conversation-empty h1 { margin: 16px 0 8px; font: 400 30px/1.1 var(--tx-font-display); }
 .conversation-empty p { max-width: 350px; margin: auto; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
-.conversation-composer { width: calc(100% - 44px); margin: 0 22px; padding: 12px 0 14px; }
+.conversation-composer { width: calc(100% - 44px); max-width: var(--conversation-content-max-width); margin: 0 auto; padding: 12px 0 14px; }
 .conversation-composer form { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 12px 12px 10px; border: 1px solid var(--border-strong); border-radius: var(--tx-radius-lg); background: var(--surface-default); box-shadow: 0 8px 28px color-mix(in srgb, var(--surface-canvas) 42%, transparent); transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease; }
 .conversation-composer form:focus-within { border-color: color-mix(in srgb, var(--selection-border) 55%, var(--border-strong)); box-shadow: 0 0 0 3px var(--focus-ring), 0 10px 32px color-mix(in srgb, var(--surface-canvas) 48%, transparent); }
 .conversation-composer textarea { width: 100%; min-height: 34px; padding: 4px 5px; resize: none; border: 0; border-radius: 0; outline: 0; color: var(--text-primary); background: transparent; font-size: 14px; line-height: 1.55; }
@@ -639,7 +639,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .citation-manager-toolbar button:disabled, .citation-manager-body article > button:disabled { opacity: .5; cursor: not-allowed; }
 .citation-manager-body { min-height: 0; flex: 1; overflow: auto; }
 .citation-manager-body article { min-height: 68px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; border-bottom: 1px solid var(--border-default); }
-.citation-manager-body article > div { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px 8px; }
+.citation-manager-body article > div:first-child { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px 8px; }
+.citation-manager-locator { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.citation-manager-locator select { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border-default); border-radius: 5px; outline: 0; color: var(--text-primary); background: var(--surface-default); font: 11px var(--tx-font-ui); }
+.citation-manager-locator select:focus { border-color: var(--selection-border); box-shadow: 0 0 0 2px var(--focus-ring); }
 .citation-manager-scope { grid-row: 1 / span 2; padding: 3px 5px; border-radius: 4px; color: var(--selection-fg); background: var(--selection-bg); font: 650 10px/1 var(--tx-font-mono); text-transform: uppercase; }
 .citation-manager-body article strong, .citation-manager-body article small { min-width: 0; overflow: hidden; display: block; text-overflow: ellipsis; white-space: nowrap; }
 .citation-manager-body article strong { color: var(--text-primary); font-size: 12px; font-weight: 650; }
