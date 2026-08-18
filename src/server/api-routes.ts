@@ -114,6 +114,12 @@ export function createApiRouter(services: ApiRouteServices) {
         deps.json(res, 200, { citations: registry });
       } catch (error) { deps.json(res, 409, { error: deps.errorMessage(error) }); }
     })
+    .get(/^\/api\/live-sessions\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, deps.video.metrics(session, decodeURIComponent(params[1]))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
     .post(/^\/api\/live-sessions\/([^/]+)\/citations\/occurrences$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
