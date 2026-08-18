@@ -316,6 +316,68 @@ try {
   }
   await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
 
+  await composer.fill('基线-long-stream');
+  await composer.press('Enter');
+  const longStream = reactPage.locator('.assistant-message.is-streaming .streaming-text');
+  await longStream.waitFor({ timeout: 10_000 });
+  const streamProbe = await reactPage.evaluate(async () => {
+    const thread = document.querySelector('.conversation-thread');
+    if (!thread) throw new Error('Conversation thread is unavailable');
+    const lengths = [];
+    const capture = () => {
+      const length = document.querySelector('.assistant-message.is-streaming .streaming-text')?.textContent?.length ?? 0;
+      if (length) lengths.push(length);
+    };
+    const observer = new MutationObserver(capture);
+    observer.observe(thread, { childList: true, characterData: true, subtree: true });
+    capture();
+    const startedAt = performance.now();
+    let previousFrame = startedAt;
+    let frames = 0;
+    let maxFrameGap = 0;
+    await new Promise((resolve) => {
+      const sample = (now) => {
+        frames += 1;
+        maxFrameGap = Math.max(maxFrameGap, now - previousFrame);
+        previousFrame = now;
+        if (now - startedAt >= 350) resolve();
+        else requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    observer.disconnect();
+    return { frames, maxFrameGap, lengths: [...new Set(lengths)] };
+  });
+  if (streamProbe.lengths.length < 4) throw new Error(`Long response did not render incrementally: ${JSON.stringify(streamProbe)}`);
+  if (streamProbe.frames < 8 || streamProbe.maxFrameGap > 150) throw new Error(`Long response blocked browser frames: ${JSON.stringify(streamProbe)}`);
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+  const completedLongMessage = reactPage.locator('.assistant-message').last();
+  const completedLongLength = await completedLongMessage.locator('.message-content').evaluate((node) => node.textContent?.length ?? 0);
+  if (completedLongLength < 40_000) throw new Error(`Long response was truncated after streaming (${completedLongLength} characters)`);
+
+  await settingsButton.click();
+  await settings.getByRole('button', { name: '常规', exact: true }).click();
+  const expandThinkingSwitch = settings.getByRole('switch', { name: '默认展开思考内容' });
+  if (await expandThinkingSwitch.getAttribute('aria-checked') !== 'true') throw new Error('Thinking content should default to expanded');
+  await expandThinkingSwitch.click();
+  if (await reactPage.evaluate(() => window.localStorage.getItem('tau-expand-thinking')) !== 'false') throw new Error('Collapsed thinking preference was not persisted');
+  await reactPage.keyboard.press('Escape');
+  await settings.waitFor({ state: 'hidden' });
+
+  await composer.fill('基线-happy-collapsed');
+  await composer.press('Enter');
+  await reactPage.locator('.assistant-message.is-streaming .thinking-toggle', { hasText: '正在思考中' }).waitFor({ timeout: 10_000 });
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+  const collapsedMessage = reactPage.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).last();
+  await collapsedMessage.waitFor({ timeout: 10_000 });
+  const collapsedThinking = collapsedMessage.locator('.thinking-toggle');
+  if (await collapsedThinking.getAttribute('aria-expanded') !== 'false') throw new Error('Thinking block should honor the collapsed preference');
+  if (!/^已思考（\d+\.\d 秒）$/.test((await collapsedThinking.textContent())?.trim() || '')) throw new Error(`Completed thinking duration was not shown with one decimal place: ${await collapsedThinking.textContent()}`);
+  if (await collapsedMessage.locator('.thinking-block pre').count()) throw new Error('Collapsed thinking text should not be rendered');
+  await collapsedThinking.click();
+  await collapsedMessage.locator('.thinking-block pre', { hasText: '用户在请求基线 happy path' }).waitFor();
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+
   await reactPage.getByLabel('消息输入').fill('基线-citation-document');
   await reactPage.getByLabel('消息输入').press('Enter');
   const citedMessage = reactPage.locator('.assistant-message', { hasText: '入口存在拥堵风险' }).last();
