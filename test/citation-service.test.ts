@@ -58,6 +58,17 @@ test('Citation Service registers JSONL evidence once with multiple line locators
   assert.deepEqual(citations.locators.map((item: any) => [item.lineStart, item.lineEnd]), [[1, 1], [2, 2]]);
 });
 
+test('Citation Service leaves GeoJSON map render data out of citations', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-geojson-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(cwd, 'stations_3km.geojson'), JSON.stringify({ type: 'FeatureCollection', features: [] }));
+  const { CitationService } = require('../bin/citation-service.js');
+
+  assert.throws(() => new CitationService().resolveArtifacts({ id: 'session_geojson', cwd }, [
+    { path: 'stations_3km.geojson', title: '场馆三公里轨交站点' },
+  ]), /Unsupported citation resource type: .geojson/);
+});
+
 test('Citation Service reuses an equivalent locator when the same artifact is resolved again', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-repeat-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));

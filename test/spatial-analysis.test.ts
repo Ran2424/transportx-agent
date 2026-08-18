@@ -70,3 +70,21 @@ test('spatial service rejects EPSG:4326 distance and session path escape', async
   await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: 'input.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:4326', distanceMeters: 10 }), /metricCrs cannot be EPSG:4326/);
   await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: '../outside.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10 }), /relative \.geojson|Unsafe/);
 });
+
+test('spatial service permits GeoJSON inputs up to 100 MiB', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-spatial-size-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  writeGeo(cwd, 'input.geojson', collection([point('p', [121, 31])]));
+  const inputPath = path.join(cwd, 'input.geojson');
+  const originalStatSync = fs.statSync;
+  fs.statSync = ((target: any, options?: any) => {
+    const stat = originalStatSync(target, options);
+    return path.resolve(String(target)) === inputPath ? Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { size: 100 * 1024 * 1024 }) : stat;
+  }) as typeof fs.statSync;
+  try {
+    const result = await service().analyze(session(cwd), { operation: 'buffer', inputPath: 'input.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10 });
+    assert.equal(result.counts.output, 1);
+  } finally {
+    fs.statSync = originalStatSync;
+  }
+});

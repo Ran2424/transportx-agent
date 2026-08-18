@@ -69,13 +69,25 @@ try {
   });
   if (!codecSupport.h264 || codecSupport.h264 === 'no') throw new Error(`Packaged renderer cannot play H.264 MP4: ${JSON.stringify(codecSupport)}`);
   console.log(`[desktop-smoke] renderer video codec support OK (${codecSupport.h264})`);
+  const oversizedDataUrlPayload = 'A'.repeat(1_500_000);
   const pdfResponse = await fetch(`${new URL(window.url()).origin}/api/reports/pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: '桌面打包验证', html: '<article><h1>TransportX</h1><p>macOS PDF bridge</p></article>' }),
+    body: JSON.stringify({ title: '桌面打包验证', html: `<article data-payload="${oversizedDataUrlPayload}"><h1>TransportX</h1><p>macOS PDF bridge</p></article>` }),
   });
   const pdf = Buffer.from(await pdfResponse.arrayBuffer());
   if (!pdfResponse.ok || pdf.subarray(0, 4).toString() !== '%PDF') throw new Error(`Desktop PDF bridge failed: ${pdfResponse.status} ${pdf.toString('utf8', 0, 200)}`);
+  const downloadsDir = path.join(temporaryHome, 'Downloads');
+  await app.evaluate(({ app }, value) => app.setPath('downloads', value), downloadsDir);
+  const downloadedPdfPath = await window.evaluate(async (origin) => {
+    const response = await fetch(`${origin}/api/reports/pdf/download`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '桌面下载验证', html: '<article><h1>TransportX</h1><p>Desktop download test</p></article>' }),
+    });
+    const { url } = await response.json();
+    return await window.transportxDesktop.download(url);
+  }, new URL(window.url()).origin);
+  if (!downloadedPdfPath.startsWith(`${downloadsDir}${path.sep}`) || !fs.existsSync(downloadedPdfPath) || fs.readFileSync(downloadedPdfPath).subarray(0, 4).toString() !== '%PDF') throw new Error('Desktop PDF download was not saved');
   await window.getByRole('button', { name: '打开设置' }).click();
   const settings = window.getByTestId('settings-workspace');
   await settings.waitFor();

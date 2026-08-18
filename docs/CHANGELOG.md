@@ -2,6 +2,11 @@
 
 本文记录项目每次提交、推送的主要内容、影响范围与验证结果，作为 README 之外的工程演进记录。
 
+## Unreleased
+
+- Hongqiao Metro Entrance Demo 升级至 `1.1.1`：校核密集监控画面后，将每秒画面人数的 YOLO 推理分辨率由默认 `640px` 提升到 `1280px`，置信度降至 `0.15`，并重算完整录像的时序指标，降低远景与遮挡人群的漏检。
+- Hongqiao Metro Entrance Demo 升级至 `1.1.0`：将原有专用进站人流展示替换为通用 Video 时序指标机制。Data Module 可在 `videos.json` 声明多个带名称、单位、采样间隔的指标文件；播放器按当前播放时间展示这些指标。本 Demo 首次接入 `visible_people`（YOLO 每秒画面可见人数）指标。
+
 ## 维护规则
 
 - 产品版本遵循 SemVer：不兼容改造递增主版本，向后兼容的新能力递增次版本，向后兼容的问题修复递增补丁版本。
@@ -10,6 +15,49 @@
 - 每条记录至少包含日期、GitHub 操作、主要修改和验证情况。
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
+
+## v3.0.11 — 报告 PDF 导出修复与会话输出完善
+
+- 日期：2026-08-18
+- GitHub 操作：待创建发布 PR。
+
+主要修改：
+
+- 修复含多张内嵌图片的 Markdown 报告 PDF 导出：渲染器改从受控临时 HTML 文件加载，避免超长 `data:` URL 导致 `ERR_INVALID_URL`；导出完成后临时文件立即清理。
+- 桌面端下载由主进程接管，并在 PDF 实际写入系统下载目录后才返回成功状态。
+- 同步纳入本次工作区中的会话输出、GeoJSON/Citation 边界与上海数据模块规则修复。
+
+验证：
+
+- `npm run typecheck:desktop`、`npm run typecheck:react`、`npm run test:desktop-smoke` 与 `npm run test:react-smoke` 通过。
+
+## 未发布 — Shanghai Data 默认排除 EVDATA
+
+- 日期：2026-08-18
+- GitHub 操作：待提交。
+
+主要修改：
+
+- Shanghai Data Skill 默认不查询、使用、引用或输出 EVDATA；仅在用户明确强调使用 EVDATA 时才启用该数据源。
+- `com.transportx.shanghaidata` 因 Skill 规则修复升级至 `2.0.2`。
+
+验证：
+
+- 已检查 Skill 规则与模块 manifest 版本一致。
+
+## 未发布 — GeoJSON 文件上限提升
+
+- 日期：2026-08-18
+- GitHub 操作：待提交至 `agent/conversation-output-rendering` 分支的 PR #15。
+
+主要修改：
+
+- 将 Geo Visualization 与 Spatial Analysis 的单个 GeoJSON 输入/输出上限从 20 MiB 提升为 100 MiB；50,000 要素上限不变。
+- Geo Visualization 与 Spatial Analysis Capability Module 均提升至 `1.0.1`，并同步更新 Geo Skill 和空间分析规格说明。
+
+验证：
+
+- `npm run typecheck:server`、`npm run typecheck:extensions`、`npm run typecheck:test` 与 `node --test --experimental-strip-types test/spatial-analysis.test.ts` 通过。
 
 ## v3.0.10 — Video Capability V1 与 Citation Evidence 修复
 
@@ -39,7 +87,9 @@
 - 修复内置模块升版本后旧会话无法恢复（`Module manifest changed: com.transportx.video@1.0.0`）：Session Plan 校验按模块来源区分——`builtin` 模块随平台升级原地替换（旧版本不复存在），内容/版本漂移降级为警告并继续恢复；`installed`/`external` 模块多版本并存，仍严格校验。
 - 文件面板新增「在系统文件管理器中打开」：点击文件面板位置可直接打开当前任务工作区目录（WorkspaceDock 命令 + 桌面 shell 集成）。
 - 提交策略写入 AGENTS.md：小型修复与小幅功能改动可直接提交 `main`，新能力、架构调整或多环节联动的较大改动走「分支 → PR → 合并」流程。
-- Citation Evidence 升级至 `1.0.1`：修复 `/cite` 手动引用在用户消息中无法显示和恢复的问题；聊天编号与报告编译按 Work 去重一致；重复解析 Locator 自动去重；网页快照请求固定到已校验的公网 IP；Agent 首次回复后自动列出会话工作区的本地产物，独立于正式引用。
+- Citation Evidence 升级至 `1.0.2`：修复 `/cite` 手动引用在用户消息中无法显示和恢复的问题；聊天编号与报告编译按 Work 去重一致；重复解析 Locator 自动去重；网页快照请求固定到已校验的公网 IP；取消会话目录自动枚举，改为仅展示 Agent 在对应回复中显式引用的用户交付物。
+- 修复流式工具调用的显示顺序：进行中的思考块先于其工具卡显示，避免工具执行或文件写入时视觉上跳到思考之前。
+- Video Capability 升级至 `1.1.1`：Skill 强制要求先成功检索源录像，并将唯一返回的 `videoId` 传入展示、截图、裁剪和抽帧工具，避免缺少视频引用的可预期报错。
 - npm 包、桌面安装包与 Agent Host 平台版本同步提升为 `3.0.10`。
 
 Workspace Focus 抽象与视频工作区形态升级：

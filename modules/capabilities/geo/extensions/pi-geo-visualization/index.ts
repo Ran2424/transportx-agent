@@ -21,7 +21,7 @@ import {
 type SceneState = { revision: number; scene: GeoSceneSnapshot | null };
 type PresentCommand = { command: string; visualizationId: string; [key: string]: any };
 
-const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_BYTES = 100 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
 const EXTENSION_RUNTIME_ID = 'pi-geo-visualization-command-v2';
 

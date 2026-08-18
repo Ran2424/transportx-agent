@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.citation",
   "name": "Citation Evidence",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],

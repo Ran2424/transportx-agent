@@ -8,7 +8,7 @@ import { PythonRunner } from './python-runner.js';
 import { diagnosticMessage, parseSpatialAnalysisResultStructured, type SpatialAnalysisResultV1 } from '../contracts/index.js';
 import { sha256File, within } from './asset-integrity.js';
 
-const MAX_INPUT_BYTES = 20 * 1024 * 1024;
+const MAX_INPUT_BYTES = 100 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
 
 function requiredString(body: JsonRecord, key: string, max = 1000) {
@@ -35,7 +35,7 @@ function safeInput(cwd: string, relativePath: string) {
   }
   const resolved = fs.realpathSync(path.resolve(root, relativePath));
   if (!within(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Spatial input escapes the session: ${relativePath}`);
-  if (fs.statSync(resolved).size > MAX_INPUT_BYTES) throw new Error(`Spatial input exceeds 20 MiB: ${relativePath}`);
+  if (fs.statSync(resolved).size > MAX_INPUT_BYTES) throw new Error(`Spatial input exceeds 100 MiB: ${relativePath}`);
   const geojson = JSON.parse(fs.readFileSync(resolved, 'utf8')) as { type?: unknown; features?: unknown };
   if (geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) throw new Error(`Spatial input must be a GeoJSON FeatureCollection: ${relativePath}`);
   if (geojson.features.length > MAX_FEATURES) throw new Error(`Spatial input exceeds 50,000 features: ${relativePath}`);

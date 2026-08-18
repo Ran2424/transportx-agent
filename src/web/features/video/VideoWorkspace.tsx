@@ -6,6 +6,25 @@ import { useConversationState, useToolExecutionState } from '../../app/store-hoo
 import { FeatureEmpty } from '../task/TaskBoard';
 import { projectVideoScene } from './video-projection';
 
+type VideoMetric = { id: string; label: string; unit: string; sampleIntervalSeconds: number; samples: Array<{ offsetSeconds: number; value: number }> };
+
+function readVideoMetrics(value: unknown): VideoMetric[] {
+  if (!value || typeof value !== 'object' || !Array.isArray((value as { metrics?: unknown }).metrics)) return [];
+  return (value as { metrics: unknown[] }).metrics.flatMap((metric) => {
+    if (!metric || typeof metric !== 'object') return [];
+    const { id, label, unit, sampleIntervalSeconds, samples } = metric as { id?: unknown; label?: unknown; unit?: unknown; sampleIntervalSeconds?: unknown; samples?: unknown };
+    if (typeof id !== 'string' || typeof label !== 'string' || typeof unit !== 'string' || !Number.isInteger(sampleIntervalSeconds) || (sampleIntervalSeconds as number) <= 0 || !Array.isArray(samples)) return [];
+    const safeSamples = samples.flatMap((sample) => {
+      if (!sample || typeof sample !== 'object') return [];
+      const { offsetSeconds, value: sampleValue } = sample as { offsetSeconds?: unknown; value?: unknown };
+      return Number.isInteger(offsetSeconds) && (offsetSeconds as number) >= 0 && typeof sampleValue === 'number' && Number.isFinite(sampleValue)
+        ? [{ offsetSeconds: offsetSeconds as number, value: sampleValue }]
+        : [];
+    });
+    return [{ id, label, unit, sampleIntervalSeconds: sampleIntervalSeconds as number, samples: safeSamples }];
+  });
+}
+
 function formatDuration(seconds: number) {
   const total = Math.round(seconds);
   const h = Math.floor(total / 3600);
@@ -108,16 +127,34 @@ function VideoPlayer({ sessionId, item, items, active, onSelect, compact = false
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [clock, setClock] = useState('');
+  const [metrics, setMetrics] = useState<VideoMetric[]>([]);
+  const [currentSecond, setCurrentSecond] = useState(0);
 
   const recordingStart = useMemo(() => parseVideoTimestamp(item.recordingStartTime), [item.recordingStartTime]);
+  const metricValues = useMemo(() => metrics.flatMap((metric) => {
+    const sampleSecond = Math.floor(currentSecond / metric.sampleIntervalSeconds) * metric.sampleIntervalSeconds;
+    const value = metric.samples.find((sample) => sample.offsetSeconds === sampleSecond)?.value;
+    return value === undefined ? [] : [{ ...metric, value }];
+  }), [currentSecond, metrics]);
 
   useEffect(() => {
     if (!active) videoRef.current?.pause();
   }, [active]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setMetrics([]);
+    void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(item.resourceId)}/metrics`)
+      .then(async (response) => response.ok ? readVideoMetrics(await response.json()) : [])
+      .then((nextMetrics) => { if (!cancelled) setMetrics(nextMetrics); })
+      .catch(() => { if (!cancelled) setMetrics([]); });
+    return () => { cancelled = true; };
+  }, [item.resourceId, sessionId]);
+
   const updateClock = (seconds: number) => {
     if (!recordingStart) return;
     setClock(formatVideoTimestamp(recordingStart.epochMs + seconds * 1000, recordingStart.offsetMinutes).slice(11, 19));
+    setCurrentSecond(Math.floor(seconds));
   };
 
   const src = `/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(item.resourceId)}/data`;
@@ -151,6 +188,7 @@ function VideoPlayer({ sessionId, item, items, active, onSelect, compact = false
       <div className="video-stage">
         {loading && !error ? <p className="video-status" role="status">{t('video.loading')}</p> : null}
         {error ? <p className="video-status is-error" role="alert">{error}</p> : null}
+        {metricValues.length ? <div className="video-metrics" aria-live="polite">{metricValues.map((metric) => <div className="video-metric" key={metric.id}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.unit}</small></div>)}</div> : null}
         <video
           ref={videoRef}
           controls

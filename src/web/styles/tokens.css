@@ -24,10 +24,10 @@
   --tx-space-5: 24px;
   --tx-space-6: 32px;
 
-  /* 圆角规则：按钮/Tabs/搜索 6px，输入/Select 8px，Dialog/输入容器 12px */
-  --tx-radius-sm: 6px;
-  --tx-radius-md: 8px;
-  --tx-radius-lg: 12px;
+  /* 圆角规则：小型控件 8px，中型 surface 12px，输入/主要容器 16px */
+  --tx-radius-sm: 8px;
+  --tx-radius-md: 12px;
+  --tx-radius-lg: 16px;
 
   /* 控件高度 */
   --tx-control-sm: 28px;
@@ -61,10 +61,10 @@
   --text-md: 14px;
   --text-lg: 14.5px;
 
-  /* 圆角：小型控件 6px，输入 8px，容器 12px */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* 圆角：小型控件 8px，中型 surface 12px，主要容器 16px */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --radius-full: 999px;
 
   /* 控件高度 */
@@ -91,12 +91,13 @@
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
-  --surface-canvas: #F7F7F6;
-  --surface-sidebar: #F1F1F0;
-  --surface-default: #FFFFFF;
+  --surface-canvas: #F7F7F5;
+  --surface-sidebar: #F1F1EF;
+  --surface-default: #FBFBFA;
   --surface-raised: #FFFFFF;
-  --surface-hover: rgba(36, 36, 36, 0.055);
-  --selection-bg: rgba(168, 90, 58, 0.10);
+  --surface-elevated: #FFFFFF;
+  --surface-hover: rgba(36, 36, 36, 0.05);
+  --selection-bg: rgba(168, 90, 58, 0.085);
   --selection-border: #A85A3A;
   --selection-fg: #8F4A2E;
 
@@ -104,8 +105,8 @@
   --text-secondary: #66635F;
   --text-tertiary: #96918B;
 
-  --border-default: rgba(36, 36, 36, 0.10);
-  --border-strong: rgba(36, 36, 36, 0.16);
+  --border-default: rgba(36, 36, 36, 0.075);
+  --border-strong: rgba(36, 36, 36, 0.12);
 
   --interactive-primary-bg: #A85A3A;
   --interactive-primary-bg-hover: #8F4A2E;
@@ -119,7 +120,8 @@
   --status-danger: #B23B34;
   --status-info: #3D6E9E;
 
-  --shadow-menu: 0 6px 20px rgba(36, 36, 36, 0.12);
+  --shadow-surface: 0 10px 30px rgba(36, 36, 36, 0.075);
+  --shadow-menu: 0 6px 20px rgba(36, 36, 36, 0.10);
   --shadow-dialog: 0 18px 48px rgba(36, 36, 36, 0.16);
   --shadow-overlay: 0 28px 72px rgba(36, 36, 36, 0.20);
 }
@@ -133,6 +135,7 @@
   --surface-sidebar: #252526;
   --surface-default: #202020;
   --surface-raised: #2A2A2A;
+  --surface-elevated: #303030;
   --surface-hover: rgba(255, 255, 255, 0.07);
   --selection-bg: rgba(217, 142, 111, 0.18);
   --selection-border: #D98E6F;
@@ -158,6 +161,7 @@
   --status-info: #7FA6CC;
 
   --shadow-menu: 0 6px 20px rgba(0, 0, 0, 0.28);
+  --shadow-surface: 0 10px 30px rgba(0, 0, 0, 0.26);
   --shadow-dialog: 0 18px 48px rgba(0, 0, 0, 0.40);
   --shadow-overlay: 0 28px 72px rgba(0, 0, 0, 0.52);
 }
@@ -167,12 +171,13 @@
    ============================================================ */
 :root[data-theme="sand"] {
   color-scheme: light;
-  --surface-canvas: #F4F1EC;
-  --surface-sidebar: #ECE7DF;
-  --surface-default: #FAF8F4;
+  --surface-canvas: #F6F4F0;
+  --surface-sidebar: #EFEBE4;
+  --surface-default: #FBFAF8;
   --surface-raised: #FFFDFC;
-  --surface-hover: rgba(38, 35, 32, 0.055);
-  --selection-bg: rgba(185, 109, 76, 0.12);
+  --surface-elevated: #FFFFFF;
+  --surface-hover: rgba(38, 35, 32, 0.05);
+  --selection-bg: rgba(185, 109, 76, 0.09);
   --selection-border: #B96D4C;
   --selection-fg: #8F4A2E;
 
@@ -180,8 +185,8 @@
   --text-secondary: #6F6963;
   --text-tertiary: #928A82;
 
-  --border-default: rgba(38, 35, 32, 0.10);
-  --border-strong: rgba(38, 35, 32, 0.16);
+  --border-default: rgba(38, 35, 32, 0.075);
+  --border-strong: rgba(38, 35, 32, 0.12);
 
   --interactive-primary-bg: #B96D4C;
   --interactive-primary-bg-hover: #A85A3A;
@@ -195,7 +200,8 @@
   --status-danger: #A33D39;
   --status-info: #4E6E8E;
 
-  --shadow-menu: 0 6px 20px rgba(99, 66, 45, 0.10);
+  --shadow-surface: 0 10px 30px rgba(99, 66, 45, 0.075);
+  --shadow-menu: 0 6px 20px rgba(99, 66, 45, 0.085);
   --shadow-dialog: 0 18px 48px rgba(99, 66, 45, 0.16);
   --shadow-overlay: 0 28px 72px rgba(99, 66, 45, 0.20);
 }

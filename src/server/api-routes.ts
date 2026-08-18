@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse } from './types.js';
@@ -47,6 +48,23 @@ type ApiRouteServices = {
 
 export function createApiRouter(services: ApiRouteServices) {
   const router = new ServerRouter(services);
+  const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number }>();
+  const createPdf = async (req: IncomingMessage, deps: ApiRouteServices) => {
+    const body = await deps.readBody(req);
+    const title = typeof body.title === 'string' ? body.title.trim().slice(0, 300) : '';
+    const html = typeof body.html === 'string' ? body.html : '';
+    if (!title || !html) {
+      const error = new Error('title and html required') as Error & { status?: number };
+      error.status = 400;
+      throw error;
+    }
+    if (html.length > 5 * 1024 * 1024) {
+      const error = new Error('Rendered report is too large') as Error & { status?: number };
+      error.status = 413;
+      throw error;
+    }
+    return { pdf: await deps.renderReportPdf(title, html), filename: `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf` };
+  };
   router
     .get('/api/health', ({ res, deps }) => deps.json(res, 200, deps.health()))
     .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))
@@ -95,6 +113,12 @@ export function createApiRouter(services: ApiRouteServices) {
         if (registry.sessionId !== (session.citationRegistryId || session.id)) return deps.json(res, 404, { error: 'Citation registry not found in this session' });
         deps.json(res, 200, { citations: registry });
       } catch (error) { deps.json(res, 409, { error: deps.errorMessage(error) }); }
+    })
+    .get(/^\/api\/live-sessions\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, deps.video.metrics(session, decodeURIComponent(params[1]))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post(/^\/api\/live-sessions\/([^/]+)\/citations\/occurrences$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
@@ -178,13 +202,7 @@ export function createApiRouter(services: ApiRouteServices) {
     })
     .post('/api/reports/pdf', async ({ req, res, deps }) => {
       try {
-        const body = await deps.readBody(req);
-        const title = typeof body.title === 'string' ? body.title.trim().slice(0, 300) : '';
-        const html = typeof body.html === 'string' ? body.html : '';
-        if (!title || !html) return deps.json(res, 400, { error: 'title and html required' });
-        if (html.length > 5 * 1024 * 1024) return deps.json(res, 413, { error: 'Rendered report is too large' });
-        const pdf = await deps.renderReportPdf(title, html);
-        const filename = `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf`;
+        const { pdf, filename } = await createPdf(req, deps);
         res.writeHead(200, {
           'Content-Type': 'application/pdf',
           'Content-Length': String(pdf.length),
@@ -192,7 +210,29 @@ export function createApiRouter(services: ApiRouteServices) {
           'Cache-Control': 'no-store',
         });
         res.end(pdf);
-      } catch (error) { deps.json(res, 500, { error: deps.errorMessage(error) }); }
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/reports/pdf/download', async ({ req, res, deps }) => {
+      try {
+        const { pdf, filename } = await createPdf(req, deps);
+        const now = Date.now();
+        for (const [id, entry] of pdfDownloads) if (entry.expiresAt <= now) pdfDownloads.delete(id);
+        const id = crypto.randomUUID();
+        pdfDownloads.set(id, { pdf, filename, expiresAt: now + 5 * 60 * 1000 });
+        deps.json(res, 200, { url: `/api/reports/pdf/download/${id}` });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .get(/^\/api\/reports\/pdf\/download\/([a-f0-9-]+)$/, ({ res, params }) => {
+      const entry = pdfDownloads.get(params[0]);
+      if (!entry || entry.expiresAt <= Date.now()) { res.writeHead(404); res.end(); return; }
+      pdfDownloads.delete(params[0]);
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Length': String(entry.pdf.length),
+        'Content-Disposition': `attachment; filename="report.pdf"; filename*=UTF-8''${encodeURIComponent(entry.filename)}`,
+        'Cache-Control': 'no-store',
+      });
+      res.end(entry.pdf);
     })
     .post('/api/internal/citations/resolve', async ({ req, res, deps }) => {
       try {
