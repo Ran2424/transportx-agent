@@ -342,6 +342,7 @@ try {
   if (!(await reportImage.getAttribute('src'))?.includes('/api/file/preview?')) {
     throw new Error('Relative Markdown report image did not use the session-scoped preview route');
   }
+  await reactPage.route(reportImageState.src, (route) => route.fulfill({ status: 503, body: 'preview route unavailable after initial render' }));
   const pdfDownloadPromise = reactPage.waitForEvent('download');
   await citationPreview.getByRole('button', { name: '下载 PDF' }).click();
   const reportDownload = await pdfDownloadPromise;
@@ -351,6 +352,7 @@ try {
   }
   if (!reportDownload.suggestedFilename().endsWith('.pdf')) throw new Error(`Unexpected PDF filename: ${reportDownload.suggestedFilename()}`);
   if (process.env.TAU_SMOKE_PDF) fs.copyFileSync(reportPdfPath, process.env.TAU_SMOKE_PDF);
+  await reactPage.unroute(reportImageState.src);
   await citationPreview.getByRole('button', { name: '关闭文件预览' }).click();
   if (await reactPage.locator('.session-outputs').count()) throw new Error('Conversation must not enumerate all session files as outputs');
 

@@ -523,6 +523,13 @@ export class PiRpcSession {
     this.touch(false);
     const type = event.type;
     const now = Date.now();
+    if (type === 'thinking_level_changed') {
+      const level = typeof event.thinkingLevel === 'string' ? event.thinkingLevel : typeof event.level === 'string' ? event.level : '';
+      if (level) {
+        this.thinkingLevel = level;
+        this.touch(true);
+      }
+    }
     if (type === 'message_start' && event.message?.role === 'assistant') {
       this.assistantThinkingStartedAt = now;
       this.assistantThinkingDurationMs = null;

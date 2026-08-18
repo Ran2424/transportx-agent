@@ -155,9 +155,11 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       case 'auto_compaction_end':
       case 'auto_retry_start':
       case 'auto_retry_end':
+      case 'thinking_level_changed':
       case 'response':
         // Pi command responses are resolved by the server-side command port.
-        // Retry/compaction lifecycle events are status-only notifications.
+        // Retry/compaction lifecycle events are status-only notifications;
+        // thinking level changes are reflected by live_session_updated.
         // agent_settled remains the authoritative streaming boundary.
         return [];
       case 'entry_appended': {
