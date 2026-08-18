@@ -19,7 +19,7 @@
 ## v3.0.11 — 报告 PDF 导出修复与会话输出完善
 
 - 日期：2026-08-18
-- GitHub 操作：待创建发布 PR。
+- GitHub 操作：PR #15 已合并至 `main`（merge commit `cca2aa4`）。
 
 主要修改：
 
