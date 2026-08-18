@@ -193,6 +193,25 @@ test('video resources are bound to their owning session and validated manifests'
   }
 });
 
+test('video metric API exposes only declared, session-scoped time-series data', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-metrics-'));
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-metrics-data-'));
+  t.after(() => { fs.rmSync(cwd, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true }); });
+  const resourceId = `video_${'f'.repeat(16)}`;
+  fakeVideoResource(cwd, resourceId, crypto.randomBytes(64));
+  fs.mkdirSync(path.join(dataRoot, 'metrics'), { recursive: true });
+  fs.writeFileSync(path.join(dataRoot, 'metrics', 'visible_people.csv'), 'relative_second,absolute_time,value\n0,2026-08-16T08:00:00+08:00,3\n1,2026-08-16T08:00:01+08:00,4\n');
+  fs.writeFileSync(path.join(dataRoot, 'videos.json'), JSON.stringify({ schemaVersion: 1, videos: [{ videoId: 'video_001', title: '测试视频', startTime: '2026-08-16T08:00:00+08:00', endTime: '2026-08-16T08:01:00+08:00', file: 'videos/test.mp4', mimeType: 'video/mp4', metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', file: 'metrics/visible_people.csv', sampleIntervalSeconds: 1 }] }] }));
+  const session = fakeSession('tau_video_metrics') as any;
+  session.cwd = cwd;
+  session.resolvedSessionPlan = { assets: [{ id: 'data:test-video', kind: 'data', path: dataRoot }] };
+  liveManager.sessions.set(session.id, session);
+
+  const response = await fetch(`${base}/api/live-sessions/${session.id}/video-resources/${resourceId}/metrics`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await jsonBody(response), { metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', sampleIntervalSeconds: 1, samples: [{ offsetSeconds: 0, value: 3 }, { offsetSeconds: 1, value: 4 }] }] });
+});
+
 test('video internal endpoints require the session video token', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-internal-'));
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-internal-data-'));

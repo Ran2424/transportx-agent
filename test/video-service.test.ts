@@ -16,6 +16,7 @@ function makeDataRoot(t: any) {
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-data-'));
   t.after(() => fs.rmSync(dataRoot, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dataRoot, 'videos'), { recursive: true });
+  fs.mkdirSync(path.join(dataRoot, 'metrics'), { recursive: true });
   const make = (file: string, extra: string[] = []) => {
     const result = spawnSync(FFMPEG, [
       '-hide_banner', '-loglevel', 'error',
@@ -28,10 +29,14 @@ function makeDataRoot(t: any) {
   };
   make('camera_001.mp4');
   make('camera_002.mp4', ['-vf', 'hue=h=120']);
+  fs.writeFileSync(path.join(dataRoot, 'metrics', 'visible_people.csv'), [
+    'relative_second,absolute_time,value',
+    ...Array.from({ length: 30 }, (_, second) => `${second},2026-08-16T08:00:${String(second).padStart(2, '0')}+08:00,${second % 4}`),
+  ].join('\n'));
   fs.writeFileSync(path.join(dataRoot, 'videos.json'), `${JSON.stringify({
     schemaVersion: 1,
     videos: [
-      { videoId: 'video_001', cameraId: 'camera_001', title: '人民路—中山路口', locationName: '人民路—中山路口', startTime: '2026-08-16T08:00:00+08:00', endTime: '2026-08-16T08:00:30+08:00', file: 'videos/camera_001.mp4', mimeType: 'video/mp4' },
+      { videoId: 'video_001', cameraId: 'camera_001', title: '人民路—中山路口', locationName: '人民路—中山路口', startTime: '2026-08-16T08:00:00+08:00', endTime: '2026-08-16T08:00:30+08:00', file: 'videos/camera_001.mp4', mimeType: 'video/mp4', metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', file: 'metrics/visible_people.csv', sampleIntervalSeconds: 1 }] },
       { videoId: 'video_002', cameraId: 'camera_002', title: '世纪大道—张杨路口', locationName: '世纪大道—张杨路口', startTime: '2026-08-16T08:30:00+08:00', endTime: '2026-08-16T08:30:30+08:00', file: 'videos/camera_002.mp4', mimeType: 'video/mp4' },
     ],
   }, null, 2)}\n`);
@@ -105,6 +110,25 @@ test('present materializes a source resource with a verified manifest and seek o
 
   await assert.rejects(() => video.present(session, { videoId: 'video_001', timestamp: '2026-08-16T08:01:00+08:00' }), /outside the recording range/);
   await assert.rejects(() => video.present(session, { videoId: 'video_404' }), /not found/i);
+});
+
+test('video metrics are available only inside the presented recording range', { skip: !ffmpegAvailable }, async (t: any) => {
+  const session = makeSession(t, makeDataRoot(t));
+  const video = service();
+  const source = await video.present(session, { videoId: 'video_001' });
+  const sourceMetric = video.metrics(session, source.item.resourceId).metrics[0];
+  assert.deepEqual({ id: sourceMetric.id, label: sourceMetric.label, unit: sourceMetric.unit, sampleIntervalSeconds: sourceMetric.sampleIntervalSeconds }, { id: 'visible_people', label: '画面人数', unit: '人', sampleIntervalSeconds: 1 });
+  assert.deepEqual(sourceMetric.samples.slice(0, 3), [{ offsetSeconds: 0, value: 0 }, { offsetSeconds: 1, value: 1 }, { offsetSeconds: 2, value: 2 }]);
+
+  const clip = await video.clip(session, { videoId: 'video_001', startTime: '2026-08-16T08:00:05+08:00', endTime: '2026-08-16T08:00:10+08:00' });
+  assert.deepEqual(video.metrics(session, clip.resourceId).metrics[0].samples, [
+    { offsetSeconds: 0, value: 1 },
+    { offsetSeconds: 1, value: 2 },
+    { offsetSeconds: 2, value: 3 },
+    { offsetSeconds: 3, value: 0 },
+    { offsetSeconds: 4, value: 1 },
+    { offsetSeconds: 5, value: 2 },
+  ]);
 });
 
 test('snapshot extracts a frame inside the recording range only', { skip: !ffmpegAvailable }, async (t: any) => {

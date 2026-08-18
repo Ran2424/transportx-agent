@@ -189,11 +189,14 @@ test('catalog parser enforces unique ids, safe relative files and strict times',
   const ok = parseVideoCatalogStructured({ schemaVersion: 1, videos: [entry] });
   assert.equal(ok.ok, true);
   assert.equal(ok.value.videos[0].videoId, 'video_001');
+  const metricCatalog = parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', file: 'metrics/visible_people.csv', sampleIntervalSeconds: 1 }] }] });
+  assert.equal(metricCatalog.value.videos[0].metrics[0].id, 'visible_people');
 
   assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [entry, { ...entry, videoId: 'video_002' }] }).ok, true);
   assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [entry, entry] }).ok, false, 'duplicate videoId');
   assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, file: '/etc/passwd' }] }).ok, false, 'absolute path');
   assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, file: '../escape.mp4' }] }).ok, false, 'dot-dot escape');
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, metrics: [{ id: 'unsafe', label: 'Unsafe', unit: 'x', file: '../escape.csv', sampleIntervalSeconds: 1 }] }] }).ok, false, 'metrics cannot escape the data root');
   assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, startTime: '2026-08-16T08:00:00' }] }).ok, false, 'naive startTime');
   assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, mimeType: 'video/webm' }] }).ok, false, 'non-mp4');
   assert.equal(parseVideoCatalogStructured({ schemaVersion: 2, videos: [entry] }).ok, false, 'unknown schemaVersion');

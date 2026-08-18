@@ -123,6 +123,22 @@ V1 的 macOS arm64 包必须为 `ffmpeg` 与 `ffprobe` 在 runtime manifest 中�
 - 业务层始终使用 Recording Absolute Time；播放器和 ffmpeg 内部才转换为相对视频 offset。派生 Clip 仍保留原录像绝对时间，不重置为 `00:00–00:30`。
 - 用户只给“08:32”等不含日期/时区的表达，且会话上下文无法唯一推定时，Agent 必须追问或呈现候选，不得自行猜测。
 
+### 视频时序指标（可选）
+
+视频 Data Module 可为任意录像声明多个数值型时序指标；这是通用的数据承载机制，不为客流、人数或某个算法设置专用 Contract。示例：
+
+```json
+"metrics": [{
+  "id": "visible_people",
+  "label": "画面当前人数",
+  "unit": "人",
+  "file": "metrics/visible_people_second.csv",
+  "sampleIntervalSeconds": 1
+}]
+```
+
+`file` 必须是 Data Root 内无 symlink 的安全相对路径。指标 CSV 固定为 `relative_second,absolute_time,value`：前两列用于验证与录像时间轴一致，`value` 为有限数值。浏览器只通过同源 Session Resource 的 metrics API 取得已解析数据；播放器依照当前播放位置与 `sampleIntervalSeconds` 渲染已声明指标。没有指标声明的录像保持原有播放器行为。派生 Clip 按其绝对录像范围自动裁剪原录像的指标序列。
+
 ## 6. Session Video Resource Manifest
 
 不建设视频资源数据库。每一个向 Session 发布的视频使用一个轻量、持久化的资源目录：
