@@ -487,6 +487,10 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
 export function createExtensionUiCommands(deps: CommandDeps): ExtensionUiCommands {
   return {
     async respond({ sessionId, id, response }) {
+      // An extension response is a terminal local UI action. Pi may take time
+      // to acknowledge it while continuing the run, so keep the dialog from
+      // blocking the workbench after the user has made a choice.
+      deps.dispatch({ type: 'extensionUi/resolved', sessionId, requestId: id });
       await rpcCommand(deps.http, {
         type: 'extension_ui_response',
         id,
@@ -494,7 +498,6 @@ export function createExtensionUiCommands(deps: CommandDeps): ExtensionUiCommand
         ...(sessionId ? { sessionId } : {}),
         ...(response ?? { cancelled: true }),
       });
-      deps.dispatch({ type: 'extensionUi/resolved', sessionId, requestId: id });
     },
   };
 }

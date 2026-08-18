@@ -54,11 +54,11 @@ test('streaming prompt keeps a stable command ID in the queue', async () => {
   assert.equal(typeof fixture.actions[0].clientCommandId, 'string');
 });
 
-test('extension response remains pending until HTTP RPC acknowledges it', async () => {
+test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {
   const fixture = deps(() => ({ type: 'response', success: false, error: 'request expired' }));
   const extension = createExtensionUiCommands(fixture.value);
   await assert.rejects(() => extension.respond({ sessionId: 'session-1', id: 'ui-1', response: { confirmed: true } }), (error: { message?: string }) => error.message === 'request expired');
-  assert.deepEqual(fixture.actions, []);
+  assert.deepEqual(fixture.actions, [{ type: 'extensionUi/resolved', sessionId: 'session-1', requestId: 'ui-1' }]);
   assert.equal(fixture.commands[0].type, 'extension_ui_response');
   assert.equal(typeof fixture.commands[0].clientCommandId, 'string');
 });
