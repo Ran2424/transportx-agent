@@ -11,7 +11,7 @@ description: 在 Tau 中使用 publish_geodata 和 present_visualization 构建�
 
 - 始终先调用 `publish_geodata`，再调用 `present_visualization`。呈现工具接收命令式参数，并在内部构建 GeoScene；不要手写 `scene`、`sources`、`layers` 或 `encoding` 对象。
 - 先完成查询、聚合、空间关联、指标计算和结果校验，再发布数据。Geo 工具负责保存资源和表达分析结果，不代替 GIS 数据分析。
-- 发布前聚合密集观测数据。`publish_geodata` 最多接受 50,000 个要素和 20 MiB 数据；不要把上百万个原始点发送到浏览器。
+- 发布前聚合密集观测数据。`publish_geodata` 最多接受 50,000 个要素和 100 MiB 数据；不要把上百万个原始点发送到浏览器。
 
 ## Agent 命令决策
 
@@ -36,7 +36,7 @@ description: 在 Tau 中使用 publish_geodata 和 present_visualization 构建�
 3. 为每个要素提供稳定且唯一的顶层 `Feature.id`，或添加唯一的字符串/整数属性，并把属性名传给 `idField`。发布器目前只对显式传入的 `idField` 校验唯一性；顶层 `Feature.id` 的唯一性需自行验证。
 4. 当线、普通点、高亮 POI 或不同专题组需要不同样式时，将它们拆分到不同数据源；GeoScene v1 没有筛选通道。
 5. 调用 `publish_geodata` 前，将生成的 GeoJSON 写入当前任务目录。
-6. 发布前检查根类型、要素数量、文件大小、几何类型、坐标范围和 ID 唯一性。数据需小于 50,000 个要素和 20 MiB；超出任一限制时，先提高聚合粒度。
+6. 发布前检查根类型、要素数量、文件大小、几何类型、坐标范围和 ID 唯一性。数据需小于 50,000 个要素和 100 MiB；超出任一限制时，先提高聚合粒度。
 
 在 GeoPandas 中使用 `idField: "id"` 时，导出前显式创建该属性：
 

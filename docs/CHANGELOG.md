@@ -11,6 +11,49 @@
 - 历史记录根据本地 Git 提交补录。Git 不保存普通 `git push` 的精确时间，因此旧版本使用提交时间，并以提交已经存在于 `origin/main` 作为推送完成依据。
 - 若仅提交到开发分支，应明确记录分支名；合并到 `main` 后再补充合并与推送结果。
 
+## v3.0.11 — 报告 PDF 导出修复与会话输出完善
+
+- 日期：2026-08-18
+- GitHub 操作：待创建发布 PR。
+
+主要修改：
+
+- 修复含多张内嵌图片的 Markdown 报告 PDF 导出：渲染器改从受控临时 HTML 文件加载，避免超长 `data:` URL 导致 `ERR_INVALID_URL`；导出完成后临时文件立即清理。
+- 桌面端下载由主进程接管，并在 PDF 实际写入系统下载目录后才返回成功状态。
+- 同步纳入本次工作区中的会话输出、GeoJSON/Citation 边界与上海数据模块规则修复。
+
+验证：
+
+- `npm run typecheck:desktop`、`npm run typecheck:react`、`npm run test:desktop-smoke` 与 `npm run test:react-smoke` 通过。
+
+## 未发布 — Shanghai Data 默认排除 EVDATA
+
+- 日期：2026-08-18
+- GitHub 操作：待提交。
+
+主要修改：
+
+- Shanghai Data Skill 默认不查询、使用、引用或输出 EVDATA；仅在用户明确强调使用 EVDATA 时才启用该数据源。
+- `com.transportx.shanghaidata` 因 Skill 规则修复升级至 `2.0.2`。
+
+验证：
+
+- 已检查 Skill 规则与模块 manifest 版本一致。
+
+## 未发布 — GeoJSON 文件上限提升
+
+- 日期：2026-08-18
+- GitHub 操作：待提交至 `agent/conversation-output-rendering` 分支的 PR #15。
+
+主要修改：
+
+- 将 Geo Visualization 与 Spatial Analysis 的单个 GeoJSON 输入/输出上限从 20 MiB 提升为 100 MiB；50,000 要素上限不变。
+- Geo Visualization 与 Spatial Analysis Capability Module 均提升至 `1.0.1`，并同步更新 Geo Skill 和空间分析规格说明。
+
+验证：
+
+- `npm run typecheck:server`、`npm run typecheck:extensions`、`npm run typecheck:test` 与 `node --test --experimental-strip-types test/spatial-analysis.test.ts` 通过。
+
 ## v3.0.10 — Video Capability V1 与 Citation Evidence 修复
 
 - 日期：2026-08-17
