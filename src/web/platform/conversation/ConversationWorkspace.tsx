@@ -2,7 +2,6 @@ import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'rea
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { AppMessage, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
-import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown } from '../../../public/markdown.js';
@@ -224,43 +223,6 @@ function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitat
       onActivate={() => {}}
       onClose={() => setPreview(null)}
     /> : null}
-  </section>;
-}
-
-const MAX_SESSION_OUTPUTS = 24;
-async function collectSessionOutputs(sessionId: string, path?: string, depth = 0): Promise<WorkspaceFile[]> {
-  const response = await appKernel.commands.session.listFiles(sessionId, path);
-  const files = response.items.filter((item) => !item.isDirectory);
-  if (depth >= 3 || files.length >= MAX_SESSION_OUTPUTS) return files.slice(0, MAX_SESSION_OUTPUTS);
-  for (const directory of response.items.filter((item) => item.isDirectory)) {
-    if (files.length >= MAX_SESSION_OUTPUTS) break;
-    files.push(...(await collectSessionOutputs(sessionId, directory.path, depth + 1)).slice(0, MAX_SESSION_OUTPUTS - files.length));
-  }
-  return files;
-}
-
-function SessionOutputs({ sessionId, hasAssistantMessage, streaming }: { sessionId: string; hasAssistantMessage: boolean; streaming: boolean }) {
-  const { t } = useTranslation();
-  const [files, setFiles] = useState<WorkspaceFile[]>([]);
-  const [preview, setPreview] = useState<WorkspaceFile | null>(null);
-  useEffect(() => {
-    if (!hasAssistantMessage || streaming) return;
-    let active = true;
-    void collectSessionOutputs(sessionId).then((items) => { if (active) setFiles(items.sort((left, right) => (right.mtime || 0) - (left.mtime || 0))); }).catch(() => { if (active) setFiles([]); });
-    return () => { active = false; };
-  }, [hasAssistantMessage, sessionId, streaming]);
-  if (!files.length) return null;
-  return <section className="message-artifacts session-outputs">
-    <header><strong>{t('conversation.artifacts')}</strong><span>{t('common.itemCount', { count: files.length })}</span></header>
-    <div>{files.map((file) => {
-      const presentation = filePresentation(file);
-      return <button key={file.path} type="button" onClick={() => presentation.preview ? setPreview(file) : void appKernel.commands.session.openInSystem(sessionId, file.path)}>
-        <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
-        <span><strong>{file.name}</strong><small>{presentation.label}</small></span>
-        <Icon name="chevron" />
-      </button>;
-    })}</div>
-    {preview ? <FilePreview item={preview} sessionId={sessionId} stackIndex={0} initialOffset={0} onActivate={() => setPreview(preview)} onClose={() => setPreview(null)} /> : null}
   </section>;
 }
 
@@ -723,7 +685,6 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
     return () => window.cancelAnimationFrame(frame);
   }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
   const showLiveAssistant = !!data?.live.active && (data.live.thinkingStartedAt !== null || !!data.live.streamingThinking || !!data.live.streamingText);
-  const hasAssistantMessage = entries.some((entry) => entry.message?.role === 'assistant');
   const optimisticCitationProjection = data?.live.optimisticPrompt ? projectCitationText(data.live.optimisticPrompt.message, citationProjection.available) : undefined;
-  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} projection={citationProjection.byEntry.get(entry)} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} expandThinking={expandThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} projection={optimisticCitationProjection} /> : null}{showLiveAssistant ? <AssistantMessage streaming showThinking={showThinking} expandThinking={expandThinking} thinkingStartedAt={data?.live.thinkingStartedAt} thinkingDurationMs={data?.live.thinkingDurationMs} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data?.live.streamingThinking }, { type: 'text', text: data?.live.streamingText }] as MessageContentBlock[] }} /> : null}<SessionOutputs sessionId={sessionId} hasAssistantMessage={hasAssistantMessage} streaming={!!data?.live.active} /></div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
+  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} projection={citationProjection.byEntry.get(entry)} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} expandThinking={expandThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} projection={optimisticCitationProjection} /> : null}{showLiveAssistant ? <AssistantMessage streaming showThinking={showThinking} expandThinking={expandThinking} thinkingStartedAt={data?.live.thinkingStartedAt} thinkingDurationMs={data?.live.thinkingDurationMs} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data?.live.streamingThinking }, { type: 'text', text: data?.live.streamingText }] as MessageContentBlock[] }} /> : null}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
 }

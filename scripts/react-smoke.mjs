@@ -316,6 +316,68 @@ try {
   }
   await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
 
+  await composer.fill('基线-long-stream');
+  await composer.press('Enter');
+  const longStream = reactPage.locator('.assistant-message.is-streaming .streaming-text');
+  await longStream.waitFor({ timeout: 10_000 });
+  const streamProbe = await reactPage.evaluate(async () => {
+    const thread = document.querySelector('.conversation-thread');
+    if (!thread) throw new Error('Conversation thread is unavailable');
+    const lengths = [];
+    const capture = () => {
+      const length = document.querySelector('.assistant-message.is-streaming .streaming-text')?.textContent?.length ?? 0;
+      if (length) lengths.push(length);
+    };
+    const observer = new MutationObserver(capture);
+    observer.observe(thread, { childList: true, characterData: true, subtree: true });
+    capture();
+    const startedAt = performance.now();
+    let previousFrame = startedAt;
+    let frames = 0;
+    let maxFrameGap = 0;
+    await new Promise((resolve) => {
+      const sample = (now) => {
+        frames += 1;
+        maxFrameGap = Math.max(maxFrameGap, now - previousFrame);
+        previousFrame = now;
+        if (now - startedAt >= 350) resolve();
+        else requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    observer.disconnect();
+    return { frames, maxFrameGap, lengths: [...new Set(lengths)] };
+  });
+  if (streamProbe.lengths.length < 4) throw new Error(`Long response did not render incrementally: ${JSON.stringify(streamProbe)}`);
+  if (streamProbe.frames < 8 || streamProbe.maxFrameGap > 150) throw new Error(`Long response blocked browser frames: ${JSON.stringify(streamProbe)}`);
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+  const completedLongMessage = reactPage.locator('.assistant-message').last();
+  const completedLongLength = await completedLongMessage.locator('.message-content').evaluate((node) => node.textContent?.length ?? 0);
+  if (completedLongLength < 40_000) throw new Error(`Long response was truncated after streaming (${completedLongLength} characters)`);
+
+  await settingsButton.click();
+  await settings.getByRole('button', { name: '常规', exact: true }).click();
+  const expandThinkingSwitch = settings.getByRole('switch', { name: '默认展开思考内容' });
+  if (await expandThinkingSwitch.getAttribute('aria-checked') !== 'true') throw new Error('Thinking content should default to expanded');
+  await expandThinkingSwitch.click();
+  if (await reactPage.evaluate(() => window.localStorage.getItem('tau-expand-thinking')) !== 'false') throw new Error('Collapsed thinking preference was not persisted');
+  await reactPage.keyboard.press('Escape');
+  await settings.waitFor({ state: 'hidden' });
+
+  await composer.fill('基线-happy-collapsed');
+  await composer.press('Enter');
+  await reactPage.locator('.assistant-message.is-streaming .thinking-toggle', { hasText: '正在思考中' }).waitFor({ timeout: 10_000 });
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+  const collapsedMessage = reactPage.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).last();
+  await collapsedMessage.waitFor({ timeout: 10_000 });
+  const collapsedThinking = collapsedMessage.locator('.thinking-toggle');
+  if (await collapsedThinking.getAttribute('aria-expanded') !== 'false') throw new Error('Thinking block should honor the collapsed preference');
+  if (!/^已思考（\d+\.\d 秒）$/.test((await collapsedThinking.textContent())?.trim() || '')) throw new Error(`Completed thinking duration was not shown with one decimal place: ${await collapsedThinking.textContent()}`);
+  if (await collapsedMessage.locator('.thinking-block pre').count()) throw new Error('Collapsed thinking text should not be rendered');
+  await collapsedThinking.click();
+  await collapsedMessage.locator('.thinking-block pre', { hasText: '用户在请求基线 happy path' }).waitFor();
+  await reactPage.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+
   await reactPage.getByLabel('消息输入').fill('基线-citation-document');
   await reactPage.getByLabel('消息输入').press('Enter');
   const citedMessage = reactPage.locator('.assistant-message', { hasText: '入口存在拥堵风险' }).last();
@@ -342,6 +404,7 @@ try {
   if (!(await reportImage.getAttribute('src'))?.includes('/api/file/preview?')) {
     throw new Error('Relative Markdown report image did not use the session-scoped preview route');
   }
+  await reactPage.route(reportImageState.src, (route) => route.fulfill({ status: 503, body: 'preview route unavailable after initial render' }));
   const pdfDownloadPromise = reactPage.waitForEvent('download');
   await citationPreview.getByRole('button', { name: '下载 PDF' }).click();
   const reportDownload = await pdfDownloadPromise;
@@ -351,12 +414,15 @@ try {
   }
   if (!reportDownload.suggestedFilename().endsWith('.pdf')) throw new Error(`Unexpected PDF filename: ${reportDownload.suggestedFilename()}`);
   if (process.env.TAU_SMOKE_PDF) fs.copyFileSync(reportPdfPath, process.env.TAU_SMOKE_PDF);
+  await reactPage.unroute(reportImageState.src);
   await citationPreview.getByRole('button', { name: '关闭文件预览' }).click();
+  if (await reactPage.locator('.session-outputs').count()) throw new Error('Conversation must not enumerate all session files as outputs');
 
   await reactPage.getByLabel('消息输入').fill('基线-citation-pdf');
   await reactPage.getByLabel('消息输入').press('Enter');
   const pdfCitationMessage = reactPage.locator('.assistant-message', { hasText: '发现人员聚集后应及时组织疏导' }).last();
   await pdfCitationMessage.locator('.citation-footer', { hasText: '标准规范' }).waitFor({ timeout: 10_000 });
+  if (await reactPage.locator('.session-outputs').count()) throw new Error('A follow-up response must not retain earlier session files as outputs');
   await pdfCitationMessage.locator('.citation-locator').hover();
   const pdfPageImage = reactPage.locator('.citation-evidence-peek img');
   await pdfPageImage.waitFor();
@@ -418,6 +484,13 @@ try {
   await composer.press('Enter');
   const runningTool = reactPage.locator('.tool-card', { hasText: 'traffic-summary.json' });
   await runningTool.locator('.tool-status.running').waitFor({ timeout: 10_000 });
+  const liveThinking = reactPage.locator('.assistant-message.is-streaming .thinking-block.is-active');
+  await liveThinking.waitFor({ timeout: 10_000 });
+  const streamOrder = await reactPage.locator('.conversation-thread').evaluate((thread) => ({
+    thinking: [...thread.children].indexOf(thread.querySelector('.assistant-message.is-streaming')),
+    tool: [...thread.children].indexOf(thread.querySelector(':scope > .tool-card')),
+  }));
+  if (streamOrder.thinking < 0 || streamOrder.tool < 0 || streamOrder.thinking > streamOrder.tool) throw new Error(`Live thinking must precede its tool card: ${JSON.stringify(streamOrder)}`);
   const toolToggle = runningTool.locator('.tool-card-toggle');
   if (await toolToggle.getAttribute('aria-expanded') !== 'true') throw new Error('Running tool should be expanded');
   await runningTool.locator('.tool-status.completed').waitFor({ timeout: 10_000 });

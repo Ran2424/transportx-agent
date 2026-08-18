@@ -186,3 +186,10 @@ test('Server creates initial capabilities and exposes incompatible Bridge diagno
   assert.equal(invalidMetadata.capabilities.ok, false);
   assert.ok(invalidMetadata.capabilities.diagnostics.some((item: { code: string }) => item.code === 'unknown_schema_version'));
 });
+
+test('Server reflects Pi thinking-level change events in live session metadata', () => {
+  const { LiveSessionManager, PiRpcSession } = require('../bin/sessions.js');
+  const session = new PiRpcSession(new LiveSessionManager(), { cwd: process.cwd() });
+  session.handleEvent({ type: 'thinking_level_changed', level: 'high' });
+  assert.equal(session.metadata().thinkingLevel, 'high');
+});

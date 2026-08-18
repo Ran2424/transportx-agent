@@ -103,7 +103,7 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
           compact
           onChange={setThinking}
         />
-        {error ? <div className="inline-error" role="alert">{error}</div> : <p className="field-help">{t('model.dialog.help')}</p>}
+        {error ? <div className="inline-error" role="alert">{error}</div> : null}
         <div className="form-actions is-split">
           <Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button>
           <span><DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose><Button type="submit" disabled={!session || !model || saving}>{saving ? t('common.saving') : t('common.save')}</Button></span>

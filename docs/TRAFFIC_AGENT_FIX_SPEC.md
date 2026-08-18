@@ -830,9 +830,9 @@ analysis/spatial/<analysis-id>/result.geojson
 
 第一阶段建议限制：
 
-- 单个输入不超过 20 MiB；
+- 单个输入不超过 100 MiB；
 - 单个输入不超过 50,000 features；
-- 最大输出 50,000 features / 20 MiB；
+- 最大输出 50,000 features / 100 MiB；
 - 默认超时 120 秒；
 - stdout / stderr 延续 `PythonRunner` 4 MiB 上限；
 - 所有 geometry 必须是合法 GeoJSON；对无效 geometry 默认报错，可选 `repairInvalid: true` 时记录修复数量；

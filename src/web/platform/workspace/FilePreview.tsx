@@ -179,13 +179,36 @@ function previewSize() {
   return { width: Math.min(720, window.innerWidth - 44), height: Math.min(540, window.innerHeight - 44) };
 }
 
+async function imageDataUrl(image: HTMLImageElement, fallbackError: Error) {
+  if (image.complete && image.naturalWidth && image.naturalHeight) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Canvas is unavailable');
+      context.drawImage(image, 0, 0);
+      return canvas.toDataURL();
+    } catch { /* Fetch below when the image cannot be copied from the preview. */ }
+  }
+  const response = await fetch(image.src);
+  if (!response.ok) throw fallbackError;
+  const blob = await response.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(i18n.t('workspace.imageConvertFailed')));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export function FilePreview({ item, sessionId, stackIndex, initialOffset, externalSource, citationProjection, onActivate, onClose }: { item: WorkspaceFile; sessionId: string; stackIndex: number; initialOffset: number; externalSource?: ExternalPreviewSource; citationProjection?: MessageCitationProjection; onActivate(): void; onClose(): void }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const presentation = useMemo(() => externalSource ? externalPresentation(externalSource) : filePresentation(item), [externalSource, item]);
   const [content, setContent] = useState<WorkspaceFileContent | null>(null);
   const [error, setError] = useState('');
-  const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [pdfError, setPdfError] = useState('');
   const bodyRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(() => ({ x: initialOffset * 26, y: initialOffset * 22 }));
@@ -258,17 +281,10 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
       const clonedImages = [...clone.querySelectorAll<HTMLImageElement>('img')];
       await Promise.all(sourceImages.map(async (image, index) => {
         if (!image.src || image.src.startsWith('data:')) return;
-        const response = await fetch(image.src);
-        if (!response.ok) throw new Error(t('workspace.imageLoadFailed', { name: image.alt || index + 1 }));
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () => reject(new Error(t('workspace.imageConvertFailed')));
-          void response.blob().then((blob) => reader.readAsDataURL(blob), reject);
-        });
+        const dataUrl = await imageDataUrl(image, new Error(t('workspace.imageLoadFailed', { name: image.alt || index + 1 })));
         clonedImages[index]?.setAttribute('src', dataUrl);
       }));
-      const response = await fetch('/api/reports/pdf', {
+      const response = await fetch('/api/reports/pdf/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: item.name, html: clone.outerHTML }),
@@ -277,15 +293,13 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
         const detail = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(detail.error || t('workspace.pdfFailed'));
       }
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${item.name.replace(/\.mdx?$/i, '')}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-      setPdfStatus('idle');
+      const detail = await response.json() as { url?: string };
+      if (!detail.url) throw new Error(t('workspace.pdfFailed'));
+      const desktop = window as Window & { transportxDesktop?: { download(url: string): Promise<string> } };
+      if (desktop.transportxDesktop) await desktop.transportxDesktop.download(detail.url);
+      else window.location.assign(detail.url);
+      setPdfStatus('saved');
+      window.setTimeout(() => setPdfStatus('idle'), 5_000);
     } catch (cause) {
       setPdfError((cause as Error).message || t('workspace.pdfFailed'));
       setPdfStatus('error');
@@ -312,7 +326,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
     <header className={`file-preview-header${presentation.preview === 'report' ? ' has-export' : ''}`} onPointerDown={startDrag} onPointerMove={dragPreview} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
       <span className={`file-preview-type is-${presentation.kind}`}><Icon name={presentation.icon} />{presentation.label}</span>
       <strong title={item.path}>{item.name}</strong>
-      {presentation.preview === 'report' ? <button className={`file-preview-export${pdfStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={pdfStatus === 'loading'} title={pdfError || t('workspace.downloadPdf')} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadPdf()}>{pdfStatus === 'loading' ? t('workspace.generating') : pdfStatus === 'error' ? t('workspace.retryPdf') : t('workspace.download')}</button> : null}
+      {presentation.preview === 'report' ? <button className={`file-preview-export${pdfStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={pdfStatus === 'loading'} title={pdfError || t('workspace.downloadPdf')} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadPdf()}>{pdfStatus === 'loading' ? t('workspace.generating') : pdfStatus === 'saved' ? t('workspace.downloaded') : pdfStatus === 'error' ? t('workspace.retryPdf') : t('workspace.download')}</button> : null}
       <button className="icon-button" type="button" aria-label={t('workspace.previewClose')} onPointerDown={(event) => event.stopPropagation()} onClick={onClose}><Icon name="close" /></button>
     </header>
     <div ref={bodyRef} className={`file-preview-body is-${presentation.kind}`}>{body}</div>

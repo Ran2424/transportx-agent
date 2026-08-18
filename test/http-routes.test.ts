@@ -14,7 +14,7 @@ process.env.PI_CODING_AGENT_SESSION_DIR = path.join(process.env.PI_CODING_AGENT_
 const PROJECTS_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'projects');
 process.env.TAU_PROJECTS_DIR = PROJECTS_DIR;
 
-const { server, computeUrls, handleRpcCommand, liveManager, SESSIONS_DIR, _setSpawnPiForTest } = require('../bin/tau.js');
+const { server, computeUrls, handleRpcCommand, liveManager, SESSIONS_DIR, PiRpcSession, _setSpawnPiForTest } = require('../bin/tau.js');
 let base = '';
 const PROJ_DIR = path.join(SESSIONS_DIR, '--tmp--httpproj');
 
@@ -191,6 +191,25 @@ test('video resources are bound to their owning session and validated manifests'
     fs.symlinkSync(outside, path.join(firstRoot, '.tau', 'video-resources', linkId), 'dir');
     assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/${linkId}/data`)).status, 403);
   }
+});
+
+test('video metric API exposes only declared, session-scoped time-series data', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-metrics-'));
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-metrics-data-'));
+  t.after(() => { fs.rmSync(cwd, { recursive: true, force: true }); fs.rmSync(dataRoot, { recursive: true, force: true }); });
+  const resourceId = `video_${'f'.repeat(16)}`;
+  fakeVideoResource(cwd, resourceId, crypto.randomBytes(64));
+  fs.mkdirSync(path.join(dataRoot, 'metrics'), { recursive: true });
+  fs.writeFileSync(path.join(dataRoot, 'metrics', 'visible_people.csv'), 'relative_second,absolute_time,value\n0,2026-08-16T08:00:00+08:00,3\n1,2026-08-16T08:00:01+08:00,4\n');
+  fs.writeFileSync(path.join(dataRoot, 'videos.json'), JSON.stringify({ schemaVersion: 1, videos: [{ videoId: 'video_001', title: '测试视频', startTime: '2026-08-16T08:00:00+08:00', endTime: '2026-08-16T08:01:00+08:00', file: 'videos/test.mp4', mimeType: 'video/mp4', metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', file: 'metrics/visible_people.csv', sampleIntervalSeconds: 1 }] }] }));
+  const session = fakeSession('tau_video_metrics') as any;
+  session.cwd = cwd;
+  session.resolvedSessionPlan = { assets: [{ id: 'data:test-video', kind: 'data', path: dataRoot }] };
+  liveManager.sessions.set(session.id, session);
+
+  const response = await fetch(`${base}/api/live-sessions/${session.id}/video-resources/${resourceId}/metrics`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await jsonBody(response), { metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', sampleIntervalSeconds: 1, samples: [{ offsetSeconds: 0, value: 3 }, { offsetSeconds: 1, value: 4 }] }] });
 });
 
 test('video internal endpoints require the session video token', async (t: TestContext) => {
@@ -422,6 +441,23 @@ test('Pi RPC prompt timeout is reported instead of optimistic success', async ()
   const response = await handleRpcCommand({ type: 'prompt', sessionId: session.id, message: '不要假成功', clientCommandId: 'client-command-timeout' });
   assert.equal(response.success, false);
   assert.match(String(response.error), /timed out/);
+});
+
+test('Pi RPC extension UI responses acknowledge after writing because Pi sends no response envelope', async () => {
+  const manager = new (require('../bin/sessions.js').LiveSessionManager)();
+  const session = new PiRpcSession(manager, { cwd: '/tmp/pi-extension-ui' });
+  const child = makeFakeChild();
+  const received: string[] = [];
+  child.stdin.on('data', (chunk: Buffer) => received.push(chunk.toString()));
+  (session as any).child = child;
+
+  const response = await Promise.race([
+    session.send({ type: 'extension_ui_response', id: 'ui-1', value: 'northbound' }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('extension UI response was not acknowledged')), 100)),
+  ]);
+
+  assert.equal((response as { success: boolean }).success, true);
+  assert.match(received.join(''), /"type":"extension_ui_response"/);
 });
 
 test('resuming a stored session publishes the persisted conversation snapshot', async (t: TestContext) => {

@@ -79,5 +79,5 @@ test('Headless runner completes Host create, prompt, final answer, plan audit an
   assert.equal(summary.passed, true);
   assert.equal(run.host.desktop, false);
   assert.equal(run.cases[0].plan.schemaVersion, 3);
-  assert.equal(run.cases[0].plan.modules.find((item: any) => item.id === 'com.transportx.shanghaidata').version, '2.0.1');
+  assert.equal(run.cases[0].plan.modules.find((item: any) => item.id === 'com.transportx.shanghaidata').version, '2.0.2');
 });

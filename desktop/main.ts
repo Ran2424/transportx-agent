@@ -1,4 +1,7 @@
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { AgentHostSupervisor } from './agent-host-supervisor.js';
@@ -7,6 +10,7 @@ import { resolveDesktopPaths, resolveDesktopUserDataDir } from './app-paths.js';
 let mainWindow: BrowserWindowType | null = null;
 let supervisor: AgentHostSupervisor | null = null;
 let quitting = false;
+let workbenchOrigin = '';
 
 app.setPath('userData', resolveDesktopUserDataDir(app.getPath('home'), app.getPath('userData')));
 
@@ -18,7 +22,47 @@ function nativeText(zh: string, en: string) {
   return app.getLocale().toLowerCase().startsWith('zh') ? zh : en;
 }
 
+function nextDownloadPath(fileName: string) {
+  const name = path.basename(fileName) || 'download.pdf';
+  const extension = path.extname(name);
+  const base = path.basename(name, extension);
+  const directory = app.getPath('downloads');
+  let candidate = path.join(directory, name);
+  for (let index = 1; fs.existsSync(candidate); index += 1) candidate = path.join(directory, `${base} (${index})${extension}`);
+  return candidate;
+}
+
+function downloadToFile(sender: Electron.WebContents, url: string) {
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error, destination?: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      sender.session.removeListener('will-download', onWillDownload);
+      if (error) reject(error);
+      else resolve(destination!);
+    };
+    const onWillDownload = (_event: Electron.Event, item: Electron.DownloadItem, contents: Electron.WebContents) => {
+      if (contents !== sender) return;
+      const destination = nextDownloadPath(item.getFilename());
+      item.setSavePath(destination);
+      item.once('done', (_doneEvent, state) => {
+        if (state === 'completed') finish(undefined, destination);
+        else finish(new Error(`PDF download ${state}`));
+      });
+    };
+    const timeout = setTimeout(() => finish(new Error('PDF download timed out')), 30_000);
+    sender.session.on('will-download', onWillDownload);
+    try { sender.downloadURL(url); }
+    catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
+  });
+}
+
 async function renderPdf(_title: string, html: string) {
+  const temporaryDir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'transportx-pdf-'));
+  const reportPath = path.join(temporaryDir, 'report.html');
+  const reportUrl = pathToFileURL(reportPath).toString();
   const window = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -30,10 +74,11 @@ async function renderPdf(_title: string, html: string) {
     },
   });
   window.webContents.session.webRequest.onBeforeRequest((details: Electron.OnBeforeRequestListenerDetails, callback: (response: Electron.CallbackResponse) => void) => {
-    callback({ cancel: !/^(?:about:|data:)/.test(details.url) });
+    callback({ cancel: details.url !== reportUrl && !/^(?:about:|data:)/.test(details.url) });
   });
   try {
-    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    await fs.promises.writeFile(reportPath, html, 'utf8');
+    await window.loadFile(reportPath);
     return await window.webContents.printToPDF({
       pageSize: 'A4',
       printBackground: true,
@@ -44,11 +89,13 @@ async function renderPdf(_title: string, html: string) {
     });
   } finally {
     window.destroy();
+    await fs.promises.rm(temporaryDir, { recursive: true, force: true });
   }
 }
 
 function createWindow(url: string) {
   const windowUrl = new URL(url);
+  workbenchOrigin = windowUrl.origin;
   windowUrl.searchParams.set('desktop-platform', process.platform);
   const window = new BrowserWindow({
     title: 'TransportX Traffic Agent',
@@ -65,6 +112,7 @@ function createWindow(url: string) {
       contextIsolation: true,
       sandbox: true,
       webviewTag: false,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
   window.webContents.setWindowOpenHandler(({ url: target }: { url: string }) => {
@@ -95,6 +143,12 @@ else {
   });
 
   app.whenReady().then(async () => {
+    ipcMain.handle('transportx:download', async (event: Electron.IpcMainInvokeEvent, value: unknown) => {
+      if (event.sender !== mainWindow?.webContents || typeof value !== 'string') throw new Error('Invalid download request');
+      const target = new URL(value, workbenchOrigin);
+      if (target.origin !== workbenchOrigin || !/^\/api\/reports\/pdf\/download\/[a-f0-9-]+$/.test(target.pathname)) throw new Error('Invalid download URL');
+      return await downloadToFile(event.sender, target.toString());
+    });
     const paths = resolveDesktopPaths(app.getAppPath(), process.resourcesPath, app.getPath('userData'));
     supervisor = new AgentHostSupervisor({
       paths,

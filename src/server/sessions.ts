@@ -443,6 +443,21 @@ export class PiRpcSession {
     const id = command.id || `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const outbound = { ...command, id };
     delete outbound.sessionId;
+    // Pi consumes extension UI replies without emitting a response envelope.
+    // Confirm delivery once the reply is written, rather than waiting for a
+    // response that its RPC protocol intentionally never sends.
+    if (outbound.type === 'extension_ui_response') {
+      return new Promise<RpcResponse>((resolve, reject) => {
+        try {
+          child.stdin!.write(JSON.stringify(outbound) + '\n', (err: Error | null | undefined) => {
+            if (err) reject(err);
+            else resolve({ type: 'response', command: outbound.type, success: true, id });
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
     const timeoutMs = opts.timeoutMs ?? 60000;
     return new Promise<RpcResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -523,6 +538,13 @@ export class PiRpcSession {
     this.touch(false);
     const type = event.type;
     const now = Date.now();
+    if (type === 'thinking_level_changed') {
+      const level = typeof event.thinkingLevel === 'string' ? event.thinkingLevel : typeof event.level === 'string' ? event.level : '';
+      if (level) {
+        this.thinkingLevel = level;
+        this.touch(true);
+      }
+    }
     if (type === 'message_start' && event.message?.role === 'assistant') {
       this.assistantThinkingStartedAt = now;
       this.assistantThinkingDurationMs = null;
