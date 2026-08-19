@@ -1,12 +1,29 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const yauzl = require('yauzl') as typeof import('yauzl');
+const { pipeline } = require('node:stream/promises') as typeof import('node:stream/promises');
 
-import { diagnosticMessage, parseModuleManifestStructured, type ModuleManifest } from '../contracts/index.js';
+import { diagnosticMessage, parseModuleManifestStructured, type ModuleArchiveCandidate, type ModuleArchiveInspection, type ModuleManifest } from '../contracts/index.js';
 import type { ModuleRegistry, ModuleSource } from './module-registry.js';
 import { verifyChecksumFile, within } from './asset-integrity.js';
 
 export type InstallKind = 'module';
+
+const MAX_ARCHIVE_ENTRIES = 20_000;
+const MAX_ARCHIVE_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRY_BYTES = 1024 * 1024 * 1024;
+const MAX_ARCHIVE_COMPRESSION_RATIO = 200;
+const MAX_MANIFEST_BYTES = 256 * 1024;
+const ARCHIVE_IMPORT_TTL_MS = 60 * 60 * 1000;
+
+type ArchiveEntry = import('yauzl').Entry;
+type PendingArchive = {
+  archivePath: string;
+  expiresAt: number;
+  inspection: ModuleArchiveInspection;
+  candidates: Map<string, ModuleArchiveCandidate>;
+};
 
 function readManifest(manifestPath: string) {
   const result = parseModuleManifestStructured(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
@@ -35,6 +52,41 @@ function copyInstallSource(source: string, destination: string) {
       return name !== '.DS_Store' && name !== '__MACOSX' && name !== '.git' && name !== '__pycache__' && !name.endsWith('.pyc');
     },
   });
+}
+
+function archiveEntryIgnored(fileName: string) {
+  const parts = fileName.replace(/\/$/, '').split('/');
+  return parts.some((part) => part === '__MACOSX' || part === '.DS_Store' || part === '.git' || part === '__pycache__' || part.endsWith('.pyc') || part.startsWith('._'));
+}
+
+function archiveEntryUnsafe(entry: ArchiveEntry) {
+  if (entry.isEncrypted()) return 'Encrypted ZIP entries are not supported';
+  if (yauzl.validateFileName(entry.fileName)) return `Unsafe ZIP entry: ${entry.fileName}`;
+  const unixMode = entry.externalFileAttributes >>> 16;
+  if ((unixMode & 0o170000) === 0o120000) return `ZIP entries cannot be symbolic links: ${entry.fileName}`;
+  if (entry.uncompressedSize > MAX_ARCHIVE_ENTRY_BYTES) return `ZIP entry is too large: ${entry.fileName}`;
+  if (entry.compressedSize > 0 && entry.uncompressedSize / entry.compressedSize > MAX_ARCHIVE_COMPRESSION_RATIO) return `ZIP entry compression ratio is too high: ${entry.fileName}`;
+  return null;
+}
+
+function archiveModuleKey(id: string, version: string) {
+  return `${id}@${version}`;
+}
+
+async function readArchiveEntry(zip: import('yauzl').ZipFile, entry: ArchiveEntry, maxBytes: number) {
+  const stream = await zip.openReadStreamPromise(entry);
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of stream) {
+    const value = Buffer.from(chunk);
+    bytes += value.length;
+    if (bytes > maxBytes) {
+      stream.destroy();
+      throw new Error(`Archive entry is too large to inspect: ${entry.fileName}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }
 
 function resolvePackageEntry(root: string, relativePath: string, label: string, optional = false) {
@@ -83,8 +135,184 @@ function migrateManifestV1(manifestPath: string) {
 }
 
 export class ModuleInstaller {
+  private readonly pendingArchives = new Map<string, PendingArchive>();
+
   constructor(readonly modulesDir: string) {
     fs.mkdirSync(modulesDir, { recursive: true });
+    fs.rmSync(path.join(modulesDir, '.imports'), { recursive: true, force: true });
+  }
+
+  private archiveImportsDir() {
+    return path.join(this.modulesDir, '.imports');
+  }
+
+  private removePendingArchive(importId: string) {
+    const pending = this.pendingArchives.get(importId);
+    this.pendingArchives.delete(importId);
+    if (pending) fs.rmSync(pending.archivePath, { force: true });
+  }
+
+  private cleanupExpiredArchives() {
+    const now = Date.now();
+    for (const [importId, pending] of this.pendingArchives) if (pending.expiresAt <= now) this.removePendingArchive(importId);
+  }
+
+  discardArchive(importId: string) {
+    this.removePendingArchive(importId);
+  }
+
+  async inspectArchive(source: string, reservedModuleIds = new Set<string>()): Promise<ModuleArchiveInspection> {
+    this.cleanupExpiredArchives();
+    const sourcePath = path.resolve(source);
+    if (path.extname(sourcePath).toLowerCase() !== '.zip') throw new Error('Only .zip Module archives are supported');
+    if (!fs.existsSync(sourcePath) || !fs.lstatSync(sourcePath).isFile()) throw new Error(`Module archive not found: ${source}`);
+    const importId = crypto.randomUUID();
+    const importsDir = this.archiveImportsDir();
+    const archivePath = path.join(importsDir, `${importId}.zip`);
+    fs.mkdirSync(importsDir, { recursive: true });
+    fs.copyFileSync(sourcePath, archivePath);
+    try {
+      const zip = await yauzl.openPromise(archivePath, { autoClose: false, lazyEntries: true, strictFileNames: true, validateEntrySizes: true });
+      const manifestEntries: Array<{ entry: ArchiveEntry; id: string; version: string }> = [];
+      const packageBytes = new Map<string, number>();
+      const paths = new Set<string>();
+      let uncompressedBytes = 0;
+      try {
+        if (zip.entryCount > MAX_ARCHIVE_ENTRIES) throw new Error(`Module archive contains too many entries (maximum ${MAX_ARCHIVE_ENTRIES})`);
+        for await (const entry of zip.eachEntry()) {
+          const unsafe = archiveEntryUnsafe(entry);
+          if (unsafe) throw new Error(unsafe);
+          if (paths.has(entry.fileName)) throw new Error(`Duplicate ZIP entry: ${entry.fileName}`);
+          paths.add(entry.fileName);
+          if (archiveEntryIgnored(entry.fileName)) continue;
+          uncompressedBytes += entry.uncompressedSize;
+          if (uncompressedBytes > MAX_ARCHIVE_UNCOMPRESSED_BYTES) throw new Error(`Module archive expands beyond ${Math.floor(MAX_ARCHIVE_UNCOMPRESSED_BYTES / 1024 / 1024)} MB`);
+          const packageMatch = entry.fileName.match(/^([^/]+)\/([^/]+)\//);
+          if (packageMatch) {
+            const key = archiveModuleKey(packageMatch[1], packageMatch[2]);
+            packageBytes.set(key, (packageBytes.get(key) || 0) + entry.uncompressedSize);
+          }
+          const manifestMatch = entry.fileName.match(/^([^/]+)\/([^/]+)\/manifest\.json$/);
+          if (manifestMatch) manifestEntries.push({ entry, id: manifestMatch[1], version: manifestMatch[2] });
+        }
+
+        const modules: ModuleArchiveCandidate[] = [];
+        const candidates = new Map<string, ModuleArchiveCandidate>();
+        for (const item of manifestEntries) {
+          const key = archiveModuleKey(item.id, item.version);
+          let candidate: ModuleArchiveCandidate;
+          try {
+            const parsed = parseModuleManifestStructured(JSON.parse((await readArchiveEntry(zip, item.entry, MAX_MANIFEST_BYTES)).toString('utf8')));
+            if (!parsed.ok) throw new Error(parsed.diagnostics.map(diagnosticMessage).join('; '));
+            const manifest = parsed.value;
+            if (manifest.id !== item.id || manifest.version !== item.version) throw new Error(`Archive path must match manifest: ${item.id}/${item.version}`);
+            const target = path.join(this.modulesDir, manifest.id, manifest.version);
+            const status = reservedModuleIds.has(manifest.id) ? 'conflict' : fs.existsSync(target) ? 'installed' : 'ready';
+            candidate = {
+              id: manifest.id,
+              name: manifest.name,
+              version: manifest.version,
+              type: manifest.type,
+              dependencies: manifest.dependencies,
+              skills: manifest.entrypoints?.skills?.length || 0,
+              extensions: manifest.entrypoints?.piExtensions?.length || 0,
+              assets: manifest.contributes?.assets?.length || 0,
+              uncompressedBytes: packageBytes.get(key) || 0,
+              status,
+              ...(status === 'conflict' ? { message: `Module id conflicts with an existing built-in or external module: ${manifest.id}` } : status === 'installed' ? { message: 'This module version is already installed' } : {}),
+            };
+          } catch (error) {
+            candidate = {
+              id: item.id,
+              name: item.id,
+              version: item.version,
+              type: 'module',
+              dependencies: [],
+              skills: 0,
+              extensions: 0,
+              assets: 0,
+              uncompressedBytes: packageBytes.get(key) || 0,
+              status: 'invalid',
+              message: error instanceof Error ? error.message : String(error),
+            };
+          }
+          if (candidates.has(key)) throw new Error(`Duplicate Module package in archive: ${key}`);
+          candidates.set(key, candidate);
+          modules.push(candidate);
+        }
+        if (!modules.length) throw new Error('No Module packages found. Expected <module-id>/<version>/manifest.json');
+        const inspection: ModuleArchiveInspection = {
+          importId,
+          sourceName: path.basename(sourcePath),
+          compressedBytes: fs.statSync(archivePath).size,
+          uncompressedBytes,
+          modules,
+        };
+        this.pendingArchives.set(importId, { archivePath, expiresAt: Date.now() + ARCHIVE_IMPORT_TTL_MS, inspection, candidates });
+        return inspection;
+      } finally {
+        if (zip.isOpen) zip.close();
+      }
+    } catch (error) {
+      fs.rmSync(archivePath, { force: true });
+      throw error;
+    }
+  }
+
+  async installArchive(importId: string, selections: Array<{ id: string; version: string }>) {
+    this.cleanupExpiredArchives();
+    const pending = this.pendingArchives.get(importId);
+    if (!pending) throw new Error('Module archive preview has expired. Drop the archive again.');
+    const keys = selections.map((selection) => archiveModuleKey(selection.id, selection.version));
+    if (!keys.length || new Set(keys).size !== keys.length) throw new Error('Select one or more distinct Modules to install');
+    const candidates = keys.map((key) => {
+      const candidate = pending.candidates.get(key);
+      if (!candidate || candidate.status !== 'ready') throw new Error(`Module is not available for installation: ${key}`);
+      return candidate;
+    });
+    const staging = path.join(this.modulesDir, `.archive-install-${crypto.randomUUID()}`);
+    const installed: Array<{ id: string; name: string; version: string; path: string }> = [];
+    try {
+      fs.mkdirSync(staging, { recursive: true });
+      const zip = await yauzl.openPromise(pending.archivePath, { lazyEntries: true, strictFileNames: true, validateEntrySizes: true });
+      try {
+        for await (const entry of zip.eachEntry()) {
+          if (archiveEntryIgnored(entry.fileName)) continue;
+          const candidate = candidates.find((item) => entry.fileName.startsWith(`${item.id}/${item.version}/`));
+          if (!candidate || entry.fileName.endsWith('/')) continue;
+          const destination = path.resolve(staging, entry.fileName);
+          if (!within(staging, destination)) throw new Error(`Unsafe ZIP entry: ${entry.fileName}`);
+          fs.mkdirSync(path.dirname(destination), { recursive: true });
+          await pipeline(await zip.openReadStreamPromise(entry), fs.createWriteStream(destination, { flags: 'wx' }));
+        }
+      } finally {
+        if (zip.isOpen) zip.close();
+      }
+
+      for (const candidate of candidates) {
+        const packageRoot = path.join(staging, candidate.id, candidate.version);
+        const manifest = readManifest(path.join(packageRoot, 'manifest.json'));
+        if (manifest.id !== candidate.id || manifest.version !== candidate.version) throw new Error(`Archive contents changed for ${candidate.id}@${candidate.version}`);
+        validateModulePackage(packageRoot, manifest);
+        const target = path.join(this.modulesDir, candidate.id, candidate.version);
+        if (!within(this.modulesDir, target) || fs.existsSync(target)) throw new Error(`Module version is already installed: ${candidate.id}@${candidate.version}`);
+      }
+
+      for (const candidate of candidates) {
+        const packageRoot = path.join(staging, candidate.id, candidate.version);
+        const target = path.join(this.modulesDir, candidate.id, candidate.version);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.renameSync(packageRoot, target);
+        installed.push({ id: candidate.id, name: candidate.name, version: candidate.version, path: target });
+      }
+      return installed;
+    } catch (error) {
+      for (const item of installed.reverse()) fs.rmSync(item.path, { recursive: true, force: true });
+      throw error;
+    } finally {
+      fs.rmSync(staging, { recursive: true, force: true });
+      this.removePendingArchive(importId);
+    }
   }
 
   migrateLegacyPackages() {
