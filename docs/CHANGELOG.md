@@ -4,6 +4,19 @@
 
 ## Unreleased
 
+## v3.1.0 — 模块 ZIP 快速安装
+
+- 日期：2026-08-19
+- GitHub 操作：待通过 PR 合并至 `main`。
+
+主要修改：
+
+- 新增桌面端模块 ZIP 快速安装：在模块设置中拖入或选择 `.zip`，预检其中的 `<模块ID>/<版本>/manifest.json`，确认后可选择模块批量安装至个人目录。导入过程拒绝路径逃逸、符号链接、加密条目、异常压缩比与重复版本，并复用既有 manifest、入口路径和资源 checksum 校验。
+
+验证：
+
+- `npm run typecheck`、`node --test test/module-installer.test.ts` 与 `npm run build` 通过。
+- 真实 `traffic-agent-modules.zip` 预检通过，识别 `com.transportx.plot-style@1.0.0`、`com.transportx.shanghaidata@2.0.1` 和 `com.transportx.traffic-assurance-knowledge@1.0.0` 三个模块。
 - Hongqiao Metro Entrance Demo 升级至 `1.1.1`：校核密集监控画面后，将每秒画面人数的 YOLO 推理分辨率由默认 `640px` 提升到 `1280px`，置信度降至 `0.15`，并重算完整录像的时序指标，降低远景与遮挡人群的漏检。
 - Hongqiao Metro Entrance Demo 升级至 `1.1.0`：将原有专用进站人流展示替换为通用 Video 时序指标机制。Data Module 可在 `videos.json` 声明多个带名称、单位、采样间隔的指标文件；播放器按当前播放时间展示这些指标。本 Demo 首次接入 `visible_people`（YOLO 每秒画面可见人数）指标。
 
