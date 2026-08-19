@@ -33,6 +33,28 @@ export type ModuleManifest = {
   };
 };
 
+export type ModuleArchiveCandidate = {
+  id: string;
+  name: string;
+  version: string;
+  type: ModuleType;
+  dependencies: string[];
+  skills: number;
+  extensions: number;
+  assets: number;
+  uncompressedBytes: number;
+  status: 'ready' | 'installed' | 'conflict' | 'invalid';
+  message?: string;
+};
+
+export type ModuleArchiveInspection = {
+  importId: string;
+  sourceName: string;
+  compressedBytes: number;
+  uncompressedBytes: number;
+  modules: ModuleArchiveCandidate[];
+};
+
 export type ModuleManifestParseResult =
   | { ok: true; value: ModuleManifest; diagnostics: [] }
   | { ok: false; value: null; diagnostics: ContractDiagnostic[] };

@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const yazl = require('yazl');
 
 const { ModuleInstaller, validateModulePackage } = require('../bin/module-installer.js');
 const { ModuleRegistry } = require('../bin/module-registry.js');
@@ -27,6 +28,25 @@ function writeAggregatePackage(root: string, id = 'local.aggregate.test', versio
     entrypoints: { skills: ['skill/SKILL.md'], piExtensions: ['extension/index.js'] },
     contributes: { assets: [{ id: 'data:test', kind: 'data', path: 'data' }, { id: 'knowledge:test', kind: 'knowledge', path: 'knowledge', integrityFile: 'knowledge/SHA256SUMS.txt' }] },
   }));
+}
+
+function archivePackageEntries(id: string, version: string, name = 'Archive test') {
+  return [
+    { path: `${id}/${version}/manifest.json`, content: JSON.stringify({ manifestVersion: 2, id, name, version, type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['skill/SKILL.md'] } }) },
+    { path: `${id}/${version}/skill/SKILL.md`, content: `# ${name}` },
+  ];
+}
+
+function writeArchive(filePath: string, entries: Array<{ path: string; content: string }>) {
+  return new Promise<void>((resolve, reject) => {
+    const archive = new yazl.ZipFile();
+    for (const entry of entries) archive.addBuffer(Buffer.from(entry.content), entry.path);
+    const output = fs.createWriteStream(filePath);
+    output.on('close', resolve);
+    output.on('error', reject);
+    archive.outputStream.on('error', reject).pipe(output);
+    archive.end();
+  });
 }
 
 test('an aggregate Module installs Skill, extension, data and knowledge into a versioned package root', (t: any) => {
@@ -102,4 +122,40 @@ test('catalog exposes every installed version and selections resolve exactly', (
   assert.match(selected[0].manifestPath, /1\.0\.0\/manifest\.json$/);
   assert.match(installer.sources()[0].manifestPath, /2\.0\.0\/manifest\.json$/);
   assert.throws(() => installer.sourcesForSelections([{ id: 'local.catalog', version: '3.0.0' }]), /not installed/);
+});
+
+test('ZIP archives are previewed before selected Module packages are installed', async (t: any) => {
+  const root = temp(t, 'transportx-module-archive-');
+  const managed = path.join(root, 'managed');
+  const archive = path.join(root, 'modules.zip');
+  await writeArchive(archive, [
+    ...archivePackageEntries('local.archive.first', '1.0.0', 'First archive module'),
+    ...archivePackageEntries('local.archive.second', '2.0.0', 'Second archive module'),
+    ...archivePackageEntries('local.archive.conflict', '1.0.0', 'Conflicting archive module'),
+    { path: '__MACOSX/._local.archive.first', content: 'finder metadata' },
+  ]);
+  const installer = new ModuleInstaller(managed);
+  const preview = await installer.inspectArchive(archive, new Set(['local.archive.conflict']));
+  assert.equal(preview.modules.length, 3);
+  assert.equal(preview.modules.find((module: any) => module.id === 'local.archive.first').status, 'ready');
+  assert.equal(preview.modules.find((module: any) => module.id === 'local.archive.conflict').status, 'conflict');
+  const installed = await installer.installArchive(preview.importId, [{ id: 'local.archive.second', version: '2.0.0' }]);
+  assert.deepEqual(installed.map((module: any) => module.id), ['local.archive.second']);
+  assert.equal(fs.existsSync(path.join(managed, 'local.archive.second', '2.0.0', 'skill', 'SKILL.md')), true);
+  assert.equal(fs.existsSync(path.join(managed, 'local.archive.first')), false);
+  assert.equal(fs.readdirSync(path.join(managed, '.imports')).length, 0);
+
+  const repeated = await installer.inspectArchive(archive);
+  assert.equal(repeated.modules.find((module: any) => module.id === 'local.archive.second').status, 'installed');
+});
+
+test('ZIP preview rejects invalid package paths before installation', async (t: any) => {
+  const root = temp(t, 'transportx-module-archive-invalid-');
+  const archive = path.join(root, 'invalid.zip');
+  await writeArchive(archive, [
+    { path: 'local.archive.path/1.0.0/manifest.json', content: JSON.stringify({ manifestVersion: 2, id: 'local.archive.other', name: 'Wrong path', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [] }) },
+  ]);
+  const preview = await new ModuleInstaller(path.join(root, 'managed')).inspectArchive(archive);
+  assert.equal(preview.modules[0].status, 'invalid');
+  assert.match(preview.modules[0].message, /Archive path/);
 });

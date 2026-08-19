@@ -62,6 +62,8 @@ export type RpcCommand = {
   name?: string;
   enabled?: boolean;
   sourcePath?: string;
+  importId?: string;
+  selections?: Array<{ id?: string; version?: string }>;
   kind?: string;
   moduleId?: string;
   [key: string]: unknown;

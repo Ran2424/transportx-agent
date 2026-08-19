@@ -455,6 +455,23 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .model-badges i { min-height: 21px; padding: 0 6px; display: inline-flex; align-items: center; border: 1px solid var(--border-default); border-radius: 4px; color: var(--text-secondary); background: var(--surface-raised); font: 10px/1 var(--tx-font-mono); font-style: normal; white-space: nowrap; }
 .settings-model-restart-note { margin: 0; padding: 12px 18px 16px; border-top: 1px solid var(--border-default); color: var(--text-tertiary); font-size: 11px; line-height: 1.55; }
 .module-installer { display: grid; grid-template-columns: minmax(260px, 1fr) auto auto; gap: 7px; margin-bottom: 8px; }
+.module-archive-dropzone { min-height: 76px; margin-bottom: 10px; display: grid; place-items: center; align-content: center; gap: 3px; border: 1px dashed var(--border-strong); border-radius: var(--tx-radius-md); color: var(--text-secondary); background: var(--surface-default); cursor: pointer; text-align: center; }
+.module-archive-dropzone:hover, .module-archive-dropzone:focus-visible { border-color: var(--selection-border); background: var(--surface-hover); outline: 0; }
+.module-archive-dropzone strong { color: var(--text-primary); font-size: 12px; font-weight: 600; }
+.module-archive-dropzone span { color: var(--text-tertiary); font-size: 11px; }
+.module-archive-dialog { width: min(620px, calc(100vw - 32px)); }
+.module-archive-summary, .module-archive-trust { margin: 0; color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.module-archive-trust { margin-top: 12px; color: var(--text-tertiary); }
+.module-archive-list { margin-top: 12px; border-top: 1px solid var(--border-default); }
+.module-archive-row { min-height: 64px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-default); cursor: pointer; }
+.module-archive-row input { margin: 0; accent-color: var(--interactive-primary-bg); }
+.module-archive-row > span { min-width: 0; }
+.module-archive-row strong, .module-archive-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.module-archive-row strong { color: var(--text-primary); font-size: 12px; }
+.module-archive-row small { margin-top: 3px; color: var(--text-tertiary); font-size: 11px; }
+.module-archive-row em { color: var(--status-success); font-size: 11px; font-style: normal; white-space: nowrap; }
+.module-archive-row[data-state="installed"] em { color: var(--text-tertiary); }
+.module-archive-row[data-state="conflict"] em, .module-archive-row[data-state="invalid"] em { color: var(--status-danger); }
 .module-installer select, .module-installer input { min-width: 0; min-height: 36px; padding: 0 9px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-primary); background: var(--surface-default); font-size: 11px; outline: none; }
 .module-installer select:focus, .module-installer input:focus { border-color: var(--selection-border); box-shadow: 0 0 0 2px var(--focus-ring); }
 .module-installer-help { margin: 0 0 12px; color: var(--text-tertiary); font-size: 11px; line-height: 1.6; }
