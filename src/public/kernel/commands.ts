@@ -9,6 +9,7 @@ import type { LiveSession, ModelRecord, SessionAttachment, SessionAttachmentSour
 import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
+import type { ModuleArchiveInspection } from '../../contracts/module.ts';
 
 export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
@@ -178,6 +179,9 @@ export type PlatformCommands = {
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
   getOverview(): Promise<PlatformOverview>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
+  inspectModuleArchive(sourcePath: string): Promise<ModuleArchiveInspection>;
+  installModuleArchive(importId: string, selections: Array<{ id: string; version: string }>): Promise<PlatformOverview>;
+  discardModuleArchive(importId: string): Promise<void>;
   uninstallModule(moduleId: string): Promise<PlatformOverview>;
   setModuleEnabled(moduleId: string, enabled: boolean): Promise<PlatformOverview>;
   migrateLegacyModules(): Promise<PlatformOverview>;
@@ -452,6 +456,20 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     async installModule(sourcePath) {
       const data = await rpcCommand(deps.http, { type: 'install_module', sourcePath });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
+    },
+
+    async inspectModuleArchive(sourcePath) {
+      const data = await rpcCommand(deps.http, { type: 'inspect_module_archive', sourcePath });
+      return (data as { data: { inspection: ModuleArchiveInspection } }).data.inspection;
+    },
+
+    async installModuleArchive(importId, selections) {
+      const data = await rpcCommand(deps.http, { type: 'install_module_archive', importId, selections });
+      return (data as { data: { overview: PlatformOverview } }).data.overview;
+    },
+
+    async discardModuleArchive(importId) {
+      await rpcCommand(deps.http, { type: 'discard_module_archive', importId });
     },
 
     async uninstallModule(moduleId) {

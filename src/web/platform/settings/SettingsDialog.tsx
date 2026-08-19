@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
 import type { ModelProviderAccess, PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
@@ -6,10 +6,12 @@ import { appKernel } from '../../app/composition-root';
 import { Icon, type IconName } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { ConfirmationDialog } from '../../components/ui/confirmation-dialog';
+import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { LocalePreference } from '../../i18n';
 import i18n from '../../i18n';
 import { formatContextWindow } from '../../lib/formatting';
+import type { ModuleArchiveInspection } from '../../../contracts/module';
 
 export const themes = [
   { id: 'light', label: 'Light' },
@@ -86,6 +88,9 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   const [modelProviders, setModelProviders] = useState<ModelProviderAccess[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [moduleSource, setModuleSource] = useState('');
+  const [archiveInspection, setArchiveInspection] = useState<ModuleArchiveInspection | null>(null);
+  const [selectedArchiveModules, setSelectedArchiveModules] = useState<string[]>([]);
+  const archiveInput = useRef<HTMLInputElement>(null);
   const [swatches, setSwatches] = useState<Record<ThemeId, string[]> | null>(null);
   const [modelQuery, setModelQuery] = useState('');
   const [modelCapability, setModelCapability] = useState<'all' | 'reasoning' | 'images'>('all');
@@ -153,6 +158,57 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     } finally {
       setBusy('');
     }
+  }
+
+  async function inspectModuleArchive(file: File) {
+    const desktop = window as Window & { transportxDesktop?: { filePath(file: File): string } };
+    const sourcePath = desktop.transportxDesktop?.filePath(file);
+    if (!sourcePath) {
+      setError(t('settings.error.moduleArchiveDesktop'));
+      return;
+    }
+    setBusy('module-archive-inspect');
+    setError('');
+    try {
+      const inspection = await kernel.commands.platform.inspectModuleArchive(sourcePath);
+      setArchiveInspection(inspection);
+      setSelectedArchiveModules(inspection.modules.filter((module) => module.status === 'ready').map((module) => `${module.id}@${module.version}`));
+    } catch (cause) {
+      setError((cause as { message?: string })?.message || t('settings.error.inspectModuleArchive'));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function installModuleArchive() {
+    if (!archiveInspection || !selectedArchiveModules.length) return;
+    setBusy('module-archive-install');
+    setError('');
+    try {
+      const selections = selectedArchiveModules.map((key) => {
+        const separator = key.lastIndexOf('@');
+        return { id: key.slice(0, separator), version: key.slice(separator + 1) };
+      });
+      setOverview(await kernel.commands.platform.installModuleArchive(archiveInspection.importId, selections));
+      setArchiveInspection(null);
+      setSelectedArchiveModules([]);
+    } catch (cause) {
+      setError((cause as { message?: string })?.message || t('settings.error.installModuleArchive'));
+      setArchiveInspection(null);
+      setSelectedArchiveModules([]);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function toggleArchiveModule(key: string) {
+    setSelectedArchiveModules((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+  }
+
+  function dismissModuleArchive() {
+    if (archiveInspection) void kernel.commands.platform.discardModuleArchive(archiveInspection.importId);
+    setArchiveInspection(null);
+    setSelectedArchiveModules([]);
   }
 
   async function uninstallModule(module: PlatformModule) {
@@ -325,6 +381,11 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
         </section>
         <section className="settings-section">
           <h2>{t('settings.moduleSettings')}</h2>
+          <input ref={archiveInput} className="sr-only" type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void inspectModuleArchive(file); }} />
+          <div className="module-archive-dropzone" role="button" tabIndex={0} onClick={() => archiveInput.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); archiveInput.current?.click(); } }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files.item(0); if (file) void inspectModuleArchive(file); }}>
+            <strong>{busy === 'module-archive-inspect' ? t('settings.moduleArchive.inspecting') : t('settings.moduleArchive.drop')}</strong>
+            <span>{t('settings.moduleArchive.browse')}</span>
+          </div>
           <div className="module-installer">
             <input aria-label={t('settings.modulePath')} value={moduleSource} onChange={(event) => setModuleSource(event.target.value)} placeholder={t('settings.modulePathPlaceholder')} />
             <Button type="button" variant="outline" disabled={!moduleSource.trim() || busy === 'module-install'} onClick={installModule}>{busy === 'module-install' ? t('settings.installing') : t('settings.install')}</Button>
@@ -370,6 +431,23 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
         </div>
       </main>
       <ConfirmationDialog open={!!disconnectTarget} onOpenChange={(open) => { if (!open) setDisconnectTarget(null); }} title={t('settings.disconnectProvider')} description={disconnectTarget ? t('settings.confirm.disconnectProvider', { name: disconnectTarget.name }) : ''} confirmLabel={t('settings.disconnectProvider')} onConfirm={() => void disconnectModelProvider()} />
+      <Dialog open={!!archiveInspection} onOpenChange={(open) => { if (!open && busy !== 'module-archive-install') dismissModuleArchive(); }} title={t('settings.moduleArchive.previewTitle')} className="module-archive-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={busy === 'module-archive-install'}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!selectedArchiveModules.length || busy === 'module-archive-install'} onClick={() => void installModuleArchive()}>{busy === 'module-archive-install' ? t('settings.installing') : t('settings.moduleArchive.installSelected', { count: selectedArchiveModules.length })}</Button></>}>
+        {archiveInspection ? <>
+          <p className="module-archive-summary">{t('settings.moduleArchive.previewSummary', { name: archiveInspection.sourceName, count: archiveInspection.modules.length, size: `${Math.ceil(archiveInspection.uncompressedBytes / 1024 / 1024)} MB` })}</p>
+          <div className="module-archive-list">
+            {archiveInspection.modules.map((module) => {
+              const key = `${module.id}@${module.version}`;
+              const selectable = module.status === 'ready';
+              return <label key={key} className="module-archive-row" data-state={module.status}>
+                <input type="checkbox" checked={selectedArchiveModules.includes(key)} disabled={!selectable || busy === 'module-archive-install'} onChange={() => toggleArchiveModule(key)} />
+                <span><strong>{module.name}</strong><small>{module.version} · {module.id}</small>{module.message ? <small>{module.message}</small> : <small>{module.skills ? `${module.skills} Skill` : ''}{module.skills && module.extensions ? ' · ' : ''}{module.extensions ? `${module.extensions} Extension` : ''}{module.assets ? `${module.skills || module.extensions ? ' · ' : ''}${module.assets} Asset` : ''}</small>}</span>
+                <em>{t(`settings.moduleArchive.status.${module.status}`)}</em>
+              </label>;
+            })}
+          </div>
+          <p className="module-archive-trust">{t('settings.moduleArchive.trust')}</p>
+        </> : null}
+      </Dialog>
     </section>
   );
 }

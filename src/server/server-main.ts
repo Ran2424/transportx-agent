@@ -241,6 +241,31 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
       return failure(errorMessage(error));
     }
   }
+  if (command.type === 'inspect_module_archive') {
+    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
+    try {
+      const reservedModuleIds = new Set([...MODULE_REGISTRY.modules.values()].filter((module) => module.origin !== 'installed').map((module) => module.manifest.id));
+      const inspection = await MODULE_INSTALLER.inspectArchive(String(command.sourcePath || ''), reservedModuleIds);
+      return success({ inspection });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'install_module_archive') {
+    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
+    try {
+      const selections = Array.isArray(command.selections)
+        ? command.selections.filter((selection): selection is { id: string; version: string } => !!selection && typeof selection.id === 'string' && typeof selection.version === 'string')
+        : [];
+      const installed = await MODULE_INSTALLER.installArchive(String(command.importId || ''), selections);
+      reloadModules();
+      for (const module of installed) setModuleEnabled(module.id, true);
+      return success({ installed, overview: currentPlatformOverview() });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'discard_module_archive') {
+    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
+    MODULE_INSTALLER.discardArchive(String(command.importId || ''));
+    return success();
+  }
   if (command.type === 'uninstall_module') {
     if (!DESKTOP_MODE) return failure('Module uninstallation is only available in the desktop app');
     try {
