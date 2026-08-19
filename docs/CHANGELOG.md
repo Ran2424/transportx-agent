@@ -7,7 +7,7 @@
 ## v3.1.0 — 模块 ZIP 快速安装
 
 - 日期：2026-08-19
-- GitHub 操作：待通过 PR 合并至 `main`。
+- GitHub 操作：PR #16 已合并至 `main`（merge commit `920bd11`）。
 
 主要修改：
 
