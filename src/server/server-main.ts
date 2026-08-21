@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
 import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
-import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
+import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, invalidateModelListCache, _setExecFileForTest } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, _setSpawnPiForTest } from './sessions.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleVideoResourceRoute } from './video-resources.js';
@@ -25,7 +25,7 @@ import { createSessionHistoryHandlers } from './session-history-handler.js';
 import { createStaticHandler } from './static-handler.js';
 import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
-import { addPiModel } from './pi-model-config.js';
+import { addPiModel, deletePiModel, deletePiModelProvider, updatePiModel } from './pi-model-config.js';
 import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders } from './pi-model-access.js';
 import { platformOverview } from './platform-overview.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, buildAttachmentContext, attachmentFilePath } from './session-attachments.js';
@@ -34,6 +34,7 @@ import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
 import { VideoService } from './video-service.js';
 import { verifyChecksumFile, within } from './asset-integrity.js';
+import { writeJson as json } from './http/response.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -85,8 +86,6 @@ function maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: 
 
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 function errorStatus(error: unknown) { return error && typeof error === 'object' && 'status' in error && typeof (error as StatusError).status === 'number' ? (error as StatusError).status! : 400; }
-function json(res: ServerResponse, status: number, data: unknown, extraHeaders: Record<string, string> = {}) { res.writeHead(status, { 'Content-Type': 'application/json', ...extraHeaders }); res.end(JSON.stringify(data)); }
-
 function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
   if (parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME]) res.setHeader('Set-Cookie', buildSessionCookie('', { secure: isForwardedHttps(req), clear: true }));
   res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Tau"', 'Content-Type': 'application/json' });
@@ -205,22 +204,43 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   if (command.type === 'connect_model_provider') {
     try {
       const provider = await connectPiModelProvider(String(command.provider || ''), String(command.apiKey || ''), PI_AGENT_DIR);
-      _clearModelListCacheForTest();
+      invalidateModelListCache();
       return success({ provider });
     } catch (error) { return failure(errorMessage(error)); }
   }
   if (command.type === 'disconnect_model_provider') {
     try {
       await disconnectPiModelProvider(String(command.provider || ''), PI_AGENT_DIR);
-      _clearModelListCacheForTest();
+      invalidateModelListCache();
       return success();
     } catch (error) { return failure(errorMessage(error)); }
   }
   if (command.type === 'add_model') {
     try {
       const model = await addPiModel(command as Omit<Partial<import('./pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, PI_AGENT_DIR);
-      _clearModelListCacheForTest();
+      invalidateModelListCache();
       return success({ model });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'update_model') {
+    try {
+      const model = await updatePiModel(command as { provider: string; modelId: string; name?: string; contextWindow?: number; reasoning?: boolean; images?: boolean }, PI_AGENT_DIR);
+      invalidateModelListCache();
+      return success({ model });
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'delete_model') {
+    try {
+      await deletePiModel(String(command.provider || ''), String(command.modelId || ''), PI_AGENT_DIR);
+      invalidateModelListCache();
+      return success();
+    } catch (error) { return failure(errorMessage(error)); }
+  }
+  if (command.type === 'delete_model_provider') {
+    try {
+      await deletePiModelProvider(String(command.provider || ''), PI_AGENT_DIR);
+      invalidateModelListCache();
+      return success();
     } catch (error) { return failure(errorMessage(error)); }
   }
   if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
@@ -474,4 +494,4 @@ function _setAuthForTest(enabled: boolean) { authEnabled = !!enabled; }
 function _setCredentialsForTest(user: string, pass: string) { TAU_SETTINGS.user = user; TAU_SETTINGS.pass = pass; }
 function _issueSessionTokenForTest(expiresAtSeconds?: number) { return issueSessionToken(expiresAtSeconds); }
 
-module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: within, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, _clearModelListCacheForTest };
+module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: within, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, invalidateModelListCache };

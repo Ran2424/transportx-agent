@@ -5,8 +5,7 @@ import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
-import { formatContextWindow, modelReference } from '../../lib/formatting';
-import i18n from '../../i18n';
+import { formatModelOption, modelReference } from '../../lib/formatting';
 
 const thinkingLevels = [
   ['off', 'model.thinking.off'],
@@ -16,15 +15,6 @@ const thinkingLevels = [
   ['high', 'model.thinking.high'],
   ['xhigh', 'model.thinking.xhigh'],
 ] as const;
-
-function normalizeModel(model: ModelRecord | string) {
-  const reference = modelReference(model);
-  if (typeof model === 'string') return { reference, label: reference, metadata: '' };
-  const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
-  const abilities = [model.thinking ? i18n.t('model.ability.thinking') : '', model.images ? i18n.t('model.ability.images') : ''].filter(Boolean).join(' · ');
-  const metadata = [context ? `${context} context` : '', abilities].filter(Boolean).join(' · ');
-  return { reference, label: reference, metadata };
-}
 
 export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: { open: boolean; onOpenChange(open: boolean): void; session: LiveSession | null; onAddModel(): void }) {
   const { t } = useTranslation();
@@ -78,7 +68,7 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
     }
   }
 
-  const normalized = models.map(normalizeModel).filter((item) => item.reference);
+  const normalized = models.map(formatModelOption).filter((item) => item.reference);
   if (model && !normalized.some((item) => item.reference === model)) normalized.unshift({ reference: model, label: model, metadata: t('model.current') });
   const modelOptions = normalized.map((item) => ({ value: item.reference, label: item.label, metadata: item.metadata }));
   const thinkingOptions = thinkingLevels.map(([value, label]) => ({ value, label: t(label) }));
