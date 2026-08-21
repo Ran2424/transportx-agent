@@ -14,6 +14,7 @@ import { projectTaskState } from '../../features/task/task-projection';
 import { formatContextWindow } from '../../lib/formatting';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
 import i18n from '../../i18n';
+import { AttachmentCards, attachmentPreviewUrl, formatBytes } from './conversation-attachments';
 import { renderConversationMarkdown } from './conversation-markdown';
 import { projectTools, type ToolData } from './tool-projection';
 import {
@@ -67,28 +68,6 @@ function copy(text: string) {
   document.execCommand('copy');
   textarea.remove();
   return Promise.resolve();
-}
-
-function attachmentPreviewUrl(sessionId: string, attachment: SessionAttachment) {
-  return `/api/file/preview?${new URLSearchParams({ sessionId, path: attachment.relativePath })}`;
-}
-
-function AttachmentCards({ sessionId, attachmentIds, attachments, compact = false }: { sessionId: string; attachmentIds?: string[]; attachments: Record<string, SessionAttachment>; compact?: boolean }) {
-  const items = (attachmentIds || []).map((id) => attachments[id]).filter((item): item is SessionAttachment => !!item);
-  if (!items.length) return null;
-  return <div className={`message-attachments${compact ? ' is-compact' : ''}`}>{items.map((attachment) => {
-    const presentation = filePresentation({ name: attachment.name, path: attachment.relativePath, isDirectory: false });
-    return <div className="message-attachment-card" key={attachment.id}>
-      {attachment.kind === 'image' ? <img src={attachmentPreviewUrl(sessionId, attachment)} alt={attachment.name} /> : <span className="message-attachment-icon"><Icon name={presentation.icon} /></span>}
-      <span><strong title={attachment.name}>{attachment.name}</strong><small>{presentation.label} · {formatBytes(attachment.size)}</small></span>
-    </div>;
-  })}</div>;
-}
-
-function formatBytes(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function focusCitationCard(event: MouseEvent<HTMLElement>) {
