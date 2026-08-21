@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process');
 const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
-import type { JsonRecord, LiveClient, ModelIdentity, PendingCommand, RpcCommand, RpcResponse } from './types.js';
+import type { JsonRecord, LiveClient, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
 import {
   APP_PATHS,
   DEFAULT_DOMAIN_ID,
@@ -26,6 +26,7 @@ import { piProcessEnv } from './pi-runtime.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { TimingMetricsStore } from './timing-metrics.js';
+import { PiRpcTransport } from './pi-rpc-transport.js';
 import { signalProcessTree } from './process-tree.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
@@ -221,7 +222,7 @@ export class PiRpcSession {
   sessionFile: string | null;
   sessionName: string | null;
   contextUsage: JsonRecord | null;
-  pending: Map<string, PendingCommand>;
+  transport: PiRpcTransport;
   stdoutBuffer: string;
   terminating: boolean;
   exitCode: number | null;
@@ -260,7 +261,7 @@ export class PiRpcSession {
     this.sessionFile = opts.sessionFile || null;
     this.sessionName = opts.sessionName || null;
     this.contextUsage = null;
-    this.pending = new Map();
+    this.transport = new PiRpcTransport();
     this.stdoutBuffer = '';
     this.terminating = false;
     this.exitCode = null;
@@ -437,45 +438,7 @@ export class PiRpcSession {
     if (!child || !child.stdin!.writable || this.terminating) {
       return Promise.reject(new Error('Pi RPC session is not running'));
     }
-    const id = command.id || `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const outbound = { ...command, id };
-    delete outbound.sessionId;
-    // Pi consumes extension UI replies without emitting a response envelope.
-    // Confirm delivery once the reply is written, rather than waiting for a
-    // response that its RPC protocol intentionally never sends.
-    if (outbound.type === 'extension_ui_response') {
-      return new Promise<RpcResponse>((resolve, reject) => {
-        try {
-          child.stdin!.write(JSON.stringify(outbound) + '\n', (err: Error | null | undefined) => {
-            if (err) reject(err);
-            else resolve({ type: 'response', command: outbound.type, success: true, id });
-          });
-        } catch (error) {
-          reject(error);
-        }
-      });
-    }
-    const timeoutMs = opts.timeoutMs ?? 60000;
-    return new Promise<RpcResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`RPC command timed out: ${outbound.type}`));
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, command: outbound.type });
-      try {
-        child.stdin!.write(JSON.stringify(outbound) + '\n', (err: Error | null | undefined) => {
-          if (err) {
-            clearTimeout(timer);
-            this.pending.delete(id);
-            reject(err);
-          }
-        });
-      } catch (e) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(e);
-      }
-    });
+    return this.transport.send(child.stdin!, command, opts);
   }
 
   handleStdout(chunk: string) {
@@ -498,15 +461,7 @@ export class PiRpcSession {
   }
 
   handleResponse(resp: PiRpcMessage) {
-    const id = resp.id;
-    if (id && this.pending.has(id)) {
-      const pending = this.pending.get(id);
-      if (pending) {
-        clearTimeout(pending.timer);
-        this.pending.delete(id);
-        pending.resolve(resp);
-      }
-    }
+    this.transport.resolve(resp);
     this.updateStateFromResponse(resp);
     this.manager.broadcast({ type: 'event', sessionId: this.id, event: resp });
   }
@@ -736,11 +691,7 @@ export class PiRpcSession {
   async terminate(reason = 'closed') {
     if (this.terminating) return;
     this.terminating = true;
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error(`Session terminated: ${reason}`));
-    }
-    this.pending.clear();
+    this.transport.rejectAll(new Error(`Session terminated: ${reason}`));
     if (!this.child || this.child.exitCode !== null) return;
     signalProcessTree(this.child, 'SIGTERM');
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -752,11 +703,7 @@ export class PiRpcSession {
   handleExit(code: number | null, signal: string | null, err?: { message?: string }) {
     if (this.exitCode !== null) return;
     this.exitCode = code;
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(err || new Error(`Pi process exited (${signal || code})`));
-    }
-    this.pending.clear();
+    this.transport.rejectAll(err || new Error(`Pi process exited (${signal || code})`));
     this.manager.removeExited(this.id, err?.message || `process_exit:${signal || code}`);
   }
 }
