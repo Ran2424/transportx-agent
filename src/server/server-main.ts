@@ -30,6 +30,7 @@ import type { RpcHandlerRegistry } from './rpc-handlers.js';
 import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
 import { createModuleRpcHandlers } from './rpc-handlers/module.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
+import { createNativeRpcHandlers } from './rpc-handlers/native.js';
 import { createSessionRpcHandlers } from './rpc-handlers/session.js';
 import { platformOverview } from './platform-overview.js';
 import { buildAttachmentContext } from '../contracts/attachments.js';
@@ -48,7 +49,6 @@ const citationService = new CitationService();
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
-const reliableCommandTypes = new Set(['prompt', 'steer', 'follow_up', 'abort', 'extension_ui_response']);
 const rpcHandlers: RpcHandlerRegistry = {
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
@@ -77,7 +77,16 @@ const rpcHandlers: RpcHandlerRegistry = {
     appendSessionName,
     updateLiveSessionName,
   }),
+  ...createNativeRpcHandlers<PiRpcSession>({
+    getLiveSession: (sessionId) => liveManager.get(sessionId),
+    resolveAttachments: resolveSessionAttachments,
+    attachmentBase64: (cwd, attachment) => fs.readFileSync(attachmentFilePath(cwd, attachment)).toString('base64'),
+    buildAttachmentContext: (attachments) => buildAttachmentContext(attachments),
+    parseModel: parseModelSpecToModel,
+    errorMessage,
+  }),
 };
+const reliableCommandTypes = new Set(Object.entries(rpcHandlers).flatMap(([type, handler]) => handler.reliable ? [type] : []));
 
 type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
 
@@ -241,52 +250,7 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   if (!session) return failure('No active Tau session. 没有活跃的交通任务，请先创建或选择一个任务。');
   if (command.type === 'get_messages') return success({ entries: session.entries });
   if (command.type === 'live_session_snapshot_request') return { type: 'live_session_snapshot', sessionId: session.id, ...session.snapshot() };
-  const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'get_state', 'set_auto_compaction', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response']);
-  if (!native.has(command.type || '')) return failure(`Unknown command: ${command.type}`);
-  const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
-  if (command.type === 'extension_ui_response' && (typeof command.id !== 'string' || !session.pendingExtensionUiRequests.has(command.id))) {
-    return failure('Extension UI request is no longer pending');
-  }
-  if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
-  let trackedPromptAttachments: string[] | null = null;
-  try {
-    let rpcCommand = { ...command };
-    delete rpcCommand.clientCommandId;
-    if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
-      const rawIds = command.attachmentIds;
-      const attachmentIds = rawIds === undefined ? [] : Array.isArray(rawIds) ? rawIds.filter((id): id is string => typeof id === 'string') : null;
-      if (!attachmentIds) return failure('attachmentIds must be an array');
-      const attachments = resolveSessionAttachments(session.cwd, attachmentIds);
-      const message = typeof command.message === 'string' ? command.message : '';
-      const context = buildAttachmentContext(attachments);
-      const imageInputs = session.model && ((session.model as Record<string, unknown>).images === true || (Array.isArray((session.model as Record<string, unknown>).input) && ((session.model as Record<string, unknown>).input as unknown[]).includes('image')))
-        ? attachments.filter((attachment) => attachment.kind === 'image').map((attachment) => ({ type: 'image', data: fs.readFileSync(attachmentFilePath(session.cwd, attachment)).toString('base64'), mimeType: attachment.mimeType }))
-        : [];
-      rpcCommand = { ...command, message: `${message}${context}`, ...(imageInputs.length ? { images: imageInputs } : {}) } as unknown as RpcCommand;
-      delete rpcCommand.attachmentIds;
-    }
-    if (command.type === 'set_model' && (!command.provider || !command.modelId)) {
-      const parsed = parseModelSpecToModel(command.model);
-      if (!parsed.model?.provider || !parsed.model.id) return failure('模型格式无效，请使用 provider/model');
-      rpcCommand = { ...command, provider: parsed.model.provider, modelId: parsed.model.id };
-    }
-    if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
-      trackedPromptAttachments = Array.isArray(command.attachmentIds) ? command.attachmentIds.filter((id): id is string => typeof id === 'string') : [];
-      session.registerPromptAttachments(trackedPromptAttachments);
-    }
-    const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 300000 : 60000 });
-    if (command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
-    if (command.type === 'set_auto_compaction' && response.success !== false) {
-      session.autoCompactionEnabled = command.enabled === true;
-      session.manager.broadcastUpdated(session.id);
-    }
-    if (response.success === false && previousLevel !== null) session.thinkingLevel = previousLevel;
-    return { ...response, success: response.success !== false };
-  } catch (error) {
-    if (previousLevel !== null) session.thinkingLevel = previousLevel;
-    if (trackedPromptAttachments) session.discardPromptAttachments(trackedPromptAttachments);
-    return failure(errorMessage(error));
-  }
+  return failure(`Unknown command: ${command.type}`);
 }
 
 async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {

@@ -6,4 +6,4 @@ export type RpcReply = {
 };
 
 export type RpcHandler = (command: RpcCommand, reply: RpcReply) => RpcResponse | Promise<RpcResponse>;
-export type RpcHandlerRegistry = Record<string, { handle: RpcHandler; native?: boolean }>;
+export type RpcHandlerRegistry = Record<string, { handle: RpcHandler; native?: boolean; reliable?: boolean }>;
