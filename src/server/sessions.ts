@@ -15,9 +15,7 @@ import {
   SESSION_ASSEMBLER,
   sessionAssemblerForProfile,
   SESSIONS_DIR,
-  TAU_SETTINGS,
   PYTHON_COMMAND,
-  expandHome,
 } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import type { SessionService } from './session-service.js';
@@ -29,6 +27,7 @@ import { PiRpcTransport } from './pi-rpc-transport.js';
 import { signalProcessTree } from './process-tree.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
+import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
 import { inferSessionTitle, isGenericSessionName } from './session-title.js';
 import {
@@ -89,68 +88,12 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
   return latest;
 }
 
-export function makeId() {
-  return `tau_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
 let citationEndpoint = process.env.TAU_CITATION_ENDPOINT || '';
 export function setCitationEndpoint(value: string) { citationEndpoint = value; }
 let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
 export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
 let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
 export function setVideoEndpoint(value: string) { videoEndpoint = value; }
-
-function pad2(value: number) {
-  return String(value).padStart(2, '0');
-}
-
-function timestampForDirectory(date = new Date()) {
-  return [
-    date.getFullYear(),
-    pad2(date.getMonth() + 1),
-    pad2(date.getDate()),
-  ].join('') + '-' + [
-    pad2(date.getHours()),
-    pad2(date.getMinutes()),
-    pad2(date.getSeconds()),
-  ].join('');
-}
-
-function safeDirectoryName(name: unknown) {
-  const cleaned = String(name || 'untitled')
-    .normalize('NFKC')
-    .trim()
-    .replace(/[\\/:*?"<>|\x00-\x1F]+/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/^\.+$/, 'untitled')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return cleaned || 'untitled';
-}
-
-export function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
-  const explicitParent = Boolean(parentCwd);
-  const parent = path.resolve(expandHome(parentCwd || TAU_SETTINGS.projectsDir || path.join(process.cwd(), 'scenario')));
-  if (explicitParent) {
-    if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
-      throw new Error(`Directory not found: ${parent}`);
-    }
-  } else {
-    fs.mkdirSync(parent, { recursive: true });
-  }
-
-  const timestamp = timestampForDirectory();
-  const prefix = sessionName ? `${timestamp}-${safeDirectoryName(sessionName)}` : timestamp;
-  for (let i = 1; i <= 999; i++) {
-    const name = i === 1 ? prefix : `${prefix}-${i}`;
-    const candidate = path.join(parent, name);
-    if (fs.existsSync(candidate)) continue;
-    fs.mkdirSync(candidate);
-    return candidate;
-  }
-
-  throw new Error(`Cannot create unique task directory in ${parent}`);
-}
 
 export class PiRpcSession {
   manager: LiveSessionManager;
@@ -191,7 +134,7 @@ export class PiRpcSession {
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
-    this.id = opts.id || makeId();
+    this.id = opts.id || makeSessionId();
     this.cwd = opts.cwd;
     this.modelSpec = opts.modelSpec || '';
     this.child = null;
