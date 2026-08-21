@@ -54,10 +54,11 @@
 - 消息内的 Artifact 列表、Citation Footer 与证据悬浮预览迁为独立展示层，继续消费既有引用投影和受控资源 URL。
 - 用户/助手消息卡片、复制交互与 Thinking 状态迁为独立组件；Conversation Workspace 收口为 55 行的会话线程组合根。
 - 会话项目/系统提示词的加载、变量渲染与 Module 资源说明迁为独立 `session-prompt` 边界；Module System 测试改为直接验证该权威入口。
+- 会话工作目录创建、名称净化与会话 ID 生成迁为独立 `session-workspace` 边界，并补充唯一目录与显式父目录校验回归。
 
 验证：
 
-- `npm test` 通过（117/117）。
+- `npm test` 通过（149/149）。
 
 ## v3.1.0 — 模块 ZIP 快速安装
 
