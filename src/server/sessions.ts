@@ -7,26 +7,20 @@ const { WebSocket } = require('ws');
 import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
 import {
-  APP_PATHS,
   DEFAULT_DOMAIN_ID,
   PI_COMMAND,
-  PI_COMMAND_ARGS,
-  PI_AGENT_DIR,
   SESSION_ASSEMBLER,
   sessionAssemblerForProfile,
-  SESSIONS_DIR,
-  PYTHON_COMMAND,
 } from './config.js';
 import { normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import type { SessionService } from './session-service.js';
-import { piProcessEnv } from './pi-runtime.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { PiRpcTransport } from './pi-rpc-transport.js';
 import { signalProcessTree } from './process-tree.js';
-import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
-import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
+import type { ResolvedSessionPlan } from './session-assembly.js';
+import { buildSessionPiLaunch } from './session-pi-launch.js';
 import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
@@ -191,43 +185,20 @@ export class PiRpcSession {
     if (!fs.existsSync(this.cwd) || !fs.statSync(this.cwd).isDirectory()) {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
-    const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
     if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
-    const extensionPaths = planExtensions(this.resolvedSessionPlan);
-    const skillPaths = planSkills(this.resolvedSessionPlan);
-    for (const extensionPath of extensionPaths) {
-      if (!fs.existsSync(extensionPath)) throw new Error(`Built-in extension not found: ${extensionPath}`);
-      args.push('--extension', extensionPath);
-    }
-    for (const skillPath of skillPaths) {
-      if (!fs.existsSync(skillPath)) throw new Error(`Built-in skill not found: ${skillPath}`);
-      args.push('--skill', skillPath);
-    }
-    args.push('--append-system-prompt', loadProjectPrompt(this.cwd, planPromptPath(this.resolvedSessionPlan), this.resolvedSessionPlan));
-    if (this.sessionFile) args.push('--session', this.sessionFile);
-    if (this.modelSpec) args.push('--model', this.modelSpec);
-    const spawnFn: SpawnFn = _spawnPiForTest || spawn;
-    const child = spawnFn(PI_COMMAND, args, {
+    const launch = buildSessionPiLaunch({
       cwd: this.cwd,
-      env: piProcessEnv({
-        PI_CODING_AGENT_DIR: PI_AGENT_DIR,
-        PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
-        TAU_DISABLED: '1',
-        TAU_PYTHON_COMMAND: PYTHON_COMMAND,
-        TAU_CITATION_ENDPOINT: citationEndpoint,
-        TAU_CITATION_SESSION_ID: this.id,
-        TAU_CITATION_TOKEN: this.serviceTokens.citation,
-        TAU_SPATIAL_ENDPOINT: spatialEndpoint,
-        TAU_SPATIAL_SESSION_ID: this.id,
-        TAU_SPATIAL_TOKEN: this.serviceTokens.spatial,
-        TAU_VIDEO_ENDPOINT: videoEndpoint,
-        TAU_VIDEO_SESSION_ID: this.id,
-        TAU_VIDEO_TOKEN: this.serviceTokens.video,
-        MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
-        PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
-        ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => [asset.id, asset.path]))) } : {}),
-        ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'data') ? { TRANSPORTX_DATA_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'data').map((asset) => [asset.id, asset.path]))) } : {}),
-      }),
+      sessionId: this.id,
+      sessionFile: this.sessionFile,
+      modelSpec: this.modelSpec,
+      resolvedSessionPlan: this.resolvedSessionPlan,
+      serviceTokens: this.serviceTokens,
+      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint },
+    });
+    const spawnFn: SpawnFn = _spawnPiForTest || spawn;
+    const child = spawnFn(PI_COMMAND, launch.args, {
+      cwd: this.cwd,
+      env: launch.env,
       detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
