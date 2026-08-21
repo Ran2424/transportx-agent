@@ -22,6 +22,7 @@
 - 附件上下文的生成与剥离迁入共享 contracts，Server 与浏览器会话投影统一使用同一标记协议。
 - 报告预览文本读取迁入 Kernel command port，`FilePreview` 不再直接请求业务资源。
 - 抽出纯 `SessionCapabilityTracker`，将 Bridge envelope、兼容性协商与诊断状态从 `PiRpcSession` 的进程运行时职责中分离。
+- 会话标题推断与通用名称判断迁入独立纯逻辑模块，运行时只保留命名状态与事件发布。
 
 验证：
 
