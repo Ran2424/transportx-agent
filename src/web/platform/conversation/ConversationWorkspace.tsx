@@ -19,6 +19,7 @@ import { ComposerCitationPicker, type CiteCandidate } from './composer-citation-
 import { renderConversationMarkdown } from './conversation-markdown';
 import { projectTools, type ToolData } from './tool-projection';
 import { compactCharacterCount, toolFilePath, toolIconName } from './tool-card-utils';
+import { compactToolArgs, imagePaths, TOOL_OUTPUT_PREVIEW_LIMIT, TOOL_TEXT_PREVIEW_LIMIT, truncateToolText } from './tool-card-formatting';
 import { ToolFilePreview } from './tool-file-preview';
 import {
   citationCopyText,
@@ -29,7 +30,6 @@ import {
   type ResolvedCitation,
 } from '../../features/citation/citation-projection';
 
-const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
 function copy(text: string) {
   if (navigator.clipboard) return navigator.clipboard.writeText(text);
   const textarea = document.createElement('textarea');
@@ -288,26 +288,6 @@ function toolLabel(name: string) {
   if (normalized.includes('browser') || normalized.startsWith('web_')) return i18n.t('conversation.tool.web');
   if (normalized.includes('image')) return i18n.t('conversation.tool.image');
   return i18n.t('conversation.tool.general');
-}
-
-function imagePaths(value: unknown) {
-  const text = formatToolResultText(value, i18n.language);
-  const paths = new Set<string>();
-  for (const match of text.matchAll(IMAGE_PATH_RE)) paths.add(match[1]);
-  return [...paths].slice(0, 3);
-}
-
-const TOOL_TEXT_PREVIEW_LIMIT = 4_000;
-const TOOL_OUTPUT_PREVIEW_LIMIT = 12_000;
-
-function truncateToolText(value: string, limit: number) {
-  if (value.length <= limit) return value;
-  const tailLength = Math.min(600, Math.floor(limit / 4));
-  return `${value.slice(0, limit - tailLength)}\n\n…\n\n${value.slice(-tailLength)}\n\n${i18n.t('conversation.tool.truncated', { count: value.length.toLocaleString() })}`;
-}
-
-function compactToolArgs(args: Record<string, unknown>) {
-  return Object.fromEntries(Object.entries(args).map(([key, value]) => [key, typeof value === 'string' ? truncateToolText(value, TOOL_TEXT_PREVIEW_LIMIT) : value]));
 }
 
 const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; sessionId: string }) {
