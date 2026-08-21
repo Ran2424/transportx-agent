@@ -29,6 +29,7 @@ import { TimingMetricsStore } from './timing-metrics.js';
 import { signalProcessTree } from './process-tree.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
+import { inferSessionTitle, isGenericSessionName } from './session-title.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
@@ -148,11 +149,6 @@ let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
 export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
 let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
 export function setVideoEndpoint(value: string) { videoEndpoint = value; }
-
-export function isGenericSessionName(name: unknown) {
-  const normalized = String(name || '').trim().toLowerCase();
-  return normalized === 'chat' || normalized === 'new chat' || normalized === 'untitled' || normalized === 'untitled chat' || normalized === 'session';
-}
 
 function pad2(value: number) {
   return String(value).padStart(2, '0');
@@ -708,14 +704,9 @@ export class PiRpcSession {
 
   maybeTitle() {
     if (this.titleSet || (this.sessionName && !isGenericSessionName(this.sessionName)) || this.userMessages.length < 1) return;
-    const msg = this.userMessages.find((m) => m.trim().length > 8) || this.userMessages[0];
-    if (!msg) return;
-    let title = msg.replace(/^(ok |okay |so |actually |hey |please |can you |could you |i want(ed)? to |i wanna |let'?s )/i, '').replace(/\n.*/s, '').trim();
-    const sentenceEnd = title.search(/[.!?]\s/);
-    if (sentenceEnd > 10 && sentenceEnd < 80) title = title.slice(0, sentenceEnd);
-    if (title.length > 60) title = title.slice(0, 57).replace(/\s+\S*$/, '') + '…';
-    title = title.charAt(0).toUpperCase() + title.slice(1);
-    this.sessionName = title || null;
+    const title = inferSessionTitle(this.userMessages);
+    if (!title) return;
+    this.sessionName = title;
     this.titleSet = true;
     this.manager.broadcast({ type: 'event', sessionId: this.id, event: { type: 'session_name', name: this.sessionName } });
   }
