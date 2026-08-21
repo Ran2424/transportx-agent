@@ -12,6 +12,7 @@ import type { LocalePreference } from '../../i18n';
 import i18n from '../../i18n';
 import { formatContextWindow } from '../../lib/formatting';
 import type { ModuleArchiveInspection } from '../../../contracts/module';
+import { ModelEditDialog } from '../model/ModelEditDialog';
 
 export const themes = [
   { id: 'light', label: 'Light' },
@@ -67,11 +68,13 @@ type SettingsPageProps = {
 function modelDetails(model: ModelRecord | string) {
   if (typeof model === 'string') {
     const slash = model.indexOf('/');
-    return { provider: slash > 0 ? model.slice(0, slash) : i18n.t('settings.model.unknownProvider'), name: slash > 0 ? model.slice(slash + 1) : model, context: '', reasoning: false, images: false };
+    return { raw: null, modelId: slash > 0 ? model.slice(slash + 1) : model, provider: slash > 0 ? model.slice(0, slash) : i18n.t('settings.model.unknownProvider'), name: slash > 0 ? model.slice(slash + 1) : model, context: '', reasoning: false, images: false };
   }
+  const modelId = model.id || model.model || model.name || '';
   const name = model.name || model.label || model.id || model.model || i18n.t('settings.model.unnamed');
-  const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
-  return { provider: model.provider || i18n.t('settings.model.unknownProvider'), name, context, reasoning: model.thinking === true || model.thinking === 'true', images: model.images === true || model.images === 'true' };
+  const contextValue = model.contextWindow || model.context || model.context_window;
+  const context = formatContextWindow(contextValue);
+  return { raw: model, modelId, provider: model.provider || i18n.t('settings.model.unknownProvider'), name, context, reasoning: model.thinking === true || model.thinking === 'true', images: model.images === true || model.images === 'true' };
 }
 
 export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, expandThinking, onExpandThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
@@ -96,6 +99,9 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   const [modelCapability, setModelCapability] = useState<'all' | 'reasoning' | 'images'>('all');
   const [providerMenu, setProviderMenu] = useState<string | null>(null);
   const [disconnectTarget, setDisconnectTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteProviderTarget, setDeleteProviderTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteModelTarget, setDeleteModelTarget] = useState<{ provider: string; modelId: string; name: string } | null>(null);
+  const [editModelTarget, setEditModelTarget] = useState<{ provider: string; model: ModelRecord } | null>(null);
 
   useEffect(() => {
     setSwatches(readThemeSwatches());
@@ -269,6 +275,40 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     }
   }
 
+  async function deleteModelProvider() {
+    const target = deleteProviderTarget;
+    setDeleteProviderTarget(null);
+    if (!target) return;
+    setBusy(`model-delete-provider:${target.id}`);
+    setError('');
+    try {
+      await kernel.commands.platform.deleteModelProvider(target.id);
+      const [nextModels, nextProviders] = await Promise.all([kernel.commands.platform.getAvailableModels(), kernel.commands.platform.getModelProviders()]);
+      setModels(nextModels);
+      setModelProviders(nextProviders);
+    } catch (cause) {
+      setError((cause as { message?: string })?.message || t('settings.error.deleteProvider'));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function deleteModel() {
+    const target = deleteModelTarget;
+    setDeleteModelTarget(null);
+    if (!target) return;
+    setBusy(`model-delete:${target.provider}/${target.modelId}`);
+    setError('');
+    try {
+      await kernel.commands.platform.deleteModel(target.provider, target.modelId);
+      setModels(await kernel.commands.platform.getAvailableModels());
+    } catch (cause) {
+      setError((cause as { message?: string })?.message || t('settings.error.deleteModel'));
+    } finally {
+      setBusy('');
+    }
+  }
+
   const activeSection = section;
   const navigation = settingsSections.map((item) => ({ ...item, label: t(item.labelKey), icon: item.icon as IconName }));
   const moduleLabels: Record<PlatformModule['type'], string> = { module: t('settings.module.package'), capability: t('settings.module.plugin'), domain: t('settings.module.domain') };
@@ -358,8 +398,8 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
           {modelsLoading ? <div className="settings-loading" aria-label={t('settings.loadingModels')}><span /></div> : connectedProviders.length ? <>
             <div className="model-access-toolbar"><label><Icon name="search" /><input value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder={t('settings.searchModelsPlaceholder')} aria-label={t('settings.searchModels')} /></label><select value={modelCapability} onChange={(event) => setModelCapability(event.target.value as typeof modelCapability)} aria-label={t('settings.filterModels')}><option value="all">{t('settings.filter.all')}</option><option value="reasoning">{t('settings.model.reasoning')}</option><option value="images">{t('settings.model.images')}</option></select></div>
             {filteredProviders.length ? <div className="model-provider-list">{filteredProviders.map((provider) => <article className="model-provider" key={provider.id}>
-              <header className="model-provider-heading"><span className="model-provider-identity"><strong>{provider.name}</strong><code>{provider.id}</code></span><span className="model-provider-meta"><i><b />{t('settings.providerConnected')}</i><small>{t('settings.modelCount', { count: provider.models.length })}</small>{provider.metadata?.credentialStored ? <button className="model-provider-more" type="button" aria-label={t('settings.providerActions')} aria-expanded={providerMenu === provider.id} onClick={() => setProviderMenu((current) => current === provider.id ? null : provider.id)}>•••</button> : null}{providerMenu === provider.id ? <span className="model-provider-menu"><button type="button" disabled={busy === `model-disconnect:${provider.id}`} onClick={() => { setProviderMenu(null); setDisconnectTarget({ id: provider.id, name: provider.name }); }}>{t('settings.disconnectProvider')}</button></span> : null}</span></header>
-              <div className="model-provider-content">{provider.models.map((model, index) => <div className="model-provider-row" key={`${provider.id}:${model.name}:${index}`}><strong>{model.name}</strong><span className="model-badges">{model.context ? <i>{model.context}</i> : null}{model.reasoning ? <i>{t('settings.model.reasoning')}</i> : null}{model.images ? <i>{t('settings.model.images')}</i> : null}</span></div>)}</div>
+              <header className="model-provider-heading"><span className="model-provider-identity"><strong>{provider.name}</strong><code>{provider.id}</code></span><span className="model-provider-meta"><i><b />{t('settings.providerConnected')}</i><small>{t('settings.modelCount', { count: provider.models.length })}</small>{provider.metadata?.custom || provider.metadata?.credentialStored ? <button className="model-provider-more" type="button" aria-label={t('settings.providerActions')} aria-expanded={providerMenu === provider.id} onClick={() => setProviderMenu((current) => current === provider.id ? null : provider.id)}>•••</button> : null}{providerMenu === provider.id ? <span className="model-provider-menu">{provider.metadata?.custom ? <button type="button" disabled={busy === `model-delete-provider:${provider.id}`} onClick={() => { setProviderMenu(null); setDeleteProviderTarget({ id: provider.id, name: provider.name }); }}>{t('settings.deleteProvider')}</button> : <button type="button" disabled={busy === `model-disconnect:${provider.id}`} onClick={() => { setProviderMenu(null); setDisconnectTarget({ id: provider.id, name: provider.name }); }}>{t('settings.disconnectProvider')}</button>}</span> : null}</span></header>
+              <div className="model-provider-content">{provider.models.map((model) => <div className="model-provider-row" key={`${provider.id}:${model.modelId}`}><span className="model-provider-model-identity"><strong>{model.name}</strong><code>{model.modelId}</code></span><span className="model-badges">{model.context ? <i>{model.context}</i> : null}{model.reasoning ? <i>{t('settings.model.reasoning')}</i> : null}{model.images ? <i>{t('settings.model.images')}</i> : null}<span className="model-row-actions">{model.raw ? <Button type="button" variant="quiet" onClick={() => setEditModelTarget({ provider: provider.id, model: model.raw! })}>{t('settings.editModelShort')}</Button> : null}{provider.metadata?.custom && model.raw ? <Button type="button" variant="quiet" disabled={busy === `model-delete:${provider.id}/${model.modelId}`} onClick={() => setDeleteModelTarget({ provider: provider.id, modelId: model.modelId, name: model.name })}>{t('settings.deleteModelShort')}</Button> : null}</span></span></div>)}</div>
             </article>)}</div> : <p className="settings-empty">{t('settings.noMatchingModels')}</p>}
           </> : <p className="settings-empty">{t('settings.noConnectedModels')}</p>}
           <p className="settings-model-restart-note">{t('settings.modelRestartNote')}</p>
@@ -431,6 +471,9 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
         </div>
       </main>
       <ConfirmationDialog open={!!disconnectTarget} onOpenChange={(open) => { if (!open) setDisconnectTarget(null); }} title={t('settings.disconnectProvider')} description={disconnectTarget ? t('settings.confirm.disconnectProvider', { name: disconnectTarget.name }) : ''} confirmLabel={t('settings.disconnectProvider')} onConfirm={() => void disconnectModelProvider()} />
+      <ConfirmationDialog open={!!deleteProviderTarget} onOpenChange={(open) => { if (!open) setDeleteProviderTarget(null); }} title={t('settings.deleteProvider')} description={deleteProviderTarget ? t('settings.confirm.deleteProvider', { name: deleteProviderTarget.name }) : ''} confirmLabel={t('settings.deleteProvider')} onConfirm={() => void deleteModelProvider()} />
+      <ConfirmationDialog open={!!deleteModelTarget} onOpenChange={(open) => { if (!open) setDeleteModelTarget(null); }} title={t('settings.deleteModel')} description={deleteModelTarget ? t('settings.confirm.deleteModel', { name: deleteModelTarget.name }) : ''} confirmLabel={t('settings.deleteModel')} onConfirm={() => void deleteModel()} />
+      <ModelEditDialog open={!!editModelTarget} onOpenChange={(open) => { if (!open) setEditModelTarget(null); }} provider={editModelTarget?.provider || ''} model={editModelTarget?.model || null} onSaved={() => { void kernel.commands.platform.getAvailableModels().then(setModels); }} />
       <Dialog open={!!archiveInspection} onOpenChange={(open) => { if (!open && busy !== 'module-archive-install') dismissModuleArchive(); }} title={t('settings.moduleArchive.previewTitle')} className="module-archive-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={busy === 'module-archive-install'}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!selectedArchiveModules.length || busy === 'module-archive-install'} onClick={() => void installModuleArchive()}>{busy === 'module-archive-install' ? t('settings.installing') : t('settings.moduleArchive.installSelected', { count: selectedArchiveModules.length })}</Button></>}>
         {archiveInspection ? <>
           <p className="module-archive-summary">{t('settings.moduleArchive.previewSummary', { name: archiveInspection.sourceName, count: archiveInspection.modules.length, size: `${Math.ceil(archiveInspection.uncompressedBytes / 1024 / 1024)} MB` })}</p>

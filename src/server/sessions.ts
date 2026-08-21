@@ -5,45 +5,39 @@ const { spawn } = require('node:child_process');
 const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
-import type { JsonRecord, LiveClient, ModelIdentity, PendingCommand, RpcCommand, RpcResponse } from './types.js';
+import type { JsonRecord, LiveClient, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
 import {
-  APP_PATHS,
   DEFAULT_DOMAIN_ID,
   PI_COMMAND,
-  PI_COMMAND_ARGS,
-  PI_AGENT_DIR,
-  PROJECT_SYSTEM_PROMPT_PATH,
   SESSION_ASSEMBLER,
   sessionAssemblerForProfile,
-  SESSIONS_DIR,
-  TAU_SETTINGS,
-  PYTHON_COMMAND,
-  expandHome,
 } from './config.js';
-import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
-import { piProcessEnv } from './pi-runtime.js';
+import { normalizeModel, parseModelSpecToModel } from './model-utils.js';
+import type { SessionService } from './session-service.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { TimingMetricsStore } from './timing-metrics.js';
+import { PiRpcTransport } from './pi-rpc-transport.js';
 import { signalProcessTree } from './process-tree.js';
-import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
+import type { ResolvedSessionPlan } from './session-assembly.js';
+import { buildSessionPiLaunch } from './session-pi-launch.js';
+import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
+import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
+import { SessionEventTiming } from './session-event-timing.js';
+import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
+import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
+import { inferSessionTitle, isGenericSessionName } from './session-title.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
-  acceptBridgeRevision,
   appError,
-  latestPiWebBridgeEnvelopeStructured,
-  matchCapabilities,
-  parsePiWebBridgeEnvelopeStructured,
   protocolError,
   parseCitationRegistry,
-  runtimeCapabilities,
   type CapabilityMismatchReason,
   type ContractDiagnostic,
-  type PiWebBridgeEnvelope,
-  type RuntimeCapabilities,
   type SessionProfileV1,
 } from '../contracts/index.js';
+import { stripAttachmentContext } from '../contracts/attachments.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
@@ -91,128 +85,12 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
   return latest;
 }
 
-function stripAttachmentContext(text: string) {
-  return text.replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
-}
-
-function moduleResourceGuide(plan: ResolvedSessionPlan | null) {
-  if (!plan) return '- 未解析 Module 会话计划；不能假定任何外部 Skill 或资产可用。';
-  const resolvedSkills = planSkills(plan);
-  const skills = resolvedSkills.length
-    ? resolvedSkills.map((skillPath) => `- Skill 根目录：\`${path.dirname(skillPath)}\`（入口：\`${skillPath}\`；脚本和参考文件均相对此目录）`).join('\n')
-    : '- 本会话没有加载 Skill。';
-  const assets = plan.assets.length
-    ? plan.assets.map((asset) => {
-      const environment = asset.kind === 'knowledge'
-        ? '；运行时目录映射：`TRANSPORTX_KNOWLEDGE_ASSETS_JSON`'
-        : asset.kind === 'data'
-          ? '；运行时目录映射：`TRANSPORTX_DATA_ASSETS_JSON`'
-          : '';
-      return `- ${asset.kind} 资产 \`${asset.id}\`：\`${asset.path}\`${environment}`;
-    }).join('\n')
-    : '- 本会话没有选中的 Data、Knowledge 或 Template 资产。';
-  return `### 已加载 Skill\n${skills}\n\n### 已选资产\n${assets}`;
-}
-
-const PROJECT_PROMPT_PLACEHOLDERS: Record<string, (cwd: string, plan: ResolvedSessionPlan | null) => string> = {
-  PROJECT_ROOT: () => APP_PATHS.appRoot,
-  TASK_WORKING_DIRECTORY: (cwd) => cwd,
-  PYTHON_COMMAND: () => PYTHON_COMMAND,
-  KNOWLEDGE_ROOT: (_cwd, plan) => plan?.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => `${asset.id}=${asset.path}`).join('\n') || '<not installed>',
-  DATA_ROOT: (_cwd, plan) => plan?.assets.filter((asset) => asset.kind === 'data').map((asset) => `${asset.id}=${asset.path}`).join('\n') || '<not installed>',
-  MODULE_RESOURCE_GUIDE: (_cwd, plan) => moduleResourceGuide(plan),
-};
-
-export function renderProjectPrompt(template: string, cwd: string, plan: ResolvedSessionPlan | null = null) {
-  let rendered = template;
-  for (const [name, resolveValue] of Object.entries(PROJECT_PROMPT_PLACEHOLDERS)) {
-    rendered = rendered.replaceAll(`{{${name}}}`, resolveValue(cwd, plan));
-  }
-  const unresolved = Array.from(new Set(rendered.match(/\{\{[A-Z0-9_]+\}\}/g) || []));
-  if (unresolved.length) throw new Error(`Unknown project prompt placeholders: ${unresolved.join(', ')}`);
-  return rendered.trim();
-}
-
-function loadProjectPrompt(cwd: string, promptPath: string | undefined, plan: ResolvedSessionPlan | null = null) {
-  if (!promptPath) throw new Error('Resolved session plan has no domain prompt.');
-  if (!fs.existsSync(promptPath)) throw new Error(`Project prompt not found: ${promptPath}`);
-  return renderProjectPrompt(fs.readFileSync(promptPath, 'utf8'), cwd, plan);
-}
-
-function loadSystemPrompt() {
-  if (!fs.existsSync(PROJECT_SYSTEM_PROMPT_PATH)) throw new Error(`System prompt not found: ${PROJECT_SYSTEM_PROMPT_PATH}`);
-  const prompt = fs.readFileSync(PROJECT_SYSTEM_PROMPT_PATH, 'utf8').trim();
-  if (!prompt) throw new Error(`System prompt is empty: ${PROJECT_SYSTEM_PROMPT_PATH}`);
-  return prompt;
-}
-
-export function makeId() {
-  return `tau_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
 let citationEndpoint = process.env.TAU_CITATION_ENDPOINT || '';
 export function setCitationEndpoint(value: string) { citationEndpoint = value; }
 let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
 export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
 let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
 export function setVideoEndpoint(value: string) { videoEndpoint = value; }
-
-export function isGenericSessionName(name: unknown) {
-  const normalized = String(name || '').trim().toLowerCase();
-  return normalized === 'chat' || normalized === 'new chat' || normalized === 'untitled' || normalized === 'untitled chat' || normalized === 'session';
-}
-
-function pad2(value: number) {
-  return String(value).padStart(2, '0');
-}
-
-function timestampForDirectory(date = new Date()) {
-  return [
-    date.getFullYear(),
-    pad2(date.getMonth() + 1),
-    pad2(date.getDate()),
-  ].join('') + '-' + [
-    pad2(date.getHours()),
-    pad2(date.getMinutes()),
-    pad2(date.getSeconds()),
-  ].join('');
-}
-
-function safeDirectoryName(name: unknown) {
-  const cleaned = String(name || 'untitled')
-    .normalize('NFKC')
-    .trim()
-    .replace(/[\\/:*?"<>|\x00-\x1F]+/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/^\.+$/, 'untitled')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return cleaned || 'untitled';
-}
-
-export function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
-  const explicitParent = Boolean(parentCwd);
-  const parent = path.resolve(expandHome(parentCwd || TAU_SETTINGS.projectsDir || path.join(process.cwd(), 'scenario')));
-  if (explicitParent) {
-    if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
-      throw new Error(`Directory not found: ${parent}`);
-    }
-  } else {
-    fs.mkdirSync(parent, { recursive: true });
-  }
-
-  const timestamp = timestampForDirectory();
-  const prefix = sessionName ? `${timestamp}-${safeDirectoryName(sessionName)}` : timestamp;
-  for (let i = 1; i <= 999; i++) {
-    const name = i === 1 ? prefix : `${prefix}-${i}`;
-    const candidate = path.join(parent, name);
-    if (fs.existsSync(candidate)) continue;
-    fs.mkdirSync(candidate);
-    return candidate;
-  }
-
-  throw new Error(`Cannot create unique task directory in ${parent}`);
-}
 
 export class PiRpcSession {
   manager: LiveSessionManager;
@@ -225,38 +103,33 @@ export class PiRpcSession {
   lastActiveAt: string;
   lastConversationAt: string;
   isStreaming: boolean;
+  isCompacting: boolean;
+  autoCompactionEnabled: boolean;
   projection: SessionProjection;
   model: ModelIdentity | null;
   thinkingLevel: string;
   sessionFile: string | null;
   sessionName: string | null;
   contextUsage: JsonRecord | null;
-  pending: Map<string, PendingCommand>;
+  transport: PiRpcTransport;
   stdoutBuffer: string;
   terminating: boolean;
   exitCode: number | null;
   titleSet: boolean;
   userMessages: string[];
-  capabilities: RuntimeCapabilities;
-  capabilityMismatches: CapabilityMismatchReason[];
   piVersion: string;
-  lastBridgeRevision: number | null;
-  contractDiagnostics: ContractDiagnostic[];
+  capabilityTracker: SessionCapabilityTracker;
   resolvedSessionPlan: ResolvedSessionPlan | null;
   pendingAttachmentRefs: string[][];
-  citationToken: string;
-  spatialToken: string;
-  videoToken: string;
+  serviceTokens: Record<SessionService, string>;
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
   timingMetrics: TimingMetricsStore;
-  assistantThinkingStartedAt: number | null;
-  assistantThinkingDurationMs: number | null;
-  toolStartedAt: Map<string, number>;
+  eventTiming: SessionEventTiming;
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
-    this.id = opts.id || makeId();
+    this.id = opts.id || makeSessionId();
     this.cwd = opts.cwd;
     this.modelSpec = opts.modelSpec || '';
     this.child = null;
@@ -264,6 +137,8 @@ export class PiRpcSession {
     this.createdAt = new Date().toISOString();
     this.lastActiveAt = this.createdAt;
     this.isStreaming = false;
+    this.isCompacting = false;
+    this.autoCompactionEnabled = true;
     this.timingMetrics = new TimingMetricsStore(this.cwd);
     this.projection = new SessionProjection(this.timingMetrics.enrichEntries(opts.entries || []), readAttachmentMessageRefs(this.cwd));
     this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
@@ -273,68 +148,33 @@ export class PiRpcSession {
     this.sessionFile = opts.sessionFile || null;
     this.sessionName = opts.sessionName || null;
     this.contextUsage = null;
-    this.pending = new Map();
+    this.transport = new PiRpcTransport();
     this.stdoutBuffer = '';
     this.terminating = false;
     this.exitCode = null;
     this.titleSet = false;
     this.userMessages = [];
     this.piVersion = opts.piVersion || PI_RUNTIME_MINIMUM;
-    this.lastBridgeRevision = null;
-    this.capabilities = runtimeCapabilities(this.piVersion);
-    this.capabilityMismatches = [];
-    this.contractDiagnostics = [];
+    this.capabilityTracker = new SessionCapabilityTracker(this.piVersion);
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.pendingAttachmentRefs = [];
-    this.citationToken = crypto.randomUUID();
-    this.spatialToken = crypto.randomUUID();
-    this.videoToken = crypto.randomUUID();
+    this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID() };
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.pendingExtensionUiRequests = new Map();
-    this.assistantThinkingStartedAt = null;
-    this.assistantThinkingDurationMs = null;
-    this.toolStartedAt = new Map();
+    this.eventTiming = new SessionEventTiming(this.timingMetrics);
     this.applyLatestBridgeEnvelope();
   }
 
   metadata() {
-    return {
-      id: this.id,
-      pid: this.pid,
-      cwd: this.cwd,
-      modelSpec: this.modelSpec,
-      model: this.model,
-      modelLabel: modelLabel(this.model, this.modelSpec),
-      thinkingLevel: this.thinkingLevel,
-      sessionFile: this.sessionFile,
-      sessionName: this.sessionName,
-      isStreaming: this.isStreaming,
-      createdAt: this.createdAt,
-      lastActiveAt: this.lastActiveAt,
-      lastConversationAt: this.lastConversationAt,
-      contextUsage: this.contextUsage,
-      pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()],
-      capabilities: {
-        ...this.capabilities,
-        ok: this.capabilityMismatches.length === 0 && this.contractDiagnostics.length === 0,
-        mismatches: this.capabilityMismatches,
-        diagnostics: this.contractDiagnostics,
-      },
-      resolvedSessionPlan: this.resolvedSessionPlan,
-    };
+    return sessionMetadata(this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
+  }
+
+  liveMetadata() {
+    return liveSessionMetadata(this, this.capabilityTracker.snapshot());
   }
 
   snapshot() {
-    return {
-      ...this.projection.snapshot(),
-      session: this.metadata(),
-      model: this.model,
-      thinkingLevel: this.thinkingLevel,
-      isStreaming: this.isStreaming,
-      sessionFile: this.sessionFile,
-      sessionName: this.sessionName,
-      contextUsage: this.contextUsage,
-    };
+    return sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
   }
 
   get entries() {
@@ -345,43 +185,20 @@ export class PiRpcSession {
     if (!fs.existsSync(this.cwd) || !fs.statSync(this.cwd).isDirectory()) {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
-    const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
     if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
-    const extensionPaths = planExtensions(this.resolvedSessionPlan);
-    const skillPaths = planSkills(this.resolvedSessionPlan);
-    for (const extensionPath of extensionPaths) {
-      if (!fs.existsSync(extensionPath)) throw new Error(`Built-in extension not found: ${extensionPath}`);
-      args.push('--extension', extensionPath);
-    }
-    for (const skillPath of skillPaths) {
-      if (!fs.existsSync(skillPath)) throw new Error(`Built-in skill not found: ${skillPath}`);
-      args.push('--skill', skillPath);
-    }
-    args.push('--append-system-prompt', loadProjectPrompt(this.cwd, planPromptPath(this.resolvedSessionPlan), this.resolvedSessionPlan));
-    if (this.sessionFile) args.push('--session', this.sessionFile);
-    if (this.modelSpec) args.push('--model', this.modelSpec);
-    const spawnFn: SpawnFn = _spawnPiForTest || spawn;
-    const child = spawnFn(PI_COMMAND, args, {
+    const launch = buildSessionPiLaunch({
       cwd: this.cwd,
-      env: piProcessEnv({
-        PI_CODING_AGENT_DIR: PI_AGENT_DIR,
-        PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
-        TAU_DISABLED: '1',
-        TAU_PYTHON_COMMAND: PYTHON_COMMAND,
-        TAU_CITATION_ENDPOINT: citationEndpoint,
-        TAU_CITATION_SESSION_ID: this.id,
-        TAU_CITATION_TOKEN: this.citationToken,
-        TAU_SPATIAL_ENDPOINT: spatialEndpoint,
-        TAU_SPATIAL_SESSION_ID: this.id,
-        TAU_SPATIAL_TOKEN: this.spatialToken,
-        TAU_VIDEO_ENDPOINT: videoEndpoint,
-        TAU_VIDEO_SESSION_ID: this.id,
-        TAU_VIDEO_TOKEN: this.videoToken,
-        MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
-        PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
-        ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => [asset.id, asset.path]))) } : {}),
-        ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'data') ? { TRANSPORTX_DATA_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'data').map((asset) => [asset.id, asset.path]))) } : {}),
-      }),
+      sessionId: this.id,
+      sessionFile: this.sessionFile,
+      modelSpec: this.modelSpec,
+      resolvedSessionPlan: this.resolvedSessionPlan,
+      serviceTokens: this.serviceTokens,
+      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint },
+    });
+    const spawnFn: SpawnFn = _spawnPiForTest || spawn;
+    const child = spawnFn(PI_COMMAND, launch.args, {
+      cwd: this.cwd,
+      env: launch.env,
       detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -440,45 +257,7 @@ export class PiRpcSession {
     if (!child || !child.stdin!.writable || this.terminating) {
       return Promise.reject(new Error('Pi RPC session is not running'));
     }
-    const id = command.id || `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const outbound = { ...command, id };
-    delete outbound.sessionId;
-    // Pi consumes extension UI replies without emitting a response envelope.
-    // Confirm delivery once the reply is written, rather than waiting for a
-    // response that its RPC protocol intentionally never sends.
-    if (outbound.type === 'extension_ui_response') {
-      return new Promise<RpcResponse>((resolve, reject) => {
-        try {
-          child.stdin!.write(JSON.stringify(outbound) + '\n', (err: Error | null | undefined) => {
-            if (err) reject(err);
-            else resolve({ type: 'response', command: outbound.type, success: true, id });
-          });
-        } catch (error) {
-          reject(error);
-        }
-      });
-    }
-    const timeoutMs = opts.timeoutMs ?? 60000;
-    return new Promise<RpcResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`RPC command timed out: ${outbound.type}`));
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, command: outbound.type });
-      try {
-        child.stdin!.write(JSON.stringify(outbound) + '\n', (err: Error | null | undefined) => {
-          if (err) {
-            clearTimeout(timer);
-            this.pending.delete(id);
-            reject(err);
-          }
-        });
-      } catch (e) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(e);
-      }
-    });
+    return this.transport.send(child.stdin!, command, opts);
   }
 
   handleStdout(chunk: string) {
@@ -501,15 +280,7 @@ export class PiRpcSession {
   }
 
   handleResponse(resp: PiRpcMessage) {
-    const id = resp.id;
-    if (id && this.pending.has(id)) {
-      const pending = this.pending.get(id);
-      if (pending) {
-        clearTimeout(pending.timer);
-        this.pending.delete(id);
-        pending.resolve(resp);
-      }
-    }
+    this.transport.resolve(resp);
     this.updateStateFromResponse(resp);
     this.manager.broadcast({ type: 'event', sessionId: this.id, event: resp });
   }
@@ -522,11 +293,16 @@ export class PiRpcSession {
       this.reconcileProjection();
     }
     if (data.sessionName) this.setSessionName(data.sessionName);
-    if (data.contextUsage) this.contextUsage = data.contextUsage;
+    if (data.contextUsage) {
+      this.contextUsage = mergeContextUsage(this.contextUsage, data.contextUsage);
+    }
     if (data.model) this.model = normalizeModel(data.model);
     if (data.thinkingLevel) this.thinkingLevel = data.thinkingLevel;
+    if (typeof data.isStreaming === 'boolean') this.isStreaming = data.isStreaming;
+    if (typeof data.isCompacting === 'boolean') this.isCompacting = data.isCompacting;
+    if (typeof data.autoCompactionEnabled === 'boolean') this.autoCompactionEnabled = data.autoCompactionEnabled;
     if (data.level) this.thinkingLevel = data.level;
-    if (data.tokens) this.contextUsage = { ...(this.contextUsage || {}), tokens: data.tokens };
+    if (data.tokens) this.contextUsage = withUsageTotals(this.contextUsage, data.tokens);
     if (command === 'set_model' || command === 'cycle_model') {
       if (data.model) this.model = normalizeModel(data.model);
       else if (data.provider && data.id) this.model = normalizeModel(data);
@@ -545,52 +321,20 @@ export class PiRpcSession {
         this.touch(true);
       }
     }
-    if (type === 'message_start' && event.message?.role === 'assistant') {
-      this.assistantThinkingStartedAt = now;
-      this.assistantThinkingDurationMs = null;
-    }
-    if (type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && this.assistantThinkingStartedAt !== null && this.assistantThinkingDurationMs === null) {
-      this.assistantThinkingDurationMs = Math.max(0, now - this.assistantThinkingStartedAt);
-    }
-    if (type === 'tool_execution_start' && typeof event.toolCallId === 'string' && event.toolCallId) {
-      this.toolStartedAt.set(event.toolCallId, now);
-      event.startedAt = now;
-    }
-    if (type === 'tool_execution_end' && typeof event.toolCallId === 'string' && event.toolCallId) {
-      const startedAt = this.toolStartedAt.get(event.toolCallId);
-      if (startedAt !== undefined) {
-        const durationMs = Math.max(0, now - startedAt);
-        event.startedAt = startedAt;
-        event.endedAt = now;
-        event.durationMs = durationMs;
-        this.timingMetrics.recordTool(event.toolCallId, startedAt, now, durationMs);
-        this.toolStartedAt.delete(event.toolCallId);
-      }
-    }
-    if (type === 'message_end' && event.message?.role === 'assistant') {
-      const startedAt = this.assistantThinkingStartedAt;
-      const hasThinking = Array.isArray(event.message.content) && event.message.content.some((block) => block.type === 'thinking');
-      if (startedAt !== null && hasThinking) {
-        const durationMs = this.assistantThinkingDurationMs ?? Math.max(0, now - startedAt);
-        event.message = this.timingMetrics.recordThinking(event.message, startedAt, startedAt + durationMs, durationMs);
-      }
-      this.assistantThinkingStartedAt = null;
-      this.assistantThinkingDurationMs = null;
-    }
-    if (type === 'message_end' && event.message?.role === 'toolResult') {
-      event.message = this.timingMetrics.enrichToolResult(event.message);
-    }
+    this.eventTiming.apply(event, now);
     if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
-    // agent_end is only a single low-level run. Keep the live session marked
-    // busy while Pi is about to retry; agent_settled is the final boundary.
-    if (type === 'agent_end' && event.willRetry !== true) {
-      this.isStreaming = false;
-      this.pendingExtensionUiRequests.clear();
+    if (type === 'compaction_start' || type === 'auto_compaction_start') this.isCompacting = true;
+    if (type === 'compaction_end' || type === 'auto_compaction_end') {
+      this.isCompacting = false;
+      const result = event.result && typeof event.result === 'object' ? event.result as JsonRecord : null;
+      this.contextUsage = contextUsageAfterCompaction(this.contextUsage, this.model?.contextWindow, result?.estimatedTokensAfter);
+      this.reconcileProjection();
     }
     if (type === 'agent_settled') {
       this.isStreaming = false;
       this.pendingExtensionUiRequests.clear();
+      this.send({ type: 'get_session_stats' }, { timeoutMs: 5000 }).catch(() => {});
     }
     if (event.contextUsage) this.contextUsage = event.contextUsage;
     if (event.sessionFile) this.sessionFile = event.sessionFile;
@@ -617,61 +361,33 @@ export class PiRpcSession {
     if (type === 'message_end' && event.message?.role === 'assistant') {
       if (event.message.usage) this.contextUsage = { ...(this.contextUsage || {}), usage: event.message.usage };
     }
-    if (type === 'agent_end') this.reconcileProjection();
+    if (type === 'agent_settled') this.reconcileProjection();
 
     this.manager.broadcast({ type: 'event', sessionId: this.id, event });
     this.manager.broadcastUpdated(this.id);
   }
 
   applyBridgePayload(value: unknown) {
-    const result = parsePiWebBridgeEnvelopeStructured(value);
-    if (!result.ok) {
-      this.contractDiagnostics = result.diagnostics;
-      this.manager.broadcastContractDiagnostic(this.id, result.diagnostics);
-      return;
-    }
-    this.applyBridgeEnvelope(result.value);
+    this.applyCapabilityUpdate(this.capabilityTracker.applyPayload(value), true);
   }
 
   applyLatestBridgeEnvelope() {
-    const hasBridgeEntry = this.projection.entries.some((entry) => entry.type === 'custom' && entry.customType === PI_WEB_BRIDGE_ENTRY);
-    if (!hasBridgeEntry) {
-      this.refreshCapabilities(null);
-      return;
-    }
-    const result = latestPiWebBridgeEnvelopeStructured(this.projection.entries);
-    if (!result.ok) {
-      this.contractDiagnostics = result.diagnostics;
-      return;
-    }
-    this.applyBridgeEnvelope(result.value);
+    this.applyCapabilityUpdate(this.capabilityTracker.applyLatest(this.projection.entries), false);
   }
 
-  applyBridgeEnvelope(envelope: PiWebBridgeEnvelope) {
-    const verdict = acceptBridgeRevision(this.lastBridgeRevision, envelope);
-    if (!verdict.accepted) {
-      console.warn(`[Pi ${this.id}] ${verdict.diagnostic?.message ?? 'bridge revision regression ignored'}`);
+  applyCapabilityUpdate(update: CapabilityUpdate, broadcastDiagnostics: boolean) {
+    if (update.kind === 'invalid') {
+      if (broadcastDiagnostics) this.manager.broadcastContractDiagnostic(this.id, update.diagnostics);
       return;
     }
-    if (envelope.model) this.model = envelope.model;
-    this.thinkingLevel = envelope.thinkingLevel;
-    this.lastBridgeRevision = envelope.revision;
-    this.contractDiagnostics = [];
-    this.refreshCapabilities(envelope);
-  }
-
-  refreshCapabilities(envelope: PiWebBridgeEnvelope | null) {
-    if (!envelope) {
-      this.capabilityMismatches = [];
-      this.capabilities = runtimeCapabilities(this.piVersion);
+    if (update.kind === 'rejected') {
+      console.warn(`[Pi ${this.id}] ${update.diagnostic?.message ?? 'bridge revision regression ignored'}`);
       return;
     }
-    const match = matchCapabilities({ ...envelope.capabilities, piVersion: this.piVersion });
-    this.capabilities = match.capabilities;
-    this.capabilityMismatches = match.ok ? [] : match.mismatches;
-    if (this.capabilityMismatches.length) {
-      this.manager.broadcastCapabilityDiagnostic(this.id, this.capabilityMismatches);
-    }
+    if (update.kind !== 'accepted') return;
+    if (update.envelope.model) this.model = update.envelope.model;
+    this.thinkingLevel = update.envelope.thinkingLevel;
+    if (update.mismatches.length) this.manager.broadcastCapabilityDiagnostic(this.id, update.mismatches);
   }
 
   reconcileProjection() {
@@ -732,14 +448,9 @@ export class PiRpcSession {
 
   maybeTitle() {
     if (this.titleSet || (this.sessionName && !isGenericSessionName(this.sessionName)) || this.userMessages.length < 1) return;
-    const msg = this.userMessages.find((m) => m.trim().length > 8) || this.userMessages[0];
-    if (!msg) return;
-    let title = msg.replace(/^(ok |okay |so |actually |hey |please |can you |could you |i want(ed)? to |i wanna |let'?s )/i, '').replace(/\n.*/s, '').trim();
-    const sentenceEnd = title.search(/[.!?]\s/);
-    if (sentenceEnd > 10 && sentenceEnd < 80) title = title.slice(0, sentenceEnd);
-    if (title.length > 60) title = title.slice(0, 57).replace(/\s+\S*$/, '') + '…';
-    title = title.charAt(0).toUpperCase() + title.slice(1);
-    this.sessionName = title || null;
+    const title = inferSessionTitle(this.userMessages);
+    if (!title) return;
+    this.sessionName = title;
     this.titleSet = true;
     this.manager.broadcast({ type: 'event', sessionId: this.id, event: { type: 'session_name', name: this.sessionName } });
   }
@@ -752,11 +463,7 @@ export class PiRpcSession {
   async terminate(reason = 'closed') {
     if (this.terminating) return;
     this.terminating = true;
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error(`Session terminated: ${reason}`));
-    }
-    this.pending.clear();
+    this.transport.rejectAll(new Error(`Session terminated: ${reason}`));
     if (!this.child || this.child.exitCode !== null) return;
     signalProcessTree(this.child, 'SIGTERM');
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -768,11 +475,7 @@ export class PiRpcSession {
   handleExit(code: number | null, signal: string | null, err?: { message?: string }) {
     if (this.exitCode !== null) return;
     this.exitCode = code;
-    for (const [, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(err || new Error(`Pi process exited (${signal || code})`));
-    }
-    this.pending.clear();
+    this.transport.rejectAll(err || new Error(`Pi process exited (${signal || code})`));
     this.manager.removeExited(this.id, err?.message || `process_exit:${signal || code}`);
   }
 }
@@ -788,6 +491,7 @@ export class LiveSessionManager {
   pendingResumes: Map<string, Promise<PiRpcSession>>;
   terminatingResumes: Map<string, Promise<void>>;
   piVersion: string;
+  liveMetadataSignatures: Map<string, string>;
 
   constructor() {
     this.sessions = new Map();
@@ -795,6 +499,7 @@ export class LiveSessionManager {
     this.pendingResumes = new Map();
     this.terminatingResumes = new Map();
     this.piVersion = PI_RUNTIME_MINIMUM;
+    this.liveMetadataSignatures = new Map();
   }
   setPiVersion(version: string) { this.piVersion = version || PI_RUNTIME_MINIMUM; }
   addClient(ws: LiveClient) { this.clients.add(ws); }
@@ -807,7 +512,12 @@ export class LiveSessionManager {
   }
   broadcastUpdated(id: string) {
     const s = this.sessions.get(id);
-    if (s) this.broadcast({ type: 'live_session_updated', session: s.metadata() });
+    if (!s) return;
+    const session = s.liveMetadata();
+    const signature = JSON.stringify(session);
+    if (this.liveMetadataSignatures.get(id) === signature) return;
+    this.liveMetadataSignatures.set(id, signature);
+    this.broadcast({ type: 'live_session_updated', session });
   }
   broadcastCapabilityDiagnostic(sessionId: string, mismatches: CapabilityMismatchReason[]) {
     if (!mismatches.length) return;
@@ -896,6 +606,7 @@ export class LiveSessionManager {
     });
     if (resolvedFile) this.terminatingResumes.set(resolvedFile, termination);
     this.sessions.delete(id);
+    this.liveMetadataSignatures.delete(id);
     this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
     await termination;
     return true;
@@ -903,11 +614,13 @@ export class LiveSessionManager {
   removeExited(id: string, reason: string) {
     if (!this.sessions.has(id)) return;
     this.sessions.delete(id);
+    this.liveMetadataSignatures.delete(id);
     this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
   }
   async shutdown() {
     const sessions = Array.from(this.sessions.values());
     this.sessions.clear();
+    this.liveMetadataSignatures.clear();
     await Promise.allSettled(sessions.map((s) => s.terminate('server_shutdown')));
   }
 }

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css';
 import { renderMarkdown } from '../../../public/markdown.js';
 import { compileCitations } from '../../../contracts/citation-compiler.js';
-import { parseCitationEnvelope } from '../../../contracts/citation.js';
+import type { CitationEnvelope } from '../../../contracts/citation.js';
 import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
@@ -112,14 +112,9 @@ export function sessionReportImageUrl(url: string, reportPath: string, sessionId
   return `${origin}/api/file/preview?${new URLSearchParams({ sessionId, path: imagePath })}`;
 }
 
-async function renderReport(source: string, reportPath: string, sessionId: string, _citationProjection?: MessageCitationProjection) {
+async function renderReport(source: string, reportPath: string, sessionId: string, citations: CitationEnvelope | null, _citationProjection?: MessageCitationProjection) {
   let compiled: ReturnType<typeof compileCitations> | undefined;
-  try {
-    const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`);
-    const payload = await response.json() as { citations?: unknown };
-    const envelope = response.ok ? parseCitationEnvelope(payload.citations) : null;
-    if (envelope) compiled = compileCitations(source, envelope, 'gbt7714-numeric');
-  } catch { /* A report without citations remains renderable offline. */ }
+  if (citations) compiled = compileCitations(source, citations, 'gbt7714-numeric');
   const replacements: Array<{ token: string; value: string }> = [];
   let index = 0;
   const token = () => `FILE_PREVIEW_RENDER_${index++}`;
@@ -158,14 +153,15 @@ async function renderReport(source: string, reportPath: string, sessionId: strin
 
 function ReportPreview({ source, reportPath, sessionId, citationProjection }: { source: string; reportPath: string; sessionId: string; citationProjection?: MessageCitationProjection }) {
   const { t } = useTranslation();
+  const kernel = appKernel;
   const [html, setHtml] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
     setHtml(''); setError('');
-    void renderReport(source, reportPath, sessionId, citationProjection).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportRenderFailed')); });
+    void kernel.commands.citation.list(sessionId).catch(() => null).then((citations) => renderReport(source, reportPath, sessionId, citations, citationProjection)).then((next) => { if (active) setHtml(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportRenderFailed')); });
     return () => { active = false; };
-  }, [citationProjection, reportPath, sessionId, source, t]);
+  }, [citationProjection, kernel, reportPath, sessionId, source, t]);
   if (error) return <p className="file-preview-error">{error}</p>;
   return html ? <article className="file-preview-report" dangerouslySetInnerHTML={{ __html: html }} /> : <p className="file-preview-loading">{t('workspace.renderingReport')}</p>;
 }
@@ -222,11 +218,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
     setContent(null); setError('');
     if (externalSource) {
       if (presentation.preview !== 'report') return;
-      void fetch(externalSource.url).then(async (response) => {
-        if (!response.ok) throw new Error(t('workspace.reportLoadFailed'));
-        const next = await response.text();
-        if (active) setContent({ content: next, encoding: 'utf8', size: new Blob([next]).size });
-      }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportLoadFailed')); });
+      void kernel.commands.report.loadSource(sessionId, externalSource.url).then((next) => { if (active) setContent(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportLoadFailed')); });
       return () => { active = false; };
     }
     if (!presentation.preview || presentation.preview === 'image') return;
@@ -284,17 +276,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
         const dataUrl = await imageDataUrl(image, new Error(t('workspace.imageLoadFailed', { name: image.alt || index + 1 })));
         clonedImages[index]?.setAttribute('src', dataUrl);
       }));
-      const response = await fetch('/api/reports/pdf/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: item.name, html: clone.outerHTML }),
-      });
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(detail.error || t('workspace.pdfFailed'));
-      }
-      const detail = await response.json() as { url?: string };
-      if (!detail.url) throw new Error(t('workspace.pdfFailed'));
+      const detail = await kernel.commands.report.exportPdf(item.name, clone.outerHTML);
       const desktop = window as Window & { transportxDesktop?: { download(url: string): Promise<string> } };
       if (desktop.transportxDesktop) await desktop.transportxDesktop.download(detail.url);
       else window.location.assign(detail.url);

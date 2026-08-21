@@ -33,12 +33,17 @@ function fakeSession(id: string) {
     modelSpec: '',
     thinkingLevel: 'off',
     isStreaming: false,
+    isCompacting: false,
+    autoCompactionEnabled: true,
     sessionFile: `/tmp/${id}.jsonl`,
     sessionName: null,
     contextUsage: null,
     entries: [],
     pendingExtensionUiRequests: new Map(),
+    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token' },
+    manager: liveManager,
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
+    liveMetadata: () => ({ id, model: 'openai/gpt-5.5', isStreaming: false, isCompacting: false, autoCompactionEnabled: true }),
     snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
     send: async () => ({ data: { commands: [] } }),
@@ -222,7 +227,7 @@ test('video internal endpoints require the session video token', async (t: TestC
   }));
   const session = fakeSession('tau_video_internal') as any;
   session.cwd = cwd;
-  session.videoToken = 'video-secret';
+  session.serviceTokens.video = 'video-secret';
   session.resolvedSessionPlan = { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
   liveManager.sessions.set(session.id, session);
 
@@ -406,6 +411,35 @@ test('normalizes model references before sending Pi set_model commands', async (
   assert.equal(response.success, true);
   assert.equal(commands[0].provider, 'deepseek');
   assert.equal(commands[0].modelId, 'deepseek-v4-flash');
+});
+
+test('RPC registry rejects prototype property names as unknown commands', async () => {
+  const session = fakeSession('tau_registry_unknown');
+  liveManager.sessions.set(session.id, session);
+  const response = await handleRpcCommand({ type: 'toString', sessionId: session.id });
+  assert.equal(response.success, false);
+  assert.match(String(response.error), /Unknown command/);
+});
+
+test('delegates auto-compaction state and settings to Pi RPC', async () => {
+  const commands: Array<Record<string, unknown>> = [];
+  const session = {
+    ...fakeSession('tau_auto_compaction'),
+    send: async (command: Record<string, unknown>) => {
+      commands.push(command);
+      if (command.type === 'get_state') return { success: true, data: { autoCompactionEnabled: false, isCompacting: true } };
+      return { success: true };
+    },
+  };
+  liveManager.sessions.set(session.id, session);
+
+  const state = await handleRpcCommand({ type: 'get_state', sessionId: session.id });
+  assert.equal(commands[0].type, 'get_state');
+  assert.equal(state.data.autoCompactionEnabled, false);
+  const updated = await handleRpcCommand({ type: 'set_auto_compaction', sessionId: session.id, enabled: false });
+  assert.equal(updated.success, true);
+  assert.deepEqual(commands[1], { type: 'set_auto_compaction', sessionId: session.id, enabled: false });
+  assert.equal(session.autoCompactionEnabled, false);
 });
 
 test('reliable prompt command IDs are acknowledged and executed once', async () => {

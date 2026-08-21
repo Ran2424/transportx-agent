@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CitationResource } from '../contracts/index.js';
 import { CitationRegistryStore } from './citation-registry.js';
 import { within } from './asset-integrity.js';
+import { writeJson as json } from './http/response.js';
 
 type CitationResourceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: { assets?: Array<{ id?: string; kind?: string; path?: string }> } | null };
 type CitationResourceDeps = {
@@ -17,11 +18,6 @@ type CitationResourceDeps = {
 const ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/citation-resources\/([^/]+)\/(content|preview)$/;
 const PDF_PAGE_CACHE = new Map<string, Buffer>();
 const PDF_PAGE_CACHE_LIMIT = 24;
-
-function json(res: ServerResponse, status: number, data: unknown) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
-  res.end(JSON.stringify(data));
-}
 
 export function handleCitationResourceRoute(
   req: IncomingMessage,

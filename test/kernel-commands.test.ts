@@ -1,26 +1,31 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createAgentCommands, createExtensionUiCommands, createPlatformCommands } = require('../public/kernel/commands.js');
+const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands, createReportCommands, createSessionCommands, createVideoCommands } = require('../public/kernel/commands.js');
 const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
+const { SessionStore } = require('../public/kernel/stores/session-store.js');
 const { ToolExecutionStore } = require('../public/kernel/stores/tool-execution-store.js');
 
 function deps(handler: (command: Record<string, unknown>) => unknown, streaming = false) {
   const commands: Record<string, unknown>[] = [];
+  const paths: string[] = [];
   const actions: Record<string, unknown>[] = [];
   return {
     commands,
+    paths,
     actions,
     value: {
       transport: { send() { throw new Error('side-effecting commands must not use WebSocket'); } },
       http: async (_path: string, init?: { body?: unknown }) => {
+        paths.push(_path);
         commands.push(init?.body as Record<string, unknown>);
         const payload = handler(init?.body as Record<string, unknown>);
-        return { ok: true, status: 200, async json() { return payload; } };
+        return { ok: true, status: 200, async json() { return payload; }, async text() { return ''; } };
       },
       dispatch: (action: Record<string, unknown>) => actions.push(action),
       isStreaming: () => streaming,
+      isCompacting: () => false,
     },
   };
 }
@@ -54,6 +59,88 @@ test('streaming prompt keeps a stable command ID in the queue', async () => {
   assert.equal(typeof fixture.actions[0].clientCommandId, 'string');
 });
 
+test('compacting prompt stays queued until the session is ready', async () => {
+  const fixture = deps(() => ({ type: 'response', success: true }));
+  fixture.value.isCompacting = () => true;
+  const agent = createAgentCommands(fixture.value);
+  await agent.sendPrompt({ sessionId: 'session-1', message: '等待压缩结束' });
+  assert.equal(fixture.commands.length, 0);
+  assert.equal(fixture.actions[0].type, 'conversation/promptQueued');
+});
+
+test('session snapshots hydrate and clear compaction state', () => {
+  const store = new SessionStore();
+  store.applySnapshot('session-1', {
+    schemaVersion: 1,
+    entries: [],
+    isCompacting: true,
+    session: { id: 'session-1', isStreaming: true, isCompacting: true },
+  });
+  assert.equal(store.isStreaming('session-1'), true);
+  assert.equal(store.isCompacting('session-1'), true);
+  store.setCompacting('session-1', false);
+  assert.equal(store.isCompacting('session-1'), false);
+});
+
+test('attachment commands update the session store through kernel actions', async () => {
+  const attachment = { id: 'att-1', name: 'demand.csv', relativePath: 'attachments/att-1/demand.csv', size: 12, kind: 'table', source: 'file' };
+  const fixture = deps((_command) => ({ attachments: [attachment] }));
+  const session = createSessionCommands(fixture.value);
+  await session.listAttachments('session-1');
+  await session.uploadAttachment({ sessionId: 'session-1', file: new File(['x'], 'demand.csv'), source: 'file' });
+  await session.deleteAttachment('session-1', attachment.id);
+  assert.deepEqual(fixture.actions.map((action) => action.type), ['session/attachmentsReceived', 'session/attachmentAdded', 'session/attachmentRemoved']);
+  assert.deepEqual(fixture.paths, [
+    '/api/live-sessions/session-1/attachments',
+    '/api/live-sessions/session-1/attachments?source=file',
+    '/api/live-sessions/session-1/attachments/att-1',
+  ]);
+
+  const store = new SessionStore();
+  store.setAttachments('session-1', [attachment]);
+  store.addAttachment('session-1', { ...attachment, id: 'att-2' });
+  store.removeAttachment('session-1', attachment.id);
+  assert.deepEqual(Object.keys(store.get().attachmentsBySession['session-1']), ['att-2']);
+  assert.equal(store.get().attachmentRevisionBySession['session-1'], 3);
+});
+
+test('citation commands validate envelopes behind the HTTP command port', async () => {
+  const citations = { protocol: 'pi-citation', version: '2.0', citationSetId: 'set-1', generatedAt: '2026-08-21T00:00:00.000Z', works: [], resources: [], locators: [], occurrences: [], provenance: [] };
+  const fixture = deps((command) => command?.locatorId ? { marker: '[1]', citations } : { citations });
+  const citation = createCitationCommands(fixture.value);
+  assert.equal((await citation.list('session-1')).citationSetId, 'set-1');
+  const created = await citation.createOccurrence('session-1', 'locator-1', 'support');
+  assert.equal(created.marker, '[1]');
+  assert.deepEqual(fixture.paths, ['/api/live-sessions/session-1/citations', '/api/live-sessions/session-1/citations/occurrences']);
+  assert.deepEqual(fixture.commands[1], { locatorId: 'locator-1', role: 'support' });
+});
+
+test('video metrics stay behind the HTTP command port', async () => {
+  const fixture = deps(() => ({ metrics: [] }));
+  const video = createVideoCommands(fixture.value);
+  assert.deepEqual(await video.getMetrics('session-1', 'video_resource'), { metrics: [] });
+  assert.deepEqual(fixture.paths, ['/api/live-sessions/session-1/video-resources/video_resource/metrics']);
+});
+
+test('PDF export stays behind the HTTP command port', async () => {
+  const fixture = deps(() => ({ url: '/api/reports/download/report.pdf' }));
+  const report = createReportCommands(fixture.value);
+  assert.deepEqual(await report.exportPdf('交通报告', '<article>内容</article>'), { url: '/api/reports/download/report.pdf' });
+  assert.deepEqual(fixture.paths, ['/api/reports/pdf/download']);
+  assert.deepEqual(fixture.commands[0], { title: '交通报告', html: '<article>内容</article>' });
+});
+
+test('report source stays behind the HTTP command port', async () => {
+  const fixture = deps(() => ({}));
+  fixture.value.http = async (path: string) => {
+    fixture.paths.push(path);
+    return { ok: true, status: 200, async json() { return {}; }, async text() { return '# 交通报告'; } };
+  };
+  const report = createReportCommands(fixture.value);
+  assert.deepEqual(await report.loadSource('session-1', '/api/citations/report.md'), { content: '# 交通报告', encoding: 'utf8', size: 14 });
+  assert.deepEqual(fixture.paths, ['/api/citations/report.md']);
+});
+
 test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {
   const fixture = deps(() => ({ type: 'response', success: false, error: 'request expired' }));
   const extension = createExtensionUiCommands(fixture.value);
@@ -77,6 +164,16 @@ test('platform model provider commands preserve provider credentials behind RPC 
   await platform.disconnectModelProvider('xiaomi-token-plan-cn');
   assert.deepEqual(fixture.commands.map((command) => command.type), ['get_model_providers', 'connect_model_provider', 'disconnect_model_provider']);
   assert.equal(fixture.commands[1].apiKey, 'secret-key');
+});
+
+test('platform model management commands stay behind the RPC port', async () => {
+  const fixture = deps((command) => ({ type: 'response', success: true, data: { model: { provider: command.provider, modelId: command.modelId, reference: `${command.provider}/${command.modelId}` } } }));
+  const platform = createPlatformCommands(fixture.value);
+  await platform.updateModel({ provider: 'custom', modelId: 'traffic-model', name: 'Traffic', contextWindow: 256000, reasoning: true, images: true });
+  await platform.deleteModel('custom', 'traffic-model');
+  await platform.deleteModelProvider('custom');
+  assert.deepEqual(fixture.commands.map((command) => command.type), ['update_model', 'delete_model', 'delete_model_provider']);
+  assert.equal(fixture.commands[0].contextWindow, 256000);
 });
 
 test('authoritative user echo arriving before HTTP acknowledgement is not duplicated', () => {

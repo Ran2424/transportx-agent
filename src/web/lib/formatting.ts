@@ -23,6 +23,18 @@ export function formatContextWindow(value: string | number | null | undefined): 
   return `${Math.round(tokens / 1_000)}K`;
 }
 
+export function formatModelOption(model: ModelRecord | string): { reference: string; label: string; metadata: string } {
+  const reference = modelReference(model);
+  if (typeof model === 'string') return { reference, label: reference, metadata: '' };
+  const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
+  const abilities = [model.thinking ? i18n.t('model.ability.thinking') : '', model.images ? i18n.t('model.ability.images') : ''].filter(Boolean).join(' · ');
+  return {
+    reference,
+    label: model.name || reference,
+    metadata: [model.name && model.name !== reference ? reference : '', context ? `${context} context` : '', abilities].filter(Boolean).join(' · '),
+  };
+}
+
 export function compactModelLabel(session: LiveSession): string {
   const raw = session.modelLabel || session.modelSpec || modelReference(session.model) || i18n.t('common.default');
   return String(raw).replace(/^.*\//, '').replace(/^claude-/, '').replace(/-\d{8}$/, '');

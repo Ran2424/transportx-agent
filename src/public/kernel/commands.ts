@@ -10,6 +10,7 @@ import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
 import type { ModuleArchiveInspection } from '../../contracts/module.ts';
+import { parseCitationEnvelope, type CitationEnvelope } from '../../contracts/citation.ts';
 
 export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
@@ -18,6 +19,7 @@ export type HttpResponse = {
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
+  text(): Promise<string>;
 };
 
 export type HttpClient = (path: string, init?: HttpInit) => Promise<HttpResponse>;
@@ -27,6 +29,7 @@ export type CommandDeps = {
   http: HttpClient;
   dispatch: (action: AppAction) => void;
   isStreaming: (sessionId: string) => boolean;
+  isCompacting: (sessionId: string) => boolean;
 };
 
 export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; clientCommandId?: string };
@@ -41,16 +44,28 @@ export type AddModelInput = {
   modelId: string;
   api: PiModelApi;
   baseUrl: string;
-  apiKey: string;
+  apiKey?: string;
   name?: string;
+  contextWindow?: number;
   reasoning?: boolean;
   images?: boolean;
+};
+export type UpdateModelInput = {
+  provider: string;
+  modelId: string;
+  name?: string;
+  contextWindow?: number;
+  reasoning: boolean;
+  images: boolean;
 };
 export type ModelProviderAccess = {
   id: string;
   name: string;
   connected: boolean;
   credentialStored: boolean;
+  custom?: boolean;
+  baseUrl?: string;
+  api?: PiModelApi;
   authMethods: Array<'api_key' | 'oauth'>;
   authSource?: string;
   modelCount: number;
@@ -102,6 +117,7 @@ export type AgentState = {
   model?: ModelRecord | null;
   thinkingLevel?: string;
   autoCompactionEnabled?: boolean;
+  isCompacting?: boolean;
 };
 
 export type PlatformModule = {
@@ -177,6 +193,9 @@ export type PlatformCommands = {
   disconnectModelProvider(provider: string): Promise<void>;
   getSessionOptions(): Promise<SessionOptions>;
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
+  updateModel(input: UpdateModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
+  deleteModel(provider: string, modelId: string): Promise<void>;
+  deleteModelProvider(provider: string): Promise<void>;
   getOverview(): Promise<PlatformOverview>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
   inspectModuleArchive(sourcePath: string): Promise<ModuleArchiveInspection>;
@@ -191,6 +210,20 @@ export type PlatformCommands = {
 
 export type ExtensionUiCommands = {
   respond(input: ExtensionUiResponseInput): Promise<void>;
+};
+
+export type CitationCommands = {
+  list(sessionId: string): Promise<CitationEnvelope>;
+  createOccurrence(sessionId: string, locatorId: string, role: 'support'): Promise<{ marker: string; citations: CitationEnvelope }>;
+};
+
+export type VideoCommands = {
+  getMetrics(sessionId: string, resourceId: string): Promise<unknown>;
+};
+
+export type ReportCommands = {
+  loadSource(sessionId: string, url: string): Promise<WorkspaceFileContent>;
+  exportPdf(title: string, html: string): Promise<{ url: string }>;
 };
 
 /** fetch() wrapper: network/HTTP-status/payload errors all become AppError. */
@@ -246,6 +279,19 @@ async function httpJson(
   return data;
 }
 
+async function httpText(http: HttpClient, path: string, context: { category: AppErrorCategory; sessionId?: string }): Promise<string> {
+  let response: HttpResponse;
+  try {
+    response = await http(path);
+  } catch (cause) {
+    throw toAppError(cause, { code: 'http_network_error', category: 'transport', sessionId: context.sessionId, retryable: true, diagnostics: { path } });
+  }
+  if (!response.ok) {
+    throw appError({ code: 'http_error', category: context.category, message: `HTTP ${response.status}`, sessionId: context.sessionId, retryable: response.status >= 500, diagnostics: { status: response.status, path } });
+  }
+  return response.text();
+}
+
 async function rpcCommand(http: HttpClient, command: Record<string, unknown>): Promise<unknown> {
   const sessionId = command.sessionId as string | undefined;
   const data = await httpJson(http, '/api/rpc', { method: 'POST', body: command }, { category: 'session', sessionId });
@@ -277,7 +323,7 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       pendingPromptIds.set(promptKey, commandId);
       // While streaming, prompts queue per session instead of hitting the
       // transport; the kernel flushes them when the run ends.
-      if (deps.isStreaming(sessionId)) {
+      if (deps.isStreaming(sessionId) || deps.isCompacting(sessionId)) {
         deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, clientCommandId: commandId });
         return;
       }
@@ -388,7 +434,9 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
 
     async listAttachments(sessionId) {
       const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments`, undefined, { ...context, sessionId });
-      return ((data as { attachments?: SessionAttachment[] }).attachments ?? []);
+      const attachments = (data as { attachments?: SessionAttachment[] }).attachments ?? [];
+      deps.dispatch({ type: 'session/attachmentsReceived', sessionId, attachments });
+      return attachments;
     },
 
     async uploadAttachment({ sessionId, file, source }) {
@@ -397,11 +445,13 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments?source=${encodeURIComponent(source)}`, { method: 'POST', body: form }, { ...context, sessionId });
       const attachment = (data as { attachments?: SessionAttachment[] }).attachments?.[0];
       if (!attachment) throw appError({ code: 'attachment_upload_invalid_response', category: 'transport', message: '附件上传响应无效', sessionId, retryable: false });
+      deps.dispatch({ type: 'session/attachmentAdded', sessionId, attachment });
       return attachment;
     },
 
     async deleteAttachment(sessionId, attachmentId) {
       await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }, { ...context, sessionId });
+      deps.dispatch({ type: 'session/attachmentRemoved', sessionId, attachmentId });
     },
 
     async close(sessionId) {
@@ -410,6 +460,51 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
 
     async deleteHistory(filePath) {
       await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { filePath } }, context);
+    },
+  };
+}
+
+export function createCitationCommands(deps: CommandDeps): CitationCommands {
+  const readEnvelope = (value: unknown, sessionId: string) => {
+    const envelope = parseCitationEnvelope((value as { citations?: unknown })?.citations);
+    if (envelope) return envelope;
+    throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用响应无效', sessionId, retryable: false });
+  };
+  return {
+    async list(sessionId) {
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations`, undefined, { category: 'session', sessionId });
+      return readEnvelope(data, sessionId);
+    },
+
+    async createOccurrence(sessionId, locatorId, role) {
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations/occurrences`, { method: 'POST', body: { locatorId, role } }, { category: 'session', sessionId });
+      const marker = typeof (data as { marker?: unknown })?.marker === 'string' ? (data as { marker: string }).marker : '';
+      if (!marker) throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用创建响应无效', sessionId, retryable: false });
+      return { marker, citations: readEnvelope(data, sessionId) };
+    },
+  };
+}
+
+export function createVideoCommands(deps: CommandDeps): VideoCommands {
+  return {
+    getMetrics(sessionId, resourceId) {
+      return httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(resourceId)}/metrics`, undefined, { category: 'session', sessionId });
+    },
+  };
+}
+
+export function createReportCommands(deps: CommandDeps): ReportCommands {
+  return {
+    async loadSource(sessionId, url) {
+      const content = await httpText(deps.http, url, { category: 'session', sessionId });
+      return { content, encoding: 'utf8', size: new Blob([content]).size };
+    },
+
+    async exportPdf(title, html) {
+      const data = await httpJson(deps.http, '/api/reports/pdf/download', { method: 'POST', body: { title, html } }, { category: 'session' });
+      const url = typeof (data as { url?: unknown })?.url === 'string' ? (data as { url: string }).url : '';
+      if (!url) throw appError({ code: 'report_export_invalid_response', category: 'session', message: 'PDF 导出响应无效', retryable: false });
+      return { url };
     },
   };
 }
@@ -446,6 +541,19 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     async addModel(input) {
       const data = await rpcCommand(deps.http, { type: 'add_model', ...input });
       return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
+    },
+
+    async updateModel(input) {
+      const data = await rpcCommand(deps.http, { type: 'update_model', ...input });
+      return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
+    },
+
+    async deleteModel(provider, modelId) {
+      await rpcCommand(deps.http, { type: 'delete_model', provider, modelId });
+    },
+
+    async deleteModelProvider(provider) {
+      await rpcCommand(deps.http, { type: 'delete_model_provider', provider });
     },
 
     async getOverview() {
@@ -523,6 +631,9 @@ export function createExtensionUiCommands(deps: CommandDeps): ExtensionUiCommand
 export type KernelCommands = {
   agent: AgentCommands;
   session: SessionCommands;
+  citation: CitationCommands;
+  video: VideoCommands;
+  report: ReportCommands;
   platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
 };
@@ -531,6 +642,9 @@ export function createCommands(deps: CommandDeps): KernelCommands {
   return {
     agent: createAgentCommands(deps),
     session: createSessionCommands(deps),
+    citation: createCitationCommands(deps),
+    video: createVideoCommands(deps),
+    report: createReportCommands(deps),
     platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),
   };
