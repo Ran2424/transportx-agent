@@ -134,22 +134,6 @@ export function attachmentFilePath(cwd: string, attachment: SessionAttachment) {
   return resolveReadyAttachment(cwd, attachment);
 }
 
-export function buildAttachmentContext(attachments: SessionAttachment[]) {
-  if (!attachments.length) return '';
-  const lines = [
-    '本轮用户消息包含以下会话附件。文件均位于当前任务工作目录内：',
-    ...attachments.map((attachment, index) => `${index + 1}. ${attachment.name}\n   相对路径：${attachment.relativePath}\n   类型：${attachment.mimeType}\n   大小：${formatBytes(attachment.size)}`),
-    '请根据用户请求读取所需附件。不要假定尚未读取的文件内容。',
-  ];
-  return `\n\n<!-- transportx-attachment-context -->\n${lines.join('\n')}\n<!-- /transportx-attachment-context -->`;
-}
-
-function formatBytes(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function makeId() { return `att_${crypto.randomBytes(8).toString('hex')}`; }
 
 async function writeMultipartPart(handle: fsp.FileHandle, hash: crypto.Hash, chunk: Buffer, state: { size: number }) {

@@ -21,6 +21,26 @@ test('SessionProfile v1 validates task range, outputs and exact Module versions'
   assert.equal(duplicate.ok, false);
 });
 
+test('Attachment context is built and stripped by the shared contract', async () => {
+  const { ATTACHMENT_CONTEXT_BEGIN, ATTACHMENT_CONTEXT_END, buildAttachmentContext, stripAttachmentContext } = await import('../src/contracts/attachments.ts');
+  const context = buildAttachmentContext([{
+    id: 'att_1234567890ab',
+    name: 'demand.csv',
+    relativePath: 'attachments/demand.csv',
+    mimeType: 'text/csv',
+    size: 1536,
+    sha256: 'a'.repeat(64),
+    kind: 'table',
+    source: 'picker',
+    status: 'ready',
+  }]);
+  assert.ok(context.startsWith(`\n\n${ATTACHMENT_CONTEXT_BEGIN}\n`));
+  assert.ok(context.includes('大小：1.5 KB'));
+  assert.ok(context.endsWith(`\n${ATTACHMENT_CONTEXT_END}`));
+  assert.equal(stripAttachmentContext(`分析早高峰${context}`), '分析早高峰');
+  assert.equal(stripAttachmentContext('没有附件上下文'), '没有附件上下文');
+});
+
 test('SessionSnapshot contract accepts v1 and diagnoses unknown versions explicitly', async () => {
   const session = fixture('session');
   const contract = await import('../src/contracts/session.ts');

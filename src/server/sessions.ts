@@ -45,6 +45,7 @@ import {
   type RuntimeCapabilities,
   type SessionProfileV1,
 } from '../contracts/index.js';
+import { stripAttachmentContext } from '../contracts/attachments.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
@@ -90,10 +91,6 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
     if (timestamp && (!latest || timestamp > latest)) latest = timestamp;
   }
   return latest;
-}
-
-function stripAttachmentContext(text: string) {
-  return text.replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
 }
 
 function moduleResourceGuide(plan: ResolvedSessionPlan | null) {

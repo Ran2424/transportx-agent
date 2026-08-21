@@ -11,6 +11,7 @@
  */
 
 import type { AppMessage, MessageContentBlock, SessionEntry, SessionSnapshot } from '../../app-types.js';
+import { stripAttachmentContext } from '../../../contracts/attachments.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
 
 export type QueuedPrompt = { message: string; attachmentIds?: string[]; clientCommandId: string };
@@ -51,9 +52,9 @@ const emptyConversation = (): ConversationState => ({ snapshotEntries: [], live:
 
 export function messageText(message: AppMessage | undefined): string {
   if (!message) return '';
-  if (typeof message.content === 'string') return message.content.replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
+  if (typeof message.content === 'string') return stripAttachmentContext(message.content);
   if (Array.isArray(message.content)) {
-    return message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n').replace(/\n\n<!-- transportx-attachment-context -->[\s\S]*?<!-- \/transportx-attachment-context -->$/, '').trimEnd();
+    return stripAttachmentContext(message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n'));
   }
   return '';
 }
