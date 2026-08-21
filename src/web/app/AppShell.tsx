@@ -20,17 +20,15 @@ function savedConversationWidth() {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_CONVERSATION_WIDTH;
 }
 
-export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, mapPanel, videoPanel, mapOpen, videoOpen, settings, settingsOpen, overlays }: {
+export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, canvas, canvasOpen, settings, settingsOpen, overlays }: {
   header: ReactNode;
   sidebar: ReactNode;
   tabs: ReactNode;
   conversation: ReactNode;
   workspace: ReactNode;
   taskFloat: ReactNode;
-  mapPanel: ReactNode;
-  videoPanel: ReactNode;
-  mapOpen: boolean;
-  videoOpen: boolean;
+  canvas: ReactNode;
+  canvasOpen: boolean;
   settings: ReactNode;
   settingsOpen: boolean;
   overlays: ReactNode;
@@ -41,7 +39,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
   const [preferredWidth, setPreferredWidth] = useState(savedConversationWidth);
   const [conversationWidth, setConversationWidth] = useState(savedConversationWidth);
   const [resizing, setResizing] = useState(false);
-  const focusOpen = mapOpen || videoOpen;
+  const focusOpen = canvasOpen;
   const [focusPhase, setFocusPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>(focusOpen ? 'opening' : 'closed');
 
   const focusState = focusOpen ? (focusPhase === 'open' ? 'open' : 'opening') : (focusPhase === 'closed' ? 'closed' : 'closing');
@@ -139,7 +137,7 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
         {settings || <>
           {sidebar}
           <section ref={mainRef} className={`agent-main-column${focusVisible ? ' is-workspace-focused' : ''}${focusState === 'opening' ? ' is-workspace-entering' : ''}${focusState === 'closing' ? ' is-workspace-closing' : ''}${resizing ? ' is-resizing-conversation' : ''}`} style={mainStyle}>
-            <section className="workspace-focus-panel">{mapPanel}{videoPanel}</section>
+            <section className="workspace-focus-panel">{canvas}</section>
             <div
               className="conversation-resizer"
               role="separator"
