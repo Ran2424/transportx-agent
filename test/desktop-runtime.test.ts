@@ -23,6 +23,15 @@ test('desktop app paths keep durable data outside application resources', () => 
   assert.ok(!paths.sessionsDir.startsWith(paths.resourcesDir));
 });
 
+test('Windows desktop app paths use roaming user data outside application resources', () => {
+  const appData = process.platform === 'win32' ? 'C:\\Users\\example\\AppData\\Roaming' : '/Users/example/AppData/Roaming';
+  const paths = resolveAppPaths({ APPDATA: appData, TAU_APP_ROOT: '/opt/TransportX/resources/app.asar', TAU_RESOURCES_DIR: '/opt/TransportX/resources' }, 'win32');
+  assert.equal(paths.userDataDir, path.join(appData, 'TransportX Traffic Agent'));
+  assert.equal(paths.scenarioDir, path.join(paths.userDataDir, 'scenario'));
+  assert.equal(paths.modulesDir, path.join(paths.userDataDir, 'modules'));
+  assert.ok(!paths.userDataDir.startsWith(paths.resourcesDir));
+});
+
 test('runtime manifest validates relative paths and checksums', (t: any) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-runtime-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -108,4 +117,22 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   assert.match(hook, /--verify/);
   assert.match(prepareRuntime, /\['-B', '-I', '-c'/);
   assert.match(smoke, /\['-B', '-I', '-c'/);
+});
+
+test('Windows NSIS release stages x64 .exe runtimes and has native installer checks', () => {
+  const builder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'electron-builder.yml'), 'utf8');
+  const prepareRuntime = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
+  const releaseCheck = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'check-windows-release.mjs'), 'utf8');
+  const installerSmoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'windows-installer-smoke.mjs'), 'utf8');
+  const smoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'desktop-smoke.mjs'), 'utf8');
+  assert.match(builder, /icon: app-icon\.ico/);
+  assert.match(builder, /target: nsis[\s\S]*arch: x64/);
+  assert.match(builder, /deleteAppDataOnUninstall: false/);
+  assert.match(prepareRuntime, /\$\{name\}\.exe/);
+  assert.match(prepareRuntime, /Bundled Windows Python must be x64/);
+  assert.match(releaseCheck, /Authenticode certificate/);
+  assert.match(releaseCheck, /native Windows x64 host/);
+  assert.match(installerSmoke, /TRANSPORTX_WINDOWS_INSTALLER/);
+  assert.match(installerSmoke, /Uninstall TransportX Traffic Agent\.exe/);
+  assert.match(smoke, /process\.platform === 'win32'/);
 });

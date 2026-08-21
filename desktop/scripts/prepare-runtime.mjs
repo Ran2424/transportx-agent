@@ -43,6 +43,7 @@ if (probeResult.status !== 0) {
 const pythonProbe = JSON.parse(probeResult.stdout);
 if (!String(pythonProbe.version).startsWith('3.10.')) throw new Error(`Bundled Python must be 3.10.x, got ${pythonProbe.version}`);
 if (process.platform === 'darwin' && pythonProbe.machine !== 'arm64') throw new Error(`Bundled macOS Python must be arm64, got ${pythonProbe.machine}`);
+if (process.platform === 'win32' && !/^(amd64|x86_64)$/i.test(String(pythonProbe.machine))) throw new Error(`Bundled Windows Python must be x64, got ${pythonProbe.machine}`);
 if (pythonProbe.missing.length) throw new Error(`Bundled Python is missing required modules: ${pythonProbe.missing.join(', ')}`);
 for (const [label, runtimePath] of [['prefix', pythonProbe.prefix], ['executable', pythonProbe.executable]]) {
   const relative = path.relative(stagedPythonRoot, path.resolve(runtimePath));
@@ -55,21 +56,23 @@ const piPkg = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', '@earen
 const agentHostSource = path.join(root, 'bin', 'tau.js');
 const piSource = path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js');
 
-// ffmpeg/ffprobe: required for the macOS Video runtime; other platforms keep
-// only the manifest/resolver structure in V1.
+// Video processing is a shipped desktop capability on macOS arm64 and Windows
+// x64. Packaged apps always resolve this pair through the integrity manifest.
 function stageFfmpegRuntime() {
   const sourceFfmpegDir = process.env.TRANSPORTX_FFMPEG_RUNTIME_DIR;
-  if (process.platform !== 'darwin' && !sourceFfmpegDir) return null;
+  const requiresFfmpeg = process.platform === 'darwin' || process.platform === 'win32';
+  if (!requiresFfmpeg && !sourceFfmpegDir) return null;
   if (!sourceFfmpegDir) throw new Error('TRANSPORTX_FFMPEG_RUNTIME_DIR must point to a directory containing static ffmpeg and ffprobe binaries');
   const stagedFfmpegRoot = path.join(buildRoot, 'runtimes', 'ffmpeg');
   fs.mkdirSync(stagedFfmpegRoot, { recursive: true });
   const entries = {};
   for (const name of ['ffmpeg', 'ffprobe']) {
-    const source = path.join(path.resolve(sourceFfmpegDir), name);
+    const filename = process.platform === 'win32' ? `${name}.exe` : name;
+    const source = path.join(path.resolve(sourceFfmpegDir), filename);
     if (!fs.existsSync(source)) throw new Error(`Bundled ${name} is missing: ${source}`);
-    const staged = path.join(stagedFfmpegRoot, name);
+    const staged = path.join(stagedFfmpegRoot, filename);
     fs.copyFileSync(source, staged);
-    fs.chmodSync(staged, 0o755);
+    if (process.platform !== 'win32') fs.chmodSync(staged, 0o755);
     const versionResult = spawnSync(staged, ['-version'], { encoding: 'utf8' });
     if (versionResult.status !== 0) throw new Error(`Bundled ${name} failed to run after staging: ${(versionResult.stderr || versionResult.stdout || '').trim()}`);
     const version = (versionResult.stdout.match(/version\s+([^\s]+)/) || [])[1];
@@ -78,7 +81,7 @@ function stageFfmpegRuntime() {
       const fileResult = spawnSync('file', [staged], { encoding: 'utf8' });
       if (!fileResult.stdout.includes('arm64')) throw new Error(`Bundled macOS ${name} must be arm64: ${fileResult.stdout.trim()}`);
     }
-    entries[name] = { version, path: `runtimes/ffmpeg/${name}`, sha256: sha256(staged), arch: process.platform === 'darwin' ? 'arm64' : process.arch };
+    entries[name] = { version, path: `runtimes/ffmpeg/${filename}`, sha256: sha256(staged), arch: process.platform === 'darwin' ? 'arm64' : 'x64' };
   }
   for (const extra of ['LICENSE', 'LICENSE.txt', 'LICENSE.md', 'NOTICES.md']) {
     const notice = path.join(path.resolve(sourceFfmpegDir), extra);
