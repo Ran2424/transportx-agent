@@ -58,10 +58,11 @@
 - 上下文用量的响应合并、压缩后估算与 usage totals 合并迁为纯 `session-context-usage` 模块，Pi Session 仅负责状态调用。
 - Pi 事件的思考/工具计时临时状态迁为 `session-event-timing` tracker；持久化仍由既有 `TimingMetricsStore` 负责，事件时间字段和消息增补语义保持不变。
 - 完整 Session Metadata、实时 Live Metadata 与快照组合迁为纯 `session-metadata` 构建器；慢变的计划/目录/待处理 UI 请求继续不进入实时增量广播。
+- Pi 的启动参数、Module 扩展/Skill、项目提示词、服务令牌与 Data/Knowledge 资产环境变量迁为 `session-pi-launch`；Session 只保留进程 spawn 和 I/O 生命周期绑定。
 
 验证：
 
-- `npm test` 通过（155/155）。
+- `npm test` 通过（156/156）。
 
 ## v3.1.0 — 模块 ZIP 快速安装
 
