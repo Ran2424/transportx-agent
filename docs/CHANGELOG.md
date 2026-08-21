@@ -50,6 +50,7 @@
 - Citation Manager 弹窗迁为独立组件；证据图加载、过滤、导出和预览仍通过同一 Kernel command 与受控资源 URL。
 - Composer 的附件去重、上传、删除与卡片展示迁为独立 Hook/组件；剪贴板图片命名和失败状态保持既有规则。
 - Composer 的引用候选加载与 marker 插入迁为专属 Hook，继续使用 Citation command port，并保持插入后回焦与错误提示。
+- Composer 本体迁为独立对话组件；prompt/steer、任务模式、队列与工具栏保持原有命令路径，Conversation Workspace 专注线程投影与组件组合。
 
 验证：
 
