@@ -8,6 +8,7 @@ import type { JsonRecord } from './types.js';
 import type { LiveSessionManager } from './sessions.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { within } from './asset-integrity.js';
+import { deriveSessionName, titleFromMessageContent } from './session-history-reader.js';
 
 type HistoryHandlersOptions = {
   sessionsDir: string;
@@ -46,32 +47,7 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
     const cwd = normalizeSessionCwd(header?.cwd);
     return cwd ? new TimingMetricsStore(cwd).enrichEntries(entries) : entries;
   };
-  const titleFromMessageContent = (content: unknown) => {
-    const text = typeof content === 'string' ? content : Array.isArray(content)
-      ? content.filter((block): block is { type?: unknown; text?: unknown } => !!block && typeof block === 'object').filter((block) => block.type === 'text').map((block) => typeof block.text === 'string' ? block.text : '').join('\n')
-      : '';
-    let title = text.replace(/^(ok |okay |so |actually |hey |please |can you |could you |i want(ed)? to |i wanna |let'?s )/i, '').replace(/\n.*/s, '').trim();
-    if (!title) return null;
-    const sentenceEnd = title.search(/[.!?]\s/);
-    if (sentenceEnd > 10 && sentenceEnd < 80) title = title.slice(0, sentenceEnd);
-    if (title.length > 60) title = title.slice(0, 57).replace(/\s+\S*$/, '') + '…';
-    return title.charAt(0).toUpperCase() + title.slice(1);
-  };
-  const deriveSessionName = (entries: JsonRecord[]) => {
-    for (let index = entries.length - 1; index >= 0; index -= 1) {
-      const entry = entries[index] as { type?: string; name?: unknown };
-      const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
-      if (entry?.type === 'session_info' && name && !options.isGenericSessionName(name)) return name;
-    }
-    for (const entry of entries) {
-      const message = entry as { type?: string; message?: { role?: string; content?: unknown } };
-      if (message?.type === 'message' && message.message?.role === 'user') {
-        const title = titleFromMessageContent(message.message.content);
-        if (title) return title;
-      }
-    }
-    return null;
-  };
+  const resolveSessionName = (entries: JsonRecord[]) => deriveSessionName(entries, options.isGenericSessionName);
   const readSessionHeaderCwd = (filePath: string) => {
     let fd: number | null = null;
     try {
@@ -203,5 +179,5 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
     return options.json(res, 200, { schemaVersion: options.snapshotSchemaVersion, entries: readSessionEntries(filePath) });
   };
 
-  return { normalizeSessionCwd, readSessionEntries, deriveSessionName, readSessionHeaderCwd, serveProjects, serveSessions, serveSearch, serveSessionFile };
+  return { normalizeSessionCwd, readSessionEntries, deriveSessionName: resolveSessionName, readSessionHeaderCwd, serveProjects, serveSessions, serveSearch, serveSessionFile };
 }
