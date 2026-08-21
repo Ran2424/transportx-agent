@@ -29,6 +29,7 @@ import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import type { RpcHandlerRegistry } from './rpc-handlers.js';
 import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
+import { createSessionRpcHandlers } from './rpc-handlers/session.js';
 import { platformOverview } from './platform-overview.js';
 import { buildAttachmentContext } from '../contracts/attachments.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
@@ -59,6 +60,12 @@ const rpcHandlers: RpcHandlerRegistry = {
     },
   }),
   ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, invalidateModelListCache, errorMessage }),
+  ...createSessionRpcHandlers<PiRpcSession>({
+    getLiveSession: (sessionId) => liveManager.get(sessionId),
+    findLiveSessionByFile: (filePath) => liveManager.findBySessionFile(filePath),
+    appendSessionName,
+    updateLiveSessionName,
+  }),
 };
 
 type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
@@ -273,14 +280,6 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
       reloadModules();
       return success({ migrated, overview: currentPlatformOverview() });
     } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'set_session_name') {
-    const name = command.name?.trim();
-    if (!name) return failure('Name cannot be empty');
-    const session = command.sessionId ? liveManager.get(command.sessionId) : null, resolvedFile = command.filePath || session?.sessionFile ? appendSessionName(command.filePath || session!.sessionFile!, name) : null;
-    const matching = resolvedFile ? [...liveManager.sessions.values()].find((item) => item.sessionFile && path.resolve(item.sessionFile) === resolvedFile) : null;
-    if (session) updateLiveSessionName(session, name); else if (matching) updateLiveSessionName(matching, name); else if (!resolvedFile) return failure('sessionId or filePath required');
-    return success({ name });
   }
   const session = command.sessionId ? liveManager.get(command.sessionId) : null;
   if (command.type === 'export_html') {

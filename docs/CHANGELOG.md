@@ -25,6 +25,7 @@
 - 会话标题推断与通用名称判断迁入独立纯逻辑模块，运行时只保留命名状态与事件发布。
 - RPC 路由建立领域 handler registry，并首先迁移模型与 Provider 配置命令，保留原有响应与缓存失效语义。
 - 鉴权 RPC 也迁入 registry，鉴权持久化、事件广播和启用后的客户端断连保持为宿主层的明确回调。
+- 会话命名命令迁入 Session RPC handler，历史 JSONL 写入与 Live Session 事件更新由宿主层回调保留。
 
 验证：
 
