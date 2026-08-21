@@ -18,6 +18,7 @@
 - Geo 与 Video 展示收口到 AgentCanvas：以轻量 Canvas item 描述展示引用，统一激活、关闭和自动发布状态，同时保留各自领域 Workspace 与资源 API。
 - Citation HTTP 访问收口到 Kernel command port；会话区、引用管理器和报告预览统一消费已验证的 `CitationEnvelope`。
 - Video Workspace 的时序指标读取迁入 Kernel command port，播放器仅保留指标校验与展示逻辑。
+- 报告 PDF 导出迁入 Kernel command port，文件预览组件继续只负责浏览器侧的渲染与下载触发。
 
 验证：
 

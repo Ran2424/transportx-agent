@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands, createVideoCommands } = require('../public/kernel/commands.js');
+const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands, createReportCommands, createVideoCommands } = require('../public/kernel/commands.js');
 const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
 const { SessionStore } = require('../public/kernel/stores/session-store.js');
@@ -98,6 +98,14 @@ test('video metrics stay behind the HTTP command port', async () => {
   const video = createVideoCommands(fixture.value);
   assert.deepEqual(await video.getMetrics('session-1', 'video_resource'), { metrics: [] });
   assert.deepEqual(fixture.paths, ['/api/live-sessions/session-1/video-resources/video_resource/metrics']);
+});
+
+test('PDF export stays behind the HTTP command port', async () => {
+  const fixture = deps(() => ({ url: '/api/reports/download/report.pdf' }));
+  const report = createReportCommands(fixture.value);
+  assert.deepEqual(await report.exportPdf('交通报告', '<article>内容</article>'), { url: '/api/reports/download/report.pdf' });
+  assert.deepEqual(fixture.paths, ['/api/reports/pdf/download']);
+  assert.deepEqual(fixture.commands[0], { title: '交通报告', html: '<article>内容</article>' });
 });
 
 test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {
