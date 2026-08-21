@@ -17,7 +17,7 @@ import {
   SESSIONS_DIR,
   PYTHON_COMMAND,
 } from './config.js';
-import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
+import { normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import type { SessionService } from './session-service.js';
 import { piProcessEnv } from './pi-runtime.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
@@ -30,6 +30,7 @@ import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
+import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
 import { inferSessionTitle, isGenericSessionName } from './session-title.js';
 import {
@@ -171,58 +172,15 @@ export class PiRpcSession {
   }
 
   metadata() {
-    return {
-      id: this.id,
-      pid: this.pid,
-      cwd: this.cwd,
-      modelSpec: this.modelSpec,
-      model: this.model,
-      modelLabel: modelLabel(this.model, this.modelSpec),
-      thinkingLevel: this.thinkingLevel,
-      sessionFile: this.sessionFile,
-      sessionName: this.sessionName,
-      isStreaming: this.isStreaming,
-      isCompacting: this.isCompacting,
-      autoCompactionEnabled: this.autoCompactionEnabled,
-      createdAt: this.createdAt,
-      lastActiveAt: this.lastActiveAt,
-      lastConversationAt: this.lastConversationAt,
-      contextUsage: this.contextUsage,
-      pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()],
-      capabilities: this.capabilityTracker.snapshot(),
-      resolvedSessionPlan: this.resolvedSessionPlan,
-    };
+    return sessionMetadata(this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
   }
 
   liveMetadata() {
-    return {
-      id: this.id,
-      modelSpec: this.modelSpec,
-      model: this.model,
-      thinkingLevel: this.thinkingLevel,
-      sessionFile: this.sessionFile,
-      sessionName: this.sessionName,
-      isStreaming: this.isStreaming,
-      isCompacting: this.isCompacting,
-      autoCompactionEnabled: this.autoCompactionEnabled,
-      lastConversationAt: this.lastConversationAt,
-      contextUsage: this.contextUsage,
-      capabilities: this.capabilityTracker.snapshot(),
-    };
+    return liveSessionMetadata(this, this.capabilityTracker.snapshot());
   }
 
   snapshot() {
-    return {
-      ...this.projection.snapshot(),
-      session: this.metadata(),
-      model: this.model,
-      thinkingLevel: this.thinkingLevel,
-      isStreaming: this.isStreaming,
-      isCompacting: this.isCompacting,
-      sessionFile: this.sessionFile,
-      sessionName: this.sessionName,
-      contextUsage: this.contextUsage,
-    };
+    return sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
   }
 
   get entries() {

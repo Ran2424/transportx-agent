@@ -57,10 +57,11 @@
 - 会话工作目录创建、名称净化与会话 ID 生成迁为独立 `session-workspace` 边界，并补充唯一目录与显式父目录校验回归。
 - 上下文用量的响应合并、压缩后估算与 usage totals 合并迁为纯 `session-context-usage` 模块，Pi Session 仅负责状态调用。
 - Pi 事件的思考/工具计时临时状态迁为 `session-event-timing` tracker；持久化仍由既有 `TimingMetricsStore` 负责，事件时间字段和消息增补语义保持不变。
+- 完整 Session Metadata、实时 Live Metadata 与快照组合迁为纯 `session-metadata` 构建器；慢变的计划/目录/待处理 UI 请求继续不进入实时增量广播。
 
 验证：
 
-- `npm test` 通过（153/153）。
+- `npm test` 通过（155/155）。
 
 ## v3.1.0 — 模块 ZIP 快速安装
 
