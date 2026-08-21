@@ -75,13 +75,10 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       case 'agent_start':
         return [{ type: 'conversation/streamStarted', sessionId, runId: nextRunId(sessionId) }];
       case 'agent_end':
-        // agent_end closes one low-level run only. Pi may immediately retry
-        // it, compact and retry, or continue queued work; ending the overlay
-        // here in that case prematurely flushes prompts and duplicates UI
-        // error state. agent_settled below is the authoritative boundary.
-        if (event.willRetry === true) return [];
-        currentRunBySession.delete(sessionId);
-        return [{ type: 'conversation/streamEnded', sessionId }];
+        // agent_end closes one low-level run only. Pi can still compact,
+        // retry, or continue queued work. agent_settled is the authoritative
+        // boundary for releasing the stream overlay and queued prompts.
+        return [];
       case 'agent_settled':
         // Newer Pi versions emit this after all automatic retries,
         // compaction retries and queued continuations have completed. It is
@@ -151,14 +148,18 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
           endedAt: event.endedAt,
           durationMs: event.durationMs,
         }];
+      case 'compaction_start':
       case 'auto_compaction_start':
+        return [{ type: 'session/compactionStarted', sessionId }];
+      case 'compaction_end':
       case 'auto_compaction_end':
+        return [{ type: 'session/compactionEnded', sessionId }];
       case 'auto_retry_start':
       case 'auto_retry_end':
       case 'thinking_level_changed':
       case 'response':
         // Pi command responses are resolved by the server-side command port.
-        // Retry/compaction lifecycle events are status-only notifications;
+        // Retry lifecycle events are status-only notifications;
         // thinking level changes are reflected by live_session_updated.
         // agent_settled remains the authoritative streaming boundary.
         return [];

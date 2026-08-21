@@ -333,11 +333,9 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
     } catch (error) { return failure(errorMessage(error)); }
   }
   if (!session) return failure('No active Tau session. 没有活跃的交通任务，请先创建或选择一个任务。');
-  if (command.type === 'get_state') return success({ model: session.model, thinkingLevel: session.thinkingLevel, isStreaming: session.isStreaming, sessionFile: session.sessionFile, sessionName: session.sessionName, autoCompactionEnabled: true });
   if (command.type === 'get_messages') return success({ entries: session.entries });
   if (command.type === 'live_session_snapshot_request') return { type: 'live_session_snapshot', sessionId: session.id, ...session.snapshot() };
-  if (command.type === 'set_auto_compaction') return success({ enabled: !!command.enabled });
-  const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response']);
+  const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'get_state', 'set_auto_compaction', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response']);
   if (!native.has(command.type || '')) return failure(`Unknown command: ${command.type}`);
   const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
   if (command.type === 'extension_ui_response' && (typeof command.id !== 'string' || !session.pendingExtensionUiRequests.has(command.id))) {
@@ -372,6 +370,10 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
     }
     const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 300000 : 60000 });
     if (command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
+    if (command.type === 'set_auto_compaction' && response.success !== false) {
+      session.autoCompactionEnabled = command.enabled === true;
+      session.manager.broadcastUpdated(session.id);
+    }
     if (response.success === false && previousLevel !== null) session.thinkingLevel = previousLevel;
     return { ...response, success: response.success !== false };
   } catch (error) {

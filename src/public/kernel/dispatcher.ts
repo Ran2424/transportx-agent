@@ -58,6 +58,12 @@ export function createDispatcher(stores: KernelStores): Dispatch {
           stores.extensionUi.requested(action.sessionId, request, stores.session.get().activeSessionId);
         }
         break;
+      case 'session/compactionStarted':
+        stores.session.setCompacting(action.sessionId, true);
+        break;
+      case 'session/compactionEnded':
+        stores.session.setCompacting(action.sessionId, false);
+        break;
 
       case 'conversation/streamStarted':
         stores.conversation.streamStarted(action.sessionId, action.runId);

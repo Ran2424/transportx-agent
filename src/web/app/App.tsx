@@ -80,6 +80,7 @@ export function App() {
       : deleteTarget.session.sessionName || deleteTarget.session.name || t('sessions.emptyTask')
     : '';
   const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
+  const activeCompacting = !!(activeSession && sessionState.compactingBySession[activeSession.id]);
   const taskState = useMemo(() => activeSession ? projectTaskState(
     conversation.bySession[activeSession.id]?.snapshotEntries ?? [],
     Object.values(tools.bySession[activeSession.id] ?? {}),
@@ -324,13 +325,13 @@ export function App() {
     { id: 'map', label: mapOpen ? t('app.command.map.close') : t('app.command.map.open'), description: visualizations.length ? t('app.command.map.description') : t('app.command.map.unavailable'), disabled: visualizations.length === 0, action: toggleMap },
     { id: 'video', label: videoOpen ? t('app.command.video.close') : t('app.command.video.open'), description: videoScene ? t('app.command.video.description') : t('app.command.video.unavailable'), disabled: !videoScene, action: toggleVideo },
     { id: 'model', label: t('app.command.model.label'), description: activeSession ? t('app.command.model.description') : t('app.command.requiresSession'), disabled: !activeSession, action: () => setModelOpen(true) },
-    { id: 'compact', label: t('app.command.compact.label'), description: activeSession ? t('app.command.compact.description') : t('app.command.requiresSession'), disabled: !activeSession, action: async () => {
+    { id: 'compact', label: t('app.command.compact.label'), description: activeSession ? t('app.command.compact.description') : t('app.command.requiresSession'), disabled: !activeSession || activeStreaming || activeCompacting, action: async () => {
       if (!activeSession) return;
       try { await kernel.commands.agent.compact(activeSession.id); setNotice(t('app.notice.compacted')); }
       catch (cause) { setNotice((cause as { message?: string })?.message || t('app.error.compact')); }
     } },
     { id: 'settings', label: t('app.command.settings.label'), description: t('app.command.settings.description'), shortcut: '⌘,', action: () => setSettingsOpen(true) },
-  ], [activeSession, filesOpen, kernel, mapOpen, t, taskAvailable, tasksOpen, toggleFiles, toggleMap, toggleTasks, toggleVideo, videoOpen, videoScene, visualizations.length]);
+  ], [activeCompacting, activeSession, activeStreaming, filesOpen, kernel, mapOpen, t, taskAvailable, tasksOpen, toggleFiles, toggleMap, toggleTasks, toggleVideo, videoOpen, videoScene, visualizations.length]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

@@ -42,6 +42,8 @@ export type AppAction =
   | { type: 'session/closed'; sessionId: string }
   | { type: 'session/activated'; sessionId: string | null }
   | { type: 'session/snapshotReceived'; sessionId: string; snapshot: SessionSnapshot }
+  | { type: 'session/compactionStarted'; sessionId: string }
+  | { type: 'session/compactionEnded'; sessionId: string }
   // conversation
   | { type: 'conversation/streamStarted'; sessionId: string; runId: string }
   | { type: 'conversation/messageStarted'; sessionId: string; runId: string | null; message: AppMessage }

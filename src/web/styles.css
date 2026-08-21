@@ -549,6 +549,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .conversation-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
 .conversation-thread { width: 100%; min-width: 0; max-width: var(--conversation-content-max-width); margin: 0 auto; padding: 32px 32px 24px; display: flex; flex-direction: column; gap: 10px; }
 .assistant-turn { display: contents; }
+.compaction-status { width: fit-content; display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; color: var(--text-secondary); background: var(--selection-bg); border-left: 2px solid var(--status-info); font-size: 11px; }
 .conversation-message { min-width: 0; max-width: min(860px, 88%); margin: 0; flex: 0 0 auto; color: var(--text-primary); position: relative; }
 .message-content { min-width: 0; max-width: 100%; font-size: 14.5px; line-height: 1.72; overflow-wrap: anywhere; }
 .message-content .table-wrapper, .message-content .katex-display { max-width: 100%; overflow-x: auto; }
@@ -693,8 +694,19 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .composer-action-hint { position: absolute; z-index: 20; left: 0; bottom: calc(100% + 7px); width: max-content; padding: 5px 7px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-raised); box-shadow: var(--shadow-menu); color: var(--text-primary); font-size: 11px; line-height: 1; opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity 140ms ease, transform 140ms ease; }
 .composer-task-toggle:hover .composer-action-hint, .composer-task-toggle:focus-visible .composer-action-hint, .composer-action-rail .composer-attach:hover .composer-action-hint { opacity: 1; transform: translateY(0); }
 .composer-task-toggle:hover:not(:disabled), .composer-task-toggle.is-on { border-color: transparent; background: var(--selection-bg); color: var(--selection-fg); }
+.composer-context-usage { position: relative; width: 30px; height: 30px; display: grid; place-items: center; color: var(--status-success); cursor: help; outline: 0; }
+.composer-context-usage svg { width: 16px; height: 16px; transform: rotate(-90deg); }
+.composer-context-usage circle { fill: none; stroke-width: 2.4; }
+.composer-context-usage .context-usage-track { stroke: var(--border-strong); }
+.composer-context-usage .context-usage-value { stroke: currentColor; stroke-linecap: round; transition: stroke-dasharray 220ms ease; }
+.composer-context-usage.is-unavailable { color: var(--text-tertiary); }
+.composer-context-usage.is-warning { color: var(--status-warning); }
+.composer-context-usage.is-critical { color: var(--status-danger); }
+.composer-context-usage-hint { position: absolute; z-index: 20; left: 0; bottom: calc(100% + 7px); width: max-content; max-width: 250px; padding: 5px 7px; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--text-primary); background: var(--surface-raised); box-shadow: var(--shadow-menu); font-size: 11px; line-height: 1.35; opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity 140ms ease, transform 140ms ease; }
+.composer-context-usage:hover .composer-context-usage-hint, .composer-context-usage:focus-visible .composer-context-usage-hint { opacity: 1; transform: translateY(0); }
 .composer-attach { border: 0; border-radius: var(--tx-radius-md); }
 .composer-stream-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.composer-compacting { padding: 0 8px; color: var(--text-secondary); font-size: 11px; }
 .composer-stream-actions .composer-send, .composer-stream-actions .composer-abort { height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border-radius: 10px; font-size: 11px; transition: border-color 140ms ease, color 140ms ease, background 140ms ease, transform 140ms ease; }
 .composer-stream-actions .composer-send::before { content: "↗"; font-size: 13px; line-height: 1; }
 .composer-stream-actions .composer-abort { border: 1px solid var(--border-strong); color: var(--text-secondary); background: transparent; }

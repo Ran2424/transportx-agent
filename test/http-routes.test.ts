@@ -33,6 +33,8 @@ function fakeSession(id: string) {
     modelSpec: '',
     thinkingLevel: 'off',
     isStreaming: false,
+    isCompacting: false,
+    autoCompactionEnabled: true,
     sessionFile: `/tmp/${id}.jsonl`,
     sessionName: null,
     contextUsage: null,
@@ -408,6 +410,27 @@ test('normalizes model references before sending Pi set_model commands', async (
   assert.equal(response.success, true);
   assert.equal(commands[0].provider, 'deepseek');
   assert.equal(commands[0].modelId, 'deepseek-v4-flash');
+});
+
+test('delegates auto-compaction state and settings to Pi RPC', async () => {
+  const commands: Array<Record<string, unknown>> = [];
+  const session = {
+    ...fakeSession('tau_auto_compaction'),
+    send: async (command: Record<string, unknown>) => {
+      commands.push(command);
+      if (command.type === 'get_state') return { success: true, data: { autoCompactionEnabled: false, isCompacting: true } };
+      return { success: true };
+    },
+  };
+  liveManager.sessions.set(session.id, session);
+
+  const state = await handleRpcCommand({ type: 'get_state', sessionId: session.id });
+  assert.equal(commands[0].type, 'get_state');
+  assert.equal(state.data.autoCompactionEnabled, false);
+  const updated = await handleRpcCommand({ type: 'set_auto_compaction', sessionId: session.id, enabled: false });
+  assert.equal(updated.success, true);
+  assert.deepEqual(commands[1], { type: 'set_auto_compaction', sessionId: session.id, enabled: false });
+  assert.equal(session.autoCompactionEnabled, false);
 });
 
 test('reliable prompt command IDs are acknowledged and executed once', async () => {

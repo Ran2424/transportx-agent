@@ -20,6 +20,7 @@ export type SessionSnapshot = {
   sessionFile?: string | null;
   session?: LiveSession;
   isStreaming?: boolean;
+  isCompacting?: boolean;
   model?: ModelRecord | null;
   thinkingLevel?: string;
   pendingExtensionUiRequests?: AppEvent[];
@@ -63,6 +64,8 @@ export type LiveSession = {
   model?: ModelRecord | string | null;
   thinkingLevel?: string;
   isStreaming?: boolean;
+  isCompacting?: boolean;
+  autoCompactionEnabled?: boolean;
   createdAt?: string;
   lastActiveAt?: string;
   lastConversationAt?: string;
