@@ -27,6 +27,7 @@ import { createStaticHandler } from './static-handler.js';
 import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import type { RpcHandlerRegistry } from './rpc-handlers.js';
+import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
 import { platformOverview } from './platform-overview.js';
 import { buildAttachmentContext } from '../contracts/attachments.js';
@@ -47,6 +48,16 @@ const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
 const reliableCommandTypes = new Set(['prompt', 'steer', 'follow_up', 'abort', 'extension_ui_response']);
 const rpcHandlers: RpcHandlerRegistry = {
+  ...createAuthRpcHandlers({
+    configured: AUTH_CONFIGURED,
+    getEnabled: () => authEnabled,
+    setEnabled: (enabled) => { authEnabled = enabled; saveTauSetting('authEnabled', enabled); },
+    notifyChanged: (enabled) => liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled } }),
+    disconnectClients: () => {
+      const timer = setTimeout(() => [...liveManager.clients].forEach((client) => { try { client.close(4001, 'Authentication enabled'); } catch {} }), 25);
+      timer.unref?.();
+    },
+  }),
   ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, invalidateModelListCache, errorMessage }),
 };
 
@@ -195,14 +206,6 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
   const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
   if (registered) return registered.handle(command, { success, failure });
-  if (command.type === 'get_auth') return success({ configured: AUTH_CONFIGURED, enabled: authEnabled });
-  if (command.type === 'set_auth') {
-    if (!AUTH_CONFIGURED) return failure('No credentials configured. Set tau.user and tau.pass in settings.json');
-    const wasEnabled = authEnabled; authEnabled = !!command.enabled; saveTauSetting('authEnabled', authEnabled);
-    liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled: authEnabled } });
-    if (!wasEnabled && authEnabled) { const timer = setTimeout(() => [...liveManager.clients].forEach((client) => { try { client.close(4001, 'Authentication enabled'); } catch {} }), 25); timer.unref?.(); }
-    return success({ enabled: authEnabled });
-  }
   if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
   if (command.type === 'install_module') {
     if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
