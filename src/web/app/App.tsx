@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HistoryProject, HistorySession } from '../../public/kernel/commands.js';
 import { appKernel, reconnectBrowserApplication } from './composition-root';
@@ -16,8 +16,9 @@ import { LiveTabs } from '../platform/sessions/LiveTabs';
 import { SessionSidebar } from '../platform/sessions/SessionSidebar';
 import { SettingsPage, themes, type SettingsSectionId, type ThemeId } from '../platform/settings/SettingsDialog';
 import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDock';
-import { projectVisualizations } from '../features/geo/geo-projection';
-import { projectVideoScene } from '../features/video/video-projection';
+import { AgentCanvas } from '../platform/canvas/AgentCanvas';
+import { projectCanvasItems } from '../platform/canvas/canvas-projection';
+import { INITIAL_CANVAS_STATE, reduceCanvasState, type CanvasItemKind } from '../platform/canvas/canvas-state';
 import { projectTaskState } from '../features/task/task-projection';
 
 const LEGACY_THEME_MIGRATION: Record<string, ThemeId> = {
@@ -58,8 +59,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
-  const [mapOpen, setMapOpen] = useState(false);
-  const [videoOpen, setVideoOpen] = useState(false);
+  const [canvasState, dispatchCanvas] = useReducer(reduceCanvasState, INITIAL_CANVAS_STATE);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general');
@@ -86,21 +86,20 @@ export function App() {
     Object.values(tools.bySession[activeSession.id] ?? {}),
   ) : { enabled: false, task: null }, [activeSession, conversation, tools]);
   const taskAvailable = taskState.enabled;
-  const visualizations = useMemo(() => activeSession ? projectVisualizations(
+  const canvasItems = useMemo(() => activeSession ? projectCanvasItems(
     conversation.bySession[activeSession.id]?.snapshotEntries ?? [],
     Object.values(tools.bySession[activeSession.id] ?? {}),
   ) : [], [activeSession, conversation, tools]);
-  const visualizationKey = activeSession && visualizations.length
-    ? `${activeSession.id}:${visualizations.map((item) => `${item.visualizationId}:${item.revision}`).join(',')}`
+  const canvasKey = activeSession && canvasItems.length
+    ? `${activeSession.id}:${canvasItems.map((item) => `${item.id}:${item.revision}`).join(',')}`
     : '';
-  const openedMapKey = useRef('');
+  const publishedCanvasKey = useRef('');
   const openedTaskSessions = useRef(new Set<string>());
-  const videoScene = useMemo(() => activeSession ? projectVideoScene(
-    conversation.bySession[activeSession.id]?.snapshotEntries ?? [],
-    Object.values(tools.bySession[activeSession.id] ?? {}),
-  ) : null, [activeSession, conversation, tools]);
-  const videoKey = activeSession && videoScene ? `${activeSession.id}:${videoScene.revision}:${videoScene.scene.activeVideoId || ''}` : '';
-  const openedVideoKey = useRef('');
+  const activeCanvasItem = canvasState.items.find((item) => item.id === canvasState.activeItemId) ?? null;
+  const mapAvailable = canvasItems.some((item) => item.kind === 'geo');
+  const videoAvailable = canvasItems.some((item) => item.kind === 'video');
+  const mapOpen = canvasState.isOpen && activeCanvasItem?.kind === 'geo';
+  const videoOpen = canvasState.isOpen && activeCanvasItem?.kind === 'video';
 
   function openModelSetup(origin: 'new' | 'picker' | 'settings') {
     setModelSetupOrigin(origin);
@@ -120,18 +119,11 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!visualizationKey || visualizationKey === openedMapKey.current) return;
-    openedMapKey.current = visualizationKey;
-    setVideoOpen(false);
-    setMapOpen(true);
-  }, [visualizationKey]);
-
-  useEffect(() => {
-    if (!videoKey || videoKey === openedVideoKey.current) return;
-    openedVideoKey.current = videoKey;
-    setMapOpen(false);
-    setVideoOpen(true);
-  }, [videoKey]);
+    const openLatest = !!canvasKey && canvasKey !== publishedCanvasKey.current;
+    if (openLatest) publishedCanvasKey.current = canvasKey;
+    if (!canvasKey) publishedCanvasKey.current = '';
+    dispatchCanvas({ type: 'itemsSynced', items: canvasItems, openLatest });
+  }, [canvasItems, canvasKey]);
 
   useEffect(() => {
     const sessionId = activeSession?.id;
@@ -141,33 +133,29 @@ export function App() {
   }, [activeSession?.id, taskState.task]);
 
   useEffect(() => { if (!taskAvailable) setTasksOpen(false); }, [taskAvailable]);
-  useEffect(() => { if (visualizations.length === 0) setMapOpen(false); }, [visualizations.length]);
-  useEffect(() => { if (!videoScene) setVideoOpen(false); }, [videoScene]);
-
   const toggleTasks = useCallback(() => {
     if (taskAvailable) setTasksOpen((value) => !value);
   }, [taskAvailable]);
 
-  const toggleMap = useCallback(() => {
-    if (visualizations.length > 0) {
-      setVideoOpen(false);
-      setMapOpen((value) => !value);
+  const toggleCanvasItem = useCallback((kind: CanvasItemKind) => {
+    const item = canvasItems.find((candidate) => candidate.kind === kind);
+    if (!item) return;
+    if (canvasState.isOpen && activeCanvasItem?.id === item.id) {
+      dispatchCanvas({ type: 'closed' });
+      return;
     }
-  }, [visualizations.length]);
+    dispatchCanvas({ type: 'itemsSynced', items: canvasItems, openLatest: false });
+    dispatchCanvas({ type: 'itemActivated', itemId: item.id });
+  }, [activeCanvasItem?.id, canvasItems, canvasState.isOpen]);
 
-  const toggleVideo = useCallback(() => {
-    if (videoScene) {
-      setMapOpen(false);
-      setVideoOpen((value) => !value);
-    }
-  }, [videoScene]);
+  const toggleMap = useCallback(() => toggleCanvasItem('geo'), [toggleCanvasItem]);
+  const toggleVideo = useCallback(() => toggleCanvasItem('video'), [toggleCanvasItem]);
 
   const toggleSidebar = useCallback(() => setSidebarOpen((value) => !value), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleFiles = useCallback(() => setFilesOpen((value) => !value), []);
   const closeFiles = useCallback(() => setFilesOpen(false), []);
-  const closeMap = useCallback(() => setMapOpen(false), []);
-  const closeVideo = useCallback(() => setVideoOpen(false), []);
+  const closeCanvas = useCallback(() => dispatchCanvas({ type: 'closed' }), []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -229,9 +217,9 @@ export function App() {
     window.localStorage.removeItem('tau-active-live-session-id');
     closeFiles();
     setTasksOpen(false);
-    closeMap();
+    dispatchCanvas({ type: 'closed' });
     setNotice('');
-  }, [closeFiles, closeMap, kernel]);
+  }, [closeFiles, kernel]);
 
   useEffect(() => {
     if (restoredRef.current || sessionState.sessions.length === 0) return;
@@ -322,8 +310,8 @@ export function App() {
     { id: 'new', label: t('app.command.new.label'), description: t('app.command.new.description'), shortcut: '⌘N', action: () => setNewSessionOpen(true) },
     { id: 'files', label: filesOpen ? t('app.command.files.close') : t('app.command.files.open'), description: t('app.command.files.description'), shortcut: '⌘⇧W', action: toggleFiles },
     { id: 'tasks', label: tasksOpen ? t('app.command.tasks.close') : t('app.command.tasks.open'), description: taskAvailable ? t('app.command.tasks.description') : t('app.command.tasks.unavailable'), disabled: !taskAvailable, action: toggleTasks },
-    { id: 'map', label: mapOpen ? t('app.command.map.close') : t('app.command.map.open'), description: visualizations.length ? t('app.command.map.description') : t('app.command.map.unavailable'), disabled: visualizations.length === 0, action: toggleMap },
-    { id: 'video', label: videoOpen ? t('app.command.video.close') : t('app.command.video.open'), description: videoScene ? t('app.command.video.description') : t('app.command.video.unavailable'), disabled: !videoScene, action: toggleVideo },
+    { id: 'map', label: mapOpen ? t('app.command.map.close') : t('app.command.map.open'), description: mapAvailable ? t('app.command.map.description') : t('app.command.map.unavailable'), disabled: !mapAvailable, action: toggleMap },
+    { id: 'video', label: videoOpen ? t('app.command.video.close') : t('app.command.video.open'), description: videoAvailable ? t('app.command.video.description') : t('app.command.video.unavailable'), disabled: !videoAvailable, action: toggleVideo },
     { id: 'model', label: t('app.command.model.label'), description: activeSession ? t('app.command.model.description') : t('app.command.requiresSession'), disabled: !activeSession, action: () => setModelOpen(true) },
     { id: 'compact', label: t('app.command.compact.label'), description: activeSession ? t('app.command.compact.description') : t('app.command.requiresSession'), disabled: !activeSession || activeStreaming || activeCompacting, action: async () => {
       if (!activeSession) return;
@@ -331,7 +319,7 @@ export function App() {
       catch (cause) { setNotice((cause as { message?: string })?.message || t('app.error.compact')); }
     } },
     { id: 'settings', label: t('app.command.settings.label'), description: t('app.command.settings.description'), shortcut: '⌘,', action: () => setSettingsOpen(true) },
-  ], [activeCompacting, activeSession, activeStreaming, filesOpen, kernel, mapOpen, t, taskAvailable, tasksOpen, toggleFiles, toggleMap, toggleTasks, toggleVideo, videoOpen, videoScene, visualizations.length]);
+  ], [activeCompacting, activeSession, activeStreaming, filesOpen, kernel, mapAvailable, mapOpen, t, taskAvailable, tasksOpen, toggleFiles, toggleMap, toggleTasks, toggleVideo, videoAvailable, videoOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -357,10 +345,8 @@ export function App() {
       }
       const hasOverlay = newSessionOpen || modelOpen || modelSetupOpen || commandsOpen || !!extensionUi.current;
       if (event.key === 'Escape' && !hasOverlay) {
-        if (videoOpen) {
-          closeVideo();
-        } else if (mapOpen) {
-          closeMap();
+        if (canvasState.isOpen) {
+          closeCanvas();
         } else if (tasksOpen) {
           setTasksOpen(false);
         } else if (filesOpen) {
@@ -375,7 +361,7 @@ export function App() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [activeSession, closeFiles, closeMap, closeSidebar, closeVideo, commandsOpen, extensionUi.current, filesOpen, kernel, mapOpen, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t, tasksOpen, videoOpen]);
+  }, [activeSession, canvasState.isOpen, closeCanvas, closeFiles, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t, tasksOpen]);
 
   const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
   const runtimeErrorMessage = runtime.lastError?.message || '';
@@ -383,16 +369,14 @@ export function App() {
 
   return (
     <AppShell
-      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={visualizations.length > 0} videoOpen={videoOpen} videoAvailable={!!videoScene} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onToggleVideo={toggleVideo} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
+      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} mapOpen={mapOpen} taskAvailable={taskAvailable} mapAvailable={mapAvailable} videoOpen={videoOpen} videoAvailable={videoAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleMap={toggleMap} onToggleVideo={toggleVideo} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
-      taskFloat={<WorkspaceFloat kind="tasks" open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
-      mapPanel={<WorkspaceFloat kind="map" open={mapOpen} session={activeSession} onClose={closeMap} />}
-      videoPanel={<WorkspaceFloat kind="video" open={videoOpen} session={activeSession} onClose={closeVideo} />}
-      mapOpen={mapOpen}
-      videoOpen={videoOpen}
+      taskFloat={<WorkspaceFloat open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
+      canvas={<AgentCanvas session={activeSession} items={canvasState.items} activeItemId={canvasState.activeItemId} open={canvasState.isOpen} onActivate={(itemId) => dispatchCanvas({ type: 'itemActivated', itemId })} onClose={closeCanvas} />}
+      canvasOpen={canvasState.isOpen}
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}
       overlays={<>
