@@ -51,6 +51,7 @@
 - Composer 的附件去重、上传、删除与卡片展示迁为独立 Hook/组件；剪贴板图片命名和失败状态保持既有规则。
 - Composer 的引用候选加载与 marker 插入迁为专属 Hook，继续使用 Citation command port，并保持插入后回焦与错误提示。
 - Composer 本体迁为独立对话组件；prompt/steer、任务模式、队列与工具栏保持原有命令路径，Conversation Workspace 专注线程投影与组件组合。
+- 消息内的 Artifact 列表、Citation Footer 与证据悬浮预览迁为独立展示层，继续消费既有引用投影和受控资源 URL。
 
 验证：
 
