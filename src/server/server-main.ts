@@ -31,7 +31,8 @@ import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
 import { createModuleRpcHandlers } from './rpc-handlers/module.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
 import { createNativeRpcHandlers } from './rpc-handlers/native.js';
-import { createSessionRpcHandlers } from './rpc-handlers/session.js';
+import { createPlatformRpcHandlers } from './rpc-handlers/platform.js';
+import { createSessionReadRpcHandlers, createSessionRpcHandlers } from './rpc-handlers/session.js';
 import { platformOverview } from './platform-overview.js';
 import { buildAttachmentContext } from '../contracts/attachments.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
@@ -50,6 +51,7 @@ const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, pat
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
 const rpcHandlers: RpcHandlerRegistry = {
+  ...createPlatformRpcHandlers(currentPlatformOverview),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
     getEnabled: () => authEnabled,
@@ -77,6 +79,7 @@ const rpcHandlers: RpcHandlerRegistry = {
     appendSessionName,
     updateLiveSessionName,
   }),
+  ...createSessionReadRpcHandlers<PiRpcSession>((sessionId) => liveManager.get(sessionId)),
   ...createNativeRpcHandlers<PiRpcSession>({
     getLiveSession: (sessionId) => liveManager.get(sessionId),
     resolveAttachments: resolveSessionAttachments,
@@ -233,7 +236,6 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
   const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
   if (registered) return registered.handle(command, { success, failure });
-  if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
   const session = command.sessionId ? liveManager.get(command.sessionId) : null;
   if (command.type === 'export_html') {
     try {
@@ -247,9 +249,6 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
       return success({ path: result });
     } catch (error) { return failure(errorMessage(error)); }
   }
-  if (!session) return failure('No active Tau session. 没有活跃的交通任务，请先创建或选择一个任务。');
-  if (command.type === 'get_messages') return success({ entries: session.entries });
-  if (command.type === 'live_session_snapshot_request') return { type: 'live_session_snapshot', sessionId: session.id, ...session.snapshot() };
   return failure(`Unknown command: ${command.type}`);
 }
 
