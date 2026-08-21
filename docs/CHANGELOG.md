@@ -53,6 +53,7 @@
 - Composer 本体迁为独立对话组件；prompt/steer、任务模式、队列与工具栏保持原有命令路径，Conversation Workspace 专注线程投影与组件组合。
 - 消息内的 Artifact 列表、Citation Footer 与证据悬浮预览迁为独立展示层，继续消费既有引用投影和受控资源 URL。
 - 用户/助手消息卡片、复制交互与 Thinking 状态迁为独立组件；Conversation Workspace 收口为 55 行的会话线程组合根。
+- 会话项目/系统提示词的加载、变量渲染与 Module 资源说明迁为独立 `session-prompt` 边界；Module System 测试改为直接验证该权威入口。
 
 验证：
 

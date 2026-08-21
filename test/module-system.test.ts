@@ -8,7 +8,7 @@ const { ModuleRegistry } = require('../bin/module-registry.js');
 const { AssetResolver } = require('../bin/asset-resolver.js');
 const { SessionAssembler, SessionPlanError, planExtensions, planSkills } = require('../bin/session-assembly.js');
 const { ModuleInstaller } = require('../bin/module-installer.js');
-const { renderProjectPrompt } = require('../bin/sessions.js');
+const { renderProjectPrompt } = require('../bin/session-prompt.js');
 
 const ROOT = process.cwd();
 const MANIFESTS = [
