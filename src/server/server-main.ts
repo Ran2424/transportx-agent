@@ -28,6 +28,7 @@ import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import type { RpcHandlerRegistry } from './rpc-handlers.js';
 import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
+import { createHtmlExportRpcHandlers } from './rpc-handlers/html-export.js';
 import { createModuleRpcHandlers } from './rpc-handlers/module.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
 import { createNativeRpcHandlers } from './rpc-handlers/native.js';
@@ -51,6 +52,7 @@ const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, pat
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
 const rpcHandlers: RpcHandlerRegistry = {
+  ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
   ...createPlatformRpcHandlers(currentPlatformOverview),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
@@ -189,6 +191,14 @@ function resolveExportOutputPath(outputPath: string, sessionFile: string) {
   return resolved;
 }
 
+async function runPiHtmlExport({ file, cwd, outputPath }: { file: string; cwd: string; outputPath?: string }) {
+  const args = [...PI_COMMAND_ARGS, '--export', file, ...(outputPath ? [resolveExportOutputPath(outputPath, file)] : [])];
+  const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: cwd || path.dirname(file), timeout: 30000, encoding: 'utf8', env: piProcessEnv() }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
+  let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
+  if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
+  return result;
+}
+
 function openUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url)) return Promise.reject(new Error('Invalid URL'));
   if (process.platform === 'win32') { spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref(); return Promise.resolve(); }
@@ -236,19 +246,6 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
   const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
   if (registered) return registered.handle(command, { success, failure });
-  const session = command.sessionId ? liveManager.get(command.sessionId) : null;
-  if (command.type === 'export_html') {
-    try {
-      if (command.sessionId && !session) throw new Error('Live session not found');
-      const file = command.filePath ? resolveSessionFile(command.filePath) : session?.sessionFile;
-      if (!file) throw new Error('No session file to export yet');
-      const args = [...PI_COMMAND_ARGS, '--export', file, ...(command.outputPath ? [resolveExportOutputPath(command.outputPath, file)] : [])];
-      const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(file), timeout: 30000, encoding: 'utf8', env: piProcessEnv() }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
-      let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
-      if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
-      return success({ path: result });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
   return failure(`Unknown command: ${command.type}`);
 }
 
