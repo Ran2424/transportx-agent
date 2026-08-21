@@ -18,7 +18,7 @@ import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, type CiteCandidate } from './composer-citation-picker';
 import { renderConversationMarkdown } from './conversation-markdown';
 import { projectTools, type ToolData } from './tool-projection';
-import { compactCharacterCount, toolFilePath, toolIconName } from './tool-card-utils';
+import { compactCharacterCount, toolFilePath, toolIconName, TOOL_LABELS } from './tool-card-utils';
 import { compactToolArgs, imagePaths, TOOL_OUTPUT_PREVIEW_LIMIT, TOOL_TEXT_PREVIEW_LIMIT, truncateToolText } from './tool-card-formatting';
 import { ToolFilePreview } from './tool-file-preview';
 import {
@@ -256,23 +256,6 @@ function preview(args: Record<string, unknown>) {
   for (const key of ['path', 'command', 'query', 'url', 'title', 'action']) if (typeof args[key] === 'string') return args[key] as string;
   return Object.values(args).find((value): value is string => typeof value === 'string') || '';
 }
-
-const TOOL_LABELS: Record<string, string> = {
-  read: 'conversation.tool.read',
-  bash: 'conversation.tool.command',
-  shell: 'conversation.tool.command',
-  command: 'conversation.tool.command',
-  exec: 'conversation.tool.command',
-  edit: 'conversation.tool.edit',
-  write: 'conversation.tool.write',
-  create: 'conversation.tool.create',
-  apply_patch: 'conversation.tool.patch',
-  tau_task: 'conversation.tool.taskStatus',
-  tau_ask_user: 'conversation.tool.ask',
-  publish_geodata: 'conversation.tool.publish',
-  present_visualization: 'conversation.tool.mapDisplay',
-  tau_cite: 'conversation.tool.citation',
-};
 
 function toolLabel(name: string) {
   const normalized = name.trim().toLowerCase().replaceAll('-', '_');
