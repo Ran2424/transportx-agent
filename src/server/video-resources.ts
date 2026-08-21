@@ -4,6 +4,7 @@ const path = require('node:path');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseVideoResourceManifestStructured } from '../contracts/index.js';
 import { within } from './asset-integrity.js';
+import { writeJson as sendJson } from './http/response.js';
 
 type VideoResourceSession = { cwd: string };
 type VideoResourceRouteDeps = { getSession(sessionId: string): VideoResourceSession | null | undefined };
@@ -11,11 +12,6 @@ type VideoResourceRouteDeps = { getSession(sessionId: string): VideoResourceSess
 const RESOURCE_ID_RE = /^video_[a-f0-9]{16}$/;
 const VIDEO_RESOURCE_ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/video-resources\/([^/]+)\/data$/;
 const RANGE_RE = /^bytes=(\d*)-(\d*)$/;
-
-function sendJson(res: ServerResponse, status: number, data: unknown) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
-  res.end(JSON.stringify(data));
-}
 
 export function handleVideoResourceRoute(
   req: IncomingMessage,

@@ -21,6 +21,7 @@ import {
   expandHome,
 } from './config.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
+import type { SessionService } from './session-service.js';
 import { piProcessEnv } from './pi-runtime.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
@@ -244,9 +245,7 @@ export class PiRpcSession {
   contractDiagnostics: ContractDiagnostic[];
   resolvedSessionPlan: ResolvedSessionPlan | null;
   pendingAttachmentRefs: string[][];
-  citationToken: string;
-  spatialToken: string;
-  videoToken: string;
+  serviceTokens: Record<SessionService, string>;
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
   timingMetrics: TimingMetricsStore;
@@ -286,9 +285,7 @@ export class PiRpcSession {
     this.contractDiagnostics = [];
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.pendingAttachmentRefs = [];
-    this.citationToken = crypto.randomUUID();
-    this.spatialToken = crypto.randomUUID();
-    this.videoToken = crypto.randomUUID();
+    this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID() };
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.assistantThinkingStartedAt = null;
@@ -370,13 +367,13 @@ export class PiRpcSession {
         TAU_PYTHON_COMMAND: PYTHON_COMMAND,
         TAU_CITATION_ENDPOINT: citationEndpoint,
         TAU_CITATION_SESSION_ID: this.id,
-        TAU_CITATION_TOKEN: this.citationToken,
+        TAU_CITATION_TOKEN: this.serviceTokens.citation,
         TAU_SPATIAL_ENDPOINT: spatialEndpoint,
         TAU_SPATIAL_SESSION_ID: this.id,
-        TAU_SPATIAL_TOKEN: this.spatialToken,
+        TAU_SPATIAL_TOKEN: this.serviceTokens.spatial,
         TAU_VIDEO_ENDPOINT: videoEndpoint,
         TAU_VIDEO_SESSION_ID: this.id,
-        TAU_VIDEO_TOKEN: this.videoToken,
+        TAU_VIDEO_TOKEN: this.serviceTokens.video,
         MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
         PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
         ...(this.resolvedSessionPlan.assets.some((asset) => asset.kind === 'knowledge') ? { TRANSPORTX_KNOWLEDGE_ASSETS_JSON: JSON.stringify(Object.fromEntries(this.resolvedSessionPlan.assets.filter((asset) => asset.kind === 'knowledge').map((asset) => [asset.id, asset.path]))) } : {}),
