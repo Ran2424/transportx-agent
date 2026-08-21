@@ -13,6 +13,8 @@
 
 - Task Mode 移除已无生产消费者的 `task-state.ts` re-export，改由 `src/contracts/task.ts` 作为唯一权威入口；模块版本提升至 `1.0.1`。
 - 删除无代码消费者的 contracts export，并将模型展示和 `models.json` CRUD 的重复逻辑收口。
+- 会话压缩状态由 Pi RPC 生命周期驱动：压缩期间安全保留排队提示词，`agent_settled` 才释放流式状态；工作台显示压缩状态和上下文占用。
+- 将历史设计、修复说明、题库与审查文档迁入 `docs/archive/`，并更新评测与历史链接。
 
 验证：
 
@@ -93,7 +95,7 @@
 
 主要修改：
 
-- 依据 `docs/SPEC_VIDEO.md` 实现 Video Capability V1：新增 `src/contracts/video.ts`（Video Scene V1、资源 Manifest、Catalog 与严格带时区时间解析）、Agent Host Video Service / VideoRunner（受控 ffmpeg/ffprobe）、Session Video Resource（`.tau/video-resources/`）、支持 GET/HEAD/单 Range/416 的同源 Video Resource API。
+- 依据 `docs/archive/SPEC_VIDEO.md` 实现 Video Capability V1：新增 `src/contracts/video.ts`（Video Scene V1、资源 Manifest、Catalog 与严格带时区时间解析）、Agent Host Video Service / VideoRunner（受控 ffmpeg/ffprobe）、Session Video Resource（`.tau/video-resources/`）、支持 GET/HEAD/单 Range/416 的同源 Video Resource API。
 - 新增内置 Capability Module `modules/capabilities/video`（`video_search` / `video_present` / `video_snapshot` / `video_clip` / `video_sample_frames` 五个受控工具、Skill 与视觉模型门控）与可安装 Data Module `modules/installable/demo-video`（两段 60 秒合成 Demo 录像）。
 - React 新增 Video Workspace（投影自 Video Scene 的 Float 播放器视图，支持初始定位、Loading/Error），Header 与命令面板增加视频视图开关。
 - 新增可安装数据模块 `modules/installable/hongqiao-metro-demo`：虹桥枢纽高铁 B1 层南通道地铁入口 74.7 分钟真实监控录像（1280x720 H.264 faststart，410MB，不入 Git）+ YOLO（yolo26s + ByteTrack，ROI 进入法）离线识别的每分钟进站客流表与联合分析 Skill。
@@ -141,7 +143,7 @@ Workspace Focus 抽象与视频工作区形态升级：
 主要修改：
 
 - 工作台 UI 打磨：新增确认对话框基元，优化能力面板、会话侧栏与设置对话框的交互与样式。
-- 新增 `docs/SPEC_VIDEO.md`：Video Capability V1 最终设计文档（视频查询、展示、受控处理与多模态理解），为后续视频模块开发提供依据。
+- 新增 `docs/archive/SPEC_VIDEO.md`：Video Capability V1 最终设计文档（视频查询、展示、受控处理与多模态理解），为后续视频模块开发提供依据。
 - npm 包与平台版本同步提升为 `3.0.9`。
 
 验证：
