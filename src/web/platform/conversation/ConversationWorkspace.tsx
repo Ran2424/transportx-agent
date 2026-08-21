@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import type { AppMessage, LiveSession, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
-import { renderMarkdown } from '../../../public/markdown.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
 import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
@@ -15,6 +14,7 @@ import { projectTaskState } from '../../features/task/task-projection';
 import { formatContextWindow } from '../../lib/formatting';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
 import i18n from '../../i18n';
+import { renderConversationMarkdown } from './conversation-markdown';
 import {
   citationCopyText,
   citationDisplayText,
@@ -70,24 +70,6 @@ function copy(text: string) {
   return Promise.resolve();
 }
 
-function html(markdown: string, user = false, citationNumbers: Record<string, number> = {}) {
-  const template = document.createElement('template');
-  template.innerHTML = renderMarkdown(markdown, citationNumbers, undefined, i18n.language);
-  const allowed = new Set(['A', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL']);
-  template.content.querySelectorAll('*').forEach((node) => {
-    if (!allowed.has(node.tagName)) { node.replaceWith(document.createTextNode(node.textContent || '')); return; }
-    [...node.attributes].forEach((attribute) => {
-      const name = attribute.name.toLowerCase();
-      const value = attribute.value.trim();
-      const safeUrl = name === 'href' ? /^(https?:|mailto:)/i.test(value) : name === 'src' ? /^(https?:|data:image\/)/i.test(value) : true;
-      const allowedName = ['aria-label', 'class', 'checked', 'data-citation-id', 'disabled', 'href', 'rel', 'src', 'style', 'target', 'type'].includes(name);
-      const validCitationId = name !== 'data-citation-id' || /^[A-Za-z0-9_.:-]{1,180}$/.test(value);
-      if (name.startsWith('on') || !allowedName || !safeUrl || !validCitationId) node.removeAttribute(attribute.name);
-    });
-  });
-  return { __html: template.innerHTML };
-}
-
 function attachmentPreviewUrl(sessionId: string, attachment: SessionAttachment) {
   return `/api/file/preview?${new URLSearchParams({ sessionId, path: attachment.relativePath })}`;
 }
@@ -123,7 +105,7 @@ const UserMessage = memo(function UserMessage({ message, sessionId, attachments,
   const { t } = useTranslation();
   const text = messageText(message);
   const [copied, setCopied] = useState(false);
-  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message" onClick={focusCitationCard}><div className="message-content"><div dangerouslySetInnerHTML={html(text, true, projection?.numbers)} /><CitationFooter projection={projection} sessionId={sessionId} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(citationCopyText(text, projection)).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
+  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message" onClick={focusCitationCard}><div className="message-content"><div dangerouslySetInnerHTML={renderConversationMarkdown(text, projection?.numbers)} /><CitationFooter projection={projection} sessionId={sessionId} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(citationCopyText(text, projection)).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
 });
 
 function useElapsedMilliseconds(startedAt: number | null, durationMs: number | null) {
@@ -317,7 +299,7 @@ const AssistantMessage = memo(function AssistantMessage({ message, streaming, sh
   const [copied, setCopied] = useState(false);
   const copyText = citationCopyText(text, projection);
   const resolvedThinkingDuration = thinkingDurationMs ?? messageThinkingDurationMs(message);
-  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={focusCitationCard}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={html(displayText, false, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
+  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={focusCitationCard}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={renderConversationMarkdown(displayText, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
 });
 
 function preview(args: Record<string, unknown>) {
