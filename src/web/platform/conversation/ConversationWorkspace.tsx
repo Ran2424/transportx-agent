@@ -14,7 +14,7 @@ import i18n from '../../i18n';
 import { AttachmentCards } from './conversation-attachments';
 import { ComposerAttachmentList, useComposerAttachments } from './composer-attachments';
 import { ComposerContextUsage } from './composer-context-usage';
-import { ComposerCitationPicker, type CiteCandidate } from './composer-citation-picker';
+import { ComposerCitationPicker, useComposerCitationPicker } from './composer-citation-picker';
 import { copyText } from './conversation-clipboard';
 import { durationSeconds, useElapsedMilliseconds } from './conversation-duration';
 import { CitationManager } from './citation-manager';
@@ -200,37 +200,10 @@ function Composer({ sessionId, session, streaming, compacting, queued, taskModeE
   const [error, setError] = useState('');
   const { pending, setPending, addAttachments, removeAttachment } = useComposerAttachments(sessionId, setError);
   const [taskModeBusy, setTaskModeBusy] = useState(false);
-  const [citeOpen, setCiteOpen] = useState(false);
-  const [citeLoading, setCiteLoading] = useState(false);
-  const [citeCandidates, setCiteCandidates] = useState<CiteCandidate[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const { citeOpen, citeLoading, citeCandidates, setCiteOpen, openCitePicker, insertCitation } = useComposerCitationPicker({ sessionId, onCitationEnvelope, onInsert: (marker) => setValue((current) => current.replace('/cite', marker)), onError: setError, onFocus: () => inputRef.current?.focus() });
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
   useEffect(resize, [value]);
-  async function openCitePicker() {
-    setCiteOpen(true); setCiteLoading(true); setError('');
-    try {
-      const citations = await kernel.commands.citation.list(sessionId);
-      const works = new Map(citations.works.map((item) => [item.workId, item]));
-      const resources = new Map(citations.resources.map((item) => [item.resourceId, item]));
-      setCiteCandidates(citations.locators.flatMap((locator) => {
-        const resource = resources.get(locator.resourceId);
-        const work = resource ? works.get(resource.workId) : null;
-        if (!resource || !work) return [];
-        const position = locator.page ? (i18n.language === 'en-US' ? `Page ${locator.page}` : `第 ${locator.page} 页`) : locator.clause || locator.section || locator.sourceUnit || locator.nodeId || t('conversation.sourceLocation');
-        return [{ locatorId: locator.locatorId, title: work.title, position, quote: locator.quote }];
-      }));
-    } catch (cause) { setError((cause as Error).message || t('conversation.citationUnavailable')); setCiteCandidates([]); }
-    finally { setCiteLoading(false); }
-  }
-  async function insertCitation(locatorId: string) {
-    try {
-      const { marker, citations } = await kernel.commands.citation.createOccurrence(sessionId, locatorId, 'support');
-      onCitationEnvelope(citations);
-      setValue((current) => current.replace('/cite', marker));
-      setCiteOpen(false);
-      requestAnimationFrame(() => inputRef.current?.focus());
-    } catch (cause) { setError((cause as Error).message || t('conversation.createCitationFailed')); }
-  }
   async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
     const attachmentIds = pending.filter((item) => item.status === 'ready' && item.attachment).map((item) => item.attachment!.id);
     if (pending.some((item) => item.status === 'uploading')) { setError(t('conversation.uploadingWait')); return; }
