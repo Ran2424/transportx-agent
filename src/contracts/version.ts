@@ -6,7 +6,6 @@
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 
 export const CONTRACT_VERSION = '1.27.0';
-export const CONTRACT_PACKAGE_VERSION = CONTRACT_VERSION;
 
 /**
  * Stable `schemaVersion` literals for the project-owned contract surfaces.
@@ -24,18 +23,8 @@ export const CITATION_ENVELOPE_PROTOCOL = 'pi-citation' as const;
 export const CITATION_ENVELOPE_VERSION = '2.0' as const;
 export const BRIDGE_ENVELOPE_SCHEMA_VERSION = 1 as const;
 
-export type SchemaVersion<T extends number | string> = { readonly schemaVersion: T };
-
 /** Mirror contract version that the Browser Kernel / Server expects from Pi workers. */
 export const PI_RUNTIME_MINIMUM = '0.80.10';
-
-export function schemaVersionIsSupported(value: unknown, supported: number): boolean {
-  return value === supported;
-}
-
-export function envelopeVersionIsSupported(value: unknown, supported: string): boolean {
-  return value === supported;
-}
 
 /**
  * Surface an unknown schema/revision as a structured diagnostic. Used by every
@@ -55,20 +44,5 @@ export function unknownVersionDiagnostic(input: {
     ...(input.field === 'revision' ? { severity: 'warning' } : {}),
     expected: input.expected,
     received: input.received as ContractDiagnostic['received'],
-  });
-}
-
-export function revisionRegressionDiagnostic(input: {
-  path: string;
-  received: number;
-  previous: number;
-}): ContractDiagnostic {
-  return diagnostic({
-    code: 'revision_regression',
-    path: input.path,
-    message: `Incoming revision ${input.received} is older than the current ${input.previous}.`,
-    severity: 'warning',
-    expected: input.previous,
-    received: input.received,
   });
 }

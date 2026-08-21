@@ -120,4 +120,4 @@ export async function getAvailableModels() {
 
 
 export function _setExecFileForTest(fn: ExecFileFn | null | undefined) { _execFileForTest = fn || null; modelListCache = { at: 0, models: [] }; }
-export function _clearModelListCacheForTest() { modelListCache = { at: 0, models: [] }; }
+export function invalidateModelListCache() { modelListCache = { at: 0, models: [] }; }

@@ -8,8 +8,6 @@
 
 export type JsonRecord = Record<string, unknown>;
 
-export type JsonPrimitive = string | number | boolean | null;
-
 export type ValidationIssue = {
   path: string;
   code: string;
@@ -47,11 +45,6 @@ export function asString(value: unknown, max = 200): string | null {
   if (!text) return null;
   if (text.length > max) return null;
   return text;
-}
-
-export function asOptionalText(value: unknown, max = 200): string | null | undefined {
-  if (value === undefined) return undefined;
-  return asString(value, max);
 }
 
 export function asFiniteNumber(value: unknown): number | null {

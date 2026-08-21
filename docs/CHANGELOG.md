@@ -2,7 +2,69 @@
 
 本文记录项目每次提交、推送的主要内容、影响范围与验证结果，作为 README 之外的工程演进记录。
 
-## Unreleased
+## v3.1.1 — 代码优化与架构整理
+
+### 代码与架构收口（`codex/final-code-optimization`）
+
+- 日期：2026-08-21
+- GitHub 操作：以 `b44082a` 建立 `codex/baseline-v3.1.0` 基线，完成 `codex/final-code-optimization` 的模块化改造并合并至 `main`；清理该发布之外的本地与 `origin` 分支。
+
+主要修改：
+
+- Task Mode 移除已无生产消费者的 `task-state.ts` re-export，改由 `src/contracts/task.ts` 作为唯一权威入口；模块版本提升至 `1.0.1`。
+- 删除无代码消费者的 contracts export，并将模型展示和 `models.json` CRUD 的重复逻辑收口。
+- 会话压缩状态由 Pi RPC 生命周期驱动：压缩期间安全保留排队提示词，`agent_settled` 才释放流式状态；工作台显示压缩状态和上下文占用。
+- 将历史设计、修复说明、题库与审查文档迁入 `docs/archive/`，并更新评测与历史链接。
+- Geo 与 Video 展示收口到 AgentCanvas：以轻量 Canvas item 描述展示引用，统一激活、关闭和自动发布状态，同时保留各自领域 Workspace 与资源 API。
+- Citation HTTP 访问收口到 Kernel command port；会话区、引用管理器和报告预览统一消费已验证的 `CitationEnvelope`。
+- Video Workspace 的时序指标读取迁入 Kernel command port，播放器仅保留指标校验与展示逻辑。
+- 报告 PDF 导出迁入 Kernel command port，文件预览组件继续只负责浏览器侧的渲染与下载触发。
+- 附件上下文的生成与剥离迁入共享 contracts，Server 与浏览器会话投影统一使用同一标记协议。
+- 报告预览文本读取迁入 Kernel command port，`FilePreview` 不再直接请求业务资源。
+- 抽出纯 `SessionCapabilityTracker`，将 Bridge envelope、兼容性协商与诊断状态从 `PiRpcSession` 的进程运行时职责中分离。
+- 会话标题推断与通用名称判断迁入独立纯逻辑模块，运行时只保留命名状态与事件发布。
+- RPC 路由建立领域 handler registry，并首先迁移模型与 Provider 配置命令，保留原有响应与缓存失效语义。
+- 鉴权 RPC 也迁入 registry，鉴权持久化、事件广播和启用后的客户端断连保持为宿主层的明确回调。
+- 会话命名命令迁入 Session RPC handler，历史 JSONL 写入与 Live Session 事件更新由宿主层回调保留。
+- 模块安装、ZIP 导入、启用与卸载命令迁入 registry，继续受桌面模式和活动会话模块占用检查保护。
+- 会话附件索引迁入 Kernel `SessionStore`；上传、删除和文件面板刷新不再通过全局 DOM 事件旁路状态。
+- Pi 原生命令的白名单、可靠投递标记、附件上下文注入与运行时状态回滚迁入独立 RPC handler，宿主由 registry 派生可靠命令集合。
+- 平台概览、会话消息和会话快照读取也迁入 RPC registry，`server-main.ts` 仅保留 HTML 导出的宿主文件与进程编排。
+- HTML 导出命令迁入 RPC registry，受控的 Pi 子进程执行和既有 session 目录输出校验仍留在宿主回调。
+- Live Session 首次连接仍下发完整 metadata；后续 `live_session_updated` 仅包含可观察实时字段，并按内容去重，避免流式事件重复广播完整会话计划与资产信息。
+- `PiRpcTransport` 接管 Pi 命令 ID、stdin 写入确认、待响应表、超时和进程终止拒绝；`PiRpcSession` 仅保留运行时状态与事件投影。
+- Conversation 的 Markdown 渲染和 HTML 白名单清理迁入独立展示工具，工作台不再内嵌 DOM 安全策略。
+- React 冒烟夹具对齐 `scenario/` 工作区和 `agent_settled` 收敛协议；工具思考事件及主题尺寸断言同步当前产品基线。
+- 工具调用的历史结果、实时状态和孤立结果投影抽为纯模块，并补充其状态优先级回归用例。
+- 消息与 Composer 共用的附件卡片、预览 URL 和大小格式化迁为独立展示原语，附件状态继续由 Kernel Store 维护。
+- Composer 的上下文窗口计算和用量提示迁入专属展示组件，工作台不再包含其 UI 细节。
+- Composer 的引用选择器迁为独立 UI 组件，查询与引用插入仍由 Composer 的既有命令路径处理。
+- Tool Card 的图标归类、文件路径解析和参数字符计数迁为纯工具模块，并新增回归用例。
+- Tool Card 的文件读取预览迁为独立组件，图片、文件预览与弹窗行为保持不变。
+- Tool Card 的图片路径提取、输出截断和参数预览格式化迁为独立展示工具。
+- Tool Card 的精确工具名与文案 key 映射迁入工具模块，工作台仅保留通用兜底分类。
+- Session History 的标题提取与会话名推导迁为纯 Reader 模块，JSONL 扫描与 HTTP 编排继续保留在 handler。
+- Session History Reader 接管单个 JSONL 会话摘要与轻量 header cwd 读取；handler 仅组织索引、排序和 HTTP 响应。
+- Session History Reader 接管 JSONL 会话搜索投影；handler 不再直接解析历史消息条目。
+- Tool Card 迁为独立对话展示组件；展开状态、计时、复制、图片与文件预览行为保持不变，工作台仅负责消息编排。
+- Citation Manager 弹窗迁为独立组件；证据图加载、过滤、导出和预览仍通过同一 Kernel command 与受控资源 URL。
+- Composer 的附件去重、上传、删除与卡片展示迁为独立 Hook/组件；剪贴板图片命名和失败状态保持既有规则。
+- Composer 的引用候选加载与 marker 插入迁为专属 Hook，继续使用 Citation command port，并保持插入后回焦与错误提示。
+- Composer 本体迁为独立对话组件；prompt/steer、任务模式、队列与工具栏保持原有命令路径，Conversation Workspace 专注线程投影与组件组合。
+- 消息内的 Artifact 列表、Citation Footer 与证据悬浮预览迁为独立展示层，继续消费既有引用投影和受控资源 URL。
+- 用户/助手消息卡片、复制交互与 Thinking 状态迁为独立组件；Conversation Workspace 收口为 55 行的会话线程组合根。
+- 会话项目/系统提示词的加载、变量渲染与 Module 资源说明迁为独立 `session-prompt` 边界；Module System 测试改为直接验证该权威入口。
+- 会话工作目录创建、名称净化与会话 ID 生成迁为独立 `session-workspace` 边界，并补充唯一目录与显式父目录校验回归。
+- 上下文用量的响应合并、压缩后估算与 usage totals 合并迁为纯 `session-context-usage` 模块，Pi Session 仅负责状态调用。
+- Pi 事件的思考/工具计时临时状态迁为 `session-event-timing` tracker；持久化仍由既有 `TimingMetricsStore` 负责，事件时间字段和消息增补语义保持不变。
+- 完整 Session Metadata、实时 Live Metadata 与快照组合迁为纯 `session-metadata` 构建器；慢变的计划/目录/待处理 UI 请求继续不进入实时增量广播。
+- Pi 的启动参数、Module 扩展/Skill、项目提示词、服务令牌与 Data/Knowledge 资产环境变量迁为 `session-pi-launch`；Session 只保留进程 spawn 和 I/O 生命周期绑定。
+
+验证：
+
+- `npm test` 通过（156/156）。
+- `npm run test:react-smoke` 通过：真实 Node 服务、fake Pi 与 Chrome 覆盖会话、对话、任务、Geo、扩展 UI 与移动视图。
+- `npm run test:desktop-smoke` 通过：Electron 生命周期、内置 Python/PDF 路径与视频编解码探测均通过。
 
 ## v3.1.0 — 模块 ZIP 快速安装
 
@@ -79,7 +141,7 @@
 
 主要修改：
 
-- 依据 `docs/SPEC_VIDEO.md` 实现 Video Capability V1：新增 `src/contracts/video.ts`（Video Scene V1、资源 Manifest、Catalog 与严格带时区时间解析）、Agent Host Video Service / VideoRunner（受控 ffmpeg/ffprobe）、Session Video Resource（`.tau/video-resources/`）、支持 GET/HEAD/单 Range/416 的同源 Video Resource API。
+- 依据 `docs/archive/SPEC_VIDEO.md` 实现 Video Capability V1：新增 `src/contracts/video.ts`（Video Scene V1、资源 Manifest、Catalog 与严格带时区时间解析）、Agent Host Video Service / VideoRunner（受控 ffmpeg/ffprobe）、Session Video Resource（`.tau/video-resources/`）、支持 GET/HEAD/单 Range/416 的同源 Video Resource API。
 - 新增内置 Capability Module `modules/capabilities/video`（`video_search` / `video_present` / `video_snapshot` / `video_clip` / `video_sample_frames` 五个受控工具、Skill 与视觉模型门控）与可安装 Data Module `modules/installable/demo-video`（两段 60 秒合成 Demo 录像）。
 - React 新增 Video Workspace（投影自 Video Scene 的 Float 播放器视图，支持初始定位、Loading/Error），Header 与命令面板增加视频视图开关。
 - 新增可安装数据模块 `modules/installable/hongqiao-metro-demo`：虹桥枢纽高铁 B1 层南通道地铁入口 74.7 分钟真实监控录像（1280x720 H.264 faststart，410MB，不入 Git）+ YOLO（yolo26s + ByteTrack，ROI 进入法）离线识别的每分钟进站客流表与联合分析 Skill。
@@ -127,7 +189,7 @@ Workspace Focus 抽象与视频工作区形态升级：
 主要修改：
 
 - 工作台 UI 打磨：新增确认对话框基元，优化能力面板、会话侧栏与设置对话框的交互与样式。
-- 新增 `docs/SPEC_VIDEO.md`：Video Capability V1 最终设计文档（视频查询、展示、受控处理与多模态理解），为后续视频模块开发提供依据。
+- 新增 `docs/archive/SPEC_VIDEO.md`：Video Capability V1 最终设计文档（视频查询、展示、受控处理与多模态理解），为后续视频模块开发提供依据。
 - npm 包与平台版本同步提升为 `3.0.9`。
 
 验证：

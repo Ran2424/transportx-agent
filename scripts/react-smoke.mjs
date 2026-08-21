@@ -549,8 +549,8 @@ try {
   if (toolChrome.cardBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.cardBorder !== 'none' || toolChrome.labelColor !== toolChrome.bodyColor || toolChrome.labelBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.labelBorder !== 'none') {
     throw new Error(`Tool history should be borderless with a plain text label: ${JSON.stringify(toolChrome)}`);
   }
-  if (toolChrome.markerBackground !== 'rgb(185, 109, 76)' || toolChrome.markerRadius !== '50%') {
-    throw new Error(`Sand completion marker should carry the timeline accent: ${JSON.stringify(toolChrome)}`);
+  if (toolChrome.markerBackground !== 'rgba(185, 109, 76, 0.09)' || toolChrome.markerRadius !== '8px') {
+    throw new Error(`Sand completion marker should use the selection token: ${JSON.stringify(toolChrome)}`);
   }
   await reactPage.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, selectedTheme);
 
@@ -576,7 +576,7 @@ try {
     const iconStyle = icon ? getComputedStyle(icon) : null;
     return { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height), iconWidth: iconStyle ? Number.parseFloat(iconStyle.width) : 0 };
   });
-  if (iconChrome.width !== 20 || iconChrome.height !== 20 || iconChrome.iconWidth !== 12) {
+  if (iconChrome.width !== 22 || iconChrome.height !== 22 || iconChrome.iconWidth !== 12) {
     throw new Error(`Tool glyph proportions changed: ${JSON.stringify(iconChrome)}`);
   }
   await fallbackToolIcon.evaluate((node) => node.closest('.tool-card')?.querySelector('button')?.click());
@@ -679,10 +679,10 @@ try {
   if (settledProtocolErrors) throw new Error('agent_settled surfaced as a protocol error');
   const retryProtocolErrors = await reactPage.locator('.runtime-notice', { hasText: /Unknown RPC event type "auto_retry_(?:start|end)"/ }).count();
   if (retryProtocolErrors) throw new Error('automatic retry lifecycle surfaced as a protocol error');
-  await reactPage.locator('[data-testid="workspace-float-map"].is-open').waitFor({ timeout: 10_000 });
+  await reactPage.locator('[data-testid="agent-canvas"].is-open').waitFor({ timeout: 10_000 });
   await reactPage.locator('.geo-map').waitFor({ timeout: 10_000 });
   await reactPage.locator('.geo-layers', { hasText: '下车点' }).waitFor({ timeout: 10_000 });
-  const geoView = reactPage.getByTestId('workspace-float-map');
+  const geoView = reactPage.getByTestId('agent-canvas');
   const geoCanvas = geoView.locator('canvas.maplibregl-canvas');
   await geoCanvas.waitFor({ timeout: 10_000 });
   await geoCanvas.evaluate((node) => { node.dataset.smokePersistentMap = 'true'; });
@@ -726,7 +726,7 @@ try {
   if (!requestedUrls.some((url) => url.includes('geo-runtime-entry') || url.includes('maplibre'))) {
     throw new Error('Geo workspace did not load its runtime on demand');
   }
-  const mapClosedMotion = await measureMotion('[data-testid="workspace-float-map"] button[aria-label="关闭地图视图"]', '.conversation-pane', 'left', 540);
+  const mapClosedMotion = await measureMotion('[data-testid="agent-canvas"] button[aria-label="关闭地图视图"]', '.conversation-pane', 'left', 540);
   assertSmoothMotion(mapClosedMotion, 'decreasing', 'Desktop map close');
   await reactPage.locator('.agent-main-column:not(.is-workspace-focused)').waitFor();
 

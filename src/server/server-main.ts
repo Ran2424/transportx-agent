@@ -10,8 +10,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
 import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
-import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, _clearModelListCacheForTest, _setExecFileForTest } from './model-utils.js';
-import { LiveSessionManager, PiRpcSession, isGenericSessionName, liveManager, makeId, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, _setSpawnPiForTest } from './sessions.js';
+import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, invalidateModelListCache, _setExecFileForTest } from './model-utils.js';
+import { LiveSessionManager, PiRpcSession, liveManager, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, _setSpawnPiForTest } from './sessions.js';
+import { makeSessionId as makeId } from './session-workspace.js';
+import { isGenericSessionName } from './session-title.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleVideoResourceRoute } from './video-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
@@ -25,15 +27,23 @@ import { createSessionHistoryHandlers } from './session-history-handler.js';
 import { createStaticHandler } from './static-handler.js';
 import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
-import { addPiModel } from './pi-model-config.js';
-import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders } from './pi-model-access.js';
+import type { RpcHandlerRegistry } from './rpc-handlers.js';
+import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
+import { createHtmlExportRpcHandlers } from './rpc-handlers/html-export.js';
+import { createModuleRpcHandlers } from './rpc-handlers/module.js';
+import { createModelRpcHandlers } from './rpc-handlers/model.js';
+import { createNativeRpcHandlers } from './rpc-handlers/native.js';
+import { createPlatformRpcHandlers } from './rpc-handlers/platform.js';
+import { createSessionReadRpcHandlers, createSessionRpcHandlers } from './rpc-handlers/session.js';
 import { platformOverview } from './platform-overview.js';
-import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, buildAttachmentContext, attachmentFilePath } from './session-attachments.js';
+import { buildAttachmentContext } from '../contracts/attachments.js';
+import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 import { CitationService } from './citation-service.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
 import { VideoService } from './video-service.js';
 import { verifyChecksumFile, within } from './asset-integrity.js';
+import { writeJson as json } from './http/response.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -42,7 +52,47 @@ const citationService = new CitationService();
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
-const reliableCommandTypes = new Set(['prompt', 'steer', 'follow_up', 'abort', 'extension_ui_response']);
+const rpcHandlers: RpcHandlerRegistry = {
+  ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
+  ...createPlatformRpcHandlers(currentPlatformOverview),
+  ...createAuthRpcHandlers({
+    configured: AUTH_CONFIGURED,
+    getEnabled: () => authEnabled,
+    setEnabled: (enabled) => { authEnabled = enabled; saveTauSetting('authEnabled', enabled); },
+    notifyChanged: (enabled) => liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled } }),
+    disconnectClients: () => {
+      const timer = setTimeout(() => [...liveManager.clients].forEach((client) => { try { client.close(4001, 'Authentication enabled'); } catch {} }), 25);
+      timer.unref?.();
+    },
+  }),
+  ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, invalidateModelListCache, errorMessage }),
+  ...createModuleRpcHandlers({
+    desktopMode: DESKTOP_MODE,
+    installer: MODULE_INSTALLER,
+    registry: MODULE_REGISTRY,
+    reloadModules,
+    setModuleEnabled,
+    hasActiveModule: (moduleId) => [...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId)),
+    overview: currentPlatformOverview,
+    errorMessage,
+  }),
+  ...createSessionRpcHandlers<PiRpcSession>({
+    getLiveSession: (sessionId) => liveManager.get(sessionId),
+    findLiveSessionByFile: (filePath) => liveManager.findBySessionFile(filePath),
+    appendSessionName,
+    updateLiveSessionName,
+  }),
+  ...createSessionReadRpcHandlers<PiRpcSession>((sessionId) => liveManager.get(sessionId)),
+  ...createNativeRpcHandlers<PiRpcSession>({
+    getLiveSession: (sessionId) => liveManager.get(sessionId),
+    resolveAttachments: resolveSessionAttachments,
+    attachmentBase64: (cwd, attachment) => fs.readFileSync(attachmentFilePath(cwd, attachment)).toString('base64'),
+    buildAttachmentContext: (attachments) => buildAttachmentContext(attachments),
+    parseModel: parseModelSpecToModel,
+    errorMessage,
+  }),
+};
+const reliableCommandTypes = new Set(Object.entries(rpcHandlers).flatMap(([type, handler]) => handler.reliable ? [type] : []));
 
 type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
 
@@ -85,8 +135,6 @@ function maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: 
 
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 function errorStatus(error: unknown) { return error && typeof error === 'object' && 'status' in error && typeof (error as StatusError).status === 'number' ? (error as StatusError).status! : 400; }
-function json(res: ServerResponse, status: number, data: unknown, extraHeaders: Record<string, string> = {}) { res.writeHead(status, { 'Content-Type': 'application/json', ...extraHeaders }); res.end(JSON.stringify(data)); }
-
 function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
   if (parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME]) res.setHeader('Set-Cookie', buildSessionCookie('', { secure: isForwardedHttps(req), clear: true }));
   res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Tau"', 'Content-Type': 'application/json' });
@@ -144,6 +192,14 @@ function resolveExportOutputPath(outputPath: string, sessionFile: string) {
   return resolved;
 }
 
+async function runPiHtmlExport({ file, cwd, outputPath }: { file: string; cwd: string; outputPath?: string }) {
+  const args = [...PI_COMMAND_ARGS, '--export', file, ...(outputPath ? [resolveExportOutputPath(outputPath, file)] : [])];
+  const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: cwd || path.dirname(file), timeout: 30000, encoding: 'utf8', env: piProcessEnv() }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
+  let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
+  if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
+  return result;
+}
+
 function openUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url)) return Promise.reject(new Error('Invalid URL'));
   if (process.platform === 'win32') { spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref(); return Promise.resolve(); }
@@ -189,176 +245,9 @@ function currentSessionOptions() {
 async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
-  if (command.type === 'get_auth') return success({ configured: AUTH_CONFIGURED, enabled: authEnabled });
-  if (command.type === 'set_auth') {
-    if (!AUTH_CONFIGURED) return failure('No credentials configured. Set tau.user and tau.pass in settings.json');
-    const wasEnabled = authEnabled; authEnabled = !!command.enabled; saveTauSetting('authEnabled', authEnabled);
-    liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled: authEnabled } });
-    if (!wasEnabled && authEnabled) { const timer = setTimeout(() => [...liveManager.clients].forEach((client) => { try { client.close(4001, 'Authentication enabled'); } catch {} }), 25); timer.unref?.(); }
-    return success({ enabled: authEnabled });
-  }
-  if (command.type === 'get_available_models') return success({ models: await getAvailableModels() });
-  if (command.type === 'get_model_providers') {
-    try { return success({ providers: await listPiModelProviders(PI_AGENT_DIR) }); }
-    catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'connect_model_provider') {
-    try {
-      const provider = await connectPiModelProvider(String(command.provider || ''), String(command.apiKey || ''), PI_AGENT_DIR);
-      _clearModelListCacheForTest();
-      return success({ provider });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'disconnect_model_provider') {
-    try {
-      await disconnectPiModelProvider(String(command.provider || ''), PI_AGENT_DIR);
-      _clearModelListCacheForTest();
-      return success();
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'add_model') {
-    try {
-      const model = await addPiModel(command as Omit<Partial<import('./pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, PI_AGENT_DIR);
-      _clearModelListCacheForTest();
-      return success({ model });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
-  if (command.type === 'install_module') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    let installed: { id: string; name: string; version: string; path: string } | null = null;
-    try {
-      installed = MODULE_INSTALLER.install(String(command.sourcePath || ''));
-      reloadModules();
-      if (MODULE_REGISTRY.get(installed.id)?.origin !== 'installed') throw new Error(`Module id conflicts with an existing module: ${installed.id}`);
-      setModuleEnabled(installed.id, true);
-      return success({ installed, overview: currentPlatformOverview() });
-    } catch (error) {
-      if (installed) {
-        try { MODULE_INSTALLER.uninstall(installed.id); } catch {}
-        try { reloadModules(); } catch {}
-      }
-      return failure(errorMessage(error));
-    }
-  }
-  if (command.type === 'inspect_module_archive') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    try {
-      const reservedModuleIds = new Set([...MODULE_REGISTRY.modules.values()].filter((module) => module.origin !== 'installed').map((module) => module.manifest.id));
-      const inspection = await MODULE_INSTALLER.inspectArchive(String(command.sourcePath || ''), reservedModuleIds);
-      return success({ inspection });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'install_module_archive') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    try {
-      const selections = Array.isArray(command.selections)
-        ? command.selections.filter((selection): selection is { id: string; version: string } => !!selection && typeof selection.id === 'string' && typeof selection.version === 'string')
-        : [];
-      const installed = await MODULE_INSTALLER.installArchive(String(command.importId || ''), selections);
-      reloadModules();
-      for (const module of installed) setModuleEnabled(module.id, true);
-      return success({ installed, overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'discard_module_archive') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    MODULE_INSTALLER.discardArchive(String(command.importId || ''));
-    return success();
-  }
-  if (command.type === 'uninstall_module') {
-    if (!DESKTOP_MODE) return failure('Module uninstallation is only available in the desktop app');
-    try {
-      const moduleId = String(command.moduleId || '');
-      if ([...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId))) throw new Error('Close active tasks that use this module before uninstalling it');
-      MODULE_INSTALLER.uninstall(moduleId, MODULE_REGISTRY);
-      reloadModules();
-      return success({ overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'set_module_enabled') {
-    if (!DESKTOP_MODE) return failure('Module selection is only available in the desktop app');
-    try {
-      setModuleEnabled(String(command.moduleId || ''), command.enabled === true);
-      return success({ overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'migrate_legacy_modules') {
-    if (!DESKTOP_MODE) return failure('Module migration is only available in the desktop app');
-    try {
-      const migrated = MODULE_INSTALLER.migrateLegacyPackages();
-      reloadModules();
-      return success({ migrated, overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'set_session_name') {
-    const name = command.name?.trim();
-    if (!name) return failure('Name cannot be empty');
-    const session = command.sessionId ? liveManager.get(command.sessionId) : null, resolvedFile = command.filePath || session?.sessionFile ? appendSessionName(command.filePath || session!.sessionFile!, name) : null;
-    const matching = resolvedFile ? [...liveManager.sessions.values()].find((item) => item.sessionFile && path.resolve(item.sessionFile) === resolvedFile) : null;
-    if (session) updateLiveSessionName(session, name); else if (matching) updateLiveSessionName(matching, name); else if (!resolvedFile) return failure('sessionId or filePath required');
-    return success({ name });
-  }
-  const session = command.sessionId ? liveManager.get(command.sessionId) : null;
-  if (command.type === 'export_html') {
-    try {
-      if (command.sessionId && !session) throw new Error('Live session not found');
-      const file = command.filePath ? resolveSessionFile(command.filePath) : session?.sessionFile;
-      if (!file) throw new Error('No session file to export yet');
-      const args = [...PI_COMMAND_ARGS, '--export', file, ...(command.outputPath ? [resolveExportOutputPath(command.outputPath, file)] : [])];
-      const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: session?.cwd || path.dirname(file), timeout: 30000, encoding: 'utf8', env: piProcessEnv() }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
-      let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
-      if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
-      return success({ path: result });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (!session) return failure('No active Tau session. 没有活跃的交通任务，请先创建或选择一个任务。');
-  if (command.type === 'get_state') return success({ model: session.model, thinkingLevel: session.thinkingLevel, isStreaming: session.isStreaming, sessionFile: session.sessionFile, sessionName: session.sessionName, autoCompactionEnabled: true });
-  if (command.type === 'get_messages') return success({ entries: session.entries });
-  if (command.type === 'live_session_snapshot_request') return { type: 'live_session_snapshot', sessionId: session.id, ...session.snapshot() };
-  if (command.type === 'set_auto_compaction') return success({ enabled: !!command.enabled });
-  const native = new Set(['prompt', 'steer', 'follow_up', 'abort', 'compact', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response']);
-  if (!native.has(command.type || '')) return failure(`Unknown command: ${command.type}`);
-  const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
-  if (command.type === 'extension_ui_response' && (typeof command.id !== 'string' || !session.pendingExtensionUiRequests.has(command.id))) {
-    return failure('Extension UI request is no longer pending');
-  }
-  if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
-  let trackedPromptAttachments: string[] | null = null;
-  try {
-    let rpcCommand = { ...command };
-    delete rpcCommand.clientCommandId;
-    if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
-      const rawIds = command.attachmentIds;
-      const attachmentIds = rawIds === undefined ? [] : Array.isArray(rawIds) ? rawIds.filter((id): id is string => typeof id === 'string') : null;
-      if (!attachmentIds) return failure('attachmentIds must be an array');
-      const attachments = resolveSessionAttachments(session.cwd, attachmentIds);
-      const message = typeof command.message === 'string' ? command.message : '';
-      const context = buildAttachmentContext(attachments);
-      const imageInputs = session.model && ((session.model as Record<string, unknown>).images === true || (Array.isArray((session.model as Record<string, unknown>).input) && ((session.model as Record<string, unknown>).input as unknown[]).includes('image')))
-        ? attachments.filter((attachment) => attachment.kind === 'image').map((attachment) => ({ type: 'image', data: fs.readFileSync(attachmentFilePath(session.cwd, attachment)).toString('base64'), mimeType: attachment.mimeType }))
-        : [];
-      rpcCommand = { ...command, message: `${message}${context}`, ...(imageInputs.length ? { images: imageInputs } : {}) } as unknown as RpcCommand;
-      delete rpcCommand.attachmentIds;
-    }
-    if (command.type === 'set_model' && (!command.provider || !command.modelId)) {
-      const parsed = parseModelSpecToModel(command.model);
-      if (!parsed.model?.provider || !parsed.model.id) return failure('模型格式无效，请使用 provider/model');
-      rpcCommand = { ...command, provider: parsed.model.provider, modelId: parsed.model.id };
-    }
-    if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
-      trackedPromptAttachments = Array.isArray(command.attachmentIds) ? command.attachmentIds.filter((id): id is string => typeof id === 'string') : [];
-      session.registerPromptAttachments(trackedPromptAttachments);
-    }
-    const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 300000 : 60000 });
-    if (command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
-    if (response.success === false && previousLevel !== null) session.thinkingLevel = previousLevel;
-    return { ...response, success: response.success !== false };
-  } catch (error) {
-    if (previousLevel !== null) session.thinkingLevel = previousLevel;
-    if (trackedPromptAttachments) session.discardPromptAttachments(trackedPromptAttachments);
-    return failure(errorMessage(error));
-  }
+  const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
+  if (registered) return registered.handle(command, { success, failure });
+  return failure(`Unknown command: ${command.type}`);
 }
 
 async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
@@ -474,4 +363,4 @@ function _setAuthForTest(enabled: boolean) { authEnabled = !!enabled; }
 function _setCredentialsForTest(user: string, pass: string) { TAU_SETTINGS.user = user; TAU_SETTINGS.pass = pass; }
 function _issueSessionTokenForTest(expiresAtSeconds?: number) { return issueSessionToken(expiresAtSeconds); }
 
-module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: within, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, _clearModelListCacheForTest };
+module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: within, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, invalidateModelListCache };

@@ -3,6 +3,7 @@ const path = require('node:path');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { within } from './asset-integrity.js';
+import { writeJson as sendJson } from './http/response.js';
 
 type GeoResourceSession = { cwd: string };
 type GeoResourceRouteDeps = { getSession(sessionId: string): GeoResourceSession | null | undefined };
@@ -15,11 +16,6 @@ type GeoResourceManifest = {
 
 const RESOURCE_ID_RE = /^geo_[a-f0-9]{16,64}$/;
 const GEO_RESOURCE_ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/geo-resources\/([^/]+)\/(manifest|data)$/;
-
-function sendJson(res: ServerResponse, status: number, data: unknown) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' });
-  res.end(JSON.stringify(data));
-}
 
 export function handleGeoResourceRoute(
   req: IncomingMessage,
