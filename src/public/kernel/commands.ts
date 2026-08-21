@@ -216,6 +216,10 @@ export type CitationCommands = {
   createOccurrence(sessionId: string, locatorId: string, role: 'support'): Promise<{ marker: string; citations: CitationEnvelope }>;
 };
 
+export type VideoCommands = {
+  getMetrics(sessionId: string, resourceId: string): Promise<unknown>;
+};
+
 /** fetch() wrapper: network/HTTP-status/payload errors all become AppError. */
 async function httpJson(
   http: HttpClient,
@@ -458,6 +462,14 @@ export function createCitationCommands(deps: CommandDeps): CitationCommands {
   };
 }
 
+export function createVideoCommands(deps: CommandDeps): VideoCommands {
+  return {
+    getMetrics(sessionId, resourceId) {
+      return httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(resourceId)}/metrics`, undefined, { category: 'session', sessionId });
+    },
+  };
+}
+
 export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
   return {
     async getAvailableModels(sessionId) {
@@ -581,6 +593,7 @@ export type KernelCommands = {
   agent: AgentCommands;
   session: SessionCommands;
   citation: CitationCommands;
+  video: VideoCommands;
   platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
 };
@@ -590,6 +603,7 @@ export function createCommands(deps: CommandDeps): KernelCommands {
     agent: createAgentCommands(deps),
     session: createSessionCommands(deps),
     citation: createCitationCommands(deps),
+    video: createVideoCommands(deps),
     platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),
   };

@@ -5,6 +5,7 @@ import { formatVideoTimestamp, parseVideoTimestamp, type VideoSceneItemV1 } from
 import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
 import { FeatureEmpty } from '../task/TaskBoard';
 import { projectVideoScene } from './video-projection';
+import { appKernel } from '../../app/composition-root';
 
 type VideoMetric = { id: string; label: string; unit: string; sampleIntervalSeconds: number; samples: Array<{ offsetSeconds: number; value: number }> };
 
@@ -123,6 +124,7 @@ function VideoPlayer({ sessionId, item, items, active, onSelect, compact = false
   trailingAction?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const kernel = appKernel;
   const videoRef = useRef<HTMLVideoElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -144,12 +146,12 @@ function VideoPlayer({ sessionId, item, items, active, onSelect, compact = false
   useEffect(() => {
     let cancelled = false;
     setMetrics([]);
-    void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(item.resourceId)}/metrics`)
-      .then(async (response) => response.ok ? readVideoMetrics(await response.json()) : [])
+    void kernel.commands.video.getMetrics(sessionId, item.resourceId)
+      .then(readVideoMetrics)
       .then((nextMetrics) => { if (!cancelled) setMetrics(nextMetrics); })
       .catch(() => { if (!cancelled) setMetrics([]); });
     return () => { cancelled = true; };
-  }, [item.resourceId, sessionId]);
+  }, [item.resourceId, kernel, sessionId]);
 
   const updateClock = (seconds: number) => {
     if (!recordingStart) return;
