@@ -28,21 +28,15 @@ import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './sessio
 import { TimingMetricsStore } from './timing-metrics.js';
 import { signalProcessTree } from './process-tree.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
+import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
-  acceptBridgeRevision,
   appError,
-  latestPiWebBridgeEnvelopeStructured,
-  matchCapabilities,
-  parsePiWebBridgeEnvelopeStructured,
   protocolError,
   parseCitationRegistry,
-  runtimeCapabilities,
   type CapabilityMismatchReason,
   type ContractDiagnostic,
-  type PiWebBridgeEnvelope,
-  type RuntimeCapabilities,
   type SessionProfileV1,
 } from '../contracts/index.js';
 import { stripAttachmentContext } from '../contracts/attachments.js';
@@ -237,11 +231,8 @@ export class PiRpcSession {
   exitCode: number | null;
   titleSet: boolean;
   userMessages: string[];
-  capabilities: RuntimeCapabilities;
-  capabilityMismatches: CapabilityMismatchReason[];
   piVersion: string;
-  lastBridgeRevision: number | null;
-  contractDiagnostics: ContractDiagnostic[];
+  capabilityTracker: SessionCapabilityTracker;
   resolvedSessionPlan: ResolvedSessionPlan | null;
   pendingAttachmentRefs: string[][];
   serviceTokens: Record<SessionService, string>;
@@ -280,10 +271,7 @@ export class PiRpcSession {
     this.titleSet = false;
     this.userMessages = [];
     this.piVersion = opts.piVersion || PI_RUNTIME_MINIMUM;
-    this.lastBridgeRevision = null;
-    this.capabilities = runtimeCapabilities(this.piVersion);
-    this.capabilityMismatches = [];
-    this.contractDiagnostics = [];
+    this.capabilityTracker = new SessionCapabilityTracker(this.piVersion);
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.pendingAttachmentRefs = [];
     this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID() };
@@ -314,12 +302,7 @@ export class PiRpcSession {
       lastConversationAt: this.lastConversationAt,
       contextUsage: this.contextUsage,
       pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()],
-      capabilities: {
-        ...this.capabilities,
-        ok: this.capabilityMismatches.length === 0 && this.contractDiagnostics.length === 0,
-        mismatches: this.capabilityMismatches,
-        diagnostics: this.contractDiagnostics,
-      },
+      capabilities: this.capabilityTracker.snapshot(),
       resolvedSessionPlan: this.resolvedSessionPlan,
     };
   }
@@ -645,54 +628,26 @@ export class PiRpcSession {
   }
 
   applyBridgePayload(value: unknown) {
-    const result = parsePiWebBridgeEnvelopeStructured(value);
-    if (!result.ok) {
-      this.contractDiagnostics = result.diagnostics;
-      this.manager.broadcastContractDiagnostic(this.id, result.diagnostics);
-      return;
-    }
-    this.applyBridgeEnvelope(result.value);
+    this.applyCapabilityUpdate(this.capabilityTracker.applyPayload(value), true);
   }
 
   applyLatestBridgeEnvelope() {
-    const hasBridgeEntry = this.projection.entries.some((entry) => entry.type === 'custom' && entry.customType === PI_WEB_BRIDGE_ENTRY);
-    if (!hasBridgeEntry) {
-      this.refreshCapabilities(null);
-      return;
-    }
-    const result = latestPiWebBridgeEnvelopeStructured(this.projection.entries);
-    if (!result.ok) {
-      this.contractDiagnostics = result.diagnostics;
-      return;
-    }
-    this.applyBridgeEnvelope(result.value);
+    this.applyCapabilityUpdate(this.capabilityTracker.applyLatest(this.projection.entries), false);
   }
 
-  applyBridgeEnvelope(envelope: PiWebBridgeEnvelope) {
-    const verdict = acceptBridgeRevision(this.lastBridgeRevision, envelope);
-    if (!verdict.accepted) {
-      console.warn(`[Pi ${this.id}] ${verdict.diagnostic?.message ?? 'bridge revision regression ignored'}`);
+  applyCapabilityUpdate(update: CapabilityUpdate, broadcastDiagnostics: boolean) {
+    if (update.kind === 'invalid') {
+      if (broadcastDiagnostics) this.manager.broadcastContractDiagnostic(this.id, update.diagnostics);
       return;
     }
-    if (envelope.model) this.model = envelope.model;
-    this.thinkingLevel = envelope.thinkingLevel;
-    this.lastBridgeRevision = envelope.revision;
-    this.contractDiagnostics = [];
-    this.refreshCapabilities(envelope);
-  }
-
-  refreshCapabilities(envelope: PiWebBridgeEnvelope | null) {
-    if (!envelope) {
-      this.capabilityMismatches = [];
-      this.capabilities = runtimeCapabilities(this.piVersion);
+    if (update.kind === 'rejected') {
+      console.warn(`[Pi ${this.id}] ${update.diagnostic?.message ?? 'bridge revision regression ignored'}`);
       return;
     }
-    const match = matchCapabilities({ ...envelope.capabilities, piVersion: this.piVersion });
-    this.capabilities = match.capabilities;
-    this.capabilityMismatches = match.ok ? [] : match.mismatches;
-    if (this.capabilityMismatches.length) {
-      this.manager.broadcastCapabilityDiagnostic(this.id, this.capabilityMismatches);
-    }
+    if (update.kind !== 'accepted') return;
+    if (update.envelope.model) this.model = update.envelope.model;
+    this.thinkingLevel = update.envelope.thinkingLevel;
+    if (update.mismatches.length) this.manager.broadcastCapabilityDiagnostic(this.id, update.mismatches);
   }
 
   reconcileProjection() {
