@@ -2,12 +2,12 @@
 
 本文记录项目每次提交、推送的主要内容、影响范围与验证结果，作为 README 之外的工程演进记录。
 
-## Unreleased
+## v3.1.1 — 代码优化与架构整理
 
 ### 代码与架构收口（`codex/final-code-optimization`）
 
 - 日期：2026-08-21
-- GitHub 操作：以 `b44082a` 建立 `codex/baseline-v3.1.0` 基线，并创建优化分支。
+- GitHub 操作：以 `b44082a` 建立 `codex/baseline-v3.1.0` 基线，完成 `codex/final-code-optimization` 的模块化改造并合并至 `main`；清理该发布之外的本地与 `origin` 分支。
 
 主要修改：
 
