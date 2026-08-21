@@ -28,6 +28,7 @@ import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import type { RpcHandlerRegistry } from './rpc-handlers.js';
 import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
+import { createModuleRpcHandlers } from './rpc-handlers/module.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
 import { createSessionRpcHandlers } from './rpc-handlers/session.js';
 import { platformOverview } from './platform-overview.js';
@@ -60,6 +61,16 @@ const rpcHandlers: RpcHandlerRegistry = {
     },
   }),
   ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, invalidateModelListCache, errorMessage }),
+  ...createModuleRpcHandlers({
+    desktopMode: DESKTOP_MODE,
+    installer: MODULE_INSTALLER,
+    registry: MODULE_REGISTRY,
+    reloadModules,
+    setModuleEnabled,
+    hasActiveModule: (moduleId) => [...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId)),
+    overview: currentPlatformOverview,
+    errorMessage,
+  }),
   ...createSessionRpcHandlers<PiRpcSession>({
     getLiveSession: (sessionId) => liveManager.get(sessionId),
     findLiveSessionByFile: (filePath) => liveManager.findBySessionFile(filePath),
@@ -214,73 +225,6 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
   if (registered) return registered.handle(command, { success, failure });
   if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
-  if (command.type === 'install_module') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    let installed: { id: string; name: string; version: string; path: string } | null = null;
-    try {
-      installed = MODULE_INSTALLER.install(String(command.sourcePath || ''));
-      reloadModules();
-      if (MODULE_REGISTRY.get(installed.id)?.origin !== 'installed') throw new Error(`Module id conflicts with an existing module: ${installed.id}`);
-      setModuleEnabled(installed.id, true);
-      return success({ installed, overview: currentPlatformOverview() });
-    } catch (error) {
-      if (installed) {
-        try { MODULE_INSTALLER.uninstall(installed.id); } catch {}
-        try { reloadModules(); } catch {}
-      }
-      return failure(errorMessage(error));
-    }
-  }
-  if (command.type === 'inspect_module_archive') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    try {
-      const reservedModuleIds = new Set([...MODULE_REGISTRY.modules.values()].filter((module) => module.origin !== 'installed').map((module) => module.manifest.id));
-      const inspection = await MODULE_INSTALLER.inspectArchive(String(command.sourcePath || ''), reservedModuleIds);
-      return success({ inspection });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'install_module_archive') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    try {
-      const selections = Array.isArray(command.selections)
-        ? command.selections.filter((selection): selection is { id: string; version: string } => !!selection && typeof selection.id === 'string' && typeof selection.version === 'string')
-        : [];
-      const installed = await MODULE_INSTALLER.installArchive(String(command.importId || ''), selections);
-      reloadModules();
-      for (const module of installed) setModuleEnabled(module.id, true);
-      return success({ installed, overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'discard_module_archive') {
-    if (!DESKTOP_MODE) return failure('Module installation is only available in the desktop app');
-    MODULE_INSTALLER.discardArchive(String(command.importId || ''));
-    return success();
-  }
-  if (command.type === 'uninstall_module') {
-    if (!DESKTOP_MODE) return failure('Module uninstallation is only available in the desktop app');
-    try {
-      const moduleId = String(command.moduleId || '');
-      if ([...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId))) throw new Error('Close active tasks that use this module before uninstalling it');
-      MODULE_INSTALLER.uninstall(moduleId, MODULE_REGISTRY);
-      reloadModules();
-      return success({ overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'set_module_enabled') {
-    if (!DESKTOP_MODE) return failure('Module selection is only available in the desktop app');
-    try {
-      setModuleEnabled(String(command.moduleId || ''), command.enabled === true);
-      return success({ overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'migrate_legacy_modules') {
-    if (!DESKTOP_MODE) return failure('Module migration is only available in the desktop app');
-    try {
-      const migrated = MODULE_INSTALLER.migrateLegacyPackages();
-      reloadModules();
-      return success({ migrated, overview: currentPlatformOverview() });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
   const session = command.sessionId ? liveManager.get(command.sessionId) : null;
   if (command.type === 'export_html') {
     try {
