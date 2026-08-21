@@ -19,6 +19,7 @@ export type HttpResponse = {
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
+  text(): Promise<string>;
 };
 
 export type HttpClient = (path: string, init?: HttpInit) => Promise<HttpResponse>;
@@ -221,6 +222,7 @@ export type VideoCommands = {
 };
 
 export type ReportCommands = {
+  loadSource(sessionId: string, url: string): Promise<WorkspaceFileContent>;
   exportPdf(title: string, html: string): Promise<{ url: string }>;
 };
 
@@ -275,6 +277,19 @@ async function httpJson(
     });
   }
   return data;
+}
+
+async function httpText(http: HttpClient, path: string, context: { category: AppErrorCategory; sessionId?: string }): Promise<string> {
+  let response: HttpResponse;
+  try {
+    response = await http(path);
+  } catch (cause) {
+    throw toAppError(cause, { code: 'http_network_error', category: 'transport', sessionId: context.sessionId, retryable: true, diagnostics: { path } });
+  }
+  if (!response.ok) {
+    throw appError({ code: 'http_error', category: context.category, message: `HTTP ${response.status}`, sessionId: context.sessionId, retryable: response.status >= 500, diagnostics: { status: response.status, path } });
+  }
+  return response.text();
 }
 
 async function rpcCommand(http: HttpClient, command: Record<string, unknown>): Promise<unknown> {
@@ -476,6 +491,11 @@ export function createVideoCommands(deps: CommandDeps): VideoCommands {
 
 export function createReportCommands(deps: CommandDeps): ReportCommands {
   return {
+    async loadSource(sessionId, url) {
+      const content = await httpText(deps.http, url, { category: 'session', sessionId });
+      return { content, encoding: 'utf8', size: new Blob([content]).size };
+    },
+
     async exportPdf(title, html) {
       const data = await httpJson(deps.http, '/api/reports/pdf/download', { method: 'POST', body: { title, html } }, { category: 'session' });
       const url = typeof (data as { url?: unknown })?.url === 'string' ? (data as { url: string }).url : '';

@@ -21,7 +21,7 @@ function deps(handler: (command: Record<string, unknown>) => unknown, streaming 
         paths.push(_path);
         commands.push(init?.body as Record<string, unknown>);
         const payload = handler(init?.body as Record<string, unknown>);
-        return { ok: true, status: 200, async json() { return payload; } };
+        return { ok: true, status: 200, async json() { return payload; }, async text() { return ''; } };
       },
       dispatch: (action: Record<string, unknown>) => actions.push(action),
       isStreaming: () => streaming,
@@ -106,6 +106,17 @@ test('PDF export stays behind the HTTP command port', async () => {
   assert.deepEqual(await report.exportPdf('交通报告', '<article>内容</article>'), { url: '/api/reports/download/report.pdf' });
   assert.deepEqual(fixture.paths, ['/api/reports/pdf/download']);
   assert.deepEqual(fixture.commands[0], { title: '交通报告', html: '<article>内容</article>' });
+});
+
+test('report source stays behind the HTTP command port', async () => {
+  const fixture = deps(() => ({}));
+  fixture.value.http = async (path: string) => {
+    fixture.paths.push(path);
+    return { ok: true, status: 200, async json() { return {}; }, async text() { return '# 交通报告'; } };
+  };
+  const report = createReportCommands(fixture.value);
+  assert.deepEqual(await report.loadSource('session-1', '/api/citations/report.md'), { content: '# 交通报告', encoding: 'utf8', size: 14 });
+  assert.deepEqual(fixture.paths, ['/api/citations/report.md']);
 });
 
 test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {
