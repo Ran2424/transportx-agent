@@ -43,6 +43,7 @@
 - Tool Card 的文件读取预览迁为独立组件，图片、文件预览与弹窗行为保持不变。
 - Tool Card 的图片路径提取、输出截断和参数预览格式化迁为独立展示工具。
 - Tool Card 的精确工具名与文案 key 映射迁入工具模块，工作台仅保留通用兜底分类。
+- Session History 的标题提取与会话名推导迁为纯 Reader 模块，JSONL 扫描与 HTTP 编排继续保留在 handler。
 
 验证：
 
