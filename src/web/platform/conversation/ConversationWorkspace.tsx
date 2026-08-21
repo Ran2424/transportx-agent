@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import type { AppMessage, LiveSession, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
+import type { AppMessage, LiveSession, MessageContentBlock, SessionAttachment, SessionAttachmentSource } from '../../../public/app-types.js';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
@@ -15,6 +15,7 @@ import { formatContextWindow } from '../../lib/formatting';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
 import i18n from '../../i18n';
 import { renderConversationMarkdown } from './conversation-markdown';
+import { projectTools, type ToolData } from './tool-projection';
 import {
   citationCopyText,
   citationDisplayText,
@@ -25,8 +26,6 @@ import {
 } from '../../features/citation/citation-projection';
 
 const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
-type ToolData = { id: string; name: string; args: Record<string, unknown>; result?: unknown; isError?: boolean; startedAt?: number; durationMs?: number; argumentChars?: number; status: 'preparing' | 'running' | 'completed' | 'error' };
-
 function numeric(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
@@ -418,45 +417,6 @@ const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; s
   const iconName = toolIconName(tool.name);
   return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon className="tool-chevron" name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}{tool.status === 'preparing' && tool.argumentChars ? <span className="tool-argument-size">{t('conversation.tool.argumentChars', { count: compactCharacterCount(tool.argumentChars) })}</span> : null}{tool.startedAt !== undefined || tool.durationMs !== undefined ? <ToolDuration startedAt={tool.status === 'running' ? tool.startedAt : undefined} durationMs={tool.durationMs} /> : null}</button><span className={`tool-status ${tool.status}`} data-tool-kind={iconName} title={status}><Icon name={iconName} /><span className="sr-only">{status}</span></span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(displayedArgs, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>{t('conversation.tool.output')}</span><button type="button" onClick={() => void copy(output)}>{t('common.copy')}</button></div><pre className="tool-output">{displayedOutput}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={t('conversation.tool.imagePreview', { name: path.split('/').pop() })} /></a>)}{readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : null}</> : readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : tool.status === 'running' ? <span className="tool-pending">{t('conversation.tool.waiting')}</span> : null}</div> : null}</section>;
 });
-
-function projectTools(entries: SessionEntry[], liveTools: Record<string, { toolCallId: string; toolName?: string; args?: Record<string, unknown>; result?: unknown; partialResult?: unknown; isError?: boolean; startedAt?: number; durationMs?: number; argumentChars?: number; status: 'preparing' | 'running' | 'completed' | 'error' }>) {
-  const results = new Map<string, AppMessage>();
-  const resultEntries = new Map<string, SessionEntry>();
-  entries.forEach((entry) => {
-    if (entry.message?.role !== 'toolResult' || !entry.message.toolCallId) return;
-    results.set(entry.message.toolCallId, entry.message);
-    resultEntries.set(entry.message.toolCallId, entry);
-  });
-  const byEntry = new Map<SessionEntry, ToolData[]>();
-  const known = new Set<string>();
-  entries.forEach((entry) => {
-    const message = entry.message;
-    if (message?.role !== 'assistant' || !Array.isArray(message.content)) return;
-    message.content.filter((block) => block.type === 'toolCall' && block.id).forEach((block) => {
-      const id = block.id!;
-      known.add(id);
-      const live = liveTools[id];
-      const result = results.get(id);
-      const tool = { id, name: live?.toolName || block.name || '', args: live?.args || block.arguments || {}, result: live?.result ?? live?.partialResult ?? (result ? { content: result.content, details: result.details } : undefined), isError: live?.isError ?? result?.isError, startedAt: live?.startedAt, durationMs: live?.durationMs ?? result?.durationMs, argumentChars: live?.argumentChars, status: live?.status || (result?.isError ? 'error' : result ? 'completed' : 'running') } satisfies ToolData;
-      byEntry.set(entry, [...(byEntry.get(entry) || []), tool]);
-    });
-  });
-  const liveOnly: ToolData[] = [];
-  Object.values(liveTools).filter((tool) => !known.has(tool.toolCallId)).forEach((tool) => {
-    const projected = { id: tool.toolCallId, name: tool.toolName || '', args: tool.args || {}, result: tool.result ?? tool.partialResult, isError: tool.isError, startedAt: tool.startedAt, durationMs: tool.durationMs, argumentChars: tool.argumentChars, status: tool.status } satisfies ToolData;
-    const resultEntry = resultEntries.get(tool.toolCallId);
-    if (resultEntry) byEntry.set(resultEntry, [projected]);
-    else liveOnly.push(projected);
-    known.add(tool.toolCallId);
-  });
-  results.forEach((result, id) => {
-    if (known.has(id)) return;
-    const resultEntry = resultEntries.get(id);
-    if (!resultEntry) return;
-    byEntry.set(resultEntry, [{ id, name: result.toolName || '', args: {}, result: { content: result.content, details: result.details }, isError: result.isError, durationMs: result.durationMs, status: result.isError ? 'error' : 'completed' }]);
-  });
-  return { byEntry, liveOnly };
-}
 
 type PendingAttachment = { localId: string; file: File; attachment?: SessionAttachment; status: 'uploading' | 'ready' | 'error'; error?: string };
 type CiteCandidate = { locatorId: string; title: string; position: string; quote?: string };
