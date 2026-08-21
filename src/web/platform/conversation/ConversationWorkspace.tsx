@@ -15,6 +15,7 @@ import { FilePreview, filePresentation } from '../workspace/FilePreview';
 import i18n from '../../i18n';
 import { AttachmentCards, attachmentPreviewUrl, formatBytes } from './conversation-attachments';
 import { ComposerContextUsage } from './composer-context-usage';
+import { ComposerCitationPicker, type CiteCandidate } from './composer-citation-picker';
 import { renderConversationMarkdown } from './conversation-markdown';
 import { projectTools, type ToolData } from './tool-projection';
 import {
@@ -367,7 +368,6 @@ const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; s
 });
 
 type PendingAttachment = { localId: string; file: File; attachment?: SessionAttachment; status: 'uploading' | 'ready' | 'error'; error?: string };
-type CiteCandidate = { locatorId: string; title: string; position: string; quote?: string };
 
 function downloadCitationExport(envelope: CitationEnvelope, format: 'bibtex' | 'csl-json' | 'ris') {
   const extensions = { bibtex: 'bib', 'csl-json': 'json', ris: 'ris' } as const;
@@ -537,10 +537,7 @@ function Composer({ sessionId, session, streaming, compacting, queued, taskModeE
           aria-label={t('conversation.messageInput')}
           disabled={compacting}
         />
-        {citeOpen ? <section className="composer-cite-picker" role="listbox" aria-label={t('conversation.chooseCitation')}>
-          <header><strong>{t('conversation.insertCitation')}</strong><button type="button" onClick={() => setCiteOpen(false)} aria-label={t('conversation.closeCitationPicker')}>×</button></header>
-          {citeLoading ? <p>{t('conversation.loadingCitations')}</p> : citeCandidates.length ? <div>{citeCandidates.map((candidate) => <button key={candidate.locatorId} type="button" role="option" onClick={() => void insertCitation(candidate.locatorId)}><strong>{candidate.title}</strong><span>{candidate.position}</span>{candidate.quote ? <small>{candidate.quote}</small> : null}</button>)}</div> : <p>{t('conversation.noInsertableCitation')}</p>}
-        </section> : null}
+        {citeOpen ? <ComposerCitationPicker loading={citeLoading} candidates={citeCandidates} onClose={() => setCiteOpen(false)} onSelect={(locatorId) => void insertCitation(locatorId)} /> : null}
         <div className="composer-toolbar">
           <div className="composer-action-rail">
             <label className="composer-attach">
