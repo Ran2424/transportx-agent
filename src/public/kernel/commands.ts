@@ -10,6 +10,7 @@ import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
 import type { ModuleArchiveInspection } from '../../contracts/module.ts';
+import { parseCitationEnvelope, type CitationEnvelope } from '../../contracts/citation.ts';
 
 export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
@@ -208,6 +209,11 @@ export type PlatformCommands = {
 
 export type ExtensionUiCommands = {
   respond(input: ExtensionUiResponseInput): Promise<void>;
+};
+
+export type CitationCommands = {
+  list(sessionId: string): Promise<CitationEnvelope>;
+  createOccurrence(sessionId: string, locatorId: string, role: 'support'): Promise<{ marker: string; citations: CitationEnvelope }>;
 };
 
 /** fetch() wrapper: network/HTTP-status/payload errors all become AppError. */
@@ -431,6 +437,27 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
   };
 }
 
+export function createCitationCommands(deps: CommandDeps): CitationCommands {
+  const readEnvelope = (value: unknown, sessionId: string) => {
+    const envelope = parseCitationEnvelope((value as { citations?: unknown })?.citations);
+    if (envelope) return envelope;
+    throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用响应无效', sessionId, retryable: false });
+  };
+  return {
+    async list(sessionId) {
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations`, undefined, { category: 'session', sessionId });
+      return readEnvelope(data, sessionId);
+    },
+
+    async createOccurrence(sessionId, locatorId, role) {
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations/occurrences`, { method: 'POST', body: { locatorId, role } }, { category: 'session', sessionId });
+      const marker = typeof (data as { marker?: unknown })?.marker === 'string' ? (data as { marker: string }).marker : '';
+      if (!marker) throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用创建响应无效', sessionId, retryable: false });
+      return { marker, citations: readEnvelope(data, sessionId) };
+    },
+  };
+}
+
 export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
   return {
     async getAvailableModels(sessionId) {
@@ -553,6 +580,7 @@ export function createExtensionUiCommands(deps: CommandDeps): ExtensionUiCommand
 export type KernelCommands = {
   agent: AgentCommands;
   session: SessionCommands;
+  citation: CitationCommands;
   platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
 };
@@ -561,6 +589,7 @@ export function createCommands(deps: CommandDeps): KernelCommands {
   return {
     agent: createAgentCommands(deps),
     session: createSessionCommands(deps),
+    citation: createCitationCommands(deps),
     platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),
   };

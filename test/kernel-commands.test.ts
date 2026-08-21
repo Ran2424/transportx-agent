@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createAgentCommands, createExtensionUiCommands, createPlatformCommands } = require('../public/kernel/commands.js');
+const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands } = require('../public/kernel/commands.js');
 const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
 const { SessionStore } = require('../public/kernel/stores/session-store.js');
@@ -9,13 +9,16 @@ const { ToolExecutionStore } = require('../public/kernel/stores/tool-execution-s
 
 function deps(handler: (command: Record<string, unknown>) => unknown, streaming = false) {
   const commands: Record<string, unknown>[] = [];
+  const paths: string[] = [];
   const actions: Record<string, unknown>[] = [];
   return {
     commands,
+    paths,
     actions,
     value: {
       transport: { send() { throw new Error('side-effecting commands must not use WebSocket'); } },
       http: async (_path: string, init?: { body?: unknown }) => {
+        paths.push(_path);
         commands.push(init?.body as Record<string, unknown>);
         const payload = handler(init?.body as Record<string, unknown>);
         return { ok: true, status: 200, async json() { return payload; } };
@@ -77,6 +80,17 @@ test('session snapshots hydrate and clear compaction state', () => {
   assert.equal(store.isCompacting('session-1'), true);
   store.setCompacting('session-1', false);
   assert.equal(store.isCompacting('session-1'), false);
+});
+
+test('citation commands validate envelopes behind the HTTP command port', async () => {
+  const citations = { protocol: 'pi-citation', version: '2.0', citationSetId: 'set-1', generatedAt: '2026-08-21T00:00:00.000Z', works: [], resources: [], locators: [], occurrences: [], provenance: [] };
+  const fixture = deps((command) => command?.locatorId ? { marker: '[1]', citations } : { citations });
+  const citation = createCitationCommands(fixture.value);
+  assert.equal((await citation.list('session-1')).citationSetId, 'set-1');
+  const created = await citation.createOccurrence('session-1', 'locator-1', 'support');
+  assert.equal(created.marker, '[1]');
+  assert.deepEqual(fixture.paths, ['/api/live-sessions/session-1/citations', '/api/live-sessions/session-1/citations/occurrences']);
+  assert.deepEqual(fixture.commands[1], { locatorId: 'locator-1', role: 'support' });
 });
 
 test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {
