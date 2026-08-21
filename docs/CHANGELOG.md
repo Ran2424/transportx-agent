@@ -24,6 +24,7 @@
 - 抽出纯 `SessionCapabilityTracker`，将 Bridge envelope、兼容性协商与诊断状态从 `PiRpcSession` 的进程运行时职责中分离。
 - 会话标题推断与通用名称判断迁入独立纯逻辑模块，运行时只保留命名状态与事件发布。
 - RPC 路由建立领域 handler registry，并首先迁移模型与 Provider 配置命令，保留原有响应与缓存失效语义。
+- 鉴权 RPC 也迁入 registry，鉴权持久化、事件广播和启用后的客户端断连保持为宿主层的明确回调。
 
 验证：
 
