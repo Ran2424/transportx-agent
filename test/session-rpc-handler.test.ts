@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createSessionRpcHandlers } = require('../bin/rpc-handlers/session.js');
+const { createSessionReadRpcHandlers, createSessionRpcHandlers } = require('../bin/rpc-handlers/session.js');
 
 const reply = {
   success(data: unknown) { return { success: true, data }; },
@@ -29,4 +29,11 @@ test('Session RPC handler rejects an empty name before resolving a session', () 
     updateLiveSessionName() { throw new Error('should not update'); },
   }).set_session_name;
   assert.deepEqual(handler.handle({ type: 'set_session_name', name: ' ' }, reply), { success: false, error: 'Name cannot be empty' });
+});
+
+test('Session read handlers keep message and snapshot responses in the registry', () => {
+  const session = { id: 'session-1', entries: [{ type: 'message' }], snapshot: () => ({ schemaVersion: 1, entries: [] }) };
+  const handlers = createSessionReadRpcHandlers(() => session);
+  assert.deepEqual(handlers.get_messages.handle({ type: 'get_messages', sessionId: session.id }, reply), { success: true, data: { entries: session.entries } });
+  assert.deepEqual(handlers.live_session_snapshot_request.handle({ type: 'live_session_snapshot_request', sessionId: session.id }, reply), { type: 'live_session_snapshot', sessionId: session.id, schemaVersion: 1, entries: [] });
 });
