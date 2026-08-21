@@ -43,6 +43,7 @@ function fakeSession(id: string) {
     serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token' },
     manager: liveManager,
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
+    liveMetadata: () => ({ id, model: 'openai/gpt-5.5', isStreaming: false, isCompacting: false, autoCompactionEnabled: true }),
     snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
     send: async () => ({ data: { commands: [] } }),

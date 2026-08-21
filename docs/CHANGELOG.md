@@ -31,6 +31,7 @@
 - Pi 原生命令的白名单、可靠投递标记、附件上下文注入与运行时状态回滚迁入独立 RPC handler，宿主由 registry 派生可靠命令集合。
 - 平台概览、会话消息和会话快照读取也迁入 RPC registry，`server-main.ts` 仅保留 HTML 导出的宿主文件与进程编排。
 - HTML 导出命令迁入 RPC registry，受控的 Pi 子进程执行和既有 session 目录输出校验仍留在宿主回调。
+- Live Session 首次连接仍下发完整 metadata；后续 `live_session_updated` 仅包含可观察实时字段，并按内容去重，避免流式事件重复广播完整会话计划与资产信息。
 
 验证：
 
