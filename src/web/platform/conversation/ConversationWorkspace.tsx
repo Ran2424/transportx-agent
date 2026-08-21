@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { AppMessage, LiveSession, MessageContentBlock, SessionAttachment, SessionAttachmentSource } from '../../../public/app-types.js';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
-import { formatToolResultText } from '../../../public/tool-result.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
 import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
@@ -16,11 +15,11 @@ import i18n from '../../i18n';
 import { AttachmentCards, attachmentPreviewUrl, formatBytes } from './conversation-attachments';
 import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, type CiteCandidate } from './composer-citation-picker';
+import { copyText } from './conversation-clipboard';
+import { durationSeconds, useElapsedMilliseconds } from './conversation-duration';
 import { renderConversationMarkdown } from './conversation-markdown';
-import { projectTools, type ToolData } from './tool-projection';
-import { compactCharacterCount, toolFilePath, toolIconName, TOOL_LABELS } from './tool-card-utils';
-import { compactToolArgs, imagePaths, TOOL_OUTPUT_PREVIEW_LIMIT, TOOL_TEXT_PREVIEW_LIMIT, truncateToolText } from './tool-card-formatting';
-import { ToolFilePreview } from './tool-file-preview';
+import { ToolCard } from './tool-card';
+import { projectTools } from './tool-projection';
 import {
   citationCopyText,
   citationDisplayText,
@@ -29,18 +28,6 @@ import {
   type MessageCitationProjection,
   type ResolvedCitation,
 } from '../../features/citation/citation-projection';
-
-function copy(text: string) {
-  if (navigator.clipboard) return navigator.clipboard.writeText(text);
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.style.cssText = 'position:fixed;left:-9999px';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
-  return Promise.resolve();
-}
 
 function focusCitationCard(event: MouseEvent<HTMLElement>) {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-citation-id]');
@@ -55,36 +42,8 @@ const UserMessage = memo(function UserMessage({ message, sessionId, attachments,
   const { t } = useTranslation();
   const text = messageText(message);
   const [copied, setCopied] = useState(false);
-  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message" onClick={focusCitationCard}><div className="message-content"><div dangerouslySetInnerHTML={renderConversationMarkdown(text, projection?.numbers)} /><CitationFooter projection={projection} sessionId={sessionId} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(citationCopyText(text, projection)).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
+  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} /><article className="conversation-message user-message" onClick={focusCitationCard}><div className="message-content"><div dangerouslySetInnerHTML={renderConversationMarkdown(text, projection?.numbers)} /><CitationFooter projection={projection} sessionId={sessionId} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copyText(citationCopyText(text, projection)).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
 });
-
-function useElapsedMilliseconds(startedAt: number | null, durationMs: number | null) {
-  const [elapsed, setElapsed] = useState<number | null>(() => durationMs ?? (startedAt === null ? null : Math.max(0, Date.now() - startedAt)));
-  useEffect(() => {
-    if (durationMs !== null || startedAt === null) {
-      setElapsed(durationMs);
-      return;
-    }
-    let frame = 0;
-    let displayedTenth = -1;
-    const update = () => {
-      const next = Math.max(0, Date.now() - startedAt);
-      const tenth = Math.floor(next / 100);
-      if (tenth !== displayedTenth) {
-        displayedTenth = tenth;
-        setElapsed(next);
-      }
-      frame = window.requestAnimationFrame(update);
-    };
-    update();
-    return () => window.cancelAnimationFrame(frame);
-  }, [durationMs, startedAt]);
-  return durationMs ?? elapsed;
-}
-
-function durationSeconds(durationMs: number) {
-  return (durationMs / 1_000).toFixed(1);
-}
 
 function ThinkingStatus({ active, startedAt, durationMs }: { active: boolean; startedAt: number | null; durationMs: number | null }) {
   const { t } = useTranslation();
@@ -93,12 +52,6 @@ function ThinkingStatus({ active, startedAt, durationMs }: { active: boolean; st
   return <span>{active
     ? duration ? t('conversation.thinkingActiveWithDuration', { duration }) : t('conversation.thinkingActive')
     : duration ? t('conversation.thinkingCompleteWithDuration', { duration }) : t('conversation.thinking')}</span>;
-}
-
-function ToolDuration({ startedAt, durationMs }: { startedAt?: number; durationMs?: number }) {
-  const { t } = useTranslation();
-  const elapsedMs = useElapsedMilliseconds(startedAt ?? null, durationMs ?? null);
-  return elapsedMs === null ? null : <span className="tool-duration">{t('conversation.thinkingDuration', { count: durationSeconds(elapsedMs) })}</span>;
 }
 
 function Thinking({ text, visible, active, startedAt = null, durationMs = null, defaultExpanded }: { text: string; visible: boolean; active: boolean; startedAt?: number | null; durationMs?: number | null; defaultExpanded: boolean }) {
@@ -247,49 +200,9 @@ const AssistantMessage = memo(function AssistantMessage({ message, streaming, sh
   const displayText = streaming ? text : citationDisplayText(text, projection);
   const thinking = messageThinking(message);
   const [copied, setCopied] = useState(false);
-  const copyText = citationCopyText(text, projection);
+  const messageCopyText = citationCopyText(text, projection);
   const resolvedThinkingDuration = thinkingDurationMs ?? messageThinkingDurationMs(message);
-  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={focusCitationCard}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={renderConversationMarkdown(displayText, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copy(copyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
-});
-
-function preview(args: Record<string, unknown>) {
-  for (const key of ['path', 'command', 'query', 'url', 'title', 'action']) if (typeof args[key] === 'string') return args[key] as string;
-  return Object.values(args).find((value): value is string => typeof value === 'string') || '';
-}
-
-function toolLabel(name: string) {
-  const normalized = name.trim().toLowerCase().replaceAll('-', '_');
-  if (TOOL_LABELS[normalized]) return i18n.t(TOOL_LABELS[normalized]);
-  if (normalized.includes('task')) return i18n.t('conversation.tool.task');
-  if (normalized.includes('geo') || normalized.includes('map')) return i18n.t('conversation.tool.map');
-  if (normalized.includes('visualization')) return i18n.t('conversation.tool.visualization');
-  if (normalized.startsWith('read_') || normalized.includes('fetch')) return i18n.t('conversation.tool.read');
-  if (normalized.startsWith('write_') || normalized.startsWith('create_')) return i18n.t('conversation.tool.write');
-  if (normalized.startsWith('edit_') || normalized.includes('patch')) return i18n.t('conversation.tool.patch');
-  if (normalized.includes('search') || normalized.includes('find') || normalized.includes('query')) return i18n.t('conversation.tool.search');
-  if (normalized.includes('ask') || normalized.includes('input')) return i18n.t('conversation.tool.ask');
-  if (normalized.includes('browser') || normalized.startsWith('web_')) return i18n.t('conversation.tool.web');
-  if (normalized.includes('image')) return i18n.t('conversation.tool.image');
-  return i18n.t('conversation.tool.general');
-}
-
-const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; sessionId: string }) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(tool.status === 'running');
-  useEffect(() => {
-    setOpen(tool.status === 'running');
-  }, [tool.status]);
-  const output = tool.result === undefined ? '' : formatToolResultText(tool.result, i18n.language);
-  const isEdit = tool.name.toLowerCase() === 'edit' && (typeof tool.args.oldText === 'string' || typeof tool.args.old_text === 'string');
-  const oldText = truncateToolText(String(tool.args.oldText ?? tool.args.old_text ?? ''), TOOL_TEXT_PREVIEW_LIMIT);
-  const newText = truncateToolText(String(tool.args.newText ?? tool.args.new_text ?? ''), TOOL_TEXT_PREVIEW_LIMIT);
-  const displayedArgs = compactToolArgs(tool.args);
-  const displayedOutput = truncateToolText(output, TOOL_OUTPUT_PREVIEW_LIMIT);
-  const normalizedToolName = tool.name.toLowerCase().replaceAll('-', '_');
-  const readPath = normalizedToolName === 'read' || normalizedToolName.startsWith('read_') ? toolFilePath(tool.args) : '';
-  const status = tool.status === 'preparing' ? t('conversation.tool.preparing') : tool.status === 'running' ? t('conversation.tool.running') : tool.status === 'error' || tool.isError ? t('conversation.tool.failed') : t('conversation.tool.completed');
-  const iconName = toolIconName(tool.name);
-  return <section className={`tool-card${open ? ' is-open' : ''}`}><header><button type="button" className="tool-card-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Icon className="tool-chevron" name="chevron" /><strong>{toolLabel(tool.name)}</strong>{preview(tool.args) ? <small title={preview(tool.args)}>{preview(tool.args)}</small> : null}{tool.status === 'preparing' && tool.argumentChars ? <span className="tool-argument-size">{t('conversation.tool.argumentChars', { count: compactCharacterCount(tool.argumentChars) })}</span> : null}{tool.startedAt !== undefined || tool.durationMs !== undefined ? <ToolDuration startedAt={tool.status === 'running' ? tool.startedAt : undefined} durationMs={tool.durationMs} /> : null}</button><span className={`tool-status ${tool.status}`} data-tool-kind={iconName} title={status}><Icon name={iconName} /><span className="sr-only">{status}</span></span></header>{open ? <div className="tool-card-body">{isEdit ? <div className="tool-diff"><pre className="diff-removed">{oldText}</pre><pre className="diff-added">{newText}</pre></div> : Object.keys(tool.args).length ? <pre className="tool-args">{JSON.stringify(displayedArgs, null, 2)}</pre> : null}{output ? <><div className="tool-output-actions"><span>{t('conversation.tool.output')}</span><button type="button" onClick={() => void copy(output)}>{t('common.copy')}</button></div><pre className="tool-output">{displayedOutput}</pre>{imagePaths(tool.result).map((path) => <a className="tool-image-preview" key={path} href={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} target="_blank" rel="noopener"><img loading="lazy" src={`/api/file/preview?${new URLSearchParams({ sessionId, path })}`} alt={t('conversation.tool.imagePreview', { name: path.split('/').pop() })} /></a>)}{readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : null}</> : readPath ? <ToolFilePreview sessionId={sessionId} path={readPath} /> : tool.status === 'running' ? <span className="tool-pending">{t('conversation.tool.waiting')}</span> : null}</div> : null}</section>;
+  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={focusCitationCard}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={renderConversationMarkdown(displayText, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copyText(messageCopyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
 });
 
 type PendingAttachment = { localId: string; file: File; attachment?: SessionAttachment; status: 'uploading' | 'ready' | 'error'; error?: string };
