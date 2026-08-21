@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
-import { useConversationState } from '../../app/store-hooks';
+import { useConversationState, useSessionState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
 import { projectMessageCitations, type MessageCitationProjection } from '../../features/citation/citation-projection';
 import { TaskBoard } from '../../features/task/TaskBoard';
@@ -37,6 +37,8 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
   const { t } = useTranslation();
   const kernel = appKernel;
   const conversation = useConversationState();
+  const sessions = useSessionState();
+  const attachmentRevision = sessions.attachmentRevisionBySession[session?.id || ''] || 0;
   const [path, setPath] = useState('');
   const [items, setItems] = useState<WorkspaceFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,11 +70,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
   }, [kernel, session, t]);
 
   useEffect(() => { if (open) void load(); }, [load, open]);
-  useEffect(() => {
-    const refresh = () => { if (open) void load(path || undefined); };
-    window.addEventListener('transportx-attachments-changed', refresh);
-    return () => window.removeEventListener('transportx-attachments-changed', refresh);
-  }, [load, open, path]);
+  useEffect(() => { if (open && attachmentRevision) void load(path || undefined); }, [attachmentRevision, load, open]);
   useEffect(() => { setPreviewFiles([]); }, [session?.id]);
 
   async function openFile(item: WorkspaceFile) {

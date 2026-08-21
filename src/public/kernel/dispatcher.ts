@@ -58,6 +58,15 @@ export function createDispatcher(stores: KernelStores): Dispatch {
           stores.extensionUi.requested(action.sessionId, request, stores.session.get().activeSessionId);
         }
         break;
+      case 'session/attachmentsReceived':
+        stores.session.setAttachments(action.sessionId, action.attachments);
+        break;
+      case 'session/attachmentAdded':
+        stores.session.addAttachment(action.sessionId, action.attachment);
+        break;
+      case 'session/attachmentRemoved':
+        stores.session.removeAttachment(action.sessionId, action.attachmentId);
+        break;
       case 'session/compactionStarted':
         stores.session.setCompacting(action.sessionId, true);
         break;
