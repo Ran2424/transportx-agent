@@ -8,7 +8,7 @@ import type { JsonRecord } from './types.js';
 import type { LiveSessionManager } from './sessions.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { within } from './asset-integrity.js';
-import { deriveSessionName, titleFromMessageContent } from './session-history-reader.js';
+import { deriveSessionName, readSessionHeaderCwd as readHistoryHeaderCwd, readSessionSummary } from './session-history-reader.js';
 
 type HistoryHandlersOptions = {
   sessionsDir: string;
@@ -48,56 +48,12 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
     return cwd ? new TimingMetricsStore(cwd).enrichEntries(entries) : entries;
   };
   const resolveSessionName = (entries: JsonRecord[]) => deriveSessionName(entries, options.isGenericSessionName);
-  const readSessionHeaderCwd = (filePath: string) => {
-    let fd: number | null = null;
-    try {
-      fd = fs.openSync(filePath, 'r');
-      const buffer = Buffer.alloc(64 * 1024);
-      const count = fs.readSync(fd, buffer, 0, buffer.length, 0);
-      for (const line of buffer.toString('utf8', 0, count).split(/\r?\n/)) {
-        if (!line.trim()) continue;
-        const entry = JSON.parse(line);
-        if (entry?.type === 'session') return normalizeSessionCwd(entry.cwd);
-      }
-    } catch { return null; }
-    finally { if (fd !== null) try { fs.closeSync(fd); } catch {} }
-    return null;
-  };
-  const messageTimestamp = (entry: JsonRecord) => {
-    const message = entry.message as { timestamp?: unknown } | undefined;
-    const value = message?.timestamp ?? entry.timestamp;
-    const date = typeof value === 'number' ? new Date(value) : typeof value === 'string' ? new Date(value) : null;
-    return date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
-  };
+  const readSessionHeaderCwd = (filePath: string) => readHistoryHeaderCwd(filePath, normalizeSessionCwd);
   const conversationTime = (session: Record<string, unknown>) => {
     const time = new Date(String(session.lastConversationAt || session.timestamp || '')).getTime();
     return Number.isFinite(time) ? time : 0;
   };
-  const parseSessionFile = async (filePath: string) => {
-    const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-    const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-    let header: JsonRecord | null = null, firstMessage: string | null = null, sessionName: string | null = null, lastConversationAt = '', userMessageCount = 0, lineCount = 0;
-    for await (const line of lines) {
-      if (!line.trim()) continue;
-      lineCount += 1;
-      try {
-        const entry = JSON.parse(line) as JsonRecord;
-        if (entry.type === 'session') header = entry;
-        else if (entry.type === 'session_info' && typeof entry.name === 'string') sessionName = entry.name;
-        else if (entry.type === 'message' && (entry.message as JsonRecord | undefined)?.role === 'user') {
-          userMessageCount += 1;
-          if (!firstMessage) firstMessage = titleFromMessageContent((entry.message as JsonRecord).content);
-        }
-        if (entry.type === 'message' && ['user', 'assistant'].includes(String((entry.message as JsonRecord | undefined)?.role || ''))) {
-          const timestamp = messageTimestamp(entry);
-          if (timestamp > lastConversationAt) lastConversationAt = timestamp;
-        }
-      } catch {}
-    }
-    lines.close(); stream.destroy();
-    if (!header?.id || (userMessageCount <= 1 && lineCount <= 8)) return null;
-    return { id: header.id, timestamp: header.timestamp || '', lastConversationAt: lastConversationAt || header.timestamp || '', name: sessionName, firstMessage, cwd: normalizeSessionCwd(header.cwd) };
-  };
+  const parseSessionFile = (filePath: string) => readSessionSummary(filePath, normalizeSessionCwd);
 
   function serveProjects(res: ServerResponse) {
     const projectsDir = options.projectsDir;
