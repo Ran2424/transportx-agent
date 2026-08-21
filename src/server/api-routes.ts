@@ -10,6 +10,7 @@ import type { CitationService } from './citation-service.js';
 import type { SpatialAnalysisService } from './spatial-analysis-service.js';
 import type { VideoService } from './video-service.js';
 import { parseSessionProfileStructured } from '../contracts/index.js';
+import { sessionServiceLabel, type SessionService } from './session-service.js';
 
 type ApiRouteServices = {
   sessions: LiveSessionManager;
@@ -237,7 +238,7 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/internal/citations/resolve', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const session = resolveCitationSession(res, body, deps);
+        const session = resolveServiceSession(res, body, deps, 'citation');
         if (!session) return;
         const results = [];
         if (Array.isArray(body.knowledgeIds) && body.knowledgeIds.length) results.push(deps.citation.resolveKnowledge(session, body.knowledgeIds as string[]));
@@ -252,7 +253,7 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/internal/citations/cite', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const session = resolveCitationSession(res, body, deps);
+        const session = resolveServiceSession(res, body, deps, 'citation');
         if (!session) return;
         if (typeof body.locatorId !== 'string' || typeof body.containerType !== 'string' || typeof body.containerId !== 'string') return deps.json(res, 400, { error: 'locatorId, containerType and containerId are required' });
         const result = deps.citation.cite(session, { locatorId: body.locatorId, containerType: body.containerType as import('../contracts/citation.js').CitationContainerType, containerId: body.containerId, ...(typeof body.anchorId === 'string' ? { anchorId: body.anchorId } : {}), ...(typeof body.role === 'string' ? { role: body.role as import('../contracts/citation.js').CitationRole } : {}) });
@@ -262,17 +263,15 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-        const token = typeof body.token === 'string' ? body.token : '';
-        const session = deps.sessions.get(sessionId);
-        if (!session || !token || token !== session.spatialToken) return deps.json(res, 403, { error: 'Spatial Analysis Host access denied' });
+        const session = resolveServiceSession(res, body, deps, 'spatial');
+        if (!session) return;
         deps.json(res, 200, { result: await deps.spatial.analyze(session, body) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/video/search', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const session = resolveVideoSession(res, body, deps);
+        const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
         deps.json(res, 200, deps.video.search(session, body));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
@@ -280,7 +279,7 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/internal/video/present', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const session = resolveVideoSession(res, body, deps);
+        const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
         deps.json(res, 200, await deps.video.present(session, body));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
@@ -288,7 +287,7 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/internal/video/snapshot', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const session = resolveVideoSession(res, body, deps);
+        const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
         deps.json(res, 200, await deps.video.snapshot(session, body));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
@@ -296,7 +295,7 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/internal/video/clip', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const session = resolveVideoSession(res, body, deps);
+        const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
         deps.json(res, 200, await deps.video.clip(session, body));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
@@ -304,7 +303,7 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/internal/video/sample-frames', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
-        const session = resolveVideoSession(res, body, deps);
+        const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
         deps.json(res, 200, await deps.video.sampleFrames(session, body));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
@@ -331,19 +330,11 @@ export function createApiRouter(services: ApiRouteServices) {
   return router;
 }
 
-function resolveCitationSession(res: ServerResponse, body: RpcCommand, services: ApiRouteServices) {
+function resolveServiceSession(res: ServerResponse, body: RpcCommand, services: ApiRouteServices, service: SessionService) {
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
   const token = typeof body.token === 'string' ? body.token : '';
   const session = services.sessions.get(sessionId);
-  if (!session || !token || token !== session.citationToken) { services.json(res, 403, { error: 'Citation host access denied' }); return null; }
-  return session;
-}
-
-function resolveVideoSession(res: ServerResponse, body: RpcCommand, services: ApiRouteServices) {
-  const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-  const token = typeof body.token === 'string' ? body.token : '';
-  const session = services.sessions.get(sessionId);
-  if (!session || !token || token !== session.videoToken) { services.json(res, 403, { error: 'Video Host access denied' }); return null; }
+  if (!session || !token || token !== session.serviceTokens[service]) { services.json(res, 403, { error: `${sessionServiceLabel[service]} host access denied` }); return null; }
   return session;
 }
 

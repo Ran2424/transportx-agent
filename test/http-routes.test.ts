@@ -38,6 +38,8 @@ function fakeSession(id: string) {
     contextUsage: null,
     entries: [],
     pendingExtensionUiRequests: new Map(),
+    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token' },
+    manager: liveManager,
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
@@ -222,7 +224,7 @@ test('video internal endpoints require the session video token', async (t: TestC
   }));
   const session = fakeSession('tau_video_internal') as any;
   session.cwd = cwd;
-  session.videoToken = 'video-secret';
+  session.serviceTokens.video = 'video-secret';
   session.resolvedSessionPlan = { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
   liveManager.sessions.set(session.id, session);
 
