@@ -42,17 +42,15 @@ test('SessionSnapshot contract accepts v1 and diagnoses unknown versions explici
   assert.deepEqual(diagnosticCodes(invalidEntries), ['invalid_type']);
 });
 
-test('TaskSnapshot contract is shared by Extension and Web and diagnoses version/revision failures', async () => {
+test('TaskSnapshot contract is shared by Web and diagnoses version/revision failures', async () => {
   const task = fixture('task');
   const contract = await import('../src/contracts/task.ts');
   const web = await import('../src/contracts/task.ts');
-  const extension = await import('../modules/capabilities/task/extensions/pi-task-mode/task-state.ts');
 
   const valid = contract.parseTaskSnapshotStructured(task.valid);
   assert.equal(valid.ok, true);
   if (!valid.ok) throw new Error('valid TaskSnapshot fixture was rejected');
   assert.deepEqual(web.parseTaskSnapshot(task.valid), valid.value);
-  assert.deepEqual(extension.parseTaskSnapshot(task.valid), valid.value);
 
   const invalidVersion = contract.parseTaskSnapshotStructured(task.invalidVersion);
   assert.equal(invalidVersion.ok, false);
@@ -192,4 +190,46 @@ test('Server reflects Pi thinking-level change events in live session metadata',
   const session = new PiRpcSession(new LiveSessionManager(), { cwd: process.cwd() });
   session.handleEvent({ type: 'thinking_level_changed', level: 'high' });
   assert.equal(session.metadata().thinkingLevel, 'high');
+});
+
+test('Server keeps a session busy through compaction until Pi settles', () => {
+  const { LiveSessionManager, PiRpcSession } = require('../bin/sessions.js');
+  const session = new PiRpcSession(new LiveSessionManager(), { cwd: process.cwd() });
+  session.model = { contextWindow: 100000 };
+  session.handleEvent({ type: 'agent_start' });
+  session.handleEvent({ type: 'agent_end', willRetry: false });
+  assert.equal(session.metadata().isStreaming, true);
+  session.handleEvent({ type: 'compaction_start', reason: 'threshold' });
+  assert.equal(session.metadata().isCompacting, true);
+  session.handleEvent({ type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false, result: { estimatedTokensAfter: 23000 } });
+  assert.equal(session.metadata().isCompacting, false);
+  assert.equal(session.metadata().contextUsage.tokens, 23000);
+  assert.equal(session.metadata().contextUsage.percent, 23);
+  session.handleEvent({ type: 'agent_settled' });
+  assert.equal(session.metadata().isStreaming, false);
+});
+
+test('Server refreshes context usage after Pi settles without losing a compaction estimate', async () => {
+  const { LiveSessionManager, PiRpcSession } = require('../bin/sessions.js');
+  const session = new PiRpcSession(new LiveSessionManager(), { cwd: process.cwd() });
+  const commands: Array<{ type: string }> = [];
+  session.contextUsage = { tokens: 23000, contextWindow: 100000, percent: 23 };
+  session.send = async (command: { type: string }) => { commands.push(command); return { success: true }; };
+  session.updateStateFromResponse({ command: 'get_session_stats', data: { contextUsage: { tokens: null, contextWindow: 100000, percent: null } } });
+  assert.equal(session.metadata().contextUsage.tokens, 23000);
+  session.handleEvent({ type: 'agent_settled' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(commands, [{ type: 'get_session_stats' }]);
+});
+
+test('Server keeps context tokens separate from the session usage totals', () => {
+  const { LiveSessionManager, PiRpcSession } = require('../bin/sessions.js');
+  const session = new PiRpcSession(new LiveSessionManager(), { cwd: process.cwd() });
+  session.updateStateFromResponse({ command: 'get_session_stats', data: {
+    contextUsage: { tokens: 9164, contextWindow: 128000, percent: 7.159375 },
+    tokens: { input: 2659, output: 361, cacheRead: 6144, cacheWrite: 0, total: 9164 },
+  } });
+  assert.equal(session.metadata().contextUsage.tokens, 9164);
+  assert.equal(session.metadata().contextUsage.percent, 7.159375);
+  assert.equal(session.metadata().contextUsage.usage.total, 9164);
 });

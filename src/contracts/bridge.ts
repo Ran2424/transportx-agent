@@ -218,10 +218,4 @@ export function acceptBridgeRevision(
   return { accepted: true };
 }
 
-/** Helper used by callers that only need the minimum vocabulary. */
-export function asNumberIfPresent(value: unknown): number | undefined {
-  const n = asFiniteNumber(value);
-  return n ?? undefined;
-}
-
 export const BRIDGE_CONTRACT_NAMESPACE = 'bridge' as const;
