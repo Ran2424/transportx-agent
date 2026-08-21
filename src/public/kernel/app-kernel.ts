@@ -100,18 +100,18 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   let commands: KernelCommands;
   const flushingSessions = new Set<string>();
 
-  // Flush prompts that were queued while a session was streaming. A prompt is
+  // Flush prompts that were queued while a session was busy. A prompt is
   // removed only after the Agent Host acknowledges it; failures leave it in
   // the queue for an explicit retry.
   const flushQueuedPrompts = () => {
-    const { streamingBySession } = stores.session.get();
+    const { streamingBySession, compactingBySession } = stores.session.get();
     const { bySession } = stores.conversation.get();
     for (const [sessionId, conv] of Object.entries(bySession)) {
-      if (streamingBySession[sessionId] || conv.live.queued.length === 0 || flushingSessions.has(sessionId)) continue;
+      if (streamingBySession[sessionId] || compactingBySession[sessionId] || conv.live.queued.length === 0 || flushingSessions.has(sessionId)) continue;
       flushingSessions.add(sessionId);
       void (async () => {
         try {
-          while (!stores.session.isStreaming(sessionId)) {
+          while (!stores.session.isStreaming(sessionId) && !stores.session.isCompacting(sessionId)) {
             const queued = stores.conversation.get().bySession[sessionId]?.live.queued[0];
             if (!queued) break;
             await commands.agent.sendPrompt({ sessionId, message: queued.message, attachmentIds: queued.attachmentIds, clientCommandId: queued.clientCommandId });
@@ -136,6 +136,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     http: options.http,
     dispatch,
     isStreaming: (sessionId) => stores.session.isStreaming(sessionId),
+    isCompacting: (sessionId) => stores.session.isCompacting(sessionId),
   });
 
   const unsubscribe = transport.subscribe((signal) => {

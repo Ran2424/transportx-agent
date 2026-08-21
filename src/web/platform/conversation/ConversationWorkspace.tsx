@@ -1,17 +1,18 @@
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import type { AppMessage, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
+import type { AppMessage, LiveSession, MessageContentBlock, SessionAttachment, SessionAttachmentSource, SessionEntry } from '../../../public/app-types.js';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown } from '../../../public/markdown.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
 import { parseCitationEnvelope, type CitationEnvelope, type CitationLocator, type CitationResource, type CitationWork } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
-import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
+import { useConversationState, useSessionState, useToolExecutionState } from '../../app/store-hooks';
 import { BrandMark } from '../../components/BrandMark';
 import { Icon, type IconName } from '../../components/icons';
 import { projectTaskState } from '../../features/task/task-projection';
+import { formatContextWindow } from '../../lib/formatting';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
 import i18n from '../../i18n';
 import {
@@ -25,6 +26,37 @@ import {
 
 const IMAGE_PATH_RE = /((?:~|\/)[^\n\r"'<>`]*?\.(?:png|jpe?g|gif|webp|svg|ico))(?:[?#][^\s"'<>`]*)?/gi;
 type ToolData = { id: string; name: string; args: Record<string, unknown>; result?: unknown; isError?: boolean; startedAt?: number; durationMs?: number; argumentChars?: number; status: 'preparing' | 'running' | 'completed' | 'error' };
+
+function numeric(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function contextUsage(session: LiveSession | undefined) {
+  const usage = session?.contextUsage;
+  const used = numeric(usage?.tokens);
+  const limit = numeric(usage?.contextWindow)
+    ?? numeric(typeof session?.model === 'object' ? session.model?.contextWindow ?? session.model?.context : null);
+  const reportedPercent = numeric(usage?.percent);
+  const percent = reportedPercent ?? (used !== null && limit && limit > 0 ? used / limit * 100 : null);
+  return { used, limit, percent };
+}
+
+function ContextUsageIndicator({ session }: { session: LiveSession | undefined }) {
+  const { t } = useTranslation();
+  const usage = contextUsage(session);
+  const percent = usage.percent === null ? 0 : usage.percent;
+  const ringPercent = Math.min(100, percent);
+  const availability = usage.percent === null ? ' is-unavailable' : '';
+  const level = percent >= 90 ? ' is-critical' : percent >= 70 ? ' is-warning' : '';
+  const detail = usage.used !== null && usage.limit !== null
+    ? t('conversation.contextUsage', { used: formatContextWindow(usage.used), limit: formatContextWindow(usage.limit), percent: `${percent.toFixed(1)}%` })
+    : t('conversation.contextUsageUnavailable');
+  return <span className={`composer-context-usage${availability}${level}`} tabIndex={0} role="img" aria-label={detail}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle className="context-usage-track" cx="12" cy="12" r="8" pathLength="100" /><circle className="context-usage-value" cx="12" cy="12" r="8" pathLength="100" strokeDasharray={`${ringPercent} 100`} /></svg>
+    <span className="composer-context-usage-hint">{detail}</span>
+  </span>;
+}
 
 function copy(text: string) {
   if (navigator.clipboard) return navigator.clipboard.writeText(text);
@@ -514,7 +546,7 @@ function clipboardFileName(index: number) {
   return `clipboard-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${index + 1}.png`;
 }
 
-function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, onAttachment, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; streaming: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
+function Composer({ sessionId, session, streaming, compacting, queued, taskModeEnabled, attachments, onAttachment, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onAttachment(attachment: SessionAttachment): void; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const [value, setValue] = useState('');
@@ -590,7 +622,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
     try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds }); setValue(''); setPending([]); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
   }
   async function toggleTaskMode() {
-    if (streaming || taskModeBusy) return;
+    if (streaming || compacting || taskModeBusy) return;
     setTaskModeBusy(true);
     setError('');
     try {
@@ -621,6 +653,7 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
           onKeyDown={(event) => { if (event.key === 'Escape' && citeOpen) { event.preventDefault(); setCiteOpen(false); return; } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }}
           placeholder={streaming ? t('conversation.steerPlaceholder') : t('conversation.promptPlaceholder')}
           aria-label={t('conversation.messageInput')}
+          disabled={compacting}
         />
         {citeOpen ? <section className="composer-cite-picker" role="listbox" aria-label={t('conversation.chooseCitation')}>
           <header><strong>{t('conversation.insertCitation')}</strong><button type="button" onClick={() => setCiteOpen(false)} aria-label={t('conversation.closeCitationPicker')}>×</button></header>
@@ -634,13 +667,16 @@ function Composer({ sessionId, streaming, queued, taskModeEnabled, attachments, 
               <span className="sr-only">{t('conversation.addAttachment')}</span>
               <input type="file" accept="*/*" multiple onChange={(event) => { if (event.currentTarget.files) void addAttachments(event.currentTarget.files, 'picker'); event.currentTarget.value = ''; }} />
             </label>
-            <button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? t('task.mode.disable') : t('task.mode.enable')} disabled={streaming || taskModeBusy} onClick={() => void toggleTaskMode()}>
+            <button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? t('task.mode.disable') : t('task.mode.enable')} disabled={streaming || compacting || taskModeBusy} onClick={() => void toggleTaskMode()}>
               <Icon name="task" />
               <span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? t('task.mode.disable') : t('task.mode.enable')}</span>
             </button>
             <button className="composer-task-toggle" type="button" aria-label={t('conversation.openCitationManager')} onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">{t('conversation.citationManager')}</span></button>
+            <ContextUsageIndicator session={session} />
           </div>
-          {streaming
+          {compacting
+            ? <span className="composer-compacting" role="status">{t('conversation.compacting')}</span>
+            : streaming
             ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId)}>{t('conversation.abortShort')}</button></div>
             : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0}>↑</button>}
         </div>
@@ -654,6 +690,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   const { t } = useTranslation();
   const kernel = appKernel;
   const conversation = useConversationState();
+  const sessions = useSessionState();
   const tools = useToolExecutionState();
   const viewportRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
@@ -673,6 +710,8 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   }, [sessionId]);
   const entries = data?.snapshotEntries || [];
   const liveTools = tools.bySession[sessionId];
+  const session = sessions.sessions.find((item) => item.id === sessionId);
+  const compacting = !!sessions.compactingBySession[sessionId];
   const taskState = useMemo(() => projectTaskState(entries, Object.values(liveTools || {})), [entries, liveTools]);
   const toolProjection = useMemo(() => projectTools(entries, liveTools || {}), [entries, liveTools]);
   const citationProjection = useMemo(() => projectMessageCitations(entries, citationEnvelope), [citationEnvelope, entries]);
@@ -683,8 +722,8 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
       if (viewport && nearBottom.current) viewport.scrollTop = viewport.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
+  }, [compacting, entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection]);
   const showLiveAssistant = !!data?.live.active && (data.live.thinkingStartedAt !== null || !!data.live.streamingThinking || !!data.live.streamingText);
   const optimisticCitationProjection = data?.live.optimisticPrompt ? projectCitationText(data.live.optimisticPrompt.message, citationProjection.available) : undefined;
-  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} projection={citationProjection.byEntry.get(entry)} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} expandThinking={expandThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} projection={optimisticCitationProjection} /> : null}{showLiveAssistant ? <AssistantMessage streaming showThinking={showThinking} expandThinking={expandThinking} thinkingStartedAt={data?.live.thinkingStartedAt} thinkingDurationMs={data?.live.thinkingDurationMs} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data?.live.streamingThinking }, { type: 'text', text: data?.live.streamingText }] as MessageContentBlock[] }} /> : null}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div></div><Composer sessionId={sessionId} streaming={!!data?.live.active} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
+  return <main className="conversation-workspace"><div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}><div className="conversation-thread">{entries.length ? entries.map((entry, index) => { const message = entry.message; if (!message) return null; const key = entry.id || index; const toolsForEntry = toolProjection.byEntry.get(entry) || []; if (message.role === 'user') return <UserMessage key={key} message={message} sessionId={sessionId} attachments={attachments} projection={citationProjection.byEntry.get(entry)} />; if (message.role === 'assistant') { const showMessage = !!messageText(message) || (showThinking && !!messageThinking(message)); return <div className="assistant-turn" key={key}>{showMessage ? <AssistantMessage message={message} showThinking={showThinking} expandThinking={expandThinking} projection={citationProjection.byEntry.get(entry)} sessionId={sessionId} /> : null}{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div>; } return toolsForEntry.length ? <div className="assistant-turn" key={key}>{toolsForEntry.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div> : null; }) : <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div>}{compacting ? <div className="compaction-status" role="status"><i className="streaming-beacon" />{t('conversation.compacting')}</div> : null}{data?.live.optimisticPrompt ? <UserMessage message={{ role: 'user', content: data.live.optimisticPrompt.message, attachmentIds: data.live.optimisticPrompt.attachmentIds }} sessionId={sessionId} attachments={attachments} projection={optimisticCitationProjection} /> : null}{showLiveAssistant ? <AssistantMessage streaming showThinking={showThinking} expandThinking={expandThinking} thinkingStartedAt={data?.live.thinkingStartedAt} thinkingDurationMs={data?.live.thinkingDurationMs} sessionId={sessionId} message={{ role: 'assistant', content: [{ type: 'thinking', thinking: data?.live.streamingThinking }, { type: 'text', text: data?.live.streamingText }] as MessageContentBlock[] }} /> : null}{toolProjection.liveOnly.map((tool) => <ToolCard key={tool.id} tool={tool} sessionId={sessionId} />)}</div></div><Composer sessionId={sessionId} session={session} streaming={!!data?.live.active} compacting={compacting} queued={data?.live.queued || []} taskModeEnabled={taskState.enabled} attachments={attachments} onAttachment={(attachment) => setAttachments((current) => ({ ...current, [attachment.id]: attachment }))} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />{citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}</main>;
 }

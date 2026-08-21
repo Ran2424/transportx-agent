@@ -226,6 +226,8 @@ export class PiRpcSession {
   lastActiveAt: string;
   lastConversationAt: string;
   isStreaming: boolean;
+  isCompacting: boolean;
+  autoCompactionEnabled: boolean;
   projection: SessionProjection;
   model: ModelIdentity | null;
   thinkingLevel: string;
@@ -263,6 +265,8 @@ export class PiRpcSession {
     this.createdAt = new Date().toISOString();
     this.lastActiveAt = this.createdAt;
     this.isStreaming = false;
+    this.isCompacting = false;
+    this.autoCompactionEnabled = true;
     this.timingMetrics = new TimingMetricsStore(this.cwd);
     this.projection = new SessionProjection(this.timingMetrics.enrichEntries(opts.entries || []), readAttachmentMessageRefs(this.cwd));
     this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
@@ -306,6 +310,8 @@ export class PiRpcSession {
       sessionFile: this.sessionFile,
       sessionName: this.sessionName,
       isStreaming: this.isStreaming,
+      isCompacting: this.isCompacting,
+      autoCompactionEnabled: this.autoCompactionEnabled,
       createdAt: this.createdAt,
       lastActiveAt: this.lastActiveAt,
       lastConversationAt: this.lastConversationAt,
@@ -328,6 +334,7 @@ export class PiRpcSession {
       model: this.model,
       thinkingLevel: this.thinkingLevel,
       isStreaming: this.isStreaming,
+      isCompacting: this.isCompacting,
       sessionFile: this.sessionFile,
       sessionName: this.sessionName,
       contextUsage: this.contextUsage,
@@ -519,11 +526,25 @@ export class PiRpcSession {
       this.reconcileProjection();
     }
     if (data.sessionName) this.setSessionName(data.sessionName);
-    if (data.contextUsage) this.contextUsage = data.contextUsage;
+    if (data.contextUsage) {
+      const tokens = data.contextUsage.tokens;
+      const contextWindow = data.contextUsage.contextWindow;
+      const hasTokens = typeof tokens === 'number' && Number.isFinite(tokens) && tokens >= 0;
+      const hasContextWindow = typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0;
+      const estimatedTokens = this.contextUsage?.tokens;
+      if (!hasTokens && hasContextWindow && typeof estimatedTokens === 'number' && Number.isFinite(estimatedTokens) && estimatedTokens >= 0) {
+        this.contextUsage = { ...data.contextUsage, tokens: estimatedTokens, percent: estimatedTokens / contextWindow * 100 };
+      } else {
+        this.contextUsage = data.contextUsage;
+      }
+    }
     if (data.model) this.model = normalizeModel(data.model);
     if (data.thinkingLevel) this.thinkingLevel = data.thinkingLevel;
+    if (typeof data.isStreaming === 'boolean') this.isStreaming = data.isStreaming;
+    if (typeof data.isCompacting === 'boolean') this.isCompacting = data.isCompacting;
+    if (typeof data.autoCompactionEnabled === 'boolean') this.autoCompactionEnabled = data.autoCompactionEnabled;
     if (data.level) this.thinkingLevel = data.level;
-    if (data.tokens) this.contextUsage = { ...(this.contextUsage || {}), tokens: data.tokens };
+    if (data.tokens) this.contextUsage = { ...(this.contextUsage || {}), usage: data.tokens };
     if (command === 'set_model' || command === 'cycle_model') {
       if (data.model) this.model = normalizeModel(data.model);
       else if (data.provider && data.id) this.model = normalizeModel(data);
@@ -579,15 +600,21 @@ export class PiRpcSession {
     }
     if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
-    // agent_end is only a single low-level run. Keep the live session marked
-    // busy while Pi is about to retry; agent_settled is the final boundary.
-    if (type === 'agent_end' && event.willRetry !== true) {
-      this.isStreaming = false;
-      this.pendingExtensionUiRequests.clear();
+    if (type === 'compaction_start' || type === 'auto_compaction_start') this.isCompacting = true;
+    if (type === 'compaction_end' || type === 'auto_compaction_end') {
+      this.isCompacting = false;
+      const result = event.result && typeof event.result === 'object' ? event.result as JsonRecord : null;
+      const tokens = Number(result?.estimatedTokensAfter);
+      const contextWindow = Number(this.contextUsage?.contextWindow ?? this.model?.contextWindow);
+      if (Number.isFinite(tokens) && tokens >= 0 && Number.isFinite(contextWindow) && contextWindow > 0) {
+        this.contextUsage = { ...(this.contextUsage || {}), tokens, contextWindow, percent: tokens / contextWindow * 100 };
+      }
+      this.reconcileProjection();
     }
     if (type === 'agent_settled') {
       this.isStreaming = false;
       this.pendingExtensionUiRequests.clear();
+      this.send({ type: 'get_session_stats' }, { timeoutMs: 5000 }).catch(() => {});
     }
     if (event.contextUsage) this.contextUsage = event.contextUsage;
     if (event.sessionFile) this.sessionFile = event.sessionFile;
@@ -614,7 +641,7 @@ export class PiRpcSession {
     if (type === 'message_end' && event.message?.role === 'assistant') {
       if (event.message.usage) this.contextUsage = { ...(this.contextUsage || {}), usage: event.message.usage };
     }
-    if (type === 'agent_end') this.reconcileProjection();
+    if (type === 'agent_settled') this.reconcileProjection();
 
     this.manager.broadcast({ type: 'event', sessionId: this.id, event });
     this.manager.broadcastUpdated(this.id);

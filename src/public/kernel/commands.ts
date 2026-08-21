@@ -27,6 +27,7 @@ export type CommandDeps = {
   http: HttpClient;
   dispatch: (action: AppAction) => void;
   isStreaming: (sessionId: string) => boolean;
+  isCompacting: (sessionId: string) => boolean;
 };
 
 export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; clientCommandId?: string };
@@ -114,6 +115,7 @@ export type AgentState = {
   model?: ModelRecord | null;
   thinkingLevel?: string;
   autoCompactionEnabled?: boolean;
+  isCompacting?: boolean;
 };
 
 export type PlatformModule = {
@@ -292,7 +294,7 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       pendingPromptIds.set(promptKey, commandId);
       // While streaming, prompts queue per session instead of hitting the
       // transport; the kernel flushes them when the run ends.
-      if (deps.isStreaming(sessionId)) {
+      if (deps.isStreaming(sessionId) || deps.isCompacting(sessionId)) {
         deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, clientCommandId: commandId });
         return;
       }

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { createAgentCommands, createExtensionUiCommands, createPlatformCommands } = require('../public/kernel/commands.js');
 const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
+const { SessionStore } = require('../public/kernel/stores/session-store.js');
 const { ToolExecutionStore } = require('../public/kernel/stores/tool-execution-store.js');
 
 function deps(handler: (command: Record<string, unknown>) => unknown, streaming = false) {
@@ -21,6 +22,7 @@ function deps(handler: (command: Record<string, unknown>) => unknown, streaming 
       },
       dispatch: (action: Record<string, unknown>) => actions.push(action),
       isStreaming: () => streaming,
+      isCompacting: () => false,
     },
   };
 }
@@ -52,6 +54,29 @@ test('streaming prompt keeps a stable command ID in the queue', async () => {
   assert.equal(fixture.commands.length, 0);
   assert.equal(fixture.actions[0].type, 'conversation/promptQueued');
   assert.equal(typeof fixture.actions[0].clientCommandId, 'string');
+});
+
+test('compacting prompt stays queued until the session is ready', async () => {
+  const fixture = deps(() => ({ type: 'response', success: true }));
+  fixture.value.isCompacting = () => true;
+  const agent = createAgentCommands(fixture.value);
+  await agent.sendPrompt({ sessionId: 'session-1', message: '等待压缩结束' });
+  assert.equal(fixture.commands.length, 0);
+  assert.equal(fixture.actions[0].type, 'conversation/promptQueued');
+});
+
+test('session snapshots hydrate and clear compaction state', () => {
+  const store = new SessionStore();
+  store.applySnapshot('session-1', {
+    schemaVersion: 1,
+    entries: [],
+    isCompacting: true,
+    session: { id: 'session-1', isStreaming: true, isCompacting: true },
+  });
+  assert.equal(store.isStreaming('session-1'), true);
+  assert.equal(store.isCompacting('session-1'), true);
+  store.setCompacting('session-1', false);
+  assert.equal(store.isCompacting('session-1'), false);
 });
 
 test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {

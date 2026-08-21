@@ -12,3 +12,13 @@ test('thinking level events do not raise an unknown RPC event error', () => {
   });
   assert.deepEqual(actions, []);
 });
+
+test('compaction lifecycle is rendered and waits for agent_settled before ending the stream', () => {
+  const normalizer = createEventNormalizer();
+  const message = (event: Record<string, unknown>) => normalizer.normalizeMessage({ type: 'event', sessionId: 'session-1', event });
+  assert.deepEqual(message({ type: 'agent_start' }).map((action: { type: string }) => action.type), ['conversation/streamStarted']);
+  assert.deepEqual(message({ type: 'agent_end' }), []);
+  assert.deepEqual(message({ type: 'compaction_start', reason: 'threshold' }), [{ type: 'session/compactionStarted', sessionId: 'session-1' }]);
+  assert.deepEqual(message({ type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false }), [{ type: 'session/compactionEnded', sessionId: 'session-1' }]);
+  assert.deepEqual(message({ type: 'agent_settled' }).map((action: { type: string }) => action.type), ['conversation/streamEnded']);
+});
