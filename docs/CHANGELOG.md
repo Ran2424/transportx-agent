@@ -46,6 +46,7 @@
 - Session History 的标题提取与会话名推导迁为纯 Reader 模块，JSONL 扫描与 HTTP 编排继续保留在 handler。
 - Session History Reader 接管单个 JSONL 会话摘要与轻量 header cwd 读取；handler 仅组织索引、排序和 HTTP 响应。
 - Session History Reader 接管 JSONL 会话搜索投影；handler 不再直接解析历史消息条目。
+- Tool Card 迁为独立对话展示组件；展开状态、计时、复制、图片与文件预览行为保持不变，工作台仅负责消息编排。
 
 验证：
 
