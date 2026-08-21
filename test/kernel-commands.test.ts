@@ -79,6 +79,16 @@ test('platform model provider commands preserve provider credentials behind RPC 
   assert.equal(fixture.commands[1].apiKey, 'secret-key');
 });
 
+test('platform model management commands stay behind the RPC port', async () => {
+  const fixture = deps((command) => ({ type: 'response', success: true, data: { model: { provider: command.provider, modelId: command.modelId, reference: `${command.provider}/${command.modelId}` } } }));
+  const platform = createPlatformCommands(fixture.value);
+  await platform.updateModel({ provider: 'custom', modelId: 'traffic-model', name: 'Traffic', contextWindow: 256000, reasoning: true, images: true });
+  await platform.deleteModel('custom', 'traffic-model');
+  await platform.deleteModelProvider('custom');
+  assert.deepEqual(fixture.commands.map((command) => command.type), ['update_model', 'delete_model', 'delete_model_provider']);
+  assert.equal(fixture.commands[0].contextWindow, 256000);
+});
+
 test('authoritative user echo arriving before HTTP acknowledgement is not duplicated', () => {
   const store = new ConversationStore();
   store.messageStarted('session-1', { role: 'user', content: '分析交通状态' });

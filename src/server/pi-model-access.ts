@@ -1,10 +1,14 @@
 const path = require('node:path');
+const fs = require('node:fs');
 
 export type PiModelProviderAccess = {
   id: string;
   name: string;
   connected: boolean;
   credentialStored: boolean;
+  custom: boolean;
+  baseUrl?: string;
+  api?: string;
   authMethods: Array<'api_key' | 'oauth'>;
   authSource?: string;
   modelCount: number;
@@ -28,15 +32,31 @@ function summarizeProvider(runtime: PiRuntime, providerId: string, storedProvide
   const authMethods: PiModelProviderAccess['authMethods'] = [];
   if (provider.auth.apiKey?.login) authMethods.push('api_key');
   if (provider.auth.oauth) authMethods.push('oauth');
+  const configured = readModelsProvider(runtime, provider.id);
   return {
     id: provider.id,
     name: provider.name || provider.id,
     connected: status.configured,
     credentialStored: storedProviderIds.has(provider.id),
+    custom: !!configured,
+    ...(configured?.baseUrl ? { baseUrl: configured.baseUrl } : {}),
+    ...(configured?.api ? { api: configured.api } : {}),
     authMethods,
     ...(status.label || status.source ? { authSource: status.label || status.source } : {}),
     modelCount: runtime.getModels(provider.id).length,
   };
+}
+
+function readModelsProvider(runtime: PiRuntime, providerId: string): { baseUrl?: string; api?: string } | null {
+  const modelsPath = (runtime as unknown as { modelsPath?: string }).modelsPath;
+  if (!modelsPath || !fs.existsSync(modelsPath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(modelsPath, 'utf8')) as { providers?: Record<string, { baseUrl?: string; api?: string }> };
+    const provider = parsed.providers?.[providerId];
+    return provider && typeof provider === 'object' ? provider : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function listPiModelProviders(agentDir: string) {
@@ -97,4 +117,21 @@ export async function disconnectPiModelProvider(providerIdInput: string, agentDi
     throw new Error(`供应商 ${provider.name} 使用环境变量或模型配置接入，无法在工作台中移除`);
   }
   await runtime.logout(providerId);
+}
+
+export async function ensurePiModelProviderConfigured(providerIdInput: string, agentDir: string) {
+  const providerId = providerIdInput.trim();
+  const runtime = await createRuntime(agentDir);
+  const provider = runtime.getProvider(providerId);
+  if (!provider) throw new Error(`未知模型供应商：${providerId}`);
+  if (!runtime.getProviderAuthStatus(providerId).configured) throw new Error(`供应商 ${provider.name} 尚未接入，请先填写 API Key`);
+}
+
+export async function removePiModelProviderCredential(providerIdInput: string, agentDir: string) {
+  const providerId = providerIdInput.trim();
+  const runtime = await createRuntime(agentDir);
+  const provider = runtime.getProvider(providerId);
+  if (!provider) throw new Error(`未知模型供应商：${providerId}`);
+  const storedProviderIds = new Set((await runtime.listCredentials()).map((item) => item.providerId));
+  if (storedProviderIds.has(providerId)) await runtime.logout(providerId);
 }

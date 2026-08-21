@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { connectPiModelProvider, disconnectPiModelProvider, listAvailablePiModels, listPiModelProviders } = require('../bin/pi-model-access.js');
+const { updatePiModel, deletePiModel, deletePiModelProvider } = require('../bin/pi-model-config.js');
 
 test('Pi provider access reuses auth.json in the configured TransportX directory', async () => {
   const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-model-access-'));
@@ -28,4 +29,28 @@ test('Pi provider access reuses auth.json in the configured TransportX directory
   await disconnectPiModelProvider(candidate.id, agentDir);
   const after = await listPiModelProviders(agentDir);
   assert.equal(after.find((provider: { id: string; credentialStored: boolean }) => provider.id === candidate.id)?.credentialStored, false);
+});
+
+test('model settings update and delete persist in models.json', async () => {
+  const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-model-config-'));
+  const modelsPath = path.join(agentDir, 'models.json');
+  fs.writeFileSync(modelsPath, JSON.stringify({ providers: {
+    custom: {
+      baseUrl: 'https://api.example.com/v1',
+      api: 'openai-responses',
+      models: [{ id: 'traffic-model', input: ['text'], reasoning: false }],
+    },
+  }}));
+
+  await updatePiModel({ provider: 'custom', modelId: 'traffic-model', name: 'Traffic Model', contextWindow: 256000, reasoning: true, images: true }, agentDir);
+  let config = JSON.parse(fs.readFileSync(modelsPath, 'utf8'));
+  assert.deepEqual(config.providers.custom.models[0], { id: 'traffic-model', input: ['text', 'image'], reasoning: true, name: 'Traffic Model', contextWindow: 256000 });
+
+  await deletePiModel('custom', 'traffic-model', agentDir);
+  config = JSON.parse(fs.readFileSync(modelsPath, 'utf8'));
+  assert.equal(config.providers.custom.models, undefined);
+
+  await deletePiModelProvider('custom', agentDir);
+  config = JSON.parse(fs.readFileSync(modelsPath, 'utf8'));
+  assert.deepEqual(config.providers, {});
 });

@@ -6,8 +6,7 @@ import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
-import { formatContextWindow, modelReference } from '../../lib/formatting';
-import i18n from '../../i18n';
+import { formatModelOption } from '../../lib/formatting';
 
 type NewSessionDialogProps = {
   open: boolean;
@@ -15,18 +14,6 @@ type NewSessionDialogProps = {
   onCreated(sessionId: string): void;
   onAddModel(): void;
 };
-
-function normalizeModel(model: ModelRecord | string) {
-  if (typeof model === 'string') return { value: model, label: model, metadata: '' };
-  const reference = modelReference(model);
-  const context = formatContextWindow(model.contextWindow || model.context || model.context_window);
-  const abilities = [model.thinking ? i18n.t('model.ability.thinking') : '', model.images ? i18n.t('model.ability.images') : ''].filter(Boolean).join(' · ');
-  return {
-    value: reference,
-    label: reference,
-    metadata: [context ? `${context} context` : '', abilities].filter(Boolean).join(' · '),
-  };
-}
 
 export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: NewSessionDialogProps) {
   const { t } = useTranslation();
@@ -57,7 +44,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
       .then(([items, options]) => {
         if (!current) return;
         setModels(items);
-        setModel(items.map(normalizeModel).find((item) => item.value)?.value || '');
+        setModel(items.map(formatModelOption).find((item) => item.reference)?.reference || '');
         setModuleOptions(options.modules);
         setSelectedModules(Object.fromEntries(options.modules.filter((item) => item.selectedByDefault).map((item) => [item.id, item.version])));
       })
@@ -99,7 +86,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
     }
   }
 
-  const modelOptions = models.map(normalizeModel).filter((item) => item.value);
+  const modelOptions = models.map(formatModelOption).filter((item) => item.reference).map((item) => ({ value: item.reference, label: item.label, metadata: item.metadata }));
   const moduleGroups = useMemo(() => {
     const groups = new Map<string, SessionModuleOption[]>();
     for (const option of moduleOptions.filter((item) => item.enabledForNewSessions)) groups.set(option.id, [...(groups.get(option.id) || []), option]);

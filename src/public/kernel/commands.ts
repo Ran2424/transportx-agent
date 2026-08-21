@@ -41,16 +41,28 @@ export type AddModelInput = {
   modelId: string;
   api: PiModelApi;
   baseUrl: string;
-  apiKey: string;
+  apiKey?: string;
   name?: string;
+  contextWindow?: number;
   reasoning?: boolean;
   images?: boolean;
+};
+export type UpdateModelInput = {
+  provider: string;
+  modelId: string;
+  name?: string;
+  contextWindow?: number;
+  reasoning: boolean;
+  images: boolean;
 };
 export type ModelProviderAccess = {
   id: string;
   name: string;
   connected: boolean;
   credentialStored: boolean;
+  custom?: boolean;
+  baseUrl?: string;
+  api?: PiModelApi;
   authMethods: Array<'api_key' | 'oauth'>;
   authSource?: string;
   modelCount: number;
@@ -177,6 +189,9 @@ export type PlatformCommands = {
   disconnectModelProvider(provider: string): Promise<void>;
   getSessionOptions(): Promise<SessionOptions>;
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
+  updateModel(input: UpdateModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
+  deleteModel(provider: string, modelId: string): Promise<void>;
+  deleteModelProvider(provider: string): Promise<void>;
   getOverview(): Promise<PlatformOverview>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
   inspectModuleArchive(sourcePath: string): Promise<ModuleArchiveInspection>;
@@ -446,6 +461,19 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     async addModel(input) {
       const data = await rpcCommand(deps.http, { type: 'add_model', ...input });
       return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
+    },
+
+    async updateModel(input) {
+      const data = await rpcCommand(deps.http, { type: 'update_model', ...input });
+      return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
+    },
+
+    async deleteModel(provider, modelId) {
+      await rpcCommand(deps.http, { type: 'delete_model', provider, modelId });
+    },
+
+    async deleteModelProvider(provider) {
+      await rpcCommand(deps.http, { type: 'delete_model_provider', provider });
     },
 
     async getOverview() {
