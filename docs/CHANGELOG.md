@@ -2,6 +2,15 @@
 
 本文记录项目每次提交、推送的主要内容、影响范围与验证结果，作为 README 之外的工程演进记录。
 
+## v3.1.2 — Windows x64 NSIS 发行链路
+
+- 日期：2026-08-21
+- GitHub：草稿 PR #17；草稿 Release `v3.1.2` 附带 Windows x64 Python 与 GPL FFmpeg runtime 压缩包及 SHA-256。
+- 目标：Windows 10/11 x64 的离线 NSIS 安装包；内置 Pi、Python 3.10 x64 与 ffmpeg/ffprobe，安装、升级、卸载不依赖系统运行时。
+- `prepare-runtime` 现验证 Windows x64 Python，并把 `ffmpeg.exe`、`ffprobe.exe` 连同版本、架构、相对路径和 SHA-256 写入 runtime manifest；已打包 Video Capability 不再依赖 PATH。
+- 新增 Windows 专用打包入口、Authenticode 发布前置检查、Windows `.ico` 图标、跨平台已打包应用冒烟以及 NSIS 静默安装/卸载/用户数据保留冒烟。
+- 新增 [Windows 发行指南](WINDOWS_RELEASE.md)，规定 Windows 原生构建、可重定位 runtime、签名、自动化和 Windows 10/11 实机验收流程。
+
 ## v3.1.1 — 代码优化与架构整理
 
 ### 代码与架构收口（`codex/final-code-optimization`）

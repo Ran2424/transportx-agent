@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "TransportX Traffic Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
@@ -45,7 +45,9 @@
     "build:desktop": "tsc -p tsconfig.desktop.json",
     "desktop:dev": "npm run build && electron .",
     "desktop:dir": "npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",
-    "desktop:pack": "node desktop/scripts/check-mac-release.mjs && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml",
+    "desktop:pack": "node desktop/scripts/check-desktop-release.mjs && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml",
+    "desktop:dir:win": "node desktop/scripts/check-windows-release.mjs --allow-unsigned && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --win --x64 --dir",
+    "desktop:pack:win": "node desktop/scripts/check-windows-release.mjs && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --win --x64",
     "dev:web": "vite --config vite.config.ts",
     "prepare": "npm run build",
     "typecheck": "npm run typecheck:server && npm run typecheck:web && npm run typecheck:react && npm run typecheck:extensions && npm run typecheck:desktop && npm run typecheck:test",
@@ -61,7 +63,8 @@
     "eval:traffic:tasks": "npm run build && node scripts/eval/run-traffic-agent-eval.mjs --mode headless --kind task",
     "eval:traffic:grade": "node scripts/eval/grade-traffic-agent-eval.mjs",
     "test:react-smoke": "npm run build && node scripts/react-smoke.mjs",
-    "test:desktop-smoke": "npm run build && node scripts/desktop-smoke.mjs"
+    "test:desktop-smoke": "npm run build && node scripts/desktop-smoke.mjs",
+    "test:windows-installer-smoke": "node scripts/windows-installer-smoke.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.80.10",

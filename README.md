@@ -73,7 +73,9 @@ macOS 首次启动会创建 `~/.transportx/traffic-agent/`。任务工作目录�
 TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:pack
 ```
 
-`desktop:pack` 在缺少签名或公证凭据时会直接停止，避免误发未签名 DMG。仅做本机结构验收时可显式设置 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。macOS 目标为 macOS 12 及以上的 Apple Silicon DMG，Windows 目标为 x64 NSIS；发布凭据不写入仓库。
+`desktop:pack` 在缺少签名或公证凭据时会直接停止，避免误发未签名 DMG。仅做本机结构验收时可显式设置 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。macOS 目标为 macOS 12 及以上的 Apple Silicon DMG。
+
+Windows 10/11 x64 使用原生 Windows 主机制作 NSIS 安装包：准备可重定位 Python 3.10 x64 runtime 与包含 `ffmpeg.exe`/`ffprobe.exe` 的 runtime，设置 `TRANSPORTX_PYTHON_RUNTIME_DIR`、`TRANSPORTX_FFMPEG_RUNTIME_DIR` 与 Authenticode 证书变量后运行 `npm run desktop:pack:win`。`npm run test:windows-installer-smoke` 会实际静默安装、启动、卸载，并验证用户数据保留。完整命令、签名和人工验收要求见 [Windows 发行指南](docs/WINDOWS_RELEASE.md)。
 
 交通知识库和数据库作为大体积 Module Asset，不写入应用安装包，也不放在 Skill 相邻目录。Knowledge Module 必须同时保存原始 PDF/文档、检索索引和精确定位映射，Citation 才能打开原始来源。运行时从已启用 Module 的安装清单解析资产，并分别向相关工具提供 `TRANSPORTX_KNOWLEDGE_ROOT` 与 `TRANSPORTX_TRAFFIC_DATA_ROOT`。
 

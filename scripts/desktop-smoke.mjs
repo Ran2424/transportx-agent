@@ -6,10 +6,32 @@ import { spawnSync } from 'node:child_process';
 import { _electron as electron } from 'playwright';
 
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-desktop-smoke-'));
-const dataRoot = path.join(temporaryHome, '.transportx', 'traffic-agent');
+const dataRoot = process.env.TRANSPORTX_SMOKE_DATA_ROOT || path.join(temporaryHome, '.transportx', 'traffic-agent');
 const packagedApp = process.env.TRANSPORTX_PACKAGED_APP;
-if (packagedApp) {
-  const packagedPython = path.join(packagedApp, 'Contents', 'Resources', 'runtimes', 'python', 'bin', 'python3');
+
+function packagedLayout(input) {
+  const packagedPath = path.resolve(input);
+  if (process.platform === 'darwin') {
+    return {
+      executable: path.join(packagedPath, 'Contents', 'MacOS', 'TransportX Traffic Agent'),
+      resourcesDir: path.join(packagedPath, 'Contents', 'Resources'),
+    };
+  }
+  if (process.platform === 'win32') {
+    const executable = path.extname(packagedPath).toLowerCase() === '.exe'
+      ? packagedPath
+      : path.join(packagedPath, 'TransportX Traffic Agent.exe');
+    return { executable, resourcesDir: path.join(path.dirname(executable), 'resources') };
+  }
+  throw new Error(`Packaged desktop smoke is unsupported on ${process.platform}`);
+}
+
+const packaged = packagedApp ? packagedLayout(packagedApp) : null;
+if (packaged) {
+  if (!fs.existsSync(packaged.executable)) throw new Error(`Packaged application is missing: ${packaged.executable}`);
+  const resourcesDir = packaged.resourcesDir;
+  const manifest = JSON.parse(fs.readFileSync(path.join(resourcesDir, 'runtime-manifest.json'), 'utf8'));
+  const packagedPython = path.join(resourcesDir, manifest.python?.path || '');
   const python = spawnSync(packagedPython, ['-B', '-I', '-c', 'import matplotlib,numpy,platform,sqlite3,ssl,yaml; print(platform.python_version())'], {
     encoding: 'utf8',
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
@@ -18,8 +40,6 @@ if (packagedApp) {
     throw new Error(`Packaged Python runtime is invalid: ${(python.stderr || python.stdout).trim()}`);
   }
   // Video runtime: ffmpeg/ffprobe must be present, runnable and integrity-recorded.
-  const resourcesDir = path.join(packagedApp, 'Contents', 'Resources');
-  const manifest = JSON.parse(fs.readFileSync(path.join(resourcesDir, 'runtime-manifest.json'), 'utf8'));
   for (const name of ['ffmpeg', 'ffprobe']) {
     const entry = manifest[name];
     if (!entry || !entry.sha256 || !entry.version) throw new Error(`Packaged runtime manifest is missing the ${name} entry`);
@@ -32,7 +52,7 @@ if (packagedApp) {
   console.log(`[desktop-smoke] packaged ffmpeg runtime OK (ffmpeg ${manifest.ffmpeg.version})`);
 }
 const app = await electron.launch({
-  ...(packagedApp ? { executablePath: path.join(packagedApp, 'Contents', 'MacOS', 'TransportX Traffic Agent') } : { args: ['.'], cwd: process.cwd() }),
+  ...(packaged ? { executablePath: packaged.executable } : { args: ['.'], cwd: process.cwd() }),
   env: {
     ...process.env,
     HOME: temporaryHome,
@@ -73,7 +93,7 @@ try {
   const pdfResponse = await fetch(`${new URL(window.url()).origin}/api/reports/pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: '桌面打包验证', html: `<article data-payload="${oversizedDataUrlPayload}"><h1>TransportX</h1><p>macOS PDF bridge</p></article>` }),
+    body: JSON.stringify({ title: '桌面打包验证', html: `<article data-payload="${oversizedDataUrlPayload}"><h1>TransportX</h1><p>Desktop PDF bridge</p></article>` }),
   });
   const pdf = Buffer.from(await pdfResponse.arrayBuffer());
   if (!pdfResponse.ok || pdf.subarray(0, 4).toString() !== '%PDF') throw new Error(`Desktop PDF bridge failed: ${pdfResponse.status} ${pdf.toString('utf8', 0, 200)}`);
