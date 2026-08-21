@@ -1,3 +1,7 @@
+export const TOOL_LABELS: Record<string, string> = {
+  read: 'conversation.tool.read', bash: 'conversation.tool.command', shell: 'conversation.tool.command', command: 'conversation.tool.command', exec: 'conversation.tool.command', edit: 'conversation.tool.edit', write: 'conversation.tool.write', create: 'conversation.tool.create', apply_patch: 'conversation.tool.patch', tau_task: 'conversation.tool.taskStatus', tau_ask_user: 'conversation.tool.ask', publish_geodata: 'conversation.tool.publish', present_visualization: 'conversation.tool.mapDisplay', tau_cite: 'conversation.tool.citation',
+};
+
 export function toolIconName(name: string) {
   const normalized = name.trim().toLowerCase().replaceAll('-', '_');
   if (['bash', 'shell', 'command', 'exec'].some((value) => normalized === value || normalized.startsWith(`${value}_`))) return 'command';
