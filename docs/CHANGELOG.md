@@ -4,6 +4,20 @@
 
 ## Unreleased
 
+### 代码与架构收口（`codex/final-code-optimization`）
+
+- 日期：2026-08-21
+- GitHub 操作：以 `b44082a` 建立 `codex/baseline-v3.1.0` 基线，并创建优化分支。
+
+主要修改：
+
+- Task Mode 移除已无生产消费者的 `task-state.ts` re-export，改由 `src/contracts/task.ts` 作为唯一权威入口；模块版本提升至 `1.0.1`。
+- 删除无代码消费者的 contracts export，并将模型展示和 `models.json` CRUD 的重复逻辑收口。
+
+验证：
+
+- 待本分支类型检查与相关回归测试完成后补充。
+
 ## v3.1.0 — 模块 ZIP 快速安装
 
 - 日期：2026-08-19
