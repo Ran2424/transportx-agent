@@ -434,7 +434,9 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
 
     async listAttachments(sessionId) {
       const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments`, undefined, { ...context, sessionId });
-      return ((data as { attachments?: SessionAttachment[] }).attachments ?? []);
+      const attachments = (data as { attachments?: SessionAttachment[] }).attachments ?? [];
+      deps.dispatch({ type: 'session/attachmentsReceived', sessionId, attachments });
+      return attachments;
     },
 
     async uploadAttachment({ sessionId, file, source }) {
@@ -443,11 +445,13 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments?source=${encodeURIComponent(source)}`, { method: 'POST', body: form }, { ...context, sessionId });
       const attachment = (data as { attachments?: SessionAttachment[] }).attachments?.[0];
       if (!attachment) throw appError({ code: 'attachment_upload_invalid_response', category: 'transport', message: '附件上传响应无效', sessionId, retryable: false });
+      deps.dispatch({ type: 'session/attachmentAdded', sessionId, attachment });
       return attachment;
     },
 
     async deleteAttachment(sessionId, attachmentId) {
       await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }, { ...context, sessionId });
+      deps.dispatch({ type: 'session/attachmentRemoved', sessionId, attachmentId });
     },
 
     async close(sessionId) {

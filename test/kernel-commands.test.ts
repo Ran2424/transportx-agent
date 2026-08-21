@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands, createReportCommands, createVideoCommands } = require('../public/kernel/commands.js');
+const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands, createReportCommands, createSessionCommands, createVideoCommands } = require('../public/kernel/commands.js');
 const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
 const { SessionStore } = require('../public/kernel/stores/session-store.js');
@@ -80,6 +80,28 @@ test('session snapshots hydrate and clear compaction state', () => {
   assert.equal(store.isCompacting('session-1'), true);
   store.setCompacting('session-1', false);
   assert.equal(store.isCompacting('session-1'), false);
+});
+
+test('attachment commands update the session store through kernel actions', async () => {
+  const attachment = { id: 'att-1', name: 'demand.csv', relativePath: 'attachments/att-1/demand.csv', size: 12, kind: 'table', source: 'file' };
+  const fixture = deps((_command) => ({ attachments: [attachment] }));
+  const session = createSessionCommands(fixture.value);
+  await session.listAttachments('session-1');
+  await session.uploadAttachment({ sessionId: 'session-1', file: new File(['x'], 'demand.csv'), source: 'file' });
+  await session.deleteAttachment('session-1', attachment.id);
+  assert.deepEqual(fixture.actions.map((action) => action.type), ['session/attachmentsReceived', 'session/attachmentAdded', 'session/attachmentRemoved']);
+  assert.deepEqual(fixture.paths, [
+    '/api/live-sessions/session-1/attachments',
+    '/api/live-sessions/session-1/attachments?source=file',
+    '/api/live-sessions/session-1/attachments/att-1',
+  ]);
+
+  const store = new SessionStore();
+  store.setAttachments('session-1', [attachment]);
+  store.addAttachment('session-1', { ...attachment, id: 'att-2' });
+  store.removeAttachment('session-1', attachment.id);
+  assert.deepEqual(Object.keys(store.get().attachmentsBySession['session-1']), ['att-2']);
+  assert.equal(store.get().attachmentRevisionBySession['session-1'], 3);
 });
 
 test('citation commands validate envelopes behind the HTTP command port', async () => {

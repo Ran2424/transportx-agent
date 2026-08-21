@@ -9,6 +9,7 @@ import type {
   AppEvent,
   AppMessage,
   LiveSession,
+  SessionAttachment,
   SessionEntry,
   SessionSnapshot,
 } from '../app-types.js';
@@ -42,6 +43,9 @@ export type AppAction =
   | { type: 'session/closed'; sessionId: string }
   | { type: 'session/activated'; sessionId: string | null }
   | { type: 'session/snapshotReceived'; sessionId: string; snapshot: SessionSnapshot }
+  | { type: 'session/attachmentsReceived'; sessionId: string; attachments: SessionAttachment[] }
+  | { type: 'session/attachmentAdded'; sessionId: string; attachment: SessionAttachment }
+  | { type: 'session/attachmentRemoved'; sessionId: string; attachmentId: string }
   | { type: 'session/compactionStarted'; sessionId: string }
   | { type: 'session/compactionEnded'; sessionId: string }
   // conversation

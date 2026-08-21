@@ -27,6 +27,7 @@
 - 鉴权 RPC 也迁入 registry，鉴权持久化、事件广播和启用后的客户端断连保持为宿主层的明确回调。
 - 会话命名命令迁入 Session RPC handler，历史 JSONL 写入与 Live Session 事件更新由宿主层回调保留。
 - 模块安装、ZIP 导入、启用与卸载命令迁入 registry，继续受桌面模式和活动会话模块占用检查保护。
+- 会话附件索引迁入 Kernel `SessionStore`；上传、删除和文件面板刷新不再通过全局 DOM 事件旁路状态。
 
 验证：
 
