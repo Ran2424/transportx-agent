@@ -26,8 +26,8 @@ import { createSessionHistoryHandlers } from './session-history-handler.js';
 import { createStaticHandler } from './static-handler.js';
 import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
-import { addPiModel, deletePiModel, deletePiModelProvider, updatePiModel } from './pi-model-config.js';
-import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders } from './pi-model-access.js';
+import type { RpcHandlerRegistry } from './rpc-handlers.js';
+import { createModelRpcHandlers } from './rpc-handlers/model.js';
 import { platformOverview } from './platform-overview.js';
 import { buildAttachmentContext } from '../contracts/attachments.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
@@ -46,6 +46,9 @@ const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, pat
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
 const reliableCommandTypes = new Set(['prompt', 'steer', 'follow_up', 'abort', 'extension_ui_response']);
+const rpcHandlers: RpcHandlerRegistry = {
+  ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, invalidateModelListCache, errorMessage }),
+};
 
 type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
 
@@ -190,6 +193,8 @@ function currentSessionOptions() {
 async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
+  const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
+  if (registered) return registered.handle(command, { success, failure });
   if (command.type === 'get_auth') return success({ configured: AUTH_CONFIGURED, enabled: authEnabled });
   if (command.type === 'set_auth') {
     if (!AUTH_CONFIGURED) return failure('No credentials configured. Set tau.user and tau.pass in settings.json');
@@ -197,53 +202,6 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
     liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled: authEnabled } });
     if (!wasEnabled && authEnabled) { const timer = setTimeout(() => [...liveManager.clients].forEach((client) => { try { client.close(4001, 'Authentication enabled'); } catch {} }), 25); timer.unref?.(); }
     return success({ enabled: authEnabled });
-  }
-  if (command.type === 'get_available_models') return success({ models: await getAvailableModels() });
-  if (command.type === 'get_model_providers') {
-    try { return success({ providers: await listPiModelProviders(PI_AGENT_DIR) }); }
-    catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'connect_model_provider') {
-    try {
-      const provider = await connectPiModelProvider(String(command.provider || ''), String(command.apiKey || ''), PI_AGENT_DIR);
-      invalidateModelListCache();
-      return success({ provider });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'disconnect_model_provider') {
-    try {
-      await disconnectPiModelProvider(String(command.provider || ''), PI_AGENT_DIR);
-      invalidateModelListCache();
-      return success();
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'add_model') {
-    try {
-      const model = await addPiModel(command as Omit<Partial<import('./pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, PI_AGENT_DIR);
-      invalidateModelListCache();
-      return success({ model });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'update_model') {
-    try {
-      const model = await updatePiModel(command as { provider: string; modelId: string; name?: string; contextWindow?: number; reasoning?: boolean; images?: boolean }, PI_AGENT_DIR);
-      invalidateModelListCache();
-      return success({ model });
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'delete_model') {
-    try {
-      await deletePiModel(String(command.provider || ''), String(command.modelId || ''), PI_AGENT_DIR);
-      invalidateModelListCache();
-      return success();
-    } catch (error) { return failure(errorMessage(error)); }
-  }
-  if (command.type === 'delete_model_provider') {
-    try {
-      await deletePiModelProvider(String(command.provider || ''), PI_AGENT_DIR);
-      invalidateModelListCache();
-      return success();
-    } catch (error) { return failure(errorMessage(error)); }
   }
   if (command.type === 'get_platform_overview') return success(currentPlatformOverview());
   if (command.type === 'install_module') {

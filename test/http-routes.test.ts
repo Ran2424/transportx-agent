@@ -412,6 +412,14 @@ test('normalizes model references before sending Pi set_model commands', async (
   assert.equal(commands[0].modelId, 'deepseek-v4-flash');
 });
 
+test('RPC registry rejects prototype property names as unknown commands', async () => {
+  const session = fakeSession('tau_registry_unknown');
+  liveManager.sessions.set(session.id, session);
+  const response = await handleRpcCommand({ type: 'toString', sessionId: session.id });
+  assert.equal(response.success, false);
+  assert.match(String(response.error), /Unknown command/);
+});
+
 test('delegates auto-compaction state and settings to Pi RPC', async () => {
   const commands: Array<Record<string, unknown>> = [];
   const session = {
