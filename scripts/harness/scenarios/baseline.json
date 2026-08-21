@@ -16,6 +16,8 @@
     {
       "match": "基线-tool-collapse",
       "steps": [
+        { "event": { "type": "message_start", "message": { "role": "assistant", "content": [{ "type": "text", "text": "" }] } } },
+        { "event": { "type": "message_update", "assistantMessageEvent": { "type": "thinking_delta", "delta": "正在读取交通摘要。" } } },
         { "tool": { "name": "read", "args": { "path": "traffic-summary.json" }, "result": { "content": "工具调用完成" }, "delayMs": 800 } }
       ]
     },
