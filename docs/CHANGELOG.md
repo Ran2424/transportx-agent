@@ -47,6 +47,7 @@
 - Session History Reader 接管单个 JSONL 会话摘要与轻量 header cwd 读取；handler 仅组织索引、排序和 HTTP 响应。
 - Session History Reader 接管 JSONL 会话搜索投影；handler 不再直接解析历史消息条目。
 - Tool Card 迁为独立对话展示组件；展开状态、计时、复制、图片与文件预览行为保持不变，工作台仅负责消息编排。
+- Citation Manager 弹窗迁为独立组件；证据图加载、过滤、导出和预览仍通过同一 Kernel command 与受控资源 URL。
 
 验证：
 
