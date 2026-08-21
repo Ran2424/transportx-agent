@@ -14,6 +14,16 @@ export type SessionHistorySummary = {
   cwd: string | null;
 };
 
+export type SessionHistorySearchResult = {
+  filePath: string;
+  project: string;
+  sessionId: string;
+  sessionName: string;
+  sessionTimestamp: string;
+  firstMessage: string;
+  matches: Array<{ role: string; snippet: string }>;
+};
+
 export function titleFromMessageContent(content: unknown) {
   const text = typeof content === 'string' ? content : Array.isArray(content)
     ? content.filter((block): block is { type?: unknown; text?: unknown } => !!block && typeof block === 'object').filter((block) => block.type === 'text').map((block) => typeof block.text === 'string' ? block.text : '').join('\n')
@@ -82,6 +92,28 @@ export async function readSessionSummary(filePath: string, normalizeSessionCwd: 
   lines.close(); stream.destroy();
   if (!header?.id || (userMessageCount <= 1 && lineCount <= 8)) return null;
   return { id: header.id, timestamp: header.timestamp || '', lastConversationAt: lastConversationAt || header.timestamp || '', name: sessionName, firstMessage, cwd: normalizeSessionCwd(header.cwd) };
+}
+
+export async function searchSessionFile(filePath: string, query: string, normalizeSessionCwd: NormalizeSessionCwd): Promise<SessionHistorySearchResult | null> {
+  const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  const needle = query.toLowerCase();
+  let sessionId = '', sessionName = '', sessionTimestamp = '', firstMessage = '', cwd: string | null = null;
+  const matches: Array<{ role: string; snippet: string }> = [];
+  for await (const line of lines) try {
+    const entry = JSON.parse(line);
+    if (entry.type === 'session') { sessionId = entry.id; sessionTimestamp = entry.timestamp || ''; cwd = normalizeSessionCwd(entry.cwd); }
+    if (entry.type === 'session_info' && entry.name) sessionName = entry.name;
+    if (entry.type === 'message') {
+      const content = entry.message?.content, text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((block) => block.type === 'text').map((block) => block.text).join(' ') : '';
+      if (!firstMessage && entry.message?.role === 'user' && text) firstMessage = text.slice(0, 120);
+      const index = text.toLowerCase().indexOf(needle);
+      if (index >= 0) matches.push({ role: entry.message?.role || 'unknown', snippet: `${index > 0 ? '…' : ''}${text.slice(Math.max(0, index - 60), Math.min(text.length, index + needle.length + 60)).replace(/\n/g, ' ')}${index + needle.length + 60 < text.length ? '…' : ''}` });
+      if (matches.length >= 3) break;
+    }
+  } catch {}
+  lines.close(); stream.destroy();
+  return matches.length ? { filePath, project: cwd || '', sessionId, sessionName, sessionTimestamp, firstMessage, matches } : null;
 }
 
 function messageTimestamp(entry: JsonRecord) {
