@@ -52,6 +52,7 @@
 - Composer 的引用候选加载与 marker 插入迁为专属 Hook，继续使用 Citation command port，并保持插入后回焦与错误提示。
 - Composer 本体迁为独立对话组件；prompt/steer、任务模式、队列与工具栏保持原有命令路径，Conversation Workspace 专注线程投影与组件组合。
 - 消息内的 Artifact 列表、Citation Footer 与证据悬浮预览迁为独立展示层，继续消费既有引用投影和受控资源 URL。
+- 用户/助手消息卡片、复制交互与 Thinking 状态迁为独立组件；Conversation Workspace 收口为 55 行的会话线程组合根。
 
 验证：
 
