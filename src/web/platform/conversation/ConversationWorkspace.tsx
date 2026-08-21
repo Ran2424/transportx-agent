@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import type { AppMessage, LiveSession, MessageContentBlock, SessionAttachment, SessionAttachmentSource } from '../../../public/app-types.js';
+import type { AppMessage, LiveSession, MessageContentBlock, SessionAttachment } from '../../../public/app-types.js';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import type { CitationEnvelope } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
@@ -11,7 +11,8 @@ import { Icon } from '../../components/icons';
 import { projectTaskState } from '../../features/task/task-projection';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
 import i18n from '../../i18n';
-import { AttachmentCards, attachmentPreviewUrl, formatBytes } from './conversation-attachments';
+import { AttachmentCards } from './conversation-attachments';
+import { ComposerAttachmentList, useComposerAttachments } from './composer-attachments';
 import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, type CiteCandidate } from './composer-citation-picker';
 import { copyText } from './conversation-clipboard';
@@ -192,20 +193,12 @@ const AssistantMessage = memo(function AssistantMessage({ message, streaming, sh
   return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={focusCitationCard}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? streaming ? <div className="streaming-text">{displayText}</div> : <div dangerouslySetInnerHTML={renderConversationMarkdown(displayText, projection?.numbers)} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copyText(messageCopyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
 });
 
-type PendingAttachment = { localId: string; file: File; attachment?: SessionAttachment; status: 'uploading' | 'ready' | 'error'; error?: string };
-
-function clipboardFileName(index: number) {
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `clipboard-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${index + 1}.png`;
-}
-
 function Composer({ sessionId, session, streaming, compacting, queued, taskModeEnabled, attachments, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const [value, setValue] = useState('');
-  const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [error, setError] = useState('');
+  const { pending, setPending, addAttachments, removeAttachment } = useComposerAttachments(sessionId, setError);
   const [taskModeBusy, setTaskModeBusy] = useState(false);
   const [citeOpen, setCiteOpen] = useState(false);
   const [citeLoading, setCiteLoading] = useState(false);
@@ -238,29 +231,6 @@ function Composer({ sessionId, session, streaming, compacting, queued, taskModeE
       requestAnimationFrame(() => inputRef.current?.focus());
     } catch (cause) { setError((cause as Error).message || t('conversation.createCitationFailed')); }
   }
-  async function addAttachments(files: FileList | File[], source: SessionAttachmentSource) {
-    const unique = Array.from(files).filter((file, index, all) => all.findIndex((candidate) => `${candidate.name}:${candidate.size}:${candidate.lastModified}:${candidate.type}` === `${file.name}:${file.size}:${file.lastModified}:${file.type}`) === index);
-    for (const [index, original] of unique.entries()) {
-      const file = source === 'clipboard' && (!original.name || original.name === 'image.png' || original.name === 'blob')
-        ? new File([original], clipboardFileName(index), { type: original.type || 'image/png' })
-        : original;
-      const localId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      setPending((current) => [...current, { localId, file, status: 'uploading' }]);
-      try {
-        const attachment = await kernel.commands.session.uploadAttachment({ sessionId, file, source });
-        setPending((current) => current.map((item) => item.localId === localId ? { ...item, attachment, status: 'ready' } : item));
-      } catch (cause) {
-        setPending((current) => current.map((item) => item.localId === localId ? { ...item, status: 'error', error: (cause as Error).message || t('conversation.uploadFailed') } : item));
-      }
-    }
-    if (unique.length) setError('');
-  }
-  async function removeAttachment(item: PendingAttachment) {
-    setPending((current) => current.filter((candidate) => candidate.localId !== item.localId));
-    if (item.attachment) {
-      try { await kernel.commands.session.deleteAttachment(sessionId, item.attachment.id); } catch { /* the input item is removed even when cleanup is unavailable */ }
-    }
-  }
   async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
     const attachmentIds = pending.filter((item) => item.status === 'ready' && item.attachment).map((item) => item.attachment!.id);
     if (pending.some((item) => item.status === 'uploading')) { setError(t('conversation.uploadingWait')); return; }
@@ -282,7 +252,7 @@ function Composer({ sessionId, session, streaming, compacting, queued, taskModeE
   }
   return <footer className="conversation-composer">
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
-    {pending.length ? <div className="attachment-list attachment-list--cards">{pending.map((item) => { const attachment = item.attachment; const presentation = attachment ? filePresentation({ name: attachment.name, path: attachment.relativePath, isDirectory: false }) : null; const name = attachment?.name || item.file.name; return <div className={`pending-attachment is-${item.status}`} key={item.localId}>{attachment?.kind === 'image' ? <img src={attachmentPreviewUrl(sessionId, attachment)} alt={attachment.name} /> : <span className="pending-attachment-icon"><Icon name={presentation?.icon || 'file'} /></span>}<span className="pending-attachment-copy"><strong title={name}>{name}</strong><small>{item.status === 'uploading' ? t('conversation.uploading') : item.status === 'error' ? item.error : attachment ? `${presentation?.label} · ${formatBytes(attachment.size)}` : t('conversation.ready')}</small></span><button type="button" aria-label={t('conversation.removeAttachment', { name })} onClick={() => void removeAttachment(item)}>×</button></div>; })}</div> : null}
+    <ComposerAttachmentList sessionId={sessionId} pending={pending} onRemove={(item) => void removeAttachment(item)} />
     <div className="composer-row">
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <textarea
