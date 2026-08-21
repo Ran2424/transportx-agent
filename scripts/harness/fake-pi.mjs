@@ -157,6 +157,7 @@ async function runSteps(steps, promptMessage) {
     }
     emit({ type: 'turn_end' });
     emit({ type: 'agent_end' });
+    emit({ type: 'agent_settled' });
   };
 
   for (const rawStep of steps) {
@@ -277,6 +278,7 @@ async function runSteps(steps, promptMessage) {
   if (aborted) { finalizeAborted(); return; }
   emit({ type: 'turn_end' });
   emit({ type: 'agent_end' });
+  emit({ type: 'agent_settled' });
 }
 
 // ---- 命令处理 ----

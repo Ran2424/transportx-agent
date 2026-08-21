@@ -42,7 +42,7 @@ const port = Number(argValue('--port', 0)) || (await freePort());
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-fake-pi-'));
 const agentDir = path.join(tempRoot, 'agent');
 const sessionsDir = path.join(agentDir, 'sessions');
-const projectsDir = path.join(tempRoot, 'projects');
+const projectsDir = path.join(tempRoot, 'scenario');
 fs.mkdirSync(sessionsDir, { recursive: true });
 fs.mkdirSync(projectsDir, { recursive: true });
 fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { 'kimi-coding': { baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', models: [{ id: 'k2p7', name: 'Fake K2P7', contextWindow: 262144, reasoning: true }] } } }));

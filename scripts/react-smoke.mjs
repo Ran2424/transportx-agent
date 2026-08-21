@@ -549,8 +549,8 @@ try {
   if (toolChrome.cardBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.cardBorder !== 'none' || toolChrome.labelColor !== toolChrome.bodyColor || toolChrome.labelBackground !== 'rgba(0, 0, 0, 0)' || toolChrome.labelBorder !== 'none') {
     throw new Error(`Tool history should be borderless with a plain text label: ${JSON.stringify(toolChrome)}`);
   }
-  if (toolChrome.markerBackground !== 'rgb(185, 109, 76)' || toolChrome.markerRadius !== '50%') {
-    throw new Error(`Sand completion marker should carry the timeline accent: ${JSON.stringify(toolChrome)}`);
+  if (toolChrome.markerBackground !== 'rgba(185, 109, 76, 0.09)' || toolChrome.markerRadius !== '8px') {
+    throw new Error(`Sand completion marker should use the selection token: ${JSON.stringify(toolChrome)}`);
   }
   await reactPage.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, selectedTheme);
 
@@ -576,7 +576,7 @@ try {
     const iconStyle = icon ? getComputedStyle(icon) : null;
     return { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height), iconWidth: iconStyle ? Number.parseFloat(iconStyle.width) : 0 };
   });
-  if (iconChrome.width !== 20 || iconChrome.height !== 20 || iconChrome.iconWidth !== 12) {
+  if (iconChrome.width !== 22 || iconChrome.height !== 22 || iconChrome.iconWidth !== 12) {
     throw new Error(`Tool glyph proportions changed: ${JSON.stringify(iconChrome)}`);
   }
   await fallbackToolIcon.evaluate((node) => node.closest('.tool-card')?.querySelector('button')?.click());
