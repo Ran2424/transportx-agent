@@ -218,11 +218,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
     setContent(null); setError('');
     if (externalSource) {
       if (presentation.preview !== 'report') return;
-      void fetch(externalSource.url).then(async (response) => {
-        if (!response.ok) throw new Error(t('workspace.reportLoadFailed'));
-        const next = await response.text();
-        if (active) setContent({ content: next, encoding: 'utf8', size: new Blob([next]).size });
-      }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportLoadFailed')); });
+      void kernel.commands.report.loadSource(sessionId, externalSource.url).then((next) => { if (active) setContent(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportLoadFailed')); });
       return () => { active = false; };
     }
     if (!presentation.preview || presentation.preview === 'image') return;

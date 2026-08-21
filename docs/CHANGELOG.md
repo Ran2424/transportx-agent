@@ -20,6 +20,7 @@
 - Video Workspace 的时序指标读取迁入 Kernel command port，播放器仅保留指标校验与展示逻辑。
 - 报告 PDF 导出迁入 Kernel command port，文件预览组件继续只负责浏览器侧的渲染与下载触发。
 - 附件上下文的生成与剥离迁入共享 contracts，Server 与浏览器会话投影统一使用同一标记协议。
+- 报告预览文本读取迁入 Kernel command port，`FilePreview` 不再直接请求业务资源。
 
 验证：
 
