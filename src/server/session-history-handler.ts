@@ -1,6 +1,5 @@
 import fs = require('node:fs');
 import path = require('node:path');
-import readline = require('node:readline');
 
 import type { Dirent } from 'node:fs';
 import type { ServerResponse } from 'node:http';
@@ -8,7 +7,7 @@ import type { JsonRecord } from './types.js';
 import type { LiveSessionManager } from './sessions.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { within } from './asset-integrity.js';
-import { deriveSessionName, readSessionHeaderCwd as readHistoryHeaderCwd, readSessionSummary } from './session-history-reader.js';
+import { deriveSessionName, readSessionHeaderCwd as readHistoryHeaderCwd, readSessionSummary, searchSessionFile } from './session-history-reader.js';
 
 type HistoryHandlersOptions = {
   sessionsDir: string;
@@ -104,26 +103,11 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
   async function serveSearch(res: ServerResponse, query: string) {
     try {
       if (!query || query.length < 2 || !fs.existsSync(options.sessionsDir)) return options.json(res, 200, { results: [] });
-      const results: Array<Record<string, unknown>> = [], needle = query.toLowerCase();
+      const results: Array<Record<string, unknown>> = [];
       for (const { filePath } of listSessionFiles()) {
         if (results.length >= 30) break;
-        const stream = fs.createReadStream(filePath, { encoding: 'utf8' }), lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-        let sessionId = '', sessionName = '', sessionTimestamp = '', firstMessage = '', cwd: string | null = null;
-        const matches: Array<Record<string, string>> = [];
-        for await (const line of lines) try {
-          const entry = JSON.parse(line);
-          if (entry.type === 'session') { sessionId = entry.id; sessionTimestamp = entry.timestamp || ''; cwd = normalizeSessionCwd(entry.cwd); }
-          if (entry.type === 'session_info' && entry.name) sessionName = entry.name;
-          if (entry.type === 'message') {
-            const content = entry.message?.content, text = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((block) => block.type === 'text').map((block) => block.text).join(' ') : '';
-            if (!firstMessage && entry.message?.role === 'user' && text) firstMessage = text.slice(0, 120);
-            const index = text.toLowerCase().indexOf(needle);
-            if (index >= 0) matches.push({ role: entry.message?.role || 'unknown', snippet: `${index > 0 ? '…' : ''}${text.slice(Math.max(0, index - 60), Math.min(text.length, index + needle.length + 60)).replace(/\n/g, ' ')}${index + needle.length + 60 < text.length ? '…' : ''}` });
-            if (matches.length >= 3) break;
-          }
-        } catch {}
-        lines.close(); stream.destroy();
-        if (matches.length) results.push({ filePath, project: cwd || '', sessionId, sessionName, sessionTimestamp, firstMessage, matches });
+        const result = await searchSessionFile(filePath, query, normalizeSessionCwd);
+        if (result) results.push(result);
       }
       options.json(res, 200, { results });
     } catch (error) { options.json(res, 500, { error: options.errorMessage(error) }); }

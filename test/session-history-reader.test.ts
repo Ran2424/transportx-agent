@@ -16,8 +16,8 @@ test('derives a stable session name from explicit metadata or the first user mes
   assert.equal(titleFromMessageContent([{ type: 'thinking', thinking: 'ignored' }]), null);
 });
 
-test('reads a JSONL session summary without leaking parsing into the HTTP handler', async () => {
-  const { readSessionHeaderCwd, readSessionSummary } = await import('../src/server/session-history-reader.ts');
+test('reads and searches a JSONL session without leaking parsing into the HTTP handler', async () => {
+  const { readSessionHeaderCwd, readSessionSummary, searchSessionFile } = await import('../src/server/session-history-reader.ts');
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-session-history-'));
   const filePath = path.join(directory, 'session.jsonl');
   fs.writeFileSync(filePath, [
@@ -37,6 +37,15 @@ test('reads a JSONL session summary without leaking parsing into the HTTP handle
       name: '徐家汇早高峰分析',
       firstMessage: 'Analyze weekday congestion at Xujiahui.',
       cwd: '/projects/traffic',
+    });
+    assert.deepEqual(await searchSessionFile(filePath, 'congestion', normalize), {
+      filePath,
+      project: '/projects/traffic',
+      sessionId: 'session-1',
+      sessionName: '徐家汇早高峰分析',
+      sessionTimestamp: '2026-08-21T08:00:00.000Z',
+      firstMessage: 'Please analyze weekday congestion at Xujiahui.',
+      matches: [{ role: 'user', snippet: '…Please analyze weekday congestion at Xujiahui.' }],
     });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });

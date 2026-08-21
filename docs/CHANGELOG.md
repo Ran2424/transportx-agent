@@ -45,6 +45,7 @@
 - Tool Card 的精确工具名与文案 key 映射迁入工具模块，工作台仅保留通用兜底分类。
 - Session History 的标题提取与会话名推导迁为纯 Reader 模块，JSONL 扫描与 HTTP 编排继续保留在 handler。
 - Session History Reader 接管单个 JSONL 会话摘要与轻量 header cwd 读取；handler 仅组织索引、排序和 HTTP 响应。
+- Session History Reader 接管 JSONL 会话搜索投影；handler 不再直接解析历史消息条目。
 
 验证：
 
