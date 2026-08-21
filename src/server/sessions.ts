@@ -29,6 +29,7 @@ import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } 
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
+import { SessionEventTiming } from './session-event-timing.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
 import { inferSessionTitle, isGenericSessionName } from './session-title.js';
 import {
@@ -129,9 +130,7 @@ export class PiRpcSession {
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
   timingMetrics: TimingMetricsStore;
-  assistantThinkingStartedAt: number | null;
-  assistantThinkingDurationMs: number | null;
-  toolStartedAt: Map<string, number>;
+  eventTiming: SessionEventTiming;
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -167,9 +166,7 @@ export class PiRpcSession {
     this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID() };
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.pendingExtensionUiRequests = new Map();
-    this.assistantThinkingStartedAt = null;
-    this.assistantThinkingDurationMs = null;
-    this.toolStartedAt = new Map();
+    this.eventTiming = new SessionEventTiming(this.timingMetrics);
     this.applyLatestBridgeEnvelope();
   }
 
@@ -395,41 +392,7 @@ export class PiRpcSession {
         this.touch(true);
       }
     }
-    if (type === 'message_start' && event.message?.role === 'assistant') {
-      this.assistantThinkingStartedAt = now;
-      this.assistantThinkingDurationMs = null;
-    }
-    if (type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && this.assistantThinkingStartedAt !== null && this.assistantThinkingDurationMs === null) {
-      this.assistantThinkingDurationMs = Math.max(0, now - this.assistantThinkingStartedAt);
-    }
-    if (type === 'tool_execution_start' && typeof event.toolCallId === 'string' && event.toolCallId) {
-      this.toolStartedAt.set(event.toolCallId, now);
-      event.startedAt = now;
-    }
-    if (type === 'tool_execution_end' && typeof event.toolCallId === 'string' && event.toolCallId) {
-      const startedAt = this.toolStartedAt.get(event.toolCallId);
-      if (startedAt !== undefined) {
-        const durationMs = Math.max(0, now - startedAt);
-        event.startedAt = startedAt;
-        event.endedAt = now;
-        event.durationMs = durationMs;
-        this.timingMetrics.recordTool(event.toolCallId, startedAt, now, durationMs);
-        this.toolStartedAt.delete(event.toolCallId);
-      }
-    }
-    if (type === 'message_end' && event.message?.role === 'assistant') {
-      const startedAt = this.assistantThinkingStartedAt;
-      const hasThinking = Array.isArray(event.message.content) && event.message.content.some((block) => block.type === 'thinking');
-      if (startedAt !== null && hasThinking) {
-        const durationMs = this.assistantThinkingDurationMs ?? Math.max(0, now - startedAt);
-        event.message = this.timingMetrics.recordThinking(event.message, startedAt, startedAt + durationMs, durationMs);
-      }
-      this.assistantThinkingStartedAt = null;
-      this.assistantThinkingDurationMs = null;
-    }
-    if (type === 'message_end' && event.message?.role === 'toolResult') {
-      event.message = this.timingMetrics.enrichToolResult(event.message);
-    }
+    this.eventTiming.apply(event, now);
     if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
     if (type === 'compaction_start' || type === 'auto_compaction_start') this.isCompacting = true;
