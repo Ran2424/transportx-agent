@@ -6,7 +6,7 @@ import { messageText, messageThinking, messageThinkingDurationMs } from '../../.
 import { formatToolResultText } from '../../../public/tool-result.js';
 import { renderMarkdown } from '../../../public/markdown.js';
 import { exportCitationBibliography } from '../../../contracts/citation-compiler.ts';
-import { parseCitationEnvelope, type CitationEnvelope, type CitationLocator, type CitationResource, type CitationWork } from '../../../contracts/citation.ts';
+import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
 import { useConversationState, useSessionState, useToolExecutionState } from '../../app/store-hooks';
 import { BrandMark } from '../../components/BrandMark';
@@ -491,6 +491,7 @@ function downloadCitationExport(envelope: CitationEnvelope, format: 'bibtex' | '
 
 function CitationManager({ sessionId, onClose }: { sessionId: string; onClose(): void }) {
   const { t } = useTranslation();
+  const kernel = appKernel;
   const [envelope, setEnvelope] = useState<CitationEnvelope | null>(null);
   const [scope, setScope] = useState<'all' | CitationResource['scope']>('all');
   const [query, setQuery] = useState('');
@@ -499,13 +500,11 @@ function CitationManager({ sessionId, onClose }: { sessionId: string; onClose():
   const [selectedLocators, setSelectedLocators] = useState<Record<string, string>>({});
   useEffect(() => {
     let active = true;
-    void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`).then(async (response) => {
-      const payload = await response.json() as { citations?: CitationEnvelope; error?: string };
-      if (!response.ok || !payload.citations) throw new Error(payload.error || t('conversation.citationUnavailable'));
-      if (active) setEnvelope(payload.citations);
+    void kernel.commands.citation.list(sessionId).then((citations) => {
+      if (active) setEnvelope(citations);
     }).catch((cause) => { if (active) setError((cause as Error).message || t('conversation.citationUnavailable')); });
     return () => { active = false; };
-  }, [sessionId, t]);
+  }, [kernel, sessionId, t]);
   const rows = useMemo(() => {
     if (!envelope) return [];
     const works = new Map(envelope.works.map((work) => [work.workId, work]));
@@ -562,12 +561,10 @@ function Composer({ sessionId, session, streaming, compacting, queued, taskModeE
   async function openCitePicker() {
     setCiteOpen(true); setCiteLoading(true); setError('');
     try {
-      const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`);
-      const payload = await response.json() as { citations?: CitationEnvelope; error?: string };
-      if (!response.ok || !payload.citations) throw new Error(payload.error || t('conversation.citationUnavailable'));
-      const works = new Map(payload.citations.works.map((item) => [item.workId, item]));
-      const resources = new Map(payload.citations.resources.map((item) => [item.resourceId, item]));
-      setCiteCandidates(payload.citations.locators.flatMap((locator) => {
+      const citations = await kernel.commands.citation.list(sessionId);
+      const works = new Map(citations.works.map((item) => [item.workId, item]));
+      const resources = new Map(citations.resources.map((item) => [item.resourceId, item]));
+      setCiteCandidates(citations.locators.flatMap((locator) => {
         const resource = resources.get(locator.resourceId);
         const work = resource ? works.get(resource.workId) : null;
         if (!resource || !work) return [];
@@ -579,12 +576,9 @@ function Composer({ sessionId, session, streaming, compacting, queued, taskModeE
   }
   async function insertCitation(locatorId: string) {
     try {
-      const response = await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations/occurrences`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locatorId, role: 'support' }) });
-      const payload = await response.json() as { marker?: string; citations?: unknown; error?: string };
-      if (!response.ok || !payload.marker) throw new Error(payload.error || t('conversation.createCitationFailed'));
-      const citations = parseCitationEnvelope(payload.citations);
-      if (citations) onCitationEnvelope(citations);
-      setValue((current) => current.replace('/cite', payload.marker!));
+      const { marker, citations } = await kernel.commands.citation.createOccurrence(sessionId, locatorId, 'support');
+      onCitationEnvelope(citations);
+      setValue((current) => current.replace('/cite', marker));
       setCiteOpen(false);
       requestAnimationFrame(() => inputRef.current?.focus());
     } catch (cause) { setError((cause as Error).message || t('conversation.createCitationFailed')); }
@@ -701,13 +695,11 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   useEffect(() => { let active = true; void kernel.commands.session.listAttachments(sessionId).then((items) => { if (active) setAttachments(Object.fromEntries(items.map((item) => [item.id, item]))); }).catch(() => {}); return () => { active = false; }; }, [kernel, sessionId]);
   useEffect(() => {
     let active = true;
-    void fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/citations`).then(async (response) => {
-      const payload = await response.json() as { citations?: unknown };
-      const citations = response.ok ? parseCitationEnvelope(payload.citations) : null;
-      if (active && citations) setCitationEnvelope(citations);
+    void kernel.commands.citation.list(sessionId).then((citations) => {
+      if (active) setCitationEnvelope(citations);
     }).catch(() => {});
     return () => { active = false; };
-  }, [sessionId]);
+  }, [kernel, sessionId]);
   const entries = data?.snapshotEntries || [];
   const liveTools = tools.bySession[sessionId];
   const session = sessions.sessions.find((item) => item.id === sessionId);

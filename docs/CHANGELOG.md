@@ -16,6 +16,7 @@
 - 会话压缩状态由 Pi RPC 生命周期驱动：压缩期间安全保留排队提示词，`agent_settled` 才释放流式状态；工作台显示压缩状态和上下文占用。
 - 将历史设计、修复说明、题库与审查文档迁入 `docs/archive/`，并更新评测与历史链接。
 - Geo 与 Video 展示收口到 AgentCanvas：以轻量 Canvas item 描述展示引用，统一激活、关闭和自动发布状态，同时保留各自领域 Workspace 与资源 API。
+- Citation HTTP 访问收口到 Kernel command port；会话区、引用管理器和报告预览统一消费已验证的 `CitationEnvelope`。
 
 验证：
 
