@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands } = require('../public/kernel/commands.js');
+const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands, createVideoCommands } = require('../public/kernel/commands.js');
 const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
 const { SessionStore } = require('../public/kernel/stores/session-store.js');
@@ -91,6 +91,13 @@ test('citation commands validate envelopes behind the HTTP command port', async 
   assert.equal(created.marker, '[1]');
   assert.deepEqual(fixture.paths, ['/api/live-sessions/session-1/citations', '/api/live-sessions/session-1/citations/occurrences']);
   assert.deepEqual(fixture.commands[1], { locatorId: 'locator-1', role: 'support' });
+});
+
+test('video metrics stay behind the HTTP command port', async () => {
+  const fixture = deps(() => ({ metrics: [] }));
+  const video = createVideoCommands(fixture.value);
+  assert.deepEqual(await video.getMetrics('session-1', 'video_resource'), { metrics: [] });
+  assert.deepEqual(fixture.paths, ['/api/live-sessions/session-1/video-resources/video_resource/metrics']);
 });
 
 test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {
