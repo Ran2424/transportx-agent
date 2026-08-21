@@ -212,6 +212,26 @@ test('Server reflects Pi thinking-level change events in live session metadata',
   assert.equal(session.metadata().thinkingLevel, 'high');
 });
 
+test('Server broadcasts only changed live session metadata after the initial snapshot', () => {
+  const { LiveSessionManager, PiRpcSession } = require('../bin/sessions.js');
+  const manager = new LiveSessionManager();
+  const session = new PiRpcSession(manager, { cwd: process.cwd() });
+  manager.sessions.set(session.id, session);
+  const broadcasts: Array<{ type?: string; session?: Record<string, unknown> }> = [];
+  manager.broadcast = (data: { type?: string; session?: Record<string, unknown> }) => broadcasts.push(data);
+
+  manager.broadcastUpdated(session.id);
+  manager.broadcastUpdated(session.id);
+  session.handleEvent({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '流式文本' } });
+  session.handleEvent({ type: 'agent_start' });
+  session.handleEvent({ type: 'agent_start' });
+
+  const updates = broadcasts.filter((item) => item.type === 'live_session_updated');
+  assert.equal(updates.length, 2);
+  assert.equal(updates[0].session?.resolvedSessionPlan, undefined);
+  assert.equal(updates[1].session?.isStreaming, true);
+});
+
 test('Server keeps a session busy through compaction until Pi settles', () => {
   const { LiveSessionManager, PiRpcSession } = require('../bin/sessions.js');
   const session = new PiRpcSession(new LiveSessionManager(), { cwd: process.cwd() });

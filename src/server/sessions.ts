@@ -303,6 +303,23 @@ export class PiRpcSession {
     };
   }
 
+  liveMetadata() {
+    return {
+      id: this.id,
+      modelSpec: this.modelSpec,
+      model: this.model,
+      thinkingLevel: this.thinkingLevel,
+      sessionFile: this.sessionFile,
+      sessionName: this.sessionName,
+      isStreaming: this.isStreaming,
+      isCompacting: this.isCompacting,
+      autoCompactionEnabled: this.autoCompactionEnabled,
+      lastConversationAt: this.lastConversationAt,
+      contextUsage: this.contextUsage,
+      capabilities: this.capabilityTracker.snapshot(),
+    };
+  }
+
   snapshot() {
     return {
       ...this.projection.snapshot(),
@@ -755,6 +772,7 @@ export class LiveSessionManager {
   pendingResumes: Map<string, Promise<PiRpcSession>>;
   terminatingResumes: Map<string, Promise<void>>;
   piVersion: string;
+  liveMetadataSignatures: Map<string, string>;
 
   constructor() {
     this.sessions = new Map();
@@ -762,6 +780,7 @@ export class LiveSessionManager {
     this.pendingResumes = new Map();
     this.terminatingResumes = new Map();
     this.piVersion = PI_RUNTIME_MINIMUM;
+    this.liveMetadataSignatures = new Map();
   }
   setPiVersion(version: string) { this.piVersion = version || PI_RUNTIME_MINIMUM; }
   addClient(ws: LiveClient) { this.clients.add(ws); }
@@ -774,7 +793,12 @@ export class LiveSessionManager {
   }
   broadcastUpdated(id: string) {
     const s = this.sessions.get(id);
-    if (s) this.broadcast({ type: 'live_session_updated', session: s.metadata() });
+    if (!s) return;
+    const session = s.liveMetadata();
+    const signature = JSON.stringify(session);
+    if (this.liveMetadataSignatures.get(id) === signature) return;
+    this.liveMetadataSignatures.set(id, signature);
+    this.broadcast({ type: 'live_session_updated', session });
   }
   broadcastCapabilityDiagnostic(sessionId: string, mismatches: CapabilityMismatchReason[]) {
     if (!mismatches.length) return;
@@ -863,6 +887,7 @@ export class LiveSessionManager {
     });
     if (resolvedFile) this.terminatingResumes.set(resolvedFile, termination);
     this.sessions.delete(id);
+    this.liveMetadataSignatures.delete(id);
     this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
     await termination;
     return true;
@@ -870,11 +895,13 @@ export class LiveSessionManager {
   removeExited(id: string, reason: string) {
     if (!this.sessions.has(id)) return;
     this.sessions.delete(id);
+    this.liveMetadataSignatures.delete(id);
     this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
   }
   async shutdown() {
     const sessions = Array.from(this.sessions.values());
     this.sessions.clear();
+    this.liveMetadataSignatures.clear();
     await Promise.allSettled(sessions.map((s) => s.terminate('server_shutdown')));
   }
 }
