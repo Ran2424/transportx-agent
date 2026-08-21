@@ -9,7 +9,7 @@ import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork 
 import { appKernel } from '../../app/composition-root';
 import { useConversationState, useSessionState, useToolExecutionState } from '../../app/store-hooks';
 import { BrandMark } from '../../components/BrandMark';
-import { Icon, type IconName } from '../../components/icons';
+import { Icon } from '../../components/icons';
 import { projectTaskState } from '../../features/task/task-projection';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
 import i18n from '../../i18n';
@@ -18,6 +18,7 @@ import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, type CiteCandidate } from './composer-citation-picker';
 import { renderConversationMarkdown } from './conversation-markdown';
 import { projectTools, type ToolData } from './tool-projection';
+import { compactCharacterCount, toolFileName, toolFilePath, toolIconName } from './tool-card-utils';
 import {
   citationCopyText,
   citationDisplayText,
@@ -288,34 +289,11 @@ function toolLabel(name: string) {
   return i18n.t('conversation.tool.general');
 }
 
-function toolIconName(name: string): IconName {
-  const normalized = name.trim().toLowerCase().replaceAll('-', '_');
-  if (['bash', 'shell', 'command', 'exec'].some((value) => normalized === value || normalized.startsWith(`${value}_`))) return 'command';
-  if (normalized.includes('task')) return 'task';
-  if (normalized.includes('geo') || normalized.includes('map') || normalized.includes('visualization')) return 'map';
-  if (normalized === 'read' || normalized.startsWith('read_')) return 'file';
-  if (['write', 'edit', 'create', 'apply_patch'].some((value) => normalized === value || normalized.startsWith(`${value}_`))) return 'write';
-  return 'tool';
-}
-
 function imagePaths(value: unknown) {
   const text = formatToolResultText(value, i18n.language);
   const paths = new Set<string>();
   for (const match of text.matchAll(IMAGE_PATH_RE)) paths.add(match[1]);
   return [...paths].slice(0, 3);
-}
-
-function toolFilePath(args: Record<string, unknown>) {
-  for (const key of ['path', 'filePath', 'file_path']) {
-    if (typeof args[key] === 'string' && args[key]) return args[key];
-  }
-  const sourceInfo = args.sourceInfo;
-  if (sourceInfo && typeof sourceInfo === 'object' && !Array.isArray(sourceInfo) && typeof (sourceInfo as Record<string, unknown>).path === 'string') return (sourceInfo as Record<string, unknown>).path as string;
-  return '';
-}
-
-function toolFileName(path: string) {
-  return path.replaceAll('\\', '/').split('/').pop() || path;
 }
 
 function ToolFilePreview({ sessionId, path }: { sessionId: string; path: string }) {
@@ -342,10 +320,6 @@ function truncateToolText(value: string, limit: number) {
 
 function compactToolArgs(args: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(args).map(([key, value]) => [key, typeof value === 'string' ? truncateToolText(value, TOOL_TEXT_PREVIEW_LIMIT) : value]));
-}
-
-function compactCharacterCount(count: number) {
-  return count < 1_000 ? String(count) : `${(count / 1_000).toFixed(count < 10_000 ? 1 : 0)}k`;
 }
 
 const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: ToolData; sessionId: string }) {
