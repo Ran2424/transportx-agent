@@ -63,6 +63,8 @@
 验证：
 
 - `npm test` 通过（156/156）。
+- `npm run test:react-smoke` 通过：真实 Node 服务、fake Pi 与 Chrome 覆盖会话、对话、任务、Geo、扩展 UI 与移动视图。
+- `npm run test:desktop-smoke` 通过：Electron 生命周期、内置 Python/PDF 路径与视频编解码探测均通过。
 
 ## v3.1.0 — 模块 ZIP 快速安装
 
