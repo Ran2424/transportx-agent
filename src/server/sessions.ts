@@ -28,6 +28,7 @@ import { signalProcessTree } from './process-tree.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
+import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
 import { inferSessionTitle, isGenericSessionName } from './session-title.js';
 import {
@@ -367,16 +368,7 @@ export class PiRpcSession {
     }
     if (data.sessionName) this.setSessionName(data.sessionName);
     if (data.contextUsage) {
-      const tokens = data.contextUsage.tokens;
-      const contextWindow = data.contextUsage.contextWindow;
-      const hasTokens = typeof tokens === 'number' && Number.isFinite(tokens) && tokens >= 0;
-      const hasContextWindow = typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0;
-      const estimatedTokens = this.contextUsage?.tokens;
-      if (!hasTokens && hasContextWindow && typeof estimatedTokens === 'number' && Number.isFinite(estimatedTokens) && estimatedTokens >= 0) {
-        this.contextUsage = { ...data.contextUsage, tokens: estimatedTokens, percent: estimatedTokens / contextWindow * 100 };
-      } else {
-        this.contextUsage = data.contextUsage;
-      }
+      this.contextUsage = mergeContextUsage(this.contextUsage, data.contextUsage);
     }
     if (data.model) this.model = normalizeModel(data.model);
     if (data.thinkingLevel) this.thinkingLevel = data.thinkingLevel;
@@ -384,7 +376,7 @@ export class PiRpcSession {
     if (typeof data.isCompacting === 'boolean') this.isCompacting = data.isCompacting;
     if (typeof data.autoCompactionEnabled === 'boolean') this.autoCompactionEnabled = data.autoCompactionEnabled;
     if (data.level) this.thinkingLevel = data.level;
-    if (data.tokens) this.contextUsage = { ...(this.contextUsage || {}), usage: data.tokens };
+    if (data.tokens) this.contextUsage = withUsageTotals(this.contextUsage, data.tokens);
     if (command === 'set_model' || command === 'cycle_model') {
       if (data.model) this.model = normalizeModel(data.model);
       else if (data.provider && data.id) this.model = normalizeModel(data);
@@ -444,11 +436,7 @@ export class PiRpcSession {
     if (type === 'compaction_end' || type === 'auto_compaction_end') {
       this.isCompacting = false;
       const result = event.result && typeof event.result === 'object' ? event.result as JsonRecord : null;
-      const tokens = Number(result?.estimatedTokensAfter);
-      const contextWindow = Number(this.contextUsage?.contextWindow ?? this.model?.contextWindow);
-      if (Number.isFinite(tokens) && tokens >= 0 && Number.isFinite(contextWindow) && contextWindow > 0) {
-        this.contextUsage = { ...(this.contextUsage || {}), tokens, contextWindow, percent: tokens / contextWindow * 100 };
-      }
+      this.contextUsage = contextUsageAfterCompaction(this.contextUsage, this.model?.contextWindow, result?.estimatedTokensAfter);
       this.reconcileProjection();
     }
     if (type === 'agent_settled') {
