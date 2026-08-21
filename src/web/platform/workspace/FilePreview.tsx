@@ -280,17 +280,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
         const dataUrl = await imageDataUrl(image, new Error(t('workspace.imageLoadFailed', { name: image.alt || index + 1 })));
         clonedImages[index]?.setAttribute('src', dataUrl);
       }));
-      const response = await fetch('/api/reports/pdf/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: item.name, html: clone.outerHTML }),
-      });
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(detail.error || t('workspace.pdfFailed'));
-      }
-      const detail = await response.json() as { url?: string };
-      if (!detail.url) throw new Error(t('workspace.pdfFailed'));
+      const detail = await kernel.commands.report.exportPdf(item.name, clone.outerHTML);
       const desktop = window as Window & { transportxDesktop?: { download(url: string): Promise<string> } };
       if (desktop.transportxDesktop) await desktop.transportxDesktop.download(detail.url);
       else window.location.assign(detail.url);

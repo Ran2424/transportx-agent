@@ -220,6 +220,10 @@ export type VideoCommands = {
   getMetrics(sessionId: string, resourceId: string): Promise<unknown>;
 };
 
+export type ReportCommands = {
+  exportPdf(title: string, html: string): Promise<{ url: string }>;
+};
+
 /** fetch() wrapper: network/HTTP-status/payload errors all become AppError. */
 async function httpJson(
   http: HttpClient,
@@ -470,6 +474,17 @@ export function createVideoCommands(deps: CommandDeps): VideoCommands {
   };
 }
 
+export function createReportCommands(deps: CommandDeps): ReportCommands {
+  return {
+    async exportPdf(title, html) {
+      const data = await httpJson(deps.http, '/api/reports/pdf/download', { method: 'POST', body: { title, html } }, { category: 'session' });
+      const url = typeof (data as { url?: unknown })?.url === 'string' ? (data as { url: string }).url : '';
+      if (!url) throw appError({ code: 'report_export_invalid_response', category: 'session', message: 'PDF 导出响应无效', retryable: false });
+      return { url };
+    },
+  };
+}
+
 export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
   return {
     async getAvailableModels(sessionId) {
@@ -594,6 +609,7 @@ export type KernelCommands = {
   session: SessionCommands;
   citation: CitationCommands;
   video: VideoCommands;
+  report: ReportCommands;
   platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
 };
@@ -604,6 +620,7 @@ export function createCommands(deps: CommandDeps): KernelCommands {
     session: createSessionCommands(deps),
     citation: createCitationCommands(deps),
     video: createVideoCommands(deps),
+    report: createReportCommands(deps),
     platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),
   };
