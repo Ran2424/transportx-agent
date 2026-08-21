@@ -35,6 +35,7 @@
 - `PiRpcTransport` 接管 Pi 命令 ID、stdin 写入确认、待响应表、超时和进程终止拒绝；`PiRpcSession` 仅保留运行时状态与事件投影。
 - Conversation 的 Markdown 渲染和 HTML 白名单清理迁入独立展示工具，工作台不再内嵌 DOM 安全策略。
 - React 冒烟夹具对齐 `scenario/` 工作区和 `agent_settled` 收敛协议；工具思考事件及主题尺寸断言同步当前产品基线。
+- 工具调用的历史结果、实时状态和孤立结果投影抽为纯模块，并补充其状态优先级回归用例。
 
 验证：
 
