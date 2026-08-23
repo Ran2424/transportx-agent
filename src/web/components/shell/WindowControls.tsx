@@ -39,14 +39,17 @@ export function WindowControls() {
 
   return (
     <div className="window-controls" role="group" aria-label={t('window.controls')}>
+      {/* Mirror macOS traffic-light order: close on the leftmost,
+       * minimize next, then maximise on the right (consistent with
+       * native macOS so users trained there get the same muscle memory). */}
+      <button className="window-control window-control-close" type="button" aria-label={t('window.close')} title={t('window.close')} onClick={() => void api.window.close()}>
+        <Icon name="close" />
+      </button>
       <button className="window-control window-control-minimize" type="button" aria-label={t('window.minimize')} title={t('window.minimize')} onClick={() => void api.window.minimize()}>
         <Icon name="minimize" />
       </button>
       <button className={`window-control window-control-maximize${maximized ? ' is-maximized' : ''}`} type="button" aria-label={t('window.maximize')} title={maximized ? t('window.restore') : t('window.maximize')} onClick={() => void api.window.toggleMaximize()}>
         <Icon name={maximized ? 'restore' : 'maximize'} />
-      </button>
-      <button className="window-control window-control-close" type="button" aria-label={t('window.close')} title={t('window.close')} onClick={() => void api.window.close()}>
-        <Icon name="close" />
       </button>
     </div>
   );
