@@ -1,0 +1,18 @@
+# Windows-only electron-builder configuration. Only read by electron-builder
+# when running on a Windows host. mac targets and DMG live in
+# electron-builder.mac.yml.
+
+win:
+  icon: app-icon.ico
+  artifactName: ${productName}-${version}-win-x64-setup.${ext}
+  requestedExecutionLevel: asInvoker
+  signAndEditExecutable: true
+  verifyUpdateCodeSignature: true
+  target:
+    - target: nsis
+      arch: x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

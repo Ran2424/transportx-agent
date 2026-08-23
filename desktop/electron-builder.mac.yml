@@ -1,0 +1,16 @@
+# macOS-only electron-builder configuration. Only read by electron-builder
+# when running on a macOS host. NSIS / Windows signing / Windows targets live
+# in electron-builder.win.yml so the mac profile stays self-contained.
+
+mac:
+  category: public.app-category.productivity
+  icon: app-icon.svg
+  minimumSystemVersion: "12.0"
+  notarize: true
+  entitlements: desktop/assets/entitlements.mac.plist
+  entitlementsInherit: desktop/assets/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch: arm64
+  hardenedRuntime: true
+  gatekeeperAssess: false
