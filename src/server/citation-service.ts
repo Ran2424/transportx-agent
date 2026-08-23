@@ -18,6 +18,7 @@ import type {
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import { resolveSessionAttachments } from './session-attachments.js';
 import { CitationRegistryStore, newCitationId } from './citation-registry.js';
+import { relativePosixPath } from './util/path.js';
 
 export type CitationServiceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: ResolvedSessionPlan | null };
 type KnowledgeResult = {
@@ -184,7 +185,7 @@ function resolveKnowledgeResultFromAsset(knowledgeRoot: string, assetId: string,
       normative_force: typeof item.normative_force === 'string' ? item.normative_force : '',
       verification_status: typeof item.verification_status === 'string' ? item.verification_status : '',
       ...(yamlScalar(metadataPath, 'issuer') ? { issuer: yamlScalar(metadataPath, 'issuer') } : {}),
-      source: { asset_id: assetId, kind: resolvedKind, mime_type: mimeType, relative_path: path.relative(root, sourcePath).split(path.sep).join('/'), sha256 },
+      source: { asset_id: assetId, kind: resolvedKind, mime_type: mimeType, relative_path: relativePosixPath(root, sourcePath), sha256 },
       source_refs: sourceRefs,
     };
   }
@@ -276,7 +277,7 @@ export class CitationService {
       if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Citation artifact is outside the active task: ${artifact.path}`);
       const [kind, mimeType] = mimeFor(resolved);
       const sha256 = hash(fs.readFileSync(resolved));
-      const relativePath = path.relative(root, resolved).split(path.sep).join('/');
+      const relativePath = relativePosixPath(root, resolved);
       const entry = this.workAndResource(session, { title: artifact.title?.trim() || path.basename(resolved), type: 'artifact', scope: 'artifact', kind, relativePath, mimeType, sha256 }, pending);
       works.push(entry.work); resources.push(entry.resource);
       locators.push({ locatorId: newCitationId('locator'), resourceId: entry.resource.resourceId, ...(artifact.quote?.trim() ? { quote: artifact.quote.trim() } : {}), ...(artifact.section?.trim() ? { section: artifact.section.trim() } : {}), ...(artifact.page ? { page: artifact.page } : {}), ...(artifact.lineStart ? { lineStart: artifact.lineStart } : {}), ...(artifact.lineEnd ? { lineEnd: artifact.lineEnd } : {}) });
@@ -295,7 +296,7 @@ export class CitationService {
       if (!isWithin(root, requested) || fs.lstatSync(requested).isSymbolicLink()) throw new Error(`Dataset result is outside the active task: ${dataset.path}`);
       const resolved = fs.realpathSync(requested);
       if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Dataset result is outside the active task: ${dataset.path}`);
-      const [, mimeType] = mimeFor(resolved), sha256 = hash(fs.readFileSync(resolved)), relativePath = path.relative(root, resolved).split(path.sep).join('/');
+      const [, mimeType] = mimeFor(resolved), sha256 = hash(fs.readFileSync(resolved)), relativePath = relativePosixPath(root, resolved);
       const label = dataset.title?.trim() || `数据结果 ${dataset.assetId}`;
       const entry = this.workAndResource(session, { title: label, type: 'dataset', scope: 'dataset', kind: 'dataset', relativePath, mimeType, sha256, standardNumber: dataset.version }, pending);
       works.push(entry.work); resources.push(entry.resource);
