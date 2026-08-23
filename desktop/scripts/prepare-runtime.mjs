@@ -4,6 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
+import { getPlatformProfile } from './platform-profile.mjs';
+
+const profile = getPlatformProfile();
+
 const root = process.cwd();
 const sourcePythonDir = process.env.TRANSPORTX_PYTHON_RUNTIME_DIR;
 if (!sourcePythonDir) {
@@ -11,8 +15,7 @@ if (!sourcePythonDir) {
 }
 
 const sourceRoot = path.resolve(sourcePythonDir);
-const pythonRelative = process.platform === 'win32' ? 'python.exe' : 'bin/python3';
-const sourcePython = path.join(sourceRoot, pythonRelative);
+const sourcePython = path.join(sourceRoot, profile.python.entry);
 if (!fs.existsSync(sourcePython)) throw new Error(`Bundled Python entrypoint is missing: ${sourcePython}`);
 
 const buildRoot = path.join(root, 'desktop', 'build');
@@ -20,11 +23,11 @@ const stagedPythonRoot = path.join(buildRoot, 'runtimes', 'python');
 fs.rmSync(buildRoot, { recursive: true, force: true });
 fs.mkdirSync(buildRoot, { recursive: true });
 fs.cpSync(sourceRoot, stagedPythonRoot, { recursive: true, verbatimSymlinks: true });
-const stagedPython = path.join(stagedPythonRoot, pythonRelative);
+const stagedPython = path.join(stagedPythonRoot, profile.python.entry);
 
 const probeSource = [
   'import importlib.util, json, platform, sys',
-  "required = ['ssl', 'sqlite3', 'yaml', 'numpy', 'matplotlib', 'pandas', 'pyproj', 'shapely']",
+  `required = ${JSON.stringify(profile.python.requiredModules)}`,
   'print(json.dumps({',
   "  'version': platform.python_version(),",
   "  'machine': platform.machine(),",
@@ -42,8 +45,9 @@ if (probeResult.status !== 0) {
 }
 const pythonProbe = JSON.parse(probeResult.stdout);
 if (!String(pythonProbe.version).startsWith('3.10.')) throw new Error(`Bundled Python must be 3.10.x, got ${pythonProbe.version}`);
-if (process.platform === 'darwin' && pythonProbe.machine !== 'arm64') throw new Error(`Bundled macOS Python must be arm64, got ${pythonProbe.machine}`);
-if (process.platform === 'win32' && !/^(amd64|x86_64)$/i.test(String(pythonProbe.machine))) throw new Error(`Bundled Windows Python must be x64, got ${pythonProbe.machine}`);
+if (!profile.python.archCheck(pythonProbe.machine)) {
+  throw new Error(`Bundled ${profile.label} Python must be ${profile.python.archErrorMessage}, got ${pythonProbe.machine}`);
+}
 if (pythonProbe.missing.length) throw new Error(`Bundled Python is missing required modules: ${pythonProbe.missing.join(', ')}`);
 for (const [label, runtimePath] of [['prefix', pythonProbe.prefix], ['executable', pythonProbe.executable]]) {
   const relative = path.relative(stagedPythonRoot, path.resolve(runtimePath));
@@ -56,32 +60,28 @@ const piPkg = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', '@earen
 const agentHostSource = path.join(root, 'bin', 'tau.js');
 const piSource = path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js');
 
-// Video processing is a shipped desktop capability on macOS arm64 and Windows
-// x64. Packaged apps always resolve this pair through the integrity manifest.
 function stageFfmpegRuntime() {
   const sourceFfmpegDir = process.env.TRANSPORTX_FFMPEG_RUNTIME_DIR;
-  const requiresFfmpeg = process.platform === 'darwin' || process.platform === 'win32';
-  if (!requiresFfmpeg && !sourceFfmpegDir) return null;
-  if (!sourceFfmpegDir) throw new Error('TRANSPORTX_FFMPEG_RUNTIME_DIR must point to a directory containing static ffmpeg and ffprobe binaries');
+  if (!profile.release.requiresFfmpeg && !sourceFfmpegDir) return null;
+  if (profile.release.requiresFfmpeg && !sourceFfmpegDir) {
+    throw new Error('TRANSPORTX_FFMPEG_RUNTIME_DIR must point to a directory containing static ffmpeg and ffprobe binaries');
+  }
   const stagedFfmpegRoot = path.join(buildRoot, 'runtimes', 'ffmpeg');
   fs.mkdirSync(stagedFfmpegRoot, { recursive: true });
   const entries = {};
   for (const name of ['ffmpeg', 'ffprobe']) {
-    const filename = process.platform === 'win32' ? `${name}.exe` : name;
+    const filename = profile.ffmpeg.binName(name);
     const source = path.join(path.resolve(sourceFfmpegDir), filename);
     if (!fs.existsSync(source)) throw new Error(`Bundled ${name} is missing: ${source}`);
     const staged = path.join(stagedFfmpegRoot, filename);
     fs.copyFileSync(source, staged);
-    if (process.platform !== 'win32') fs.chmodSync(staged, 0o755);
+    if (profile.ffmpeg.chmodRequired) fs.chmodSync(staged, 0o755);
+    profile.ffmpeg.archCheck(staged);
     const versionResult = spawnSync(staged, ['-version'], { encoding: 'utf8' });
     if (versionResult.status !== 0) throw new Error(`Bundled ${name} failed to run after staging: ${(versionResult.stderr || versionResult.stdout || '').trim()}`);
     const version = (versionResult.stdout.match(/version\s+([^\s]+)/) || [])[1];
     if (!version) throw new Error(`Cannot determine bundled ${name} version`);
-    if (process.platform === 'darwin') {
-      const fileResult = spawnSync('file', [staged], { encoding: 'utf8' });
-      if (!fileResult.stdout.includes('arm64')) throw new Error(`Bundled macOS ${name} must be arm64: ${fileResult.stdout.trim()}`);
-    }
-    entries[name] = { version, path: `runtimes/ffmpeg/${filename}`, sha256: sha256(staged), arch: process.platform === 'darwin' ? 'arm64' : 'x64' };
+    entries[name] = { version, path: `runtimes/ffmpeg/${filename}`, sha256: sha256(staged), arch: profile.ffmpeg.arch };
   }
   for (const extra of ['LICENSE', 'LICENSE.txt', 'LICENSE.md', 'NOTICES.md']) {
     const notice = path.join(path.resolve(sourceFfmpegDir), extra);
@@ -107,7 +107,7 @@ const manifest = {
   },
   python: {
     version: pythonProbe.version,
-    path: `runtimes/python/${pythonRelative}`,
+    path: `runtimes/python/${profile.python.entry}`,
     sha256: sha256(stagedPython),
   },
   ...(ffmpegEntries ? { ffmpeg: ffmpegEntries.ffmpeg, ffprobe: ffmpegEntries.ffprobe } : {}),
