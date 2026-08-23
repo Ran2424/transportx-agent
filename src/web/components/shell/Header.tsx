@@ -60,6 +60,7 @@ export function Header({
   return (
     <header className={`workspace-header${activeSession ? ' has-task' : ''}`}>
       <div className="workspace-header-left">
+        <WindowControls />
         <button className="icon-button" type="button" aria-label={t('header.toggleSidebar')} aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
           <Icon name="menu" />
         </button>
@@ -113,7 +114,6 @@ export function Header({
         <button className="icon-button" type="button" aria-label={t('header.openSettings')} onClick={onOpenSettings}>
           <Icon name="settings" />
         </button>
-        <WindowControls />
       </div>
     </header>
   );
