@@ -28,9 +28,28 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .workspace-header-left, .workspace-header-right { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .workspace-header-right { justify-content: flex-end; }
 .workspace-header-center { min-width: 0; display: flex; justify-content: center; }
+/* macOS keeps 'hiddenInset' which leaves traffic-lights floating under the
+ * left side of the header; the rest of the OSes use the fully frameless
+ * 'hidden' chrome where the entire header is a drag region. Buttons stay
+ * interactive because we opt each one out of the drag region below. */
 :root[data-desktop-platform="darwin"] .workspace-header { -webkit-app-region: drag; }
 :root[data-desktop-platform="darwin"] .workspace-header-left { padding-left: 66px; }
 :root[data-desktop-platform="darwin"] .workspace-header button { -webkit-app-region: no-drag; }
+:root[data-desktop-platform="win32"] .workspace-header,
+:root[data-desktop-platform="linux"] .workspace-header { -webkit-app-region: drag; padding: 0 4px 0 16px; }
+:root[data-desktop-platform="win32"] .workspace-header button,
+:root[data-desktop-platform="linux"] .workspace-header button { -webkit-app-region: no-drag; }
+/* Frameless host chrome window controls. Hidden on macOS (its native
+ * traffic-lights take that role); on Win/Linux the cluster lives at the
+ * far right of the header with a clear hover / pressed treatment so it
+ * survives the same brand vibe as the rest of the toolbar. */
+.window-controls { display: flex; align-items: center; gap: 0; margin-left: 4px; -webkit-app-region: no-drag; }
+.window-control { width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: var(--tx-radius-md); background: transparent; color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: 160ms ease; }
+.window-control svg { width: 13px; height: 13px; }
+.window-control:hover { background: var(--surface-hover); color: var(--text-primary); }
+.window-control:active { background: var(--surface-active); }
+.window-control-close:hover { color: #fff; background: var(--status-danger); }
+.window-control-close:active { background: color-mix(in srgb, var(--status-danger) 80%, #000); }
 .icon-button { width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: var(--tx-radius-md); color: var(--text-secondary); background: transparent; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: 160ms ease; }
 .icon-button svg { width: 17px; height: 17px; }
 .icon-button:hover, .icon-button[aria-pressed="true"] { color: var(--text-primary); border-color: transparent; background: var(--surface-hover); }

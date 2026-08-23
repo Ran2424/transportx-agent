@@ -235,7 +235,8 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   assert.match(commonBuilder, /prompts\/\*\*/);
   assert.match(macBuilder, /target:[\s\S]*dmg/);
   assert.match(macBuilder, /arch: arm64/);
-  assert.match(main, /titleBarStyle: process\.platform === 'darwin' \? 'hiddenInset'/);
+  assert.match(main, /titleBarStyle:[\s\S]*hiddenInset[\s\S]*hidden/);
+  assert.match(main, /Menu\.setApplicationMenu\(null\)/);
   assert.match(main, /trafficLightPosition: \{ x: 14, y: 14 \}/);
   assert.match(styles, /data-desktop-platform="darwin".*workspace-header-left.*padding-left: 66px/);
   assert.match(hook, /TRANSPORTX_ALLOW_UNSIGNED_BUILD/);

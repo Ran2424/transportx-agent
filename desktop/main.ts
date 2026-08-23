@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -97,6 +97,7 @@ function createWindow(url: string) {
   const windowUrl = new URL(url);
   workbenchOrigin = windowUrl.origin;
   windowUrl.searchParams.set('desktop-platform', process.platform);
+  const isMac = process.platform === 'darwin';
   const window = new BrowserWindow({
     title: 'TransportX Traffic Agent',
     width: 1440,
@@ -105,8 +106,11 @@ function createWindow(url: string) {
     minHeight: 640,
     show: false,
     backgroundColor: '#f5f7fa',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 14, y: 14 } } : {}),
+    // macOS keeps 'hiddenInset' so the React header can extend under the
+    // traffic-lights; every other OS gets a fully frameless chrome and the
+    // React header renders custom minimise / maximise / close buttons.
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? { trafficLightPosition: { x: 14, y: 14 } } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -115,6 +119,11 @@ function createWindow(url: string) {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  // On non-mac hosts the application menu (File / Edit / View / Window)
+  // would surface the OS chrome that makes the app feel like a wrapped
+  // web view. Remove it; the in-app Command Palette (⌘K) and the React
+  // workspace header replace those affordances.
+  if (!isMac) Menu.setApplicationMenu(null);
   window.webContents.setWindowOpenHandler(({ url: target }: { url: string }) => {
     if (isHttpUrl(target)) shell.openExternal(target).catch(() => {});
     return { action: 'deny' };
@@ -143,6 +152,18 @@ else {
   });
 
   app.whenReady().then(async () => {
+    // Window-control IPC for the frameless Win/Linux chrome. The renderer
+    // sends 'transportx:window:minimize' / 'maximize' / 'close' and the main
+    // process drives the underlying BrowserWindow. isMaximized() lets the UI
+    // flip the maximise glyph between restore / maximise.
+    ipcMain.handle('transportx:window:minimize', () => { mainWindow?.minimize(); });
+    ipcMain.handle('transportx:window:toggle-maximize', () => {
+      if (!mainWindow) return;
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      else mainWindow.maximize();
+    });
+    ipcMain.handle('transportx:window:is-maximized', () => Boolean(mainWindow?.isMaximized()));
+    ipcMain.handle('transportx:window:close', () => { mainWindow?.close(); });
     ipcMain.handle('transportx:download', async (event: Electron.IpcMainInvokeEvent, value: unknown) => {
       if (event.sender !== mainWindow?.webContents || typeof value !== 'string') throw new Error('Invalid download request');
       const target = new URL(value, workbenchOrigin);

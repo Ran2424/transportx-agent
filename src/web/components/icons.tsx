@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from 'react';
 
-export type IconName = 'menu' | 'plus' | 'refresh' | 'settings' | 'command' | 'workspace' | 'task' | 'map' | 'video' | 'search' | 'close' | 'chevron' | 'panel' | 'file' | 'report' | 'code' | 'image' | 'table' | 'write' | 'tool' | 'citation' | 'open';
+export type IconName = 'menu' | 'plus' | 'refresh' | 'settings' | 'command' | 'workspace' | 'task' | 'map' | 'video' | 'search' | 'close' | 'chevron' | 'panel' | 'file' | 'report' | 'code' | 'image' | 'table' | 'write' | 'tool' | 'citation' | 'open' | 'minimize' | 'maximize' | 'restore';
 
 const paths: Record<IconName, ReactNode> = {
   menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
@@ -25,6 +25,9 @@ const paths: Record<IconName, ReactNode> = {
   tool: <><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8Z" /></>,
   citation: <><path d="M7 5H5v14h2M17 5h2v14h-2M10 8h4M10 12h4M10 16h4" /></>,
   open: <><path d="M14 4h6v6" /><path d="M20 4 11 13" /><path d="M19 14v5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V8a1.5 1.5 0 0 1 1.5-1.5h5" /></>,
+  minimize: <><path d="M5 13h14" /></>,
+  maximize: <><rect x="6" y="6" width="12" height="12" rx="1" /></>,
+  restore: <><path d="M9 9h6v6H9Z M6 6h3 M6 6v3" /><path d="M15 15h3 M18 18v-3" /><path d="M6 6 9 3 M3 3v3 M3 3l3 3" /></>,
 };
 
 export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {

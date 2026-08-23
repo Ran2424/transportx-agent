@@ -4,6 +4,7 @@ import type { ConnectionState } from '../../../public/kernel/stores/runtime-stor
 import { BrandMark } from '../BrandMark';
 import { Icon } from '../icons';
 import { modelReference, sessionTitle } from '../../lib/formatting';
+import { WindowControls } from './WindowControls';
 
 type HeaderProps = {
   connection: ConnectionState;
@@ -112,6 +113,7 @@ export function Header({
         <button className="icon-button" type="button" aria-label={t('header.openSettings')} onClick={onOpenSettings}>
           <Icon name="settings" />
         </button>
+        <WindowControls />
       </div>
     </header>
   );
