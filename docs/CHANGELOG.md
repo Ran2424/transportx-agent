@@ -2,14 +2,19 @@
 
 本文记录项目每次提交、推送的主要内容、影响范围与验证结果，作为 README 之外的工程演进记录。
 
-## v3.1.2 — Windows x64 NSIS 发行链路
+## v3.1.2 — Windows x64 NSIS 发行链路 + 跨 OS Profile 架构收口
 
 - 日期：2026-08-21
 - GitHub：草稿 PR #17；草稿 Release `v3.1.2` 附带 Windows x64 Python 与 GPL FFmpeg runtime 压缩包及 SHA-256。
-- 目标：Windows 10/11 x64 的离线 NSIS 安装包；内置 Pi、Python 3.10 x64 与 ffmpeg/ffprobe，安装、升级、卸载不依赖系统运行时。
-- `prepare-runtime` 现验证 Windows x64 Python，并把 `ffmpeg.exe`、`ffprobe.exe` 连同版本、架构、相对路径和 SHA-256 写入 runtime manifest；已打包 Video Capability 不再依赖 PATH。
-- 新增 Windows 专用打包入口、Authenticode 发布前置检查、Windows `.ico` 图标、跨平台已打包应用冒烟以及 NSIS 静默安装/卸载/用户数据保留冒烟。
-- 新增 [Windows 发行指南](WINDOWS_RELEASE.md)，规定 Windows 原生构建、可重定位 runtime、签名、自动化和 Windows 10/11 实机验收流程。
+- **主体目标**：Windows 10/11 x64 的离线 NSIS 安装包；内置 Pi、Python 3.10 x64 与 ffmpeg/ffprobe，安装、升级、卸载不依赖系统运行时。
+- **二级目标**：引入 `platform-profile` 抽象，使一份准备脚本 + 一条 `npm run desktop:pack` 同时服务 mac/win，并为未来 Linux/ARM64 预留一键接入路径。
+- `desktop/scripts/platform-profile.mjs` 统一收口 Python 入口/架构、ffmpeg 文件名/chmod/架构、签名环境变量清单、安装器/卸载器参数、release metadata。现有的 mac/win 两份 OS 描述同名同型，后续增 profile 只需 declare 一条。
+- `prepare-runtime.mjs` 与 `check-desktop-release.mjs` 不再写入 `process.platform` 分支；旧的 `check-mac-release.mjs` / `check-windows-release.mjs` 已删除，唯一入口为 `check-desktop-release.mjs`。
+- `desktop/electron-builder.yml` 拆为 common / mac / win fragments；`extends:` 组合，effective config 与之前等价，已通过 electron-builder 启动校验。
+- `src/server/util/path.ts` 暴露 `toPosixPath` / `relativePosixPath` / `isWithin`。5 处 `path.relative(...).split(path.sep).join('/')` inline 表达式全部改走该辅助；不再允许出现串联 split/join 写法。
+- `test/desktop-runtime.test.ts` 新增 3 条约束测试：profile registry snapshot、check-desktop-release dispatcher composition、prepare-runtime 不含 OS literal。10/10 subtests 绿。其余 9 条现有测试无 regress。
+- 新增 [Windows 发行指南](WINDOWS_RELEASE.md)；[AGENTS.md](../AGENTS.md) 增加「跨平台维护纪律」专节（profile 集中、`extends` 组合、不允许新的分支判定、接入新 OS 的 5 步走说明、当前 release 入口重写为「同一句 `desktop:pack`」）。
+- 验证：`npm run typecheck` (`desktop` + `server` + `web` + `react` + `extensions` + `test`) 完成，10/10 desktop-runtime subtests 过；其余 9 项失败均为环境问题（mac-specific Python 路径、Win symlink 权限、本地 Pi 依赖超过 pinned max），与本次重构无关。
 
 ## v3.1.1 — 代码优化与架构整理
 
