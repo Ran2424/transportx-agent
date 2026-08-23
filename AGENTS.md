@@ -68,23 +68,42 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 - **版本同步**：发布前同步 `package.json` 与 `src/server/config.ts` 的 `PLATFORM_VERSION`；`desktop/build/runtime-manifest.json` 由构建脚本自动生成，不要手改。
 - **提交策略**：小型修复与小幅功能改动可直接提交 `main`；涉及新能力、架构调整或多环节联动的较大改动走「分支 → PR → 合并」流程（参考 PR #12 的 Video Capability）。
 - **安全边界**：模块安装拒绝符号链接与路径逃逸；文件/Geo/Citation 资源按会话目录与 SHA-256 校验；Markdown 安全渲染；鉴权 Cookie 与 WebSocket 断连处理均有测试覆盖。
+- **跨平台维护纪律**：所有 OS 相关的事实（python 入口与架构校验、ffmpeg 文件名 / chmod / 架构探测、签名环境变量、安装器 / 卸载器形为、安装器静默参数、release metadata）都集中于 [`desktop/scripts/platform-profile.mjs`](desktop/scripts/platform-profile.mjs)。`desktop/electron-builder.yml` 仅负责用 `extends:` 组合 [`electron-builder.common.yml`](desktop/electron-builder.common.yml) + [`electron-builder.mac.yml`](desktop/electron-builder.mac.yml) + [`electron-builder.win.yml`](desktop/electron-builder.win.yml)。增减新 OS 仅意味着：（1）在 `platform-profile.mjs` 增一条 profile；（2）新增一份 `electron-builder.<os>.yml` fragment 并在主文件 `extends` 中加入；（3）如果 profile.signing.hostArchRequired 不是 `x64/arm64`、或 ffmpeg/python 入口不一致，更新 [`test/desktop-runtime.test.ts`](test/desktop-runtime.test.ts) 的 snapshot 子例。**不允许在任何业务文件（`src/server/**`、`desktop/main.ts`、`desktop/agent-host-supervisor.ts`、`scripts/**`）重新引入 `process.platform === '...'` 分支、`path.sep` 拼接的边界判定、或 `.exe` 字符串拼接**；一律走现成 helper：`isWithin`（来自 `src/server/util/path.ts`）、`toPosixPath` / `relativePosixPath`（同上）。磁盘序列化一律 POSIX；内存判定一律 `path.relative`；混合写法在 review 阶段会被打回。同一 `npm run desktop:pack` 命令会根据 `process.platform` 自动走对应 profile，无需为 Windows 维护独立脚本。
 
 ## 发布流程
 
 1. 提升版本：`package.json` + `src/server/config.ts`（两处一致）。
 2. 更新 `docs/CHANGELOG.md`（新版本写最上方，包含日期、GitHub 操作、主要修改、验证）。
-3. 打包（本机结构验收）：
+3. 打包步骤全部由 `desktop/scripts/platform-profile.mjs` 驱动，不再为不同 OS 维护不同的命令/脚本：
 
-   ```bash
-   TRANSPORTX_PYTHON_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/python-3.10-runtime" \
-   TRANSPORTX_FFMPEG_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/ffmpeg-runtime" \
-   TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 npm run desktop:pack
-   ```
+   - macOS（已在 `platform-profile.darwin`）：
 
-   - 本机持久化的自包含 Python 3.10 runtime 位于 `~/Library/Application Support/TransportX/python-3.10-runtime`；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
-   - 本机持久化的静态 ffmpeg/ffprobe 8.0（macOS arm64）位于 `~/Library/Application Support/TransportX/ffmpeg-runtime`；如缺失，可从 `desktop/build/runtimes/ffmpeg`（上次构建残留）恢复，或重新下载静态 arm64 二进制（许可证说明见该目录 NOTICES.md）。
-   - 产物在 `release/`：DMG、blockmap、sha256、`latest-mac.yml`（自动更新清单）、`README-安装说明.txt`（需同步更新版本与 SHA-256）。
-4. 正式对外分发必须配置 **Developer ID Application 证书 + Apple 公证**（Apple ID / App Store Connect API Key / keychain profile 之一）；`desktop:pack` 在凭据缺失时会停止。测试包使用 ad-hoc 签名，首次启动需右键「打开」。
+     ```bash
+     TRANSPORTX_PYTHON_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/python-3.10-runtime" \
+     TRANSPORTX_FFMPEG_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/ffmpeg-runtime" \
+     TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 npm run desktop:pack    # 结构验收 / ad-hoc 签名测试包
+     npm run desktop:pack                                       # 正式包，需要 Developer ID + 公证
+     ```
+
+   - Windows x64（已在 `platform-profile.win`）：参阅 [docs/WINDOWS_RELEASE.md](docs/WINDOWS_RELEASE.md)。`npm run desktop:pack` 在 Windows x64 主机上直接走入 `check-desktop-release.mjs` 的 win 分支。
+
+   - 本机持久化的自包含 Python 3.10 runtime 位于 `~/Library/Application Support/TransportX/python-3.10-runtime`（mac）或 `C:\TransportX\runtime\python-3.10-win-x64`（win）；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
+   - 静态 ffmpeg/ffprobe 8.0 同上：mac arm64 在 `~/Library/Application Support/TransportX/ffmpeg-runtime`；win x64 在 `C:\TransportX\runtime\ffmpeg-win-x64`；LICENSE/NOTICES 随包携带。
+   - 产物在 `release/`：mac 产出 `latest-mac.yml` + DMG + blockmap + sha256 + `README-安装说明.txt`；win 产出 NSIS `setup.exe` + sha256 + 清单文件。同一句 `npm run desktop:pack` 下由 `process.platform` 决定产出哪个 artifact，**不要**在 macOS 上交叉打 Windows 包。
+4. 正式对外分发需为各 profile 提供证书：
+
+   - macOS：Developer ID Application + Apple 公证（Apple ID / App Store Connect API Key / keychain profile 之一）；凭据缺失时 `desktop:pack` 启动后会由 `check-desktop-release.mjs` 报错拦截。测试包走 ad-hoc 签名，首次启动需右键「打开」。
+   - Windows x64：Authenticode 证书 + 可信时间戳（变量 `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD`，或 Windows 证书库主题名 `WIN_CSC_NAME`，与 CSC_* 兼容）。凭据缺失时 `desktop:pack` 同样会被 `check-desktop-release.mjs` 拦截。
+
+## 接入新 OS 平台
+
+1. 在 `desktop/scripts/platform-profile.mjs` 增加一个 PLATFORM_PROFILES 条目，镜像 mac/win 的 schema（python / ffmpeg / signing / release）。在 `PROCESS_PLATFORM_TO_BUILDER` 中加 `linux: 'linux'`（或你期望的键）。
+2. 新增 `desktop/electron-builder.<os>.yml`，仅含 `<os>:` 顶层 section + 安装器 segment；并在 `desktop/electron-builder.yml` 的 `extends` 列表中加上。
+3. （仅以 ffmpeg / Python 为 source native binary 的 OS）安装 `desktop/scripts/check-desktop-release.mjs` 中所需的签名检测分支或删除不适用分支。
+4. 同步 [`test/desktop-runtime.test.ts`](test/desktop-runtime.test.ts) 的 `PLATFORM_PROFILES` 子例（添加条目、赢 OS-特定约定），保证后续回归被防住。
+5. 考虑是否需要安装器冒烟（mac/win 使用 NSIS / DMG；Linux 可使用 `scripts/desktop-smoke.mjs` 默认会验证已打包产物）。
+
+完成后，所有运行时脚本、`package.json` 与 React 代码不需要任何改动。
 
 ## 文档索引
 
