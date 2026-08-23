@@ -142,7 +142,8 @@ test('desktop app paths keep durable data outside application resources', () => 
 test('Windows desktop app paths use roaming user data outside application resources', () => {
   const appData = process.platform === 'win32' ? 'C:\\Users\\example\\AppData\\Roaming' : '/Users/example/AppData/Roaming';
   const paths = resolveAppPaths({ APPDATA: appData, TAU_APP_ROOT: '/opt/TransportX/resources/app.asar', TAU_RESOURCES_DIR: '/opt/TransportX/resources' }, 'win32');
-  assert.equal(paths.userDataDir, path.join(appData, 'TransportX Traffic Agent'));
+  // Mirror the macOS vendor/product split: %APPDATA%\TransportX\traffic-agent\
+  assert.equal(paths.userDataDir, path.join(appData, 'TransportX', 'traffic-agent'));
   assert.equal(paths.scenarioDir, path.join(paths.userDataDir, 'scenario'));
   assert.equal(paths.modulesDir, path.join(paths.userDataDir, 'modules'));
   assert.ok(!paths.userDataDir.startsWith(paths.resourcesDir));

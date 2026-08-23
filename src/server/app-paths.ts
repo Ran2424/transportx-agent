@@ -18,7 +18,11 @@ export type AppPaths = {
 export function defaultUserDataDir(platform: NodeJS.Platform, env: NodeJS.ProcessEnv) {
   const home = env.HOME || env.USERPROFILE || os.homedir();
   if (platform === 'darwin') return path.join(home, '.transportx', 'traffic-agent');
-  if (platform === 'win32') return path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'TransportX Traffic Agent');
+  // Match the macOS vendor/product split (%APPDATA%\TransportX\traffic-agent\)
+  // so the existing mac convention `~/.transportx/traffic-agent/` has a
+  // single-shape cross-OS path. The previous `'TransportX Traffic Agent'`
+  // leaf was Electron's default productName and broke that symmetry.
+  if (platform === 'win32') return path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'TransportX', 'traffic-agent');
   return path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'transportx-traffic-agent');
 }
 
