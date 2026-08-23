@@ -7,6 +7,7 @@ import type { PiRpcSession } from './sessions.js';
 import { PythonRunner } from './python-runner.js';
 import { diagnosticMessage, parseSpatialAnalysisResultStructured, type SpatialAnalysisResultV1 } from '../contracts/index.js';
 import { sha256File, within } from './asset-integrity.js';
+import { relativePosixPath } from './util/path.js';
 
 const MAX_INPUT_BYTES = 100 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
@@ -39,7 +40,7 @@ function safeInput(cwd: string, relativePath: string) {
   const geojson = JSON.parse(fs.readFileSync(resolved, 'utf8')) as { type?: unknown; features?: unknown };
   if (geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) throw new Error(`Spatial input must be a GeoJSON FeatureCollection: ${relativePath}`);
   if (geojson.features.length > MAX_FEATURES) throw new Error(`Spatial input exceeds 50,000 features: ${relativePath}`);
-  return { absolutePath: resolved, relativePath: path.relative(root, resolved).split(path.sep).join('/'), sha256: sha256File(resolved), featureCount: geojson.features.length };
+  return { absolutePath: resolved, relativePath: relativePosixPath(root, resolved), sha256: sha256File(resolved), featureCount: geojson.features.length };
 }
 
 export class SpatialAnalysisService {

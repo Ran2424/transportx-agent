@@ -7,10 +7,26 @@ const path = require('node:path');
 
 const { resolveAppPaths } = require('../bin/app-paths.js');
 const { loadRuntimeManifest, validateRuntimeManifest } = require('../bin/runtime-resolver.js');
+const { toPosixPath, relativePosixPath, isWithin } = require('../bin/util/path.js');
 
 function digest(filePath: string) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
+
+test('path utilities produce host-stable POSIX output', () => {
+  // toPosixPath on a Windows-shaped path must always yield forward slashes.
+  assert.equal(toPosixPath('a\\b\\c'), 'a/b/c');
+  assert.equal(toPosixPath('a\\\\b'), 'a/b');
+  assert.equal(toPosixPath(''), '');
+  // relativePosixPath runs path.relative first, then POSIX-normalizes.
+  assert.equal(relativePosixPath(path.resolve('/tmp'), path.resolve('/tmp/foo/bar')), 'foo/bar');
+  // Same call with Windows-shaped arguments yields the same relative string.
+  assert.equal(relativePosixPath(path.resolve('C:\\tmp'), path.resolve('C:\\tmp\\foo\\bar')), 'foo/bar');
+  // isWithin re-exports the canonical asset-integrity boundary formula and
+  // must reject symlink-shaped escapes regardless of host.
+  assert.equal(isWithin(path.resolve('/root'), path.resolve('/root/inner')), true);
+  assert.equal(isWithin(path.resolve('/root'), path.resolve('/root-evil')), false);
+});
 
 test('desktop app paths keep durable data outside application resources', () => {
   const resourcesDir = '/Applications/TransportX.app/Contents/Resources';

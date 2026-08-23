@@ -9,6 +9,7 @@ import type {
   SessionAttachmentSource,
 } from '../contracts/attachments.js';
 import { within } from './asset-integrity.js';
+import { relativePosixPath } from './util/path.js';
 
 const INDEX_VERSION = 1;
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
@@ -227,7 +228,7 @@ export async function saveUploadedAttachments(cwd: string, req: IncomingMessage,
       fs.mkdirSync(dir, { recursive: false, mode: 0o700 });
       ensureWithin(sessionAttachmentsDir(cwd), dir);
       fs.renameSync(file.tempPath, target);
-      const attachment: SessionAttachment = { id, name: file.name, relativePath: path.relative(cwd, target).split(path.sep).join('/'), mimeType: file.mimeType, size: file.size, sha256: file.sha256, kind: kindFor(file.name, file.mimeType), source, status: 'ready', createdAt: new Date().toISOString() };
+      const attachment: SessionAttachment = { id, name: file.name, relativePath: relativePosixPath(cwd, target), mimeType: file.mimeType, size: file.size, sha256: file.sha256, kind: kindFor(file.name, file.mimeType), source, status: 'ready', createdAt: new Date().toISOString() };
       index.attachments.push(attachment); created.push(attachment);
     }
     writeIndex(cwd, index);
