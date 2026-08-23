@@ -13,13 +13,17 @@ function digest(filePath: string) {
 }
 
 test('desktop app paths keep durable data outside application resources', () => {
-  const paths = resolveAppPaths({ HOME: '/Users/example', TAU_APP_ROOT: '/Applications/TransportX.app/app', TAU_RESOURCES_DIR: '/Applications/TransportX.app/Contents/Resources' }, 'darwin');
-  assert.equal(paths.resourcesDir, '/Applications/TransportX.app/Contents/Resources');
-  assert.equal(paths.userDataDir, '/Users/example/.transportx/traffic-agent');
-  assert.equal(paths.scenarioDir, '/Users/example/.transportx/traffic-agent/scenario');
-  assert.equal(paths.piAgentDir, '/Users/example/.transportx/traffic-agent');
-  assert.equal(paths.sessionsDir, '/Users/example/.transportx/traffic-agent/sessions');
-  assert.equal(paths.modulesDir, '/Users/example/.transportx/traffic-agent/modules');
+  const resourcesDir = '/Applications/TransportX.app/Contents/Resources';
+  const userDataDir = path.join('/Users/example', '.transportx', 'traffic-agent');
+  const paths = resolveAppPaths({ HOME: '/Users/example', TAU_APP_ROOT: '/Applications/TransportX.app/app', TAU_RESOURCES_DIR: resourcesDir }, 'darwin');
+  // path.resolve produces absolute paths the same way on every platform; the
+  // expected values are recomputed through path.join to stay portable.
+  assert.equal(paths.resourcesDir, path.resolve(resourcesDir));
+  assert.equal(paths.userDataDir, path.resolve(userDataDir));
+  assert.equal(paths.scenarioDir, path.join(paths.userDataDir, 'scenario'));
+  assert.equal(paths.piAgentDir, path.resolve(userDataDir));
+  assert.equal(paths.sessionsDir, path.join(paths.userDataDir, 'sessions'));
+  assert.equal(paths.modulesDir, path.join(paths.userDataDir, 'modules'));
   assert.ok(!paths.sessionsDir.startsWith(paths.resourcesDir));
 });
 
@@ -100,16 +104,24 @@ test('ffmpeg executables resolve from the packaged manifest, env overrides, or d
 });
 
 test('unsigned macOS test builds replace Electron linker signatures before creating the DMG', () => {
-  const builder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'electron-builder.yml'), 'utf8');
+  const rootBuilder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'electron-builder.yml'), 'utf8');
+  const commonBuilder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'electron-builder.common.yml'), 'utf8');
+  const macBuilder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'electron-builder.mac.yml'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.ts'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'styles.css'), 'utf8');
   const hook = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'after-pack.cjs'), 'utf8');
   const prepareRuntime = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
   const smoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'desktop-smoke.mjs'), 'utf8');
-  assert.match(builder, /afterPack: desktop\/scripts\/after-pack\.cjs/);
-  assert.match(builder, /asarUnpack:[\s\S]*modules\/\*\*\/skills\/\*\*/);
-  assert.match(builder, /"!modules\/installable\/\*\*"/);
-  assert.match(builder, /prompts\/\*\*/);
+  // Top-level electron-builder.yml must compose platform-agnostic + per-OS fragments.
+  assert.match(rootBuilder, /extends:[\s\S]*electron-builder\.common\.yml/);
+  assert.match(rootBuilder, /extends:[\s\S]*electron-builder\.mac\.yml/);
+  assert.match(rootBuilder, /extends:[\s\S]*electron-builder\.win\.yml/);
+  assert.match(commonBuilder, /afterPack: desktop\/scripts\/after-pack\.cjs/);
+  assert.match(commonBuilder, /asarUnpack:[\s\S]*modules\/\*\*\/skills\/\*\*/);
+  assert.match(commonBuilder, /"!modules\/installable\/\*\*"/);
+  assert.match(commonBuilder, /prompts\/\*\*/);
+  assert.match(macBuilder, /target:[\s\S]*dmg/);
+  assert.match(macBuilder, /arch: arm64/);
   assert.match(main, /titleBarStyle: process\.platform === 'darwin' \? 'hiddenInset'/);
   assert.match(main, /trafficLightPosition: \{ x: 14, y: 14 \}/);
   assert.match(styles, /data-desktop-platform="darwin".*workspace-header-left.*padding-left: 66px/);
@@ -119,19 +131,24 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   assert.match(smoke, /\['-B', '-I', '-c'/);
 });
 
-test('Windows NSIS release stages x64 .exe runtimes and has native installer checks', () => {
-  const builder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'electron-builder.yml'), 'utf8');
+test('Windows NSIS release stages x64 .exe runtimes and has a profile-aware pre-flight', () => {
+  const winBuilder = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'electron-builder.win.yml'), 'utf8');
+  const profile = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'platform-profile.mjs'), 'utf8');
+  const releaseCheck = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'check-desktop-release.mjs'), 'utf8');
   const prepareRuntime = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
-  const releaseCheck = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'check-windows-release.mjs'), 'utf8');
   const installerSmoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'windows-installer-smoke.mjs'), 'utf8');
   const smoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'desktop-smoke.mjs'), 'utf8');
-  assert.match(builder, /icon: app-icon\.ico/);
-  assert.match(builder, /target: nsis[\s\S]*arch: x64/);
-  assert.match(builder, /deleteAppDataOnUninstall: false/);
-  assert.match(prepareRuntime, /\$\{name\}\.exe/);
-  assert.match(prepareRuntime, /Bundled Windows Python must be x64/);
-  assert.match(releaseCheck, /Authenticode certificate/);
-  assert.match(releaseCheck, /native Windows x64 host/);
+  assert.match(winBuilder, /icon: app-icon\.ico/);
+  assert.match(winBuilder, /target: nsis[\s\S]*arch: x64/);
+  assert.match(winBuilder, /deleteAppDataOnUninstall: false/);
+  // Profile is the single source of truth for Windows pre-flight requirements.
+  assert.match(profile, /win[\s\S]*Authenticode/i);
+  assert.match(profile, /hostArchRequired: 'x64'/);
+  assert.match(profile, /binName:[\s\S]*\.exe/);
+  assert.match(prepareRuntime, /profile\.ffmpeg\.binName/);
+  assert.match(prepareRuntime, /Bundled \$\{profile\.label\} Python must be \$\{profile\.python\.archErrorMessage\}/);
+  assert.match(releaseCheck, /WIN_CSC_LINK/);
+  assert.match(releaseCheck, /profile\.signing\.description/);
   assert.match(installerSmoke, /TRANSPORTX_WINDOWS_INSTALLER/);
   assert.match(installerSmoke, /Uninstall TransportX Traffic Agent\.exe/);
   assert.match(smoke, /process\.platform === 'win32'/);
