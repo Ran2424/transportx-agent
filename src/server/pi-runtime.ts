@@ -1,7 +1,7 @@
 const { execFileSync } = require('node:child_process');
 
 export const MIN_PI_VERSION = '0.80.10';
-export const MAX_PI_VERSION_EXCLUSIVE = '0.81.0';
+export const MAX_PI_VERSION_EXCLUSIVE = '0.85.0';
 
 type PiVersion = { major: number; minor: number; patch: number; raw: string };
 
