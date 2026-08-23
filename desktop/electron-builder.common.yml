@@ -1,0 +1,31 @@
+# Platform-agnostic electron-builder configuration. Loaded by
+# electron-builder.yml via `extends:` and shared by every OS profile.
+# Profile-specific sections live in electron-builder.{mac,win}.yml and are
+# only consumed on the matching host platform.
+
+appId: com.transportx.traffic-agent
+productName: TransportX Traffic Agent
+asar: true
+asarUnpack:
+  - modules/**/skills/**
+afterPack: desktop/scripts/after-pack.cjs
+directories:
+  output: release
+  buildResources: desktop/assets
+files:
+  - package.json
+  - dist-desktop/**
+  - bin/**
+  - dist/web/**
+  - public/geo-runtime.*
+  - prompts/**
+  - modules/**
+  - "!modules/installable/**"
+  - src/contracts/**
+extraResources:
+  - from: desktop/build/runtime-manifest.json
+    to: runtime-manifest.json
+  - from: desktop/build/runtimes/python
+    to: runtimes/python
+  - from: desktop/build/runtimes/ffmpeg
+    to: runtimes/ffmpeg
