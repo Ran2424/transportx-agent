@@ -90,7 +90,13 @@ export async function readSessionSummary(filePath: string, normalizeSessionCwd: 
     } catch {}
   }
   lines.close(); stream.destroy();
-  if (!header?.id || (userMessageCount <= 1 && lineCount <= 8)) return null;
+  // Only skip sessions that never had any user message (i.e. pure setup /
+  // model_change / pi-web-bridge entries with no real exchange). The
+  // previous "(userMessageCount <= 1 && lineCount <= 8)" heuristic also
+  // filtered out single-turn conversations — the typical hello/back probe
+  // produces exactly 7 lines and 1 user message — which made them invisible
+  // to /api/sessions even though they are valid exchanges.
+  if (!header?.id || userMessageCount === 0) return null;
   return { id: header.id, timestamp: header.timestamp || '', lastConversationAt: lastConversationAt || header.timestamp || '', name: sessionName, firstMessage, cwd: normalizeSessionCwd(header.cwd) };
 }
 
