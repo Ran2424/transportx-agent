@@ -28,6 +28,102 @@ test('path utilities produce host-stable POSIX output', () => {
   assert.equal(isWithin(path.resolve('/root'), path.resolve('/root-evil')), false);
 });
 
+test('platform-profile registry exposes frozen mac/win profiles with required contract', async () => {
+  const url = require('node:url');
+  const profilePath = path.join(__dirname, '..', 'desktop', 'scripts', 'platform-profile.mjs');
+  const profileModule = await import(url.pathToFileURL(profilePath).toString());
+  const { PLATFORM_PROFILES, PROCESS_PLATFORM_TO_BUILDER, getPlatformProfile, builderPlatformFor } = profileModule;
+
+  // mac/win mapping is stable; adding linux must be an explicit PR change here.
+  assert.deepEqual({ ...PROCESS_PLATFORM_TO_BUILDER }, { darwin: 'mac', win32: 'win', linux: 'linux' });
+  assert.equal(builderPlatformFor('darwin'), 'mac');
+  assert.equal(builderPlatformFor('win32'), 'win');
+
+  const profileExpectations: Record<string, { key: string; builderPlatform: string; installerArtifact: string }> = {
+    darwin: { key: 'darwin', builderPlatform: 'mac', installerArtifact: 'dmg' },
+    win: { key: 'win', builderPlatform: 'win', installerArtifact: 'nsis' },
+  };
+
+  for (const [entry, expected] of Object.entries(profileExpectations)) {
+    const profile = PLATFORM_PROFILES[entry];
+    assert.ok(profile, `profile ${entry} missing`);
+    assert.equal(profile.key, expected.key);
+    assert.equal(profile.builderPlatform, expected.builderPlatform);
+    assert.equal(typeof profile.python.archCheck, 'function');
+    assert.match(profile.python.archErrorMessage, /./);
+    assert.ok(Array.isArray(profile.python.requiredModules) && profile.python.requiredModules.length >= 4);
+    assert.equal(typeof profile.ffmpeg.binName, 'function');
+    assert.equal(typeof profile.ffmpeg.chmodRequired, 'boolean');
+    assert.equal(typeof profile.ffmpeg.archCheck, 'function');
+    assert.match(profile.ffmpeg.arch, /arm64|x64/);
+    assert.match(profile.signing.hostArchRequired, /arm64|x64/);
+    assert.match(profile.signing.description, /./);
+    assert.ok(Array.isArray(profile.signing.requiredEnv) && profile.signing.requiredEnv.length >= 1);
+    assert.match(profile.signing.allowUnsignedEnv, /./);
+    assert.match(profile.signing.allowUnsignedPurpose, /./);
+    assert.equal(profile.release.installerArtifact, expected.installerArtifact);
+    assert.match(profile.release.productExeBasename, /./);
+    assert.match(profile.release.productExeSuffix, /\.exe|/);
+    assert.equal(typeof profile.release.requiresFfmpeg, 'boolean');
+    assert.equal(typeof profile.release.supportsInstallerSmoke, 'boolean');
+    assert.match(profile.release.notes, /./);
+  }
+
+  // OS-specific invariants baked into the contract:
+  const mac = PLATFORM_PROFILES.darwin;
+  assert.equal(mac.ffmpeg.binName('ffmpeg'), 'ffmpeg', 'mac ffmpeg binary must not have a suffix');
+  assert.equal(mac.ffmpeg.chmodRequired, true, 'mac ffmpeg needs +x');
+  assert.equal(mac.ffmpeg.arch, 'arm64');
+  assert.equal(mac.signing.hostArchRequired, 'arm64');
+  assert.equal(mac.python.entry, 'bin/python3');
+
+  const win = PLATFORM_PROFILES.win;
+  assert.equal(win.ffmpeg.binName('ffmpeg'), 'ffmpeg.exe', 'win ffmpeg binary must end in .exe');
+  assert.equal(win.ffmpeg.chmodRequired, false, 'win ffmpeg inherits +x from NTFS');
+  assert.equal(win.ffmpeg.arch, 'x64');
+  assert.equal(win.signing.hostArchRequired, 'x64');
+  assert.equal(win.python.entry, 'python.exe');
+  assert.equal(win.release.installerArtifact, 'nsis');
+  assert.equal(typeof win.release.uninstallName, 'string');
+  assert.ok(Array.isArray(win.release.installerSilentArgs(path.join('C:', 'install'))));
+
+  // getPlatformProfile with a non-registered builderPlatform must throw clearly.
+  assert.throws(() => getPlatformProfile('plan9'), /Platform profile missing/);
+});
+
+test('check-desktop-release composes per-OS requirements behind one dispatcher', () => {
+  const check = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'check-desktop-release.mjs'), 'utf8');
+  // Single entry point; per-OS scripts are retired.
+  assert.match(check, /import \{ builderPlatformFor, getPlatformProfile \} from '\.\/platform-profile\.mjs'/);
+  // Each OS branch resolves env via profile.signing, not inline literals.
+  for (const fragment of [
+    /profile\.signing\.hostArchRequired/,
+    /profile\.signing\.allowUnsignedPurpose/,
+    /profile\.signing\.description/,
+    /profile\.key === 'darwin'/,
+    /profile\.key === 'win'/,
+  ]) assert.match(check, fragment);
+});
+
+test('prepare-runtime reads platform-profile fields and never hardcodes a platform', () => {
+  const prepare = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
+  // Profile is the canonical data source.
+  assert.match(prepare, /import \{ getPlatformProfile \} from '\.\/platform-profile\.mjs'/);
+  // Python entrypoint, arch probe and ffmpeg filename/chmod all reach through the profile.
+  assert.match(prepare, /profile\.python\.entry/);
+  assert.match(prepare, /profile\.python\.archCheck\(pythonProbe\.machine\)/);
+  assert.match(prepare, /profile\.ffmpeg\.binName/);
+  assert.match(prepare, /profile\.ffmpeg\.chmodRequired/);
+  assert.match(prepare, /profile\.ffmpeg\.archCheck\(staged\)/);
+  // Error message references profile fields, not platform literals, so a future
+  // Linux profile inherits correct guidance.
+  assert.match(prepare, /Bundled \$\{profile\.label\} Python must be \$\{profile\.python\.archErrorMessage\}/);
+  // Hardcoded OS checks must NOT appear in the production script.
+  assert.doesNotMatch(prepare, /process\.platform === '(?:darwin|win32)'/);
+  assert.doesNotMatch(prepare, /python\.exe/);
+  assert.doesNotMatch(prepare, /ffmpeg\.exe/);
+});
+
 test('desktop app paths keep durable data outside application resources', () => {
   const resourcesDir = '/Applications/TransportX.app/Contents/Resources';
   const userDataDir = path.join('/Users/example', '.transportx', 'traffic-agent');
