@@ -1,317 +1,262 @@
-# TransportX Traffic Agent 架构与目录治理
+# TransportX Traffic Agent 架构
 
-- 产品版本：3.0.7
-- 架构状态：已实现基线
-- 更新时间：2026-08-14
-- 当前正式目标：macOS 12+ Apple Silicon；Windows x64 保留构建配置，尚待实机发布验收
+- 产品版本：3.1.3
+- 文档状态：当前实现的架构权威
+- 更新日期：2026-08-25
+- 发布 Profile：macOS arm64（DMG）与 Windows x64（NSIS）；Linux 不是发布目标
 
-TransportX Traffic Agent 是一个本地优先的交通分析 Agent 桌面产品。项目保持单仓库、单 npm 包和模块化单体，不拆分远程微服务，也不维护第二套 Web UI。Electron 管理桌面生命周期，Node Agent Host 是唯一业务服务，Pi 负责 Agent 推理和工具调用，Python 执行交通数据脚本，React Workspace 负责全部用户交互。
+TransportX Traffic Agent 是本地优先的交通分析桌面工作台。它是一个单仓库、单 npm 包、模块化单体：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi RPC 负责推理与工具调用，Python 运行受控的数据和空间分析，React 提供唯一的用户界面。
 
-## 1. 系统全景
+不维护第二套 Web UI、远程业务服务或第二种 Agent Runtime。开发时可将 Agent Host 作为本地 Web 服务启动；业务边界与桌面版相同。
+
+## 1. 项目目录速览
 
 ```text
-TransportX Traffic Agent.app
-│
-├─ Electron Main
-│  ├─ 单实例、窗口与退出生命周期
-│  ├─ Agent Host 启动、健康检查和进程树清理
-│  ├─ 外部链接隔离
-│  └─ 隔离的 HTML → PDF 桥接
-│
-├─ Agent Host（Node）
-│  ├─ HTTP / WebSocket / 同源认证
-│  ├─ Session、Attachment、File、Citation、Geo、Spatial Analysis、Report
-│  ├─ Model 配置
-│  ├─ Module Registry / Installer / Asset Resolver
-│  ├─ Session Assembly
-│  └─ Pi / Python 进程管理
-│
-├─ Pi CLI Process
-│  ├─ Task / Citation / Geo / Spatial Analysis / Web Bridge Extensions
-│  ├─ Skills 与 Session Prompt
-│  └─ 模型供应商连接
-│
-├─ Python 3.10 Process
-│  └─ 数据查询、空间分析和制图脚本
-│
-└─ React Workspace
-   ├─ Browser Application Kernel
-   ├─ Conversation / Session / Attachment / Model / Settings / File
-   └─ Task / Citation / Geo 功能界面
+pi-tau-traffic/
+├─ desktop/                    Electron 主进程、Supervisor、平台 Profile 与打包脚本
+│  ├─ assets/                  图标、签名与平台资源
+│  └─ scripts/                 runtime 准备、发布前检查、打包钩子
+├─ modules/                    随应用发布或由用户安装的能力单元
+│  ├─ capabilities/            Task、Geo、Citation、Video 等平台通用能力
+│  ├─ official/                Workbench、报告模板、Module Authoring
+│  └─ installable/             独立交付的交通数据、知识与风格模块源码
+├─ prompts/                    Pi 系统与会话 Prompt
+├─ src/
+│  ├─ contracts/               跨层协议与验证原语；不依赖具体运行时
+│  ├─ server/                  Node Agent Host、会话、资源、HTTP/RPC 与鉴权
+│  ├─ public/                  浏览器 Kernel、共享工具与 Geo runtime 源码
+│  └─ web/                     React 工作台、功能面板、组件、i18n 与样式
+├─ scripts/                    场景测试、fake Pi harness、eval 与构建辅助
+├─ test/                       细粒度诊断测试与固定 fixtures
+├─ docs/                       架构、发布说明、变更记录与历史文档
+├─ package.json                构建、开发、发布与场景测试入口
+└─ tsconfig*.json / vite.config.ts
+                              TypeScript 与前端构建配置
 ```
 
-Electron 启动 Agent Host 后，Agent Host 监听随机 `127.0.0.1` 端口并输出版本化 ready 消息。Electron 校验 `/api/health` 后才加载页面。React 继续通过 HTTP 和 WebSocket 与同一个 Agent Host 通信，不复制业务逻辑到 Electron IPC。
+以下目录由构建生成，不手工编辑或提交：`bin/`、`public/*.js`、`dist/web/`、`dist-desktop/`、`desktop/build/`、`release/`。
 
-## 2. 组件职责
+## 2. 运行时边界
 
-### 2.1 Electron Main
+```mermaid
+flowchart TB
+  user([交通分析人员]) --> workspace["React 工作台<br/>会话 · 对话 · 任务 · 地图"]
 
-`desktop/main.ts` 和 `desktop/agent-host-supervisor.ts` 只负责桌面边界：
+  subgraph desktop["TransportX 桌面应用 · Electron"]
+    main["桌面壳<br/>窗口 · 生命周期 · PDF · 受限 Preload"]
+    workspace
+    main -. 受限桥接 .-> workspace
+  end
 
-- 保证应用单实例；
-- 创建安全 BrowserWindow；
-- 解析应用资源目录和用户目录；
-- 校验 Runtime Manifest；
-- 启动 Agent Host、等待 ready、检查 health；
-- 保存有界日志并在退出时清理完整进程树；
-- 使用禁用 JavaScript、阻断网络的隐藏窗口生成 PDF；
-- 把外部 HTTP/HTTPS 链接交给系统浏览器。
+  workspace <--> |HTTP RPC · WebSocket 事件| host["Agent Host · Node<br/>会话 · Module · 资源 · 本地 API"]
+  main -->|启动 · 健康检查 · 停止| host
+  host --> pi["Pi Agent<br/>每个任务一个 RPC 进程"]
+  host --> worker["Python 3.10 / ffmpeg<br/>数据 · 空间分析 · 制图 · 视频"]
 
-Electron Main 不管理 Session、Task、Citation、Geo、模型或模块业务。Renderer 使用 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true`，当前不暴露通用 Preload API。
+  classDef user fill:#1e3a5f,stroke:#1e3a5f,color:#fff;
+  classDef desktop fill:#e8f1ff,stroke:#4f7db8,color:#102a43;
+  classDef workspace fill:#f0ebff,stroke:#7c5cc4,color:#2f1b63;
+  classDef platform fill:#e1f5f2,stroke:#278c85,color:#123b3a;
+  classDef runtime fill:#fff0dd,stroke:#c87821,color:#5b3410;
+  class user user;
+  class main desktop;
+  class workspace workspace;
+  class host platform;
+  class pi,worker runtime;
+```
 
-### 2.2 Agent Host
+### Electron Main
 
-`src/server/server-main.ts` 是业务组合入口，只装配依赖、认证、RPC 和生命周期。具体 HTTP 行为由 route/handler 负责：
+`desktop/main.ts` 与 `desktop/agent-host-supervisor.ts` 只承担桌面壳职责：
 
-- Session：Pi RPC 子进程、实时状态、历史恢复和分支投影；
-- Attachment：Session 范围的上传、元数据、消息引用与受控 Agent 上下文；
-- File：会话工作区文件、预览和本机打开；
-- Citation：原件注册、会话隔离、摘要校验和只读访问；
-- Geo：受会话约束的 GeoJSON 资源；
-- Report：桌面模式调用 Electron PDF 桥，Web 模式使用受控后端；
-- Platform：模型、模块、路径和运行时状态；
-- WebSocket：同源升级、连接、心跳与实时事件；有副作用命令只通过可确认的 HTTP RPC 提交。
+- 单实例、窗口创建、外链交给系统浏览器、退出时清理 Agent Host 进程树；
+- 在加载工作台前等待 Agent Host 的版本化 ready 消息，并校验 `/api/health`；
+- 已打包应用启动前验证 `runtime-manifest.json` 中 Agent Host、Pi 与 Python 的路径和 SHA-256；
+- 以禁用 JavaScript 且阻断网络的隐藏窗口生成 PDF；
+- macOS 保留原生 traffic lights；Windows/Linux 使用无边框窗口和 React 渲染的最小化、最大化、关闭按钮。
 
-Agent Host 是 Electron、命令行 Web 启动方式共用的唯一业务核心。
+Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true` 和 `webviewTag: false`。Preload 不提供通用 Node/Electron 能力，只暴露：受同源校验的 PDF 下载、上传文件真实路径，以及非 macOS 的窗口控制。
 
-### 2.3 Pi 与 Python
+### Agent Host
 
-桌面安装包固定使用内置 Pi CLI 和可重定位 Python 3.10，不回退到目标机器的全局命令。开发模式可以用受控环境变量覆盖运行时。
+`src/server/server-main.ts` 是唯一业务组合入口。它监听随机 `127.0.0.1` 端口，提供：
 
-Pi 以 RPC 模式启动，每个 Session 注入本次解析出的 Extension、Skill、Prompt、模型、资产根目录及 `TAU_PYTHON_COMMAND`。交通查询与空间分析脚本必须使用该内置 Python 入口，不回退到机器全局解释器。内置 runtime 固定提供 NumPy、Matplotlib、Pandas、PyProj 与 Shapely；其中后两者用于坐标投影、米制距离和几何运算。`PythonRunner` 为 Agent Host 侧受控 Python 作业提供工作目录、UTF-8、超时、取消和进程清理能力。Python 缓存定向到用户缓存目录，并禁止在只读 `.app` 中生成字节码。
+- HTTP API 与带 `clientCommandId` 的可靠 RPC；
+- WebSocket 实时事件与 Snapshot 更新；WebSocket 不接受有副作用命令；
+- Session、附件、文件预览、本机打开、引用、报告、Geo、空间分析和视频资源；
+- 模型配置、认证、Module Registry/Installer、Asset Resolver 与 Session Assembly；
+- Pi、Python、ffmpeg 的受控调用。
 
-### 2.4 React Workspace 与 Browser Kernel
+Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一个 Agent Host。
 
-React 是唯一生产 UI。`src/public/kernel/` 负责传输事件标准化、命令端口和可重放状态；`src/web/` 负责 React 组合和展示。React 组件不直接解析原始 Pi RPC 消息，也不直接读取本机文件。
+### Pi、Python 与 ffmpeg
 
-## 3. 权威契约和事实来源
+每个任务以 Pi RPC 进程运行。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
-| 信息 | 唯一权威 | 消费者 |
+发布版使用随包 Pi、Python 3.10 和 ffmpeg/ffprobe；开发模式仅能通过明确环境变量覆盖。Python 作业由 Agent Host 控制工作目录、UTF-8、超时、取消与进程回收，不得依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely。
+
+### React Workspace 与 Browser Kernel
+
+`src/public/` 提供浏览器端的 Kernel、Markdown/工具结果处理和 Geo runtime；`src/web/` 负责 React 应用、功能面板、i18n 与样式。React 通过 Kernel 消费 Snapshot/事件并发送命令，不解析原始 Pi RPC，也不直接访问本机文件。
+
+## 3. 关键数据流
+
+### 创建并运行交通任务
+
+```text
+新建任务（模型 + 任务范围 + 已启用 Module）
+  → Module Registry / Asset Resolver
+  → Session Assembly
+  → ResolvedSessionPlan v3（精确版本与完整性冻结）
+  → Pi RPC Session（cwd、Skills、Extensions、Assets）
+  → Agent Host Snapshot + WebSocket 事件
+  → Browser Kernel
+  → React Conversation / Task / Geo / Citation 界面
+```
+
+新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module、入口、Asset 与运行时信息；恢复任务时以该计划校验，而不是悄然替换为当前最新 Module。内置 Module 有受控漂移容忍规则；用户安装 Module 的缺失或不一致必须明确处理。
+
+Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更新前端状态。WebSocket 只用于实时 Pi 事件和 Snapshot；断线或刷新后由 Agent Host Snapshot 重新校正。
+
+### 文件、引用、地图与视频
+
+- 附件先上传到任务工作区，再以 `attachmentIds` 关联后续消息；服务端再次校验归属、状态、真实路径和文件存在性后才向 Pi 提供上下文。
+- Citation、File、Preview、Geo、Video 和 Spatial Analysis 都以活动 Session cwd 为边界。跨会话路径、路径逃逸和符号链接越界必须拒绝。
+- Spatial Analysis 只处理当前会话的 GeoJSON，使用受控 Python 生成 WGS84 GeoJSON 与包含输入、参数、计数和哈希的 manifest，再发布到 Geo 界面。
+- Video 资源与指标由 Agent Host 的受控 ffmpeg/ffprobe 入口处理；发布版不得依赖系统 `PATH`。
+
+## 4. 契约与事实来源
+
+| 内容 | 权威来源 | 主要消费者 |
 |---|---|---|
-| Session、Task、Geo、Citation、Module 协议 | `src/contracts/` | Extension、Server、Kernel、React |
-| 历史对话 | Pi Session JSONL | Session Projection、React Snapshot |
-| 实时对话 | Agent Host live overlay | WebSocket 客户端；刷新后回归 Snapshot |
-| Session 附件元数据与消息引用 | `<session cwd>/.tau/attachments.json` | Attachment API、Session Projection、React 对话区 |
-| Session 附件内容 | `<session cwd>/attachments/<attachment-id>/` | Agent、File Preview；仅经 Session 范围校验读取 |
-| 模型定义 | `models.json` | Pi、模型选择器、设置页 |
-| 模型密钥 | `auth.json` | Pi；服务端不把密钥返回前端 |
-| 模块声明 | `manifest.json` | Module Registry、Installer、Session Assembly |
-| 桌面运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
-| 会话实际装配 | `ResolvedSessionPlan` | Session 启动、恢复和审计 |
-| 任务范围与精确 Module 选择 | `SessionProfile v1` | Session API、Assembler、新建任务 UI、Eval |
-| 受控空间分析结果 | `SpatialAnalysisResult v1` | Spatial Extension、Agent Host、Geo、Eval |
+| Session、Task、Geo、Citation、附件等跨层协议 | `src/contracts/` | Extension、Server、Kernel、React |
+| 已完成的对话历史 | Pi Session JSONL | Session Projection、历史 API |
+| 实时会话状态 | Agent Host live overlay | WebSocket、Browser Kernel |
+| 任务装配结果 | `<task>/.tau/resolved-session-plan*.json` | Session 恢复、审计 |
+| 附件索引 | `<task>/.tau/attachments.json` | Attachment API、会话投影 |
+| Citation/Geo/Video 资源 | 任务 cwd 下的受控资源目录 | 对应资源 API 与 React 面板 |
+| 模型定义与密钥 | 用户目录 `models.json`、`auth.json` | Agent Host、Pi；密钥不返回前端 |
+| Module 声明与完整性 | Module `manifest.json`、`integrityFile` | Registry、Installer、Session Assembly |
+| 打包运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
 
-`src/contracts/` 不依赖 Node、Electron、React、DOM 或 MapLibre。跨进程或跨层新增字段时，先更新契约和解析测试，再实现适配器。
+`src/contracts/` 必须保持纯粹：不依赖 Node、Electron、React、DOM 或 MapLibre。任何跨层字段先定义契约和解析规则，再实现服务端、Kernel、UI 适配。
 
-## 4. 会话启动与装配
+磁盘、JSON 和跨平台协议中的相对路径一律采用 POSIX `/`；路径边界在 Node 中通过 `path.relative` 和统一的 `isWithin` 判定，不使用字符串前缀比较。
 
-```text
-用户提交 SessionProfile（模型、任务范围、Module 精确版本）
-        │
-        ▼
-Module Registry 解析依赖与启用状态
-        │
-        ▼
-Asset Resolver 解析 Skill / Extension / Data / Knowledge / Template
-        │
-        ▼
-Session Assembly 生成 ResolvedSessionPlan v3
-        │
-        ├─ Pi CLI + model
-        ├─ Pi Extensions
-        ├─ Skills + Prompt
-        ├─ Knowledge/Data 环境变量
-        └─ Workspace cwd
-        ▼
-Pi RPC Session
-```
+## 5. Module 与资产模型
 
-每个新任务必须显式选择模型，并以 `SessionProfile v1` 固定任务类型、预期交付和 Module 精确版本。默认任务根目录是 `~/.transportx/traffic-agent/scenario/`，每个任务使用独立子目录。创建时原子写入 `ResolvedSessionPlan v3`，恢复时验证 Module manifest、入口点、资产路径与完整性哈希，不再重新选择当前最新 Module。旧 plan 只能经用户明确确认后按当前配置派生 v3。
+Module 是唯一安装与版本冻结单元，可组合贡献 Skill、Extension、Data、Knowledge 与 Template。Skill/Extension/Data/Knowledge 不单独安装，全部由 Manifest 的 `entrypoints` 与 `contributes` 描述。
 
-用户命令的交付与实时事件分离：Prompt、Steer、Follow-up、Abort 和 Extension UI Response 使用带 `clientCommandId` 的 HTTP RPC，Agent Host 在会话内去重并返回 ACK；WebSocket 只传输 Pi 事件和 Snapshot 更新。前端仅在 ACK 后将命令视为已交付，断线、超时和 pending Extension UI 都保持可见、可重试状态。
-
-Spatial Analysis capability 通过会话专用 endpoint/token 调用 Agent Host，只接受会话内 GeoJSON，由受控 Python 实现 buffer、nearest 和 spatial join。结果统一输出 WGS84 GeoJSON 与带输入/参数/计数/哈希的 manifest，再交由 Geo capability 发布。
-
-Pi JSONL 是历史事实来源。服务端通过 `SessionProjection` 选择最后叶节点所属分支；浏览器只维护降低延迟的实时 overlay，重连或刷新后由服务端 Snapshot 重新校正。
-
-附件不写入 Pi 对话内容。浏览器先通过同源 multipart API 上传文件，Agent Host 将其保存到当前 Session cwd，并以 `attachmentIds` 关联后续消息。发送时服务端重新验证 ID、归属、状态、真实路径和文件存在性，再向 Agent 注入文件名、MIME 类型和安全相对路径；仅当模型声明支持视觉输入时，图片内容才额外作为视觉块传入。Session Projection 依据附件索引补全历史用户消息的附件引用。
-
-## 5. Module 模型
-
-### 5.1 Module 是统一生命周期单元
-
-Module 可以组合贡献：
-
-- Skill：行为、分析口径、查询说明和脚本；
-- Extension：Pi 侧工具与结构化状态桥；
-- Data：数据库、GeoJSON、字段和质量信息；
-- Knowledge：法规、预案、项目资料、索引与引用映射；
-- Template：报告和导出模板。
-
-Skill、Extension、Data、Knowledge 不是可安装的一等对象；它们只能作为 Module 的贡献存在。安装器只接受自包含 Module 包，避免“有数据但没有查询 Skill”或“有工具但没有依赖声明”的旁路状态。
-
-### 5.2 Manifest 与来源
-
-Manifest v2 仅支持 `module`、`capability`、`domain` 三种包分类；Skill、Extension、Prompt 与 Asset 均通过 `entrypoints` / `contributes` 声明。Registry 区分三种来源：
-
-- `builtin`：仓库随应用发布的官方模块；
-- `installed`：复制到用户 `modules/` 目录的受管模块；
-- `external`：开发或受控部署显式传入的只读 Manifest。
-
-官方 Module 随应用只读预装；用户 Module 按 `modules/<module-id>/<version>/` 受管存储。用户安装 Module 后必须在设置页显式启用，才能进入新任务的 Session Plan。Registry 拒绝重复 ID 和不兼容平台版本，按依赖顺序装配；缺失依赖会禁用相关模块，但单个可选模块损坏不阻止平台启动。
-
-平台与用户模块按“机制”和“内容”分层：
-
-| 层级 | 模块 | 职责 |
+| 来源 | 位置 | 用途 |
 |---|---|---|
-| 平台内置 | Workbench、Task、Geo、Citation、Web Bridge | 会话装配、任务状态、地图呈现、可信引用和前后端桥接等通用机制 |
-| 平台内置 | Geo 操作说明、通用交通报告模板 | 使用内置机制所需的通用说明与基础输出结构，不包含城市或项目数据 |
-| 用户安装 | `shanghaidata` | 上海数据、数据字典、查询脚本、数据口径和上海专属地图表达约定 |
-| 用户安装 | `traffic-assurance-knowledge` | 交通保障法规、标准、预案、案例知识及检索流程 |
-| 用户安装 | `plot-style` | 图表选型、审美经验、参考参数和 matplotlib 风格模板 |
+| 内置 capability | `modules/capabilities/` | Task、Timing、Citation、Geo、Spatial Analysis、Video、Web Bridge 等通用机制 |
+| 内置 official | `modules/official/` | Workbench、报告模板、Module Authoring |
+| 用户可安装源码 | `modules/installable/` | 上海数据、交通保障知识、绘图风格、演示数据；不打入应用 |
+| 用户受管 Module | 用户目录 `modules/<id>/<version>/` | 安装后显式启用，参与新任务装配 |
 
-内置 Workbench 不依赖任何用户模块。删除全部用户模块后，任务、会话、文件、Geo 和 Citation 等平台能力仍应正常启动；城市、项目、案例、知识库和风格模板不得写入内置依赖图。
+平台能力不依赖用户 Module。Data/Knowledge 的大体积资产、原始资料、索引和精确定位映射不进入 Git 或桌面安装包；解析后通过 `TRANSPORTX_TRAFFIC_DATA_ROOT`、`TRANSPORTX_KNOWLEDGE_ROOT` 等会话环境变量提供给 Pi/脚本。
 
-### 5.3 Data / Knowledge 与 Skill 解耦
+安装器拒绝符号链接、绝对入口、路径逃逸、重复 ID 和缺少入口；带 `integrityFile` 的资产在安装及解析阶段验证 SHA-256。Module 改动必须同步提升其 `manifest.json` 版本并记录 CHANGELOG。
 
-Data 和 Knowledge 都是 Asset，但保留不同的运行时契约：Data 关注 schema、时间覆盖与计算；Knowledge 必须保留原始文件、检索索引及页码/段落定位，以便 Citation 打开原始 PDF 或文档。Skill 只包含行为与查询工具，不拥有资产路径。Asset Resolver 从 Module Manifest 解析资产，并在 Session 启动时注入：
+## 6. 目录与持久化
 
-- `TRANSPORTX_TRAFFIC_DATA_ROOT`；
-- `TRANSPORTX_KNOWLEDGE_ROOT`。
-
-查询脚本不得回退到开发机绝对路径或 Skill 相邻目录。Knowledge/Data 的实体资产不进入 Git 仓库和应用安装包，必须作为用户 Module 的一部分交付。内置 `create-transportx-module` Skill 负责在 Agent 对话中按用户意图创建这类包。
-
-Session Assembly 仅装配已启用 Module；同类资产冲突时拒绝创建任务，用户应停用不适用于该任务的 Module。带 `integrityFile` 的资产在安装及每次解析时执行 SHA-256 校验，内容不一致会被拒绝。
-
-## 6. 目录治理
-
-### 6.1 仓库目录
+### 仓库
 
 ```text
-desktop/                       Electron、Supervisor、打包配置和运行时准备脚本
-modules/
-  capabilities/               自包含的 Task、Citation、Geo、Web Bridge Module
-  official/                   自包含的 Workbench、Template、Module Authoring Module
-  installable/                独立交付、不随应用打包的用户模块源码
-prompts/                       会话 Prompt 源文件
-src/
-  contracts/                  跨层纯协议
-  server/                     Agent Host 和本地平台服务
-  public/                     Browser Kernel、Markdown、Geo runtime 源码
-  web/                        React Workspace
-test/                          Contract、Server、Module、Desktop 回归测试
-docs/archive/                  已实施方案、未来计划、评审和历史报告
-dist/、dist-desktop/、bin/     本地构建产物，不提交
-release/                       本地安装包交付目录，不提交
+desktop/                 Electron、Supervisor、平台 profile、打包脚本
+modules/                 内置能力、官方模块与可安装模块源码
+prompts/                 Pi 系统与会话 Prompt
+src/contracts/           跨层协议
+src/server/              Agent Host、会话、资产、HTTP/WebSocket、鉴权
+src/public/              Browser Kernel、共享运行时、Geo runtime
+src/web/                 React 工作台
+scripts/                 场景测试、harness、eval、构建辅助
+test/                    细粒度诊断/契约测试与 fixtures
+docs/                    当前文档与历史记录
 ```
 
-### 6.2 安装包只读资源
+`bin/`、`public/*.js`、`dist/web/`、`dist-desktop/`、`desktop/build/`、`release/` 是生成物，不手工编辑或提交。
+
+### 用户数据
+
+| 平台 | 默认根目录 |
+|---|---|
+| macOS | `~/.transportx/traffic-agent/` |
+| Windows | `%APPDATA%\TransportX\traffic-agent\` |
+| 非发布 Linux 开发模式 | `$XDG_CONFIG_HOME/transportx-traffic-agent` 或 `~/.config/transportx-traffic-agent` |
 
 ```text
-TransportX Traffic Agent.app/Contents/Resources/
-├─ app.asar                    Agent Host、Pi CLI、React 和平台内置模块
-├─ app.asar.unpacked/          Module 内需要由 Python/外部进程直接读取的 Skill 与脚本
-├─ runtime-manifest.json       产品、Agent Host、Pi、Python 版本和 SHA-256
-└─ runtimes/python/            可重定位 Python 3.10
+<user-data>/
+├─ scenario/<task>/             每个任务的受控工作区
+├─ sessions/                    Pi Session JSONL
+├─ modules/<id>/<version>/      受管 Module
+├─ settings/                    平台设置
+├─ logs/                        Agent Host 等日志
+├─ cache/                       Python/Matplotlib 等可清理缓存
+├─ models.json                  模型定义
+└─ auth.json                    模型密钥
 ```
 
-安装后不得修改 `.app` 内容。日志、模型、Session、Module、Python/Matplotlib 缓存和任务产物全部写入用户目录。
-
-`modules/installable/` 在 Electron 打包时被显式排除。需要交付其中的模块时，应把对应目录连同实际资产作为独立安装包发布，不能借由应用资源目录自动注册。
-
-### 6.3 macOS 用户目录
-
-```text
-~/.transportx/traffic-agent/
-├─ scenario/                   新任务工作区
-├─ sessions/                   Pi Session JSONL
-├─ modules/<id>/<version>/     用户安装的受管 Module
-├─ settings/                   平台设置
-├─ logs/                       Agent Host 等本地日志
-├─ cache/                      Python、Matplotlib 等可清理缓存
-├─ models.json                 Pi 模型定义
-└─ auth.json                   Pi 密钥，权限 0600
-```
-
-每个 `scenario/<task>/` 工作区可包含：
-
-```text
-attachments/
-  att_<id>/<原始文件名>         Session 私有附件内容
-.tau/
-  attachments.json              附件元数据与用户消息引用
-  geo-resources/                已发布的会话内 GeoJSON 资源
-  resolved-session-plan.json    实际会话装配记录
-```
-
-`TAU_USER_DATA_DIR` 只用于开发和受控部署覆盖。应用升级不得覆盖用户目录；卸载单个 Module 只删除 `modules/<module-id>/` 中的受管副本。
+`TAU_USER_DATA_DIR` 只用于开发或受控部署覆盖。安装包资源始终只读；升级和卸载不应删除用户数据。任务工作区中的附件、计划和派生资源均属于该任务，不可被其他任务直接读取。
 
 ## 7. 安全边界
 
-1. Agent Host 只监听随机回环端口，不对局域网开放。
-2. HTTP/WebSocket 使用同源检查和本地认证，跨源升级被拒绝。
-3. Renderer 禁用 Node 集成并启用上下文隔离和沙箱。
-4. Attachment、File、Preview、Citation 和 Geo 都以 active Session cwd 为路径边界，拒绝路径穿越、符号链接越界和跨会话读取。附件上传清理文件名、限制单文件大小、记录 SHA-256，并以原子方式写入索引；已被消息引用的附件不可删除。
-5. Module 安装拒绝符号链接、绝对入口、包路径逃逸、重复 ID 和缺失入口；复制时过滤 `.git`、缓存和 macOS 垃圾文件。
-6. API Key 与模型定义分离，写入采用临时文件原子替换，密钥文件限制为当前用户读写。
-7. Runtime Manifest 在桌面启动前校验 Agent Host、Pi CLI 和 Python 的路径与 SHA-256。
-8. PDF 隐藏窗口禁用 JavaScript，并取消非 `about:`/`data:` 请求，避免报告 HTML 获得桌面权限。
+1. Agent Host 默认只监听随机回环端口；HTTP/WebSocket 做同源与本地认证校验。
+2. 可靠命令使用 HTTP RPC，WebSocket 是事件通道，不接受副作用操作。
+3. Renderer 隔离 Node 与 Electron；Preload 能力按参数和调用方严格限制。
+4. Session cwd 是附件、文件、引用、地图和视频资源的授权边界；读取前验证真实路径、文件类型、哈希或资源清单。
+5. API Key 不返回 Renderer；模型配置与密钥分离并采用原子写入，密钥文件仅允许当前用户读写。
+6. 打包运行时在桌面启动前校验相对路径与 SHA-256；安装器和运行时准备拒绝不符合目标架构的 Python/ffmpeg。
+7. PDF 使用禁用 JavaScript 的临时隐藏窗口，阻断 `about:`/`data:` 以外的请求。
 
-这些约束提供应用级边界，但 Module 仍是本机受信任代码/数据包，不等同于操作系统级第三方插件沙箱。
+Module 是本机可信代码与数据包，而非操作系统级沙箱插件。若未来开放第三方市场，必须单独设计签名、权限与隔离模型。
 
-## 8. macOS 打包与分发
+## 8. 打包与平台 Profile
 
-当前构建基线：Electron 43.3.0、Pi 0.80.10、Python 3.10.x（NumPy、Matplotlib、Pandas、PyProj、Shapely）、macOS 12+ Apple Silicon。构建顺序为：
+`desktop/scripts/platform-profile.mjs` 是发布平台事实的唯一来源：Python 入口与架构、ffmpeg 名称/权限/架构检查、签名要求、安装器类型与冒烟能力均在此声明。
 
 ```text
-check-mac-release
-→ TypeScript / React / Desktop build
-→ prepare-runtime（版本、架构、依赖、可重定位性、哈希）
-→ electron-builder
-→ 签名 / DMG / 公证
+desktop/electron-builder.yml
+  ├─ electron-builder.common.yml   通用资源与 asar 规则
+  ├─ electron-builder.mac.yml      macOS arm64 DMG
+  └─ electron-builder.win.yml      Windows x64 NSIS
 ```
 
-正式外发必须使用 `Developer ID Application` 签名、Apple notarization 和 stapling。发布前置检查在缺少证书或公证凭据时停止。`TRANSPORTX_ALLOW_UNSIGNED_BUILD=1` 仅用于受信任测试；测试构建会应用并严格验证 ad-hoc 签名，但 Gatekeeper 不会把它视为正式发行版。
+`npm run desktop:pack` 在目标平台运行同一入口：
 
-首次运行回归必须同时验证：DMG 校验、运行前严格签名、应用完整启动、运行后严格签名、只读 DMG 内启动和退出后无孤儿进程。
+1. `check-desktop-release.mjs` 根据 Profile 验证宿主架构与签名条件；
+2. `prepare-runtime.mjs` 复制并实际启动 Python、ffmpeg、ffprobe，生成哈希清单；
+3. electron-builder 按对应 fragment 打包；
+4. macOS 正式发行需要 Developer ID + 公证，Windows 正式发行需要 Authenticode + 可信时间戳。
 
-## 9. 依赖方向
+不要从 macOS 交叉生成 Windows 正式包。完整 Windows 验收与环境变量见 [WINDOWS_RELEASE.md](WINDOWS_RELEASE.md)。
+
+## 9. 依赖方向与演进规则
 
 ```text
-Electron Main ───────────────> Desktop Supervisor（不得依赖 Agent 业务对象）
-Extension / Server / React ──> contracts
-server-main ─────────────────> handlers + sessions + module/runtime services
+Electron Main ───────────────> Desktop Supervisor
+Server / Extension / Kernel ─> contracts
+server-main ─────────────────> routes + services + session/module/runtime 组件
 Session Assembly ────────────> Registry + Asset Resolver + Runtime Resolver
-React components ────────────> Kernel stores + Command ports
-React Geo runtime ───────────> contracts + maplibre-gl
+React components ────────────> Browser Kernel + Command ports
+Geo runtime ────────────────> contracts + MapLibre
 ```
 
-禁止反向依赖：Contract 不导入平台代码；Kernel 不导入 React；Server handler 不依赖 UI；React 不直接读取文件或解析原始 Pi RPC；Electron Main 不复制 Agent Host 业务。
+- Contract 不导入平台代码；Kernel 不导入 React；Server handler 不依赖 UI。
+- React 不直接读文件或解析原始 Pi RPC；Electron 不承载 Agent Host 业务规则。
+- 新领域能力优先做 Module/Asset，而不是把城市、项目或知识库路径写进 Platform Core。
+- `server-main.ts` 只做组合；新增 API 进入独立 route/handler 与对应契约。
+- 新平台先增加 platform profile、electron-builder fragment 和目标平台场景测试，不在业务代码中散落新的 OS 分支。
 
-## 10. 验证基线
+## 10. 场景验证
 
-- `npm run typecheck`：Server、Public、React 和 Desktop 类型检查；
-- `npm test`：默认回归，覆盖进程、契约、附件持久化、安全边界、模块生命周期和桌面打包；
-- `npm run test:react-smoke`：真实 Server、fake Pi 和浏览器工作台；
-- `npm run test:desktop-smoke`：Electron、Agent Host、模型入口、模块设置、内置 Python、PDF 和退出清理；
-- `TRANSPORTX_PACKAGED_APP=... npm run test:desktop-smoke`：真实 `.app`/DMG 运行时验证；
-- `npm run test:pi-smoke`：显式执行的真实 Pi RPC 离线冒烟。
+测试入口按用户可见场景划分；细粒度 `test/` 用例仅用于定位协议或边界问题，不是日常发布门禁。
 
-测试数量不是架构目标。新增或修改跨边界行为时，应覆盖协议、状态转移、权限边界或用户可见回归；纯实现细节不单独增加脆弱测试。
+| 入口 | 场景 | 运行条件 |
+|---|---|---|
+| `npm test` | Agent Host 启动、创建任务环境、安装/卸载 Module、健康检查与退出 | 任意开发主机 |
+| `npm run test:web` | 浏览器中创建交通任务、获得分析、发布地图 | 本机 Chrome + fake Pi |
+| `npm run test:platform:macos` | Electron、Agent Host、PDF、内置 Python、退出清理 | macOS；可用 `TRANSPORTX_PACKAGED_APP` 验证 DMG/.app |
+| `npm run test:platform:windows` | Windows 未安装应用启动，或 NSIS 安装/启动/卸载/数据保留 | Windows x64；设置 `TRANSPORTX_PACKAGED_APP` 或 `TRANSPORTX_WINDOWS_INSTALLER` |
 
-## 11. 当前限制与后续边界
-
-- 正式验收平台目前是 macOS Apple Silicon；Intel Mac 和 Windows 安装包尚未完成发布验证。
-- 仓库不分发实际 Knowledge/Data 资产，换机后需要重新安装或迁移用户 Module。
-- 空间分析已实现为内置 capability module（受控 Python + `SpatialAnalysisResult v1` 契约，见 §4），不作为可安装的用户 Module 分发。
-- 当前不提供在线模块市场、任意第三方 UI Bundle、远程 Agent、SSH/WSL 或第二种 Agent Runtime。
-- Module 权限建立在本机可信来源之上；若未来开放第三方市场，必须另行设计签名、权限声明和执行隔离。
-
-## 12. 演进规则
-
-1. 新能力先定义或复用 Contract，再实现 Extension、Server、Kernel 和 React 适配器。
-2. 新领域能力优先作为 Module/资产贡献，不在 Platform Core 写固定路径和领域 Prompt。
-3. `server-main.ts` 只做组合；新增 API 进入类型化 route 和对应 handler。
-4. 用户数据只能写入平台用户目录或当前 Session cwd，安装包资源始终只读。
-5. 大型 Geo runtime 保持按需加载；只有真实性能数据证明必要时才拆分更多 bundle。
-6. 发布产物必须用目标平台实机验证，正式公开分发不得绕过代码签名和公证。
+此外，`npm run typecheck` 检查全部 TypeScript 项目，`npm run test:pi-smoke` 是显式运行的真实 Pi RPC 冒烟，`eval:traffic` 系列用于交通任务评估，不纳入日常场景验证。

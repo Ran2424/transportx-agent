@@ -20,8 +20,9 @@ test('path utilities produce host-stable POSIX output', () => {
   assert.equal(toPosixPath(''), '');
   // relativePosixPath runs path.relative first, then POSIX-normalizes.
   assert.equal(relativePosixPath(path.resolve('/tmp'), path.resolve('/tmp/foo/bar')), 'foo/bar');
-  // Same call with Windows-shaped arguments yields the same relative string.
-  assert.equal(relativePosixPath(path.resolve('C:\\tmp'), path.resolve('C:\\tmp\\foo\\bar')), 'foo/bar');
+  // Windows path semantics must be supplied by path.win32 when the test runs
+  // on another host; path.resolve intentionally uses the current host only.
+  assert.equal(toPosixPath(path.win32.relative('C:\\tmp', 'C:\\tmp\\foo\\bar')), 'foo/bar');
   // isWithin re-exports the canonical asset-integrity boundary formula and
   // must reject symlink-shaped escapes regardless of host.
   assert.equal(isWithin(path.resolve('/root'), path.resolve('/root/inner')), true);
