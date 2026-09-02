@@ -6,6 +6,17 @@
 
 ## Unreleased
 
+## 3.1.4 - 2026-09-02
+
+### Changed
+
+- 地图底图名称改为仅显示本地非拉丁文字，不再同时显示英文或拉丁转写；道路编号与业务图层标签保持不变。
+
+### Fixed
+
+- 修复 macOS 与 Windows 发布流程无法从 Builder 平台名解析运行时 Profile、导致安装包预检与运行时准备提前失败的问题。
+- 修复 `desktop:dir:allow-unsigned` 在 macOS 上未触发 ad-hoc 重签名、导致目录测试包无法通过签名验证的问题。
+
 ## 3.1.3 - 2026-08-29
 
 ### Changed

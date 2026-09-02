@@ -15,6 +15,7 @@ import {
   compileGeoLayer,
   geoRuntimeSourceId,
 } from './geo-layer-compiler.js';
+import { usesLocalBasemapName } from './geo-basemap-labels.js';
 import { GeoChartImageManager } from './geo-chart-images.js';
 import { GeoInteractionController } from './geo-interaction-controller.js';
 import {
@@ -157,6 +158,7 @@ class MapLibreGeoRuntime {
       else map.once('load', onLoad);
     });
     if (this.destroyed || this.map !== map) return;
+    this.showOnlyLocalBasemapLabels(map);
     this.interactions = new GeoInteractionController(map);
     this.chartImages = new GeoChartImageManager(map);
     for (const source of scene.sources) this.addSource(source, sessionId);
@@ -167,6 +169,16 @@ class MapLibreGeoRuntime {
     map.resize();
     this.scene = scene;
     this.sessionId = sessionId;
+  }
+
+  private showOnlyLocalBasemapLabels(map: MapLibreMap) {
+    for (const layer of map.getStyle().layers ?? []) {
+      if (layer.type !== 'symbol') continue;
+      const textField = map.getLayoutProperty(layer.id, 'text-field');
+      if (usesLocalBasemapName(textField)) {
+        map.setLayoutProperty(layer.id, 'text-field', ['get', 'name:nonlatin']);
+      }
+    }
   }
 
   private reconcile(previous: GeoSceneSnapshot, next: GeoSceneSnapshot, sessionId: string | null) {

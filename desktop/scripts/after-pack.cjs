@@ -9,7 +9,9 @@ function run(command, args) {
 }
 
 module.exports = async function afterPack(context) {
-  if (context.electronPlatformName !== 'darwin' || process.env.TRANSPORTX_ALLOW_UNSIGNED_BUILD !== '1') return;
+  const allowUnsigned = process.env.TRANSPORTX_ALLOW_UNSIGNED_BUILD === '1'
+    || process.env.npm_lifecycle_event === 'desktop:dir:allow-unsigned';
+  if (context.electronPlatformName !== 'darwin' || !allowUnsigned) return;
 
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   run('codesign', [
