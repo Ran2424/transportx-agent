@@ -72,7 +72,21 @@ try {
   await geoMap.waitFor({ timeout: 10_000 });
   assert.equal((await resourceLoaded).ok(), true);
   await page.waitForTimeout(250);
-  await page.getByRole('button', { name: '点选', exact: true }).click();
+  const modeSwitch = page.getByLabel('切换模式');
+  assert.equal(await modeSwitch.inputValue(), 'browse');
+  await page.getByRole('button', { name: '保存截图', exact: true }).click();
+  const screenshotNotice = page.locator('.geo-notice');
+  await screenshotNotice.waitFor({ timeout: 10_000 });
+  const screenshotFilename = (await screenshotNotice.textContent())?.match(/map-screenshot-[\d-]+\.png/)?.[0];
+  assert.ok(screenshotFilename);
+  const screenshotSaved = await page.evaluate(async (filename) => {
+    const sessions = await (await fetch('/api/live-sessions')).json();
+    const files = await (await fetch(`/api/files?sessionId=${encodeURIComponent(sessions.sessions[0].id)}`)).json();
+    return files.items.some((item) => item.name === filename && item.size > 0);
+  }, screenshotFilename);
+  assert.equal(screenshotSaved, true);
+  console.log('Geo smoke: current map screenshot saved in the task directory.');
+  await modeSwitch.selectOption('feature');
   const mapBox = await geoMap.boundingBox();
   if (!mapBox) throw new Error('Geo map has no browser layout box');
   const tray = page.locator('.geo-context-tray');

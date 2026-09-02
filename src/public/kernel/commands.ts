@@ -225,6 +225,7 @@ export type VideoCommands = {
 export type GeoCommands = {
   createContext(sessionId: string, context: GeoClientContextV1): Promise<GeoContextReferenceV1>;
   getContext(sessionId: string, contextId: string): Promise<GeoClientContextV1>;
+  saveScreenshot(sessionId: string, input: { visualizationId: string; sceneRevision: number; dataUrl: string }): Promise<{ filename: string; path: string; bytes: number }>;
   respond(sessionId: string, requestId: string, response: { status: 'submitted'; context: GeoClientContextV1 } | { status: 'cancelled' } | { status: 'invalidated'; reason: 'scene_revision_changed' | 'visualization_changed' | 'resource_changed' }): Promise<{ response: GeoInteractionResponseV1; context?: GeoClientContextV1 }>;
 };
 
@@ -510,6 +511,9 @@ export function createGeoCommands(deps: CommandDeps): GeoCommands {
     async getContext(sessionId, contextId) {
       const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-contexts/${encodeURIComponent(contextId)}`, undefined, context(sessionId));
       return (data as { context: GeoClientContextV1 }).context;
+    },
+    async saveScreenshot(sessionId, input) {
+      return await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-screenshots`, { method: 'POST', body: input }, context(sessionId)) as { filename: string; path: string; bytes: number };
     },
     async respond(sessionId, requestId, response) {
       return await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-interactions/${encodeURIComponent(requestId)}/respond`, { method: 'POST', body: response }, context(sessionId)) as { response: GeoInteractionResponseV1; context?: GeoClientContextV1 };

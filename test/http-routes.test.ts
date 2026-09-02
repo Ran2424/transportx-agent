@@ -322,6 +322,13 @@ test('Geo interaction routes enforce capability, token scope and terminal respon
   assert.equal(created.provenance.geoResourceId, resourceId);
   const restored = await jsonBody(await fetch(`${contextUrl}/${context.contextId}`));
   assert.equal(restored.context.contextId, context.contextId);
+  const screenshotResponse = await fetch(`${base}/api/sessions/${session.id}/geo-screenshots`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ visualizationId: 'route_map', sceneRevision: 1, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl6sAAAAASUVORK5CYII=' }),
+  });
+  assert.equal(screenshotResponse.status, 200);
+  const screenshot = await jsonBody(screenshotResponse);
+  assert.equal(path.dirname(screenshot.path), cwd);
+  assert.equal(fs.existsSync(screenshot.path), true);
 
   const inspectUrl = `${base}/api/internal/geo/inspect`;
   assert.equal((await fetch(inspectUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'wrong', contextIds: [context.contextId] }) })).status, 403);

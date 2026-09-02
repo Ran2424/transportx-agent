@@ -107,6 +107,11 @@ class MapLibreGeoRuntime {
 
   clearUserDraft() { this.interactions?.clearDraft(); }
 
+  captureScreenshot() {
+    if (!this.map) throw new Error('Map is not ready');
+    return this.map.getCanvas().toDataURL('image/png');
+  }
+
   getUserDraft() {
     const draft = this.interactions?.getDraft();
     return draft ? this.clientContext(draft) : null;
@@ -191,6 +196,7 @@ class MapLibreGeoRuntime {
       localIdeographFontFamily: '"Noto Sans CJK SC", "PingFang SC", sans-serif',
       dragRotate: false,
       pitchWithRotate: false,
+      canvasContextAttributes: { preserveDrawingBuffer: true },
     });
     this.map = map;
     map.on('error', (event) => {

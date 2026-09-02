@@ -27,6 +27,8 @@ import type { JsonRecord } from './types.js';
 import { sha256File, within } from './asset-integrity.js';
 
 const GEO_MODULE_ID = 'com.transportx.geo';
+const MAX_GEO_SCREENSHOT_BYTES = 10 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 export type GeoInteractionSession = {
   id: string;
@@ -92,6 +94,15 @@ function readJson<T>(cwd: string, target: string): T | null {
 }
 
 function randomId(prefix: 'geoctx_' | 'georeq_') { return `${prefix}${crypto.randomBytes(12).toString('hex')}`; }
+
+function screenshotName(cwd: string) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  for (let sequence = 0; sequence < 1000; sequence += 1) {
+    const name = `map-screenshot-${stamp}${sequence ? `-${sequence + 1}` : ''}.png`;
+    if (!fs.existsSync(path.join(cwd, name))) return name;
+  }
+  throw serviceError('Could not allocate a map screenshot filename.', 409);
+}
 
 function hasGeo(session: GeoInteractionSession) {
   return !!session.resolvedSessionPlan?.modules?.some((module) => module.id === GEO_MODULE_ID);
@@ -233,6 +244,26 @@ export class GeoInteractionService {
     if (!Array.isArray(ids) || ids.length > GEO_CONTEXTS_PER_MESSAGE || ids.some((id) => typeof id !== 'string') || new Set(ids).size !== ids.length) throw serviceError(`A message may reference at most ${GEO_CONTEXTS_PER_MESSAGE} unique Geo Contexts.`);
     for (const id of ids as string[]) this.getContext(session, id);
     return ids as string[];
+  }
+
+  saveScreenshot(session: GeoInteractionSession, value: unknown) {
+    requireGeo(session);
+    const input = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const visualizationId = typeof input.visualizationId === 'string' ? input.visualizationId : '';
+    const sceneRevision = typeof input.sceneRevision === 'number' ? input.sceneRevision : 0;
+    requireVisualization(session, visualizationId, sceneRevision);
+    const dataUrl = typeof input.dataUrl === 'string' ? input.dataUrl : '';
+    const match = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+    if (!match) throw serviceError('Map screenshot must be a base64 PNG data URL.');
+    const image = Buffer.from(match[1], 'base64');
+    if (image.length < PNG_SIGNATURE.length || image.length > MAX_GEO_SCREENSHOT_BYTES || !image.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+      throw serviceError(`Map screenshot must be a valid PNG no larger than ${MAX_GEO_SCREENSHOT_BYTES / 1024 / 1024} MiB.`, 413);
+    }
+    const filename = screenshotName(session.cwd);
+    const target = ensureStoragePath(session.cwd, path.join(session.cwd, filename));
+    assertNoSymlink(target);
+    fs.writeFileSync(target, image, { flag: 'wx', mode: 0o600 });
+    return { filename, path: target, bytes: image.length };
   }
 
   setActiveMessageContexts(session: GeoInteractionSession, ids: string[]) {

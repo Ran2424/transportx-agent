@@ -19,6 +19,7 @@ type GeoRuntime = {
   setLayerVisibility(layerId: string, visible: boolean): void;
   setInteractionMode(mode: 'browse' | GeoContextMode, options?: { forRequest?: boolean; targetLayerIds?: string[]; maxFeatures?: number }): void;
   clearUserDraft(): void;
+  captureScreenshot(): string;
   getUserDraft(): GeoClientContextV1 | null;
   subscribe(listener: (event: GeoInteractionEvent) => void): () => void;
   fitToData(): void;
@@ -43,6 +44,8 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
   const [draft, setDraft] = useState<GeoClientContextV1 | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const [screenshotNotice, setScreenshotNotice] = useState('');
   const [now, setNow] = useState(Date.now());
   const selected = items.find((item) => item.visualizationId === selectedId) ?? items[0] ?? null;
   const interaction = session ? sessions.geoInteractionBySession[session.id] : undefined;
@@ -128,6 +131,20 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
     finally { setBusy(false); }
   }
 
+  async function saveScreenshot() {
+    if (!session || !runtime || !selected) return;
+    setScreenshotBusy(true); setScreenshotNotice(''); setNotice('');
+    try {
+      const result = await appKernel.commands.geo.saveScreenshot(session.id, {
+        visualizationId: selected.visualizationId,
+        sceneRevision: selected.revision,
+        dataUrl: runtime.captureScreenshot(),
+      });
+      setScreenshotNotice(t('geo.screenshotSaved', { filename: result.filename }));
+    } catch (cause) { setNotice(t('geo.screenshotFailed', { error: (cause as Error).message })); }
+    finally { setScreenshotBusy(false); }
+  }
+
   if (!session) return <FeatureEmpty mark="04" title={t('task.waitingContext')} description={t('geo.waitingDescription')} />;
   if (!selected?.scene) return <FeatureEmpty mark="04" title={t('geo.emptyTitle')} description={t('geo.emptyDescription')} />;
   const remaining = request ? Math.max(0, Math.ceil((Date.parse(request.expiresAt) - now) / 1000)) : 0;
@@ -138,14 +155,16 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
       <select aria-label={t('geo.select')} value={selected.visualizationId} onChange={(event) => setSelectedId(event.target.value)} disabled={!!request}>
         {items.map((item) => <option key={item.visualizationId} value={item.visualizationId}>{item.summary.title}</option>)}
       </select>
-      {MODES.map((item) => <button key={item} className={mode === item ? 'is-active' : ''} type="button" disabled={!!request && request.mode !== item} onClick={() => changeMode(item)}>{t(`geo.mode.${item}`)}</button>)}
+      <label className="geo-mode-switch"><span>{t('geo.modeSwitch')}</span><select aria-label={t('geo.modeSwitch')} value={mode} disabled={!!request} onChange={(event) => changeMode(event.target.value as 'browse' | GeoContextMode)}>{MODES.map((item) => <option key={item} value={item}>{t(`geo.mode.${item}`)}</option>)}</select></label>
       <button type="button" disabled={!draft} onClick={() => runtime?.clearUserDraft()}>{t('geo.clear')}</button>
       {selected.scene.controls?.fitToData !== false ? <button type="button" onClick={() => runtime?.fitToData()}>{t('geo.fit')}</button> : null}
+      <button type="button" disabled={!runtime || screenshotBusy} onClick={() => void saveScreenshot()}>{screenshotBusy ? t('geo.screenshotSaving') : t('geo.screenshot')}</button>
       <button type="button" disabled={!draft || busy || !!request} onClick={() => void attachDraft()}>{t('geo.attach')}</button>
       <small>rev {selected.revision}</small>
     </div>
     <GeoMap key={`${session.id}:${selected.visualizationId}`} envelope={selected} sessionId={session.id} active={active} onReady={setRuntime} onEvent={handleRuntimeEvent} />
     {draft ? <div className="geo-context-tray" role="status"><strong>{t(`geo.mode.${draft.mode}`)}</strong><span>{draft.summary}</span><small>{t('geo.contextMeta', { revision: draft.sceneRevision, count: draft.visibleLayerIds.length })}</small><button type="button" onClick={() => runtime?.clearUserDraft()}>{t('geo.clear')}</button>{request ? <button type="button" disabled={busy} onClick={() => void submitRequest()}>{t('geo.submit')}</button> : <button type="button" disabled={busy} onClick={() => void attachDraft()}>{t('geo.attach')}</button>}</div> : null}
+    {screenshotNotice ? <p className="geo-notice" role="status">{screenshotNotice}</p> : null}
     {notice ? <p className="geo-error" role="alert">{notice}</p> : null}
     <div className="geo-layers" role="group" aria-label={t('geo.layers')} tabIndex={0}>{[...selected.scene.layers].reverse().map((layer) => <GeoLayer key={`${selected.visualizationId}:${layer.id}`} layer={layer} onVisibility={(visible) => runtime?.setLayerVisibility(layer.id, visible)} />)}</div>
     {selected.scene.metadata.description ? <p className="geo-description" role="region" aria-label={t('geo.description')} tabIndex={0}>{selected.scene.metadata.description}</p> : null}

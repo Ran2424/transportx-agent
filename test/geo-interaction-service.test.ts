@@ -109,6 +109,23 @@ test('Geo Host rejects missing maps without creating interaction state and never
   assert.deepEqual(applyGeoMessageRefs(entries, [{ text: '相同文字', timestamp: 1, contextIds }]), entries);
 });
 
+test('Geo screenshots are validated and saved directly in the session directory', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-screenshot-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const { GeoInteractionService } = require('../bin/geo-interaction-service.js');
+  const service = new GeoInteractionService();
+  const session = makeSession(cwd);
+  const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl6sAAAAASUVORK5CYII=';
+  const first = service.saveScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 1, dataUrl });
+  const second = service.saveScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 1, dataUrl });
+  assert.equal(path.dirname(first.path), cwd);
+  assert.match(first.filename, /^map-screenshot-\d{8}-\d{6}\.png$/);
+  assert.notEqual(second.filename, first.filename);
+  assert.equal(fs.readFileSync(first.path).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.throws(() => service.saveScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 1, dataUrl: 'data:image/png;base64,bm90LXBuZw==' }), /valid PNG/);
+  assert.throws(() => service.saveScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 2, dataUrl }), /revision changed/);
+});
+
 test('Geo requests submit once, persist terminal state and restore through snapshots', async (t: any) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-request-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));

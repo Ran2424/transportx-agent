@@ -854,6 +854,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .geo-toolbar button.is-active { border-color: var(--selection-border); color: var(--selection-fg); background: var(--selection-bg); }
 .geo-toolbar button:disabled { cursor: default; opacity: .5; }
 .geo-toolbar small { color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
+.geo-mode-switch { height: 30px; display: flex; align-items: center; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-secondary); background: var(--surface-default); overflow: hidden; }
+.geo-mode-switch > span { padding-left: 8px; font-size: 11px; white-space: nowrap; }
+.geo-toolbar .geo-mode-switch select { width: auto; min-width: 74px; padding-left: 5px; border: 0; color: var(--text-primary); background: transparent; font-size: 11px; font-weight: 600; }
 .geo-request-banner { min-height: 48px; padding: 8px 13px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px; border-bottom: 1px solid color-mix(in srgb, var(--status-warning) 38%, var(--border-default)); color: var(--text-primary); background: color-mix(in srgb, var(--status-warning) 8%, var(--surface-raised)); }
 .geo-request-banner > div { min-width: 0; display: grid; gap: 2px; }
 .geo-request-banner strong, .geo-request-banner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -874,6 +877,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .geo-layers small { color: var(--text-tertiary); font-size: 10px; }
 .geo-workspace > .geo-description { max-height: calc(6.6em + 15px); flex: 0 1 auto; overflow-y: auto; margin: 0; padding: 7px 13px; border-top: 1px solid var(--border-default); scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; color: var(--text-secondary); font-size: 11px; line-height: 1.65; }
 .geo-error { padding: 0 13px 12px; color: var(--status-danger); font-size: 11px; }
+.geo-notice { margin: 0; padding: 7px 13px; border-top: 1px solid color-mix(in srgb, var(--status-success) 36%, var(--border-default)); color: var(--status-success); background: color-mix(in srgb, var(--status-success) 7%, var(--surface-raised)); font-size: 11px; }
 .geo-map .maplibregl-popup-content { overflow: hidden; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--tx-radius-md); color: var(--text-primary); background: var(--surface-raised); box-shadow: var(--shadow-dialog); }
 .geo-map .maplibregl-popup-close-button { z-index: 1; right: 7px; top: 7px; width: 22px; height: 22px; border-radius: 5px; color: var(--text-secondary); font: 16px/20px -apple-system, BlinkMacSystemFont, sans-serif; }
 .geo-map .maplibregl-popup-close-button:hover { color: var(--text-primary); background: var(--selection-bg); }
