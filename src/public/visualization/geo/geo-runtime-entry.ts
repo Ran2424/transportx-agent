@@ -51,6 +51,140 @@ function styleForBasemap(basemap: GeoSceneSnapshot['basemap']) {
   return basemap.id === 'none' ? blankStyle(basemap) : BASEMAP_STYLES[basemap.id];
 }
 
+function screenshotColor(style: CSSStyleDeclaration, name: string, fallback: string) {
+  return style.getPropertyValue(name).trim() || fallback;
+}
+
+function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  const suffix = '…';
+  let result = '';
+  for (const character of text) {
+    if (ctx.measureText(result + character + suffix).width > maxWidth) break;
+    result += character;
+  }
+  return result + suffix;
+}
+
+function wrapScreenshotText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const lines: string[] = [];
+  for (const paragraph of text.replaceAll('\t', '  ').split('\n')) {
+    if (!paragraph) { lines.push(''); continue; }
+    let line = '';
+    let width = 0;
+    for (const character of paragraph) {
+      const characterWidth = ctx.measureText(character).width;
+      if (line && width + characterWidth > maxWidth) {
+        lines.push(line);
+        line = character;
+        width = characterWidth;
+      } else {
+        line += character;
+        width += characterWidth;
+      }
+    }
+    if (line) lines.push(line);
+  }
+  return lines;
+}
+
+function composeScreenshot(
+  mapCanvas: HTMLCanvasElement,
+  container: HTMLElement,
+  scene: GeoSceneSnapshot,
+  visibilityOverrides: ReadonlyMap<string, boolean>,
+) {
+  const cssWidth = mapCanvas.clientWidth || mapCanvas.width;
+  const cssHeight = mapCanvas.clientHeight || mapCanvas.height;
+  const scale = mapCanvas.width / Math.max(1, cssWidth);
+  const style = getComputedStyle(container);
+  const fontFamily = screenshotColor(style, '--tx-font-ui', 'sans-serif');
+  const surface = screenshotColor(style, '--surface-default', '#fbfbfa');
+  const border = screenshotColor(style, '--border-default', 'rgba(36, 36, 36, 0.075)');
+  const primary = screenshotColor(style, '--text-primary', '#242424');
+  const secondary = screenshotColor(style, '--text-secondary', '#66635f');
+  const tertiary = screenshotColor(style, '--text-tertiary', '#96918b');
+  const accent = screenshotColor(style, '--interactive-primary-bg', '#a85a3a');
+  const accentText = screenshotColor(style, '--interactive-primary-fg', '#ffffff');
+  const layers = [...scene.layers].reverse();
+  const columns = 3;
+  const legendRows = Math.ceil(layers.length / columns);
+  const legendHeight = layers.length ? legendRows * 28 + 12 : 0;
+
+  const measureCanvas = document.createElement('canvas');
+  const measure = measureCanvas.getContext('2d');
+  if (!measure) throw new Error('Screenshot canvas is unavailable');
+  measure.font = `11px ${fontFamily}`;
+  const descriptionLines = scene.metadata.description
+    ? wrapScreenshotText(measure, scene.metadata.description, Math.max(1, cssWidth - 26))
+    : [];
+  const descriptionHeight = descriptionLines.length ? descriptionLines.length * 18 + 14 : 0;
+
+  const output = document.createElement('canvas');
+  output.width = mapCanvas.width;
+  output.height = Math.ceil((cssHeight + legendHeight + descriptionHeight) * scale);
+  const ctx = output.getContext('2d');
+  if (!ctx) throw new Error('Screenshot canvas is unavailable');
+  ctx.scale(scale, scale);
+  ctx.drawImage(mapCanvas, 0, 0, cssWidth, cssHeight);
+  ctx.fillStyle = surface;
+  ctx.fillRect(0, cssHeight, cssWidth, legendHeight + descriptionHeight);
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+
+  if (layers.length) {
+    ctx.beginPath();
+    ctx.moveTo(0, cssHeight + 0.5);
+    ctx.lineTo(cssWidth, cssHeight + 0.5);
+    ctx.stroke();
+    const gap = 12;
+    const columnWidth = (cssWidth - 26 - gap * (columns - 1)) / columns;
+    ctx.textBaseline = 'alphabetic';
+    layers.forEach((layer, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const x = 13 + column * (columnWidth + gap);
+      const y = cssHeight + 6 + row * 28;
+      const visible = visibilityOverrides.get(layer.id) ?? layer.visible !== false;
+      ctx.fillStyle = visible ? accent : surface;
+      ctx.fillRect(x + 1, y + 8, 11, 11);
+      if (!visible) {
+        ctx.strokeStyle = tertiary;
+        ctx.strokeRect(x + 1.5, y + 8.5, 10, 10);
+      } else {
+        ctx.strokeStyle = accentText;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 3.5, y + 13.5);
+        ctx.lineTo(x + 6, y + 16);
+        ctx.lineTo(x + 10, y + 11);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+      ctx.font = `10px ${fontFamily}`;
+      const typeWidth = ctx.measureText(layer.type).width;
+      ctx.fillStyle = tertiary;
+      ctx.fillText(layer.type, x + columnWidth - typeWidth, y + 18);
+      ctx.font = `11px ${fontFamily}`;
+      ctx.fillStyle = visible ? primary : tertiary;
+      ctx.fillText(ellipsize(ctx, layer.title || layer.id, Math.max(1, columnWidth - typeWidth - 28)), x + 18, y + 18);
+    });
+  }
+
+  if (descriptionLines.length) {
+    const top = cssHeight + legendHeight;
+    ctx.strokeStyle = border;
+    ctx.beginPath();
+    ctx.moveTo(0, top + 0.5);
+    ctx.lineTo(cssWidth, top + 0.5);
+    ctx.stroke();
+    ctx.font = `11px ${fontFamily}`;
+    ctx.fillStyle = secondary;
+    descriptionLines.forEach((line, index) => ctx.fillText(line, 13, top + 19 + index * 18));
+  }
+  return output.toDataURL('image/png');
+}
+
 class MapLibreGeoRuntime {
   private map: MapLibreMap | null = null;
   private scene: GeoSceneSnapshot | null = null;
@@ -107,9 +241,10 @@ class MapLibreGeoRuntime {
 
   clearUserDraft() { this.interactions?.clearDraft(); }
 
-  captureScreenshot() {
-    if (!this.map) throw new Error('Map is not ready');
-    return this.map.getCanvas().toDataURL('image/png');
+  async captureScreenshot() {
+    if (!this.map || !this.scene) throw new Error('Map is not ready');
+    await document.fonts.ready;
+    return composeScreenshot(this.map.getCanvas(), this.container, this.scene, this.visibilityOverrides);
   }
 
   getUserDraft() {
