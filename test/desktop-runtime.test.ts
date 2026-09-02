@@ -39,6 +39,8 @@ test('platform-profile registry exposes frozen mac/win profiles with required co
   assert.deepEqual({ ...PROCESS_PLATFORM_TO_BUILDER }, { darwin: 'mac', win32: 'win', linux: 'linux' });
   assert.equal(builderPlatformFor('darwin'), 'mac');
   assert.equal(builderPlatformFor('win32'), 'win');
+  assert.equal(getPlatformProfile(builderPlatformFor('darwin')), PLATFORM_PROFILES.darwin);
+  assert.equal(getPlatformProfile(builderPlatformFor('win32')), PLATFORM_PROFILES.win);
 
   const profileExpectations: Record<string, { key: string; builderPlatform: string; installerArtifact: string }> = {
     darwin: { key: 'darwin', builderPlatform: 'mac', installerArtifact: 'dmg' },
@@ -241,6 +243,7 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   assert.match(main, /trafficLightPosition: \{ x: 14, y: 14 \}/);
   assert.match(styles, /data-desktop-platform="darwin".*workspace-header-left.*padding-left: 66px/);
   assert.match(hook, /TRANSPORTX_ALLOW_UNSIGNED_BUILD/);
+  assert.match(hook, /npm_lifecycle_event === 'desktop:dir:allow-unsigned'/);
   assert.match(hook, /--verify/);
   assert.match(prepareRuntime, /\['-B', '-I', '-c'/);
   assert.match(smoke, /\['-B', '-I', '-c'/);
