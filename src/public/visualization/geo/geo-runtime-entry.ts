@@ -5,6 +5,8 @@ import maplibregl, {
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type {
+  GeoClientContextV1,
+  GeoContextMode,
   GeoLayer,
   GeoSceneSnapshot,
   GeoSource,
@@ -18,6 +20,7 @@ import {
 import { usesLocalBasemapName } from './geo-basemap-labels.js';
 import { GeoChartImageManager } from './geo-chart-images.js';
 import { GeoInteractionController } from './geo-interaction-controller.js';
+import type { GeoInteractionControllerEvent, GeoUserDraft } from './geo-interaction-controller.js';
 import {
   planGeoSceneUpdate,
   retainedLayerVisibility,
@@ -28,6 +31,12 @@ const BASEMAP_STYLES: Record<Exclude<GeoSceneSnapshot['basemap']['id'], 'none'>,
   light: 'https://tiles.openfreemap.org/styles/positron',
   dark: 'https://tiles.openfreemap.org/styles/dark',
 };
+
+export type GeoInteractionEvent =
+  | { type: 'draft_changed'; draft: GeoClientContextV1 | null }
+  | { type: 'draft_stale'; previousRevision: number; nextRevision: number }
+  | { type: 'limit_reached'; limit: number }
+  | { type: 'unselectable_layer'; layerId: string };
 
 function blankStyle(basemap: GeoSceneSnapshot['basemap']) {
   const backgrounds = { default: '#eef3f8', light: '#f4f6f8', dark: '#17202b', none: '#f7f8fa' };
@@ -56,6 +65,8 @@ class MapLibreGeoRuntime {
   private scaleControl: maplibregl.ScaleControl | null = null;
   private updateQueue: Promise<void> = Promise.resolve();
   private destroyed = false;
+  private visualizationId = '';
+  private listeners = new Set<(event: GeoInteractionEvent) => void>();
 
   constructor(private container: HTMLElement, private onError: (message: string) => void) {}
 
@@ -73,9 +84,44 @@ class MapLibreGeoRuntime {
     }
   }
 
+  async applyAgentSelection(input: { layerId: string; featureIds: Array<string | number>; fit?: boolean }) {
+    if (!this.scene || input.featureIds.length > 1000) throw new Error('Agent selection must contain at most 1,000 features');
+    const layer = this.scene.layers.find((item) => item.id === input.layerId);
+    const source = layer && this.scene.sources.find((item) => item.id === layer.sourceId);
+    if (!layer || !source) throw new Error(`Layer not found: ${input.layerId}`);
+    const runtimeSource = geoRuntimeSourceId(source.id);
+    for (const id of input.featureIds) this.map?.setFeatureState({ source: runtimeSource, id }, { selectedByAgent: true });
+    if (input.fit && this.map) {
+      const selected = new Set(input.featureIds.map((id) => `${typeof id}:${String(id)}`));
+      const bounds = new maplibregl.LngLatBounds();
+      for (const feature of this.map.querySourceFeatures(runtimeSource)) {
+        if (feature.id !== undefined && selected.has(`${typeof feature.id}:${String(feature.id)}`)) extendGeometry(bounds, feature.geometry);
+      }
+      if (!bounds.isEmpty()) this.map.fitBounds(bounds, { padding: 32, duration: 250 });
+    }
+  }
+
+  setInteractionMode(mode: 'browse' | GeoContextMode, options: { forRequest?: boolean; targetLayerIds?: string[]; maxFeatures?: number } = {}) {
+    this.interactions?.setMode(mode, options);
+  }
+
+  clearUserDraft() { this.interactions?.clearDraft(); }
+
+  getUserDraft() {
+    const draft = this.interactions?.getDraft();
+    return draft ? this.clientContext(draft) : null;
+  }
+
+  subscribe(listener: (event: GeoInteractionEvent) => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
   fitToScene() {
     if (this.scene) this.applyView(this.scene.view, 250);
   }
+
+  fitToData() { this.fitToScene(); }
 
   resize() {
     this.map?.resize();
@@ -88,10 +134,18 @@ class MapLibreGeoRuntime {
     this.scene = null;
     this.sessionId = null;
     this.revision = 0;
+    this.visualizationId = '';
+    this.listeners.clear();
   }
 
   private async applyEnvelope(envelope: VisualizationEnvelope, sessionId: string | null) {
     if (this.destroyed || envelope.revision <= this.revision) return;
+    if (this.interactions?.getDraft()) {
+      const previousRevision = this.revision;
+      this.interactions.clearDraft();
+      this.publish({ type: 'draft_stale', previousRevision, nextRevision: envelope.revision });
+    }
+    this.visualizationId = envelope.visualizationId;
     if (!envelope.scene) {
       this.teardownMap();
       this.scene = null;
@@ -159,7 +213,7 @@ class MapLibreGeoRuntime {
     });
     if (this.destroyed || this.map !== map) return;
     this.showOnlyLocalBasemapLabels(map);
-    this.interactions = new GeoInteractionController(map);
+    this.interactions = new GeoInteractionController(map, (event) => this.handleInteractionEvent(event));
     this.chartImages = new GeoChartImageManager(map);
     for (const source of scene.sources) this.addSource(source, sessionId);
     this.addLayers(scene);
@@ -245,13 +299,14 @@ class MapLibreGeoRuntime {
       const beforeId = (layer.type === 'line' || layer.type === 'fill') ? firstBasemapLabel : undefined;
       for (const spec of rendered.specs) map.addLayer(spec, beforeId);
       this.layerIds.set(layer.id, rendered.specs.map((spec) => spec.id));
-      this.interactions?.bindLayer(layer, rendered.interactiveId, sourceId);
+      const source = scene.sources.find((item) => item.id === layer.sourceId);
+      this.interactions?.bindLayer(layer, rendered.interactiveId, sourceId, source?.type === 'geojson-resource');
     }
   }
 
   private removeLayers() {
     const map = this.requireMap();
-    this.interactions?.clear();
+    this.interactions?.clearLayerBindings();
     for (const ids of [...this.layerIds.values()].reverse()) {
       for (const id of [...ids].reverse()) if (map.getLayer(id)) map.removeLayer(id);
     }
@@ -263,12 +318,12 @@ class MapLibreGeoRuntime {
     for (const selection of previous?.selection || []) {
       const source = geoRuntimeSourceId(selection.sourceId);
       if (!map.getSource(source)) continue;
-      for (const id of selection.featureIds.slice(0, 5000)) map.removeFeatureState({ source, id }, 'selected');
+      for (const id of selection.featureIds.slice(0, 5000)) map.removeFeatureState({ source, id }, 'selectedByAgent');
     }
     for (const selection of next.selection || []) {
       const source = geoRuntimeSourceId(selection.sourceId);
       if (!map.getSource(source)) continue;
-      for (const id of selection.featureIds.slice(0, 5000)) map.setFeatureState({ source, id }, { selected: true });
+      for (const id of selection.featureIds.slice(0, 5000)) map.setFeatureState({ source, id }, { selectedByAgent: true });
     }
   }
 
@@ -342,6 +397,47 @@ class MapLibreGeoRuntime {
     this.navigationControl = null;
     this.fullscreenControl = null;
     this.scaleControl = null;
+  }
+
+  private handleInteractionEvent(event: GeoInteractionControllerEvent) {
+    if (event.type === 'draft_changed') this.publish({ type: 'draft_changed', draft: event.draft ? this.clientContext(event.draft) : null });
+    else this.publish(event);
+  }
+
+  private clientContext(draft: GeoUserDraft): GeoClientContextV1 {
+    const map = this.requireMap();
+    const center = map.getCenter();
+    const bounds = map.getBounds();
+    const visibleLayerIds = (this.scene?.layers || []).filter((layer) => this.visibilityOverrides.get(layer.id) ?? (layer.visible !== false)).map((layer) => layer.id);
+    return {
+      version: 1,
+      contextId: `geoctx_${globalThis.crypto?.randomUUID?.().replaceAll('-', '') || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`}`,
+      visualizationId: this.visualizationId,
+      sceneRevision: this.revision,
+      mode: draft.mode,
+      createdAt: new Date().toISOString(),
+      view: { center: [center.lng, center.lat], zoom: map.getZoom(), bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], bearing: map.getBearing(), pitch: map.getPitch() },
+      visibleLayerIds,
+      ...(draft.selection ? { selection: draft.selection } : {}),
+      ...(draft.geometry ? { geometry: draft.geometry } : {}),
+      summary: draft.summary,
+    };
+  }
+
+  private publish(event: GeoInteractionEvent) { for (const listener of this.listeners) listener(event); }
+}
+
+function extendGeometryBounds(bounds: maplibregl.LngLatBounds, coordinates: unknown) {
+  if (!Array.isArray(coordinates)) return;
+  if (coordinates.length >= 2 && typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') { bounds.extend(coordinates as [number, number]); return; }
+  for (const child of coordinates) extendGeometryBounds(bounds, child);
+}
+
+function extendGeometry(bounds: maplibregl.LngLatBounds, geometry: maplibregl.MapGeoJSONFeature['geometry']) {
+  if (geometry.type === 'GeometryCollection') {
+    for (const child of geometry.geometries) extendGeometry(bounds, child);
+  } else {
+    extendGeometryBounds(bounds, geometry.coordinates);
   }
 }
 

@@ -18,20 +18,28 @@ function compile(value: GeoVisualValue | undefined, fallback: string | number | 
 }
 
 function selectedColor(normal: Expression) {
-  return ['case', ['boolean', ['feature-state', 'selected'], false], '#f59e0b', normal];
+  return ['case',
+    ['boolean', ['feature-state', 'selectedForRequest'], false], '#dc2626',
+    ['boolean', ['feature-state', 'selectedByUser'], false], '#2563eb',
+    ['boolean', ['feature-state', 'selectedByAgent'], false], '#f59e0b',
+    normal,
+  ];
 }
 
 function interactiveSize(normal: Expression, hoverDelta: number, selectedDelta = hoverDelta) {
   return ['+', normal,
-    ['case', ['boolean', ['feature-state', 'selected'], false], selectedDelta,
-      ['boolean', ['feature-state', 'hover'], false], hoverDelta, 0],
+    ['case', ['any',
+      ['boolean', ['feature-state', 'selectedForRequest'], false],
+      ['boolean', ['feature-state', 'selectedByUser'], false],
+      ['boolean', ['feature-state', 'selectedByAgent'], false]], selectedDelta,
+      ['boolean', ['feature-state', 'hovered'], false], hoverDelta, 0],
   ];
 }
 
 function interactiveOpacity(normal: Expression) {
   return ['case',
-    ['boolean', ['feature-state', 'selected'], false], 0.72,
-    ['boolean', ['feature-state', 'hover'], false], 0.62,
+    ['any', ['boolean', ['feature-state', 'selectedForRequest'], false], ['boolean', ['feature-state', 'selectedByUser'], false], ['boolean', ['feature-state', 'selectedByAgent'], false]], 0.72,
+    ['boolean', ['feature-state', 'hovered'], false], 0.62,
     normal,
   ];
 }
@@ -223,8 +231,8 @@ export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: 
           },
           paint: {
             'icon-opacity': ['case',
-              ['boolean', ['feature-state', 'selected'], false], 1,
-              ['boolean', ['feature-state', 'hover'], false], 0.72,
+              ['any', ['boolean', ['feature-state', 'selectedForRequest'], false], ['boolean', ['feature-state', 'selectedByUser'], false], ['boolean', ['feature-state', 'selectedByAgent'], false]], 1,
+              ['boolean', ['feature-state', 'hovered'], false], 0.72,
               0,
             ],
           },
