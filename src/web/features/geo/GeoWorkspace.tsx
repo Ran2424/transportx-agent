@@ -19,7 +19,7 @@ type GeoRuntime = {
   setLayerVisibility(layerId: string, visible: boolean): void;
   setInteractionMode(mode: 'browse' | GeoContextMode, options?: { forRequest?: boolean; targetLayerIds?: string[]; maxFeatures?: number }): void;
   clearUserDraft(): void;
-  captureScreenshot(): string;
+  captureScreenshot(): Promise<string>;
   getUserDraft(): GeoClientContextV1 | null;
   subscribe(listener: (event: GeoInteractionEvent) => void): () => void;
   fitToData(): void;
@@ -138,7 +138,7 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
       const result = await appKernel.commands.geo.saveScreenshot(session.id, {
         visualizationId: selected.visualizationId,
         sceneRevision: selected.revision,
-        dataUrl: runtime.captureScreenshot(),
+        dataUrl: await runtime.captureScreenshot(),
       });
       setScreenshotNotice(t('geo.screenshotSaved', { filename: result.filename }));
     } catch (cause) { setNotice(t('geo.screenshotFailed', { error: (cause as Error).message })); }

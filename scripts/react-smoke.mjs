@@ -74,7 +74,18 @@ try {
   await page.waitForTimeout(250);
   const modeSwitch = page.getByLabel('切换模式');
   assert.equal(await modeSwitch.inputValue(), 'browse');
+  const mapBox = await geoMap.boundingBox();
+  if (!mapBox) throw new Error('Geo map has no browser layout box');
+  const screenshotRequest = page.waitForRequest((request) => request.url().includes('/geo-screenshots'));
   await page.getByRole('button', { name: '保存截图', exact: true }).click();
+  const screenshotDataUrl = (await screenshotRequest).postDataJSON().dataUrl;
+  const screenshotSize = await page.evaluate((dataUrl) => new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => reject(new Error('Saved Geo screenshot is not a readable image'));
+    image.src = dataUrl;
+  }), screenshotDataUrl);
+  assert.ok(screenshotSize.height > mapBox.height + 40, 'Geo screenshot should include the legend and description below the map');
   const screenshotNotice = page.locator('.geo-notice');
   await screenshotNotice.waitFor({ timeout: 10_000 });
   const screenshotFilename = (await screenshotNotice.textContent())?.match(/map-screenshot-[\d-]+\.png/)?.[0];
@@ -85,10 +96,8 @@ try {
     return files.items.some((item) => item.name === filename && item.size > 0);
   }, screenshotFilename);
   assert.equal(screenshotSaved, true);
-  console.log('Geo smoke: current map screenshot saved in the task directory.');
+  console.log('Geo smoke: map, layer legend and description saved in the task directory.');
   await modeSwitch.selectOption('feature');
-  const mapBox = await geoMap.boundingBox();
-  if (!mapBox) throw new Error('Geo map has no browser layout box');
   const tray = page.locator('.geo-context-tray');
   let selectedFeatures = 0;
   for (let fraction = 0.05; fraction <= 0.95 && selectedFeatures < 2; fraction += 0.01) {
