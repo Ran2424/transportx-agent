@@ -40,13 +40,18 @@ function fakeSession(id: string) {
     contextUsage: null,
     entries: [],
     pendingExtensionUiRequests: new Map(),
-    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token' },
+    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token' },
     manager: liveManager,
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     liveMetadata: () => ({ id, model: 'openai/gpt-5.5', isStreaming: false, isCompacting: false, autoCompactionEnabled: true }),
     snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
     send: async () => ({ data: { commands: [] } }),
+    registerPromptAttachments: () => {},
+    discardPromptAttachments: () => {},
+    registerPromptGeoContexts: () => {},
+    discardPromptGeoContexts: () => {},
+    abortGeoInteraction: () => {},
   };
 }
 
@@ -258,6 +263,94 @@ test('Geo resources cannot be read through another live session', async (t: Test
   liveManager.sessions.set(owner.id, owner); liveManager.sessions.set(other.id, other);
   assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/geo-resources/${resourceId}/data`)).status, 200);
   assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/geo-resources/${resourceId}/data`)).status, 404);
+});
+
+test('Geo interaction routes enforce capability, token scope and terminal response', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-routes-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const resourceId = `geo_${'c'.repeat(24)}`;
+  const geojson = JSON.stringify({ type: 'FeatureCollection', features: [
+    { type: 'Feature', id: 'road-1', properties: { name: '一号路', secret: 'not-exposed' }, geometry: { type: 'LineString', coordinates: [[121.4, 31.1], [121.5, 31.3]] } },
+  ] });
+  const resourceDir = path.join(cwd, '.tau', 'geo-resources', resourceId);
+  fs.mkdirSync(resourceDir, { recursive: true });
+  fs.writeFileSync(path.join(resourceDir, 'data.geojson'), geojson);
+  fs.writeFileSync(path.join(resourceDir, 'manifest.json'), JSON.stringify({
+    resourceId,
+    sha256: crypto.createHash('sha256').update(geojson).digest('hex'),
+    bytes: Buffer.byteLength(geojson),
+    featureCount: 1,
+  }));
+  const envelope = {
+    protocol: 'pi-visualization', version: '1.0', kind: 'geo', visualizationId: 'route_map', revision: 1, operation: 'replace',
+    scene: {
+      view: { mode: 'bounds', bounds: [121.4, 31.1, 121.5, 31.3] }, basemap: { id: 'light' },
+      sources: [{ id: 'roads_source', type: 'geojson-resource', resourceId }],
+      layers: [{ id: 'roads', sourceId: 'roads_source', type: 'line', encoding: { color: { mode: 'constant', value: '#2563eb' } }, popup: { fields: [{ field: 'name', label: '名称' }] } }],
+      metadata: { title: '道路' },
+    },
+    summary: { title: '道路' }, generatedAt: '2026-09-02T00:00:00.000Z',
+  };
+  const session = fakeSession('tau_geo_routes') as any;
+  session.cwd = cwd;
+  session.entries = [{ type: 'message', message: { role: 'toolResult', details: { visualization: envelope } } }];
+  session.resolvedSessionPlan = { modules: [] };
+  session.activeGeoContextIds = [];
+  liveManager.sessions.set(session.id, session);
+  const context = {
+    version: 1,
+    contextId: `geoctx_${'a'.repeat(16)}`,
+    visualizationId: 'route_map',
+    sceneRevision: 1,
+    mode: 'feature',
+    createdAt: '2026-09-02T01:00:00.000Z',
+    view: { center: [121.45, 31.2], zoom: 12, bounds: [121.4, 31.1, 121.5, 31.3], bearing: 0, pitch: 0 },
+    visibleLayerIds: ['roads'],
+    selection: { layerId: 'roads', featureIds: ['road-1'] },
+    summary: 'client summary',
+  };
+  const contextUrl = `${base}/api/sessions/${session.id}/geo-contexts`;
+  const unavailable = await fetch(contextUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(context) });
+  assert.equal(unavailable.status, 409);
+  assert.equal(fs.existsSync(path.join(cwd, '.tau', 'geo-interactions')), false);
+
+  session.resolvedSessionPlan.modules = [{ id: 'com.transportx.geo' }];
+  const createdResponse = await fetch(contextUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(context) });
+  assert.equal(createdResponse.status, 200);
+  const created = await jsonBody(createdResponse);
+  assert.equal(created.context.summary, 'client summary');
+  assert.equal(created.provenance.geoResourceId, resourceId);
+  const restored = await jsonBody(await fetch(`${contextUrl}/${context.contextId}`));
+  assert.equal(restored.context.contextId, context.contextId);
+
+  const inspectUrl = `${base}/api/internal/geo/inspect`;
+  assert.equal((await fetch(inspectUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'wrong', contextIds: [context.contextId] }) })).status, 403);
+  session.activeGeoContextIds = [context.contextId];
+  const inspected = await jsonBody(await fetch(inspectUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'geo-token' }) }));
+  assert.equal(inspected.result.source, 'active_prompt');
+  assert.equal(inspected.result.contexts[0].summary, '1 selected feature(s) in layer roads');
+  assert.deepEqual(inspected.result.contexts[0].features, [{ id: 'road-1', properties: { name: '一号路' } }]);
+
+  const requestPromise = fetch(`${base}/api/internal/geo/request`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: session.id, token: 'geo-token', visualizationId: 'route_map', sceneRevision: 1, mode: 'viewport', prompt: '请确认当前视野' }),
+  });
+  let requestId = '';
+  const requestsRoot = path.join(cwd, '.tau', 'geo-interactions', 'requests');
+  for (let attempt = 0; attempt < 50 && !requestId; attempt += 1) {
+    if (fs.existsSync(requestsRoot)) requestId = fs.readdirSync(requestsRoot)[0] || '';
+    if (!requestId) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.match(requestId, /^georeq_/);
+  const { selection: _selection, ...contextWithoutSelection } = context;
+  const responseContext = { ...contextWithoutSelection, contextId: `geoctx_${'b'.repeat(16)}`, mode: 'viewport' };
+  const responded = await jsonBody(await fetch(`${base}/api/sessions/${session.id}/geo-interactions/${requestId}/respond`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'submitted', context: responseContext }),
+  }));
+  assert.equal(responded.response.status, 'submitted');
+  const requestResult = await jsonBody(await requestPromise);
+  assert.equal(requestResult.result.response.status, 'submitted');
+  assert.equal(requestResult.result.context.contextId, responseContext.contextId);
 });
 
 test('serves Registry-backed citation resources without exposing arbitrary session files', async (t: TestContext) => {

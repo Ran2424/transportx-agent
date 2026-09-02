@@ -14,6 +14,7 @@ import type {
   SessionSnapshot,
 } from '../app-types.js';
 import type { AppError } from '../../contracts/errors.ts';
+import type { GeoInteractionRequestV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 
 export type ToolExecution = {
   toolCallId: string;
@@ -48,6 +49,7 @@ export type AppAction =
   | { type: 'session/attachmentRemoved'; sessionId: string; attachmentId: string }
   | { type: 'session/compactionStarted'; sessionId: string }
   | { type: 'session/compactionEnded'; sessionId: string }
+  | { type: 'session/geoInteractionUpdated'; sessionId: string; request?: GeoInteractionRequestV1; response?: GeoInteractionResponseV1 }
   // conversation
   | { type: 'conversation/streamStarted'; sessionId: string; runId: string }
   | { type: 'conversation/messageStarted'; sessionId: string; runId: string | null; message: AppMessage }
@@ -55,8 +57,8 @@ export type AppAction =
   | { type: 'conversation/streamCompleted'; sessionId: string; message: AppMessage }
   | { type: 'conversation/streamEnded'; sessionId: string }
   | { type: 'conversation/messageAppended'; sessionId: string; entry: SessionEntry }
-  | { type: 'conversation/promptSent'; sessionId: string; message: string; attachmentIds?: string[] }
-  | { type: 'conversation/promptQueued'; sessionId: string; message: string; attachmentIds?: string[]; clientCommandId: string }
+  | { type: 'conversation/promptSent'; sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[] }
+  | { type: 'conversation/promptQueued'; sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; clientCommandId: string }
   | { type: 'conversation/queueItemRemoved'; sessionId: string; index: number }
   | { type: 'conversation/queueDrained'; sessionId: string }
   // tool execution

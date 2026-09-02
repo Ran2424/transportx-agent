@@ -6,6 +6,15 @@
 
 ## Unreleased
 
+### Added
+
+- Geo 模块升级至 1.1.0：支持要素、点位、矩形与当前视野四类可审计地图上下文，用户可将选择附到下一条消息，Agent 也可发起阻塞式地图输入请求。
+- 新增 `inspect_map_context` 与 `request_geo_input` 工具，以及会话级持久化、恢复、超时、取消、中止和场景/资源失效终态。
+
+### Changed
+
+- 地图工作台增加交互模式、Context Tray、Agent 请求横幅、提交倒计时与严格 revision 失效处理；Feature Context 仅接受具有稳定唯一 ID 的受管资源图层。
+
 ## 3.1.4 - 2026-09-02
 
 ### Changed

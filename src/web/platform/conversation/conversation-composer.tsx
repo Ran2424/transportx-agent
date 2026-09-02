@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession, SessionAttachment } from '../../../public/app-types.js';
 import type { CitationEnvelope } from '../../../contracts/citation.ts';
@@ -8,6 +8,7 @@ import { AttachmentCards } from './conversation-attachments';
 import { ComposerAttachmentList, useComposerAttachments } from './composer-attachments';
 import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, useComposerCitationPicker } from './composer-citation-picker';
+import { geoContextStore } from '../../features/geo/geo-context-store';
 
 export function ConversationComposer({ sessionId, session, streaming, compacting, queued, taskModeEnabled, attachments, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
@@ -16,6 +17,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
   const [error, setError] = useState('');
   const { pending, setPending, addAttachments, removeAttachment } = useComposerAttachments(sessionId, setError);
   const [taskModeBusy, setTaskModeBusy] = useState(false);
+  const geoContexts = useSyncExternalStore(geoContextStore.subscribe, () => geoContextStore.get(sessionId));
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { citeOpen, citeLoading, citeCandidates, setCiteOpen, openCitePicker, insertCitation } = useComposerCitationPicker({ sessionId, onCitationEnvelope, onInsert: (marker) => setValue((current) => current.replace('/cite', marker)), onError: setError, onFocus: () => inputRef.current?.focus() });
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
@@ -23,9 +25,10 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
   async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
     const attachmentIds = pending.filter((item) => item.status === 'ready' && item.attachment).map((item) => item.attachment!.id);
     if (pending.some((item) => item.status === 'uploading')) { setError(t('conversation.uploadingWait')); return; }
-    const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : '');
+    const geoContextIds = geoContexts.map((item) => item.reference.contextId);
+    const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : '');
     if (!message) return;
-    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds }); setValue(''); setPending([]); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
+    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds }); setValue(''); setPending([]); geoContextStore.clear(sessionId); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
   }
   async function toggleTaskMode() {
     if (streaming || compacting || taskModeBusy) return;
@@ -42,6 +45,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
   return <footer className="conversation-composer">
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
     <ComposerAttachmentList sessionId={sessionId} pending={pending} onRemove={(item) => void removeAttachment(item)} />
+    {geoContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.geoContexts')}>{geoContexts.map((item) => <span key={item.reference.contextId}><strong>{t(`geo.mode.${item.reference.mode}`)}</strong>{item.reference.summary}<button type="button" aria-label={t('conversation.removeGeoContext', { summary: item.reference.summary })} onClick={() => geoContextStore.remove(sessionId, item.reference.contextId)}>×</button></span>)}</div> : null}
     <div className="composer-row">
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <textarea
@@ -81,7 +85,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
             ? <span className="composer-compacting" role="status">{t('conversation.compacting')}</span>
             : streaming
             ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId)}>{t('conversation.abortShort')}</button></div>
-            : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0}>↑</button>}
+            : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0 && geoContexts.length === 0}>↑</button>}
         </div>
       </form>
     </div>

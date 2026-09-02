@@ -134,3 +134,11 @@ grid["id"] = grid.index.astype(str)
 6. 如果相同的 `visualizationId + command + layerId + channel` 在同一字段路径上连续失败两次，停止重试。保留最后成功的场景并报告工具故障，不要继续猜测参数。
 
 不要反复提交互不相关的整体改写。当工具返回字段级错误时，以该错误为准。
+
+## 使用地图交互上下文
+
+- 用户在地图中点选要素、点位、矩形或当前视野后，先调用 `inspect_map_context` 读取本轮消息显式附带的 Geo Context；不要从自然语言猜测地图选择，也不要沿用历史消息中的 Context。
+- `inspect_map_context` 返回 `no_geo_context` 时，按普通对话继续。Feature Context 只返回弹窗白名单属性；需要来源校验信息时再设置 `includeProvenance: true`。
+- 只有确实需要用户在地图上补充空间输入时才调用 `request_geo_input`。明确指定 `visualizationId`、`sceneRevision`、固定 `mode` 和简短提示；Feature 模式可限制 `targetLayerIds` 与 `maxFeatures`。
+- `request_geo_input` 会等待用户提交、取消、超时、地图失效或任务中止。逐一处理 `submitted`、`cancelled`、`expired`、`invalidated`、`aborted`，不要在取消或失效后自行重试，也不要伪造选择结果。
+- 用户提交后，以工具返回的冻结 Context 为事实继续分析。地图 revision 变化会使尚未提交的选择失效，但已经保存的 Context 仍是可审计的历史事实。
