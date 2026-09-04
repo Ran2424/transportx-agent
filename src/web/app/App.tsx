@@ -125,6 +125,15 @@ export function App() {
     dispatchCanvas({ type: 'itemsSynced', items: canvasItems, openLatest });
   }, [canvasItems, canvasKey]);
 
+  const waitingGeoRequest = activeSession ? sessionState.geoInteractionBySession[activeSession.id]?.waitingRequest : undefined;
+  useEffect(() => {
+    if (!waitingGeoRequest) return;
+    const item = canvasItems.find((candidate) => candidate.kind === 'geo' && candidate.resourceId === waitingGeoRequest.visualizationId);
+    if (!item) return;
+    dispatchCanvas({ type: 'itemsSynced', items: canvasItems, openLatest: false });
+    dispatchCanvas({ type: 'itemActivated', itemId: item.id });
+  }, [canvasItems, waitingGeoRequest?.requestId, waitingGeoRequest?.visualizationId]);
+
   useEffect(() => {
     const sessionId = activeSession?.id;
     if (!sessionId || !taskState.task || openedTaskSessions.current.has(sessionId)) return;

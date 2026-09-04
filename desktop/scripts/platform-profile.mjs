@@ -22,7 +22,7 @@ export function builderPlatformFor(platform = process.platform) {
 }
 
 export function getPlatformProfile(builderPlatform = builderPlatformFor()) {
-  const profile = PLATFORM_PROFILES[builderPlatform];
+  const profile = Object.values(PLATFORM_PROFILES).find((entry) => entry.builderPlatform === builderPlatform);
   if (!profile) throw new Error(`Platform profile missing: ${builderPlatform}`);
   return profile;
 }

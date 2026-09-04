@@ -49,9 +49,10 @@ npm run desktop:dev               # 开发模式启动 Electron + 本地 Agent H
 npm run typecheck                 # 全部 tsconfig 类型检查（server/web/react/extensions/desktop/test）
 npm run typecheck:react           # 只查 React 工作台
 npm run build                     # 全量构建（server → web → react → geo → desktop）
-npm test                          # 构建 + 必要回归测试
-npm run test:react-smoke          # 真实 Node 服务 + fake Pi + Chrome 的 UI 冒烟
-npm run test:desktop-smoke        # Electron 生命周期 + 内置 Python + PDF 导出冒烟
+npm test                          # 构建 + 核心 Agent Host 用户场景
+npm run test:web                  # 真实 Node 服务 + fake Pi + Chrome 的 Web 功能冒烟
+npm run test:platform:macos       # macOS Electron 生命周期 + 内置 Python/PDF 冒烟
+npm run test:platform:windows     # Windows NSIS 安装器冒烟（仅 Windows x64，需已构建安装器）
 npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认测试）
 ```
 
@@ -73,7 +74,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 ## 发布流程
 
 1. 提升版本：`package.json` + `src/server/config.ts`（两处一致）。
-2. 更新 `docs/CHANGELOG.md`（新版本写最上方，包含日期、GitHub 操作、主要修改、验证）。
+2. 更新 `docs/CHANGELOG.md`：遵循 Keep a Changelog，在 `Unreleased` 归集待发布的用户可见变更；发布时移入带 ISO 日期的版本段，并按 Added / Changed / Fixed / Security / Removed 分类。
 3. 打包步骤全部由 `desktop/scripts/platform-profile.mjs` 驱动，不再为不同 OS 维护不同的命令/脚本：
 
    - macOS（已在 `platform-profile.darwin`）：
@@ -108,11 +109,11 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 ## 文档索引
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 系统边界、依赖方向与模块职责（架构权威）
-- [docs/CHANGELOG.md](docs/CHANGELOG.md) — 版本修改与 GitHub 操作日志（发布历史）
+- [docs/CHANGELOG.md](docs/CHANGELOG.md) — 按 Keep a Changelog 维护的发布历史
 
 ## 给 Agent 的日常工作流建议
 
-- 改前端：先跑 `npm run typecheck:react`，涉及交互行为再跑 `npm run test:react-smoke`。
+- 改前端：先跑 `npm run typecheck:react`，涉及交互行为再跑 `npm run test:web`。
 - 改服务端/契约：`npm run typecheck` + `npm test`（契约、边界与安全用例）。
 - 改桌面/打包：`npm run typecheck:desktop`，结构验收用 `desktop:dir`，出包用 `desktop:pack`。
 - 每轮改动遵循「先复现/定义成功标准 → 最小修改 → 运行对应检查」；不引入与任务无关的重构。

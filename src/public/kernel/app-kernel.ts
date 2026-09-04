@@ -114,7 +114,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
           while (!stores.session.isStreaming(sessionId) && !stores.session.isCompacting(sessionId)) {
             const queued = stores.conversation.get().bySession[sessionId]?.live.queued[0];
             if (!queued) break;
-            await commands.agent.sendPrompt({ sessionId, message: queued.message, attachmentIds: queued.attachmentIds, clientCommandId: queued.clientCommandId });
+            await commands.agent.sendPrompt({ sessionId, message: queued.message, attachmentIds: queued.attachmentIds, geoContextIds: queued.geoContextIds, clientCommandId: queued.clientCommandId });
             apply({ type: 'conversation/queueItemRemoved', sessionId, index: 0 });
           }
         } catch (cause) {

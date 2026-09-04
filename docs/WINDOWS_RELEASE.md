@@ -72,17 +72,17 @@ npm run desktop:dir:allow-unsigned
 
 ```powershell
 $env:TRANSPORTX_PACKAGED_APP = (Resolve-Path '.\release\win-unpacked\TransportX Traffic Agent.exe').Path
-npm run test:desktop-smoke
+npm run test:platform:windows
 ```
 
 再验证最终 NSIS 安装器的静默安装、启动、卸载和用户数据保留：
 
 ```powershell
 $env:TRANSPORTX_WINDOWS_INSTALLER = (Resolve-Path '.\release\TransportX Traffic Agent-<version>-win-x64-setup.exe').Path
-npm run test:windows-installer-smoke
+npm run test:platform:windows
 ```
 
-两条测试都已经在 macOS 上的 v3.1.1 + v3.1.2 上通过；Windows 版本需要在 Windows CI runner 上执行。
+未安装应用与 NSIS 安装器场景都必须在 Windows x64 CI runner 或实机执行；macOS 验收使用 `npm run test:platform:macos`。
 
 发布前还须在两台干净机器上人工完成：Windows 10 22H2 x64 与 Windows 11 x64 各一台。每台测试首次安装、创建任务、添加模型、视频播放与裁剪、PDF 导出、覆盖升级、卸载和重新安装。检查签名与安装器哈希：
 

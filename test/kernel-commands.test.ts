@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createPlatformCommands, createReportCommands, createSessionCommands, createVideoCommands } = require('../public/kernel/commands.js');
+const { createAgentCommands, createCitationCommands, createExtensionUiCommands, createGeoCommands, createPlatformCommands, createReportCommands, createSessionCommands, createVideoCommands } = require('../public/kernel/commands.js');
 const { createAppKernel } = require('../public/kernel/app-kernel.js');
 const { ConversationStore } = require('../public/kernel/stores/conversation-store.js');
 const { SessionStore } = require('../public/kernel/stores/session-store.js');
@@ -120,6 +120,15 @@ test('video metrics stay behind the HTTP command port', async () => {
   const video = createVideoCommands(fixture.value);
   assert.deepEqual(await video.getMetrics('session-1', 'video_resource'), { metrics: [] });
   assert.deepEqual(fixture.paths, ['/api/live-sessions/session-1/video-resources/video_resource/metrics']);
+});
+
+test('Geo screenshots stay behind the session HTTP command port', async () => {
+  const fixture = deps(() => ({ filename: 'map-screenshot.png', path: '/tmp/map-screenshot.png', bytes: 68 }));
+  const geo = createGeoCommands(fixture.value);
+  const result = await geo.saveScreenshot('session-1', { visualizationId: 'map-1', sceneRevision: 2, dataUrl: 'data:image/png;base64,png' });
+  assert.equal(result.filename, 'map-screenshot.png');
+  assert.deepEqual(fixture.paths, ['/api/sessions/session-1/geo-screenshots']);
+  assert.deepEqual(fixture.commands[0], { visualizationId: 'map-1', sceneRevision: 2, dataUrl: 'data:image/png;base64,png' });
 });
 
 test('PDF export stays behind the HTTP command port', async () => {

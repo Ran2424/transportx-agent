@@ -38,6 +38,8 @@ import {
   type SessionProfileV1,
 } from '../contracts/index.js';
 import { stripAttachmentContext } from '../contracts/attachments.js';
+import { getVisualizationFromToolResult, stripGeoContextPrompt } from '../contracts/geo.js';
+import { geoInteractionService } from './geo-interaction-service.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
@@ -91,6 +93,8 @@ let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
 export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
 let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
 export function setVideoEndpoint(value: string) { videoEndpoint = value; }
+let geoEndpoint = process.env.TAU_GEO_ENDPOINT || '';
+export function setGeoEndpoint(value: string) { geoEndpoint = value; }
 
 export class PiRpcSession {
   manager: LiveSessionManager;
@@ -121,6 +125,8 @@ export class PiRpcSession {
   capabilityTracker: SessionCapabilityTracker;
   resolvedSessionPlan: ResolvedSessionPlan | null;
   pendingAttachmentRefs: string[][];
+  pendingGeoContextRefs: string[][];
+  activeGeoContextIds: string[];
   serviceTokens: Record<SessionService, string>;
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
@@ -140,7 +146,7 @@ export class PiRpcSession {
     this.isCompacting = false;
     this.autoCompactionEnabled = true;
     this.timingMetrics = new TimingMetricsStore(this.cwd);
-    this.projection = new SessionProjection(this.timingMetrics.enrichEntries(opts.entries || []), readAttachmentMessageRefs(this.cwd));
+    this.projection = new SessionProjection(this.timingMetrics.enrichEntries(opts.entries || []), readAttachmentMessageRefs(this.cwd), geoInteractionService.readMessageRefs(this.cwd));
     this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
@@ -158,7 +164,9 @@ export class PiRpcSession {
     this.capabilityTracker = new SessionCapabilityTracker(this.piVersion);
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.pendingAttachmentRefs = [];
-    this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID() };
+    this.pendingGeoContextRefs = [];
+    this.activeGeoContextIds = [];
+    this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID() };
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.eventTiming = new SessionEventTiming(this.timingMetrics);
@@ -174,7 +182,9 @@ export class PiRpcSession {
   }
 
   snapshot() {
-    return sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
+    const snapshot = sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
+    const geoInteraction = geoInteractionService.snapshot(this);
+    return { ...snapshot, ...(geoInteraction ? { geoInteraction } : {}) };
   }
 
   get entries() {
@@ -193,7 +203,7 @@ export class PiRpcSession {
       modelSpec: this.modelSpec,
       resolvedSessionPlan: this.resolvedSessionPlan,
       serviceTokens: this.serviceTokens,
-      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint },
+      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint, geo: geoEndpoint },
     });
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
     const child = spawnFn(PI_COMMAND, launch.args, {
@@ -346,6 +356,10 @@ export class PiRpcSession {
     if ((type === 'message_start' || type === 'message_end') && event.message) {
       this.trackMessage(event.message, type);
     }
+    if (type === 'message_end' && event.message) {
+      const envelope = getVisualizationFromToolResult(event.message);
+      if (envelope) geoInteractionService.invalidateForEnvelope(this, envelope);
+    }
     const appendedEntry = event.entry && typeof event.entry === 'object' && !Array.isArray(event.entry)
       ? event.entry as JsonRecord
       : null;
@@ -407,11 +421,16 @@ export class PiRpcSession {
       const text = this.messageText(message);
       if (text) this.userMessages.push(text.slice(0, 300));
       const attachmentIds = this.pendingAttachmentRefs.shift() || [];
+      const geoContextIds = this.pendingGeoContextRefs.shift() || [];
       const enriched = attachmentIds.length
-        ? { ...message, attachmentIds, content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
+        ? { ...message, attachmentIds, ...(geoContextIds.length ? { geoContextIds } : {}), content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
+        : geoContextIds.length
+        ? { ...message, geoContextIds, content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
         : (typeof message.content === 'string' && message.content !== text ? { ...message, content: text } : message);
       if (attachmentIds.length) recordAttachmentMessageRefs(this.cwd, { text, timestamp: typeof message.timestamp === 'number' ? message.timestamp : undefined, attachmentIds });
+      if (geoContextIds.length) geoInteractionService.recordMessageRefs(this, { text, timestamp: typeof message.timestamp === 'number' || typeof message.timestamp === 'string' ? message.timestamp : undefined, contextIds: geoContextIds });
       this.projection.setMessageRefs(readAttachmentMessageRefs(this.cwd));
+      this.projection.setGeoMessageRefs(geoInteractionService.readMessageRefs(this.cwd));
       this.projection.appendMessage(enriched as JsonRecord);
       this.maybeTitle();
     } else if (message.role !== 'user' && eventType === 'message_end') {
@@ -433,10 +452,30 @@ export class PiRpcSession {
     }
   }
 
+  registerPromptGeoContexts(contextIds: string[]) {
+    this.activeGeoContextIds = [...contextIds];
+    this.pendingGeoContextRefs.push([...contextIds]);
+  }
+
+  discardPromptGeoContexts(contextIds: string[]) {
+    for (let index = this.pendingGeoContextRefs.length - 1; index >= 0; index -= 1) {
+      const pending = this.pendingGeoContextRefs[index];
+      if (pending.length === contextIds.length && pending.every((id, itemIndex) => id === contextIds[itemIndex])) {
+        this.pendingGeoContextRefs.splice(index, 1);
+        break;
+      }
+    }
+    if (this.activeGeoContextIds.length === contextIds.length && this.activeGeoContextIds.every((id, index) => id === contextIds[index])) this.activeGeoContextIds = [];
+  }
+
   messageText(message: PiMessage) {
-    if (typeof message.content === 'string') return stripAttachmentContext(message.content);
-    if (Array.isArray(message.content)) return stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n'));
+    if (typeof message.content === 'string') return stripGeoContextPrompt(stripAttachmentContext(message.content));
+    if (Array.isArray(message.content)) return stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n')));
     return '';
+  }
+
+  abortGeoInteraction() {
+    geoInteractionService.abortSession(this, 'agent_aborted');
   }
 
   setSessionName(name: unknown) {
@@ -463,6 +502,7 @@ export class PiRpcSession {
   async terminate(reason = 'closed') {
     if (this.terminating) return;
     this.terminating = true;
+    geoInteractionService.abortSession(this, reason === 'aborted_by_user' ? 'agent_aborted' : 'session_closed');
     this.transport.rejectAll(new Error(`Session terminated: ${reason}`));
     if (!this.child || this.child.exitCode !== null) return;
     signalProcessTree(this.child, 'SIGTERM');
@@ -475,6 +515,7 @@ export class PiRpcSession {
   handleExit(code: number | null, signal: string | null, err?: { message?: string }) {
     if (this.exitCode !== null) return;
     this.exitCode = code;
+    geoInteractionService.abortSession(this, 'agent_aborted');
     this.transport.rejectAll(err || new Error(`Pi process exited (${signal || code})`));
     this.manager.removeExited(this.id, err?.message || `process_exit:${signal || code}`);
   }

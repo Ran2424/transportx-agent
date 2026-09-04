@@ -20,8 +20,9 @@ test('path utilities produce host-stable POSIX output', () => {
   assert.equal(toPosixPath(''), '');
   // relativePosixPath runs path.relative first, then POSIX-normalizes.
   assert.equal(relativePosixPath(path.resolve('/tmp'), path.resolve('/tmp/foo/bar')), 'foo/bar');
-  // Same call with Windows-shaped arguments yields the same relative string.
-  assert.equal(relativePosixPath(path.resolve('C:\\tmp'), path.resolve('C:\\tmp\\foo\\bar')), 'foo/bar');
+  // Windows path semantics must be supplied by path.win32 when the test runs
+  // on another host; path.resolve intentionally uses the current host only.
+  assert.equal(toPosixPath(path.win32.relative('C:\\tmp', 'C:\\tmp\\foo\\bar')), 'foo/bar');
   // isWithin re-exports the canonical asset-integrity boundary formula and
   // must reject symlink-shaped escapes regardless of host.
   assert.equal(isWithin(path.resolve('/root'), path.resolve('/root/inner')), true);
@@ -38,6 +39,8 @@ test('platform-profile registry exposes frozen mac/win profiles with required co
   assert.deepEqual({ ...PROCESS_PLATFORM_TO_BUILDER }, { darwin: 'mac', win32: 'win', linux: 'linux' });
   assert.equal(builderPlatformFor('darwin'), 'mac');
   assert.equal(builderPlatformFor('win32'), 'win');
+  assert.equal(getPlatformProfile(builderPlatformFor('darwin')), PLATFORM_PROFILES.darwin);
+  assert.equal(getPlatformProfile(builderPlatformFor('win32')), PLATFORM_PROFILES.win);
 
   const profileExpectations: Record<string, { key: string; builderPlatform: string; installerArtifact: string }> = {
     darwin: { key: 'darwin', builderPlatform: 'mac', installerArtifact: 'dmg' },
@@ -240,6 +243,7 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   assert.match(main, /trafficLightPosition: \{ x: 14, y: 14 \}/);
   assert.match(styles, /data-desktop-platform="darwin".*workspace-header-left.*padding-left: 66px/);
   assert.match(hook, /TRANSPORTX_ALLOW_UNSIGNED_BUILD/);
+  assert.match(hook, /npm_lifecycle_event === 'desktop:dir:allow-unsigned'/);
   assert.match(hook, /--verify/);
   assert.match(prepareRuntime, /\['-B', '-I', '-c'/);
   assert.match(smoke, /\['-B', '-I', '-c'/);

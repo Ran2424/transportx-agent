@@ -4,11 +4,7 @@ node_modules/
 *.tsbuildinfo
 
 # TypeScript build output
-/bin/*.js
-/bin/*.js.map
-/bin/*.d.ts
-/bin/contracts/
-/bin/server/
+/bin/
 /public/*.js
 /public/*.js.map
 /public/*.d.ts
