@@ -22,3 +22,14 @@ test('compaction lifecycle is rendered and waits for agent_settled before ending
   assert.deepEqual(message({ type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false }), [{ type: 'session/compactionEnded', sessionId: 'session-1' }]);
   assert.deepEqual(message({ type: 'agent_settled' }).map((action: { type: string }) => action.type), ['conversation/streamEnded']);
 });
+
+test('Geo interaction websocket updates are validated before reaching stores', () => {
+  const normalizer = createEventNormalizer();
+  const [action] = normalizer.normalizeMessage({
+    type: 'geo_interaction_updated',
+    sessionId: 'session-1',
+    request: { version: 999 },
+  });
+  assert.equal(action.type, 'error/raised');
+  assert.equal(action.error.code, 'malformed_message');
+});

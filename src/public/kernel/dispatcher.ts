@@ -73,6 +73,9 @@ export function createDispatcher(stores: KernelStores): Dispatch {
       case 'session/compactionEnded':
         stores.session.setCompacting(action.sessionId, false);
         break;
+      case 'session/geoInteractionUpdated':
+        stores.session.geoInteractionUpdated(action.sessionId, action.request, action.response);
+        break;
 
       case 'conversation/streamStarted':
         stores.conversation.streamStarted(action.sessionId, action.runId);
@@ -95,10 +98,10 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         stores.conversation.appendEntry(action.sessionId, action.entry);
         break;
       case 'conversation/promptSent':
-        stores.conversation.promptSent(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds });
+        stores.conversation.promptSent(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, geoContextIds: action.geoContextIds });
         break;
       case 'conversation/promptQueued':
-        stores.conversation.promptQueued(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, clientCommandId: action.clientCommandId });
+        stores.conversation.promptQueued(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, geoContextIds: action.geoContextIds, clientCommandId: action.clientCommandId });
         break;
       case 'conversation/queueItemRemoved':
         stores.conversation.removeQueued(action.sessionId, action.index);
