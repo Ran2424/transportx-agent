@@ -1,8 +1,8 @@
 # TransportX Traffic Agent 架构
 
-- 产品版本：3.1.3
+- 产品版本：3.1.5
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-08-25
+- 更新日期：2026-09-04
 - 发布 Profile：macOS arm64（DMG）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Traffic Agent 是本地优先的交通分析桌面工作台。它是一个单仓库、单 npm 包、模块化单体：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi RPC 负责推理与工具调用，Python 运行受控的数据和空间分析，React 提供唯一的用户界面。
@@ -73,7 +73,7 @@ flowchart TB
 - 在加载工作台前等待 Agent Host 的版本化 ready 消息，并校验 `/api/health`；
 - 已打包应用启动前验证 `runtime-manifest.json` 中 Agent Host、Pi 与 Python 的路径和 SHA-256；
 - 以禁用 JavaScript 且阻断网络的隐藏窗口生成 PDF；
-- macOS 保留原生 traffic lights；Windows/Linux 使用无边框窗口和 React 渲染的最小化、最大化、关闭按钮。
+- macOS 保留原生 traffic lights；Windows/Linux 使用无边框窗口和 React 渲染的最小化、最大化、关闭按钮，控件位于左侧并沿用 macOS 顺序。
 
 Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true` 和 `webviewTag: false`。Preload 不提供通用 Node/Electron 能力，只暴露：受同源校验的 PDF 下载、上传文件真实路径，以及非 macOS 的窗口控制。
 
@@ -122,6 +122,8 @@ Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更
 
 - 附件先上传到任务工作区，再以 `attachmentIds` 关联后续消息；服务端再次校验归属、状态、真实路径和文件存在性后才向 Pi 提供上下文。
 - Citation、File、Preview、Geo、Video 和 Spatial Analysis 都以活动 Session cwd 为边界。跨会话路径、路径逃逸和符号链接越界必须拒绝。
+- 用户可从地图提交要素、点位、矩形或当前视野四类 Geo Context，并显式附到下一轮消息。Agent 通过 `inspect_map_context` 读取本轮上下文，也可用 `request_geo_input` 等待用户在指定地图 revision 上补充输入；提交、取消、超时、中止和地图失效都有明确终态。
+- 地图截图由工作台按当前画面、图例和说明生成 PNG，再写入当前任务目录。截图不扩大资源访问范围。
 - Spatial Analysis 只处理当前会话的 GeoJSON，使用受控 Python 生成 WGS84 GeoJSON 与包含输入、参数、计数和哈希的 manifest，再发布到 Geo 界面。
 - Video 资源与指标由 Agent Host 的受控 ffmpeg/ffprobe 入口处理；发布版不得依赖系统 `PATH`。
 
@@ -135,6 +137,7 @@ Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更
 | 任务装配结果 | `<task>/.tau/resolved-session-plan*.json` | Session 恢复、审计 |
 | 附件索引 | `<task>/.tau/attachments.json` | Attachment API、会话投影 |
 | Citation/Geo/Video 资源 | 任务 cwd 下的受控资源目录 | 对应资源 API 与 React 面板 |
+| 地图交互上下文与等待请求 | Session Snapshot、Geo Interaction Service | Pi Geo 工具、Browser Kernel、React Geo Workspace |
 | 模型定义与密钥 | 用户目录 `models.json`、`auth.json` | Agent Host、Pi；密钥不返回前端 |
 | Module 声明与完整性 | Module `manifest.json`、`integrityFile` | Registry、Installer、Session Assembly |
 | 打包运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
@@ -230,6 +233,8 @@ desktop/electron-builder.yml
 4. macOS 正式发行需要 Developer ID + 公证，Windows 正式发行需要 Authenticode + 可信时间戳。
 
 不要从 macOS 交叉生成 Windows 正式包。完整 Windows 验收与环境变量见 [WINDOWS_RELEASE.md](WINDOWS_RELEASE.md)。
+
+`TRANSPORTX_ALLOW_UNSIGNED_BUILD=1` 只用于内部未签名结构验收。`TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1` 还能跳过缺失 Python 模块的预检，但不会让不完整运行时具备真实功能；两者都不得用于正式发行。
 
 ## 9. 依赖方向与演进规则
 
