@@ -6,7 +6,7 @@
 
 - 安装器：`TransportX Traffic Agent-<version>-win-x64-setup.exe`（NSIS），由 [`desktop/electron-builder.win.yml`](../desktop/electron-builder.win.yml) 中的 `win.artifactName` 与 `nsis.deleteAppDataOnUninstall: false` 决定卸载行为。
 - 安装方式：每用户安装，允许选择目录；同一 `appId` 的新版本会原位升级。
-- 用户数据：默认位于 `%APPDATA%\TransportX Traffic Agent`，卸载不会删除。任务、会话、模型密钥、日志和受管 Module 均在这里，不能置于安装目录。
+- 用户数据：默认位于 `%APPDATA%\TransportX\traffic-agent\`，卸载不会删除。任务、会话、模型密钥、日志和受管 Module 均在这里，不能置于安装目录。3.1.3 起不再读取旧目录 `%APPDATA%\TransportX Traffic Agent\`。
 - 内置运行时：Pi CLI、Python 3.10 x64、`ffmpeg.exe` 与 `ffprobe.exe`。已打包应用不得依赖系统 `PATH`、Conda、Homebrew、Python 或 ffmpeg。
 
 ## 发行前准备
@@ -56,15 +56,25 @@ $env:TRANSPORTX_ALLOW_UNSIGNED_BUILD = '1'
 npm run desktop:pack
 ```
 
+若离线 CI 或临时验收机上的 Python 3.10 缺少部分项目依赖，可以同时设置：
+
+```powershell
+$env:TRANSPORTX_ALLOW_UNSIGNED_BUILD = '1'
+$env:TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME = '1'
+npm run desktop:pack
+```
+
+`TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME` 只跳过 Python 依赖完整性预检，不会补齐缺少的模块。由此生成的应用不能用于功能验收或正式分发。正式包必须取消该变量，并通过完整的 Python runtime 探测与平台冒烟。
+
 ### Windows x64 — 快速结构预览（不安装）
 
-```bash
+```powershell
 npm run desktop:dir:allow-unsigned
 # 实际执行：check-desktop-release.mjs --allow-unsigned -> prepare-runtime.mjs -> electron-builder --dir
 # 产物：release/win-unpacked/TransportX Traffic Agent.exe + resources/
 ```
 
-构建脚本会在复制后实际启动 Python、ffmpeg 和 ffprobe，并把它们的版本、相对路径、架构及 SHA-256 写入 `desktop/build/runtime-manifest.json`。这是 `desktop/agent-host-supervisor.ts` 中 `validatePackagedRuntime` 校验的依据。
+构建脚本会在复制后实际启动 Python、ffmpeg 和 ffprobe，并把它们的版本、相对路径、架构及 SHA-256 写入 `desktop/build/runtime-manifest.json`。这是 `desktop/agent-host-supervisor.ts` 中 `validatePackagedRuntime` 校验的依据。该文件是构建产物，不应手工修改或提交。
 
 ## 验收
 

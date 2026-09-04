@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+### Changed
+
+- 重构项目 README，补齐 Windows x64 安装与发布边界、跨平台用户数据目录、双向地图交互、地图截图和当前验证入口。
+- 更新 Windows 发行指南与架构说明，记录 Python runtime 结构验收开关，并移除旧 Windows 用户数据路径。
+
 ## 3.1.5 - 2026-09-04
 
 ### Added
