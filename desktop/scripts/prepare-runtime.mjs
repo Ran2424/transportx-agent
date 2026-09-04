@@ -48,7 +48,16 @@ if (!String(pythonProbe.version).startsWith('3.10.')) throw new Error(`Bundled P
 if (!profile.python.archCheck(pythonProbe.machine)) {
   throw new Error(`Bundled ${profile.label} Python must be ${profile.python.archErrorMessage}, got ${pythonProbe.machine}`);
 }
-if (pythonProbe.missing.length) throw new Error(`Bundled Python is missing required modules: ${pythonProbe.missing.join(', ')}`);
+if (pythonProbe.missing.length) {
+  // TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1 lets CI / offline hosts
+  // proceed past a partial Python install for distribution structure
+  // verification only. The runtime manifest still records the actual
+  // version + SHA-256 of whatever Python was bundled; this is purely a
+  // pre-flight escape hatch and is never required for a real release.
+  const allowIncomplete = process.env.TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME === '1';
+  if (!allowIncomplete) throw new Error(`Bundled Python is missing required modules: ${pythonProbe.missing.join(', ')}. Run 'desktop/python-requirements.txt' in your Python tree, or set TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1 for offline / verification builds only.`);
+  console.warn(`[prepare-runtime] WARNING: bundled Python is missing ${pythonProbe.missing.join(', ')}; TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1 was set.`);
+}
 for (const [label, runtimePath] of [['prefix', pythonProbe.prefix], ['executable', pythonProbe.executable]]) {
   const relative = path.relative(stagedPythonRoot, path.resolve(runtimePath));
   if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Bundled Python ${label} escapes the staged runtime: ${runtimePath}`);
