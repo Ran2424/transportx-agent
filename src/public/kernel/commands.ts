@@ -11,6 +11,7 @@ import { appError, toAppError, type AppError, type AppErrorCategory } from '../.
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
 import type { ModuleArchiveInspection } from '../../contracts/module.ts';
 import { parseCitationEnvelope, type CitationEnvelope } from '../../contracts/citation.ts';
+import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 
 export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
@@ -32,9 +33,9 @@ export type CommandDeps = {
   isCompacting: (sessionId: string) => boolean;
 };
 
-export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; clientCommandId?: string };
+export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; clientCommandId?: string };
 export type SetTaskModeInput = { sessionId: string; enabled: boolean };
-export type SteerInput = { sessionId: string; message: string; attachmentIds?: string[] };
+export type SteerInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[] };
 export type FollowUpInput = { sessionId: string; message: string };
 export type SetModelInput = { sessionId: string; model: string };
 export type SetThinkingLevelInput = { sessionId: string; level: string };
@@ -221,6 +222,13 @@ export type VideoCommands = {
   getMetrics(sessionId: string, resourceId: string): Promise<unknown>;
 };
 
+export type GeoCommands = {
+  createContext(sessionId: string, context: GeoClientContextV1): Promise<GeoContextReferenceV1>;
+  getContext(sessionId: string, contextId: string): Promise<GeoClientContextV1>;
+  saveScreenshot(sessionId: string, input: { visualizationId: string; sceneRevision: number; dataUrl: string }): Promise<{ filename: string; path: string; bytes: number }>;
+  respond(sessionId: string, requestId: string, response: { status: 'submitted'; context: GeoClientContextV1 } | { status: 'cancelled' } | { status: 'invalidated'; reason: 'scene_revision_changed' | 'visualization_changed' | 'resource_changed' }): Promise<{ response: GeoInteractionResponseV1; context?: GeoClientContextV1 }>;
+};
+
 export type ReportCommands = {
   loadSource(sessionId: string, url: string): Promise<WorkspaceFileContent>;
   exportPdf(title: string, html: string): Promise<{ url: string }>;
@@ -317,19 +325,19 @@ function clientCommandId() {
 export function createAgentCommands(deps: CommandDeps): AgentCommands {
   const pendingPromptIds = new Map<string, string>();
   return {
-    async sendPrompt({ sessionId, message, attachmentIds, clientCommandId: requestedId }) {
-      const promptKey = `${sessionId}\0${message}\0${(attachmentIds || []).join(',')}`;
+    async sendPrompt({ sessionId, message, attachmentIds, geoContextIds, clientCommandId: requestedId }) {
+      const promptKey = `${sessionId}\0${message}\0${(attachmentIds || []).join(',')}\0${(geoContextIds || []).join(',')}`;
       const commandId = requestedId || pendingPromptIds.get(promptKey) || clientCommandId();
       pendingPromptIds.set(promptKey, commandId);
       // While streaming, prompts queue per session instead of hitting the
       // transport; the kernel flushes them when the run ends.
       if (deps.isStreaming(sessionId) || deps.isCompacting(sessionId)) {
-        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, clientCommandId: commandId });
+        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, geoContextIds, clientCommandId: commandId });
         return;
       }
-      await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}) });
+      await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}) });
       pendingPromptIds.delete(promptKey);
-      deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds });
+      deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds, geoContextIds });
     },
 
     async setTaskMode({ sessionId, enabled }) {
@@ -345,8 +353,8 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       await rpcCommand(deps.http, { type: 'abort', sessionId, clientCommandId: clientCommandId() });
     },
 
-    async steer({ sessionId, message, attachmentIds }) {
-      await rpcCommand(deps.http, { type: 'steer', sessionId, message, clientCommandId: clientCommandId(), ...(attachmentIds?.length ? { attachmentIds } : {}) });
+    async steer({ sessionId, message, attachmentIds, geoContextIds }) {
+      await rpcCommand(deps.http, { type: 'steer', sessionId, message, clientCommandId: clientCommandId(), ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}) });
     },
 
     async followUp({ sessionId, message }) {
@@ -493,6 +501,26 @@ export function createVideoCommands(deps: CommandDeps): VideoCommands {
   };
 }
 
+export function createGeoCommands(deps: CommandDeps): GeoCommands {
+  const context = (sessionId: string) => ({ category: 'session' as const, sessionId });
+  return {
+    async createContext(sessionId, geoContext) {
+      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-contexts`, { method: 'POST', body: geoContext }, context(sessionId));
+      return (data as { reference: GeoContextReferenceV1 }).reference;
+    },
+    async getContext(sessionId, contextId) {
+      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-contexts/${encodeURIComponent(contextId)}`, undefined, context(sessionId));
+      return (data as { context: GeoClientContextV1 }).context;
+    },
+    async saveScreenshot(sessionId, input) {
+      return await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-screenshots`, { method: 'POST', body: input }, context(sessionId)) as { filename: string; path: string; bytes: number };
+    },
+    async respond(sessionId, requestId, response) {
+      return await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-interactions/${encodeURIComponent(requestId)}/respond`, { method: 'POST', body: response }, context(sessionId)) as { response: GeoInteractionResponseV1; context?: GeoClientContextV1 };
+    },
+  };
+}
+
 export function createReportCommands(deps: CommandDeps): ReportCommands {
   return {
     async loadSource(sessionId, url) {
@@ -633,6 +661,7 @@ export type KernelCommands = {
   session: SessionCommands;
   citation: CitationCommands;
   video: VideoCommands;
+  geo: GeoCommands;
   report: ReportCommands;
   platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
@@ -644,6 +673,7 @@ export function createCommands(deps: CommandDeps): KernelCommands {
     session: createSessionCommands(deps),
     citation: createCitationCommands(deps),
     video: createVideoCommands(deps),
+    geo: createGeoCommands(deps),
     report: createReportCommands(deps),
     platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),

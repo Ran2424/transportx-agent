@@ -303,6 +303,44 @@ function assertSceneResources(cwd: string, scene: GeoSceneSnapshot) {
   }
 }
 
+const InspectMapContextSchema = Type.Object({
+  contextIds: Type.Optional(Type.Array(Type.String({ pattern: '^geoctx_[A-Za-z0-9_-]{12,64}$' }), { maxItems: 8 })),
+  maxFeatures: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+  includeProvenance: Type.Optional(Type.Boolean()),
+}, { additionalProperties: false });
+
+const RequestGeoInputSchema = Type.Object({
+  visualizationId: VisualizationIdSchema,
+  sceneRevision: Type.Integer({ minimum: 1 }),
+  mode: Type.Union([Type.Literal('feature'), Type.Literal('point'), Type.Literal('rectangle'), Type.Literal('viewport')]),
+  prompt: Type.String({ minLength: 1, maxLength: 500 }),
+  required: Type.Optional(Type.Boolean()),
+  targetLayerIds: Type.Optional(Type.Array(ItemIdSchema, { minItems: 1, maxItems: 32 })),
+  maxFeatures: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+  timeoutSeconds: Type.Optional(Type.Integer({ minimum: 30, maximum: 1800 })),
+}, { additionalProperties: false });
+
+function geoHost() {
+  const endpoint = process.env.TAU_GEO_ENDPOINT;
+  const sessionId = process.env.TAU_GEO_SESSION_ID;
+  const token = process.env.TAU_GEO_TOKEN;
+  if (!endpoint || !sessionId || !token) throw new Error('Geo Agent Host bridge is unavailable for this session.');
+  return { endpoint, sessionId, token };
+}
+
+async function geoHostCall(pathname: 'inspect' | 'request', body: Record<string, unknown>, signal?: AbortSignal) {
+  const host = geoHost();
+  const response = await fetch(`${host.endpoint}/api/internal/geo/${pathname}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, sessionId: host.sessionId, token: host.token }),
+    signal,
+  });
+  const payload = await response.json() as { error?: string; result?: unknown };
+  if (!response.ok) throw new Error(payload.error || 'Geo Agent Host request failed.');
+  return payload.result;
+}
+
 export default function geoVisualizationExtension(pi: ExtensionAPI) {
   const scenes = new Map<string, SceneState>();
   const failedValidations = new Map<string, { count: number; message: string }>();
@@ -322,6 +360,32 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
 
   pi.on('session_start', async (_event, ctx) => restore(ctx));
   pi.on('session_tree', async (_event, ctx) => restore(ctx));
+
+  pi.registerTool({
+    name: 'inspect_map_context',
+    label: 'Inspect Map Context',
+    description: 'Read explicitly named Geo Contexts, or the Geo Contexts attached to the current user turn. Never falls back to a previous turn.',
+    promptSnippet: 'Inspect verified map selections attached to the current user turn',
+    promptGuidelines: ['Call this first when the current user message carries Geo Context IDs. Treat multiple Contexts separately; do not infer a union or intersection.'],
+    parameters: InspectMapContextSchema,
+    async execute(_toolCallId, params, signal) {
+      const result = await geoHostCall('inspect', params as Record<string, unknown>, signal);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], details: { kind: 'tau-geo-context' as const, result } };
+    },
+  });
+
+  pi.registerTool({
+    name: 'request_geo_input',
+    label: 'Request Map Input',
+    description: 'Ask the user to select verified features, a WGS84 point, an axis-aligned rectangle, or the current viewport on an existing map, then wait for the terminal response.',
+    promptSnippet: 'Request one structured map input when the user must identify a location, feature, or extent',
+    promptGuidelines: ['Handle submitted, cancelled, expired, aborted, and invalidated as distinct outcomes. Do not ask the user to type coordinates that can be selected on the map.'],
+    parameters: RequestGeoInputSchema,
+    async execute(_toolCallId, params, signal) {
+      const result = await geoHostCall('request', params as Record<string, unknown>, signal);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], details: { kind: 'tau-geo-interaction' as const, result } };
+    },
+  });
 
   pi.registerTool({
     name: 'publish_geodata',

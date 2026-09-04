@@ -11,6 +11,7 @@ import type { SpatialAnalysisService } from './spatial-analysis-service.js';
 import type { VideoService } from './video-service.js';
 import { parseSessionProfileStructured } from '../contracts/index.js';
 import { sessionServiceLabel, type SessionService } from './session-service.js';
+import type { GeoInteractionService } from './geo-interaction-service.js';
 
 type ApiRouteServices = {
   sessions: LiveSessionManager;
@@ -45,6 +46,7 @@ type ApiRouteServices = {
   citation: CitationService;
   spatial: SpatialAnalysisService;
   video: VideoService;
+  geo: GeoInteractionService;
 };
 
 export function createApiRouter(services: ApiRouteServices) {
@@ -149,6 +151,32 @@ export function createApiRouter(services: ApiRouteServices) {
       if (!session) return;
       try { deps.deleteAttachment(session.cwd, decodeURIComponent(params[1])); deps.json(res, 200, { success: true }); }
       catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
+    })
+    .post(/^\/api\/sessions\/([^/]+)\/geo-contexts$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try {
+        const created = deps.geo.createContext(session, await deps.readBody(req));
+        deps.json(res, 200, created);
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+    })
+    .get(/^\/api\/sessions\/([^/]+)\/geo-contexts\/([^/]+)$/, ({ res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, deps.geo.getContext(session, decodeURIComponent(params[1]))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post(/^\/api\/sessions\/([^/]+)\/geo-screenshots$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, deps.geo.saveScreenshot(session, await deps.readBody(req))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+    })
+    .post(/^\/api\/sessions\/([^/]+)\/geo-interactions\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, await deps.geo.respond(session, decodeURIComponent(params[1]), await deps.readBody(req))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
     .get(/^\/api\/live-sessions\/([^/]+)$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
@@ -267,6 +295,22 @@ export function createApiRouter(services: ApiRouteServices) {
         if (!session) return;
         deps.json(res, 200, { result: await deps.spatial.analyze(session, body) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/geo/inspect', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'geo');
+        if (!session) return;
+        deps.json(res, 200, { result: deps.geo.inspect(session, body) });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/geo/request', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'geo');
+        if (!session) return;
+        deps.json(res, 200, { result: await deps.geo.request(session, body) });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
     .post('/api/internal/video/search', async ({ req, res, deps }) => {
       try {

@@ -7,6 +7,7 @@
 
 import type { LiveSession, SessionAttachment, SessionSnapshot } from '../../app-types.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
+import type { GeoInteractionRequestV1, GeoInteractionResponseV1 } from '../../../contracts/geo.js';
 
 export type SessionStoreState = {
   sessions: LiveSession[];
@@ -15,9 +16,10 @@ export type SessionStoreState = {
   compactingBySession: Record<string, boolean>;
   attachmentsBySession: Record<string, Record<string, SessionAttachment>>;
   attachmentRevisionBySession: Record<string, number>;
+  geoInteractionBySession: Record<string, { contextCount: number; waitingRequest?: GeoInteractionRequestV1; lastResponse?: GeoInteractionResponseV1 }>;
 };
 
-const INITIAL: SessionStoreState = { sessions: [], activeSessionId: null, streamingBySession: {}, compactingBySession: {}, attachmentsBySession: {}, attachmentRevisionBySession: {} };
+const INITIAL: SessionStoreState = { sessions: [], activeSessionId: null, streamingBySession: {}, compactingBySession: {}, attachmentsBySession: {}, attachmentRevisionBySession: {}, geoInteractionBySession: {} };
 
 export class SessionStore {
   private readonly store: Store<SessionStoreState> = createStore<SessionStoreState>(INITIAL);
@@ -44,16 +46,18 @@ export class SessionStore {
       const compactingBySession: Record<string, boolean> = {};
       const attachmentsBySession: Record<string, Record<string, SessionAttachment>> = {};
       const attachmentRevisionBySession: Record<string, number> = {};
+      const geoInteractionBySession: SessionStoreState['geoInteractionBySession'] = {};
       for (const session of sessions) {
         if (session.id) streamingBySession[session.id] = !!session.isStreaming;
         if (session.id) compactingBySession[session.id] = !!session.isCompacting;
         if (session.id && prev.attachmentsBySession[session.id]) attachmentsBySession[session.id] = prev.attachmentsBySession[session.id];
         if (session.id && prev.attachmentRevisionBySession[session.id]) attachmentRevisionBySession[session.id] = prev.attachmentRevisionBySession[session.id];
+        if (session.id && prev.geoInteractionBySession[session.id]) geoInteractionBySession[session.id] = prev.geoInteractionBySession[session.id];
       }
       const activeSessionId = prev.activeSessionId && sessions.some((s) => s.id === prev.activeSessionId)
         ? prev.activeSessionId
         : null;
-      return { sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession };
+      return { sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession, geoInteractionBySession };
     });
   }
 
@@ -81,12 +85,14 @@ export class SessionStore {
       const compactingBySession = { ...prev.compactingBySession };
       const attachmentsBySession = { ...prev.attachmentsBySession };
       const attachmentRevisionBySession = { ...prev.attachmentRevisionBySession };
+      const geoInteractionBySession = { ...prev.geoInteractionBySession };
       delete streamingBySession[sessionId];
       delete compactingBySession[sessionId];
       delete attachmentsBySession[sessionId];
       delete attachmentRevisionBySession[sessionId];
+      delete geoInteractionBySession[sessionId];
       const activeSessionId = prev.activeSessionId === sessionId ? null : prev.activeSessionId;
-      return { sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession };
+      return { sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession, geoInteractionBySession };
     });
   }
 
@@ -140,5 +146,18 @@ export class SessionStore {
     if (snapshot.session) this.upsert({ ...snapshot.session, id: snapshot.session.id ?? sessionId });
     if (snapshot.isStreaming !== undefined) this.setStreaming(sessionId, !!snapshot.isStreaming);
     if (snapshot.isCompacting !== undefined) this.setCompacting(sessionId, !!snapshot.isCompacting);
+    this.store.set((prev) => {
+      const geoInteractionBySession = { ...prev.geoInteractionBySession };
+      if (snapshot.geoInteraction) geoInteractionBySession[sessionId] = snapshot.geoInteraction;
+      else delete geoInteractionBySession[sessionId];
+      return { ...prev, geoInteractionBySession };
+    });
+  }
+
+  geoInteractionUpdated(sessionId: string, request?: GeoInteractionRequestV1, response?: GeoInteractionResponseV1) {
+    this.store.set((prev) => {
+      const current = prev.geoInteractionBySession[sessionId] || { contextCount: 0 };
+      return { ...prev, geoInteractionBySession: { ...prev.geoInteractionBySession, [sessionId]: request ? { ...current, waitingRequest: request } : { ...current, waitingRequest: undefined, ...(response ? { lastResponse: response } : {}) } } };
+    });
   }
 }

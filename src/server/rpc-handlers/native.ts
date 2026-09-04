@@ -13,6 +13,9 @@ type NativeSession = {
   send(command: RpcCommand, options: { timeoutMs: number }): Promise<RpcResponse>;
   registerPromptAttachments(attachmentIds: string[]): void;
   discardPromptAttachments(attachmentIds: string[]): void;
+  registerPromptGeoContexts(contextIds: string[]): void;
+  discardPromptGeoContexts(contextIds: string[]): void;
+  abortGeoInteraction(): void;
 };
 
 type NativeRpcDependencies<T extends NativeSession> = {
@@ -20,6 +23,8 @@ type NativeRpcDependencies<T extends NativeSession> = {
   resolveAttachments(cwd: string, attachmentIds: string[]): SessionAttachment[];
   attachmentBase64(cwd: string, attachment: SessionAttachment): string;
   buildAttachmentContext(attachments: SessionAttachment[]): string;
+  validateGeoContexts(session: T, contextIds: unknown): string[];
+  buildGeoContext(contextIds: string[]): string;
   parseModel(model: unknown): { model: { provider?: string; id?: string } | null };
   errorMessage(error: unknown): string;
 };
@@ -34,7 +39,9 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
     const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
     if (command.type === 'extension_ui_response' && (typeof command.id !== 'string' || !session.pendingExtensionUiRequests.has(command.id))) return reply.failure('Extension UI request is no longer pending');
     if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
+    if (command.type === 'abort') session.abortGeoInteraction();
     let trackedPromptAttachments: string[] | null = null;
+    let trackedPromptGeoContexts: string[] | null = null;
     try {
       let rpcCommand = { ...command };
       delete rpcCommand.clientCommandId;
@@ -43,12 +50,14 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
         const attachmentIds = rawIds === undefined ? [] : Array.isArray(rawIds) ? rawIds.filter((id): id is string => typeof id === 'string') : null;
         if (!attachmentIds) return reply.failure('attachmentIds must be an array');
         const attachments = deps.resolveAttachments(session.cwd, attachmentIds);
+        const geoContextIds = command.geoContextIds === undefined ? [] : deps.validateGeoContexts(session, command.geoContextIds);
         const message = typeof command.message === 'string' ? command.message : '';
         const imageInputs = session.model && (session.model.images === true || (Array.isArray(session.model.input) && session.model.input.includes('image')))
           ? attachments.filter((attachment) => attachment.kind === 'image').map((attachment) => ({ type: 'image', data: deps.attachmentBase64(session.cwd, attachment), mimeType: attachment.mimeType }))
           : [];
-        rpcCommand = { ...command, message: `${message}${deps.buildAttachmentContext(attachments)}`, ...(imageInputs.length ? { images: imageInputs } : {}) } as RpcCommand;
+        rpcCommand = { ...command, message: `${message}${deps.buildAttachmentContext(attachments)}${deps.buildGeoContext(geoContextIds)}`, ...(imageInputs.length ? { images: imageInputs } : {}) } as RpcCommand;
         delete rpcCommand.attachmentIds;
+        delete rpcCommand.geoContextIds;
       }
       if (command.type === 'set_model' && (!command.provider || !command.modelId)) {
         const parsed = deps.parseModel(command.model);
@@ -58,6 +67,8 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
       if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
         trackedPromptAttachments = Array.isArray(command.attachmentIds) ? command.attachmentIds.filter((id): id is string => typeof id === 'string') : [];
         session.registerPromptAttachments(trackedPromptAttachments);
+        trackedPromptGeoContexts = command.geoContextIds === undefined ? [] : deps.validateGeoContexts(session, command.geoContextIds);
+        session.registerPromptGeoContexts(trackedPromptGeoContexts);
       }
       const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 300000 : 60000 });
       if (command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
@@ -70,6 +81,7 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
     } catch (error) {
       if (previousLevel !== null) session.thinkingLevel = previousLevel;
       if (trackedPromptAttachments) session.discardPromptAttachments(trackedPromptAttachments);
+      if (trackedPromptGeoContexts) session.discardPromptGeoContexts(trackedPromptGeoContexts);
       return reply.failure(deps.errorMessage(error));
     }
   };
