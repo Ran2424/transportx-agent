@@ -6,10 +6,11 @@
 
 ## Unreleased
 
+## 3.1.5 - 2026-09-04
+
 ### Added
 
 - `prepare-runtime.mjs` 新增 `TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1` 预检逃生通道，允许 CI / 离线主机在 Python runtime 模块不全时继续打包以便做发行结构验收；该环境变量对真实发布流程无任何影响。
-
 - Geo 模块升级至 1.1.0：支持要素、点位、矩形与当前视野四类可审计地图上下文，用户可将选择附到下一条消息，Agent 也可发起阻塞式地图输入请求。
 - 新增 `inspect_map_context` 与 `request_geo_input` 工具，以及会话级持久化、恢复、超时、取消、中止和场景/资源失效终态。
 - 地图工作台支持将当前地图画面、底部图层图例与说明截图为 PNG，并直接保存到当前任务目录。
