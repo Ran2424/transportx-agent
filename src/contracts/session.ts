@@ -14,6 +14,7 @@
 import { asRecord, type JsonRecord } from './common.ts';
 import { SESSION_SNAPSHOT_SCHEMA_VERSION } from './version.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
+import { parseGeoInteractionRequestStructured, type GeoInteractionRequestV1 } from './geo.ts';
 
 /**
  * Raw session row. The contract deliberately keeps this loose — it is the
@@ -34,6 +35,7 @@ export type SessionEntry = JsonRecord & {
 export type SessionSnapshot = {
   readonly schemaVersion: typeof SESSION_SNAPSHOT_SCHEMA_VERSION;
   entries: SessionEntry[];
+  geoInteraction?: { contextCount: number; waitingRequest?: GeoInteractionRequestV1 };
 };
 
 export type SessionBranchDiagnostic = ContractDiagnostic;
@@ -104,7 +106,20 @@ export function parseSessionSnapshot(value: unknown): SessionBranchResult<Sessio
     return { ok: false, value: null, diagnostics: [diagnostic({ code: 'invalid_type', path: 'session.entries', message: 'entries must be an array.' })] };
   }
   const entries = selectCurrentSessionBranch(root.entries);
-  return { ok: true, value: { schemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, entries }, diagnostics: [] };
+  const interaction = root.geoInteraction === undefined ? null : asRecord(root.geoInteraction);
+  if (root.geoInteraction !== undefined && (!interaction || !Number.isInteger(interaction.contextCount) || Number(interaction.contextCount) < 0)) {
+    return { ok: false, value: null, diagnostics: [diagnostic({ code: 'invalid_type', path: 'session.geoInteraction', message: 'geoInteraction.contextCount must be a non-negative integer.' })] };
+  }
+  let waitingRequest: GeoInteractionRequestV1 | undefined;
+  if (interaction?.waitingRequest !== undefined) {
+    const parsed = parseGeoInteractionRequestStructured(interaction.waitingRequest);
+    if (!parsed.ok) return { ok: false, value: null, diagnostics: parsed.diagnostics };
+    waitingRequest = parsed.value;
+  }
+  const geoInteraction = interaction
+    ? { contextCount: Number(interaction.contextCount), ...(waitingRequest ? { waitingRequest } : {}) }
+    : undefined;
+  return { ok: true, value: { schemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, entries, ...(geoInteraction ? { geoInteraction } : {}) }, diagnostics: [] };
 }
 
 /** Linearize a snapshot back to a plain JSONL-friendly row array. */

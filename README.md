@@ -75,7 +75,7 @@ TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:p
 
 `desktop:pack` 在缺少签名或公证凭据时会直接停止，避免误发未签名 DMG。仅做本机结构验收时可显式设置 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。macOS 目标为 macOS 12 及以上的 Apple Silicon DMG。
 
-Windows 10/11 x64 使用原生 Windows 主机制作 NSIS 安装包：准备可重定位 Python 3.10 x64 runtime 与包含 `ffmpeg.exe`/`ffprobe.exe` 的 runtime，设置 `TRANSPORTX_PYTHON_RUNTIME_DIR`、`TRANSPORTX_FFMPEG_RUNTIME_DIR` 与 Authenticode 证书变量后运行 `npm run desktop:pack:win`。`npm run test:windows-installer-smoke` 会实际静默安装、启动、卸载，并验证用户数据保留。完整命令、签名和人工验收要求见 [Windows 发行指南](docs/WINDOWS_RELEASE.md)。
+Windows 10/11 x64 使用原生 Windows 主机制作 NSIS 安装包：准备可重定位 Python 3.10 x64 runtime 与包含 `ffmpeg.exe`/`ffprobe.exe` 的 runtime，设置 `TRANSPORTX_PYTHON_RUNTIME_DIR`、`TRANSPORTX_FFMPEG_RUNTIME_DIR` 与 Authenticode 证书变量后运行 `npm run desktop:pack`。`npm run test:platform:windows` 会实际静默安装、启动、卸载，并验证用户数据保留。完整命令、签名和人工验收要求见 [Windows 发行指南](docs/WINDOWS_RELEASE.md)。
 
 交通知识库和数据库作为大体积 Module Asset，不写入应用安装包，也不放在 Skill 相邻目录。Knowledge Module 必须同时保存原始 PDF/文档、检索索引和精确定位映射，Citation 才能打开原始来源。运行时从已启用 Module 的安装清单解析资产，并分别向相关工具提供 `TRANSPORTX_KNOWLEDGE_ROOT` 与 `TRANSPORTX_TRAFFIC_DATA_ROOT`。
 
@@ -84,14 +84,16 @@ Windows 10/11 x64 使用原生 Windows 主机制作 NSIS 安装包：准备可�
 ```bash
 npm run typecheck
 npm test
-npm run test:react-smoke
-npm run test:desktop-smoke
+npm run test:web
+npm run test:platform:macos
+npm run test:platform:windows
 npm run test:pi-smoke
 ```
 
-- `npm test`：构建并运行 30 个必要回归测试，覆盖 Agent Host、认证、共享契约、桌面运行时、会话历史与恢复、文件/Geo/Citation 边界、模块安装与装配、Task 生命周期、WebSocket 安全与断连行为，以及版本同步。
-- `test:react-smoke`：真实 Node 服务、fake Pi 和 Chrome 的 React 工作台冒烟。
-- `test:desktop-smoke`：真实 Electron、Agent Host 和 fake Pi 的桌面生命周期、内置 Python、PDF 导出、安全选项与退出清理冒烟；设置 `TRANSPORTX_PACKAGED_APP` 后可直接验证构建出的 `.app`。
+- `npm test`：核心 Agent Host 场景：启动桌面会话宿主、创建任务环境、安装/卸载 Module，并确认健康检查与进程退出。
+- `test:web`：真实 Node 服务、fake Pi 和 Chrome 的 React 工作台功能冒烟。
+- `test:platform:macos`：真实 Electron、Agent Host 和 fake Pi 的 macOS 生命周期、内置 Python、PDF 导出、安全选项与退出清理冒烟；设置 `TRANSPORTX_PACKAGED_APP` 后可直接验证构建出的 `.app`。
+- `test:platform:windows`：Windows x64 未安装应用或 NSIS 安装器的启动验证；安装器场景额外验证静默安装、卸载与用户数据保留。
 - `test:pi-smoke`：真实本机 Pi RPC 离线冒烟；它会启动子进程，不纳入默认测试。
 
 `bin/`、`public/*.js`、`public/geo-runtime.*` 和 `dist/web/` 都是本地生成物，不手工编辑或提交。
@@ -111,7 +113,7 @@ npm run test:pi-smoke
 - [桌面化与模块化实施记录](./docs/archive/implemented/AGENT_PLATFORM_PRODUCTIZATION.md)：3.0 改造范围、落地结果、macOS 分发修复与待发布事项。
 - [引用板块功能设计](./docs/archive/implemented/CITATION_FEATURE_TECHNICAL_PLAN.md)：知识库引用、任务产物与报告参考依据的实现和验收记录。
 - [React UI 改造 ADR](./docs/archive/implemented/REACT_UI_MIGRATION_PLAN.md)：已完成的迁移决策与删除 legacy 的记录。
-- [版本修改与 GitHub 操作日志](./docs/CHANGELOG.md)：发布与提交历史。
+- [变更记录](./docs/CHANGELOG.md)：按 Keep a Changelog 维护的版本与发布历史。
 - [测试基线](./docs/archive/implemented/TEST_BASELINES.md)：默认测试与浏览器验证范围。
 
 ## License

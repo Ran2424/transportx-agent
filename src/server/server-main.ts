@@ -11,7 +11,7 @@ import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.j
 import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, invalidateModelListCache, _setExecFileForTest } from './model-utils.js';
-import { LiveSessionManager, PiRpcSession, liveManager, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, _setSpawnPiForTest } from './sessions.js';
+import { LiveSessionManager, PiRpcSession, liveManager, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, setGeoEndpoint, _setSpawnPiForTest } from './sessions.js';
 import { makeSessionId as makeId } from './session-workspace.js';
 import { isGenericSessionName } from './session-title.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
@@ -33,6 +33,7 @@ import { createHtmlExportRpcHandlers } from './rpc-handlers/html-export.js';
 import { createModuleRpcHandlers } from './rpc-handlers/module.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
 import { createNativeRpcHandlers } from './rpc-handlers/native.js';
+import { buildGeoPromptContext, geoInteractionService } from './geo-interaction-service.js';
 import { createPlatformRpcHandlers } from './rpc-handlers/platform.js';
 import { createSessionReadRpcHandlers, createSessionRpcHandlers } from './rpc-handlers/session.js';
 import { platformOverview } from './platform-overview.js';
@@ -88,6 +89,8 @@ const rpcHandlers: RpcHandlerRegistry = {
     resolveAttachments: resolveSessionAttachments,
     attachmentBase64: (cwd, attachment) => fs.readFileSync(attachmentFilePath(cwd, attachment)).toString('base64'),
     buildAttachmentContext: (attachments) => buildAttachmentContext(attachments),
+    validateGeoContexts: (session, contextIds) => contextIds === undefined ? [] : geoInteractionService.validateMessageContexts(session, contextIds),
+    buildGeoContext: buildGeoPromptContext,
     parseModel: parseModelSpecToModel,
     errorMessage,
   }),
@@ -289,6 +292,7 @@ const apiRouter = createApiRouter({
   citation: citationService,
   spatial: spatialAnalysisService,
   video: videoService,
+  geo: geoInteractionService,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -320,6 +324,7 @@ function computeUrls(port: number) {
   setCitationEndpoint(`http://127.0.0.1:${port}`);
   setSpatialEndpoint(`http://127.0.0.1:${port}`);
   setVideoEndpoint(`http://127.0.0.1:${port}`);
+  setGeoEndpoint(`http://127.0.0.1:${port}`);
 }
 
 function listen(port: number, attemptsLeft = 10) {

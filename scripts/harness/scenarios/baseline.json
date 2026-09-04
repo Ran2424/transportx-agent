@@ -152,6 +152,39 @@
       ]
     },
     {
+      "match": "geo-main-start",
+      "steps": [
+        { "geoResource": {
+          "resourceId": "geo_111111111111111111111111",
+          "title": "Geo 交互验收道路",
+          "idField": "road_id",
+          "data": { "type": "FeatureCollection", "features": [
+            { "type": "Feature", "properties": { "road_id": "road-a", "name": "一号测试路", "volume": 120, "secret": "not-exposed" }, "geometry": { "type": "LineString", "coordinates": [[121.435, 31.175], [121.435, 31.215]] } },
+            { "type": "Feature", "properties": { "road_id": "road-b", "name": "二号测试路", "volume": 180, "secret": "not-exposed" }, "geometry": { "type": "LineString", "coordinates": [[121.465, 31.175], [121.465, 31.215]] } },
+            { "type": "Feature", "properties": { "road_id": "road-c", "name": "三号测试路", "volume": 90, "secret": "not-exposed" }, "geometry": { "type": "LineString", "coordinates": [[121.45, 31.175], [121.45, 31.215]] } }
+          ] }
+        } },
+        { "tool": { "name": "present_visualization", "args": { "visualizationId": "geo_interaction_map" }, "result": { "$fixture": "features/geo-interaction-tool-results.json#initial" } } },
+        { "streamText": { "text": "请选择两条道路，并把地图上下文附到下一条消息。", "chunks": 4, "delayMs": 10 } }
+      ]
+    },
+    {
+      "match": "geo-main-context",
+      "steps": [
+        { "geoHost": { "path": "inspect", "args": { "includeProvenance": true } } },
+        { "geoHost": { "path": "request", "args": { "visualizationId": "geo_interaction_map", "sceneRevision": 1, "mode": "rectangle", "prompt": "请框选补充分析范围", "required": true, "timeoutSeconds": 600 } } },
+        { "tool": { "name": "present_visualization", "args": { "visualizationId": "geo_interaction_map", "command": "set_metadata" }, "result": { "$fixture": "features/geo-interaction-tool-results.json#updated" } } },
+        { "streamText": { "text": "已读取两个稳定道路要素，并结合 Rectangle Context 完成分析。", "chunks": 5, "delayMs": 10 } }
+      ]
+    },
+    {
+      "match": "geo-refresh-request",
+      "steps": [
+        { "geoHost": { "path": "request", "args": { "visualizationId": "geo_interaction_map", "sceneRevision": 2, "mode": "viewport", "prompt": "刷新恢复验收：请确认当前视野", "timeoutSeconds": 600 } } },
+        { "streamText": { "text": "刷新后的地图请求已正确结束。", "chunks": 4, "delayMs": 10 } }
+      ]
+    },
+    {
       "match": "基线-geo",
       "steps": [
         { "streamText": { "text": "正在生成下车热点地图。", "chunks": 4, "delayMs": 15 } },

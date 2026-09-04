@@ -1,0 +1,62 @@
+{
+  "initial": {
+    "content": [{ "type": "text", "text": "Stable road map published." }],
+    "details": {
+      "visualization": {
+        "protocol": "pi-visualization",
+        "version": "1.0",
+        "kind": "geo",
+        "visualizationId": "geo_interaction_map",
+        "revision": 1,
+        "operation": "replace",
+        "scene": {
+          "view": { "mode": "bounds", "bounds": [121.42, 31.17, 121.48, 31.22], "padding": 32 },
+          "basemap": { "id": "none" },
+          "sources": [{ "id": "roads_source", "type": "geojson-resource", "resourceId": "geo_111111111111111111111111", "idField": "road_id" }],
+          "layers": [{
+            "id": "roads",
+            "sourceId": "roads_source",
+            "type": "line",
+            "title": "候选道路",
+            "encoding": { "color": { "mode": "constant", "value": "#2563eb" }, "width": { "mode": "constant", "value": 12 } },
+            "popup": { "fields": [{ "field": "name", "label": "道路" }, { "field": "volume", "label": "流量", "format": "integer" }] }
+          }],
+          "controls": { "navigation": true, "fitToData": true },
+          "metadata": { "title": "Geo 交互验收地图", "description": "选择两条具有稳定 ID 的道路。" }
+        },
+        "summary": { "title": "Geo 交互验收地图" },
+        "generatedAt": "2026-09-02T02:00:00.000Z"
+      }
+    }
+  },
+  "updated": {
+    "content": [{ "type": "text", "text": "Map updated after both user inputs." }],
+    "details": {
+      "visualization": {
+        "protocol": "pi-visualization",
+        "version": "1.0",
+        "kind": "geo",
+        "visualizationId": "geo_interaction_map",
+        "revision": 2,
+        "operation": "patch",
+        "scene": {
+          "view": { "mode": "bounds", "bounds": [121.42, 31.17, 121.48, 31.22], "padding": 32 },
+          "basemap": { "id": "none" },
+          "sources": [{ "id": "roads_source", "type": "geojson-resource", "resourceId": "geo_111111111111111111111111", "idField": "road_id" }],
+          "layers": [{
+            "id": "roads",
+            "sourceId": "roads_source",
+            "type": "line",
+            "title": "分析道路",
+            "encoding": { "color": { "mode": "constant", "value": "#d9485f" }, "width": { "mode": "constant", "value": 12 } },
+            "popup": { "fields": [{ "field": "name", "label": "道路" }, { "field": "volume", "label": "流量", "format": "integer" }] }
+          }],
+          "controls": { "navigation": true, "fitToData": true },
+          "metadata": { "title": "Geo 双向交互分析结果", "description": "已结合两个道路要素和用户框选范围。" }
+        },
+        "summary": { "title": "Geo 双向交互分析结果" },
+        "generatedAt": "2026-09-02T02:05:00.000Z"
+      }
+    }
+  }
+}

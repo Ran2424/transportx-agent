@@ -4,6 +4,7 @@ import { selectCurrentSessionBranch, SESSION_SNAPSHOT_SCHEMA_VERSION } from '../
 import type { JsonRecord } from './types.js';
 import type { SessionSnapshot } from '../contracts/session.js';
 import { applyAttachmentMessageRefs, type AttachmentMessageRef } from './session-attachments.js';
+import { applyGeoMessageRefs, type GeoMessageRef } from './geo-interaction-service.js';
 
 export {
   SESSION_SNAPSHOT_SCHEMA_VERSION,
@@ -46,10 +47,12 @@ export function readSessionBranch(filePath: string): JsonRecord[] {
 export class SessionProjection {
   private currentEntries: JsonRecord[];
   private messageRefs: AttachmentMessageRef[];
+  private geoMessageRefs: GeoMessageRef[];
 
-  constructor(entries: unknown[] = [], messageRefs: AttachmentMessageRef[] = []) {
+  constructor(entries: unknown[] = [], messageRefs: AttachmentMessageRef[] = [], geoMessageRefs: GeoMessageRef[] = []) {
     this.messageRefs = messageRefs;
-    this.currentEntries = applyAttachmentMessageRefs(selectCurrentSessionBranch(entries), this.messageRefs);
+    this.geoMessageRefs = geoMessageRefs;
+    this.currentEntries = this.applyMessageRefs(selectCurrentSessionBranch(entries));
   }
 
   get entries() {
@@ -57,10 +60,15 @@ export class SessionProjection {
   }
 
   replace(entries: unknown[]) {
-    this.currentEntries = applyAttachmentMessageRefs(selectCurrentSessionBranch(entries), this.messageRefs);
+    this.currentEntries = this.applyMessageRefs(selectCurrentSessionBranch(entries));
   }
 
   setMessageRefs(refs: AttachmentMessageRef[]) { this.messageRefs = refs; this.replace(this.currentEntries); }
+  setGeoMessageRefs(refs: GeoMessageRef[]) { this.geoMessageRefs = refs; this.replace(this.currentEntries); }
+
+  private applyMessageRefs(entries: JsonRecord[]) {
+    return applyGeoMessageRefs(applyAttachmentMessageRefs(entries, this.messageRefs), this.geoMessageRefs);
+  }
 
   append(entry: JsonRecord) {
     if (entry.type !== 'session') this.currentEntries.push(entry);

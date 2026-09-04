@@ -23,6 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -185,6 +186,22 @@ async function runSteps(steps, promptMessage) {
       continue;
     }
 
+    if (step.geoResource) {
+      const raw = Buffer.from(JSON.stringify(step.geoResource.data));
+      const directory = path.join(process.cwd(), '.tau', 'geo-resources', step.geoResource.resourceId);
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, 'data.geojson'), raw);
+      fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify({
+        resourceId: step.geoResource.resourceId,
+        title: step.geoResource.title || step.geoResource.resourceId,
+        bytes: raw.byteLength,
+        sha256: crypto.createHash('sha256').update(raw).digest('hex'),
+        featureCount: step.geoResource.data.features.length,
+        ...(step.geoResource.idField ? { idField: step.geoResource.idField } : {}),
+      }, null, 2));
+      continue;
+    }
+
     if (step.streamText) {
       const { thinking } = step.streamText;
       const text = String(step.streamText.text ?? '').repeat(Math.max(1, step.streamText.repeat ?? 1));
@@ -249,6 +266,27 @@ async function runSteps(steps, promptMessage) {
         isError,
         timestamp: Date.now(),
       };
+      emit({ type: 'message_end', message });
+      appendSessionEntry({ type: 'message', message });
+      continue;
+    }
+
+    if (step.geoHost) {
+      const toolCallId = step.geoHost.toolCallId || `call_fake_${(++entryCounter).toString(16)}`;
+      const toolName = step.geoHost.path === 'inspect' ? 'inspect_map_context' : 'request_geo_input';
+      const args = step.geoHost.args || {};
+      emit({ type: 'tool_execution_start', toolCallId, toolName, args });
+      const response = await fetch(`${process.env.TAU_GEO_ENDPOINT}/api/internal/geo/${step.geoHost.path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...args, sessionId: process.env.TAU_GEO_SESSION_ID, token: process.env.TAU_GEO_TOKEN }),
+      });
+      const payload = await response.json();
+      const result = response.ok
+        ? { content: [{ type: 'text', text: JSON.stringify(payload.result) }], details: { kind: step.geoHost.path === 'inspect' ? 'tau-geo-context' : 'tau-geo-interaction', result: payload.result } }
+        : { content: [{ type: 'text', text: payload.error || 'Geo Host request failed' }] };
+      emit({ type: 'tool_execution_end', toolCallId, toolName, result, isError: !response.ok });
+      const message = { role: 'toolResult', toolCallId, toolName, content: result.content, ...(result.details ? { details: result.details } : {}), isError: !response.ok, timestamp: Date.now() };
       emit({ type: 'message_end', message });
       appendSessionEntry({ type: 'message', message });
       continue;
