@@ -1,6 +1,6 @@
 const { execFileSync } = require('node:child_process');
 
-export const MIN_PI_VERSION = '0.80.10';
+import { PI_RUNTIME_MINIMUM } from '../contracts/version.js';
 export const MAX_PI_VERSION_EXCLUSIVE = '0.85.0';
 
 type PiVersion = { major: number; minor: number; patch: number; raw: string };
@@ -26,11 +26,11 @@ export function piProcessEnv(extra: NodeJS.ProcessEnv = {}) {
 
 export function assertSupportedPiVersion(value: unknown) {
   const actual = parsePiVersion(value);
-  const minimum = parsePiVersion(MIN_PI_VERSION)!;
+  const minimum = parsePiVersion(PI_RUNTIME_MINIMUM)!;
   const maximum = parsePiVersion(MAX_PI_VERSION_EXCLUSIVE)!;
   if (!actual) throw new Error(`Cannot parse Pi version: ${String(value || '<empty>')}`);
   if (compareVersion(actual, minimum) < 0 || compareVersion(actual, maximum) >= 0) {
-    throw new Error(`Unsupported Pi version ${actual.raw}; expected >=${MIN_PI_VERSION} <${MAX_PI_VERSION_EXCLUSIVE}`);
+    throw new Error(`Unsupported Pi version ${actual.raw}; expected >=${PI_RUNTIME_MINIMUM} <${MAX_PI_VERSION_EXCLUSIVE}`);
   }
   return actual.raw;
 }

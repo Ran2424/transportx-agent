@@ -72,13 +72,11 @@ export const TAU_SETTINGS = loadTauSettings();
 export const AUTH_CONFIGURED = !!(TAU_SETTINGS.user && TAU_SETTINGS.pass);
 export const PORT = TAU_SETTINGS.port;
 export const HOST = TAU_SETTINGS.host;
-export const STATIC_DIR = process.env.TAU_STATIC_DIR || findPublicDir();
 export const REACT_STATIC_DIR = process.env.TAU_REACT_STATIC_DIR || findReactWebDir();
 export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(APP_PATHS.appRoot, 'prompts', 'PI_SYSTEM.md');
 export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.workbench';
 export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
-  'modules/capabilities/timing/manifest.json',
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',
@@ -146,20 +144,6 @@ export function setModuleEnabled(moduleId: string, enabled: boolean) {
   TAU_SETTINGS.enabledModuleIds = value;
   reloadModules();
   return MODULE_REGISTRY;
-}
-
-function findPublicDir() {
-  const candidates: string[] = [];
-  const add = (p: string) => candidates.push(path.resolve(p));
-  add(path.join(__dirname, '..', 'public'));
-  add(path.join(APP_PATHS.appRoot, 'public'));
-  add(path.join(process.cwd(), 'public'));
-  try {
-    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
-    add(path.join(path.dirname(pkgPath), 'public'));
-  } catch {}
-  add(path.join(process.cwd(), 'node_modules', 'pi-traffic-workspace', 'public'));
-  return candidates.find((c) => fs.existsSync(path.join(c, 'index.html'))) || candidates[0];
 }
 
 function findReactWebDir() {

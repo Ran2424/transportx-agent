@@ -86,8 +86,3 @@ export function parseSessionProfileStructured(value: unknown): SessionProfilePar
     modules: { selectionMode, selected },
   } };
 }
-
-export function parseSessionProfile(value: unknown) {
-  const result = parseSessionProfileStructured(value);
-  return result.ok ? result.value : null;
-}

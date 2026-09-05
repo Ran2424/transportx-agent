@@ -82,8 +82,3 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
   if (diagnostics.length || !profile.ok || !platform || !domain || !runtime || !workspace || !createdAt) return { ok: false, value: null, diagnostics };
   return { ok: true, diagnostics: [], value: { schemaVersion: 3, platform: { name: 'TransportX Traffic Agent', version: asString(platform.version, 100)! }, profile: profile.value, domain: { id: asString(domain.id, 200)!, version: asString(domain.version, 100)! }, modules, assets, runtime: { ...(asString(runtime.piVersion, 100) ? { piVersion: asString(runtime.piVersion, 100)! } : {}), ...(asString(runtime.pythonVersion, 100) ? { pythonVersion: asString(runtime.pythonVersion, 100)! } : {}) }, workspace, createdAt } };
 }
-
-export function parseResolvedSessionPlan(value: unknown) {
-  const result = parseResolvedSessionPlanStructured(value);
-  return result.ok ? result.value : null;
-}

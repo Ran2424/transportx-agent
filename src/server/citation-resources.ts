@@ -6,7 +6,7 @@ const path = require('node:path');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CitationResource } from '../contracts/index.js';
 import { CitationRegistryStore } from './citation-registry.js';
-import { within } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 import { writeJson as json } from './http/response.js';
 
 type CitationResourceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: { assets?: Array<{ id?: string; kind?: string; path?: string }> } | null };
@@ -71,7 +71,7 @@ function readCitationResource(session: CitationResourceSession, resource: Citati
   const root = fs.realpathSync(location.root);
   const candidate = path.resolve(root, location.relativePath);
   const resolved = fs.realpathSync(candidate);
-  if (!within(root, resolved) || !fs.statSync(resolved).isFile()) throw Object.assign(new Error('Citation resource path is not allowed'), { code: 'EACCES' });
+  if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw Object.assign(new Error('Citation resource path is not allowed'), { code: 'EACCES' });
   const buffer = fs.readFileSync(resolved);
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
   if (sha256 !== resource.sha256) throw Object.assign(new Error('Citation resource has changed since it was registered'), { code: 'ECHANGED' });

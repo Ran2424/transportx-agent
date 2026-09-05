@@ -2,9 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import { formatVideoTimestamp, parseVideoTimestamp, type VideoSceneItemV1 } from '../../../contracts/video.js';
-import { useConversationState, useToolExecutionState } from '../../app/store-hooks';
-import { FeatureEmpty } from '../task/TaskBoard';
-import { projectVideoScene } from './video-projection';
 import { appKernel } from '../../app/composition-root';
 
 type VideoMetric = { id: string; label: string; unit: string; sampleIntervalSeconds: number; samples: Array<{ offsetSeconds: number; value: number }> };
@@ -42,30 +39,10 @@ function formatDuration(seconds: number) {
  * (camera, recording range, current absolute recording time, source/derived)
  * lives in the toolbar. Player transient state never leaves this component.
  */
-export function VideoWorkspace({ session, active }: { session: LiveSession | null; active: boolean }) {
+export function VideoWorkspace({ session, active, item: selected, compareItem, revision }: { session: LiveSession; active: boolean; item: VideoSceneItemV1; compareItem?: VideoSceneItemV1; revision: number }) {
   const { t } = useTranslation();
-  const conversation = useConversationState();
-  const tools = useToolExecutionState();
-  const entries = session ? conversation.bySession[session.id]?.snapshotEntries : undefined;
-  const executions = session ? tools.bySession[session.id] : undefined;
-  const scene = useMemo(
-    () => projectVideoScene(entries ?? [], Object.values(executions ?? {})),
-    [entries, executions],
-  );
-  const items = scene?.scene.videos ?? [];
-  const activeItem = items.find((item) => item.id === scene?.scene.activeVideoId) ?? items.at(-1) ?? null;
-  const compareItem = scene?.scene.compareVideoId ? items.find((item) => item.id === scene.scene.compareVideoId) ?? null : null;
-  const [selectedId, setSelectedId] = useState('');
   const [dismissedCompareKey, setDismissedCompareKey] = useState('');
-  const selected = items.find((item) => item.id === selectedId) ?? activeItem;
-  useEffect(() => {
-    if (activeItem && activeItem.id !== selectedId) setSelectedId(activeItem.id);
-  }, [activeItem, selectedId]);
-
-  if (!session) return <FeatureEmpty mark="05" title={t('task.waitingContext')} description={t('video.waitingDescription')} />;
-  if (!selected) return <FeatureEmpty mark="05" title={t('video.emptyTitle')} description={t('video.emptyDescription')} />;
-
-  const compareKey = compareItem && scene ? `${scene.revision}:${compareItem.id}` : '';
+  const compareKey = compareItem ? `${revision}:${compareItem.id}` : '';
   const showCompare = !!compareItem && compareItem.id !== selected.id && compareKey !== dismissedCompareKey;
 
   if (showCompare && compareItem) {
@@ -74,23 +51,19 @@ export function VideoWorkspace({ session, active }: { session: LiveSession | nul
         <div className="video-compare">
           <div className="video-compare-pane">
             <VideoPlayer
-              key={`${session.id}:${selected.id}:${selected.initialSeekSeconds ?? 'start'}:${scene?.revision ?? 0}`}
+              key={`${session.id}:${selected.id}:${selected.initialSeekSeconds ?? 'start'}`}
               sessionId={session.id}
               item={selected}
-              items={[]}
               active={active}
-              onSelect={setSelectedId}
               compact
             />
           </div>
           <div className="video-compare-pane">
             <VideoPlayer
-              key={`${session.id}:${compareItem.id}:${compareItem.initialSeekSeconds ?? 'start'}:${scene?.revision ?? 0}`}
+              key={`${session.id}:${compareItem.id}:${compareItem.initialSeekSeconds ?? 'start'}`}
               sessionId={session.id}
               item={compareItem}
-              items={[]}
               active={active}
-              onSelect={() => {}}
               compact
               trailingAction={<button className="video-exit-compare" type="button" onClick={() => setDismissedCompareKey(compareKey)}>{t('video.exitCompare')}</button>}
             />
@@ -103,23 +76,19 @@ export function VideoWorkspace({ session, active }: { session: LiveSession | nul
   return (
     <div className="video-workspace">
       <VideoPlayer
-        key={`${session.id}:${selected.id}:${selected.initialSeekSeconds ?? 'start'}:${scene?.revision ?? 0}`}
+        key={`${session.id}:${selected.id}:${selected.initialSeekSeconds ?? 'start'}`}
         sessionId={session.id}
         item={selected}
-        items={items}
         active={active}
-        onSelect={setSelectedId}
       />
     </div>
   );
 }
 
-function VideoPlayer({ sessionId, item, items, active, onSelect, compact = false, trailingAction }: {
+function VideoPlayer({ sessionId, item, active, compact = false, trailingAction }: {
   sessionId: string;
   item: VideoSceneItemV1;
-  items: VideoSceneItemV1[];
   active: boolean;
-  onSelect(id: string): void;
   compact?: boolean;
   trailingAction?: ReactNode;
 }) {
@@ -164,13 +133,7 @@ function VideoPlayer({ sessionId, item, items, active, onSelect, compact = false
   return (
     <div className="video-player">
       <div className="video-toolbar">
-        {items.length > 1 ? (
-          <select aria-label={t('video.select')} value={item.id} onChange={(event) => onSelect(event.target.value)}>
-            {items.map((video) => <option key={video.id} value={video.id}>{video.title}</option>)}
-          </select>
-        ) : (
-          <strong className="video-toolbar-title">{item.title}</strong>
-        )}
+        <strong className="video-toolbar-title">{item.title}</strong>
         {trailingAction}
         <span className="video-toolbar-clock" title={clock ? `${item.recordingStartTime.slice(0, 10)} ${clock}` : ''}>
           {clock ? t('video.currentTime', { time: clock }) : ''}

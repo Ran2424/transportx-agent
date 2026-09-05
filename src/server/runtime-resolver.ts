@@ -1,7 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-import { sha256File, within } from './asset-integrity.js';
+import { sha256File } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 
 export const AGENT_HOST_PROTOCOL_VERSION = 1;
 export const RUNTIME_MANIFEST_VERSION = 1;
@@ -28,7 +29,7 @@ export type Executable = { command: string; args: string[]; version?: string };
 function resolveEntry(resourcesDir: string, entry: RuntimeEntry, label: string) {
   if (!entry.path || path.isAbsolute(entry.path)) throw new Error(`${label} runtime path must be relative`);
   const resolved = path.resolve(resourcesDir, entry.path);
-  if (!within(resourcesDir, resolved)) throw new Error(`${label} runtime path escapes resources`);
+  if (!isWithin(resourcesDir, resolved)) throw new Error(`${label} runtime path escapes resources`);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error(`${label} runtime is missing: ${resolved}`);
   if (!/^[a-f0-9]{64}$/i.test(entry.sha256) || sha256File(resolved) !== entry.sha256.toLowerCase()) {
     throw new Error(`${label} runtime checksum mismatch: ${resolved}`);

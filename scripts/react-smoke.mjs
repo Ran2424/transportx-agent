@@ -67,12 +67,14 @@ try {
   await composer.fill('geo-main-start');
   await composer.press('Enter');
   await page.locator('.assistant-message', { hasText: '请选择两条道路' }).waitFor({ timeout: 10_000 });
-  await page.getByLabel('选择地图').selectOption('geo_interaction_map');
-  const geoMap = page.locator('.geo-map');
+  await page.locator('[role=tab][aria-selected=true]', { hasText: '交互' }).waitFor();
+  assert.equal(await page.getByLabel('选择地图', { exact: true }).count(), 0);
+  assert.equal(await page.locator('[data-testid=agent-canvas] [role=tab]').count(), 2);
+  const geoMap = page.locator('.canvas-panel:not([hidden]) .geo-map');
   await geoMap.waitFor({ timeout: 10_000 });
   assert.equal((await resourceLoaded).ok(), true);
   await page.waitForTimeout(250);
-  const modeSwitch = page.getByLabel('切换模式');
+  const modeSwitch = page.locator('.canvas-panel:not([hidden])').getByLabel('切换模式');
   assert.equal(await modeSwitch.inputValue(), 'browse');
   const mapBox = await geoMap.boundingBox();
   if (!mapBox) throw new Error('Geo map has no browser layout box');
@@ -86,7 +88,7 @@ try {
     image.src = dataUrl;
   }), screenshotDataUrl);
   assert.ok(screenshotSize.height > mapBox.height + 40, 'Geo screenshot should include the legend and description below the map');
-  const screenshotNotice = page.locator('.geo-notice');
+  const screenshotNotice = page.locator('.canvas-panel:not([hidden]) .geo-notice');
   await screenshotNotice.waitFor({ timeout: 10_000 });
   const screenshotFilename = (await screenshotNotice.textContent())?.match(/map-screenshot-[\d-]+\.png/)?.[0];
   assert.ok(screenshotFilename);
@@ -98,7 +100,7 @@ try {
   assert.equal(screenshotSaved, true);
   console.log('Geo smoke: map, layer legend and description saved in the task directory.');
   await modeSwitch.selectOption('feature');
-  const tray = page.locator('.geo-context-tray');
+  const tray = page.locator('.canvas-panel:not([hidden]) .geo-context-tray');
   let selectedFeatures = 0;
   for (let fraction = 0.05; fraction <= 0.95 && selectedFeatures < 2; fraction += 0.01) {
     await page.mouse.click(mapBox.x + mapBox.width * fraction, mapBox.y + mapBox.height * 0.5);
@@ -110,6 +112,14 @@ try {
   await tray.getByText('2 features').waitFor({ timeout: 10_000 });
   await tray.getByRole('button', { name: '附到对话' }).click();
   await page.locator('.composer-geo-contexts').waitFor();
+  const activeMapNode = await geoMap.elementHandle();
+  await page.getByRole('tab', { name: '下车热点热力图', exact: true }).click();
+  await page.getByRole('tab', { name: 'Geo 交互验收地图', exact: true }).click();
+  assert.equal(await geoMap.evaluate((node, previous) => node === previous, activeMapNode), true, 'tab switching preserves the map instance');
+  await page.getByRole('button', { name: '关闭视图：下车热点热力图', exact: true }).click();
+  await page.getByLabel('重新打开成果').selectOption('geo:dropoff_heatmap');
+  await page.getByRole('tab', { name: 'Geo 交互验收地图', exact: true }).click();
+
 
   await composer.fill('geo-main-context');
   await composer.press('Enter');
@@ -124,7 +134,7 @@ try {
   await requestBanner.getByRole('button', { name: '提交' }).click();
   await page.locator('.assistant-message', { hasText: '已读取两个稳定道路要素' }).waitFor({ timeout: 10_000 });
   console.log('Geo smoke: bidirectional request completed.');
-  const updatedOption = page.getByRole('option', { name: 'Geo 双向交互分析结果' });
+  const updatedOption = page.getByRole('tab', { name: 'Geo 双向交互分析结果', exact: true });
   await updatedOption.waitFor({ state: 'attached', timeout: 10_000 });
   assert.equal(await updatedOption.textContent(), 'Geo 双向交互分析结果');
 
@@ -145,6 +155,56 @@ try {
   assert.equal(audit.contextOk, true);
   assert.equal(audit.context.context.sceneRevision, 1);
   console.log('Geo smoke: stored Context and inspect output audited.');
+
+  // Generate a small local video in the browser so the UI test needs no external video assets.
+  console.log('Canvas smoke: generating test video.');
+  const videoBytes = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 180;
+    const context = canvas.getContext('2d');
+    const stream = canvas.captureStream(12);
+    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+    const chunks = [];
+    recorder.ondataavailable = (event) => chunks.push(event.data);
+    const finished = new Promise((resolve) => { recorder.onstop = resolve; });
+    recorder.start();
+    for (let frame = 0; frame < 12; frame++) {
+      context.fillStyle = frame % 2 ? '#687b77' : '#485a65';
+      context.fillRect(0, 0, 320, 180);
+      await new Promise((resolve) => setTimeout(resolve, 85));
+    }
+    recorder.stop(); await Promise.race([finished, new Promise((_, reject) => setTimeout(() => reject(new Error('Test video recording timed out')), 5000))]);
+    stream.getTracks().forEach((track) => track.stop());
+    return Array.from(new Uint8Array(await new Blob(chunks).arrayBuffer()));
+  });
+  console.log('Canvas smoke: test video ready.', videoBytes.length);
+  await page.route('**/video-resources/video_canvas_*/data', (route) => route.fulfill({ contentType: 'video/webm', body: Buffer.from(videoBytes) }));
+  await page.route('**/video-resources/video_canvas_*/metrics', (route) => route.fulfill({ json: { metrics: [] } }));
+  for (const [prompt, title] of [['canvas-video-first', '东入口录像'], ['canvas-video-second', '西入口录像']]) {
+    await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+    console.log('Canvas smoke: presenting', title);
+    await composer.fill(prompt); await composer.press('Enter');
+    await page.locator('[role=tab][aria-selected=true]', { hasText: title }).waitFor();
+  }
+  const firstVideo = page.locator('[id="canvas-panel-video:video_canvas_a"] video');
+  await page.getByRole('tab', { name: '东入口录像', exact: true }).click();
+  await firstVideo.evaluate(async (video) => { video.muted = true; await Promise.race([video.play(), new Promise((_, reject) => setTimeout(() => reject(new Error(`Video play timed out: ${video.readyState}, ${video.networkState}, ${video.error?.message}`)), 5000))]); });
+  await page.getByRole('tab', { name: '西入口录像', exact: true }).click();
+  assert.equal(await firstVideo.evaluate((video) => video.paused), true, 'background videos pause');
+  await page.getByRole('button', { name: '关闭视图：下车热点热力图', exact: true }).click();
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  await composer.fill('canvas-show-map'); await composer.press('Enter');
+  await page.locator('[role=tab][aria-selected=true]', { hasText: '下车热点热力图' }).waitFor();
+  assert.equal(await page.getByRole('tab', { name: '下车热点热力图', exact: true }).count(), 1);
+  assert.equal(await page.getByLabel('切换地图面板', { exact: true }).count(), 0);
+  await page.waitForTimeout(450);
+  if (process.env.TAU_CANVAS_SCREENSHOT) {
+    await page.setViewportSize({ width: 1580, height: 1000 });
+    await page.getByRole('tab', { name: 'Geo 双向交互分析结果', exact: true }).click();
+    await page.waitForTimeout(700);
+    await page.screenshot({ path: process.env.TAU_CANVAS_SCREENSHOT });
+  }
+  console.log('Canvas smoke: named tabs, map preservation, close/reopen, video selection/pause and Agent focus passed.');
 
   await composer.fill('geo-refresh-request');
   await composer.press('Enter');
@@ -172,6 +232,8 @@ try {
   await restoredBanner.getByRole('button', { name: '取消' }).click();
   await page.locator('.assistant-message', { hasText: '刷新后的地图请求已正确结束' }).waitFor({ timeout: 10_000 });
   console.log('Geo smoke: restored request cancelled.');
+
+
 
   if (pageErrors.length) throw new Error(`Web scenario raised page errors: ${pageErrors.join('\n')}`);
   console.log('Web scenario passed: baseline workflow plus Geo user Context, Agent request, audited result, and refresh recovery.');

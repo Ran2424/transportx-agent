@@ -16,7 +16,6 @@ function deps(handler: (command: Record<string, unknown>) => unknown, streaming 
     paths,
     actions,
     value: {
-      transport: { send() { throw new Error('side-effecting commands must not use WebSocket'); } },
       http: async (_path: string, init?: { body?: unknown }) => {
         paths.push(_path);
         commands.push(init?.body as Record<string, unknown>);
@@ -258,7 +257,6 @@ test('kernel batches text deltas to one animation frame and flushes before messa
   animationGlobal.cancelAnimationFrame = () => {};
   const kernel = createAppKernel({
     transport: {
-      send() {},
       subscribe(next: (signal: Record<string, unknown>) => void) {
         listener = next;
         return () => {};
@@ -306,7 +304,6 @@ test('kernel projects streamed tool arguments before execution without exposing 
   animationGlobal.cancelAnimationFrame = () => {};
   const kernel = createAppKernel({
     transport: {
-      send() {},
       subscribe(next: (signal: Record<string, unknown>) => void) {
         listener = next;
         return () => {};
