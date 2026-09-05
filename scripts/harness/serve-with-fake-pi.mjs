@@ -50,7 +50,6 @@ fs.writeFileSync(path.join(agentDir, 'auth.json'), JSON.stringify({ 'kimi-coding
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.PI_CODING_AGENT_SESSION_DIR = sessionsDir;
 process.env.TAU_PROJECTS_DIR = projectsDir;
-process.env.TAU_STATIC_DIR = path.join(REPO_ROOT, 'public');
 process.env.TAU_HOST = '127.0.0.1';
 process.env.PI_OFFLINE = '1';
 

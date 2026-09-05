@@ -18,7 +18,7 @@ import type {
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import { resolveSessionAttachments } from './session-attachments.js';
 import { CitationRegistryStore, newCitationId } from './citation-registry.js';
-import { relativePosixPath } from './util/path.js';
+import { isWithin, relativePosixPath } from './util/path.js';
 
 export type CitationServiceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: ResolvedSessionPlan | null };
 type KnowledgeResult = {
@@ -109,11 +109,6 @@ async function readWebSnapshot(response: IncomingMessage) {
     response.destroy();
   }
   return Buffer.concat(chunks);
-}
-
-function isWithin(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 function mimeFor(filePath: string): [CitationResourceKind, string] {

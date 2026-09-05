@@ -72,8 +72,3 @@ export function parseSpatialAnalysisResultStructured(value: unknown): SpatialAna
   if (diagnostics.length || !operation || !analysisId || !createdAt || durationMs === null || !outputPath || !outputHash || outputCount === null || !parametersRoot) return { ok: false, value: null, diagnostics };
   return { ok: true, diagnostics: [], value: { protocol: SPATIAL_ANALYSIS_PROTOCOL, schemaVersion: 1, analysisId, operation, inputs, parameters, counts, output: { relativePath: outputPath, sha256: outputHash, crs: 'EPSG:4326', geometryTypes, featureCount: outputCount }, warnings, durationMs, createdAt } };
 }
-
-export function parseSpatialAnalysisResult(value: unknown) {
-  const result = parseSpatialAnalysisResultStructured(value);
-  return result.ok ? result.value : null;
-}

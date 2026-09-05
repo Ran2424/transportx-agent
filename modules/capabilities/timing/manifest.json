@@ -1,9 +1,0 @@
-{
-  "manifestVersion": 2,
-  "id": "com.transportx.timing",
-  "name": "耗时统计",
-  "version": "1.0.0",
-  "type": "capability",
-  "platformVersion": ">=3.0.0 <4.0.0",
-  "dependencies": []
-}

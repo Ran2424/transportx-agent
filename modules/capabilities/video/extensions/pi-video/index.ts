@@ -93,8 +93,8 @@ export default function videoExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'video_present',
     label: '展示录像',
-    description: 'Materialize a recorded video as a session resource and present it in the Video Workspace, optionally seeking to an absolute recording timestamp. Use this when the user wants to view a video; it does not analyze the content. For a derived clip, pass its resourceId instead of videoId. Set compare=true to place the video in the comparison pane next to the current one (for side-by-side comparison of two locations or two recording times).',
-    promptSnippet: 'Present a recorded video in the workspace, optionally at a specific recording time',
+    description: 'Materialize a recorded video as a session resource and open or activate its named Canvas tab, optionally seeking to an absolute recording timestamp. Use this when the user wants to view a video; it does not analyze the content. For a derived clip, pass its resourceId instead of videoId. Set compare=true to place the video in the comparison pane next to the current one (for side-by-side comparison of two locations or two recording times).',
+    promptSnippet: 'Open or activate a video Canvas tab, optionally at a specific recording time',
     parameters: Type.Object({
       videoId: Type.Optional(Type.String({ maxLength: 120 })),
       resourceId: Type.Optional(Type.String({ maxLength: 120, description: 'Session video resource id of a derived clip' })),

@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LiveSession } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
-import type { GeoClientContextV1, GeoContextMode, GeoInteractionRequestV1, VisualizationEnvelope } from '../../../contracts/geo.js';
-import { useConversationState, useSessionState, useToolExecutionState } from '../../app/store-hooks';
+import { GEO_CONTEXTS_PER_MESSAGE, type GeoClientContextV1, type GeoContextMode, type GeoInteractionRequestV1, type VisualizationEnvelope } from '../../../contracts/geo.js';
+import { useSessionState } from '../../app/store-hooks';
 import { appKernel } from '../../app/composition-root';
 import { FeatureEmpty } from '../task/TaskBoard';
-import { projectVisualizations } from './geo-projection';
 import { geoContextStore } from './geo-context-store';
 
 type GeoInteractionEvent =
@@ -30,15 +29,9 @@ type RuntimeModule = { createGeoMapRuntime(container: HTMLElement, onError: (mes
 
 const MODES: Array<'browse' | GeoContextMode> = ['browse', 'feature', 'point', 'rectangle', 'viewport'];
 
-export function GeoWorkspace({ session, active }: { session: LiveSession | null; active: boolean }) {
+export function GeoWorkspace({ session, active, envelope: selected }: { session: LiveSession; active: boolean; envelope: VisualizationEnvelope }) {
   const { t } = useTranslation();
-  const conversation = useConversationState();
   const sessions = useSessionState();
-  const tools = useToolExecutionState();
-  const entries = session ? conversation.bySession[session.id]?.snapshotEntries : undefined;
-  const executions = session ? tools.bySession[session.id] : undefined;
-  const items = useMemo(() => projectVisualizations(entries ?? [], Object.values(executions ?? {})), [entries, executions]);
-  const [selectedId, setSelectedId] = useState('');
   const [runtime, setRuntime] = useState<GeoRuntime | null>(null);
   const [mode, setMode] = useState<'browse' | GeoContextMode>('browse');
   const [draft, setDraft] = useState<GeoClientContextV1 | null>(null);
@@ -47,14 +40,8 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
   const [screenshotBusy, setScreenshotBusy] = useState(false);
   const [screenshotNotice, setScreenshotNotice] = useState('');
   const [now, setNow] = useState(Date.now());
-  const selected = items.find((item) => item.visualizationId === selectedId) ?? items[0] ?? null;
   const interaction = session ? sessions.geoInteractionBySession[session.id] : undefined;
-  const request = interaction?.waitingRequest;
-
-  useEffect(() => {
-    if (request && request.visualizationId !== selectedId && items.some((item) => item.visualizationId === request.visualizationId)) setSelectedId(request.visualizationId);
-    else if (selected && selected.visualizationId !== selectedId) setSelectedId(selected.visualizationId);
-  }, [items, request, selected, selectedId]);
+  const request = interaction?.waitingRequest?.visualizationId === selected.visualizationId ? interaction.waitingRequest : undefined;
 
   useEffect(() => {
     if (!request) return;
@@ -101,13 +88,13 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
 
   async function attachDraft() {
     if (!session || !runtime) return;
-    if (geoContextStore.get(session.id).length >= 8) { setNotice(t('geo.contextLimit')); return; }
+    if (geoContextStore.get(session.id).length >= GEO_CONTEXTS_PER_MESSAGE) { setNotice(t('geo.contextLimit')); return; }
     const current = runtime.getUserDraft();
     if (!current) return;
     setBusy(true); setNotice('');
     try {
       const reference = await appKernel.commands.geo.createContext(session.id, current);
-      geoContextStore.attach(session.id, { reference, context: current });
+      geoContextStore.attach(session.id, reference);
       runtime.clearUserDraft(); setMode('browse'); runtime.setInteractionMode('browse');
     } catch (cause) { setNotice((cause as Error).message); }
     finally { setBusy(false); }
@@ -145,16 +132,12 @@ export function GeoWorkspace({ session, active }: { session: LiveSession | null;
     finally { setScreenshotBusy(false); }
   }
 
-  if (!session) return <FeatureEmpty mark="04" title={t('task.waitingContext')} description={t('geo.waitingDescription')} />;
   if (!selected?.scene) return <FeatureEmpty mark="04" title={t('geo.emptyTitle')} description={t('geo.emptyDescription')} />;
   const remaining = request ? Math.max(0, Math.ceil((Date.parse(request.expiresAt) - now) / 1000)) : 0;
 
   return <div className="geo-workspace">
     {request ? <GeoRequestBanner request={request} remaining={remaining} busy={busy} canSubmit={!!draft} onSubmit={() => void submitRequest()} onCancel={() => void cancelRequest()} /> : null}
     <div className="geo-toolbar">
-      <select aria-label={t('geo.select')} value={selected.visualizationId} onChange={(event) => setSelectedId(event.target.value)} disabled={!!request}>
-        {items.map((item) => <option key={item.visualizationId} value={item.visualizationId}>{item.summary.title}</option>)}
-      </select>
       <label className="geo-mode-switch"><span>{t('geo.modeSwitch')}</span><select aria-label={t('geo.modeSwitch')} value={mode} disabled={!!request} onChange={(event) => changeMode(event.target.value as 'browse' | GeoContextMode)}>{MODES.map((item) => <option key={item} value={item}>{t(`geo.mode.${item}`)}</option>)}</select></label>
       <button type="button" disabled={!draft} onClick={() => runtime?.clearUserDraft()}>{t('geo.clear')}</button>
       {selected.scene.controls?.fitToData !== false ? <button type="button" onClick={() => runtime?.fitToData()}>{t('geo.fit')}</button> : null}
@@ -196,7 +179,7 @@ function GeoMap({ envelope, sessionId, active, onReady, onEvent }: { envelope: V
   }, []);
 
   useEffect(() => {
-    if (!active || !container.current) return;
+    if (!container.current) return;
     let disposed = false, unsubscribe = () => {};
     setError('');
     void import('../../../public/visualization/geo/geo-runtime-entry.js').then(async (module: RuntimeModule) => {
@@ -208,7 +191,7 @@ function GeoMap({ envelope, sessionId, active, onReady, onEvent }: { envelope: V
       if (!disposed && runtime.current === instance) { onReady(instance); resize(); }
     }).catch((cause) => { if (!disposed) setError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { disposed = true; unsubscribe(); runtime.current?.destroy(); runtime.current = null; onReady(null); };
-  }, [active, runtimeKey, sessionId]);
+  }, [runtimeKey, sessionId]);
 
   useEffect(() => { if (active && runtime.current) { setError(''); void runtime.current.apply(envelope, sessionId).then(resize).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))); } }, [active, envelope, sessionId]);
   useEffect(() => { if (!active) return; resize(); const timer = window.setTimeout(resize, 260); return () => window.clearTimeout(timer); }, [active, runtimeKey]);

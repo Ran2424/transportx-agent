@@ -121,11 +121,4 @@ export class WebSocketClient implements KernelTransport {
     }, delay);
   }
 
-  send(data: unknown) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
-    } else {
-      console.error('[WS] Cannot send, not connected');
-    }
-  }
 }

@@ -8,7 +8,7 @@ import { copyText } from './conversation-clipboard';
 import { durationSeconds, useElapsedMilliseconds } from './conversation-duration';
 import { renderConversationMarkdown } from './conversation-markdown';
 import { CitationFooter, MessageArtifacts } from './message-citations';
-import { citationCopyText, citationDisplayText, type MessageCitationProjection } from '../../features/citation/citation-projection';
+import { citationCopyText, type MessageCitationProjection } from '../../features/citation/citation-projection';
 
 function focusCitationCard(event: MouseEvent<HTMLElement>) {
   const button = (event.target as HTMLElement).closest<HTMLElement>('[data-citation-id]');
@@ -45,7 +45,7 @@ function Thinking({ text, visible, active, startedAt = null, durationMs = null, 
 export const AssistantMessage = memo(function AssistantMessage({ message, streaming, showThinking, expandThinking, thinkingStartedAt, thinkingDurationMs, projection, sessionId }: { message: AppMessage; streaming?: boolean; showThinking: boolean; expandThinking: boolean; thinkingStartedAt?: number | null; thinkingDurationMs?: number | null; projection?: MessageCitationProjection; sessionId: string }) {
   const { t } = useTranslation();
   const text = messageText(message);
-  const displayText = streaming ? text : citationDisplayText(text, projection);
+  const displayText = text;
   const thinking = messageThinking(message);
   const [copied, setCopied] = useState(false);
   const messageCopyText = citationCopyText(text, projection);

@@ -63,7 +63,7 @@ const PresentVisualizationCommandSchema = Type.Object({
     Type.Literal('set_continuous'), Type.Literal('set_categorical'), Type.Literal('set_popup'),
     Type.Literal('set_controls'), Type.Literal('set_metadata'), Type.Literal('set_camera'),
     Type.Literal('fit_bounds'), Type.Literal('set_visibility'), Type.Literal('remove_layer'),
-    Type.Literal('reorder_layers'), Type.Literal('select'), Type.Literal('clear'),
+    Type.Literal('reorder_layers'), Type.Literal('select'), Type.Literal('clear'), Type.Literal('show_map'),
     Type.Literal('add_chart_layer'), Type.Literal('set_chart'),
   ], { description: 'One atomic scene mutation: create/add content, change one style or popup/control/metadata concern, focus/select, or clear. create_map starts a visualizationId; later commands update it.' }),
   visualizationId: VisualizationIdSchema,
@@ -443,12 +443,13 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'present_visualization',
     label: 'Present Map',
-    description: 'Create or update one revisioned declarative 2D map after GIS data preparation and analysis. The tool owns GeoScene mutations; it does not query or analyze source data.',
+    description: 'Open an existing map in the Canvas with show_map, or create/update one revisioned declarative 2D map after GIS data preparation and analysis. The tool owns GeoScene mutations; it does not query or analyze source data.',
     promptSnippet: 'Maintain interactive maps with explicit scene, layer style, popup, control, view, selection, and clear commands',
     promptGuidelines: [
       'Read the geo-visualization-explanation skill before first using publish_geodata or present_visualization for a map task.',
       'Query, aggregate, compare, and validate GIS data before publishing it. present_visualization only turns an analyzed result into a revisioned GeoScene.',
       'Always call publish_geodata first, then pass its resourceId to command=create_map; never hand-write sources, layers, encoding, view, or metadata JSON.',
+      'To activate an existing Canvas tab without changing its map or revision, call command=show_map with its visualizationId.',
       'Use create_map once per visualizationId. Afterwards change exactly one concern per command: layer, style, popup, controls, metadata, view, selection, or clear.',
       'Reuse the same visualizationId for follow-up requests about the same analysis. Create another visualizationId only when the user explicitly asks for a separate map.',
       'Use the channel names color, radius, opacity, strokeColor, strokeWidth, width, dash, outlineColor, textField, size, haloColor, and haloWidth exactly as declared by the command schema.',
@@ -461,6 +462,15 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       const params = rawParams as PresentCommand;
       assertCommandParams(params);
       const current = scenes.get(params.visualizationId);
+      if (params.command === 'show_map') {
+        const scene = requireCurrentScene(current, params.visualizationId);
+        const envelope: VisualizationEnvelope = {
+          protocol: 'pi-visualization', version: '1.0', kind: 'geo',
+          visualizationId: params.visualizationId, revision: current!.revision,
+          operation: 'focus', scene, summary: { title: scene.metadata.title }, generatedAt: new Date().toISOString(),
+        };
+        return { content: [{ type: 'text' as const, text: `Showing map "${scene.metadata.title}" in Canvas.` }], details: { visualization: envelope } };
+      }
       let scene: GeoSceneSnapshot | null = null;
       let operation: VisualizationEnvelope['operation'] = 'patch';
 

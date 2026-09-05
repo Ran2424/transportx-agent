@@ -13,7 +13,6 @@ const { renderProjectPrompt } = require('../bin/session-prompt.js');
 const ROOT = process.cwd();
 const MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
-  'modules/capabilities/timing/manifest.json',
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',
@@ -38,13 +37,12 @@ function registry(extra: Array<{ manifestPath: string; packageRoot?: string; ori
 test('built-in manifests register only platform capabilities', () => {
   const modules = registry();
   assert.deepEqual(modules.errors, []);
-  assert.equal(modules.enabled().length, 9);
+  assert.equal(modules.enabled().length, 8);
   assert.equal(modules.get('com.transportx.shanghaidata'), undefined);
   assert.equal(modules.get('com.transportx.traffic-assurance-knowledge'), undefined);
   const order = modules.dependencyOrder('com.transportx.workbench');
   assert.equal(order.at(-1).manifest.type, 'domain');
   assert.ok(order.some((item: any) => item.manifest.id === 'com.transportx.geo'));
-  assert.ok(order.some((item: any) => item.manifest.id === 'com.transportx.timing'));
 });
 
 test('data, knowledge and plot-style packages install independently from the platform', (t: any) => {
@@ -114,6 +112,15 @@ test('Session Resume tolerates builtin module drift but still enforces installed
   assert.equal(geoPlan.origin, 'builtin');
   assembler.save(plan);
   assert.equal(assembler.load(workspace).modules.find((module: any) => module.id === 'com.transportx.geo').version, geoPlan.version);
+  assert.doesNotThrow(() => assembler.verify({
+    ...plan,
+    modules: [...plan.modules, {
+      ...geoPlan,
+      id: 'com.transportx.timing',
+      packageRoot: path.join(workspace, 'retired-timing-module'),
+      entrypoints: [],
+    }],
+  }));
 
   // Builtin modules are replaced in place on platform upgrades: version bumps and
   // content changes must not make older sessions unloadable.

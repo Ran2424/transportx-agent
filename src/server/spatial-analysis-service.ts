@@ -6,7 +6,8 @@ import type { JsonRecord } from './types.js';
 import type { PiRpcSession } from './sessions.js';
 import { PythonRunner } from './python-runner.js';
 import { diagnosticMessage, parseSpatialAnalysisResultStructured, type SpatialAnalysisResultV1 } from '../contracts/index.js';
-import { sha256File, within } from './asset-integrity.js';
+import { sha256File } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 import { relativePosixPath } from './util/path.js';
 
 const MAX_INPUT_BYTES = 100 * 1024 * 1024;
@@ -35,7 +36,7 @@ function safeInput(cwd: string, relativePath: string) {
     if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw new Error(`Spatial inputs cannot use symbolic links: ${relativePath}`);
   }
   const resolved = fs.realpathSync(path.resolve(root, relativePath));
-  if (!within(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Spatial input escapes the session: ${relativePath}`);
+  if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Spatial input escapes the session: ${relativePath}`);
   if (fs.statSync(resolved).size > MAX_INPUT_BYTES) throw new Error(`Spatial input exceeds 100 MiB: ${relativePath}`);
   const geojson = JSON.parse(fs.readFileSync(resolved, 'utf8')) as { type?: unknown; features?: unknown };
   if (geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) throw new Error(`Spatial input must be a GeoJSON FeatureCollection: ${relativePath}`);

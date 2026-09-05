@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
 import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
-import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, invalidateModelListCache, _setExecFileForTest } from './model-utils.js';
+import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession, liveManager, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, setGeoEndpoint, _setSpawnPiForTest } from './sessions.js';
 import { makeSessionId as makeId } from './session-workspace.js';
 import { isGenericSessionName } from './session-title.js';
@@ -43,7 +43,8 @@ import { CitationService } from './citation-service.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
 import { VideoService } from './video-service.js';
-import { verifyChecksumFile, within } from './asset-integrity.js';
+import { verifyChecksumFile } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 import { writeJson as json } from './http/response.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
@@ -156,7 +157,7 @@ function readBody(req: IncomingMessage): Promise<RpcCommand> {
 function resolveSessionFile(filePath: string) {
   if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
   const resolved = path.resolve(filePath), root = path.resolve(SESSIONS_DIR);
-  if (!resolved.startsWith(root + path.sep) || !resolved.endsWith('.jsonl')) throw new Error('Invalid session file');
+  if (!isWithin(root, resolved) || !resolved.endsWith('.jsonl')) throw new Error('Invalid session file');
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Session not found');
   return resolved;
 }
@@ -181,17 +182,17 @@ function resolveLiveSessionPath(session: PiRpcSession | null | undefined, reques
   const candidate = path.resolve(path.isAbsolute(requested) ? requested : path.join(root, requested));
   let resolved = candidate;
   try { resolved = fs.realpathSync(candidate); } catch {}
-  if (!within(root, resolved)) { const error = new Error('Path is outside the active session directory') as StatusError; error.status = 403; throw error; }
+  if (!isWithin(root, resolved)) { const error = new Error('Path is outside the active session directory') as StatusError; error.status = 403; throw error; }
   return resolved;
 }
 
 function resolveExportOutputPath(outputPath: string, sessionFile: string) {
   if (!outputPath || typeof outputPath !== 'string') throw new Error('outputPath required');
   const sessionDir = path.dirname(path.resolve(sessionFile)), sessionDirReal = fs.realpathSync(sessionDir), expanded = expandHome(outputPath), resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(sessionDir, expanded);
-  if (!within(sessionDir, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Export outputPath must be an .html file in the session directory') as StatusError; error.status = 403; throw error; }
+  if (!isWithin(sessionDir, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Export outputPath must be an .html file in the session directory') as StatusError; error.status = 403; throw error; }
   let parentReal: string;
   try { parentReal = fs.realpathSync(path.dirname(resolved)); } catch { const error = new Error('Export output directory not found') as StatusError; error.status = 404; throw error; }
-  if (!within(sessionDirReal, parentReal) || (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink())) { const error = new Error('Export outputPath must stay inside the session directory') as StatusError; error.status = 403; throw error; }
+  if (!isWithin(sessionDirReal, parentReal) || (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink())) { const error = new Error('Export outputPath must stay inside the session directory') as StatusError; error.status = 403; throw error; }
   return resolved;
 }
 
@@ -283,7 +284,7 @@ function setCorsForAllowedOrigin(req: IncomingMessage, res: ServerResponse) {
 }
 
 const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projectsDir: TAU_SETTINGS.projectsDir, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, expandHome, json, errorMessage, readBranch: readSessionBranch, isGenericSessionName, sessions: liveManager });
-const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath: within, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
+const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath: isWithin, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
 const apiRouter = createApiRouter({
   sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Traffic Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), sessionOptions: currentSessionOptions, json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
   listAttachments: listSessionAttachments,
@@ -368,4 +369,4 @@ function _setAuthForTest(enabled: boolean) { authEnabled = !!enabled; }
 function _setCredentialsForTest(user: string, pass: string) { TAU_SETTINGS.user = user; TAU_SETTINGS.pass = pass; }
 function _issueSessionTokenForTest(expiresAtSeconds?: number) { return issueSessionToken(expiresAtSeconds); }
 
-module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, parsePiListModels, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: within, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setExecFileForTest, invalidateModelListCache };
+module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: isWithin, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, invalidateModelListCache };

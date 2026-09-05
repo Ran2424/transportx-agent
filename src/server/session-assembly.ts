@@ -12,9 +12,11 @@ import {
 import type { Executable } from './runtime-resolver.js';
 import type { ModuleRegistry, RegisteredModule } from './module-registry.js';
 import type { AssetResolver, ResolvedAsset } from './asset-resolver.js';
-import { verifyChecksumFile, sha256File, within } from './asset-integrity.js';
+import { verifyChecksumFile, sha256File } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
+const RETIRED_BUILTIN_MODULE_IDS = new Set(['com.transportx.timing']);
 
 export class SessionPlanError extends Error {
   status = 409;
@@ -23,7 +25,7 @@ export class SessionPlanError extends Error {
 
 function resolvePackagePath(packageRoot: string, relativePath: string, label: string) {
   const resolved = path.resolve(packageRoot, relativePath);
-  if (!within(packageRoot, resolved)) throw new Error(`${label} escapes package root: ${relativePath}`);
+  if (!isWithin(packageRoot, resolved)) throw new Error(`${label} escapes package root: ${relativePath}`);
   if (!fs.existsSync(resolved)) throw new Error(`${label} is missing: ${resolved}`);
   return preferUnpackedPath(resolved);
 }
@@ -152,7 +154,10 @@ export class SessionAssembler {
     if (path.resolve(plan.workspace) !== path.resolve(workspace)) throw new SessionPlanError('workspace_mismatch', 'Resolved session plan belongs to another workspace.', [{ expected: path.resolve(workspace), actual: path.resolve(plan.workspace) }]);
     for (const module of plan.modules) {
       const manifestPath = path.join(module.packageRoot, 'manifest.json');
-      if (!fs.existsSync(manifestPath)) throw new SessionPlanError('module_version_missing', `Module version is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
+      if (!fs.existsSync(manifestPath)) {
+        if (module.origin === 'builtin' && RETIRED_BUILTIN_MODULE_IDS.has(module.id)) continue;
+        throw new SessionPlanError('module_version_missing', `Module version is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
+      }
       // Builtin modules ship with the platform and are replaced in place on upgrade;
       // their old versions no longer exist, so content drift is tolerated (and logged)
       // instead of making every older session unloadable. Installed/external modules

@@ -6,7 +6,8 @@ const { pipeline } = require('node:stream/promises') as typeof import('node:stre
 
 import { diagnosticMessage, parseModuleManifestStructured, type ModuleArchiveCandidate, type ModuleArchiveInspection, type ModuleManifest } from '../contracts/index.js';
 import type { ModuleRegistry, ModuleSource } from './module-registry.js';
-import { verifyChecksumFile, within } from './asset-integrity.js';
+import { verifyChecksumFile } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 
 export type InstallKind = 'module';
 
@@ -92,7 +93,7 @@ async function readArchiveEntry(zip: import('yauzl').ZipFile, entry: ArchiveEntr
 function resolvePackageEntry(root: string, relativePath: string, label: string, optional = false) {
   if (path.isAbsolute(relativePath)) throw new Error(`${label} must use a relative path`);
   const resolved = path.resolve(root, relativePath);
-  if (!within(root, resolved)) throw new Error(`${label} escapes the module package`);
+  if (!isWithin(root, resolved)) throw new Error(`${label} escapes the module package`);
   if (!fs.existsSync(resolved) && !optional) throw new Error(`${label} is missing: ${relativePath}`);
   return resolved;
 }
@@ -281,7 +282,7 @@ export class ModuleInstaller {
           const candidate = candidates.find((item) => entry.fileName.startsWith(`${item.id}/${item.version}/`));
           if (!candidate || entry.fileName.endsWith('/')) continue;
           const destination = path.resolve(staging, entry.fileName);
-          if (!within(staging, destination)) throw new Error(`Unsafe ZIP entry: ${entry.fileName}`);
+          if (!isWithin(staging, destination)) throw new Error(`Unsafe ZIP entry: ${entry.fileName}`);
           fs.mkdirSync(path.dirname(destination), { recursive: true });
           await pipeline(await zip.openReadStreamPromise(entry), fs.createWriteStream(destination, { flags: 'wx' }));
         }
@@ -295,7 +296,7 @@ export class ModuleInstaller {
         if (manifest.id !== candidate.id || manifest.version !== candidate.version) throw new Error(`Archive contents changed for ${candidate.id}@${candidate.version}`);
         validateModulePackage(packageRoot, manifest);
         const target = path.join(this.modulesDir, candidate.id, candidate.version);
-        if (!within(this.modulesDir, target) || fs.existsSync(target)) throw new Error(`Module version is already installed: ${candidate.id}@${candidate.version}`);
+        if (!isWithin(this.modulesDir, target) || fs.existsSync(target)) throw new Error(`Module version is already installed: ${candidate.id}@${candidate.version}`);
       }
 
       for (const candidate of candidates) {
@@ -384,7 +385,7 @@ export class ModuleInstaller {
     validateModulePackage(packageRoot, manifest);
     const moduleRoot = path.join(this.modulesDir, manifest.id);
     const target = path.join(moduleRoot, manifest.version);
-    if (!within(this.modulesDir, target)) throw new Error(`Invalid module id: ${manifest.id}`);
+    if (!isWithin(this.modulesDir, target)) throw new Error(`Invalid module id: ${manifest.id}`);
     if (fs.existsSync(target)) throw new Error(`Module version is already installed: ${manifest.id}@${manifest.version}`);
     const staging = path.join(this.modulesDir, `.install-${crypto.randomUUID()}`);
     try {
@@ -407,7 +408,7 @@ export class ModuleInstaller {
     const dependent = registry?.enabled().find((candidate) => candidate.manifest.id !== id && candidate.manifest.dependencies.includes(id));
     if (dependent) throw new Error(`Module ${id} is required by ${dependent.manifest.id}`);
     const target = path.join(this.modulesDir, id);
-    if (!fs.existsSync(target) || !within(this.modulesDir, target) || target === path.resolve(this.modulesDir)) throw new Error('Installed module not found');
+    if (!fs.existsSync(target) || !isWithin(this.modulesDir, target) || target === path.resolve(this.modulesDir)) throw new Error('Installed module not found');
     fs.rmSync(target, { recursive: true, force: true });
     return { id };
   }

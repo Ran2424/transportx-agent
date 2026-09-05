@@ -6,6 +6,7 @@ import type { ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, StatusError } from './types.js';
 import type { PiRpcSession } from './sessions.js';
 import { latestPiWebBridgeEnvelope } from '../contracts/index.js';
+import { isWithin } from './util/path.js';
 
 type FileHandlersOptions = {
   sessionsDir: string;
@@ -110,7 +111,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
   };
   const resolveExportedSessionPath = (filePath: string) => {
     const resolved = path.resolve(options.expandHome(filePath || '')), root = path.resolve(options.sessionsDir);
-    if (!resolved.startsWith(root + path.sep) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Can only open exported session HTML without a live session') as StatusError; error.status = 403; throw error; }
+    if (!isWithin(root, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Can only open exported session HTML without a live session') as StatusError; error.status = 403; throw error; }
     if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) { const error = new Error('File not found') as StatusError; error.status = 404; throw error; }
     return resolved;
   };

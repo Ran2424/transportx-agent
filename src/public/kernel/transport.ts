@@ -10,6 +10,5 @@ export type TransportSignal =
   | { kind: 'message'; message: unknown };
 
 export type KernelTransport = {
-  send(data: unknown): void;
   subscribe(listener: (signal: TransportSignal) => void): () => void;
 };

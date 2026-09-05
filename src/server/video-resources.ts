@@ -3,7 +3,7 @@ const path = require('node:path');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseVideoResourceManifestStructured } from '../contracts/index.js';
-import { within } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 import { writeJson as sendJson } from './http/response.js';
 
 type VideoResourceSession = { cwd: string };
@@ -47,13 +47,13 @@ function serveVideoResource(req: IncomingMessage, res: ServerResponse, session: 
   if (!RESOURCE_ID_RE.test(resourceId)) return sendJson(res, 400, { error: 'Invalid video resource id' });
   const root = path.resolve(session.cwd, '.tau', 'video-resources');
   const resourceDir = path.resolve(root, resourceId);
-  if (!within(root, resourceDir)) return sendJson(res, 403, { error: 'Video resource is outside the active task' });
+  if (!isWithin(root, resourceDir)) return sendJson(res, 403, { error: 'Video resource is outside the active task' });
   try {
     const realRoot = fs.realpathSync(root);
     const realDir = fs.realpathSync(resourceDir);
     const realManifest = fs.realpathSync(path.join(realDir, 'manifest.json'));
     const realVideo = fs.realpathSync(path.join(realDir, 'video.mp4'));
-    if (!within(realRoot, realDir) || !within(realDir, realManifest) || !within(realDir, realVideo)) {
+    if (!isWithin(realRoot, realDir) || !isWithin(realDir, realManifest) || !isWithin(realDir, realVideo)) {
       return sendJson(res, 403, { error: 'Video resource path is not allowed' });
     }
     const parsed = parseVideoResourceManifestStructured(JSON.parse(fs.readFileSync(realManifest, 'utf8')));
