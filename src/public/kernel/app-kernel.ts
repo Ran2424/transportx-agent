@@ -132,7 +132,6 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   };
 
   commands = createCommands({
-    transport,
     http: options.http,
     dispatch,
     isStreaming: (sessionId) => stores.session.isStreaming(sessionId),

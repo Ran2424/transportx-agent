@@ -985,13 +985,21 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .workspace-float--canvas { inset: 58px 16px 14px; transition-duration: var(--tx-motion-map-focus); }
 .workspace-float--canvas .workspace-float-body { overflow: hidden; }
 .workspace-float--canvas .geo-map { min-height: 0; }
-.agent-canvas-tabs { min-width: 0; flex: 1; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
-.agent-canvas-tabs::-webkit-scrollbar { display: none; }
-.agent-canvas-tabs button { min-width: 0; height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--tx-radius-sm); color: var(--text-secondary); background: transparent; font-size: 11px; }
-.agent-canvas-tabs button:hover { color: var(--text-primary); background: var(--interactive-hover-bg); }
-.agent-canvas-tabs button.is-active { border-color: var(--border-strong); color: var(--text-primary); background: var(--selection-bg); }
-.agent-canvas-tabs button svg { width: 14px; height: 14px; flex: 0 0 auto; }
-.agent-canvas-tabs button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-canvas-tabs { min-width: 0; flex: 1; display: flex; align-items: stretch; gap: 2px; overflow-x: auto; scrollbar-width: thin; }
+.canvas-header { padding-bottom: 0; }
+.canvas-tab { display: flex; flex: 0 0 auto; align-items: center; max-width: 240px; border-bottom: 2px solid transparent; }
+.canvas-tab.is-active { border-bottom-color: var(--selection-border); background: var(--selection-bg); }
+.canvas-tab button { display: inline-flex; align-items: center; gap: 7px; min-width: 0; height: 36px; padding: 0 10px; border: 0; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 12px; }
+.canvas-tab.is-active button { color: var(--text-primary); }
+.canvas-tab button:hover { background: var(--interactive-hover-bg); }
+.canvas-tab button:focus-visible { outline: 2px solid var(--selection-border); outline-offset: -2px; }
+.canvas-tab button svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.canvas-tab button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-tab .canvas-tab-close { flex: 0 0 auto; padding: 0 5px; }
+.canvas-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; }
+.canvas-panel[hidden] { display: none; }
+.canvas-reopen { width: 32px; height: 28px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-primary); background: var(--surface-default); font-size: 12px; }
+
 .video-workspace { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .video-player { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .video-toolbar { min-height: 40px; padding: 6px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-default); }

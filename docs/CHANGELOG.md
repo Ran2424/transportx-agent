@@ -6,8 +6,14 @@
 
 ## Unreleased
 
+## 3.1.6 - 2026-09-09
+
 ### Changed
 
+- Canvas 改为顶部具名成果标签，支持多个地图与视频、关闭与重新打开、键盘切换；移除领域面板重复选择器和独立地图／视频入口。隐藏视图保留查看状态，视频暂停。移除旧 Geo runtime bundle。
+- Geo 与 Video 模块升级至 1.2.0：Agent 展示结果时激活对应 Canvas 标签；Geo 新增 `show_map`，可显示已有地图而不修改内容与 revision。
+- 移除无调用的浏览器发送、旧模型列表文本解析、旧静态目录搜索与无消费者契约包装；引用解析、路径边界和受控进程执行改为共享实现。
+- Timing 不再作为独立 Module；历史 Session Plan 中的内置 Timing 记录在恢复边界兼容忽略。
 - 重构项目 README，补齐 Windows x64 安装与发布边界、跨平台用户数据目录、双向地图交互、地图截图和当前验证入口。
 - 更新 Windows 发行指南与架构说明，记录 Python runtime 结构验收开关，并移除旧 Windows 用户数据路径。
 

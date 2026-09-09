@@ -2,12 +2,11 @@
   "manifestVersion": 2,
   "id": "com.transportx.workbench",
   "name": "TransportX Workbench",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "domain",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [
     "com.transportx.web-bridge",
-    "com.transportx.timing",
     "com.transportx.task",
     "com.transportx.citation",
     "com.transportx.geo",

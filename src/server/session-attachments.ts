@@ -8,7 +8,7 @@ import type {
   SessionAttachmentKind,
   SessionAttachmentSource,
 } from '../contracts/attachments.js';
-import { within } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 import { relativePosixPath } from './util/path.js';
 
 const INDEX_VERSION = 1;
@@ -91,8 +91,8 @@ function writeIndex(cwd: string, index: AttachmentIndex) {
 }
 
 function ensureWithin(root: string, target: string) {
-  // Stricter than within(): the attachment root itself is not a valid target.
-  if (path.resolve(root) === path.resolve(target) || !within(root, target)) throw error('Attachment path escapes the session directory', 403);
+  // Stricter than isWithin(): the attachment root itself is not a valid target.
+  if (path.resolve(root) === path.resolve(target) || !isWithin(root, target)) throw error('Attachment path escapes the session directory', 403);
 }
 
 function resolveReadyAttachment(cwd: string, attachment: SessionAttachment) {

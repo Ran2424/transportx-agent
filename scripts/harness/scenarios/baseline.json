@@ -1,6 +1,9 @@
 {
   "description": "React smoke 场景：按 prompt 子串匹配回放协议一致的事件序列。provenance：协议一致的合成事件，形状与 test/fixtures 一致并经 server 实际消费验证。",
   "rules": [
+    {"match": "canvas-video-first", "steps": [{"tool": {"name": "video_present", "args": {}, "result": {"$fixture": "features/canvas-tool-results.json#first"}}}, {"streamText": {"text": "录像已打开。", "chunks": 1, "delayMs": 10}}]},
+    {"match": "canvas-video-second", "steps": [{"tool": {"name": "video_present", "args": {}, "result": {"$fixture": "features/canvas-tool-results.json#second"}}}, {"streamText": {"text": "录像已打开。", "chunks": 1, "delayMs": 10}}]},
+    {"match": "canvas-show-map", "steps": [{"tool": {"name": "present_visualization", "args": {"command": "show_map", "visualizationId": "dropoff_heatmap"}, "result": {"$fixture": "features/geo-tool-result.json#presentVisualizationResult"}}}, {"streamText": {"text": "已切回地图。", "chunks": 1, "delayMs": 10}}]},
     {
       "match": "基线-happy",
       "steps": [

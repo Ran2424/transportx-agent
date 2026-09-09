@@ -25,7 +25,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
   async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
     const attachmentIds = pending.filter((item) => item.status === 'ready' && item.attachment).map((item) => item.attachment!.id);
     if (pending.some((item) => item.status === 'uploading')) { setError(t('conversation.uploadingWait')); return; }
-    const geoContextIds = geoContexts.map((item) => item.reference.contextId);
+    const geoContextIds = geoContexts.map((item) => item.contextId);
     const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : '');
     if (!message) return;
     try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds }); setValue(''); setPending([]); geoContextStore.clear(sessionId); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
@@ -45,7 +45,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
   return <footer className="conversation-composer">
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
     <ComposerAttachmentList sessionId={sessionId} pending={pending} onRemove={(item) => void removeAttachment(item)} />
-    {geoContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.geoContexts')}>{geoContexts.map((item) => <span key={item.reference.contextId}><strong>{t(`geo.mode.${item.reference.mode}`)}</strong>{item.reference.summary}<button type="button" aria-label={t('conversation.removeGeoContext', { summary: item.reference.summary })} onClick={() => geoContextStore.remove(sessionId, item.reference.contextId)}>×</button></span>)}</div> : null}
+    {geoContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.geoContexts')}>{geoContexts.map((item) => <span key={item.contextId}><strong>{t(`geo.mode.${item.mode}`)}</strong>{item.summary}<button type="button" aria-label={t('conversation.removeGeoContext', { summary: item.summary })} onClick={() => geoContextStore.remove(sessionId, item.contextId)}>×</button></span>)}</div> : null}
     <div className="composer-row">
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <textarea

@@ -142,3 +142,7 @@ grid["id"] = grid.index.astype(str)
 - 只有确实需要用户在地图上补充空间输入时才调用 `request_geo_input`。明确指定 `visualizationId`、`sceneRevision`、固定 `mode` 和简短提示；Feature 模式可限制 `targetLayerIds` 与 `maxFeatures`。
 - `request_geo_input` 会等待用户提交、取消、超时、地图失效或任务中止。逐一处理 `submitted`、`cancelled`、`expired`、`invalidated`、`aborted`，不要在取消或失效后自行重试，也不要伪造选择结果。
 - 用户提交后，以工具返回的冻结 Context 为事实继续分析。地图 revision 变化会使尚未提交的选择失效，但已经保存的 Context 仍是可审计的历史事实。
+
+## Canvas 视图
+
+每个 visualizationId 对应一个地图标签。创建独立地图时使用新 ID，更新原图时复用 ID。用户要求查看已有地图时，调用 `present_visualization(command="show_map", visualizationId=...)`；此操作仅激活 Canvas 标签，不修改地图或 revision。

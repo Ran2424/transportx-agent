@@ -1,4 +1,13 @@
 export const zhCN = {
+  'canvas.title': '画布',
+  'canvas.views': '成果视图',
+  'canvas.toggle': '切换画布',
+  'canvas.show': '打开画布',
+  'canvas.hide': '收起画布',
+  'canvas.description': '查看当前任务的地图与视频成果',
+  'canvas.closeView': '关闭视图：{{title}}',
+  'canvas.reopen': '重新打开成果',
+
   'common.agent': 'Agent',
   'common.cancel': '取消',
   'common.close': '关闭',
@@ -590,6 +599,15 @@ export const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 export const enUS: Record<TranslationKey, string> = {
+  'canvas.title': 'Canvas',
+  'canvas.views': 'Result views',
+  'canvas.toggle': 'Toggle canvas',
+  'canvas.show': 'Open canvas',
+  'canvas.hide': 'Hide canvas',
+  'canvas.description': 'View maps and videos for this task',
+  'canvas.closeView': 'Close view: {{title}}',
+  'canvas.reopen': 'Reopen result',
+
   'conversation.compacting': 'Compacting context…',
   'conversation.contextUsage': 'Context usage {{used}} / {{limit}} tokens ({{percent}})',
   'conversation.contextUsageUnavailable': 'Context usage is not available yet',

@@ -1,9 +1,7 @@
-const { execFile } = require('node:child_process');
 const fs = require('node:fs');
 
-import type { ChildProcess } from 'node:child_process';
 import type { Executable, VideoExecutables } from './runtime-resolver.js';
-import { signalProcessTree } from './process-tree.js';
+import { ProcessRunner } from './process-runner.js';
 
 export type VideoProbeResult = { durationSeconds: number; width: number; height: number };
 
@@ -21,36 +19,16 @@ const MAX_CAPTURE_BYTES = 256 * 1024;
  * flags, inputs or outputs.
  */
 export class VideoRunner {
-  private children = new Set<ChildProcess>();
+  private readonly runner = new ProcessRunner();
 
   constructor(private executables: VideoExecutables) {}
 
   private run(executable: Executable, args: string[], opts: VideoRunOptions = {}): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      const child: ChildProcess = execFile(
-        executable.command,
-        [...executable.args, ...args],
-        {
-          encoding: 'utf8',
-          timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          maxBuffer: MAX_CAPTURE_BYTES,
-          signal: opts.signal,
-          detached: process.platform !== 'win32',
-          env: { ...process.env },
-        },
-        (error: Error | null, stdout: string, stderr: string) => {
-          this.children.delete(child);
-          if (error) {
-            const detail = String(stderr || '').trim().split('\n').slice(-3).join(' ');
-            const wrapped = new Error(detail || error.message) as Error & { stderr?: string };
-            wrapped.stderr = stderr;
-            reject(wrapped);
-          } else {
-            resolve({ stdout, stderr });
-          }
-        },
-      );
-      this.children.add(child);
+    return this.runner.run(executable, args, {
+      timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      maxBuffer: MAX_CAPTURE_BYTES,
+      signal: opts.signal,
+      errorMessage: (stderr) => String(stderr || '').trim().split('\n').slice(-3).join(' '),
     });
   }
 
@@ -110,8 +88,7 @@ export class VideoRunner {
   }
 
   terminateAll() {
-    for (const child of this.children) signalProcessTree(child, 'SIGTERM');
-    this.children.clear();
+    this.runner.terminateAll();
   }
 }
 

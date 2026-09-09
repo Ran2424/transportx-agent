@@ -16,7 +16,10 @@
 
 import path from 'node:path';
 
-export { within as isWithin } from '../asset-integrity.js';
+export function isWithin(root: string, target: string) {
+  const relative = path.relative(path.resolve(root), path.resolve(target));
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
 
 /**
  * Convert any path string to forward-slash, POSIX form. Used to normalize

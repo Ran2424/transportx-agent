@@ -26,7 +26,6 @@ export type HttpResponse = {
 export type HttpClient = (path: string, init?: HttpInit) => Promise<HttpResponse>;
 
 export type CommandDeps = {
-  transport: { send(data: unknown): void };
   http: HttpClient;
   dispatch: (action: AppAction) => void;
   isStreaming: (sessionId: string) => boolean;

@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "3.1.5",
+  "version": "3.1.6",
   "description": "TransportX Traffic Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
@@ -37,11 +37,10 @@
     "tsconfig.extensions.json"
   ],
   "scripts": {
-    "build": "npm run build:server && npm run build:web && npm run build:react && npm run build:geo && npm run build:desktop",
+    "build": "npm run build:server && npm run build:web && npm run build:react && npm run build:desktop",
     "build:server": "tsc -p tsconfig.server.json && node scripts/postbuild-layout.mjs server",
     "build:web": "tsc -p tsconfig.public.json && node scripts/postbuild-layout.mjs public",
     "build:react": "vite build",
-    "build:geo": "esbuild src/public/visualization/geo/geo-runtime-entry.ts --bundle --format=esm --target=es2022 --outfile=public/geo-runtime.js",
     "build:desktop": "tsc -p tsconfig.desktop.json",
     "desktop:dev": "npm run build && electron .",
     "desktop:dir": "npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",
