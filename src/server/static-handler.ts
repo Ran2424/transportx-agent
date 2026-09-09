@@ -3,6 +3,7 @@ import path = require('node:path');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Stats } from 'node:fs';
+import { isWithin } from './util/path.js';
 
 type AuthResult = { ok: boolean };
 
@@ -27,7 +28,7 @@ function serveStaticFromRoot(res: ServerResponse, staticRootValue: string, reque
   }
   const staticRoot = path.resolve(staticRootValue);
   const filePath = path.resolve(path.join(staticRoot, decodedPath));
-  if (filePath !== staticRoot && !filePath.startsWith(staticRoot + path.sep)) {
+  if (!isWithin(staticRoot, filePath)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;

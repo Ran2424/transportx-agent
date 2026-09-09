@@ -15,7 +15,8 @@ import {
   type VideoSceneItemV1,
 } from '../contracts/index.js';
 import type { ResolvedSessionPlanV3 } from '../contracts/resolved-session-plan.js';
-import { sha256File, within } from './asset-integrity.js';
+import { sha256File } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 import { VideoRunner } from './video-runner.js';
 import type { VideoExecutables } from './runtime-resolver.js';
 
@@ -98,7 +99,7 @@ function resolveSafeDataFile(assetRoot: string, relativeFile: string) {
     if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw new Error(`Video files cannot use symbolic links: ${relativeFile}`);
   }
   const resolved = fs.realpathSync(path.resolve(root, relativeFile));
-  if (!within(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Video file escapes the Data Root: ${relativeFile}`);
+  if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Video file escapes the Data Root: ${relativeFile}`);
   return resolved;
 }
 
@@ -224,7 +225,7 @@ export class VideoService {
     const realDir = fs.realpathSync(resourceDir);
     const realManifest = fs.realpathSync(manifestPath);
     const realVideo = fs.realpathSync(videoPath);
-    if (!within(realRoot, realDir) || !within(realDir, realManifest) || !within(realDir, realVideo)) throw new Error('Video resource path is not allowed');
+    if (!isWithin(realRoot, realDir) || !isWithin(realDir, realManifest) || !isWithin(realDir, realVideo)) throw new Error('Video resource path is not allowed');
     const parsed = parseVideoResourceManifestStructured(JSON.parse(fs.readFileSync(realManifest, 'utf8')));
     if (!parsed.ok) throw new Error(`Video resource manifest is invalid: ${videoDiagnosticsMessage(parsed.diagnostics)}`);
     if (parsed.value.resourceId !== resourceId) throw new Error('Video resource manifest id mismatch');

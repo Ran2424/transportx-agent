@@ -24,7 +24,8 @@ import {
 } from '../contracts/geo.js';
 import { stripAttachmentContext } from '../contracts/attachments.js';
 import type { JsonRecord } from './types.js';
-import { sha256File, within } from './asset-integrity.js';
+import { sha256File } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 
 const GEO_MODULE_ID = 'com.transportx.geo';
 const MAX_GEO_SCREENSHOT_BYTES = 10 * 1024 * 1024;
@@ -64,10 +65,10 @@ function assertNoSymlink(target: string) {
 function ensureStoragePath(cwd: string, target: string) {
   const sessionRoot = path.resolve(cwd);
   const resolved = path.resolve(target);
-  if (!within(sessionRoot, resolved)) throw serviceError('Geo interaction path escapes the session.', 403);
+  if (!isWithin(sessionRoot, resolved)) throw serviceError('Geo interaction path escapes the session.', 403);
   assertNoSymlink(path.join(cwd, '.tau'));
   assertNoSymlink(interactionRoot(cwd));
-  for (let cursor = path.dirname(resolved); cursor !== sessionRoot && within(sessionRoot, cursor); cursor = path.dirname(cursor)) assertNoSymlink(cursor);
+  for (let cursor = path.dirname(resolved); cursor !== sessionRoot && isWithin(sessionRoot, cursor); cursor = path.dirname(cursor)) assertNoSymlink(cursor);
   return resolved;
 }
 
@@ -85,7 +86,7 @@ function readJson<T>(cwd: string, target: string): T | null {
     const resolved = ensureStoragePath(cwd, target);
     const realSession = fs.realpathSync(cwd);
     const realTarget = fs.realpathSync(resolved);
-    if (!within(realSession, realTarget) || !fs.statSync(realTarget).isFile()) throw serviceError('Geo interaction file is outside the session.', 403);
+    if (!isWithin(realSession, realTarget) || !fs.statSync(realTarget).isFile()) throw serviceError('Geo interaction file is outside the session.', 403);
     return JSON.parse(fs.readFileSync(realTarget, 'utf8')) as T;
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null;
@@ -132,13 +133,13 @@ function requireVisualization(session: GeoInteractionSession, visualizationId: s
 function parseResource(session: GeoInteractionSession, resourceId: string) {
   const root = path.resolve(session.cwd, '.tau', 'geo-resources');
   const dir = path.resolve(root, resourceId);
-  if (!within(root, dir)) throw serviceError('Geo resource is outside the session.', 403);
+  if (!isWithin(root, dir)) throw serviceError('Geo resource is outside the session.', 403);
   const manifestPath = path.join(dir, 'manifest.json');
   const dataPath = path.join(dir, 'data.geojson');
   const realSession = fs.realpathSync(session.cwd);
   const realManifest = fs.realpathSync(manifestPath);
   const realData = fs.realpathSync(dataPath);
-  if (!within(realSession, realManifest) || !within(realSession, realData)) throw serviceError('Geo resource path is not allowed.', 403);
+  if (!isWithin(realSession, realManifest) || !isWithin(realSession, realData)) throw serviceError('Geo resource path is not allowed.', 403);
   const manifest = JSON.parse(fs.readFileSync(realManifest, 'utf8')) as { resourceId?: unknown; sha256?: unknown; bytes?: unknown };
   const bytes = fs.statSync(realData).size;
   const sha256 = sha256File(realData);

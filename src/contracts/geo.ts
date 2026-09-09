@@ -819,10 +819,6 @@ export function parseGeoClientContextStructured(value: unknown): GeoParseResult<
   return { ok: true, value: { version: 1, contextId, visualizationId, sceneRevision, mode, createdAt, view, visibleLayerIds, ...(selection ? { selection } : {}), ...(geometry ? { geometry } : {}), summary }, diagnostics: [] };
 }
 
-export function parseGeoClientContext(value: unknown) {
-  return parseGeoClientContextStructured(value).value;
-}
-
 export function parseGeoInteractionRequestStructured(value: unknown): GeoParseResult<GeoInteractionRequestV1> {
   const input = asRecord(value);
   if (!input) return interactionFail('request', 'invalid_type', 'Geo request must be an object.');

@@ -1,11 +1,6 @@
-const { execFile } = require('node:child_process');
-
-import type { JsonRecord, ModelIdentity, ParsedModelSpec, StatusError } from './types.js';
+import type { ModelIdentity, ParsedModelSpec } from './types.js';
 import { PI_AGENT_DIR } from './config.js';
 import { listAvailablePiModels } from './pi-model-access.js';
-
-type ExecFileCallback = (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => void;
-type ExecFileFn = (file: string, args: string[], opts: JsonRecord, callback: ExecFileCallback) => void;
 
 export function modelLabel(model: ModelIdentity | string | null | undefined, fallback = '') {
   if (!model) return fallback || '';
@@ -56,51 +51,8 @@ export function parseModelSpecToModel(spec: unknown): ParsedModelSpec {
   return { model: normalizeModel(core), level };
 }
 
-export function parseYesNo(value: unknown) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'yes') return true;
-  if (normalized === 'no') return false;
-  return value;
-}
-
-export function parsePiListModels(output: string) {
-  const lines = String(output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const models = [];
-  for (const line of lines) {
-    if (/^provider\s+model\s+/i.test(line)) continue;
-    const parts = line.split(/\s{2,}/).map((part) => part.trim()).filter(Boolean);
-    if (parts.length < 2) continue;
-    const [provider, id, context, maxOutput, thinking, images] = parts;
-    if (!provider || !id) continue;
-    models.push({
-      provider,
-      id,
-      ...(context !== undefined ? { context } : {}),
-      ...(maxOutput !== undefined ? { maxOutput } : {}),
-      ...(thinking !== undefined ? { thinking: parseYesNo(thinking) } : {}),
-      ...(images !== undefined ? { images: parseYesNo(images) } : {}),
-    });
-  }
-  return models;
-}
-
 const MODEL_LIST_CACHE_MS = 5 * 60 * 1000;
 let modelListCache: { at: number; models: ModelIdentity[] } = { at: 0, models: [] };
-let _execFileForTest: ExecFileFn | null = null;
-
-export function execFileAsync(file: string, args: string[], opts: JsonRecord): Promise<{ stdout: string; stderr: string }> {
-  const runner: ExecFileFn = _execFileForTest || execFile;
-  return new Promise((resolve, reject) => {
-    runner(file, args, opts, (err: NodeJS.ErrnoException | null, stdout: string, stderr: string) => {
-      if (err) {
-        (err as StatusError).stderr = stderr;
-        reject(err);
-        return;
-      }
-      resolve({ stdout, stderr });
-    });
-  });
-}
 
 export async function getAvailableModels() {
   const now = Date.now();
@@ -119,5 +71,4 @@ export async function getAvailableModels() {
 }
 
 
-export function _setExecFileForTest(fn: ExecFileFn | null | undefined) { _execFileForTest = fn || null; modelListCache = { at: 0, models: [] }; }
 export function invalidateModelListCache() { modelListCache = { at: 0, models: [] }; }

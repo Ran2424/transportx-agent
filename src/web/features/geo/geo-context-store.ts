@@ -1,25 +1,26 @@
-import type { GeoClientContextV1, GeoContextReferenceV1 } from '../../../contracts/geo.js';
+import { GEO_CONTEXTS_PER_MESSAGE, type GeoContextReferenceV1 } from '../../../contracts/geo.js';
+import { createStore } from '../../../public/kernel/store.js';
 
-export type AttachedGeoContext = { reference: GeoContextReferenceV1; context: GeoClientContextV1 };
-const bySession = new Map<string, AttachedGeoContext[]>();
-const listeners = new Set<() => void>();
-const EMPTY: AttachedGeoContext[] = [];
-
-function publish() { for (const listener of listeners) listener(); }
+type GeoContextState = Record<string, GeoContextReferenceV1[]>;
+const store = createStore<GeoContextState>({});
+const EMPTY: GeoContextReferenceV1[] = [];
 
 export const geoContextStore = {
-  subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
-  get(sessionId: string) { return bySession.get(sessionId) || EMPTY; },
-  attach(sessionId: string, item: AttachedGeoContext) {
-    const current = bySession.get(sessionId) || [];
-    if (current.some((entry) => entry.reference.contextId === item.reference.contextId)) return;
-    if (current.length >= 8) throw new Error('一条消息最多附加 8 个地图上下文。');
-    bySession.set(sessionId, [...current, item]);
-    publish();
+  subscribe(listener: () => void) { return store.subscribe(listener); },
+  get(sessionId: string) { return store.get()[sessionId] || EMPTY; },
+  attach(sessionId: string, reference: GeoContextReferenceV1) {
+    const current = store.get()[sessionId] || EMPTY;
+    if (current.some((item) => item.contextId === reference.contextId)) return;
+    if (current.length >= GEO_CONTEXTS_PER_MESSAGE) throw new Error(`一条消息最多附加 ${GEO_CONTEXTS_PER_MESSAGE} 个地图上下文。`);
+    store.set((state) => ({ ...state, [sessionId]: [...current, reference] }));
   },
   remove(sessionId: string, contextId: string) {
-    bySession.set(sessionId, (bySession.get(sessionId) || []).filter((item) => item.reference.contextId !== contextId));
-    publish();
+    const current = store.get()[sessionId] || EMPTY;
+    const next = current.filter((item) => item.contextId !== contextId);
+    store.set(({ [sessionId]: _removed, ...rest }) => next.length ? { ...rest, [sessionId]: next } : rest);
   },
-  clear(sessionId: string) { if (bySession.delete(sessionId)) publish(); },
+  clear(sessionId: string) {
+    if (!store.get()[sessionId]) return;
+    store.set(({ [sessionId]: _removed, ...rest }) => rest);
+  },
 };

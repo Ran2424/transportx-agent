@@ -13,16 +13,13 @@ type HeaderProps = {
   sidebarOpen: boolean;
   fileOpen: boolean;
   taskOpen: boolean;
-  mapOpen: boolean;
-  videoOpen: boolean;
+  canvasOpen: boolean;
   taskAvailable: boolean;
-  mapAvailable: boolean;
-  videoAvailable: boolean;
+  canvasAvailable: boolean;
   onToggleSidebar(): void;
   onToggleFiles(): void;
   onToggleTasks(): void;
-  onToggleMap(): void;
-  onToggleVideo(): void;
+  onToggleCanvas(): void;
   onGoHome(): void;
   onOpenModel(): void;
   onOpenCommands(): void;
@@ -36,16 +33,13 @@ export function Header({
   sidebarOpen,
   fileOpen,
   taskOpen,
-  mapOpen,
-  videoOpen,
+  canvasOpen,
   taskAvailable,
-  mapAvailable,
-  videoAvailable,
+  canvasAvailable,
   onToggleSidebar,
   onToggleFiles,
   onToggleTasks,
-  onToggleMap,
-  onToggleVideo,
+  onToggleCanvas,
   onGoHome,
   onOpenModel,
   onOpenCommands,
@@ -105,11 +99,8 @@ export function Header({
         <button className="icon-button" type="button" aria-label={t('header.toggleTasks')} aria-pressed={taskOpen} disabled={!taskAvailable} title={taskAvailable ? t('app.command.tasks.open') : t('app.command.tasks.unavailable')} onClick={onToggleTasks}>
           <Icon name="task" />
         </button>
-        <button className="icon-button" type="button" aria-label={t('header.toggleMap')} aria-pressed={mapOpen} disabled={!mapAvailable} title={mapAvailable ? t('app.command.map.open') : t('app.command.map.unavailable')} onClick={onToggleMap}>
-          <Icon name="map" />
-        </button>
-        <button className="icon-button" type="button" aria-label={t('header.toggleVideo')} aria-pressed={videoOpen} disabled={!videoAvailable} title={videoAvailable ? t('app.command.video.open') : t('app.command.video.unavailable')} onClick={onToggleVideo}>
-          <Icon name="video" />
+        <button className="icon-button" type="button" aria-label={t('canvas.toggle')} aria-pressed={canvasOpen} disabled={!canvasAvailable} title={t('canvas.description')} onClick={onToggleCanvas}>
+          <Icon name="panel" />
         </button>
         <button className="icon-button" type="button" aria-label={t('header.openSettings')} onClick={onOpenSettings}>
           <Icon name="settings" />

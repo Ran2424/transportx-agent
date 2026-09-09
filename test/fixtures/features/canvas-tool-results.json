@@ -1,0 +1,74 @@
+{
+  "first": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Presenting 东入口录像"
+      }
+    ],
+    "details": {
+      "video": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "scene": {
+          "schemaVersion": 1,
+          "revision": 1,
+          "videos": [
+            {
+              "id": "video_canvas_a",
+              "resourceId": "video_canvas_a",
+              "videoId": "camera_a",
+              "title": "东入口录像",
+              "recordingStartTime": "2026-08-16T08:00:00+08:00",
+              "recordingEndTime": "2026-08-16T08:00:02+08:00",
+              "durationSeconds": 2,
+              "kind": "source"
+            }
+          ],
+          "activeVideoId": "video_canvas_a"
+        }
+      }
+    }
+  },
+  "second": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Presenting 西入口录像"
+      }
+    ],
+    "details": {
+      "video": {
+        "schemaVersion": 1,
+        "revision": 2,
+        "scene": {
+          "schemaVersion": 1,
+          "revision": 2,
+          "videos": [
+            {
+              "id": "video_canvas_a",
+              "resourceId": "video_canvas_a",
+              "videoId": "camera_a",
+              "title": "东入口录像",
+              "recordingStartTime": "2026-08-16T08:00:00+08:00",
+              "recordingEndTime": "2026-08-16T08:00:02+08:00",
+              "durationSeconds": 2,
+              "kind": "source"
+            },
+            {
+              "id": "video_canvas_b",
+              "resourceId": "video_canvas_b",
+              "videoId": "camera_b",
+              "title": "西入口录像",
+              "recordingStartTime": "2026-08-16T08:00:00+08:00",
+              "recordingEndTime": "2026-08-16T08:00:02+08:00",
+              "durationSeconds": 2,
+              "kind": "source"
+            }
+          ],
+          "activeVideoId": "video_canvas_b"
+        }
+      }
+    }
+  }
+}

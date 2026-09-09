@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { within } from './asset-integrity.js';
+import { isWithin } from './util/path.js';
 import { writeJson as sendJson } from './http/response.js';
 
 type GeoResourceSession = { cwd: string };
@@ -47,7 +47,7 @@ export function serveGeoResource(req: IncomingMessage, res: ServerResponse, sess
   if (!RESOURCE_ID_RE.test(resourceId)) return sendJson(res, 400, { error: 'Invalid geo resource id' });
   const root = path.resolve(session.cwd, '.tau', 'geo-resources');
   const resourceDir = path.resolve(root, resourceId);
-  if (!within(root, resourceDir)) return sendJson(res, 403, { error: 'Geo resource is outside the active task' });
+  if (!isWithin(root, resourceDir)) return sendJson(res, 403, { error: 'Geo resource is outside the active task' });
   const manifestPath = path.join(resourceDir, 'manifest.json');
   const dataPath = path.join(resourceDir, 'data.geojson');
   try {
@@ -55,7 +55,7 @@ export function serveGeoResource(req: IncomingMessage, res: ServerResponse, sess
     const realResourceDir = fs.realpathSync(resourceDir);
     const realManifest = fs.realpathSync(manifestPath);
     const realData = fs.realpathSync(dataPath);
-    if (!within(realRoot, realResourceDir) || !within(realResourceDir, realManifest) || !within(realResourceDir, realData)) {
+    if (!isWithin(realRoot, realResourceDir) || !isWithin(realResourceDir, realManifest) || !isWithin(realResourceDir, realData)) {
       return sendJson(res, 403, { error: 'Geo resource path is not allowed' });
     }
     const manifest = JSON.parse(fs.readFileSync(realManifest, 'utf8')) as GeoResourceManifest;

@@ -10,26 +10,36 @@ export type CitationCompileResult = {
   unavailableIds: string[];
 };
 export type CitationExportFormat = 'bibtex' | 'csl-json' | 'ris';
+export type ResolvedCitationOccurrence = { occurrence: CitationOccurrence; work: CitationWork; resource: CitationResource; locator: CitationLocator };
 
-const MARKER_RE = /\[\[cite:([A-Za-z0-9_.:-]+(?:\s*,\s*[A-Za-z0-9_.:-]+)*)\]\]/g;
+export const CITATION_MARKER_RE = /\[\[cite:([A-Za-z0-9_.:-]+(?:\s*,\s*[A-Za-z0-9_.:-]+)*)\]\]/g;
 const GENERATED_REFERENCE_RE = /\n*<!-- tau:references:start -->[\s\S]*?<!-- tau:references:end -->\s*$/;
 
 function bodyWithoutReferences(markdown: string) {
   return markdown.replace(GENERATED_REFERENCE_RE, '').trimEnd();
 }
 
-function occurrenceIndex(envelope: CitationEnvelope) {
+export function citationOccurrenceIndex(envelope: CitationEnvelope) {
   const works = new Map(envelope.works.map((item) => [item.workId, item]));
   const resources = new Map(envelope.resources.map((item) => [item.resourceId, item]));
   const locators = new Map(envelope.locators.map((item) => [item.locatorId, item]));
-  const resolved = new Map<string, Omit<CompiledCitation, 'number'>>();
+  const resolved = new Map<string, ResolvedCitationOccurrence>();
   for (const occurrence of envelope.occurrences) {
     const locator = locators.get(occurrence.locatorId);
     const resource = locator && resources.get(locator.resourceId);
     const work = resource && works.get(resource.workId);
-    if (locator && resource && work) resolved.set(occurrence.occurrenceId, { occurrenceId: occurrence.occurrenceId, work, resource, locator });
+    if (locator && resource && work) resolved.set(occurrence.occurrenceId, { occurrence, work, resource, locator });
   }
   return resolved;
+}
+
+export function citationIdsInText(text: string) {
+  const searchable = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '');
+  const ids: string[] = [];
+  for (const match of searchable.matchAll(CITATION_MARKER_RE)) {
+    for (const id of match[1].split(',').map((value) => value.trim())) if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }
 
 function locatorText(locator: CitationLocator) {
@@ -52,26 +62,23 @@ export function formatGbt7714Reference(citation: CompiledCitation) {
 }
 
 export function compileCitations(markdown: string, envelope: CitationEnvelope, profile: CitationProfile = 'gbt7714-numeric'): CitationCompileResult {
-  const available = occurrenceIndex(envelope);
+  const available = citationOccurrenceIndex(envelope);
   const numbers: Record<string, number> = {};
   const citationMap: CitationCompileResult['citationMap'] = {};
   const references: CompiledCitation[] = [];
   const workNumbers = new Map<string, number>();
   const unavailableIds: string[] = [];
   const body = bodyWithoutReferences(markdown);
-  const searchable = body.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '');
-  for (const match of searchable.matchAll(MARKER_RE)) {
-    for (const occurrenceId of match[1].split(',').map((item) => item.trim())) {
-      const citation = available.get(occurrenceId);
-      if (!citation) { if (!unavailableIds.includes(occurrenceId)) unavailableIds.push(occurrenceId); continue; }
-      const number = workNumbers.get(citation.work.workId) || references.length + 1;
-      if (!workNumbers.has(citation.work.workId)) {
-        workNumbers.set(citation.work.workId, number);
-        references.push({ ...citation, number });
-      }
-      numbers[occurrenceId] = number;
-      citationMap[occurrenceId] = { workId: citation.work.workId, resourceId: citation.resource.resourceId, locatorId: citation.locator.locatorId, number };
+  for (const occurrenceId of citationIdsInText(body)) {
+    const citation = available.get(occurrenceId);
+    if (!citation) { unavailableIds.push(occurrenceId); continue; }
+    const number = workNumbers.get(citation.work.workId) || references.length + 1;
+    if (!workNumbers.has(citation.work.workId)) {
+      workNumbers.set(citation.work.workId, number);
+      references.push({ occurrenceId: citation.occurrence.occurrenceId, work: citation.work, resource: citation.resource, locator: citation.locator, number });
     }
+    numbers[occurrenceId] = number;
+    citationMap[occurrenceId] = { workId: citation.work.workId, resourceId: citation.resource.resourceId, locatorId: citation.locator.locatorId, number };
   }
   const referenceLines = profile === 'gbt7714-numeric'
     ? references.map(formatGbt7714Reference)

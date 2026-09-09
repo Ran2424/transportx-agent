@@ -8,6 +8,7 @@ import {
   type CitationResource,
   type CitationWork,
 } from '../../../contracts/citation.ts';
+import { CITATION_MARKER_RE, citationIdsInText, citationOccurrenceIndex } from '../../../contracts/citation-compiler.ts';
 
 export type ResolvedCitation = {
   occurrence: CitationOccurrence;
@@ -26,8 +27,6 @@ export type MessageCitationProjection = {
 };
 export type AvailableCitation = Omit<ResolvedCitation, 'number'>;
 
-const MARKER_RE = /\[\[cite:([A-Za-z0-9_.:-]+(?:\s*,\s*[A-Za-z0-9_.:-]+)*)\]\]/g;
-const GENERATED_REFERENCE_START = '<!-- tau:references:start -->';
 
 function messageText(message: SessionEntry['message']) {
   if (!message) return '';
@@ -37,27 +36,8 @@ function messageText(message: SessionEntry['message']) {
     : '';
 }
 
-export function citationIdsInText(text: string) {
-  const searchable = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '');
-  const ids: string[] = [];
-  for (const match of searchable.matchAll(MARKER_RE)) {
-    for (const id of match[1].split(',').map((value) => value.trim())) if (!ids.includes(id)) ids.push(id);
-  }
-  return ids;
-}
-
 function resolveEnvelope(envelope: NonNullable<ReturnType<typeof parseCitationEnvelope>>) {
-  const works = new Map(envelope.works.map((item) => [item.workId, item]));
-  const resources = new Map(envelope.resources.map((item) => [item.resourceId, item]));
-  const locators = new Map(envelope.locators.map((item) => [item.locatorId, item]));
-  const resolved = new Map<string, AvailableCitation>();
-  for (const occurrence of envelope.occurrences) {
-    const locator = locators.get(occurrence.locatorId);
-    const resource = locator ? resources.get(locator.resourceId) : null;
-    const work = resource ? works.get(resource.workId) : null;
-    if (locator && resource && work) resolved.set(occurrence.occurrenceId, { occurrence, locator, resource, work });
-  }
-  return resolved;
+  return citationOccurrenceIndex(envelope);
 }
 
 function projectionForIds(ids: string[], available: Map<string, AvailableCitation>): MessageCitationProjection {
@@ -100,17 +80,6 @@ export function projectCitationText(text: string, available: Map<string, Availab
   return projectionForIds(ids, available);
 }
 
-export function stripManualCitationReferenceTail(markdown: string) {
-  const generatedStart = markdown.indexOf(GENERATED_REFERENCE_START);
-  const suffix = generatedStart >= 0 ? markdown.slice(generatedStart).trimStart() : '';
-  const body = (generatedStart >= 0 ? markdown.slice(0, generatedStart) : markdown)
-    .replace(/\n+(?:---\s*\n+)?#{1,3}\s+(?:参考依据|参考文献|引用依据)\s*\n[\s\S]*$/u, '')
-    .trimEnd();
-  return suffix ? `${body}\n\n${suffix}` : body;
-}
-
-export function citationDisplayText(text: string, _projection?: MessageCitationProjection) { return text; }
-
 function locatorText(locator: CitationLocator) {
   const positions: string[] = [];
   const english = i18n.language === 'en-US';
@@ -139,7 +108,7 @@ export function citationReferenceMarkdown(projection?: MessageCitationProjection
 
 export function citationCopyText(text: string, projection?: MessageCitationProjection) {
   if (!projection) return text;
-  let output = text.replace(MARKER_RE, (_marker, raw: string) => raw.split(',').map((id) => projection.numbers[id.trim()] ? `[${projection.numbers[id.trim()]}]` : `[${i18n.language === 'en-US' ? 'citation unavailable' : '引用不可用'}]`).join(''));
+  let output = text.replace(CITATION_MARKER_RE, (_marker, raw: string) => raw.split(',').map((id) => projection.numbers[id.trim()] ? `[${projection.numbers[id.trim()]}]` : `[${i18n.language === 'en-US' ? 'citation unavailable' : '引用不可用'}]`).join(''));
   if (projection.citations.length) output += `\n\n${citationReferenceMarkdown(projection)}`;
   return output;
 }

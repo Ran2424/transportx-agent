@@ -38,3 +38,7 @@ description: 查询、展示、定位并受控处理本地录像（Demo MP4）�
 
 - 视频数据来自已安装的 Data Module（如 demo-video）。未安装或未配置时，`video_search` 会返回“没有可用视频数据”，此时如实告知用户，不要猜测文件路径。
 - 工具不返回、你也无需构造任何绝对路径；派生片段通过 `resourceId` 引用。
+
+## Canvas 视图
+
+`video_present` 打开或激活指定录像的 Canvas 标签。用户要求切换回已有录像时，复用其 videoId 或 resourceId 调用该工具。不同录像可分别保留在顶部标签中；`compare=true` 保留现有双画面对比。

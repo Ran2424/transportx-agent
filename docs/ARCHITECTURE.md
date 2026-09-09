@@ -97,6 +97,8 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 ### React Workspace 与 Browser Kernel
 
+Canvas 在工作区顶部以具名标签承载当前任务的地图和视频。Canvas 统一管理打开的引用与活动标签，领域面板接收指定成果并维护缩放、图层和播放状态。Agent 的展示工具激活对应标签；`show_map` 只显示已有地图，不推进 revision。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。
+
 `src/public/` 提供浏览器端的 Kernel、Markdown/工具结果处理和 Geo runtime；`src/web/` 负责 React 应用、功能面板、i18n 与样式。React 通过 Kernel 消费 Snapshot/事件并发送命令，不解析原始 Pi RPC，也不直接访问本机文件。
 
 ## 3. 关键数据流
@@ -152,7 +154,7 @@ Module 是唯一安装与版本冻结单元，可组合贡献 Skill、Extension�
 
 | 来源 | 位置 | 用途 |
 |---|---|---|
-| 内置 capability | `modules/capabilities/` | Task、Timing、Citation、Geo、Spatial Analysis、Video、Web Bridge 等通用机制 |
+| 内置 capability | `modules/capabilities/` | Task、Citation、Geo、Spatial Analysis、Video、Web Bridge 等通用机制 |
 | 内置 official | `modules/official/` | Workbench、报告模板、Module Authoring |
 | 用户可安装源码 | `modules/installable/` | 上海数据、交通保障知识、绘图风格、演示数据；不打入应用 |
 | 用户受管 Module | 用户目录 `modules/<id>/<version>/` | 安装后显式启用，参与新任务装配 |
