@@ -14,7 +14,7 @@
 import { asRecord, type JsonRecord } from './common.ts';
 import { SESSION_SNAPSHOT_SCHEMA_VERSION } from './version.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
-import { parseGeoInteractionRequestStructured, type GeoInteractionRequestV1 } from './geo.ts';
+import { parseGeoInteractionRequestStructured, parseGeoScreenshotRequestStructured, type GeoInteractionRequestV1, type GeoScreenshotRequestV1 } from './geo.ts';
 
 /**
  * Raw session row. The contract deliberately keeps this loose — it is the
@@ -35,7 +35,7 @@ export type SessionEntry = JsonRecord & {
 export type SessionSnapshot = {
   readonly schemaVersion: typeof SESSION_SNAPSHOT_SCHEMA_VERSION;
   entries: SessionEntry[];
-  geoInteraction?: { contextCount: number; waitingRequest?: GeoInteractionRequestV1 };
+  geoInteraction?: { contextCount: number; waitingRequest?: GeoInteractionRequestV1; waitingScreenshotRequest?: GeoScreenshotRequestV1 };
 };
 
 export type SessionBranchDiagnostic = ContractDiagnostic;
@@ -116,8 +116,14 @@ export function parseSessionSnapshot(value: unknown): SessionBranchResult<Sessio
     if (!parsed.ok) return { ok: false, value: null, diagnostics: parsed.diagnostics };
     waitingRequest = parsed.value;
   }
+  let waitingScreenshotRequest: GeoScreenshotRequestV1 | undefined;
+  if (interaction?.waitingScreenshotRequest !== undefined) {
+    const parsed = parseGeoScreenshotRequestStructured(interaction.waitingScreenshotRequest);
+    if (!parsed.ok) return { ok: false, value: null, diagnostics: parsed.diagnostics };
+    waitingScreenshotRequest = parsed.value;
+  }
   const geoInteraction = interaction
-    ? { contextCount: Number(interaction.contextCount), ...(waitingRequest ? { waitingRequest } : {}) }
+    ? { contextCount: Number(interaction.contextCount), ...(waitingRequest ? { waitingRequest } : {}), ...(waitingScreenshotRequest ? { waitingScreenshotRequest } : {}) }
     : undefined;
   return { ok: true, value: { schemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, entries, ...(geoInteraction ? { geoInteraction } : {}) }, diagnostics: [] };
 }

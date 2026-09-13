@@ -75,6 +75,26 @@ Vite 地址为 <http://127.0.0.1:5173>，API 与 WebSocket 默认代理到 `127.
 npm run desktop:dev
 ```
 
+### 命令行模式
+
+构建后可以直接在终端启动 TransportX Agent：
+
+```bash
+node bin/transportx.js
+node bin/transportx.js --print "分析当前交通数据"
+node bin/transportx.js modules list
+```
+
+通过 `npm link` 或安装 npm 包后，入口命令为 `transportx`。命令行默认不加载任何可选 Module；Task、Citation、Web Bridge、Geo、Spatial Analysis 和 Video 都需要通过可重复的 `--module <id[@version]>` 显式启用。`--no-modules` 可用于明确声明不加载可选 Module：
+
+```bash
+transportx --module com.transportx.task@1.0.1
+transportx --module com.transportx.shanghaidata@2.0.1 --print "统计早高峰流量"
+transportx --no-modules --model provider/model
+```
+
+CLI 仍通过 Agent Host 创建独立任务目录，并冻结精确的 Module 版本。Geo 框选、地图截图和视频播放等界面交互需要桌面工作台。
+
 首次创建任务前，在“新建交通任务”或“设置”中添加一个 Pi 兼容模型。模型定义与密钥分开保存，API Key 不返回前端。
 
 ## 用户数据

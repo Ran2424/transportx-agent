@@ -124,6 +124,7 @@ export const GEO_REQUEST_MAX_TARGET_LAYERS = 32;
 export const GEO_REQUEST_DEFAULT_TIMEOUT_SECONDS = 600;
 export const GEO_REQUEST_MIN_TIMEOUT_SECONDS = 30;
 export const GEO_REQUEST_MAX_TIMEOUT_SECONDS = 1_800;
+export const GEO_SCREENSHOT_TIMEOUT_SECONDS = 60;
 export const GEO_CONTEXT_PROMPT_BEGIN = '<!-- TAU_GEO_CONTEXT_V1 -->';
 export const GEO_CONTEXT_PROMPT_END = '<!-- /TAU_GEO_CONTEXT_V1 -->';
 
@@ -215,6 +216,17 @@ export type GeoInteractionResponseV1 = {
   contextId?: string;
   reason?: GeoInteractionResponseReason;
   completedAt: string;
+};
+
+export type GeoScreenshotRequestV1 = {
+  version: 1;
+  requestId: string;
+  sessionId: string;
+  visualizationId: string;
+  sceneRevision: number;
+  status: 'waiting';
+  createdAt: string;
+  expiresAt: string;
 };
 
 export function buildGeoContextPrompt(contextIds: string[]) {
@@ -706,7 +718,7 @@ function interactionFail<T>(path: string, code: ContractDiagnostic['code'], mess
   return { ok: false, value: null, diagnostics: [diagnostic({ path, code, message })] };
 }
 
-function interactionId(value: unknown, prefix: 'geoctx_' | 'georeq_') {
+function interactionId(value: unknown, prefix: 'geoctx_' | 'georeq_' | 'geoshot_') {
   const text = asString(value, 80);
   return text && new RegExp(`^${prefix}[A-Za-z0-9_-]{12,64}$`).test(text) ? text : null;
 }
@@ -885,4 +897,23 @@ export function parseGeoInteractionResponseStructured(value: unknown): GeoParseR
   const reason = typeof input.reason === 'string' ? input.reason as GeoInteractionResponseReason : null;
   if (!reason || !RESPONSE_REASONS[status].includes(reason) || input.contextId !== undefined) return interactionFail('response.reason', 'unsupported_value', `${status} requires its matching reason and forbids contextId.`);
   return { ok: true, value: { version: 1, requestId, status, reason, completedAt }, diagnostics: [] };
+}
+
+export function parseGeoScreenshotRequestStructured(value: unknown): GeoParseResult<GeoScreenshotRequestV1> {
+  const input = asRecord(value);
+  if (!input) return interactionFail('screenshotRequest', 'invalid_type', 'Geo screenshot request must be an object.');
+  if (input.version !== 1) return interactionFail('screenshotRequest.version', 'unknown_schema_version', 'Unsupported Geo screenshot request version.');
+  const requestId = interactionId(input.requestId, 'geoshot_');
+  const sessionId = asString(input.sessionId, 160);
+  const visualizationId = asString(input.visualizationId, 80);
+  const revision = asInteger(input.sceneRevision);
+  const createdAt = isoDate(input.createdAt);
+  const expiresAt = isoDate(input.expiresAt);
+  if (!requestId) return interactionFail('screenshotRequest.requestId', 'invalid_type', 'requestId must be a valid geoshot_ identifier.');
+  if (!sessionId) return interactionFail('screenshotRequest.sessionId', 'invalid_type', 'sessionId is required.');
+  if (!visualizationId || !SOURCE_ID_RE.test(visualizationId)) return interactionFail('screenshotRequest.visualizationId', 'invalid_type', 'visualizationId must be a valid identifier.');
+  if (revision === null || revision < 1) return interactionFail('screenshotRequest.sceneRevision', 'out_of_range', 'sceneRevision must be positive.');
+  if (input.status !== 'waiting') return interactionFail('screenshotRequest.status', 'unsupported_value', 'status must be waiting.');
+  if (!createdAt || !expiresAt || Date.parse(expiresAt) <= Date.parse(createdAt)) return interactionFail('screenshotRequest.expiresAt', 'out_of_range', 'Request timestamps must define a future expiry.');
+  return { ok: true, value: { version: 1, requestId, sessionId, visualizationId, sceneRevision: revision, status: 'waiting', createdAt, expiresAt }, diagnostics: [] };
 }

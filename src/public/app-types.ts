@@ -11,7 +11,7 @@
 import type { ContractDiagnostic } from '../contracts/diagnostic.js';
 import type { CapabilityMismatchReason, RuntimeCapabilities } from '../contracts/capabilities.js';
 import type { ResolvedSessionPlanV3 } from '../contracts/resolved-session-plan.js';
-import type { GeoInteractionRequestV1 } from '../contracts/geo.js';
+import type { GeoInteractionRequestV1, GeoScreenshotRequestV1 } from '../contracts/geo.js';
 export type { SessionAttachment, SessionAttachmentKind, SessionAttachmentSource, SessionAttachmentStatus } from '../contracts/attachments.js';
 
 export type SessionSnapshot = {
@@ -25,7 +25,7 @@ export type SessionSnapshot = {
   model?: ModelRecord | null;
   thinkingLevel?: string;
   pendingExtensionUiRequests?: AppEvent[];
-  geoInteraction?: { contextCount: number; waitingRequest?: GeoInteractionRequestV1 };
+  geoInteraction?: { contextCount: number; waitingRequest?: GeoInteractionRequestV1; waitingScreenshotRequest?: GeoScreenshotRequestV1 };
 };
 
 export type SessionEntry = {

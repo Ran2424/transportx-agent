@@ -86,8 +86,16 @@ export class SessionAssembler {
   assemble(domainId: string, workspace: string, requestedProfile?: SessionProfileV1): ResolvedSessionPlan {
     const modules = this.registry.dependencyOrder(domainId);
     const included = new Set(modules.map((module) => module.manifest.id));
-    for (const installed of this.registry.enabled().filter((module) => module.origin !== 'builtin')) {
-      for (const dependency of this.registry.dependencyOrder(installed.manifest.id)) {
+    const selected = requestedProfile
+      ? requestedProfile.modules.selected.map((selection) => {
+        const module = this.registry.get(selection.id);
+        if (!module?.enabled) throw new Error(`Selected Module is unavailable: ${selection.id}@${selection.version}`);
+        if (module.manifest.version !== selection.version) throw new Error(`Selected Module version is unavailable: ${selection.id}@${selection.version}`);
+        return module;
+      })
+      : this.registry.enabled().filter((module) => module.origin !== 'builtin');
+    for (const module of selected) {
+      for (const dependency of this.registry.dependencyOrder(module.manifest.id)) {
         if (included.has(dependency.manifest.id)) continue;
         included.add(dependency.manifest.id);
         modules.push(dependency);

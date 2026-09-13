@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+## 3.1.7 - 2026-09-13
+
+### Added
+
+- 新增面向用户的 `transportx` 命令行入口，支持交互式会话、单次/JSON/JSONL 输出、模型选择，以及内置和已安装 Module 的精确选择；CLI 默认不加载任何可选 Module。
+- Geo 模块升级至 1.3.0：新增 `capture_geo_screenshot` 工具，Agent 可请求工作台捕获最终地图、图例和说明，保存到当前任务目录，并将返回的相对路径插入 Markdown 报告与 PDF。
+- 新增 `com.transportx.shanghai-hub-traffic` 1.0.0 首版模块，将两场三站源表治理为六个可关联 SQLite 数据库，提供来源血缘、冲突处置、质量规则、指标口径、只读查询和可复现构建校验脚本。
+
 ## 3.1.6 - 2026-09-09
 
 ### Changed

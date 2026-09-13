@@ -339,7 +339,7 @@ function listen(port: number, attemptsLeft = 10) {
     computeUrls(actualPort);
     console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`);
     console.log(`[Tau] React application: ${REACT_STATIC_DIR} (/)`);
-    if (DESKTOP_MODE) console.log(JSON.stringify({ type: 'transportx-agent-host-ready', port: actualPort, host: HOST, protocolVersion: AGENT_HOST_PROTOCOL_VERSION, pid: process.pid }));
+    if (DESKTOP_MODE || ARGS['ready-json'] === true) console.log(JSON.stringify({ type: 'transportx-agent-host-ready', port: actualPort, host: HOST, protocolVersion: AGENT_HOST_PROTOCOL_VERSION, pid: process.pid }));
     if (ARGS.open) openUrl(lanUrl).catch(() => {});
   });
 }
@@ -358,7 +358,7 @@ function startCli() {
   process.on('exit', () => { for (const session of liveManager.sessions.values()) try { session.child?.kill('SIGTERM'); } catch {} });
   process.on('uncaughtException', (error) => { console.error(error); shutdown('uncaughtException'); }); process.on('unhandledRejection', (error) => console.error(error));
   const parentPid = Number(ARGS['parent-pid'] || process.env.TAU_PARENT_PID || 0);
-  if (DESKTOP_MODE && parentPid > 0) {
+  if (parentPid > 0) {
     const watcher = setInterval(() => { try { process.kill(parentPid, 0); } catch { clearInterval(watcher); shutdown('parent_exit'); } }, 1000);
     watcher.unref();
   }
