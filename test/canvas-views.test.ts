@@ -60,6 +60,7 @@ test('show_map activates a restored map without changing its revision or content
   extension({ registerTool: (tool: any) => tools.set(tool.name, tool), on: (name: string, handler: any) => handlers.set(name, handler) } as any);
   const ctx = { sessionManager: { getBranch: () => [{ type: 'message', message: fixture }] } };
   await handlers.get('session_start')({}, ctx);
+  assert.ok(tools.has('capture_geo_screenshot'));
   const result = await tools.get('present_visualization').execute('show', { command: 'show_map', visualizationId: fixture.details.visualization.visualizationId }, undefined, undefined, ctx);
   assert.equal(result.details.visualization.revision, fixture.details.visualization.revision);
   assert.deepEqual(result.details.visualization.scene, fixture.details.visualization.scene);

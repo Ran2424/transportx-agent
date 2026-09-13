@@ -15,6 +15,7 @@ export type TauArgs = Record<string, string | boolean | undefined> & {
   host?: string;
   'parent-pid'?: string;
   'projects-dir'?: string;
+  'ready-json'?: boolean;
 };
 
 export type TauSettingsFile = {

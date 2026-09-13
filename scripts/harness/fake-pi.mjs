@@ -26,6 +26,11 @@ import readline from 'node:readline';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+if (process.argv.includes('--version')) {
+  process.stdout.write('0.80.10\n');
+  process.exit(0);
+}
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FIXTURES_DIR = process.env.FAKE_PI_FIXTURES_DIR || path.join(REPO_ROOT, 'test', 'fixtures');
 const SCENARIO_PATH = process.env.FAKE_PI_SCENARIO || path.join(REPO_ROOT, 'scripts', 'harness', 'scenarios', 'baseline.json');
@@ -273,7 +278,9 @@ async function runSteps(steps, promptMessage) {
 
     if (step.geoHost) {
       const toolCallId = step.geoHost.toolCallId || `call_fake_${(++entryCounter).toString(16)}`;
-      const toolName = step.geoHost.path === 'inspect' ? 'inspect_map_context' : 'request_geo_input';
+      const toolName = step.geoHost.path === 'inspect'
+        ? 'inspect_map_context'
+        : step.geoHost.path === 'screenshot' ? 'capture_geo_screenshot' : 'request_geo_input';
       const args = step.geoHost.args || {};
       emit({ type: 'tool_execution_start', toolCallId, toolName, args });
       const response = await fetch(`${process.env.TAU_GEO_ENDPOINT}/api/internal/geo/${step.geoHost.path}`, {
@@ -282,8 +289,11 @@ async function runSteps(steps, promptMessage) {
         body: JSON.stringify({ ...args, sessionId: process.env.TAU_GEO_SESSION_ID, token: process.env.TAU_GEO_TOKEN }),
       });
       const payload = await response.json();
+      const detailKind = step.geoHost.path === 'inspect'
+        ? 'tau-geo-context'
+        : step.geoHost.path === 'screenshot' ? 'tau-geo-screenshot' : 'tau-geo-interaction';
       const result = response.ok
-        ? { content: [{ type: 'text', text: JSON.stringify(payload.result) }], details: { kind: step.geoHost.path === 'inspect' ? 'tau-geo-context' : 'tau-geo-interaction', result: payload.result } }
+        ? { content: [{ type: 'text', text: JSON.stringify(payload.result) }], details: { kind: detailKind, result: payload.result } }
         : { content: [{ type: 'text', text: payload.error || 'Geo Host request failed' }] };
       emit({ type: 'tool_execution_end', toolCallId, toolName, result, isError: !response.ok });
       const message = { role: 'toolResult', toolCallId, toolName, content: result.content, ...(result.details ? { details: result.details } : {}), isError: !response.ok, timestamp: Date.now() };

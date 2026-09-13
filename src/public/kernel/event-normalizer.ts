@@ -9,7 +9,7 @@
 import type { AppEvent, AppMessage, LiveSession, SessionEntry, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
 import { appError, type AppError } from '../../contracts/errors.ts';
-import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured } from '../../contracts/geo.ts';
+import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured, parseGeoScreenshotRequestStructured } from '../../contracts/geo.ts';
 import type { TransportSignal } from './transport.js';
 
 type RawMessage = { type?: unknown; [key: string]: unknown };
@@ -237,6 +237,19 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
           return [protocolError('malformed_message', 'geo_interaction_updated with an invalid request or response', sessionId)];
         }
         return [{ type: 'session/geoInteractionUpdated', sessionId, request: request?.value, response: response?.value }];
+      }
+      case 'geo_screenshot_updated': {
+        const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId : '';
+        if (!sessionId) return [protocolError('malformed_message', 'geo_screenshot_updated without a session id')];
+        if (raw.request !== undefined) {
+          const request = parseGeoScreenshotRequestStructured(raw.request);
+          if (!request.ok) return [protocolError('malformed_message', 'geo_screenshot_updated with an invalid request', sessionId)];
+          return [{ type: 'session/geoScreenshotUpdated', sessionId, request: request.value }];
+        }
+        const requestId = typeof raw.requestId === 'string' ? raw.requestId : '';
+        return requestId
+          ? [{ type: 'session/geoScreenshotUpdated', sessionId, requestId }]
+          : [protocolError('malformed_message', 'geo_screenshot_updated without a request or requestId', sessionId)];
       }
       case 'contract_diagnostic': {
         const error = raw.error as AppError | undefined;

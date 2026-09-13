@@ -126,6 +126,25 @@ test('Geo screenshots are validated and saved directly in the session directory'
   assert.throws(() => service.saveScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 2, dataUrl }), /revision changed/);
 });
 
+test('Agent screenshot requests wait for the browser and return a report-ready relative path', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-agent-screenshot-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const { GeoInteractionService } = require('../bin/geo-interaction-service.js');
+  const service = new GeoInteractionService();
+  const session = makeSession(cwd);
+  const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl6sAAAAASUVORK5CYII=';
+  const pending = service.requestScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 1 });
+  const request = service.snapshot(session)?.waitingScreenshotRequest;
+  assert.match(request?.requestId || '', /^geoshot_/);
+  const captured = service.respondScreenshot(session, request!.requestId, { status: 'captured', dataUrl });
+  assert.equal(captured.status, 'captured');
+  if (captured.status !== 'captured') throw new Error('screenshot was not captured');
+  assert.equal(captured.relativePath, captured.filename);
+  assert.equal(fs.existsSync(path.join(cwd, captured.relativePath)), true);
+  assert.deepEqual(await pending, captured);
+  assert.equal(service.snapshot(session)?.waitingScreenshotRequest, undefined);
+});
+
 test('Geo requests submit once, persist terminal state and restore through snapshots', async (t: any) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-request-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));

@@ -53,6 +53,7 @@ export function platformOverview(
       origin: module.origin,
       removable: module.origin === 'installed',
       enabled: module.enabled,
+      dependencies: module.manifest.dependencies,
       extensions: module.manifest.entrypoints?.piExtensions?.length || 0,
       skills: module.manifest.entrypoints?.skills?.length || 0,
       skillFiles: skillFiles(module.packageRoot, module.manifest.entrypoints?.skills || []),

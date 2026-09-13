@@ -181,6 +181,13 @@
       ]
     },
     {
+      "match": "geo-agent-screenshot",
+      "steps": [
+        { "geoHost": { "path": "screenshot", "args": { "visualizationId": "geo_interaction_map", "sceneRevision": 1 } } },
+        { "streamText": { "text": "地图截图已自动保存，可插入报告。", "chunks": 3, "delayMs": 10 } }
+      ]
+    },
+    {
       "match": "geo-refresh-request",
       "steps": [
         { "geoHost": { "path": "request", "args": { "visualizationId": "geo_interaction_map", "sceneRevision": 2, "mode": "viewport", "prompt": "刷新恢复验收：请确认当前视野", "timeoutSeconds": 600 } } },
