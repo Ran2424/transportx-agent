@@ -1,6 +1,6 @@
 ---
 name: geo-visualization-explanation
-description: 在 Tau 中使用 publish_geodata 和 present_visualization 构建、解释并调试声明式交互 Web GIS 地图。适用于发布 GeoJSON、绘制点/线/面图层、展示空间热点与专题样式、添加 POI 参考图层、切换图层、处理选择交互，或排查任何 Invalid GeoScene 错误。不适用于普通的静态 matplotlib 图表。
+description: 在 Tau 中使用 publish_geodata、present_visualization 和 capture_geo_screenshot 构建、解释、截图并调试声明式交互 Web GIS 地图。适用于发布 GeoJSON、绘制点/线/面图层、展示空间热点与专题样式、添加 POI 参考图层、切换图层、生成报告地图截图、处理选择交互，或排查任何 Invalid GeoScene 错误。不适用于普通的静态 matplotlib 图表。
 ---
 
 # 地理可视化说明
@@ -26,6 +26,7 @@ description: 在 Tau 中使用 publish_geodata 和 present_visualization 构建�
 | 控制图层或高亮结果 | `set_visibility` 或 `select` | 不要把临时 hover 当成 Scene 事实 |
 | 删除或排序图层 | `remove_layer` 或 `reorder_layers` | 不要通过重建整个地图来改变图层顺序 |
 | 清除当前可视化 | `clear` | 不要创建空 GeoJSON 来模拟清除 |
+| 将最终地图插入报告 | `capture_geo_screenshot` | 不要另画一张与 Canvas 状态不一致的静态图 |
 
 每条 `present_visualization` 命令只修改一个关注点。工具成功后会返回完整、递增 revision 的 GeoScene Snapshot；后续命令继续使用同一个 `visualizationId`。
 
@@ -146,3 +147,11 @@ grid["id"] = grid.index.astype(str)
 ## Canvas 视图
 
 每个 visualizationId 对应一个地图标签。创建独立地图时使用新 ID，更新原图时复用 ID。用户要求查看已有地图时，调用 `present_visualization(command="show_map", visualizationId=...)`；此操作仅激活 Canvas 标签，不修改地图或 revision。
+
+## 将地图截图写入报告
+
+- 完成图层、样式、说明和视角设置后，再调用 `capture_geo_screenshot`；传入最后一次成功结果中的 `visualizationId` 和 `revision`。
+- 工具会让工作台打开对应地图，捕获当前浏览器渲染的底图、业务图层、图例和说明，并把 PNG 保存到当前任务目录。
+- 工具返回 `relativePath` 后，使用 `![地图说明](relativePath)` 插入 Markdown。报告需要地理展示时，不要只在最终回复中说明“地图已在 Canvas 打开”。
+- 地图截图是展示产物，不是分析依据；指标结论仍须来自已校验的数据和空间分析结果。
+- 截图请求失败时，根据返回的 revision、地图可用性或前端连接错误处理；不要用未经说明的 Python 示意图冒充 Geo Canvas 截图。

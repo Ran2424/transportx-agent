@@ -320,6 +320,11 @@ const RequestGeoInputSchema = Type.Object({
   timeoutSeconds: Type.Optional(Type.Integer({ minimum: 30, maximum: 1800 })),
 }, { additionalProperties: false });
 
+const CaptureGeoScreenshotSchema = Type.Object({
+  visualizationId: VisualizationIdSchema,
+  sceneRevision: Type.Integer({ minimum: 1 }),
+}, { additionalProperties: false });
+
 function geoHost() {
   const endpoint = process.env.TAU_GEO_ENDPOINT;
   const sessionId = process.env.TAU_GEO_SESSION_ID;
@@ -328,7 +333,7 @@ function geoHost() {
   return { endpoint, sessionId, token };
 }
 
-async function geoHostCall(pathname: 'inspect' | 'request', body: Record<string, unknown>, signal?: AbortSignal) {
+async function geoHostCall(pathname: 'inspect' | 'request' | 'screenshot', body: Record<string, unknown>, signal?: AbortSignal) {
   const host = geoHost();
   const response = await fetch(`${host.endpoint}/api/internal/geo/${pathname}`, {
     method: 'POST',
@@ -384,6 +389,27 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal) {
       const result = await geoHostCall('request', params as Record<string, unknown>, signal);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], details: { kind: 'tau-geo-interaction' as const, result } };
+    },
+  });
+
+  pi.registerTool({
+    name: 'capture_geo_screenshot',
+    label: 'Capture Map Screenshot',
+    description: 'Capture the finalized browser-rendered map, legend, and description as a PNG in the current task directory.',
+    promptSnippet: 'Capture a finalized Geo visualization for use in reports or other task artifacts',
+    promptGuidelines: [
+      'Call this only after the map has its final scene revision and camera.',
+      'Use the returned relativePath directly in Markdown image syntax when the screenshot belongs in a report.',
+      'A screenshot is a presentation artifact, not a substitute for querying or validating the underlying GIS data.',
+    ],
+    parameters: CaptureGeoScreenshotSchema,
+    async execute(_toolCallId, params, signal) {
+      const result = await geoHostCall('screenshot', params as Record<string, unknown>, signal) as { status?: string; reason?: string; relativePath?: string };
+      if (result.status !== 'captured' || !result.relativePath) throw new Error(`Map screenshot failed: ${result.reason || 'unknown error'}`);
+      return {
+        content: [{ type: 'text' as const, text: `Saved map screenshot to ${result.relativePath}. Use ![map description](${result.relativePath}) to include it in Markdown reports.` }],
+        details: { kind: 'tau-geo-screenshot' as const, result },
+      };
     },
   });
 

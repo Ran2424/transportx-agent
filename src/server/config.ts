@@ -17,7 +17,7 @@ export function parseArgs(argv: string[]): TauArgs {
     const arg = argv[i];
     if (!arg.startsWith('--')) continue;
     const key = arg.slice(2);
-    if (key === 'open' || key === 'desktop') { out[key] = true; continue; }
+    if (key === 'open' || key === 'desktop' || key === 'ready-json') { out[key] = true; continue; }
     const next = argv[i + 1];
     if (next && !next.startsWith('--')) { out[key] = next; i++; }
   }
@@ -43,7 +43,7 @@ export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
     return null; // Video processing reports a clear error when ffmpeg is unavailable.
   }
 })();
-export const PLATFORM_VERSION = '3.1.6';
+export const PLATFORM_VERSION = '3.1.7';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -84,6 +84,7 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/video/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
+  'modules/official/cli/manifest.json',
   'modules/official/workbench/manifest.json',
 ].map((manifestPath) => {
   const absolutePath = path.join(APP_PATHS.appRoot, manifestPath);
@@ -113,14 +114,21 @@ export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RES
 export function sessionAssemblerForProfile(profile: SessionProfileV1) {
   const parsed = parseSessionProfileStructured(profile);
   if (!parsed.ok) throw new Error(parsed.diagnostics.map((item) => item.message).join('; '));
-  const allowed = new Set(TAU_SETTINGS.enabledModuleIds);
+  const builtinIds = new Set(BUILTIN_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
+  const externalIds = new Set(LOCAL_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
+  const allowed = new Set([...builtinIds, ...externalIds, ...TAU_SETTINGS.enabledModuleIds]);
   for (const selection of parsed.value.modules.selected) if (!allowed.has(selection.id)) throw new Error(`Selected Module is not enabled for new tasks: ${selection.id}`);
   const registry = new ModuleRegistry(PLATFORM_VERSION).load([
     ...BUILTIN_MODULE_MANIFESTS,
-    ...MODULE_INSTALLER.sourcesForSelections(parsed.value.modules.selected),
+    ...MODULE_INSTALLER.sourcesForSelections(parsed.value.modules.selected.filter((selection) => !builtinIds.has(selection.id) && !externalIds.has(selection.id))),
     ...LOCAL_MODULE_MANIFESTS,
   ]);
   if (registry.errors.length) throw new Error(registry.errors.map((item) => item.message).join('; '));
+  for (const selection of parsed.value.modules.selected) {
+    const module = registry.get(selection.id);
+    if (!module?.enabled) throw new Error(`Selected Module is unavailable: ${selection.id}@${selection.version}`);
+    if (module.manifest.version !== selection.version) throw new Error(`Selected Module version is unavailable: ${selection.id}@${selection.version}`);
+  }
   const assets = new AssetResolver(registry, ASSET_OVERRIDES);
   for (const selection of parsed.value.modules.selected) {
     const module = registry.get(selection.id)!;

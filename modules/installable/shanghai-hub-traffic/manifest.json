@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.shanghai-hub-traffic",
+  "name": "Shanghai Hub Traffic Data",
+  "version": "1.0.0",
+  "type": "module",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "entrypoints": {
+    "skills": ["skill/SKILL.md"]
+  },
+  "contributes": {
+    "assets": [
+      {
+        "id": "data:shanghai-hub-traffic",
+        "kind": "data",
+        "path": "assets/databases",
+        "integrityFile": "assets/databases/SHA256SUMS.txt",
+        "required": false
+      }
+    ]
+  }
+}

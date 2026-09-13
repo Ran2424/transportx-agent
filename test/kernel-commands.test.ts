@@ -130,6 +130,14 @@ test('Geo screenshots stay behind the session HTTP command port', async () => {
   assert.deepEqual(fixture.commands[0], { visualizationId: 'map-1', sceneRevision: 2, dataUrl: 'data:image/png;base64,png' });
 });
 
+test('Agent-requested Geo screenshots complete through the session HTTP command port', async () => {
+  const fixture = deps(() => ({ status: 'captured', filename: 'map-screenshot.png', relativePath: 'map-screenshot.png', bytes: 68 }));
+  const geo = createGeoCommands(fixture.value);
+  await geo.respondScreenshot('session-1', 'geoshot-1', { status: 'captured', dataUrl: 'data:image/png;base64,png' });
+  assert.deepEqual(fixture.paths, ['/api/sessions/session-1/geo-screenshots/geoshot-1/respond']);
+  assert.deepEqual(fixture.commands[0], { status: 'captured', dataUrl: 'data:image/png;base64,png' });
+});
+
 test('PDF export stays behind the HTTP command port', async () => {
   const fixture = deps(() => ({ url: '/api/reports/download/report.pdf' }));
   const report = createReportCommands(fixture.value);

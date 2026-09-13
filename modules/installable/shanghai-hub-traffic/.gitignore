@@ -1,0 +1,6 @@
+.build/
+assets/databases/*.sqlite
+assets/databases/*.sqlite-*
+assets/databases/SHA256SUMS.txt
+__pycache__/
+.DS_Store

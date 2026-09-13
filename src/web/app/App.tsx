@@ -129,12 +129,14 @@ export function App() {
   }
 
   const waitingGeoRequest = activeSession ? sessionState.geoInteractionBySession[activeSession.id]?.waitingRequest : undefined;
-  const waitingViewAvailable = !!waitingGeoRequest && canvasContent.views.some((view) => view.id === `geo:${waitingGeoRequest.visualizationId}`);
+  const waitingGeoScreenshot = activeSession ? sessionState.geoInteractionBySession[activeSession.id]?.waitingScreenshotRequest : undefined;
+  const waitingGeoTarget = waitingGeoScreenshot || waitingGeoRequest;
+  const waitingViewAvailable = !!waitingGeoTarget && canvasContent.views.some((view) => view.id === `geo:${waitingGeoTarget.visualizationId}`);
   useEffect(() => {
-    if (!waitingGeoRequest || !waitingViewAvailable) return;
-    const id = `geo:${waitingGeoRequest.visualizationId}`;
+    if (!waitingGeoTarget || !waitingViewAvailable) return;
+    const id = `geo:${waitingGeoTarget.visualizationId}`;
     updateCanvas((state) => activateCanvas(state, id));
-  }, [waitingGeoRequest?.requestId, waitingGeoRequest?.visualizationId, waitingViewAvailable, updateCanvas]);
+  }, [waitingGeoTarget?.requestId, waitingGeoTarget?.visualizationId, waitingViewAvailable, updateCanvas]);
 
   useEffect(() => {
     const sessionId = activeSession?.id;

@@ -7,7 +7,7 @@
 
 import type { LiveSession, SessionAttachment, SessionSnapshot } from '../../app-types.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
-import type { GeoInteractionRequestV1, GeoInteractionResponseV1 } from '../../../contracts/geo.js';
+import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../../contracts/geo.js';
 
 export type SessionStoreState = {
   sessions: LiveSession[];
@@ -16,7 +16,7 @@ export type SessionStoreState = {
   compactingBySession: Record<string, boolean>;
   attachmentsBySession: Record<string, Record<string, SessionAttachment>>;
   attachmentRevisionBySession: Record<string, number>;
-  geoInteractionBySession: Record<string, { contextCount: number; waitingRequest?: GeoInteractionRequestV1; lastResponse?: GeoInteractionResponseV1 }>;
+  geoInteractionBySession: Record<string, { contextCount: number; waitingRequest?: GeoInteractionRequestV1; lastResponse?: GeoInteractionResponseV1; waitingScreenshotRequest?: GeoScreenshotRequestV1 }>;
 };
 
 const INITIAL: SessionStoreState = { sessions: [], activeSessionId: null, streamingBySession: {}, compactingBySession: {}, attachmentsBySession: {}, attachmentRevisionBySession: {}, geoInteractionBySession: {} };
@@ -158,6 +158,15 @@ export class SessionStore {
     this.store.set((prev) => {
       const current = prev.geoInteractionBySession[sessionId] || { contextCount: 0 };
       return { ...prev, geoInteractionBySession: { ...prev.geoInteractionBySession, [sessionId]: request ? { ...current, waitingRequest: request } : { ...current, waitingRequest: undefined, ...(response ? { lastResponse: response } : {}) } } };
+    });
+  }
+
+  geoScreenshotUpdated(sessionId: string, request?: GeoScreenshotRequestV1, requestId?: string) {
+    this.store.set((prev) => {
+      const current = prev.geoInteractionBySession[sessionId] || { contextCount: 0 };
+      if (request) return { ...prev, geoInteractionBySession: { ...prev.geoInteractionBySession, [sessionId]: { ...current, waitingScreenshotRequest: request } } };
+      if (requestId && current.waitingScreenshotRequest?.requestId !== requestId) return prev;
+      return { ...prev, geoInteractionBySession: { ...prev.geoInteractionBySession, [sessionId]: { ...current, waitingScreenshotRequest: undefined } } };
     });
   }
 }

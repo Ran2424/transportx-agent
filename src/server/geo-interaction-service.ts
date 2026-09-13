@@ -6,6 +6,7 @@ import {
   GEO_CONTEXTS_PER_MESSAGE,
   GEO_CONTEXT_MAX_FEATURES,
   GEO_REQUEST_DEFAULT_TIMEOUT_SECONDS,
+  GEO_SCREENSHOT_TIMEOUT_SECONDS,
   buildGeoContextPrompt,
   getVisualizationFromToolResult,
   stripGeoContextPrompt,
@@ -19,6 +20,7 @@ import {
   type GeoInteractionResponseReason,
   type GeoInteractionResponseV1,
   type GeoInteractionTerminalStatus,
+  type GeoScreenshotRequestV1,
   type GeoJsonFeature,
   type VisualizationEnvelope,
 } from '../contracts/geo.js';
@@ -44,6 +46,11 @@ export type GeoMessageRef = { text: string; timestamp?: number | string; context
 
 type StoredContext = { context: GeoClientContextV1; provenance?: GeoContextProvenanceV1 };
 type Waiter = { sessionId: string; resolve(value: { response: GeoInteractionResponseV1; context?: GeoClientContextV1 }): void; timer: ReturnType<typeof setTimeout> };
+type ScreenshotFailureReason = 'timeout' | 'agent_aborted' | 'session_closed' | 'scene_revision_changed' | 'visualization_changed' | 'capture_failed';
+type ScreenshotResult =
+  | { status: 'captured'; filename: string; relativePath: string; bytes: number }
+  | { status: 'failed'; reason: ScreenshotFailureReason };
+type ScreenshotWaiter = { resolve(value: ScreenshotResult): void; timer: ReturnType<typeof setTimeout> };
 
 function serviceError(message: string, status = 400, code?: string) {
   const error = new Error(message) as Error & { status?: number; code?: string };
@@ -94,7 +101,7 @@ function readJson<T>(cwd: string, target: string): T | null {
   }
 }
 
-function randomId(prefix: 'geoctx_' | 'georeq_') { return `${prefix}${crypto.randomBytes(12).toString('hex')}`; }
+function randomId(prefix: 'geoctx_' | 'georeq_' | 'geoshot_') { return `${prefix}${crypto.randomBytes(12).toString('hex')}`; }
 
 function screenshotName(cwd: string) {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
@@ -210,6 +217,8 @@ function responseFor(requestId: string, status: GeoInteractionTerminalStatus, de
 
 export class GeoInteractionService {
   private waiters = new Map<string, Waiter>();
+  private screenshotWaiters = new Map<string, ScreenshotWaiter>();
+  private screenshotRequests = new Map<string, GeoScreenshotRequestV1>();
 
   available(session: GeoInteractionSession) { return hasGeo(session); }
 
@@ -265,6 +274,50 @@ export class GeoInteractionService {
     assertNoSymlink(target);
     fs.writeFileSync(target, image, { flag: 'wx', mode: 0o600 });
     return { filename, path: target, bytes: image.length };
+  }
+
+  requestScreenshot(session: GeoInteractionSession, value: JsonRecord) {
+    requireGeo(session);
+    const visualizationId = typeof value.visualizationId === 'string' ? value.visualizationId : '';
+    const sceneRevision = typeof value.sceneRevision === 'number' ? value.sceneRevision : 0;
+    requireVisualization(session, visualizationId, sceneRevision);
+    if (this.screenshotRequests.has(session.id)) throw serviceError('This session already has a waiting Geo screenshot request.', 409, 'geo_screenshot_already_waiting');
+    const now = new Date();
+    const request: GeoScreenshotRequestV1 = {
+      version: 1,
+      requestId: randomId('geoshot_'),
+      sessionId: session.id,
+      visualizationId,
+      sceneRevision,
+      status: 'waiting',
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + GEO_SCREENSHOT_TIMEOUT_SECONDS * 1000).toISOString(),
+    };
+    this.screenshotRequests.set(session.id, request);
+    session.manager?.broadcast({ type: 'geo_screenshot_updated', sessionId: session.id, request });
+    return new Promise<ScreenshotResult>((resolve) => {
+      const timer = setTimeout(() => this.finishScreenshot(session, request, { status: 'failed', reason: 'timeout' }), GEO_SCREENSHOT_TIMEOUT_SECONDS * 1000);
+      this.screenshotWaiters.set(request.requestId, { resolve, timer });
+    });
+  }
+
+  respondScreenshot(session: GeoInteractionSession, requestId: string, value: JsonRecord) {
+    requireGeo(session);
+    const request = this.screenshotRequests.get(session.id);
+    if (!request || request.requestId !== requestId) throw serviceError('Waiting Geo screenshot request not found.', 404);
+    if (value.status === 'captured') {
+      const saved = this.saveScreenshot(session, {
+        visualizationId: request.visualizationId,
+        sceneRevision: request.sceneRevision,
+        dataUrl: value.dataUrl,
+      });
+      return this.finishScreenshot(session, request, { status: 'captured', filename: saved.filename, relativePath: saved.filename, bytes: saved.bytes });
+    }
+    const reason = value.reason;
+    if (value.status !== 'failed' || !['scene_revision_changed', 'visualization_changed', 'capture_failed'].includes(String(reason))) {
+      throw serviceError('Browser must return a captured PNG or a supported screenshot failure.');
+    }
+    return this.finishScreenshot(session, request, { status: 'failed', reason: reason as ScreenshotFailureReason });
   }
 
   setActiveMessageContexts(session: GeoInteractionSession, ids: string[]) {
@@ -426,14 +479,17 @@ export class GeoInteractionService {
   snapshot(session: GeoInteractionSession) {
     if (!hasGeo(session)) return undefined;
     const waitingRequest = this.waitingRequest(session);
+    const waitingScreenshotRequest = this.screenshotRequests.get(session.id);
     const contextsRoot = path.join(interactionRoot(session.cwd), 'contexts');
     const contextCount = fs.existsSync(contextsRoot) ? fs.readdirSync(contextsRoot).length : 0;
-    return waitingRequest || contextCount ? { contextCount, ...(waitingRequest ? { waitingRequest } : {}) } : undefined;
+    return waitingRequest || waitingScreenshotRequest || contextCount ? { contextCount, ...(waitingRequest ? { waitingRequest } : {}), ...(waitingScreenshotRequest ? { waitingScreenshotRequest } : {}) } : undefined;
   }
 
   abortSession(session: GeoInteractionSession, reason: 'session_closed' | 'agent_aborted' = 'session_closed') {
     const request = this.waitingRequest(session);
     if (request) void this.finish(session, request, responseFor(request.requestId, 'aborted', { reason }));
+    const screenshotRequest = this.screenshotRequests.get(session.id);
+    if (screenshotRequest) this.finishScreenshot(session, screenshotRequest, { status: 'failed', reason });
     session.activeGeoContextIds = [];
   }
 
@@ -442,6 +498,22 @@ export class GeoInteractionService {
     if (request?.visualizationId === envelope.visualizationId && request.sceneRevision !== envelope.revision) {
       void this.finish(session, request, responseFor(request.requestId, 'invalidated', { reason: envelope.scene ? 'scene_revision_changed' : 'visualization_changed' }));
     }
+    const screenshotRequest = this.screenshotRequests.get(session.id);
+    if (screenshotRequest?.visualizationId === envelope.visualizationId && screenshotRequest.sceneRevision !== envelope.revision) {
+      this.finishScreenshot(session, screenshotRequest, { status: 'failed', reason: envelope.scene ? 'scene_revision_changed' : 'visualization_changed' });
+    }
+  }
+
+  private finishScreenshot(session: GeoInteractionSession, request: GeoScreenshotRequestV1, result: ScreenshotResult) {
+    const waiter = this.screenshotWaiters.get(request.requestId);
+    if (waiter) {
+      clearTimeout(waiter.timer);
+      this.screenshotWaiters.delete(request.requestId);
+      waiter.resolve(result);
+    }
+    this.screenshotRequests.delete(session.id);
+    session.manager?.broadcast({ type: 'geo_screenshot_updated', sessionId: session.id, requestId: request.requestId, result });
+    return result;
   }
 
   private finish(session: GeoInteractionSession, request: GeoInteractionRequestV1, response: GeoInteractionResponseV1, context?: GeoClientContextV1) {

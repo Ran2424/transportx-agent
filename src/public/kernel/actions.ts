@@ -14,7 +14,7 @@ import type {
   SessionSnapshot,
 } from '../app-types.js';
 import type { AppError } from '../../contracts/errors.ts';
-import type { GeoInteractionRequestV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
+import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../contracts/geo.ts';
 
 export type ToolExecution = {
   toolCallId: string;
@@ -50,6 +50,7 @@ export type AppAction =
   | { type: 'session/compactionStarted'; sessionId: string }
   | { type: 'session/compactionEnded'; sessionId: string }
   | { type: 'session/geoInteractionUpdated'; sessionId: string; request?: GeoInteractionRequestV1; response?: GeoInteractionResponseV1 }
+  | { type: 'session/geoScreenshotUpdated'; sessionId: string; request?: GeoScreenshotRequestV1; requestId?: string }
   // conversation
   | { type: 'conversation/streamStarted'; sessionId: string; runId: string }
   | { type: 'conversation/messageStarted'; sessionId: string; runId: string | null; message: AppMessage }

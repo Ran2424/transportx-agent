@@ -33,3 +33,10 @@ test('Geo interaction websocket updates are validated before reaching stores', (
   assert.equal(action.type, 'error/raised');
   assert.equal(action.error.code, 'malformed_message');
 });
+
+test('Geo screenshot websocket requests are validated before reaching stores', () => {
+  const normalizer = createEventNormalizer();
+  const request = { version: 1, requestId: `geoshot_${'a'.repeat(16)}`, sessionId: 'session-1', visualizationId: 'traffic_map', sceneRevision: 2, status: 'waiting', createdAt: '2026-09-02T01:00:00.000Z', expiresAt: '2026-09-02T01:01:00.000Z' };
+  assert.equal(normalizer.normalizeMessage({ type: 'geo_screenshot_updated', sessionId: 'session-1', request })[0].type, 'session/geoScreenshotUpdated');
+  assert.equal(normalizer.normalizeMessage({ type: 'geo_screenshot_updated', sessionId: 'session-1', request: { version: 999 } })[0].type, 'error/raised');
+});
