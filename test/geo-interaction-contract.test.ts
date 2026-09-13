@@ -75,8 +75,12 @@ test('Geo request and response contracts enforce feature-only fields and termina
 test('Session Snapshot validates and preserves waiting Geo interaction state', async () => {
   const { parseSessionSnapshot } = await import('../src/contracts/session.ts');
   const request = { version: 1, requestId: `georeq_${'d'.repeat(16)}`, sessionId: 'session-1', visualizationId: 'traffic_map', sceneRevision: 1, mode: 'viewport', prompt: '确认视野', required: false, timeoutSeconds: 600, status: 'waiting', createdAt: '2026-09-02T01:00:00.000Z', expiresAt: '2026-09-02T01:10:00.000Z' };
-  const parsed = parseSessionSnapshot({ schemaVersion: 1, entries: [], geoInteraction: { contextCount: 2, waitingRequest: request } });
+  const screenshotRequest = { version: 1, requestId: `geoshot_${'e'.repeat(16)}`, sessionId: 'session-1', visualizationId: 'traffic_map', sceneRevision: 1, status: 'waiting', createdAt: '2026-09-02T01:00:00.000Z', expiresAt: '2026-09-02T01:01:00.000Z' };
+  const parsed = parseSessionSnapshot({ schemaVersion: 1, entries: [], geoInteraction: { contextCount: 2, waitingRequest: request, waitingScreenshotRequest: screenshotRequest } });
   assert.equal(parsed.ok, true);
-  if (parsed.ok) assert.equal(parsed.value.geoInteraction?.waitingRequest?.requestId, request.requestId);
+  if (parsed.ok) {
+    assert.equal(parsed.value.geoInteraction?.waitingRequest?.requestId, request.requestId);
+    assert.equal(parsed.value.geoInteraction?.waitingScreenshotRequest?.requestId, screenshotRequest.requestId);
+  }
   assert.equal(parseSessionSnapshot({ schemaVersion: 1, entries: [], geoInteraction: { contextCount: -1 } }).ok, false);
 });

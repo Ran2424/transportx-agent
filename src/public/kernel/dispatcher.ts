@@ -76,6 +76,9 @@ export function createDispatcher(stores: KernelStores): Dispatch {
       case 'session/geoInteractionUpdated':
         stores.session.geoInteractionUpdated(action.sessionId, action.request, action.response);
         break;
+      case 'session/geoScreenshotUpdated':
+        stores.session.geoScreenshotUpdated(action.sessionId, action.request, action.requestId);
+        break;
 
       case 'conversation/streamStarted':
         stores.conversation.streamStarted(action.sessionId, action.runId);

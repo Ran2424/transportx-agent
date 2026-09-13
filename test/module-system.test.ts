@@ -19,6 +19,7 @@ const MANIFESTS = [
   'modules/capabilities/spatial-analysis/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
+  'modules/official/cli/manifest.json',
   'modules/official/workbench/manifest.json',
 ];
 const INSTALLABLE_MODULES = [
@@ -37,12 +38,35 @@ function registry(extra: Array<{ manifestPath: string; packageRoot?: string; ori
 test('built-in manifests register only platform capabilities', () => {
   const modules = registry();
   assert.deepEqual(modules.errors, []);
-  assert.equal(modules.enabled().length, 8);
+  assert.equal(modules.enabled().length, 9);
   assert.equal(modules.get('com.transportx.shanghaidata'), undefined);
   assert.equal(modules.get('com.transportx.traffic-assurance-knowledge'), undefined);
   const order = modules.dependencyOrder('com.transportx.workbench');
   assert.equal(order.at(-1).manifest.type, 'domain');
   assert.ok(order.some((item: any) => item.manifest.id === 'com.transportx.geo'));
+});
+
+test('CLI domain loads only explicitly selected capabilities', () => {
+  const modules = registry();
+  const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [] }, { command: 'python', args: [] });
+  const profile = {
+    schemaVersion: 1,
+    task: { kind: 'data-query', expectedOutputs: ['answer'] },
+    modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: '1.0.2' }] },
+  };
+  const plan = assembler.assemble('com.transportx.cli', process.cwd(), profile);
+  assert.deepEqual(plan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.citation']);
+  assert.equal(plan.modules.some((module: any) => module.id === 'com.transportx.geo'), false);
+  assert.equal(plan.modules.some((module: any) => module.id === 'com.transportx.video'), false);
+  const spatialPlan = assembler.assemble('com.transportx.cli', process.cwd(), {
+    ...profile,
+    modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.spatial-analysis', version: '1.0.1' }] },
+  });
+  assert.deepEqual(spatialPlan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.geo', 'com.transportx.spatial-analysis']);
+  assert.throws(() => assembler.assemble('com.transportx.cli', process.cwd(), {
+    ...profile,
+    modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: '9.9.9' }] },
+  }), /version is unavailable/);
 });
 
 test('data, knowledge and plot-style packages install independently from the platform', (t: any) => {

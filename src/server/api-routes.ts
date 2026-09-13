@@ -78,7 +78,8 @@ export function createApiRouter(services: ApiRouteServices) {
         const name = typeof body.name === 'string' ? body.name.trim() : '';
         const profile = body.profile === undefined ? undefined : parseSessionProfileStructured(body.profile);
         if (profile && !profile.ok) return deps.json(res, 400, { error: profile.diagnostics.map((item) => item.message).join('; '), diagnostics: profile.diagnostics });
-        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null, ...(profile?.ok ? { profile: profile.value } : {}) });
+        const domainId = typeof body.domainId === 'string' && body.domainId.trim() ? body.domainId.trim() : undefined;
+        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null, ...(domainId ? { domainId } : {}), ...(profile?.ok ? { profile: profile.value } : {}) });
         deps.json(res, 200, { session: session.metadata(), ...(body.profile === undefined ? { diagnostics: [{ code: 'profile_compat_default', path: 'profile', severity: 'warning', message: 'profile was omitted; the current Module selection was frozen as compat-default.' }] } : {}) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
     })
@@ -170,6 +171,12 @@ export function createApiRouter(services: ApiRouteServices) {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.saveScreenshot(session, await deps.readBody(req))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+    })
+    .post(/^\/api\/sessions\/([^/]+)\/geo-screenshots\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, deps.geo.respondScreenshot(session, decodeURIComponent(params[1]), await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
     .post(/^\/api\/sessions\/([^/]+)\/geo-interactions\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
@@ -310,6 +317,14 @@ export function createApiRouter(services: ApiRouteServices) {
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
         deps.json(res, 200, { result: await deps.geo.request(session, body) });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+    })
+    .post('/api/internal/geo/screenshot', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'geo');
+        if (!session) return;
+        deps.json(res, 200, { result: await deps.geo.requestScreenshot(session, body) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
     .post('/api/internal/video/search', async ({ req, res, deps }) => {

@@ -39,9 +39,34 @@ export function GeoWorkspace({ session, active, envelope: selected }: { session:
   const [busy, setBusy] = useState(false);
   const [screenshotBusy, setScreenshotBusy] = useState(false);
   const [screenshotNotice, setScreenshotNotice] = useState('');
+  const handledScreenshotRequest = useRef('');
   const [now, setNow] = useState(Date.now());
   const interaction = session ? sessions.geoInteractionBySession[session.id] : undefined;
   const request = interaction?.waitingRequest?.visualizationId === selected.visualizationId ? interaction.waitingRequest : undefined;
+  const screenshotRequest = interaction?.waitingScreenshotRequest?.visualizationId === selected.visualizationId ? interaction.waitingScreenshotRequest : undefined;
+
+  useEffect(() => {
+    if (!screenshotRequest || !runtime || !active || handledScreenshotRequest.current === screenshotRequest.requestId) return;
+    handledScreenshotRequest.current = screenshotRequest.requestId;
+    setScreenshotBusy(true); setScreenshotNotice(''); setNotice('');
+    void (async () => {
+      try {
+        if (selected.revision !== screenshotRequest.sceneRevision) {
+          await appKernel.commands.geo.respondScreenshot(session.id, screenshotRequest.requestId, { status: 'failed', reason: 'scene_revision_changed' });
+          return;
+        }
+        runtime.resize();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        const dataUrl = await runtime.captureScreenshot();
+        const result = await appKernel.commands.geo.respondScreenshot(session.id, screenshotRequest.requestId, { status: 'captured', dataUrl }) as { filename?: string };
+        if (result.filename) setScreenshotNotice(t('geo.screenshotSaved', { filename: result.filename }));
+      } catch (cause) {
+        try { await appKernel.commands.geo.respondScreenshot(session.id, screenshotRequest.requestId, { status: 'failed', reason: 'capture_failed' }); }
+        catch { /* The original request may already have timed out. */ }
+        setNotice(t('geo.screenshotFailed', { error: (cause as Error).message }));
+      } finally { setScreenshotBusy(false); }
+    })();
+  }, [active, runtime, screenshotRequest?.requestId, screenshotRequest?.sceneRevision, selected.revision, session.id, t]);
 
   useEffect(() => {
     if (!request) return;

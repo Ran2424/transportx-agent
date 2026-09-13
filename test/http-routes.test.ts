@@ -330,6 +330,30 @@ test('Geo interaction routes enforce capability, token scope and terminal respon
   assert.equal(path.dirname(screenshot.path), cwd);
   assert.equal(fs.existsSync(screenshot.path), true);
 
+  let screenshotRequestId = '';
+  const broadcast = liveManager.broadcast.bind(liveManager);
+  liveManager.broadcast = (data: any) => {
+    if (data?.type === 'geo_screenshot_updated' && data.request?.requestId) screenshotRequestId = data.request.requestId;
+    broadcast(data);
+  };
+  t.after(() => { liveManager.broadcast = broadcast; });
+  const agentScreenshotPromise = fetch(`${base}/api/internal/geo/screenshot`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: session.id, token: 'geo-token', visualizationId: 'route_map', sceneRevision: 1 }),
+  });
+  for (let attempt = 0; attempt < 50 && !screenshotRequestId; attempt += 1) {
+    if (!screenshotRequestId) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.match(screenshotRequestId, /^geoshot_/);
+  const agentScreenshotResponse = await fetch(`${base}/api/sessions/${session.id}/geo-screenshots/${screenshotRequestId}/respond`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'captured', dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl6sAAAAASUVORK5CYII=' }),
+  });
+  assert.equal(agentScreenshotResponse.status, 200);
+  const agentScreenshot = await jsonBody(await agentScreenshotPromise);
+  assert.equal(agentScreenshot.result.status, 'captured');
+  assert.equal(agentScreenshot.result.relativePath, agentScreenshot.result.filename);
+
   const inspectUrl = `${base}/api/internal/geo/inspect`;
   assert.equal((await fetch(inspectUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'wrong', contextIds: [context.contextId] }) })).status, 403);
   session.activeGeoContextIds = [context.contextId];

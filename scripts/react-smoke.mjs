@@ -99,6 +99,18 @@ try {
   }, screenshotFilename);
   assert.equal(screenshotSaved, true);
   console.log('Geo smoke: map, layer legend and description saved in the task directory.');
+
+  await composer.fill('geo-agent-screenshot');
+  await composer.press('Enter');
+  await page.locator('.assistant-message', { hasText: '地图截图已自动保存，可插入报告。' }).waitFor({ timeout: 10_000 });
+  const agentScreenshotSaved = await page.evaluate(async () => {
+    const sessions = await (await fetch('/api/live-sessions')).json();
+    const files = await (await fetch(`/api/files?sessionId=${encodeURIComponent(sessions.sessions[0].id)}`)).json();
+    return files.items.filter((item) => /^map-screenshot-[\d-]+\.png$/.test(item.name) && item.size > 0).length >= 2;
+  });
+  assert.equal(agentScreenshotSaved, true);
+  console.log('Geo smoke: Agent-requested screenshot captured by the workbench and saved automatically.');
+
   await modeSwitch.selectOption('feature');
   const tray = page.locator('.canvas-panel:not([hidden]) .geo-context-tray');
   let selectedFeatures = 0;
