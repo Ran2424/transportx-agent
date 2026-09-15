@@ -1,4 +1,4 @@
-# TransportX Traffic Agent 会话上下文
+# TransportX Agent 会话上下文
 
 以下目录由 TransportX Agent Host 在创建会话时注入。
 

@@ -1,4 +1,4 @@
-# TransportX Traffic Agent 命令行会话上下文
+# TransportX Agent 命令行会话上下文
 
 以下目录和 Module 由 TransportX Agent Host 在创建命令行会话时注入。
 

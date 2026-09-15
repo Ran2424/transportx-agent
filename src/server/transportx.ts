@@ -72,7 +72,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 }
 
 function help() {
-  return `TransportX Traffic Agent ${VERSION}
+  return `TransportX Agent ${VERSION}
 
 Usage:
   transportx [chat] [options] [prompt]

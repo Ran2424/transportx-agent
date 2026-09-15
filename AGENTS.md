@@ -1,10 +1,10 @@
-# AGENTS.md — TransportX Traffic Agent
+# AGENTS.md — TransportX Agent
 
 本文件供 AI Agent / 协作者快速理解项目。详细设计见 [文档索引](#文档索引)；版本演进见 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
 ## 项目概览
 
-**TransportX Traffic Agent**：可安装的本地交通分析 Agent。产品形态为桌面工作台（Codex / VS Code 式高密度面板），面向交通分析人员，回答路段、时段、出行需求等交通问题，支持地图分析、视频查询与受控处理、任务拆解、引用与报告生成。
+**TransportX Agent**：可安装的本地交通分析 Agent。产品形态为桌面工作台（Codex / VS Code 式高密度面板），面向交通分析人员，回答路段、时段、出行需求等交通问题，支持地图分析、视频查询与受控处理、任务拆解、引用与报告生成。
 
 - **桌面生命周期**：Electron（主进程 + Agent Host Utility Process）
 - **会话与资源边界**：Node Agent Host（Pi RPC、Python、会话、文件、鉴权）

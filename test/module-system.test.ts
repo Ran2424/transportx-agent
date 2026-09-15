@@ -125,6 +125,10 @@ test('Session Assembly resolves extensions, skills, assets and persists a versio
   assert.ok(persisted.modules.every((module: any) => /^[a-f0-9]{64}$/.test(module.manifestSha256)));
   assert.deepEqual(assembler.load(workspace), plan);
 
+  persisted.platform.name = 'TransportX Traffic Agent';
+  fs.writeFileSync(saved, JSON.stringify(persisted));
+  assert.equal(assembler.load(workspace).platform.name, 'TransportX Agent');
+
   fs.writeFileSync(path.join(installed, 'skill', 'SKILL.md'), '# Tampered Skill');
   assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_content_mismatch');
 });

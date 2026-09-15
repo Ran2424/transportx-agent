@@ -46,7 +46,7 @@ export function loadRuntimeManifest(resourcesDir: string): RuntimeManifest {
     throw new Error(`Cannot read runtime manifest '${manifestPath}': ${error instanceof Error ? error.message : String(error)}`);
   }
   if (manifest.manifestVersion !== RUNTIME_MANIFEST_VERSION) throw new Error(`Unsupported runtime manifest version: ${String(manifest.manifestVersion)}`);
-  if (manifest.product?.name !== 'TransportX Traffic Agent') throw new Error('Runtime manifest product name mismatch');
+  if (manifest.product?.name !== 'TransportX Agent') throw new Error('Runtime manifest product name mismatch');
   if (manifest.agentHost?.protocolVersion !== AGENT_HOST_PROTOCOL_VERSION) throw new Error(`Agent Host protocol mismatch: ${String(manifest.agentHost?.protocolVersion)}`);
   return manifest;
 }

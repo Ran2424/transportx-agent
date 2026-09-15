@@ -1,6 +1,6 @@
 {
-  "name": "TransportX Traffic Agent",
-  "short_name": "Traffic Agent",
+  "name": "TransportX Agent",
+  "short_name": "TransportX Agent",
   "description": "TransportX 本地交通态势分析与辅助决策智能体",
   "start_url": "/",
   "display": "standalone",

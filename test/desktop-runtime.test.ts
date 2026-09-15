@@ -167,12 +167,12 @@ test('runtime manifest validates relative paths and checksums', (t: any) => {
   const entry = (relative: string, version: string) => ({ version, path: relative, sha256: digest(path.join(root, relative)) });
   fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
     manifestVersion: 1,
-    product: { name: 'TransportX Traffic Agent', version: '3.0.3' },
+    product: { name: 'TransportX Agent', version: '3.0.3' },
     agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 1 },
     pi: entry('runtimes/pi/cli.js', '0.80.10'),
     python: entry('runtimes/python/python', '3.10.0'),
   }));
-  assert.equal(loadRuntimeManifest(root).product.name, 'TransportX Traffic Agent');
+  assert.equal(loadRuntimeManifest(root).product.name, 'TransportX Agent');
   assert.equal(validateRuntimeManifest(root).pi, path.join(root, 'runtimes/pi/cli.js'));
   fs.writeFileSync(path.join(root, 'runtimes/pi/cli.js'), 'tampered');
   assert.throws(() => validateRuntimeManifest(root), /checksum mismatch/);
@@ -200,7 +200,7 @@ test('ffmpeg executables resolve from the packaged manifest, env overrides, or d
   const entry = (relative: string, version: string) => ({ version, path: relative, sha256: digest(path.join(root, relative)) });
   fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
     manifestVersion: 1,
-    product: { name: 'TransportX Traffic Agent', version: '3.0.9' },
+    product: { name: 'TransportX Agent', version: '3.0.9' },
     agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 1 },
     pi: entry('runtimes/pi/cli.js', '0.80.10'),
     python: entry('runtimes/python/python', '3.10.20'),
@@ -276,6 +276,6 @@ test('Windows NSIS release stages x64 .exe runtimes and has a profile-aware pre-
   assert.match(releaseCheck, /WIN_CSC_LINK/);
   assert.match(releaseCheck, /profile\.signing\.description/);
   assert.match(installerSmoke, /TRANSPORTX_WINDOWS_INSTALLER/);
-  assert.match(installerSmoke, /Uninstall TransportX Traffic Agent\.exe/);
+  assert.match(installerSmoke, /Uninstall TransportX Agent\.exe/);
   assert.match(smoke, /process\.platform === 'win32'/);
 });
