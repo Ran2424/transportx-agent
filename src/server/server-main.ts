@@ -20,7 +20,7 @@ import { handleCitationResourceRoute } from './citation-resources.js';
 import { renderReportPdf } from './report-pdf.js';
 import { inspectPiRuntime, piProcessEnv } from './pi-runtime.js';
 import { readSessionBranch } from './session-projection.js';
-import { createApiRouter } from './api-routes.js';
+import { createApiRouter, REPORT_PDF_MAX_HTML_BYTES } from './api-routes.js';
 import { SESSION_SNAPSHOT_SCHEMA_VERSION } from '../contracts/index.js';
 import { createFileApiHandlers } from './file-api-handler.js';
 import { createSessionHistoryHandlers } from './session-history-handler.js';
@@ -148,7 +148,7 @@ function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
 function readBody(req: IncomingMessage): Promise<RpcCommand> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk: Buffer) => { body += chunk.toString(); if (body.length > 20 * 1024 * 1024) reject(new Error('Request body too large')); });
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); if (Buffer.byteLength(body, 'utf8') > REPORT_PDF_MAX_HTML_BYTES + 1024 * 1024) reject(new Error('Request body too large')); });
     req.on('end', () => { try { resolve(body ? JSON.parse(body) as RpcCommand : {}); } catch (error) { reject(error); } });
     req.on('error', reject);
   });

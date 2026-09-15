@@ -49,6 +49,8 @@ type ApiRouteServices = {
   geo: GeoInteractionService;
 };
 
+export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
+
 export function createApiRouter(services: ApiRouteServices) {
   const router = new ServerRouter(services);
   const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number }>();
@@ -61,7 +63,7 @@ export function createApiRouter(services: ApiRouteServices) {
       error.status = 400;
       throw error;
     }
-    if (html.length > 5 * 1024 * 1024) {
+    if (Buffer.byteLength(html, 'utf8') > REPORT_PDF_MAX_HTML_BYTES) {
       const error = new Error('Rendered report is too large') as Error & { status?: number };
       error.status = 413;
       throw error;

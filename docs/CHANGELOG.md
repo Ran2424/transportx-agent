@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Markdown 报告导出 PDF 的渲染 HTML 上限由 5 MiB 提升至 50 MiB，支持包含多张高分辨率图件的分析报告。
+
 ## 3.1.8 - 2026-09-15
 
 ### Fixed
