@@ -31,6 +31,7 @@ test('builds Pi startup arguments and session-scoped asset environment', (t: any
     sessionId: 'tau_1',
     sessionFile: '/tmp/history.jsonl',
     modelSpec: 'openai/gpt-5',
+    appendSystemPrompt: '# Evaluation policy\nAnswer exactly.',
     resolvedSessionPlan: plan,
     serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token' },
     endpoints: { citation: 'http://127.0.0.1:3000', spatial: 'http://127.0.0.1:3001', video: 'http://127.0.0.1:3002' },
@@ -39,7 +40,7 @@ test('builds Pi startup arguments and session-scoped asset environment', (t: any
   assert.deepEqual(launch.args.slice(-10), [
     '--extension', extension,
     '--skill', skill,
-    '--append-system-prompt', `工作目录：${root}`,
+    '--append-system-prompt', `工作目录：${root}\n\n# Evaluation policy\nAnswer exactly.`,
     '--session', '/tmp/history.jsonl',
     '--model', 'openai/gpt-5',
   ]);

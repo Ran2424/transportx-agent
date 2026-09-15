@@ -12,6 +12,7 @@ type SessionPiLaunchInput = {
   sessionId: string;
   sessionFile: string | null;
   modelSpec: string;
+  appendSystemPrompt?: string;
   resolvedSessionPlan: ResolvedSessionPlan;
   serviceTokens: Record<SessionService, string>;
   endpoints: Record<SessionService, string>;
@@ -33,7 +34,8 @@ export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
     if (!fs.existsSync(skillPath)) throw new Error(`Built-in skill not found: ${skillPath}`);
     args.push('--skill', skillPath);
   }
-  args.push('--append-system-prompt', loadProjectPrompt(input.cwd, planPromptPath(plan), plan));
+  const appendSystemPrompt = [loadProjectPrompt(input.cwd, planPromptPath(plan), plan), input.appendSystemPrompt?.trim()].filter(Boolean).join('\n\n');
+  args.push('--append-system-prompt', appendSystemPrompt);
   if (input.sessionFile) args.push('--session', input.sessionFile);
   if (input.modelSpec) args.push('--model', input.modelSpec);
 

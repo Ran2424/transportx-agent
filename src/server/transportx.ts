@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 const path = require('node:path');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface, type Interface } from 'node:readline/promises';
 import WebSocket from 'ws';
+import { defaultUserDataDir } from './app-paths.js';
 
 type CliOptions = {
   command: 'chat' | 'modules' | 'help' | 'version';
@@ -18,6 +20,7 @@ type CliOptions = {
   model: string;
   name: string;
   cwd: string;
+  appendSystemPromptFile: string;
 };
 
 type JsonObject = Record<string, any>;
@@ -36,7 +39,7 @@ function optionValue(argv: string[], index: number, option: string) {
 }
 
 export function parseCliArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { command: 'chat', prompt: '', print: false, json: false, jsonl: false, verbose: false, noModules: false, modules: [], model: '', name: '', cwd: process.cwd() };
+  const options: CliOptions = { command: 'chat', prompt: '', print: false, json: false, jsonl: false, verbose: false, noModules: false, modules: [], model: '', name: '', cwd: process.cwd(), appendSystemPromptFile: '' };
   const positional: string[] = [];
   let index = 0;
   if (argv[0] === 'modules') {
@@ -55,6 +58,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === '--no-modules') options.noModules = true;
     else if (arg === '--module' || arg === '-m') { options.modules.push(optionValue(argv, index, arg)); index += 1; }
     else if (arg === '--model') { options.model = optionValue(argv, index, arg); index += 1; }
+    else if (arg === '--append-system-prompt-file') { options.appendSystemPromptFile = path.resolve(optionValue(argv, index, arg)); index += 1; }
     else if (arg === '--name' || arg === '-n') { options.name = optionValue(argv, index, arg); index += 1; }
     else if (arg === '--cwd') { options.cwd = path.resolve(optionValue(argv, index, arg)); index += 1; }
     else if (arg.startsWith('-')) throw new CliError(`Unknown option: ${arg}`, 2);
@@ -79,6 +83,8 @@ Options:
   -m, --module <id[@ver]> Select a Module (repeatable)
       --no-modules        Load no optional Modules
       --model <provider/model>
+      --append-system-prompt-file <path>
+                           Append a UTF-8 system prompt file
   -n, --name <name>       Name the task workspace
       --cwd <directory>   Parent directory for the task workspace
       --json              Print one final JSON object
@@ -95,11 +101,13 @@ type HostHandle = { child: ChildProcess; baseUrl: string; authorization: string 
 
 async function startHost(): Promise<HostHandle> {
   const appRoot = path.resolve(__dirname, '..');
+  const userDataDir = path.resolve(process.env.TAU_USER_DATA_DIR || defaultUserDataDir(process.platform, process.env));
+  const piAgentDir = path.resolve(process.env.PI_CODING_AGENT_DIR || userDataDir);
   const user = 'transportx-cli';
   const pass = crypto.randomBytes(24).toString('base64url');
   const child = spawn(process.execPath, [path.join(__dirname, 'tau.js'), '--host', '127.0.0.1', '--port', '0', '--parent-pid', String(process.pid), '--ready-json'], {
     cwd: appRoot,
-    env: { ...process.env, TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER: user, TAU_PASS: pass },
+    env: { ...process.env, TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER_DATA_DIR: userDataDir, PI_CODING_AGENT_DIR: piAgentDir, TAU_USER: user, TAU_PASS: pass },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
@@ -127,6 +135,18 @@ async function startHost(): Promise<HostHandle> {
     throw error;
   });
   return { child, baseUrl: `http://127.0.0.1:${ready.port}`, authorization: `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}` };
+}
+
+function loadAppendSystemPrompt(filePath: string) {
+  if (!filePath) return '';
+  try {
+    const prompt = fs.readFileSync(filePath, 'utf8').trim();
+    if (!prompt) throw new CliError(`Appended system prompt file is empty: ${filePath}`, 2);
+    return prompt;
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw new CliError(`Cannot read appended system prompt file: ${filePath}`, 2);
+  }
 }
 
 async function jsonRequest(host: HostHandle, pathname: string, init: RequestInit = {}) {
@@ -205,7 +225,7 @@ async function runPrompt(host: HostHandle, socket: WebSocket, sessionId: string,
   let streamed = '';
   let cancelWait = () => {};
   const completion = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => finish(new CliError('Agent response timed out')), 300_000);
+    const timer = setTimeout(() => finish(new CliError('Agent response timed out')), 600_000);
     const finish = (error?: Error) => {
       clearTimeout(timer);
       socket.off('message', receive);
@@ -292,6 +312,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   if (options.command === 'help') { process.stdout.write(`${help()}\n`); return; }
   if (options.command === 'version') { process.stdout.write(`${VERSION}\n`); return; }
   if (options.print && !options.prompt) throw new CliError('--print requires a prompt', 2);
+  const appendSystemPrompt = loadAppendSystemPrompt(options.appendSystemPromptFile);
 
   const host = await startHost();
   let sessionId = '';
@@ -320,6 +341,7 @@ export async function runCli(argv = process.argv.slice(2)) {
         name: options.name || 'TransportX CLI',
         model,
         domainId: CLI_DOMAIN_ID,
+        ...(appendSystemPrompt ? { appendSystemPrompt } : {}),
         profile: { schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected } },
       }),
     });
