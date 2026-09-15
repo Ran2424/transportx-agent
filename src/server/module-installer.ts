@@ -385,6 +385,22 @@ export class ModuleInstaller {
     return [...byId.values()].map((entries) => entries.find((entry) => entry.version === newestVersion(entries.map((entry) => entry.version)))!.source);
   }
 
+  sourcesForEnabledModules(moduleIds: string[]): ModuleSource[] {
+    const catalog = this.catalog();
+    const sources = this.sources();
+    const latest = new Map(sources.map((source) => [source.moduleId!, catalog.find((entry) => entry.source.manifestPath === source.manifestPath)!]));
+    const enabled = new Set<string>();
+    const visit = (id: string) => {
+      if (enabled.has(id)) return;
+      const entry = latest.get(id);
+      if (!entry) return;
+      enabled.add(id);
+      entry.manifest.dependencies.forEach(visit);
+    };
+    moduleIds.forEach(visit);
+    return sources.map((source) => ({ ...source, enabled: enabled.has(source.moduleId!) }));
+  }
+
   sourcesForSelections(selections: Array<{ id: string; version: string }>): ModuleSource[] {
     const catalog = this.catalog();
     return selections.map((selection) => {
@@ -392,6 +408,23 @@ export class ModuleInstaller {
       if (!entry) throw new Error(`Selected Module version is not installed: ${selection.id}@${selection.version}`);
       return entry.source;
     });
+  }
+
+  sourcesForSelectionsWithDependencies(selections: Array<{ id: string; version: string }>, providedModuleIds: Set<string> = new Set()): ModuleSource[] {
+    const catalog = this.catalog();
+    const newest = new Map(this.sources().map((source) => [source.moduleId!, source.manifestPath]));
+    const selected = new Map<string, ModuleSource>();
+    const visit = (id: string, version?: string) => {
+      if (providedModuleIds.has(id) || selected.has(id)) return;
+      const entry = version
+        ? catalog.find((candidate) => candidate.id === id && candidate.version === version)
+        : catalog.find((candidate) => candidate.id === id && candidate.source.manifestPath === newest.get(id));
+      if (!entry) throw new Error(version ? `Selected Module version is not installed: ${id}@${version}` : `Module dependency is not installed: ${id}`);
+      selected.set(id, entry.source);
+      entry.manifest.dependencies.forEach((dependency) => visit(dependency));
+    };
+    selections.forEach((selection) => visit(selection.id, selection.version));
+    return [...selected.values()];
   }
 
   install(source: string, kind: InstallKind = 'module') {

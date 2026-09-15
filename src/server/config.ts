@@ -96,10 +96,9 @@ export const LOCAL_MODULE_MANIFESTS = String(process.env.TAU_MODULE_MANIFESTS ||
   .map((manifestPath) => ({ manifestPath, packageRoot: path.dirname(path.resolve(manifestPath)), origin: 'external' as const }));
 export const MODULE_INSTALLER = new ModuleInstaller(APP_PATHS.modulesDir);
 export function moduleSources() {
-  const enabled = new Set(TAU_SETTINGS.enabledModuleIds);
   return [
     ...BUILTIN_MODULE_MANIFESTS,
-    ...MODULE_INSTALLER.sources().map((source) => ({ ...source, enabled: !!source.moduleId && enabled.has(source.moduleId) })),
+    ...MODULE_INSTALLER.sourcesForEnabledModules(TAU_SETTINGS.enabledModuleIds),
     ...LOCAL_MODULE_MANIFESTS,
   ];
 }
@@ -117,24 +116,9 @@ export function sessionAssemblerForProfile(profile: SessionProfileV1) {
   const externalIds = new Set(LOCAL_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
   const allowed = new Set([...builtinIds, ...externalIds, ...TAU_SETTINGS.enabledModuleIds]);
   for (const selection of parsed.value.modules.selected) if (!allowed.has(selection.id)) throw new Error(`Selected Module is not enabled for new tasks: ${selection.id}`);
-  const installedCatalog = MODULE_INSTALLER.catalog();
-  const newestInstalledManifestPaths = new Set(MODULE_INSTALLER.sources().map((source) => source.manifestPath));
-  const installedSources = new Map<string, ReturnType<ModuleInstaller['catalog']>[number]['source']>();
-  const addInstalled = (id: string, version?: string) => {
-    if (builtinIds.has(id) || externalIds.has(id) || installedSources.has(id)) return;
-    if (!allowed.has(id)) throw new Error(`Module dependency is not enabled for new tasks: ${id}`);
-    const candidates = installedCatalog.filter((entry) => entry.id === id);
-    const entry = version
-      ? candidates.find((candidate) => candidate.version === version)
-      : candidates.find((candidate) => newestInstalledManifestPaths.has(candidate.source.manifestPath));
-    if (!entry) throw new Error(version ? `Selected Module version is not installed: ${id}@${version}` : `Module dependency is not installed: ${id}`);
-    installedSources.set(id, entry.source);
-    entry.manifest.dependencies.forEach((dependency) => addInstalled(dependency));
-  };
-  parsed.value.modules.selected.forEach((selection) => addInstalled(selection.id, selection.version));
   const registry = new ModuleRegistry(PLATFORM_VERSION).load([
     ...BUILTIN_MODULE_MANIFESTS,
-    ...installedSources.values(),
+    ...MODULE_INSTALLER.sourcesForSelectionsWithDependencies(parsed.value.modules.selected, new Set([...builtinIds, ...externalIds])),
     ...LOCAL_MODULE_MANIFESTS,
   ]);
   if (registry.errors.length) throw new Error(registry.errors.map((item) => item.message).join('; '));
@@ -162,6 +146,9 @@ export function setModuleEnabled(moduleId: string, enabled: boolean) {
   if (enabled) {
     const runtime = moduleRuntimeCompatible(module.manifest);
     if (!runtime.compatible) throw new Error(`Module ${moduleId} has no ${runtime.missingRuntime} runtime for ${process.platform}/${process.arch}`);
+  } else {
+    const dependent = TAU_SETTINGS.enabledModuleIds.find((id) => id !== moduleId && MODULE_INSTALLER.sourcesForEnabledModules([id]).some((source) => source.moduleId === moduleId && source.enabled));
+    if (dependent) throw new Error(`Module ${moduleId} is required by enabled Module ${dependent}`);
   }
   const selected = new Set(TAU_SETTINGS.enabledModuleIds);
   if (enabled) selected.add(moduleId); else selected.delete(moduleId);

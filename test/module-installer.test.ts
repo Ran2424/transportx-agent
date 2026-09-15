@@ -144,6 +144,41 @@ test('catalog exposes every installed version and selections resolve exactly', (
   assert.throws(() => installer.sourcesForSelections([{ id: 'local.catalog', version: '3.0.0' }]), /not installed/);
 });
 
+test('enabled modules and exact selections automatically include installed dependencies', (t: any) => {
+  const root = temp(t, 'transportx-module-dependencies-');
+  const managed = path.join(root, 'managed');
+  const installer = new ModuleInstaller(managed);
+  for (const [id, dependencies] of [
+    ['com.transportx.video', []],
+    ['local.video-data', ['com.transportx.video']],
+    ['local.unrelated', []],
+  ] as const) {
+    const source = path.join(root, id);
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'manifest.json'), JSON.stringify({
+      manifestVersion: 2,
+      id,
+      name: id,
+      version: '1.0.0',
+      type: 'module',
+      platformVersion: '>=3.0.0 <4.0.0',
+      dependencies,
+    }));
+    installer.install(source);
+  }
+
+  const enabled = installer.sourcesForEnabledModules(['local.video-data']);
+  assert.equal(enabled.find((source: any) => source.moduleId === 'local.video-data').enabled, true);
+  assert.equal(enabled.find((source: any) => source.moduleId === 'com.transportx.video').enabled, true);
+  assert.equal(enabled.find((source: any) => source.moduleId === 'local.unrelated').enabled, false);
+  const registry = new ModuleRegistry('3.0.0').load(enabled);
+  assert.deepEqual(registry.errors, []);
+  assert.deepEqual(registry.dependencyOrder('local.video-data').map((module: any) => module.manifest.id), ['com.transportx.video', 'local.video-data']);
+
+  const selected = installer.sourcesForSelectionsWithDependencies([{ id: 'local.video-data', version: '1.0.0' }]);
+  assert.deepEqual(selected.map((source: any) => source.moduleId).sort(), ['com.transportx.video', 'local.video-data']);
+});
+
 test('ZIP archives are previewed before selected Module packages are installed', async (t: any) => {
   const root = temp(t, 'transportx-module-archive-');
   const managed = path.join(root, 'managed');
