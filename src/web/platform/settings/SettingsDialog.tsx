@@ -443,7 +443,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
                 const hasActiveAsset = module.assets.some((asset) => asset.active);
                 const substituted = module.assets.length > 0 && module.assets.every((asset) => asset.configured || activeKinds.has(asset.kind));
                 const status = !module.enabled ? t('settings.module.status.disabled') : hasActiveAsset ? t('settings.module.status.active') : missingAssets.length ? t('settings.module.status.missing') : substituted && module.assets.some((asset) => !asset.configured) ? t('settings.module.status.substituted') : t('settings.module.status.enabled');
-                const contributions = [module.skills ? `${module.skills} Skill` : '', module.extensions ? `${module.extensions} Extension` : '', ...module.assets.map((asset) => asset.kind === 'data' ? 'Data' : asset.kind === 'knowledge' ? 'Knowledge' : 'Template')].filter(Boolean);
+                const contributions = [module.skills ? `${module.skills} Skill` : '', module.extensions ? `${module.extensions} Extension` : '', module.nativeRuntimes ? `${module.nativeRuntimes} Runtime` : '', ...module.assets.map((asset) => asset.kind === 'data' ? 'Data' : asset.kind === 'knowledge' ? 'Knowledge' : 'Template')].filter(Boolean);
                 const origin = module.origin === 'installed' ? t('settings.module.origin.installed') : module.origin === 'external' ? t('settings.module.origin.external') : t('settings.module.origin.builtin');
                 return <div className="module-row" key={module.id}><span><strong>{module.name}</strong><small>{module.version} · {moduleLabels[module.type]} · {origin} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-enable:${module.id}`} onClick={() => setModuleEnabled(module, !module.enabled)}>{module.enabled ? t('common.disable') : t('common.enable')}</Button> : null}{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>{t('settings.module.uninstall')}</Button> : null}</span></div>;
               })}
@@ -481,9 +481,10 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
             {archiveInspection.modules.map((module) => {
               const key = `${module.id}@${module.version}`;
               const selectable = module.status === 'ready';
+              const contributionSummary = [`${module.skills || ''}${module.skills ? ' Skill' : ''}`, `${module.extensions || ''}${module.extensions ? ' Extension' : ''}`, `${module.nativeRuntimes || ''}${module.nativeRuntimes ? ' Runtime' : ''}`, `${module.assets || ''}${module.assets ? ' Asset' : ''}`].filter(Boolean).join(' · ');
               return <label key={key} className="module-archive-row" data-state={module.status}>
                 <input type="checkbox" checked={selectedArchiveModules.includes(key)} disabled={!selectable || busy === 'module-archive-install'} onChange={() => toggleArchiveModule(key)} />
-                <span><strong>{module.name}</strong><small>{module.version} · {module.id}</small>{module.message ? <small>{module.message}</small> : <small>{module.skills ? `${module.skills} Skill` : ''}{module.skills && module.extensions ? ' · ' : ''}{module.extensions ? `${module.extensions} Extension` : ''}{module.assets ? `${module.skills || module.extensions ? ' · ' : ''}${module.assets} Asset` : ''}</small>}</span>
+                <span><strong>{module.name}</strong><small>{module.version} · {module.id}</small>{module.message ? <small>{module.message}</small> : <small>{contributionSummary}</small>}</span>
                 <em>{t(`settings.moduleArchive.status.${module.status}`)}</em>
               </label>;
             })}
