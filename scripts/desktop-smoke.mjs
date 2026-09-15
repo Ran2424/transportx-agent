@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { _electron as electron } from 'playwright';
 
@@ -39,17 +38,10 @@ if (packaged) {
   if (python.status !== 0 || !python.stdout.trim().startsWith('3.10.')) {
     throw new Error(`Packaged Python runtime is invalid: ${(python.stderr || python.stdout).trim()}`);
   }
-  // Video runtime: ffmpeg/ffprobe must be present, runnable and integrity-recorded.
-  for (const name of ['ffmpeg', 'ffprobe']) {
-    const entry = manifest[name];
-    if (!entry || !entry.sha256 || !entry.version) throw new Error(`Packaged runtime manifest is missing the ${name} entry`);
-    const binary = path.join(resourcesDir, entry.path);
-    const digest = crypto.createHash('sha256').update(fs.readFileSync(binary)).digest('hex');
-    if (digest !== entry.sha256) throw new Error(`Packaged ${name} checksum mismatch`);
-    const probe = spawnSync(binary, ['-version'], { encoding: 'utf8' });
-    if (probe.status !== 0 || !probe.stdout.includes(entry.version)) throw new Error(`Packaged ${name} is invalid: ${(probe.stderr || probe.stdout).trim()}`);
+  if (manifest.ffmpeg || manifest.ffprobe || fs.existsSync(path.join(resourcesDir, 'runtimes', 'ffmpeg'))) {
+    throw new Error('Base desktop package must not contain the optional ffmpeg runtime');
   }
-  console.log(`[desktop-smoke] packaged ffmpeg runtime OK (ffmpeg ${manifest.ffmpeg.version})`);
+  console.log('[desktop-smoke] optional ffmpeg runtime is absent from the base package');
 }
 const app = await electron.launch({
   ...(packaged ? { executablePath: packaged.executable } : { args: ['.'], cwd: process.cwd() }),

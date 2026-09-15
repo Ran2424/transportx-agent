@@ -88,6 +88,21 @@ test('video search reports no data when the session has no video assets', { skip
   assert.equal(result.candidates.length, 0);
 });
 
+test('packaged video processing resolves ffmpeg from the active capability module', { skip: !ffmpegAvailable }, async (t: any) => {
+  const session = makeSession(t, makeDataRoot(t));
+  const unavailable = new VideoService(null);
+  await assert.rejects(() => unavailable.present(session, { videoId: 'video_001' }), /install and enable the Video Capability module/);
+  session.resolvedSessionPlan.modules = [{
+    nativeRuntimes: [{
+      id: 'ffmpeg', kind: 'ffmpeg', platform: 'darwin', arch: 'arm64', version: 'test',
+      ffmpeg: { path: FFMPEG, sha256: '0'.repeat(64) },
+      ffprobe: { path: FFPROBE, sha256: '0'.repeat(64) },
+    }],
+  }];
+  const presented = await unavailable.present(session, { videoId: 'video_001' });
+  assert.equal(presented.item.kind, 'source');
+});
+
 test('present materializes a source resource with a verified manifest and seek offset', { skip: !ffmpegAvailable }, async (t: any) => {
   const session = makeSession(t, makeDataRoot(t));
   const video = service();

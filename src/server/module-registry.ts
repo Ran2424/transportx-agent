@@ -21,6 +21,13 @@ function compatible(range: string, platformVersion: string) {
   return Number.isInteger(platformMajor) && (!minimum || platformMajor >= Number(minimum[1])) && (!maximum || platformMajor < Number(maximum[1]));
 }
 
+export function moduleRuntimeCompatible(manifest: ModuleManifest, platform = process.platform, arch = process.arch) {
+  const runtimes = manifest.contributes?.nativeRuntimes || [];
+  const matchingRuntimeIds = new Set(runtimes.filter((runtime) => runtime.platform === platform && runtime.arch === arch).map((runtime) => runtime.id));
+  const missingRuntime = (manifest.contributes?.requiredNativeRuntimes || []).find((id) => !matchingRuntimeIds.has(id));
+  return { compatible: !missingRuntime, missingRuntime };
+}
+
 export class ModuleRegistry {
   readonly platformVersion: string;
   readonly modules = new Map<string, RegisteredModule>();
@@ -60,7 +67,9 @@ export class ModuleRegistry {
       this.errors.push({ manifestPath, moduleId: result.value.id, message: `Module ${result.value.id} ${result.value.version} is incompatible with platform ${this.platformVersion}` });
       return;
     }
-    this.modules.set(result.value.id, { manifest: result.value, manifestPath, packageRoot: path.resolve(source.packageRoot || path.dirname(manifestPath)), enabled: source.enabled !== false, origin: source.origin || 'external' });
+    const { compatible: runtimeCompatible, missingRuntime } = moduleRuntimeCompatible(result.value);
+    if (!runtimeCompatible) this.errors.push({ manifestPath, moduleId: result.value.id, message: `Module ${result.value.id} has no ${missingRuntime} runtime for ${process.platform}/${process.arch}` });
+    this.modules.set(result.value.id, { manifest: result.value, manifestPath, packageRoot: path.resolve(source.packageRoot || path.dirname(manifestPath)), enabled: source.enabled !== false && runtimeCompatible, origin: source.origin || 'external' });
   }
 
   private resolveDependencies() {

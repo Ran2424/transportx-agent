@@ -18,8 +18,7 @@ function run() {
   }
 
   // Native host arch must align with the supported release arch. A mac arm64
-  // release cannot run on an Intel host because the bundled Python and ffmpeg are
-  // not portable across architectures.
+  // release cannot run on an Intel host because the bundled Python is not portable.
   if (profile.signing.hostArchRequired && process.arch !== profile.signing.hostArchRequired) {
     throw new Error(`${profile.label} release must run on a ${profile.signing.hostArchRequired} Node runtime, got ${process.arch}`);
   }

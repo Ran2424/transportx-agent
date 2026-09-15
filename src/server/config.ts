@@ -5,7 +5,7 @@ const os = require('node:os');
 import type { TauArgs, TauSettings, TauSettingsFile } from './types.js';
 import { ensureWritableAppPaths, resolveAppPaths } from './app-paths.js';
 import { resolveFfmpegExecutables, resolvePiExecutable, resolvePythonExecutable, type VideoExecutables } from './runtime-resolver.js';
-import { ModuleRegistry } from './module-registry.js';
+import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
 import { AssetResolver } from './asset-resolver.js';
 import { SessionAssembler } from './session-assembly.js';
 import { ModuleInstaller } from './module-installer.js';
@@ -43,7 +43,7 @@ export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
     return null; // Video processing reports a clear error when ffmpeg is unavailable.
   }
 })();
-export const PLATFORM_VERSION = '3.1.8';
+export const PLATFORM_VERSION = '3.2.0';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -81,7 +81,6 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/geo/manifest.json',
   'modules/capabilities/spatial-analysis/manifest.json',
-  'modules/capabilities/video/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
   'modules/official/cli/manifest.json',
@@ -118,9 +117,24 @@ export function sessionAssemblerForProfile(profile: SessionProfileV1) {
   const externalIds = new Set(LOCAL_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
   const allowed = new Set([...builtinIds, ...externalIds, ...TAU_SETTINGS.enabledModuleIds]);
   for (const selection of parsed.value.modules.selected) if (!allowed.has(selection.id)) throw new Error(`Selected Module is not enabled for new tasks: ${selection.id}`);
+  const installedCatalog = MODULE_INSTALLER.catalog();
+  const newestInstalledManifestPaths = new Set(MODULE_INSTALLER.sources().map((source) => source.manifestPath));
+  const installedSources = new Map<string, ReturnType<ModuleInstaller['catalog']>[number]['source']>();
+  const addInstalled = (id: string, version?: string) => {
+    if (builtinIds.has(id) || externalIds.has(id) || installedSources.has(id)) return;
+    if (!allowed.has(id)) throw new Error(`Module dependency is not enabled for new tasks: ${id}`);
+    const candidates = installedCatalog.filter((entry) => entry.id === id);
+    const entry = version
+      ? candidates.find((candidate) => candidate.version === version)
+      : candidates.find((candidate) => newestInstalledManifestPaths.has(candidate.source.manifestPath));
+    if (!entry) throw new Error(version ? `Selected Module version is not installed: ${id}@${version}` : `Module dependency is not installed: ${id}`);
+    installedSources.set(id, entry.source);
+    entry.manifest.dependencies.forEach((dependency) => addInstalled(dependency));
+  };
+  parsed.value.modules.selected.forEach((selection) => addInstalled(selection.id, selection.version));
   const registry = new ModuleRegistry(PLATFORM_VERSION).load([
     ...BUILTIN_MODULE_MANIFESTS,
-    ...MODULE_INSTALLER.sourcesForSelections(parsed.value.modules.selected.filter((selection) => !builtinIds.has(selection.id) && !externalIds.has(selection.id))),
+    ...installedSources.values(),
     ...LOCAL_MODULE_MANIFESTS,
   ]);
   if (registry.errors.length) throw new Error(registry.errors.map((item) => item.message).join('; '));
@@ -145,6 +159,10 @@ export function reloadModules() {
 export function setModuleEnabled(moduleId: string, enabled: boolean) {
   const module = MODULE_REGISTRY.get(moduleId);
   if (!module || module.origin !== 'installed') throw new Error(`Only installed modules can be enabled or disabled: ${moduleId}`);
+  if (enabled) {
+    const runtime = moduleRuntimeCompatible(module.manifest);
+    if (!runtime.compatible) throw new Error(`Module ${moduleId} has no ${runtime.missingRuntime} runtime for ${process.platform}/${process.arch}`);
+  }
   const selected = new Set(TAU_SETTINGS.enabledModuleIds);
   if (enabled) selected.add(moduleId); else selected.delete(moduleId);
   const value = [...selected].sort();

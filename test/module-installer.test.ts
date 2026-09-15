@@ -66,6 +66,26 @@ test('an aggregate Module installs Skill, extension, data and knowledge into a v
   assert.equal(fs.existsSync(path.join(managed, installed.id)), false);
 });
 
+test('native runtime entries are installed only when executable checksums match', { skip: process.platform !== 'darwin' || process.arch !== 'arm64' }, (t: any) => {
+  const root = temp(t, 'transportx-native-runtime-');
+  const source = path.join(root, 'source');
+  const managed = path.join(root, 'managed');
+  fs.mkdirSync(path.join(source, 'runtime'), { recursive: true });
+  fs.writeFileSync(path.join(source, 'runtime', 'ffmpeg'), 'ffmpeg-binary');
+  fs.writeFileSync(path.join(source, 'runtime', 'ffprobe'), 'ffprobe-binary');
+  fs.writeFileSync(path.join(source, 'runtime', 'NOTICES.md'), 'FFmpeg notices');
+  const hash = (name: string) => crypto.createHash('sha256').update(fs.readFileSync(path.join(source, 'runtime', name))).digest('hex');
+  fs.writeFileSync(path.join(source, 'manifest.json'), JSON.stringify({
+    manifestVersion: 2, id: 'com.transportx.video', name: 'Video Capability', version: '1.3.0', type: 'capability', platformVersion: '>=3.0.0 <4.0.0', dependencies: [],
+    contributes: { nativeRuntimes: [{ id: 'ffmpeg', kind: 'ffmpeg', platform: 'darwin', arch: 'arm64', version: '8.0', executables: { ffmpeg: { path: 'runtime/ffmpeg', sha256: hash('ffmpeg') }, ffprobe: { path: 'runtime/ffprobe', sha256: hash('ffprobe') } }, notices: 'runtime/NOTICES.md' }] },
+  }));
+  const installed = new ModuleInstaller(managed).install(source);
+  assert.equal(fs.existsSync(path.join(installed.path, 'runtime', 'ffmpeg')), true);
+  assert.notEqual(fs.statSync(path.join(installed.path, 'runtime', 'ffmpeg')).mode & 0o111, 0);
+  fs.writeFileSync(path.join(source, 'runtime', 'ffmpeg'), 'tampered');
+  assert.throws(() => validateModulePackage(source, JSON.parse(fs.readFileSync(path.join(source, 'manifest.json'), 'utf8'))), /checksum mismatch/);
+});
+
 test('legacy v1 packages migrate once to the versioned v2 store', (t: any) => {
   const root = temp(t, 'transportx-module-migrate-');
   const managed = path.join(root, 'managed');

@@ -14,6 +14,19 @@ export type ModuleAsset = {
   integrityFile?: string;
 };
 
+export type ModuleNativeRuntime = {
+  id: string;
+  kind: 'ffmpeg';
+  platform: 'darwin' | 'win32';
+  arch: 'arm64' | 'x64';
+  version: string;
+  executables: {
+    ffmpeg: { path: string; sha256: string };
+    ffprobe: { path: string; sha256: string };
+  };
+  notices?: string;
+};
+
 export type ModuleManifest = {
   manifestVersion: 2;
   id: string;
@@ -30,6 +43,8 @@ export type ModuleManifest = {
   contributes?: {
     artifactTypes?: string[];
     assets?: ModuleAsset[];
+    nativeRuntimes?: ModuleNativeRuntime[];
+    requiredNativeRuntimes?: string[];
   };
 };
 
@@ -42,6 +57,7 @@ export type ModuleArchiveCandidate = {
   skills: number;
   extensions: number;
   assets: number;
+  nativeRuntimes: number;
   uncompressedBytes: number;
   status: 'ready' | 'installed' | 'conflict' | 'invalid';
   message?: string;
@@ -97,6 +113,7 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
   const skills = entrypointsRecord ? stringList(entrypointsRecord.skills, '$.entrypoints.skills', diagnostics) : undefined;
   const prompts = entrypointsRecord ? stringList(entrypointsRecord.prompts, '$.entrypoints.prompts', diagnostics) : undefined;
   const artifactTypes = contributesRecord ? stringList(contributesRecord.artifactTypes, '$.contributes.artifactTypes', diagnostics) : undefined;
+  const requiredNativeRuntimes = contributesRecord ? stringList(contributesRecord.requiredNativeRuntimes, '$.contributes.requiredNativeRuntimes', diagnostics) : undefined;
 
   const assets: ModuleAsset[] = [];
   if (contributesRecord?.assets !== undefined) {
@@ -109,6 +126,40 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
       if (!asset || !assetId || !assetPath || !['knowledge', 'data', 'template'].includes(kind || '')) {
         diagnostics.push(diagnostic({ code: 'invalid_type', path: `$.contributes.assets[${index}]`, message: 'Asset requires id, kind and path.' }));
       } else assets.push({ id: assetId, kind: kind as ModuleAsset['kind'], path: assetPath, ...(typeof asset.required === 'boolean' ? { required: asset.required } : {}), ...(asString(asset.integrityFile, 500) ? { integrityFile: asString(asset.integrityFile, 500)! } : {}) });
+    });
+  }
+
+  const nativeRuntimes: ModuleNativeRuntime[] = [];
+  if (contributesRecord?.nativeRuntimes !== undefined) {
+    if (!Array.isArray(contributesRecord.nativeRuntimes)) diagnostics.push(diagnostic({ code: 'invalid_type', path: '$.contributes.nativeRuntimes', message: 'nativeRuntimes must be an array.' }));
+    else contributesRecord.nativeRuntimes.forEach((item, index) => {
+      const runtime = asRecord(item);
+      const executables = asRecord(runtime?.executables);
+      const ffmpeg = asRecord(executables?.ffmpeg);
+      const ffprobe = asRecord(executables?.ffprobe);
+      const id = asString(runtime?.id, 200);
+      const kind = asString(runtime?.kind, 40);
+      const platform = asString(runtime?.platform, 40);
+      const arch = asString(runtime?.arch, 40);
+      const version = asString(runtime?.version, 100);
+      const ffmpegPath = asString(ffmpeg?.path, 500);
+      const ffprobePath = asString(ffprobe?.path, 500);
+      const ffmpegSha256 = asString(ffmpeg?.sha256, 64);
+      const ffprobeSha256 = asString(ffprobe?.sha256, 64);
+      if (!runtime || !id || kind !== 'ffmpeg' || !['darwin', 'win32'].includes(platform || '') || !['arm64', 'x64'].includes(arch || '') || !version || !ffmpegPath || !ffprobePath || !ffmpegSha256?.match(/^[a-f0-9]{64}$/i) || !ffprobeSha256?.match(/^[a-f0-9]{64}$/i)) {
+        diagnostics.push(diagnostic({ code: 'invalid_type', path: `$.contributes.nativeRuntimes[${index}]`, message: 'Native runtime requires an id, supported platform/architecture, version, and SHA-256 executable entries.' }));
+      } else nativeRuntimes.push({
+        id,
+        kind: 'ffmpeg',
+        platform: platform as ModuleNativeRuntime['platform'],
+        arch: arch as ModuleNativeRuntime['arch'],
+        version,
+        executables: {
+          ffmpeg: { path: ffmpegPath, sha256: ffmpegSha256.toLowerCase() },
+          ffprobe: { path: ffprobePath, sha256: ffprobeSha256.toLowerCase() },
+        },
+        ...(asString(runtime.notices, 500) ? { notices: asString(runtime.notices, 500)! } : {}),
+      });
     });
   }
 
@@ -132,6 +183,8 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
       ...(contributesRecord ? { contributes: {
         ...(artifactTypes ? { artifactTypes } : {}),
         ...(assets.length ? { assets } : {}),
+        ...(nativeRuntimes.length ? { nativeRuntimes } : {}),
+        ...(requiredNativeRuntimes ? { requiredNativeRuntimes } : {}),
       } } : {}),
     },
   };

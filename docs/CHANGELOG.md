@@ -9,6 +9,13 @@
 ### Changed
 
 - Markdown 报告导出 PDF 的渲染 HTML 上限由 5 MiB 提升至 50 MiB，支持包含多张高分辨率图件的分析报告。
+- Video Capability 从内置能力改为可安装、可禁用和可卸载的 Module；视频数据 Module 继续通过依赖关系启用该能力。
+- 基础桌面安装包不再携带 ffmpeg/ffprobe；平台专属 Video Capability ZIP 独立携带并冻结原生运行时版本与 SHA-256。
+
+### Added
+
+- Module manifest 支持声明经过哈希校验的平台/架构专属 Native Runtime。
+- 新增 `npm run video:pack`，生成包含自包含 Extension、Skill、ffmpeg/ffprobe 和许可证说明的视频能力包。
 
 ## 3.1.8 - 2026-09-15
 

@@ -8,7 +8,7 @@ import {
   type VideoEnvelopeV1,
   type VideoSceneItemV1,
   type VideoSceneSnapshotV1,
-} from '../../../../../src/contracts/index.ts';
+} from '../../../../../src/contracts/video.ts';
 
 type HostResponse<T> = T & { error?: string };
 

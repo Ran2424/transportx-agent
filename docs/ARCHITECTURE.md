@@ -85,7 +85,7 @@ Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`san
 - WebSocket 实时事件与 Snapshot 更新；WebSocket 不接受有副作用命令；
 - Session、附件、文件预览、本机打开、引用、报告、Geo、空间分析和视频资源；
 - 模型配置、认证、Module Registry/Installer、Asset Resolver 与 Session Assembly；
-- Pi、Python、ffmpeg 的受控调用。
+- Pi、Python，以及可安装 Video Capability 提供的 ffmpeg/ffprobe 受控调用。
 
 Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一个 Agent Host。
 
@@ -93,7 +93,7 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 每个任务以 Pi RPC 进程运行。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
-发布版使用随包 Pi、Python 3.10 和 ffmpeg/ffprobe；开发模式仅能通过明确环境变量覆盖。Python 作业由 Agent Host 控制工作目录、UTF-8、超时、取消与进程回收，不得依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely。
+发布版基础安装包使用随包 Pi 与 Python 3.10；ffmpeg/ffprobe 由平台专属的可安装 Video Capability Module 提供。开发模式可通过明确环境变量覆盖。Python 作业由 Agent Host 控制工作目录、UTF-8、超时、取消与进程回收，不得依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely。
 
 ### React Workspace 与 Browser Kernel
 
@@ -127,7 +127,7 @@ Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更
 - 用户可从地图提交要素、点位、矩形或当前视野四类 Geo Context，并显式附到下一轮消息。Agent 通过 `inspect_map_context` 读取本轮上下文，也可用 `request_geo_input` 等待用户在指定地图 revision 上补充输入；提交、取消、超时、中止和地图失效都有明确终态。
 - 地图截图由工作台按当前画面、图例和说明生成 PNG，再写入当前任务目录。截图不扩大资源访问范围。
 - Spatial Analysis 只处理当前会话的 GeoJSON，使用受控 Python 生成 WGS84 GeoJSON 与包含输入、参数、计数和哈希的 manifest，再发布到 Geo 界面。
-- Video 资源与指标由 Agent Host 的受控 ffmpeg/ffprobe 入口处理；发布版不得依赖系统 `PATH`。
+- Video 资源与指标由 Agent Host 使用当前会话冻结的 Video Capability ffmpeg/ffprobe 处理；发布版不得依赖系统 `PATH`。
 
 ## 4. 契约与事实来源
 
@@ -154,7 +154,8 @@ Module 是唯一安装与版本冻结单元，可组合贡献 Skill、Extension�
 
 | 来源 | 位置 | 用途 |
 |---|---|---|
-| 内置 capability | `modules/capabilities/` | Task、Citation、Geo、Spatial Analysis、Video、Web Bridge 等通用机制 |
+| 内置 capability | `modules/capabilities/` | Task、Citation、Geo、Spatial Analysis、Web Bridge 等通用机制 |
+| 可安装 capability | `modules/installable/video/` | Video Skill、Extension 与平台专属 ffmpeg/ffprobe Runtime |
 | 内置 official | `modules/official/` | Workbench、报告模板、Module Authoring |
 | 用户可安装源码 | `modules/installable/` | 上海数据、交通保障知识、绘图风格、演示数据；不打入应用 |
 | 用户受管 Module | 用户目录 `modules/<id>/<version>/` | 安装后显式启用，参与新任务装配 |
@@ -211,7 +212,7 @@ docs/                    当前文档与历史记录
 3. Renderer 隔离 Node 与 Electron；Preload 能力按参数和调用方严格限制。
 4. Session cwd 是附件、文件、引用、地图和视频资源的授权边界；读取前验证真实路径、文件类型、哈希或资源清单。
 5. API Key 不返回 Renderer；模型配置与密钥分离并采用原子写入，密钥文件仅允许当前用户读写。
-6. 打包运行时在桌面启动前校验相对路径与 SHA-256；安装器和运行时准备拒绝不符合目标架构的 Python/ffmpeg。
+6. 基础打包运行时在桌面启动前校验相对路径与 SHA-256；Module Installer 对 Native Runtime 执行路径和 SHA-256 校验，并拒绝不匹配当前平台/架构的能力模块。
 7. PDF 使用禁用 JavaScript 的临时隐藏窗口，阻断 `about:`/`data:` 以外的请求。
 
 Module 是本机可信代码与数据包，而非操作系统级沙箱插件。若未来开放第三方市场，必须单独设计签名、权限与隔离模型。
@@ -230,9 +231,11 @@ desktop/electron-builder.yml
 `npm run desktop:pack` 在目标平台运行同一入口：
 
 1. `check-desktop-release.mjs` 根据 Profile 验证宿主架构与签名条件；
-2. `prepare-runtime.mjs` 复制并实际启动 Python、ffmpeg、ffprobe，生成哈希清单；
+2. `prepare-runtime.mjs` 复制并实际启动 Python，生成基础运行时哈希清单；
 3. electron-builder 按对应 fragment 打包；
 4. macOS 正式发行需要 Developer ID + 公证，Windows 正式发行需要 Authenticode + 可信时间戳。
+
+Video Capability 使用 `npm run video:pack` 独立生成平台专属 ZIP。该步骤编译自包含 Extension，复制并验证 ffmpeg/ffprobe，将版本、架构、SHA-256 与许可证说明写入 Module manifest。
 
 不要从 macOS 交叉生成 Windows 正式包。完整 Windows 验收与环境变量见 [WINDOWS_RELEASE.md](WINDOWS_RELEASE.md)。
 
