@@ -44,7 +44,7 @@ test('desktop Agent Host binds a random loopback port and publishes ready/health
   assert.equal(ready.host, '127.0.0.1');
   assert.ok(ready.port > 0);
   const health = await (await fetch(`http://127.0.0.1:${ready.port}/api/health`)).json();
-  assert.equal(health.product, 'TransportX Traffic Agent');
+  assert.equal(health.product, 'TransportX Agent');
   assert.equal(health.protocolVersion, 1);
   const moduleSource = path.join(userData, 'install-source');
   fs.mkdirSync(path.join(moduleSource, 'skill'), { recursive: true });

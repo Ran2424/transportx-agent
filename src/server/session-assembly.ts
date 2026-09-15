@@ -158,7 +158,7 @@ export class SessionAssembler {
     );
     return {
       schemaVersion: 3,
-      platform: { name: 'TransportX Traffic Agent', version: this.platformVersion },
+      platform: { name: 'TransportX Agent', version: this.platformVersion },
       profile,
       domain: { id: domain.manifest.id, version: domain.manifest.version },
       modules: resolvedModules,

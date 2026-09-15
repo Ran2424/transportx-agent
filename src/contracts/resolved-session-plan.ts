@@ -35,7 +35,7 @@ export type ResolvedPlanAsset = {
 };
 export type ResolvedSessionPlanV3 = {
   schemaVersion: 3;
-  platform: { name: 'TransportX Traffic Agent'; version: string };
+  platform: { name: 'TransportX Agent'; version: string };
   profile: SessionProfileV1;
   domain: { id: string; version: string };
   modules: ResolvedPlanModule[];
@@ -49,6 +49,7 @@ export type ResolvedSessionPlanParseResult =
   | { ok: false; value: null; diagnostics: ContractDiagnostic[] };
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
+const PLATFORM_NAMES = ['TransportX Agent', 'TransportX Traffic Agent'];
 
 export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSessionPlanParseResult {
   const root = asRecord(value);
@@ -62,7 +63,7 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
   const runtime = asRecord(root.runtime);
   const workspace = asString(root.workspace, 2000);
   const createdAt = asString(root.createdAt, 80);
-  if (platform?.name !== 'TransportX Traffic Agent' || !asString(platform.version, 100)) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'plan.platform', message: 'Invalid platform identity.' }));
+  if (!PLATFORM_NAMES.includes(String(platform?.name)) || !asString(platform?.version, 100)) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'plan.platform', message: 'Invalid platform identity.' }));
   if (!asString(domain?.id, 200) || !asString(domain?.version, 100)) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'plan.domain', message: 'Invalid domain identity.' }));
   if (!runtime || !workspace || !createdAt) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'plan', message: 'runtime, workspace and createdAt are required.' }));
   const modules: ResolvedPlanModule[] = [];
@@ -102,5 +103,5 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
     else { assetIds.add(id); assets.push({ id, moduleId, moduleVersion, path: assetPath, kind: kind as ResolvedPlanAsset['kind'], integrityStatus: integrityStatus as ResolvedPlanAsset['integrityStatus'], ...(integrityFile ? { integrityFile } : {}), ...(integrityFileSha256 ? { integrityFileSha256 } : {}) }); }
   });
   if (diagnostics.length || !profile.ok || !platform || !domain || !runtime || !workspace || !createdAt) return { ok: false, value: null, diagnostics };
-  return { ok: true, diagnostics: [], value: { schemaVersion: 3, platform: { name: 'TransportX Traffic Agent', version: asString(platform.version, 100)! }, profile: profile.value, domain: { id: asString(domain.id, 200)!, version: asString(domain.version, 100)! }, modules, assets, runtime: { ...(asString(runtime.piVersion, 100) ? { piVersion: asString(runtime.piVersion, 100)! } : {}), ...(asString(runtime.pythonVersion, 100) ? { pythonVersion: asString(runtime.pythonVersion, 100)! } : {}) }, workspace, createdAt } };
+  return { ok: true, diagnostics: [], value: { schemaVersion: 3, platform: { name: 'TransportX Agent', version: asString(platform.version, 100)! }, profile: profile.value, domain: { id: asString(domain.id, 200)!, version: asString(domain.version, 100)! }, modules, assets, runtime: { ...(asString(runtime.piVersion, 100) ? { piVersion: asString(runtime.piVersion, 100)! } : {}), ...(asString(runtime.pythonVersion, 100) ? { pythonVersion: asString(runtime.pythonVersion, 100)! } : {}) }, workspace, createdAt } };
 }

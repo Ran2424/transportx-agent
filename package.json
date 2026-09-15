@@ -1,7 +1,7 @@
 {
-  "name": "pi-traffic-workspace",
+  "name": "transportx-agent",
   "version": "3.2.0",
-  "description": "TransportX Traffic Agent 本地交通分析桌面工作台",
+  "description": "TransportX Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
     "pi",
@@ -15,10 +15,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Ran2424/pi-traffic-workspace.git"
+    "url": "https://github.com/Ran2424/transportx-agent.git"
   },
   "bin": {
-    "pi-traffic-workspace": "./bin/tau.js",
+    "transportx-agent": "./bin/tau.js",
     "transportx": "./bin/transportx.js"
   },
   "files": [

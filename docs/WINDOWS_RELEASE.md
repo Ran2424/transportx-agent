@@ -1,10 +1,10 @@
 # Windows 10/11 x64 发行指南
 
-本文是 TransportX Traffic Agent Windows 安装包的发布权威说明。首发范围仅为 64 位 Windows 10（22H2）和 Windows 11；不支持 Windows on ARM、便携版或自动在线安装 Python。
+本文是 TransportX Agent Windows 安装包的发布权威说明。首发范围仅为 64 位 Windows 10（22H2）和 Windows 11；不支持 Windows on ARM、便携版或自动在线安装 Python。
 
 ## 交付物与边界
 
-- 安装器：`TransportX Traffic Agent-<version>-win-x64-setup.exe`（NSIS），由 [`desktop/electron-builder.win.yml`](../desktop/electron-builder.win.yml) 中的 `win.artifactName` 与 `nsis.deleteAppDataOnUninstall: false` 决定卸载行为。
+- 安装器：`TransportX Agent-<version>-win-x64-setup.exe`（NSIS），由 [`desktop/electron-builder.win.yml`](../desktop/electron-builder.win.yml) 中的 `win.artifactName` 与 `nsis.deleteAppDataOnUninstall: false` 决定卸载行为。
 - 安装方式：每用户安装，允许选择目录；同一 `appId` 的新版本会原位升级。
 - 用户数据：默认位于 `%APPDATA%\TransportX\traffic-agent\`，卸载不会删除。任务、会话、模型密钥、日志和受管 Module 均在这里，不能置于安装目录。3.1.3 起不再读取旧目录 `%APPDATA%\TransportX Traffic Agent\`。
 - 内置运行时：Pi CLI 与 Python 3.10 x64。`ffmpeg.exe` 与 `ffprobe.exe` 仅由额外安装的 Windows x64 Video Capability Module 提供；基础应用和视频能力均不得依赖系统 `PATH`、Conda、Python 或 ffmpeg。
@@ -78,7 +78,7 @@ npm run desktop:pack
 ```powershell
 npm run desktop:dir:allow-unsigned
 # 实际执行：check-desktop-release.mjs --allow-unsigned -> prepare-runtime.mjs -> electron-builder --dir
-# 产物：release/win-unpacked/TransportX Traffic Agent.exe + resources/
+# 产物：release/win-unpacked/TransportX Agent.exe + resources/
 ```
 
 基础构建脚本会在复制后实际启动 Python，并把版本、相对路径及 SHA-256 写入 `desktop/build/runtime-manifest.json`。Video Capability 打包脚本单独启动并校验 ffmpeg/ffprobe，把平台、架构、版本、路径及 SHA-256 写入模块 manifest。两类文件均为构建产物，不应手工修改或提交。
@@ -88,14 +88,14 @@ npm run desktop:dir:allow-unsigned
 先验证未安装包：
 
 ```powershell
-$env:TRANSPORTX_PACKAGED_APP = (Resolve-Path '.\release\win-unpacked\TransportX Traffic Agent.exe').Path
+$env:TRANSPORTX_PACKAGED_APP = (Resolve-Path '.\release\win-unpacked\TransportX Agent.exe').Path
 npm run test:platform:windows
 ```
 
 再验证最终 NSIS 安装器的静默安装、启动、卸载和用户数据保留：
 
 ```powershell
-$env:TRANSPORTX_WINDOWS_INSTALLER = (Resolve-Path '.\release\TransportX Traffic Agent-<version>-win-x64-setup.exe').Path
+$env:TRANSPORTX_WINDOWS_INSTALLER = (Resolve-Path '.\release\TransportX Agent-<version>-win-x64-setup.exe').Path
 npm run test:platform:windows
 ```
 
@@ -104,8 +104,8 @@ npm run test:platform:windows
 发布前还须在两台干净机器上人工完成：Windows 10 22H2 x64 与 Windows 11 x64 各一台。每台测试基础安装包启动、Video Capability 安装/禁用/卸载、视频播放与裁剪、PDF 导出、覆盖升级、卸载和重新安装。检查签名与安装器哈希：
 
 ```powershell
-Get-AuthenticodeSignature '.\release\TransportX Traffic Agent-<version>-win-x64-setup.exe'
-Get-FileHash '.\release\TransportX Traffic Agent-<version>-win-x64-setup.exe' -Algorithm SHA256
+Get-AuthenticodeSignature '.\release\TransportX Agent-<version>-win-x64-setup.exe'
+Get-FileHash '.\release\TransportX Agent-<version>-win-x64-setup.exe' -Algorithm SHA256
 ```
 
 将安装器、Video Capability ZIP、SHA-256、签名状态、Python/ffmpeg 来源及版本、验收系统版本一并归档。SmartScreen 信誉由签名和发布历史逐步建立，代码签名本身不保证新发行者立刻不显示提示。

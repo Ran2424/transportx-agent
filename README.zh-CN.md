@@ -1,6 +1,6 @@
 <div align="center">
   <img src="./src/web/assets/x-icon.svg" alt="TransportX" width="96" />
-  <h1>TransportX Traffic Agent</h1>
+  <h1>TransportX Agent</h1>
   <p><strong>面向交通分析 Agent 的本地桌面工作台。</strong></p>
   <p>用自然语言分析道路、公交、轨道、出行需求与交通数据。TransportX 将分析结果整理为地图、图表、带引用的结论和报告，同时保留相关源文件与工具记录。</p>
   <p>
@@ -18,7 +18,7 @@ Codex、Claude Code 等编程 Agent 进步很快，但实际使用通常仍离�
 TransportX 的出发点很简单：让交通分析人员能直接使用 Agent 完成提问、分析、制图和成果交付，并保留结果所依据的数据与过程。平台本身保持轻量，具体数据、知识、方法和工具通过 Module 装配，因此也可以适配交通之外的数据分析场景。
 
 <p align="center">
-  <img src="./docs/images/product-home.png" alt="TransportX Traffic Agent 首页" width="920" />
+  <img src="./docs/images/product-home.png" alt="TransportX Agent 首页" width="920" />
 </p>
 
 ## 为交通分析设计
