@@ -79,7 +79,8 @@ export function createApiRouter(services: ApiRouteServices) {
         const profile = body.profile === undefined ? undefined : parseSessionProfileStructured(body.profile);
         if (profile && !profile.ok) return deps.json(res, 400, { error: profile.diagnostics.map((item) => item.message).join('; '), diagnostics: profile.diagnostics });
         const domainId = typeof body.domainId === 'string' && body.domainId.trim() ? body.domainId.trim() : undefined;
-        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null, ...(domainId ? { domainId } : {}), ...(profile?.ok ? { profile: profile.value } : {}) });
+        const appendSystemPrompt = typeof body.appendSystemPrompt === 'string' && body.appendSystemPrompt.trim() ? body.appendSystemPrompt.trim() : undefined;
+        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null, ...(domainId ? { domainId } : {}), ...(profile?.ok ? { profile: profile.value } : {}), ...(appendSystemPrompt ? { appendSystemPrompt } : {}) });
         deps.json(res, 200, { session: session.metadata(), ...(body.profile === undefined ? { diagnostics: [{ code: 'profile_compat_default', path: 'profile', severity: 'warning', message: 'profile was omitted; the current Module selection was frozen as compat-default.' }] } : {}) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
     })
