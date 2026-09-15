@@ -4,6 +4,7 @@
 
 | 模块 | 内容边界 | 平台依赖 |
 |---|---|---|
+| `video` | 视频 Skill、Pi Extension 与经过哈希校验的 ffmpeg/ffprobe 原生运行时 | macOS arm64 或 Windows x64 对应能力包 |
 | `shanghaidata` | 上海交通数据、数据字典、查询/治理脚本、上海数据口径与地图表达约定 | Geo |
 | `shanghai-multimodal-data` | 2026-08-24 上海轨道、公交、出租车、网约车、共享单车及站点邻近关系的单日数据快照 | 无 |
 | `shanghai-hub-traffic` | 两场三站及上海松江站的铁路、预测、出租车、功能点和网约车治理数据 | 无 |

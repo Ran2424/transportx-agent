@@ -143,15 +143,30 @@ function sceneItemFromManifest(manifest: VideoResourceManifestV1, title: string,
 }
 
 export class VideoService {
-  private runner: VideoRunner | null;
+  private readonly fallbackRunner: VideoRunner | null;
+  private readonly moduleRunners = new Map<string, VideoRunner>();
 
   constructor(executables: VideoExecutables | null) {
-    this.runner = executables ? new VideoRunner(executables) : null;
+    this.fallbackRunner = executables ? new VideoRunner(executables) : null;
   }
 
-  private requireRunner() {
-    if (!this.runner) throw new Error('Video processing is unavailable: ffmpeg/ffprobe are not configured for this runtime');
-    return this.runner;
+  private requireRunner(session: VideoSessionContext) {
+    const runtimes = (session.resolvedSessionPlan?.modules || []).flatMap((module) => module.nativeRuntimes || []).filter((runtime) => runtime.kind === 'ffmpeg');
+    if (runtimes.length > 1) throw new Error('Video processing is unavailable: multiple ffmpeg runtimes are active');
+    const runtime = runtimes[0];
+    if (!runtime) {
+      if (this.fallbackRunner) return this.fallbackRunner;
+      throw new Error('Video processing is unavailable: install and enable the Video Capability module');
+    }
+    const key = `${runtime.ffmpeg.path}:${runtime.ffmpeg.sha256}:${runtime.ffprobe.path}:${runtime.ffprobe.sha256}`;
+    const cached = this.moduleRunners.get(key);
+    if (cached) return cached;
+    const runner = new VideoRunner({
+      ffmpeg: { command: runtime.ffmpeg.path, args: [], version: runtime.version },
+      ffprobe: { command: runtime.ffprobe.path, args: [], version: runtime.version },
+    });
+    this.moduleRunners.set(key, runner);
+    return runner;
   }
 
   /** Scan the session's resolved Data Assets for videos.json catalogs. */
@@ -260,7 +275,7 @@ export class VideoService {
   }
 
   private ensureResourceAsync(session: VideoSessionContext, record: CatalogRecord): Promise<{ manifest: VideoResourceManifestV1; videoPath: string }> {
-    const runner = this.requireRunner();
+    const runner = this.requireRunner(session);
     const resourceId = `video_${crypto.createHash('sha256').update(`${record.assetId}:${record.entry.videoId}`).digest('hex').slice(0, 16)}`;
     return (async () => {
       const resolvedFile = resolveSafeDataFile(record.assetRoot, record.entry.file);
@@ -366,7 +381,7 @@ export class VideoService {
     fs.mkdirSync(outDir, { recursive: true });
     const outputPath = path.join(outDir, `snap_${crypto.randomBytes(8).toString('hex')}.jpg`);
     try {
-      await this.requireRunner().snapshot({ inputPath: resolved.videoPath, offsetSeconds: offset, outputPath }, { signal });
+      await this.requireRunner(session).snapshot({ inputPath: resolved.videoPath, offsetSeconds: offset, outputPath }, { signal });
       const bytes = fs.statSync(outputPath).size;
       if (bytes > MAX_SNAPSHOT_BYTES) throw new Error(`Snapshot exceeds the ${MAX_SNAPSHOT_BYTES / 1024 / 1024} MiB limit`);
       return { videoId: resolved.manifest.videoId, timestamp: timestamp.iso, mimeType: 'image/jpeg', dataBase64: fs.readFileSync(outputPath).toString('base64'), bytes };
@@ -392,7 +407,7 @@ export class VideoService {
     const outDir = outputRoot(session.cwd);
     fs.mkdirSync(outDir, { recursive: true });
     const tempOutput = path.join(outDir, `clip_${crypto.randomBytes(8).toString('hex')}.mp4`);
-    const runner = this.requireRunner();
+    const runner = this.requireRunner(session);
     try {
       await runner.clip({ inputPath: resolved.videoPath, startSeconds: offset, durationSeconds, outputPath: tempOutput }, { signal });
       const probed = await runner.probe(tempOutput, { signal });
@@ -460,7 +475,7 @@ export class VideoService {
     if (startOffset === null) throw new Error('startTime could not be converted to a video offset');
     const spanSeconds = (end.epochMs - start.epochMs) / 1000;
 
-    const runner = this.requireRunner();
+    const runner = this.requireRunner(session);
     const outDir = outputRoot(session.cwd);
     fs.mkdirSync(outDir, { recursive: true });
     const offsets = Array.from({ length: frameCount as number }, (_, index) => startOffset + ((index + 0.5) * spanSeconds) / (frameCount as number));
@@ -501,6 +516,7 @@ export class VideoService {
   }
 
   terminateAll() {
-    this.runner?.terminateAll();
+    this.fallbackRunner?.terminateAll();
+    for (const runner of this.moduleRunners.values()) runner.terminateAll();
   }
 }

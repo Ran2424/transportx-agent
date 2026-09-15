@@ -74,6 +74,7 @@ test('platform-profile registry exposes frozen mac/win profiles with required co
 
   // OS-specific invariants baked into the contract:
   const mac = PLATFORM_PROFILES.darwin;
+  assert.equal(mac.release.requiresFfmpeg, false, 'base macOS package excludes the optional video runtime');
   assert.equal(mac.ffmpeg.binName('ffmpeg'), 'ffmpeg', 'mac ffmpeg binary must not have a suffix');
   assert.equal(mac.ffmpeg.chmodRequired, true, 'mac ffmpeg needs +x');
   assert.equal(mac.ffmpeg.arch, 'arm64');
@@ -81,6 +82,7 @@ test('platform-profile registry exposes frozen mac/win profiles with required co
   assert.equal(mac.python.entry, 'bin/python3');
 
   const win = PLATFORM_PROFILES.win;
+  assert.equal(win.release.requiresFfmpeg, false, 'base Windows package excludes the optional video runtime');
   assert.equal(win.ffmpeg.binName('ffmpeg'), 'ffmpeg.exe', 'win ffmpeg binary must end in .exe');
   assert.equal(win.ffmpeg.chmodRequired, false, 'win ffmpeg inherits +x from NTFS');
   assert.equal(win.ffmpeg.arch, 'x64');
@@ -108,16 +110,18 @@ test('check-desktop-release composes per-OS requirements behind one dispatcher',
   ]) assert.match(check, fragment);
 });
 
-test('prepare-runtime reads platform-profile fields and never hardcodes a platform', () => {
+test('base runtime packages Python without the optional video runtime', () => {
   const prepare = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
+  const videoPack = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'package-video-capability.mjs'), 'utf8');
   // Profile is the canonical data source.
   assert.match(prepare, /import \{ getPlatformProfile \} from '\.\/platform-profile\.mjs'/);
-  // Python entrypoint, arch probe and ffmpeg filename/chmod all reach through the profile.
+  // Python stays in the base installer; ffmpeg moves to the platform-specific Video Capability package.
   assert.match(prepare, /profile\.python\.entry/);
   assert.match(prepare, /profile\.python\.archCheck\(pythonProbe\.machine\)/);
-  assert.match(prepare, /profile\.ffmpeg\.binName/);
-  assert.match(prepare, /profile\.ffmpeg\.chmodRequired/);
-  assert.match(prepare, /profile\.ffmpeg\.archCheck\(staged\)/);
+  assert.doesNotMatch(prepare, /profile\.ffmpeg/);
+  assert.match(videoPack, /profile\.ffmpeg\.binName/);
+  assert.match(videoPack, /profile\.ffmpeg\.chmodRequired/);
+  assert.match(videoPack, /profile\.ffmpeg\.archCheck\(target\)/);
   // Error message references profile fields, not platform literals, so a future
   // Linux profile inherits correct guidance.
   assert.match(prepare, /Bundled \$\{profile\.label\} Python must be \$\{profile\.python\.archErrorMessage\}/);
@@ -236,6 +240,7 @@ test('unsigned macOS test builds replace Electron linker signatures before creat
   assert.match(commonBuilder, /afterPack: desktop\/scripts\/after-pack\.cjs/);
   assert.match(commonBuilder, /asarUnpack:[\s\S]*modules\/\*\*\/skills\/\*\*/);
   assert.match(commonBuilder, /"!modules\/installable\/\*\*"/);
+  assert.doesNotMatch(commonBuilder, /runtimes\/ffmpeg/);
   assert.match(commonBuilder, /prompts\/\*\*/);
   assert.match(macBuilder, /target:[\s\S]*dmg/);
   assert.match(macBuilder, /arch: arm64/);
@@ -255,6 +260,7 @@ test('Windows NSIS release stages x64 .exe runtimes and has a profile-aware pre-
   const profile = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'platform-profile.mjs'), 'utf8');
   const releaseCheck = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'check-desktop-release.mjs'), 'utf8');
   const prepareRuntime = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'prepare-runtime.mjs'), 'utf8');
+  const videoPack = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'scripts', 'package-video-capability.mjs'), 'utf8');
   const installerSmoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'windows-installer-smoke.mjs'), 'utf8');
   const smoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'desktop-smoke.mjs'), 'utf8');
   assert.match(winBuilder, /icon: app-icon\.ico/);
@@ -264,7 +270,8 @@ test('Windows NSIS release stages x64 .exe runtimes and has a profile-aware pre-
   assert.match(profile, /win[\s\S]*Authenticode/i);
   assert.match(profile, /hostArchRequired: 'x64'/);
   assert.match(profile, /binName:[\s\S]*\.exe/);
-  assert.match(prepareRuntime, /profile\.ffmpeg\.binName/);
+  assert.doesNotMatch(prepareRuntime, /profile\.ffmpeg/);
+  assert.match(videoPack, /profile\.ffmpeg\.binName/);
   assert.match(prepareRuntime, /Bundled \$\{profile\.label\} Python must be \$\{profile\.python\.archErrorMessage\}/);
   assert.match(releaseCheck, /WIN_CSC_LINK/);
   assert.match(releaseCheck, /profile\.signing\.description/);

@@ -5,8 +5,8 @@ const yauzl = require('yauzl') as typeof import('yauzl');
 const { pipeline } = require('node:stream/promises') as typeof import('node:stream/promises');
 
 import { diagnosticMessage, parseModuleManifestStructured, type ModuleArchiveCandidate, type ModuleArchiveInspection, type ModuleManifest } from '../contracts/index.js';
-import type { ModuleRegistry, ModuleSource } from './module-registry.js';
-import { verifyChecksumFile } from './asset-integrity.js';
+import { moduleRuntimeCompatible, type ModuleRegistry, type ModuleSource } from './module-registry.js';
+import { sha256File, verifyChecksumFile } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 
 export type InstallKind = 'module';
@@ -100,6 +100,8 @@ function resolvePackageEntry(root: string, relativePath: string, label: string, 
 
 export function validateModulePackage(packageRoot: string, manifest: ModuleManifest) {
   assertSafeTree(packageRoot);
+  const runtimeCompatibility = moduleRuntimeCompatible(manifest);
+  if (!runtimeCompatibility.compatible) throw new Error(`Module ${manifest.id} has no ${runtimeCompatibility.missingRuntime} runtime for ${process.platform}/${process.arch}`);
   for (const entry of manifest.entrypoints?.piExtensions || []) resolvePackageEntry(packageRoot, entry, 'Extension');
   for (const entry of manifest.entrypoints?.skills || []) resolvePackageEntry(packageRoot, entry, 'Skill');
   for (const entry of manifest.entrypoints?.prompts || []) resolvePackageEntry(packageRoot, entry, 'Prompt');
@@ -109,6 +111,20 @@ export function validateModulePackage(packageRoot: string, manifest: ModuleManif
       const integrityFile = resolvePackageEntry(packageRoot, asset.integrityFile, `Integrity file for ${asset.id}`, asset.required === false);
       if (fs.existsSync(assetRoot) && fs.existsSync(integrityFile)) verifyChecksumFile(assetRoot, integrityFile);
     }
+  }
+  for (const runtime of manifest.contributes?.nativeRuntimes || []) {
+    for (const [name, executable] of Object.entries(runtime.executables)) {
+      const executablePath = resolvePackageEntry(packageRoot, executable.path, `Native runtime executable ${runtime.id}/${name}`);
+      if (!fs.statSync(executablePath).isFile()) throw new Error(`Native runtime executable must be a file: ${runtime.id}/${name}`);
+      if (sha256File(executablePath) !== executable.sha256) throw new Error(`Native runtime executable checksum mismatch: ${runtime.id}/${name}`);
+    }
+    if (runtime.notices) resolvePackageEntry(packageRoot, runtime.notices, `Native runtime notices ${runtime.id}`);
+  }
+}
+
+function ensureNativeRuntimePermissions(packageRoot: string, manifest: ModuleManifest) {
+  for (const runtime of manifest.contributes?.nativeRuntimes || []) {
+    for (const executable of Object.values(runtime.executables)) fs.chmodSync(resolvePackageEntry(packageRoot, executable.path, `Native runtime executable ${runtime.id}`), 0o755);
   }
 }
 
@@ -208,7 +224,8 @@ export class ModuleInstaller {
             const manifest = parsed.value;
             if (manifest.id !== item.id || manifest.version !== item.version) throw new Error(`Archive path must match manifest: ${item.id}/${item.version}`);
             const target = path.join(this.modulesDir, manifest.id, manifest.version);
-            const status = reservedModuleIds.has(manifest.id) ? 'conflict' : fs.existsSync(target) ? 'installed' : 'ready';
+            const runtimeCompatibility = moduleRuntimeCompatible(manifest);
+            const status = !runtimeCompatibility.compatible ? 'invalid' : reservedModuleIds.has(manifest.id) ? 'conflict' : fs.existsSync(target) ? 'installed' : 'ready';
             candidate = {
               id: manifest.id,
               name: manifest.name,
@@ -218,9 +235,10 @@ export class ModuleInstaller {
               skills: manifest.entrypoints?.skills?.length || 0,
               extensions: manifest.entrypoints?.piExtensions?.length || 0,
               assets: manifest.contributes?.assets?.length || 0,
+              nativeRuntimes: manifest.contributes?.nativeRuntimes?.length || 0,
               uncompressedBytes: packageBytes.get(key) || 0,
               status,
-              ...(status === 'conflict' ? { message: `Module id conflicts with an existing built-in or external module: ${manifest.id}` } : status === 'installed' ? { message: 'This module version is already installed' } : {}),
+              ...(!runtimeCompatibility.compatible ? { message: `No ${runtimeCompatibility.missingRuntime} runtime for ${process.platform}/${process.arch}` } : status === 'conflict' ? { message: `Module id conflicts with an existing built-in or external module: ${manifest.id}` } : status === 'installed' ? { message: 'This module version is already installed' } : {}),
             };
           } catch (error) {
             candidate = {
@@ -232,6 +250,7 @@ export class ModuleInstaller {
               skills: 0,
               extensions: 0,
               assets: 0,
+              nativeRuntimes: 0,
               uncompressedBytes: packageBytes.get(key) || 0,
               status: 'invalid',
               message: error instanceof Error ? error.message : String(error),
@@ -294,6 +313,7 @@ export class ModuleInstaller {
         const packageRoot = path.join(staging, candidate.id, candidate.version);
         const manifest = readManifest(path.join(packageRoot, 'manifest.json'));
         if (manifest.id !== candidate.id || manifest.version !== candidate.version) throw new Error(`Archive contents changed for ${candidate.id}@${candidate.version}`);
+        ensureNativeRuntimePermissions(packageRoot, manifest);
         validateModulePackage(packageRoot, manifest);
         const target = path.join(this.modulesDir, candidate.id, candidate.version);
         if (!isWithin(this.modulesDir, target) || fs.existsSync(target)) throw new Error(`Module version is already installed: ${candidate.id}@${candidate.version}`);
@@ -392,6 +412,7 @@ export class ModuleInstaller {
       fs.mkdirSync(staging, { recursive: true });
       copyInstallSource(packageRoot, staging);
       const installedManifest = readManifest(path.join(staging, 'manifest.json'));
+      ensureNativeRuntimePermissions(staging, installedManifest);
       validateModulePackage(staging, installedManifest);
       fs.mkdirSync(moduleRoot, { recursive: true });
       fs.renameSync(staging, target);

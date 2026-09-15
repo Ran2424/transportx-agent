@@ -69,37 +69,6 @@ const piPkg = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', '@earen
 const agentHostSource = path.join(root, 'bin', 'tau.js');
 const piSource = path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js');
 
-function stageFfmpegRuntime() {
-  const sourceFfmpegDir = process.env.TRANSPORTX_FFMPEG_RUNTIME_DIR;
-  if (!profile.release.requiresFfmpeg && !sourceFfmpegDir) return null;
-  if (profile.release.requiresFfmpeg && !sourceFfmpegDir) {
-    throw new Error('TRANSPORTX_FFMPEG_RUNTIME_DIR must point to a directory containing static ffmpeg and ffprobe binaries');
-  }
-  const stagedFfmpegRoot = path.join(buildRoot, 'runtimes', 'ffmpeg');
-  fs.mkdirSync(stagedFfmpegRoot, { recursive: true });
-  const entries = {};
-  for (const name of ['ffmpeg', 'ffprobe']) {
-    const filename = profile.ffmpeg.binName(name);
-    const source = path.join(path.resolve(sourceFfmpegDir), filename);
-    if (!fs.existsSync(source)) throw new Error(`Bundled ${name} is missing: ${source}`);
-    const staged = path.join(stagedFfmpegRoot, filename);
-    fs.copyFileSync(source, staged);
-    if (profile.ffmpeg.chmodRequired) fs.chmodSync(staged, 0o755);
-    profile.ffmpeg.archCheck(staged);
-    const versionResult = spawnSync(staged, ['-version'], { encoding: 'utf8' });
-    if (versionResult.status !== 0) throw new Error(`Bundled ${name} failed to run after staging: ${(versionResult.stderr || versionResult.stdout || '').trim()}`);
-    const version = (versionResult.stdout.match(/version\s+([^\s]+)/) || [])[1];
-    if (!version) throw new Error(`Cannot determine bundled ${name} version`);
-    entries[name] = { version, path: `runtimes/ffmpeg/${filename}`, sha256: sha256(staged), arch: profile.ffmpeg.arch };
-  }
-  for (const extra of ['LICENSE', 'LICENSE.txt', 'LICENSE.md', 'NOTICES.md']) {
-    const notice = path.join(path.resolve(sourceFfmpegDir), extra);
-    if (fs.existsSync(notice)) fs.copyFileSync(notice, path.join(stagedFfmpegRoot, extra));
-  }
-  return entries;
-}
-const ffmpegEntries = stageFfmpegRuntime();
-
 const manifest = {
   manifestVersion: 1,
   product: { name: 'TransportX Traffic Agent', version: pkg.version },
@@ -119,7 +88,6 @@ const manifest = {
     path: `runtimes/python/${profile.python.entry}`,
     sha256: sha256(stagedPython),
   },
-  ...(ffmpegEntries ? { ffmpeg: ffmpegEntries.ffmpeg, ffprobe: ffmpegEntries.ffprobe } : {}),
 };
 fs.writeFileSync(path.join(buildRoot, 'runtime-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-console.log(`Prepared TransportX runtime: Pi ${piPkg.version}, Python ${manifest.python.version}${ffmpegEntries ? `, ffmpeg ${ffmpegEntries.ffmpeg.version}` : ''}`);
+console.log(`Prepared TransportX runtime: Pi ${piPkg.version}, Python ${manifest.python.version}`);

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { ModuleRegistry } = require('../bin/module-registry.js');
+const { ModuleRegistry, moduleRuntimeCompatible } = require('../bin/module-registry.js');
 const { AssetResolver } = require('../bin/asset-resolver.js');
 const { SessionAssembler, SessionPlanError, planExtensions, planSkills } = require('../bin/session-assembly.js');
 const { ModuleInstaller } = require('../bin/module-installer.js');
@@ -44,6 +44,17 @@ test('built-in manifests register only platform capabilities', () => {
   const order = modules.dependencyOrder('com.transportx.workbench');
   assert.equal(order.at(-1).manifest.type, 'domain');
   assert.ok(order.some((item: any) => item.manifest.id === 'com.transportx.geo'));
+});
+
+test('required native runtimes are compatible only with their declared platform and architecture', () => {
+  const manifest = {
+    contributes: {
+      requiredNativeRuntimes: ['ffmpeg'],
+      nativeRuntimes: [{ id: 'ffmpeg', platform: 'darwin', arch: 'arm64' }],
+    },
+  };
+  assert.equal(moduleRuntimeCompatible(manifest, 'darwin', 'arm64').compatible, true);
+  assert.deepEqual(moduleRuntimeCompatible(manifest, 'win32', 'x64'), { compatible: false, missingRuntime: 'ffmpeg' });
 });
 
 test('CLI domain loads only explicitly selected capabilities', () => {
@@ -157,6 +168,41 @@ test('Session Resume tolerates builtin module drift but still enforces installed
   // A missing builtin package is still a hard failure.
   fs.rmSync(geoManifest);
   assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
+});
+
+test('Session Resume replaces the retired builtin Video module with an installed version', (t: any) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-plan-video-migration-'));
+  const installed = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-installed-video-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(installed, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(installed, 'manifest.json'), JSON.stringify({
+    manifestVersion: 2,
+    id: 'com.transportx.video',
+    name: 'Video Capability',
+    version: '1.3.0',
+    type: 'capability',
+    platformVersion: '>=3.0.0 <4.0.0',
+    dependencies: [],
+  }));
+  const modules = registry([{ manifestPath: path.join(installed, 'manifest.json'), packageRoot: installed, origin: 'installed' }]);
+  const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.2.0', { command: 'node', args: [] }, { command: 'python', args: [] });
+  const plan = assembler.assemble('com.transportx.workbench', workspace);
+  const baseModule = plan.modules.find((module: any) => module.id === 'com.transportx.geo');
+  plan.modules.push({
+    ...baseModule,
+    id: 'com.transportx.video',
+    version: '1.2.0',
+    origin: 'builtin',
+    packageRoot: path.join(workspace, 'removed-builtin-video'),
+    entrypoints: [],
+    nativeRuntimes: [],
+  });
+
+  const resumed = assembler.verify(plan);
+  const video = resumed.modules.find((module: any) => module.id === 'com.transportx.video');
+  assert.equal(video.origin, 'installed');
+  assert.equal(video.version, '1.3.0');
+  assert.equal(video.packageRoot, installed);
 });
 
 test('Session Assembly keeps every active Data and Knowledge asset in one session plan', (t: any) => {

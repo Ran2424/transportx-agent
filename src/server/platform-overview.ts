@@ -56,6 +56,7 @@ export function platformOverview(
       dependencies: module.manifest.dependencies,
       extensions: module.manifest.entrypoints?.piExtensions?.length || 0,
       skills: module.manifest.entrypoints?.skills?.length || 0,
+      nativeRuntimes: module.manifest.contributes?.nativeRuntimes?.length || 0,
       skillFiles: skillFiles(module.packageRoot, module.manifest.entrypoints?.skills || []),
       assets: moduleAssets,
     };

@@ -126,20 +126,18 @@ CLI 仍通过 Agent Host 创建独立任务目录，并冻结精确的 Module �
 
 ## Module
 
-Module 是唯一安装和版本冻结单元，可以同时提供 Skill、Extension、Data、Knowledge 与 Template。用户可以从设置页选择包含 `manifest.json` 的目录或 ZIP；安装内容会复制到用户数据目录，显式启用后才参与新任务装配。
+Module 是唯一安装和版本冻结单元，可以同时提供 Skill、Extension、Native Runtime、Data、Knowledge 与 Template。用户可以从设置页选择包含 `manifest.json` 的目录或 ZIP；安装内容会复制到用户数据目录，显式启用后才参与新任务装配。
 
-平台内置 Module 只提供 Workbench、Task、Geo、Spatial Analysis、Citation、Video 和 Web Bridge 等通用能力。`modules/installable/` 保存独立交付的交通数据、知识、样式和演示模块源码，它们不会进入安装包，也不是平台启动依赖。详见 [可安装模块说明](./modules/installable/README.md)。
+平台内置 Module 只提供 Workbench、Task、Geo、Spatial Analysis、Citation 和 Web Bridge 等通用能力。Video Capability 与 ffmpeg/ffprobe 作为平台专属的可安装能力包交付。`modules/installable/` 保存独立交付的能力、交通数据、知识、样式和演示模块源码，它们不会进入安装包，也不是平台启动依赖。详见 [可安装模块说明](./modules/installable/README.md)。
 
 大体积数据库、原始文档和检索索引不进入 Git。每个任务的 `ResolvedSessionPlan` 会记录实际启用的 Module 版本和资产，恢复任务时按该计划校验。
 
 ## 桌面打包
 
-发布包内置 Pi CLI、Python 3.10 和 ffmpeg/ffprobe，不依赖用户机器上的 Conda、系统 Python 或 `PATH`。构建前必须准备对应平台和架构的可重定位运行时：
+基础发布包内置 Pi CLI 和 Python 3.10，不依赖用户机器上的 Conda 或系统 Python。构建前必须准备对应平台和架构的可重定位 Python 运行时：
 
 ```bash
-TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime \
-TRANSPORTX_FFMPEG_RUNTIME_DIR=/absolute/path/to/ffmpeg-runtime \
-npm run desktop:pack
+TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:pack
 ```
 
 `npm run desktop:pack` 会根据当前宿主平台选择发布 Profile。macOS 正式包要求 Developer ID 签名和 Apple 公证；Windows 正式包要求 Authenticode 证书和可信时间戳。不要在 macOS 上交叉生成 Windows 正式包。
@@ -150,14 +148,13 @@ Windows 使用每用户 NSIS 安装器，允许选择安装目录，支持同一
 
 ```powershell
 $env:TRANSPORTX_PYTHON_RUNTIME_DIR = 'C:\TransportX\runtime\python-3.10-win-x64'
-$env:TRANSPORTX_FFMPEG_RUNTIME_DIR = 'C:\TransportX\runtime\ffmpeg-win-x64'
 $env:WIN_CSC_LINK = 'C:\secure\transportx-codesign.pfx'
 $env:WIN_CSC_KEY_PASSWORD = '<certificate-password>'
 npm ci
 npm run desktop:pack
 ```
 
-产物位于 `release/TransportX Traffic Agent-<version>-win-x64-setup.exe`。运行时目录分别需要包含 `python.exe`，以及 `ffmpeg.exe`、`ffprobe.exe` 和许可证文件。
+产物位于 `release/TransportX Traffic Agent-<version>-win-x64-setup.exe`。Video Capability 另行设置 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 并运行 `npm run video:pack`，生成平台专属模块 ZIP。
 
 内部结构验收可使用 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。如果离线 CI 的 Python 缺少项目依赖，还可额外设置 `TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1`；该变量只能验证包结构，不能用于正式发行或功能验收。完整流程见 [Windows 发行指南](./docs/WINDOWS_RELEASE.md)。
 
@@ -167,7 +164,6 @@ npm run desktop:pack
 
 ```bash
 TRANSPORTX_PYTHON_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/python-3.10-runtime" \
-TRANSPORTX_FFMPEG_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/ffmpeg-runtime" \
 TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 \
 npm run desktop:pack
 ```

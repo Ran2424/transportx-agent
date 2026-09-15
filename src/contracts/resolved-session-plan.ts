@@ -4,6 +4,15 @@ import { parseSessionProfileStructured, type SessionProfileV1 } from './session-
 
 export const RESOLVED_SESSION_PLAN_SCHEMA_VERSION = 3 as const;
 export type ResolvedPlanEntrypoint = { kind: 'prompt' | 'skill' | 'extension'; path: string; sha256: string };
+export type ResolvedPlanNativeRuntime = {
+  id: string;
+  kind: 'ffmpeg';
+  platform: 'darwin' | 'win32';
+  arch: 'arm64' | 'x64';
+  version: string;
+  ffmpeg: { path: string; sha256: string };
+  ffprobe: { path: string; sha256: string };
+};
 export type ResolvedPlanModule = {
   id: string;
   version: string;
@@ -12,6 +21,7 @@ export type ResolvedPlanModule = {
   packageRoot: string;
   manifestSha256: string;
   entrypoints: ResolvedPlanEntrypoint[];
+  nativeRuntimes: ResolvedPlanNativeRuntime[];
 };
 export type ResolvedPlanAsset = {
   id: string;
@@ -67,8 +77,20 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
       const parsed = asRecord(entry); const kind = parsed?.kind; const entryPath = asString(parsed?.path, 2000); const sha256 = asString(parsed?.sha256, 64);
       if ((kind === 'prompt' || kind === 'skill' || kind === 'extension') && entryPath && sha256 && SHA256_RE.test(sha256)) entrypoints.push({ kind, path: entryPath, sha256 });
     });
-    if (!id || !version || !packageRoot || !manifestSha256 || !SHA256_RE.test(manifestSha256) || moduleIds.has(id) || !['module', 'capability', 'domain'].includes(String(type)) || !['builtin', 'installed', 'external'].includes(String(origin)) || !Array.isArray(item?.entrypoints) || entrypoints.length !== item.entrypoints.length) diagnostics.push(diagnostic({ code: 'invalid_type', path: `plan.modules[${index}]`, message: 'Invalid or duplicate resolved Module.' }));
-    else { moduleIds.add(id); modules.push({ id, version, packageRoot, manifestSha256, type: type as ResolvedPlanModule['type'], origin: origin as ResolvedPlanModule['origin'], entrypoints }); }
+    const nativeRuntimes: ResolvedPlanNativeRuntime[] = [];
+    const rawRuntimes = item?.nativeRuntimes === undefined ? [] : item.nativeRuntimes;
+    if (Array.isArray(rawRuntimes)) rawRuntimes.forEach((candidateRuntime) => {
+      const runtime = asRecord(candidateRuntime);
+      const ffmpeg = asRecord(runtime?.ffmpeg); const ffprobe = asRecord(runtime?.ffprobe);
+      const runtimeId = asString(runtime?.id, 200); const runtimeVersion = asString(runtime?.version, 100);
+      const ffmpegPath = asString(ffmpeg?.path, 2000); const ffmpegSha256 = asString(ffmpeg?.sha256, 64);
+      const ffprobePath = asString(ffprobe?.path, 2000); const ffprobeSha256 = asString(ffprobe?.sha256, 64);
+      if (runtimeId && runtime?.kind === 'ffmpeg' && ['darwin', 'win32'].includes(String(runtime.platform)) && ['arm64', 'x64'].includes(String(runtime.arch)) && runtimeVersion && ffmpegPath && ffmpegSha256 && SHA256_RE.test(ffmpegSha256) && ffprobePath && ffprobeSha256 && SHA256_RE.test(ffprobeSha256)) {
+        nativeRuntimes.push({ id: runtimeId, kind: 'ffmpeg', platform: runtime.platform as ResolvedPlanNativeRuntime['platform'], arch: runtime.arch as ResolvedPlanNativeRuntime['arch'], version: runtimeVersion, ffmpeg: { path: ffmpegPath, sha256: ffmpegSha256 }, ffprobe: { path: ffprobePath, sha256: ffprobeSha256 } });
+      }
+    });
+    if (!id || !version || !packageRoot || !manifestSha256 || !SHA256_RE.test(manifestSha256) || moduleIds.has(id) || !['module', 'capability', 'domain'].includes(String(type)) || !['builtin', 'installed', 'external'].includes(String(origin)) || !Array.isArray(item?.entrypoints) || entrypoints.length !== item.entrypoints.length || !Array.isArray(rawRuntimes) || nativeRuntimes.length !== rawRuntimes.length) diagnostics.push(diagnostic({ code: 'invalid_type', path: `plan.modules[${index}]`, message: 'Invalid or duplicate resolved Module.' }));
+    else { moduleIds.add(id); modules.push({ id, version, packageRoot, manifestSha256, type: type as ResolvedPlanModule['type'], origin: origin as ResolvedPlanModule['origin'], entrypoints, nativeRuntimes }); }
   });
   const assets: ResolvedPlanAsset[] = [];
   const assetIds = new Set<string>();

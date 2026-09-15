@@ -4,8 +4,11 @@ const path = require('node:path');
 
 import {
   defaultSessionProfile,
+  parseModuleManifestStructured,
   parseResolvedSessionPlanStructured,
   type ResolvedPlanEntrypoint,
+  type ResolvedPlanModule,
+  type ResolvedPlanNativeRuntime,
   type ResolvedSessionPlanV3,
   type SessionProfileV1,
 } from '../contracts/index.js';
@@ -17,6 +20,7 @@ import { isWithin } from './util/path.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
 const RETIRED_BUILTIN_MODULE_IDS = new Set(['com.transportx.timing']);
+const INSTALLABLE_REPLACEMENTS_FOR_RETIRED_BUILTINS = new Set(['com.transportx.video']);
 
 export class SessionPlanError extends Error {
   status = 409;
@@ -45,6 +49,42 @@ function resolvedEntrypoints(module: RegisteredModule, domainId: string): Resolv
     entries.push({ kind: 'prompt', path: entryPath, sha256: sha256File(entryPath) });
   }
   return entries;
+}
+
+function resolvedNativeRuntimes(module: RegisteredModule): ResolvedPlanNativeRuntime[] {
+  const declared = module.manifest.contributes?.nativeRuntimes || [];
+  const matching = declared.filter((runtime) => runtime.platform === process.platform && runtime.arch === process.arch);
+  const matchingIds = new Set(matching.map((runtime) => runtime.id));
+  const missingRuntime = (module.manifest.contributes?.requiredNativeRuntimes || []).find((id) => !matchingIds.has(id));
+  if (missingRuntime) throw new Error(`Module ${module.manifest.id} has no ${missingRuntime} runtime for ${process.platform}/${process.arch}`);
+  return matching.map((runtime) => {
+    const ffmpegPath = resolvePackagePath(module.packageRoot, runtime.executables.ffmpeg.path, 'ffmpeg executable');
+    const ffprobePath = resolvePackagePath(module.packageRoot, runtime.executables.ffprobe.path, 'ffprobe executable');
+    if (sha256File(ffmpegPath) !== runtime.executables.ffmpeg.sha256) throw new Error(`ffmpeg checksum mismatch in Module ${module.manifest.id}`);
+    if (sha256File(ffprobePath) !== runtime.executables.ffprobe.sha256) throw new Error(`ffprobe checksum mismatch in Module ${module.manifest.id}`);
+    return {
+      id: runtime.id,
+      kind: runtime.kind,
+      platform: runtime.platform,
+      arch: runtime.arch,
+      version: runtime.version,
+      ffmpeg: { path: ffmpegPath, sha256: runtime.executables.ffmpeg.sha256 },
+      ffprobe: { path: ffprobePath, sha256: runtime.executables.ffprobe.sha256 },
+    };
+  });
+}
+
+function resolvedPlanModule(module: RegisteredModule, domainId: string): ResolvedPlanModule {
+  return {
+    id: module.manifest.id,
+    version: module.manifest.version,
+    type: module.manifest.type,
+    origin: module.origin,
+    packageRoot: module.packageRoot,
+    manifestSha256: sha256File(module.manifestPath),
+    entrypoints: resolvedEntrypoints(module, domainId),
+    nativeRuntimes: resolvedNativeRuntimes(module),
+  };
 }
 
 function resolvedIntegrity(asset: ResolvedAsset, module: RegisteredModule) {
@@ -108,15 +148,7 @@ export class SessionAssembler {
         const resolved = this.assets.resolve(entry.id);
         if (resolved) selectedAssets.push(resolved);
       }
-      return {
-        id: module.manifest.id,
-        version: module.manifest.version,
-        type: module.manifest.type,
-        origin: module.origin,
-        packageRoot: module.packageRoot,
-        manifestSha256: sha256File(module.manifestPath),
-        entrypoints: resolvedEntrypoints(module, domainId),
-      };
+      return resolvedPlanModule(module, domainId);
     });
     const promptCount = resolvedModules.flatMap((module) => module.entrypoints).filter((entry) => entry.kind === 'prompt').length;
     if (promptCount !== 1) throw new Error(`Domain ${domainId} must contribute exactly one prompt`);
@@ -160,20 +192,32 @@ export class SessionAssembler {
 
   verify(plan: ResolvedSessionPlan, workspace = plan.workspace) {
     if (path.resolve(plan.workspace) !== path.resolve(workspace)) throw new SessionPlanError('workspace_mismatch', 'Resolved session plan belongs to another workspace.', [{ expected: path.resolve(workspace), actual: path.resolve(plan.workspace) }]);
-    for (const module of plan.modules) {
+    for (let index = 0; index < plan.modules.length; index++) {
+      let module = plan.modules[index];
       const manifestPath = path.join(module.packageRoot, 'manifest.json');
       if (!fs.existsSync(manifestPath)) {
+        if (module.origin === 'builtin' && INSTALLABLE_REPLACEMENTS_FOR_RETIRED_BUILTINS.has(module.id)) {
+          const replacement = this.registry.get(module.id);
+          if (!replacement?.enabled || replacement.origin !== 'installed') {
+            throw new SessionPlanError('module_version_missing', `Install and enable ${module.id} before resuming this session.`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
+          }
+          module = resolvedPlanModule(replacement, plan.domain.id);
+          plan.modules[index] = module;
+          console.warn(`[Tau] Replaced retired builtin Module ${module.id} with installed version ${module.version} while resuming a session.`);
+        } else {
         if (module.origin === 'builtin' && RETIRED_BUILTIN_MODULE_IDS.has(module.id)) continue;
         throw new SessionPlanError('module_version_missing', `Module version is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
+        }
       }
+      const currentManifestPath = path.join(module.packageRoot, 'manifest.json');
       // Builtin modules ship with the platform and are replaced in place on upgrade;
       // their old versions no longer exist, so content drift is tolerated (and logged)
       // instead of making every older session unloadable. Installed/external modules
       // keep exact-version enforcement because multiple versions coexist.
       const builtin = module.origin === 'builtin';
-      if (sha256File(manifestPath) !== module.manifestSha256) {
+      if (sha256File(currentManifestPath) !== module.manifestSha256) {
         const message = `Module manifest changed: ${module.id}@${module.version}`;
-        if (!builtin) throw new SessionPlanError('module_content_mismatch', message, [{ moduleId: module.id, expected: module.manifestSha256, actual: sha256File(manifestPath) }]);
+        if (!builtin) throw new SessionPlanError('module_content_mismatch', message, [{ moduleId: module.id, expected: module.manifestSha256, actual: sha256File(currentManifestPath) }]);
         console.warn(`[Tau] Tolerating builtin module drift while resuming a session: ${message}`);
       }
       for (const entry of module.entrypoints) {
@@ -181,6 +225,21 @@ export class SessionAssembler {
           const message = `Module entrypoint changed: ${module.id}@${module.version}`;
           if (!builtin) throw new SessionPlanError('module_content_mismatch', message, [{ moduleId: module.id, path: entry.path, expected: entry.sha256, actual: fs.existsSync(entry.path) ? sha256File(entry.path) : 'missing' }]);
           console.warn(`[Tau] Tolerating builtin module drift while resuming a session: ${message} (${entry.path})`);
+        }
+      }
+      for (const runtime of module.nativeRuntimes) {
+        const manifest = parseModuleManifestStructured(JSON.parse(fs.readFileSync(currentManifestPath, 'utf8')));
+        const declared = manifest.ok ? manifest.value.contributes?.nativeRuntimes?.find((candidate) => candidate.id === runtime.id && candidate.platform === runtime.platform && candidate.arch === runtime.arch && candidate.version === runtime.version) : undefined;
+        if (!declared) throw new SessionPlanError('module_content_mismatch', `Native runtime is not declared by Module ${module.id}@${module.version}`, [{ moduleId: module.id, runtimeId: runtime.id }]);
+        const expectedFfmpeg = resolvePackagePath(module.packageRoot, declared.executables.ffmpeg.path, 'ffmpeg executable');
+        const expectedFfprobe = resolvePackagePath(module.packageRoot, declared.executables.ffprobe.path, 'ffprobe executable');
+        if (runtime.ffmpeg.path !== expectedFfmpeg || runtime.ffprobe.path !== expectedFfprobe || runtime.ffmpeg.sha256 !== declared.executables.ffmpeg.sha256 || runtime.ffprobe.sha256 !== declared.executables.ffprobe.sha256) {
+          throw new SessionPlanError('module_content_mismatch', `Native runtime plan changed: ${module.id}@${module.version}`, [{ moduleId: module.id, runtimeId: runtime.id }]);
+        }
+        for (const executable of [runtime.ffmpeg, runtime.ffprobe]) {
+          if (!fs.existsSync(executable.path) || sha256File(executable.path) !== executable.sha256) {
+            throw new SessionPlanError('module_content_mismatch', `Native runtime changed: ${module.id}@${module.version}`, [{ moduleId: module.id, path: executable.path, expected: executable.sha256, actual: fs.existsSync(executable.path) ? sha256File(executable.path) : 'missing' }]);
+          }
         }
       }
     }

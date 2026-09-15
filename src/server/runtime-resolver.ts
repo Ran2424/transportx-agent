@@ -19,7 +19,7 @@ export type RuntimeManifest = {
   agentHost: RuntimeEntry & { protocolVersion: number };
   pi: RuntimeEntry;
   python: RuntimeEntry;
-  /** Optional until the packaged runtime ships ffmpeg; required in desktop Video flows. */
+  /** Legacy compatibility only; new releases obtain ffmpeg from the installed Video Capability Module. */
   ffmpeg?: RuntimeEntry & { arch?: string };
   ffprobe?: RuntimeEntry & { arch?: string };
 };
@@ -89,9 +89,8 @@ export function resolvePythonExecutable(opts: { resourcesDir: string; desktop: b
 export type VideoExecutables = { ffmpeg: Executable; ffprobe: Executable };
 
 /**
- * Resolve the controlled ffmpeg/ffprobe pair. Packaged apps must use the
- * runtime manifest entries (integrity-checked, PATH-independent); development
- * may override via TAU_FFMPEG_COMMAND/TAU_FFPROBE_COMMAND or fall back to PATH.
+ * Resolve a development override or a legacy bundled ffmpeg/ffprobe pair.
+ * Current packaged apps resolve the pair from the active Video Capability Module.
  */
 export function resolveFfmpegExecutables(opts: { resourcesDir: string; desktop: boolean; env?: NodeJS.ProcessEnv }): VideoExecutables {
   const env = opts.env || process.env;
