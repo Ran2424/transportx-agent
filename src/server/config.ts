@@ -166,7 +166,7 @@ function findReactWebDir() {
   add(path.join(APP_PATHS.appRoot, 'dist', 'web'));
   add(path.join(process.cwd(), 'dist', 'web'));
   try {
-    const pkgPath = require.resolve('pi-traffic-workspace/package.json');
+    const pkgPath = require.resolve('transportx-agent/package.json');
     add(path.join(path.dirname(pkgPath), 'dist', 'web'));
   } catch {}
   return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'index.html'))) || candidates[0];

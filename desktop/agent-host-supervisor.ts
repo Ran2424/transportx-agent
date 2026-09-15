@@ -41,7 +41,7 @@ export function parseReadyLine(line: string): AgentHostReady | null {
 export function validatePackagedRuntime(resourcesDir: string) {
   const manifestPath = path.join(resourcesDir, 'runtime-manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  if (manifest.manifestVersion !== 1 || manifest.product?.name !== 'TransportX Traffic Agent') throw new Error('Invalid TransportX runtime manifest');
+  if (manifest.manifestVersion !== 1 || manifest.product?.name !== 'TransportX Agent') throw new Error('Invalid TransportX runtime manifest');
   if (manifest.agentHost?.protocolVersion !== AGENT_HOST_PROTOCOL_VERSION) throw new Error('Agent Host protocol mismatch');
   for (const [label, entry] of [['Agent Host', manifest.agentHost], ['Pi CLI', manifest.pi], ['Python', manifest.python]]) {
     if (!entry || typeof entry.path !== 'string' || path.isAbsolute(entry.path) || !/^[a-f0-9]{64}$/i.test(entry.sha256 || '')) throw new Error(`Invalid ${label} runtime entry`);

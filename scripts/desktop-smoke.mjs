@@ -12,14 +12,14 @@ function packagedLayout(input) {
   const packagedPath = path.resolve(input);
   if (process.platform === 'darwin') {
     return {
-      executable: path.join(packagedPath, 'Contents', 'MacOS', 'TransportX Traffic Agent'),
+      executable: path.join(packagedPath, 'Contents', 'MacOS', 'TransportX Agent'),
       resourcesDir: path.join(packagedPath, 'Contents', 'Resources'),
     };
   }
   if (process.platform === 'win32') {
     const executable = path.extname(packagedPath).toLowerCase() === '.exe'
       ? packagedPath
-      : path.join(packagedPath, 'TransportX Traffic Agent.exe');
+      : path.join(packagedPath, 'TransportX Agent.exe');
     return { executable, resourcesDir: path.join(path.dirname(executable), 'resources') };
   }
   throw new Error(`Packaged desktop smoke is unsupported on ${process.platform}`);
@@ -58,9 +58,9 @@ try {
   await window.waitForSelector('.workspace-brand', { timeout: 20_000 });
   const title = await window.title();
   const brand = await window.locator('.workspace-brand').innerText();
-  if (title !== 'TransportX Traffic Agent') throw new Error(`Unexpected title: ${title}`);
+  if (title !== 'TransportX Agent') throw new Error(`Unexpected title: ${title}`);
   const normalizedBrand = brand.toUpperCase();
-  if (!normalizedBrand.includes('TRANSPORTX') || !normalizedBrand.includes('TRAFFIC AGENT')) throw new Error(`Unexpected brand: ${brand}`);
+  if (!normalizedBrand.includes('TRANSPORTX') || !normalizedBrand.includes('AGENT')) throw new Error(`Unexpected brand: ${brand}`);
   const preferences = await app.evaluate(({ BrowserWindow }) => {
     const current = BrowserWindow.getAllWindows()[0];
     return current.webContents.getLastWebPreferences();
@@ -70,7 +70,7 @@ try {
   }
   const healthUrl = `${new URL(window.url()).origin}/api/health`;
   const health = await (await fetch(healthUrl)).json();
-  if (health.product !== 'TransportX Traffic Agent' || health.protocolVersion !== 1) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
+  if (health.product !== 'TransportX Agent' || health.protocolVersion !== 1) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
   // Phase 0 playback spike: the packaged renderer must accept the Video Input Spec codec.
   const codecSupport = await window.evaluate(() => {
     const probe = document.createElement('video');

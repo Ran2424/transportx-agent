@@ -14,8 +14,8 @@ if (!fs.existsSync(installerPath) || path.extname(installerPath).toLowerCase() !
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-windows-installer-'));
 const installDir = path.join(temporaryRoot, 'install');
 const dataRoot = path.join(temporaryRoot, 'user-data');
-const productExecutable = path.join(installDir, 'TransportX Traffic Agent.exe');
-const uninstaller = path.join(installDir, 'Uninstall TransportX Traffic Agent.exe');
+const productExecutable = path.join(installDir, 'TransportX Agent.exe');
+const uninstaller = path.join(installDir, 'Uninstall TransportX Agent.exe');
 
 function run(command, args, env = process.env) {
   const result = spawnSync(command, args, { encoding: 'utf8', env, timeout: 120_000, windowsHide: true });

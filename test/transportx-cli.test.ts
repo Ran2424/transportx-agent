@@ -78,7 +78,7 @@ test('transportx runs a headless prompt without optional Modules by default', as
   assert.match(output.answer, /fake-pi/);
   const launch = JSON.parse(fs.readFileSync(launchFile, 'utf8'));
   const appendPromptIndex = launch.argv.indexOf('--append-system-prompt');
-  assert.match(launch.argv[appendPromptIndex + 1], /^# TransportX Traffic Agent 命令行会话上下文/);
+  assert.match(launch.argv[appendPromptIndex + 1], /^# TransportX Agent 命令行会话上下文/);
   assert.match(launch.argv[appendPromptIndex + 1], /\n\n# Evaluation policy\nAnswer exactly\.$/);
   assert.equal(launch.piAgentDir, defaultUserDataDir(process.platform, cliEnv));
   const taskDirectory = path.join(projectsDir, fs.readdirSync(projectsDir)[0]);
