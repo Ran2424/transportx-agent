@@ -1,6 +1,6 @@
 {
   "name": "pi-traffic-workspace",
-  "version": "3.1.8",
+  "version": "3.2.0",
   "description": "TransportX Traffic Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
@@ -47,6 +47,7 @@
     "desktop:dir": "npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",
     "desktop:pack": "node desktop/scripts/check-desktop-release.mjs && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml",
     "desktop:dir:allow-unsigned": "node desktop/scripts/check-desktop-release.mjs --allow-unsigned && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",
+    "video:pack": "node desktop/scripts/package-video-capability.mjs",
     "dev:web": "vite --config vite.config.ts",
     "prepare": "npm run build",
     "typecheck": "npm run typecheck:server && npm run typecheck:web && npm run typecheck:react && npm run typecheck:extensions && npm run typecheck:desktop && npm run typecheck:test",
