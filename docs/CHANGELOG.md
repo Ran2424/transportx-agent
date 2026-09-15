@@ -6,6 +6,17 @@
 
 ## Unreleased
 
+## 3.1.8 - 2026-09-15
+
+### Fixed
+
+- `com.transportx.shanghai-multimodal-data` 升级至 1.0.1：明确 SQLite `NUMBER` 结果必须保持数值类型，控制精度时使用数值表达式或 `ROUND`，避免格式化为文本。
+
+### Added
+
+- CLI 新增 `--append-system-prompt-file <path>`，允许按次追加 UTF-8 系统提示词，同时保留 TransportX 基础提示词与 CLI 会话上下文；CLI 默认配置目录与桌面端统一。
+- 新增 `com.transportx.shanghai-multimodal-data` 1.0.0 数据模块，封装 2026-08-24 上海五种交通方式与站点邻近关系的 SQLite 快照，并提供分层的数据覆盖、表结构、指标、场景和空间口径说明。
+
 ## 3.1.7 - 2026-09-13
 
 ### Added
