@@ -217,6 +217,7 @@ test('ffmpeg executables resolve from the packaged manifest, env overrides, or d
   const supervisor = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'agent-host-supervisor.ts'), 'utf8');
   assert.match(supervisor, /TAU_FFMPEG_COMMAND/);
   assert.match(supervisor, /TAU_FFPROBE_COMMAND/);
+  assert.match(supervisor, /Buffer\.byteLength\(request\.html, 'utf8'\) > 50 \* 1024 \* 1024/);
 });
 
 test('unsigned macOS test builds replace Electron linker signatures before creating the DMG', () => {
