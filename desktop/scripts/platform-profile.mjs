@@ -105,7 +105,7 @@ const RELEASE_PROFILE = {
   darwin: {
     label: 'macOS arm64',
     installerArtifact: 'dmg',
-    productExeBasename: 'TransportX Traffic Agent',
+    productExeBasename: 'TransportX Agent',
     productExeSuffix: '',
     requiresFfmpeg: false,
     supportsInstallerSmoke: false,
@@ -114,10 +114,10 @@ const RELEASE_PROFILE = {
   win: {
     label: 'Windows x64',
     installerArtifact: 'nsis',
-    productExeBasename: 'TransportX Traffic Agent',
+    productExeBasename: 'TransportX Agent',
     productExeSuffix: '.exe',
-    productExeName: 'TransportX Traffic Agent.exe',
-    uninstallName: 'Uninstall TransportX Traffic Agent.exe',
+    productExeName: 'TransportX Agent.exe',
+    uninstallName: 'Uninstall TransportX Agent.exe',
     installerSilentArgs: (installDir) => ['/S', `/D=${installDir}`],
     requiresFfmpeg: false,
     supportsInstallerSmoke: true,

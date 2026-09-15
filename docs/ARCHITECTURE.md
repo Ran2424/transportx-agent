@@ -1,11 +1,11 @@
-# TransportX Traffic Agent 架构
+# TransportX Agent 架构
 
 - 产品版本：3.2.0
 - 文档状态：当前实现的架构权威
 - 更新日期：2026-09-15
 - 发布 Profile：macOS arm64（DMG）与 Windows x64（NSIS）；Linux 不是发布目标
 
-TransportX Traffic Agent 是本地优先的交通分析桌面工作台。它是一个单仓库、单 npm 包、模块化单体：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
+TransportX Agent 是本地优先的交通分析桌面工作台。它是一个单仓库、单 npm 包、模块化单体：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
 
 模型推理由配置的 Provider 提供，可使用远程 API 或本地服务；仓库没有自研模型推理引擎。本文以当前源码、Module manifest 和打包配置为依据，历史方案仅用于了解背景。
 

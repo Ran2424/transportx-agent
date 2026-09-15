@@ -71,7 +71,7 @@ const piSource = path.join(root, 'node_modules', '@earendil-works', 'pi-coding-a
 
 const manifest = {
   manifestVersion: 1,
-  product: { name: 'TransportX Traffic Agent', version: pkg.version },
+  product: { name: 'TransportX Agent', version: pkg.version },
   agentHost: {
     version: pkg.version,
     protocolVersion: 1,

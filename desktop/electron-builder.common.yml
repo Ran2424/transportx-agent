@@ -4,7 +4,7 @@
 # only consumed on the matching host platform.
 
 appId: com.transportx.traffic-agent
-productName: TransportX Traffic Agent
+productName: TransportX Agent
 asar: true
 asarUnpack:
   - modules/**/skills/**

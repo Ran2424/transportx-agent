@@ -86,7 +86,7 @@ npm ci
 npm run desktop:pack
 ```
 
-产物位于 `release/TransportX Traffic Agent-<version>-win-x64-setup.exe`。Video Capability 另行设置 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 并运行 `npm run video:pack`，生成平台专属模块 ZIP。
+产物位于 `release/TransportX Agent-<version>-win-x64-setup.exe`。Video Capability 另行设置 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 并运行 `npm run video:pack`，生成平台专属模块 ZIP。
 
 内部结构验收可使用 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。如果离线 CI 的 Python 缺少项目依赖，还可额外设置 `TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1`；该变量只能验证包结构，不能用于正式发行或功能验收。完整流程见 [Windows 发行指南](./WINDOWS_RELEASE.md)。
 

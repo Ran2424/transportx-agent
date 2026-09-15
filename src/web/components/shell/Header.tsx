@@ -80,7 +80,7 @@ export function Header({
         ) : (
           <button className="workspace-brand" type="button" aria-label={t('header.goHome')} onClick={onGoHome}>
             <BrandMark className="workspace-brand-mark" />
-            <span><strong>TransportX</strong><small>TRAFFIC AGENT</small></span>
+            <span><strong>TransportX</strong><small>AGENT</small></span>
           </button>
         )}
       </div>
