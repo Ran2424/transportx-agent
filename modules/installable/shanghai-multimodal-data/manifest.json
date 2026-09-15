@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.shanghai-multimodal-data",
+  "name": "Shanghai Multimodal Traffic Data",
+  "version": "1.0.1",
+  "type": "module",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "entrypoints": {
+    "skills": ["skill/SKILL.md"]
+  },
+  "contributes": {
+    "assets": [
+      {
+        "id": "data:shanghai-multimodal-20260824",
+        "kind": "data",
+        "path": "assets/shanghai-multimodal",
+        "integrityFile": "assets/shanghai-multimodal/SHA256SUMS.txt",
+        "required": true
+      }
+    ]
+  }
+}

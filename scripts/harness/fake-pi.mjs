@@ -41,6 +41,7 @@ const scenario = JSON.parse(fs.readFileSync(SCENARIO_PATH, 'utf8'));
 
 // ---- argv: 只关心 --session（其余 pi 参数原样接受、忽略） ----
 const argv = process.argv.slice(2);
+if (process.env.FAKE_PI_LAUNCH_FILE) fs.writeFileSync(process.env.FAKE_PI_LAUNCH_FILE, JSON.stringify({ argv, piAgentDir: process.env.PI_CODING_AGENT_DIR }));
 function argValue(flag) {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1] : null;

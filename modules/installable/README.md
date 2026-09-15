@@ -5,6 +5,7 @@
 | 模块 | 内容边界 | 平台依赖 |
 |---|---|---|
 | `shanghaidata` | 上海交通数据、数据字典、查询/治理脚本、上海数据口径与地图表达约定 | Geo |
+| `shanghai-multimodal-data` | 2026-08-24 上海轨道、公交、出租车、网约车、共享单车及站点邻近关系的单日数据快照 | 无 |
 | `shanghai-hub-traffic` | 两场三站及上海松江站的铁路、预测、出租车、功能点和网约车治理数据 | 无 |
 | `traffic-assurance-knowledge` | 交通保障法规、标准、预案和案例知识，以及检索与引用流程 | Citation |
 | `plot-style` | 静态图表选型、出版级样式经验、参考参数和 matplotlib 模板 | 无 |
