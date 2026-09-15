@@ -90,8 +90,11 @@ node bin/transportx.js modules list
 ```bash
 transportx --module com.transportx.task@1.0.1
 transportx --module com.transportx.shanghaidata@2.0.1 --print "统计早高峰流量"
+transportx --append-system-prompt-file /absolute/path/to/eval-system-prompt.md --print "执行评测题"
 transportx --no-modules --model provider/model
 ```
+
+`--append-system-prompt-file` 读取 UTF-8 文件，将其内容追加在 TransportX 基础提示词和 CLI 会话上下文之后；它不能替换平台基础提示词。CLI 默认读取 TransportX 用户目录中的 `settings.json` 和已安装 Module，也可通过 `PI_CODING_AGENT_DIR` 显式覆盖。
 
 CLI 仍通过 Agent Host 创建独立任务目录，并冻结精确的 Module 版本。Geo 框选、地图截图和视频播放等界面交互需要桌面工作台。
 

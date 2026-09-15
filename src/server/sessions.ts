@@ -101,6 +101,7 @@ export class PiRpcSession {
   id: string;
   cwd: string;
   modelSpec: string;
+  appendSystemPrompt: string;
   child: ChildProcess | null;
   pid: number | null;
   createdAt: string;
@@ -133,11 +134,12 @@ export class PiRpcSession {
   timingMetrics: TimingMetricsStore;
   eventTiming: SessionEventTiming;
 
-  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
+  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
     this.id = opts.id || makeSessionId();
     this.cwd = opts.cwd;
     this.modelSpec = opts.modelSpec || '';
+    this.appendSystemPrompt = opts.appendSystemPrompt || '';
     this.child = null;
     this.pid = null;
     this.createdAt = new Date().toISOString();
@@ -201,6 +203,7 @@ export class PiRpcSession {
       sessionId: this.id,
       sessionFile: this.sessionFile,
       modelSpec: this.modelSpec,
+      appendSystemPrompt: this.appendSystemPrompt,
       resolvedSessionPlan: this.resolvedSessionPlan,
       serviceTokens: this.serviceTokens,
       endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint, geo: geoEndpoint },
@@ -592,13 +595,13 @@ export class LiveSessionManager {
   }
   hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
-  async create({ cwd, model, sessionName, profile, domainId = DEFAULT_DOMAIN_ID }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string }) {
+  async create({ cwd, model, sessionName, profile, domainId = DEFAULT_DOMAIN_ID, appendSystemPrompt = '' }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string }) {
     if (!model?.trim()) throw new Error('请先添加并选择模型');
     const resolved = createSessionWorkingDirectory(cwd, sessionName);
     const assembler = profile ? sessionAssemblerForProfile(profile) : SESSION_ASSEMBLER;
     const resolvedSessionPlan = assembler.assemble(domainId, resolved, profile);
     assembler.save(resolvedSessionPlan);
-    const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), sessionName, piVersion: this.piVersion, resolvedSessionPlan });
+    const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), appendSystemPrompt, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
     await session.start();
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
