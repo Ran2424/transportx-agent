@@ -15,7 +15,7 @@ test('Shanghai eval fixture contains the 25 documented questions plus spatial an
   assert.deepEqual(questions.map((item: any) => item.id), Array.from({ length: 25 }, (_, index) => `SH-${String(index + 1).padStart(3, '0')}`));
   assert.ok(suite.cases.filter((item: any) => item.category === 'spatial').length >= 3);
   assert.ok(suite.cases.filter((item: any) => item.id.startsWith('TASK-')).length >= 3);
-  const markdown = fs.readFileSync(path.join(ROOT, 'docs/archive/shanghai-data-question-bank.md'), 'utf8');
+  const markdown = fs.readFileSync(path.join(ROOT, 'test/fixtures/shanghai-data-question-bank.md'), 'utf8');
   assert.equal((markdown.match(/^\| \d+ \|/gm) || []).length, 50);
 });
 

@@ -40,8 +40,15 @@ scenario/
 modules/official/traffic-data/assets/
 modules/official/traffic-knowledge/assets/
 
-# 浏览器截图基线 PNG（体积大，只保留 manifest.json 哈希清单，见 docs/TEST_BASELINES.md）
+# 浏览器截图基线 PNG（体积大，只保留 manifest.json 哈希清单）
 test/baselines/screenshots/*.png
+
+# GitHub 只发布架构、变更记录与产品图片
+/docs/*
+!/docs/ARCHITECTURE.md
+!/docs/CHANGELOG.md
+!/docs/images/
+!/docs/images/**
 
 # 大体积监控录像不写入仓库（虹桥 Demo 数据模块，本地准备，见模块 README）
 modules/installable/hongqiao-metro-demo/data/videos/*.mp4

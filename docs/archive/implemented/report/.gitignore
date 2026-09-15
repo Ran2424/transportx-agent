@@ -1,5 +1,0 @@
-# LaTeX 中间产物（统一在 build/ 下生成；PDF 输出到根目录）
-build/
-
-# macOS
-.DS_Store

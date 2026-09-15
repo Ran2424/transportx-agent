@@ -42,37 +42,7 @@ pi-tau-traffic/
 
 ### 2.1 进程与通信
 
-```mermaid
-flowchart TB
-  main["Electron Main / Supervisor"]
-  ui["React + Browser Kernel<br/>桌面 Renderer 或开发浏览器"]
-  cli["CLI 客户端"]
-  subgraph hostProcess["Agent Host 进程"]
-    api["HTTP / RPC / WebSocket<br/>server-main.ts"]
-    sessions["会话与历史投影<br/>LiveSessionManager / PiRpcSession"]
-    assembly["模块装配<br/>Registry / Assets / Assembler"]
-    services["领域服务<br/>Geo / Citation / Spatial / Video / File"]
-    api --> sessions
-    sessions --> assembly
-    api --> services
-  end
-  pi["Pi 子进程：每个活动会话一个<br/>模型循环 + 基础工具 + Extensions / Skills"]
-  model["模型 Provider"]
-  python["Python 子进程"]
-  video["ffmpeg / ffprobe 子进程<br/>会话冻结的视频模块运行时"]
-  main -->|启动 / 健康检查 / 回收| api
-  main -.->|受限桌面桥接| ui
-  ui <-->|HTTP 命令 / WS 事件| api
-  cli <-->|HTTP / WS| api
-  sessions <-->|stdin / stdout JSONL| pi
-  assembly -.->|启动配置| pi
-  pi <-->|模型 API| model
-  pi -->|扩展内部 HTTP + token| services
-  pi -->|bash 分析脚本| python
-  services -->|PythonRunner| python
-  services -->|VideoRunner| video
-```
-
+![TransportX Agent 整体架构与执行流程](./images/architecture-overview.png)
 
 实线表示运行时通信或调用；虚线表示桥接或装配配置。Host 图内各组件在同一进程，Module 不是独立服务。当前 Supervisor 在 macOS 使用 `utilityProcess.fork`，Windows 使用 Electron 可执行文件配合 `ELECTRON_RUN_AS_NODE=1` 启动 Node 子进程。CLI 自行启动 Host 子进程；Web 模式直接运行 Host，均使用同一组会话与领域服务。Pi 的基础工具读写任务文件，部分 Extension 直接发布资源或持久化状态；Host 负责对外提供经过校验的文件与资源。文件与资产的具体边界见第 3.4、4、6 节。
 
@@ -379,7 +349,7 @@ desktop/electron-builder.yml
 
 Video Capability 使用 `npm run video:pack` 独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。源码目录只描述能力及其运行时要求，不可代替平台专属 ZIP 安装。
 
-不要从 macOS 交叉生成 Windows 正式包。完整 Windows 验收与环境变量见 [WINDOWS_RELEASE.md](WINDOWS_RELEASE.md)。
+不要从 macOS 交叉生成 Windows 正式包。Windows 验收与签名条件由 `check-desktop-release.mjs` 和平台 Profile 统一定义。
 
 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1` 只用于内部未签名结构验收。`TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1` 还能跳过缺失 Python 模块的预检，但不会让不完整运行时具备真实功能；两者都不得用于正式发行。
 
