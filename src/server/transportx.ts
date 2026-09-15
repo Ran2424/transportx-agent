@@ -225,7 +225,11 @@ async function runPrompt(host: HostHandle, socket: WebSocket, sessionId: string,
   let streamed = '';
   let cancelWait = () => {};
   const completion = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => finish(new CliError('Agent response timed out')), 600_000);
+    const configuredTimeoutSeconds = Number(process.env.TRANSPORTX_AGENT_RESPONSE_TIMEOUT_SECONDS || 600);
+    const responseTimeoutMs = Number.isFinite(configuredTimeoutSeconds) && configuredTimeoutSeconds > 0
+      ? configuredTimeoutSeconds * 1000
+      : 600_000;
+    const timer = setTimeout(() => finish(new CliError('Agent response timed out')), responseTimeoutMs);
     const finish = (error?: Error) => {
       clearTimeout(timer);
       socket.off('message', receive);
