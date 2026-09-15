@@ -34,6 +34,14 @@ TransportX 把提问、证据核查、地图操作和成果交付放在同一个
 | **报告交付** | 生成包含图件和引用的 Markdown 报告，并在桌面端导出 PDF。 |
 | **版本化能力** | 用 Module 安装 Skill、Extension、Data、Knowledge、Template 和本地运行时；任务记录实际使用的精确版本。 |
 
+## 工作方式
+
+<p align="center">
+  <img src="./docs/images/architecture-overview.png" alt="TransportX Agent 整体架构与执行流程" width="920" />
+</p>
+
+桌面端、Web 与 CLI 共用本地 Agent Host。Host 管理会话、资源、模型和版本化 Module；Pi 负责 Agent 执行循环，并调用选定的模型、Python 分析环境与领域服务。
+
 ## 一个工作台，多种分析界面
 
 <table>
@@ -75,8 +83,6 @@ npm run desktop:dev
 
 > 交通数据库、知识库原文、模型凭据和用户安装的 Module 不随仓库分发。
 
-Web 工作台、CLI、运行时准备、打包和测试命令见[开发与运行指南](./docs/DEVELOPMENT.md)。
-
 ## 平台支持
 
 | 平台 | 状态 |
@@ -91,10 +97,7 @@ Web 工作台、CLI、运行时准备、打包和测试命令见[开发与运行
 
 | 文档 | 内容 |
 |---|---|
-| [开发与运行指南](./docs/DEVELOPMENT.md) | Web、桌面、CLI、打包和测试 |
 | [架构说明](./docs/ARCHITECTURE.md) | 进程边界、数据流、资源模型和安全约束 |
-| [可安装 Module](./modules/installable/README.md) | 数据、知识、样式和能力包 |
-| [Windows 发行指南](./docs/WINDOWS_RELEASE.md) | Windows x64 运行时、签名和安装器验收 |
 | [变更记录](./docs/CHANGELOG.md) | 版本更新和兼容性变化 |
 
 ## 致谢

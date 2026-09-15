@@ -85,7 +85,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
      npm run desktop:pack                                       # 正式包，需要 Developer ID + 公证
      ```
 
-   - Windows x64（已在 `platform-profile.win`）：参阅 [docs/WINDOWS_RELEASE.md](docs/WINDOWS_RELEASE.md)。`npm run desktop:pack` 在 Windows x64 主机上直接走入 `check-desktop-release.mjs` 的 win 分支。
+   - Windows x64（已在 `platform-profile.win`）：`npm run desktop:pack` 在 Windows x64 主机上直接走入 `check-desktop-release.mjs` 的 win 分支。
 
    - 本机持久化的自包含 Python 3.10 runtime 位于 `~/Library/Application Support/TransportX/python-3.10-runtime`（mac）或 `C:\TransportX\runtime\python-3.10-win-x64`（win）；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
    - Video Capability 单独设置 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`；mac arm64 runtime 位于 `~/Library/Application Support/TransportX/ffmpeg-runtime`，win x64 位于 `C:\TransportX\runtime\ffmpeg-win-x64`，LICENSE/NOTICES 随模块包携带。

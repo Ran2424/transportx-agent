@@ -34,6 +34,14 @@ TransportX gives analysts one place to ask questions, inspect evidence, work wit
 | **Report delivery** | Build Markdown reports with figures and citations, then export them as PDF from the desktop app. |
 | **Versioned capabilities** | Install Skills, Extensions, Data, Knowledge, Templates, and native runtimes as Modules. Every task records the exact versions it used. |
 
+## How it works
+
+<p align="center">
+  <img src="./docs/images/architecture-overview.png" alt="TransportX Agent architecture and execution flow" width="920" />
+</p>
+
+The desktop, Web, and CLI clients share one local Agent Host. It manages sessions, resources, models, and versioned Modules; Pi runs the agent loop and calls the selected model, Python analysis environment, and domain services.
+
 ## One workspace, multiple analysis surfaces
 
 <table>
@@ -75,8 +83,6 @@ Before creating the first task, add a Pi-compatible model from **New Traffic Tas
 
 > Traffic databases, source knowledge collections, model credentials, and user-installed Modules are not distributed with the repository.
 
-For the web workspace, CLI, runtime preparation, packaging, and test commands, see the [development guide](./docs/DEVELOPMENT.md).
-
 ## Platform support
 
 | Platform | Status |
@@ -91,10 +97,7 @@ The desktop app is built with Electron and React. A local Node.js Agent Host own
 
 | Guide | Covers |
 |---|---|
-| [Development and runtime](./docs/DEVELOPMENT.md) | Web, desktop, CLI, packaging, and tests |
 | [Architecture](./docs/ARCHITECTURE.md) | Process boundaries, data flow, resource model, and security constraints |
-| [Installable Modules](./modules/installable/README.md) | Data, knowledge, style, and capability packages |
-| [Windows release](./docs/WINDOWS_RELEASE.md) | Windows x64 runtime, signing, and installer validation |
 | [Changelog](./docs/CHANGELOG.md) | Releases and compatibility changes |
 
 ## Acknowledgements
