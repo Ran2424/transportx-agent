@@ -160,7 +160,7 @@ export class AgentHostSupervisor {
     child.on('message', (message: unknown) => {
       const request = message as { type?: string; id?: string; title?: string; html?: string };
       if (request?.type !== 'transportx-pdf-request' || !request.id || typeof request.title !== 'string' || typeof request.html !== 'string') return;
-      if (!this.options.renderPdf || Buffer.byteLength(request.html, 'utf8') > 20 * 1024 * 1024) {
+      if (!this.options.renderPdf || Buffer.byteLength(request.html, 'utf8') > 50 * 1024 * 1024) {
         sendMessage(child, { type: 'transportx-pdf-response', id: request.id, ok: false, error: 'Desktop PDF request is unavailable or too large' });
         return;
       }

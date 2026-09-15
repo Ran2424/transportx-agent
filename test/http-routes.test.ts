@@ -15,6 +15,7 @@ const PROJECTS_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'projects');
 process.env.TAU_PROJECTS_DIR = PROJECTS_DIR;
 
 const { server, computeUrls, handleRpcCommand, liveManager, SESSIONS_DIR, PiRpcSession, _setSpawnPiForTest } = require('../bin/tau.js');
+const { createApiRouter, REPORT_PDF_MAX_HTML_BYTES } = require('../bin/api-routes.js');
 let base = '';
 const PROJ_DIR = path.join(SESSIONS_DIR, '--tmp--httpproj');
 
@@ -80,6 +81,28 @@ before((_: TestContext, done: () => void) => {
 
 after((_: TestContext, done: () => void) => server.close(done));
 beforeEach(() => liveManager.sessions.clear());
+
+test('PDF report routes accept rendered HTML larger than the previous 5 MiB limit', async (t: TestContext) => {
+  assert.equal(REPORT_PDF_MAX_HTML_BYTES, 50 * 1024 * 1024);
+  const html = `<article>${'x'.repeat(6 * 1024 * 1024)}</article>`;
+  let renderedHtml = '';
+  const router = createApiRouter({
+    readBody: async () => ({ title: 'large-report.md', html }),
+    renderReportPdf: async (_title: string, value: string) => { renderedHtml = value; return Buffer.from('%PDF-test'); },
+    json: (res: any, status: number, data: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); },
+    errorMessage: (error: unknown) => error instanceof Error ? error.message : String(error),
+    errorStatus: (error: unknown) => error && typeof error === 'object' && 'status' in error ? Number(error.status) : 400,
+  } as any);
+  const reportServer = require('node:http').createServer((req: any, res: any) => {
+    if (!router.dispatch(req, res, new URL(req.url, 'http://127.0.0.1'))) { res.writeHead(404); res.end(); }
+  });
+  await new Promise<void>((resolve) => reportServer.listen(0, '127.0.0.1', resolve));
+  t.after(() => reportServer.close());
+  const address = reportServer.address();
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/reports/pdf/download`, { method: 'POST' });
+  assert.equal(response.status, 200);
+  assert.equal(renderedHtml, html);
+});
 
 test('serves only session-scoped GeoJSON and supports ETag revalidation', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-resource-'));
