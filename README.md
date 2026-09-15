@@ -1,229 +1,112 @@
-# TransportX Traffic Agent
+<div align="center">
+  <img src="./src/web/assets/x-icon.svg" alt="TransportX" width="96" />
+  <h1>TransportX Traffic Agent</h1>
+  <p><strong>A local-first desktop workspace for traffic analysis agents.</strong></p>
+  <p>Ask about roads, transit, traffic demand, and mobility data. TransportX turns the work into maps, charts, cited findings, and reports while keeping the source files and tool history close at hand.</p>
+  <p>
+    <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="Version 3.2.0" />
+    <img src="https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Windows%20x64-6B7280?style=flat-square" alt="macOS arm64 and Windows x64" />
+    <img src="https://img.shields.io/badge/license-MIT-3B82F6?style=flat-square" alt="MIT License" />
+  </p>
+  <p><strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a></p>
+</div>
 
-TransportX Traffic Agent 是面向交通分析人员的本地桌面工作台。它把对话式分析、任务拆解、GIS 地图、视频处理、知识引用和报告输出放在同一个任务目录中，并保留数据来源、工具过程与产出文件。
+## Why TransportX
 
-当前版本为 `3.2.0`。正式桌面发行目标是 macOS 12+ Apple Silicon 和 Windows 10 22H2 / Windows 11 x64；Linux 目前只作为开发环境，不提供安装包。
+Coding agents such as Codex and Claude Code have improved quickly, but using them still often means working with code, terminals, and unfamiliar file structures. That remains a real barrier for many domain specialists, particularly non-programmers who need to analyze traffic data or build map-based explanations.
 
-## 主要能力
+TransportX began with a simple goal: make agent-assisted analysis practical for transport professionals. It is a lightweight desktop workspace for asking questions, inspecting maps and charts, and delivering results with their evidence attached. The core stays small. Modules add the data, knowledge, methods, and tools required by a field, which also makes the platform useful beyond transport.
 
-- 管理多个交通分析任务，支持流式回复、思考过程、工具调用、任务步骤和历史恢复。
-- 上传并预览代码、表格、Markdown、图片和视频；任务产出可集中查看，Markdown 报告可导出 PDF。
-- 发布受任务目录约束的 GeoJSON，以增量命令构建 MapLibre 地图。
-- 在地图中选择要素、点位、矩形或当前视野，并把可审计的 Geo Context 附到下一条消息；Agent 也可以等待用户补充地图输入。
-- 将当前地图、图例和说明导出为 PNG，直接保存到任务目录。
-- 安装 Video Capability 后检索和处理会话内视频，支持播放、截图、裁剪、抽帧和时序指标。
-- 在回答和报告中生成可核查引用，并回到原始知识资产的具体位置。
-- 通过 Module 安装 Skill、Extension、Data、Knowledge 和 Template，按任务冻结实际使用的模块版本。
+<p align="center">
+  <img src="./docs/images/product-home.png" alt="TransportX Traffic Agent home screen" width="920" />
+</p>
 
-## 界面
+## Built for traffic analysis
 
-首页提供交通问数、地图分析和报告生成入口：
+TransportX gives analysts one place to ask questions, inspect evidence, work with maps, and deliver results. Each task has its own workspace, conversation history, files, and resolved capability versions.
 
-![TransportX Traffic Agent 首页](./docs/archive/implemented/images/view.png)
+| | What TransportX provides |
+|---|---|
+| **Conversational analysis** | Ask questions in natural language and follow the model's responses, tool calls, task steps, and generated files. |
+| **Interactive GIS** | Publish GeoJSON, combine routes, stations, grids, and administrative boundaries, then send selected features or map extents back to the agent. |
+| **Data, charts, and video** | Analyze tables, databases, and code; create charts; install Video Capability for search, playback, snapshots, clips, frame sampling, and time-series metrics. |
+| **Traceable findings** | Keep citations, map context, source files, and tool output connected to the conclusion that used them. |
+| **Report delivery** | Build Markdown reports with figures and citations, then export them as PDF from the desktop app. |
+| **Versioned capabilities** | Install Skills, Extensions, Data, Knowledge, Templates, and native runtimes as Modules. Every task records the exact versions it used. |
 
-同一工作台可以保留对话、工具过程和地图结果：
+## One workspace, multiple analysis surfaces
 
-![上海体育场周边地铁线路分析](./docs/archive/implemented/images/geo-analysis-transit-network.png)
+<table>
+  <tr>
+    <td width="50%"><img src="./docs/images/product-task-setup.png" alt="Select a model and module versions for a new task" width="100%" /></td>
+    <td width="50%"><img src="./docs/images/product-multilayer-map.png" alt="Transit lines, stations, and a traffic heat grid on one map" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center">Select the model and capability versions for each task</td>
+    <td align="center">Combine routes, stations, demand, and other spatial layers</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="./docs/images/product-map-selection.png" alt="Select a region on the map and return it to the agent" width="100%" /></td>
+    <td width="50%"><img src="./docs/images/product-chart-analysis.png" alt="Traffic analysis chart preview" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center">Use map selections as structured context for the next analysis step</td>
+    <td align="center">Inspect charts and other generated artifacts without leaving the task</td>
+  </tr>
+</table>
 
-## 运行结构
+## Design principles
 
-项目是单仓库、模块化单体，没有第二套 Web UI 或远程业务后端。
+- **The map is both output and input.** The agent can create spatial layers, and analysts can return a point, feature, rectangle, or viewport as structured context.
+- **Work stays inspectable.** Sessions retain tool activity, source references, attachments, maps, and derived artifacts instead of flattening everything into chat text.
+- **Capabilities are explicit.** Data, domain knowledge, analysis methods, and native tools are installed as Modules, selected when a task starts, and pinned for recovery.
+- **The workspace is local.** Tasks and credentials are managed on the machine. Models can run locally or through a configured remote provider.
 
-```mermaid
-flowchart LR
-  electron[Electron 桌面壳] --> host[Node Agent Host]
-  react[React 工作台] <-->|HTTP RPC / WebSocket| host
-  host --> python[Python 3.10]
-  host --> plan[Resolved Session Plan]
-  plan --> pi[Pi RPC + Module Skills / Extensions / Assets]
-  plan --> video[Video Service]
-  video --> ffmpeg["可安装 Video Capability<br/>ffmpeg / ffprobe"]
-```
+## Quick start
 
-- Electron 管理窗口、应用生命周期、Agent Host 子进程和桌面 PDF 下载。
-- Node Agent Host 管理会话、模型、模块、文件、鉴权与本地资源边界。
-- Pi RPC 负责推理和工具调用；每个任务使用独立工作目录。
-- Python 执行受控的数据与空间分析；Video Service 只从当前任务冻结的 Video Capability 中取得 ffmpeg/ffprobe。
-- React 是唯一界面，通过 Browser Kernel 消费服务端 Snapshot 和实时事件。
-
-完整边界与依赖方向见 [架构说明](./docs/ARCHITECTURE.md)。
-
-## 开发启动
-
-先安装依赖：
+Run the desktop app from source:
 
 ```bash
 npm install
-```
-
-### 本地 Web 工作台
-
-```bash
-./start.sh
-```
-
-服务默认监听 <http://127.0.0.1:3000>。需要 React 热更新时，保留上述进程，再开一个终端运行：
-
-```bash
-npm run dev:web
-```
-
-Vite 地址为 <http://127.0.0.1:5173>，API 与 WebSocket 默认代理到 `127.0.0.1:3000`。
-
-### Electron 开发模式
-
-```bash
 npm run desktop:dev
 ```
 
-### 命令行模式
+Before creating the first task, add a Pi-compatible model from **New Traffic Task** or **Settings**.
 
-构建后可以直接在终端启动 TransportX Agent：
+> Traffic databases, source knowledge collections, model credentials, and user-installed Modules are not distributed with the repository.
 
-```bash
-node bin/transportx.js
-node bin/transportx.js --print "分析当前交通数据"
-node bin/transportx.js modules list
-```
+For the web workspace, CLI, runtime preparation, packaging, and test commands, see the [development guide](./docs/DEVELOPMENT.md).
 
-通过 `npm link` 或安装 npm 包后，入口命令为 `transportx`。命令行默认不加载任何可选 Module；随平台提供的 Task、Citation、Web Bridge、Geo、Spatial Analysis 仍需通过可重复的 `--module <id[@version]>` 显式启用。Video 还必须先安装对应平台的能力包，再用相同参数选择。`--no-modules` 可用于明确声明不加载可选 Module：
+## Platform support
 
-```bash
-transportx --module com.transportx.task@1.0.1
-transportx --module com.transportx.shanghaidata@2.0.1 --print "统计早高峰流量"
-transportx --append-system-prompt-file /absolute/path/to/eval-system-prompt.md --print "执行评测题"
-transportx --no-modules --model provider/model
-```
-
-`--append-system-prompt-file` 读取 UTF-8 文件，将其内容追加在 TransportX 基础提示词和 CLI 会话上下文之后；它不能替换平台基础提示词。CLI 默认读取 TransportX 用户目录中的 `settings.json` 和已安装 Module，也可通过 `PI_CODING_AGENT_DIR` 显式覆盖。
-
-CLI 仍通过 Agent Host 创建独立任务目录，并冻结精确的 Module 版本。Geo 框选、地图截图和视频播放等界面交互需要桌面工作台。
-
-首次创建任务前，在“新建交通任务”或“设置”中添加一个 Pi 兼容模型。模型定义与密钥分开保存，API Key 不返回前端。
-
-## 用户数据
-
-| 平台 | 默认目录 |
+| Platform | Status |
 |---|---|
-| macOS | `~/.transportx/traffic-agent/` |
-| Windows | `%APPDATA%\TransportX\traffic-agent\` |
-| Linux 开发环境 | `$XDG_CONFIG_HOME/transportx-traffic-agent/` 或 `~/.config/transportx-traffic-agent/` |
+| macOS 12+ on Apple Silicon | Desktop release target |
+| Windows 10 22H2 / Windows 11 x64 | Desktop release target |
+| Linux | Source development only |
 
-目录中包含：
+The desktop app is built with Electron and React. A local Node.js Agent Host owns sessions and resource boundaries, while [Pi](https://github.com/earendil-works/pi) runs the model and tool loop. Python 3.10 ships with the desktop application; the video runtime is installed separately with Video Capability.
 
-```text
-<user-data>/
-├─ scenario/                 每个任务的工作目录
-├─ sessions/                 Pi 会话记录
-├─ modules/<id>/<version>/   已安装 Module
-├─ settings/                 平台设置
-├─ logs/                     运行日志
-├─ cache/                    可清理缓存
-├─ models.json               模型定义
-└─ auth.json                 模型密钥
-```
+## Documentation
 
-可通过 `TAU_USER_DATA_DIR` 覆盖数据根目录，但该变量主要用于开发和受控部署。应用升级或卸载不会主动删除用户数据。
-
-## Module
-
-Module 是唯一安装和版本冻结单元，可以同时提供 Skill、Extension、Native Runtime、Data、Knowledge 与 Template。用户可以从设置页选择包含 `manifest.json` 的目录或 ZIP；安装内容会复制到用户数据目录，显式启用后才参与新任务装配。
-
-平台内置 Module 只提供 Workbench、Task、Geo、Spatial Analysis、Citation 和 Web Bridge 等通用能力。Video Capability 与 ffmpeg/ffprobe 作为平台专属的可安装能力包交付。`modules/installable/` 保存独立交付的能力、交通数据、知识、样式和演示模块源码，它们不会进入安装包，也不是平台启动依赖。详见 [可安装模块说明](./modules/installable/README.md)。
-
-Video Capability 的使用顺序是：安装与当前操作系统、CPU 架构匹配的 ZIP，在设置中启用，再创建任务。安装器会校验包路径、平台、架构和 ffmpeg/ffprobe 的 SHA-256；活动任务正在使用模块时不能卸载。
-
-大体积数据库、原始文档和检索索引不进入 Git。每个任务的 `ResolvedSessionPlan` 会记录实际启用的 Module 版本、入口、资产和 Native Runtime，恢复任务时按该计划校验。3.2.0 以前使用内置 Video 的任务，在安装并启用新版 Video Capability 后可受控迁移；其他已安装模块仍执行精确版本和内容校验。
-
-## 桌面打包
-
-基础发布包内置 Pi CLI 和 Python 3.10，不依赖用户机器上的 Conda 或系统 Python。构建前必须准备对应平台和架构的可重定位 Python 运行时：
-
-```bash
-TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:pack
-```
-
-`npm run desktop:pack` 会根据当前宿主平台选择发布 Profile。macOS 正式包要求 Developer ID 签名和 Apple 公证；Windows 正式包要求 Authenticode 证书和可信时间戳。不要在 macOS 上交叉生成 Windows 正式包。
-
-Video Capability 独立构建，不参与基础桌面包：
-
-```bash
-TRANSPORTX_FFMPEG_RUNTIME_DIR=/absolute/path/to/ffmpeg-runtime npm run video:pack
-```
-
-产物位于 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`，包含编译后的 Extension、Skill、ffmpeg/ffprobe、校验值和许可证说明。必须在目标平台构建对应能力包。
-
-### Windows 10/11 x64
-
-Windows 使用每用户 NSIS 安装器，允许选择安装目录，支持同一 `appId` 原位升级，卸载时保留 `%APPDATA%\TransportX\traffic-agent\`。应用窗口使用与其他桌面平台一致的无边框壳，最小化、最大化和关闭按钮位于左侧。在原生 Windows x64 主机的 PowerShell 中：
-
-```powershell
-$env:TRANSPORTX_PYTHON_RUNTIME_DIR = 'C:\TransportX\runtime\python-3.10-win-x64'
-$env:WIN_CSC_LINK = 'C:\secure\transportx-codesign.pfx'
-$env:WIN_CSC_KEY_PASSWORD = '<certificate-password>'
-npm ci
-npm run desktop:pack
-```
-
-产物位于 `release/TransportX Traffic Agent-<version>-win-x64-setup.exe`。Video Capability 另行设置 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 并运行 `npm run video:pack`，生成平台专属模块 ZIP。
-
-内部结构验收可使用 `TRANSPORTX_ALLOW_UNSIGNED_BUILD=1`。如果离线 CI 的 Python 缺少项目依赖，还可额外设置 `TRANSPORTX_ALLOW_INCOMPLETE_PYTHON_RUNTIME=1`；该变量只能验证包结构，不能用于正式发行或功能验收。完整流程见 [Windows 发行指南](./docs/WINDOWS_RELEASE.md)。
-
-### macOS arm64
-
-本机结构验收可生成 ad-hoc 签名包：
-
-```bash
-TRANSPORTX_PYTHON_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/python-3.10-runtime" \
-TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 \
-npm run desktop:pack
-```
-
-正式 DMG 不设置 `TRANSPORTX_ALLOW_UNSIGNED_BUILD`，并需提供签名与公证凭据。
-
-## 使用限制
-
-- 不要用 `sudo` 启动服务或桌面应用，否则用户数据和模块目录的权限会被破坏。
-- 在线底图需要网络；使用 `none` 底图时可以离线显示任务内 GeoJSON。
-- 交通数据库、知识库原文、模型密钥和用户安装的 Module 不随源码或安装包分发。
-- 发布版只使用包内运行时；环境变量覆盖仅用于开发、测试和受控部署。
-
-## 验证
-
-| 命令 | 验证范围 |
+| Guide | Covers |
 |---|---|
-| `npm run typecheck` | 全部 TypeScript 项目 |
-| `npm test` | Agent Host 启动、任务环境、Module 安装与进程退出 |
-| `npm run test:web` | 真实 Node 服务、fake Pi 与 Chrome 中的 React 用户场景 |
-| `npm run test:platform:macos` | macOS Electron 生命周期、内置 Pi/Python、可选视频运行时隔离、PDF 与退出清理 |
-| `npm run test:platform:windows` | Windows 未安装应用，或 NSIS 安装、启动、卸载和数据保留 |
-| `npm run test:pi-smoke` | 本机真实 Pi RPC 冒烟；不纳入默认测试 |
+| [Development and runtime](./docs/DEVELOPMENT.md) | Web, desktop, CLI, packaging, and tests |
+| [Architecture](./docs/ARCHITECTURE.md) | Process boundaries, data flow, resource model, and security constraints |
+| [Installable Modules](./modules/installable/README.md) | Data, knowledge, style, and capability packages |
+| [Windows release](./docs/WINDOWS_RELEASE.md) | Windows x64 runtime, signing, and installer validation |
+| [Changelog](./docs/CHANGELOG.md) | Releases and compatibility changes |
 
-Windows 测试需要设置 `TRANSPORTX_PACKAGED_APP` 或 `TRANSPORTX_WINDOWS_INSTALLER`，并在 Windows x64 主机运行。
+## Acknowledgements
 
-## 仓库目录
+TransportX builds on and has benefited from these open-source projects:
 
-```text
-desktop/             Electron、平台 Profile、打包配置与发布脚本
-modules/             内置能力、官方模块和可安装模块源码
-prompts/             Pi 系统与会话 Prompt
-src/contracts/       跨层协议与验证原语
-src/server/          Node Agent Host
-src/public/          Browser Kernel 与共享运行时
-src/web/             React 工作台
-scripts/             构建、冒烟、评测与测试 harness
-test/                细粒度契约和边界测试
-docs/                当前说明、发布指南、变更记录与归档
-```
+- [Pi](https://github.com/earendil-works/pi) provides the agent runtime, model integration, and tool loop.
+- [Pi Tau Web Server](https://github.com/milanglacier/pi-tau-web-server) is the upstream foundation for the browser workspace and Pi RPC session architecture.
+- [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js) powers interactive map rendering.
+- [Electron](https://github.com/electron/electron) and [React](https://github.com/facebook/react) provide the desktop and interface foundations.
 
-`bin/`、`public/*.js`、`public/geo-runtime.*`、`dist/web/`、`dist-desktop/`、`desktop/build/` 和 `release/` 是构建产物，不手工编辑或提交。
-
-## 文档
-
-- [架构说明](./docs/ARCHITECTURE.md)：当前系统边界、数据流、Module 模型与跨平台约束。
-- [Windows 发行指南](./docs/WINDOWS_RELEASE.md)：运行时准备、签名、打包和安装器验收。
-- [变更记录](./docs/CHANGELOG.md)：按版本记录用户、部署者与模块作者可见的变化。
-- [历史实施文档](./docs/archive/README.md)：已完成设计、评审和旧版本资料的索引。
+Thank you to their maintainers and contributors.
 
 ## License
 
