@@ -1,8 +1,8 @@
 # TransportX Traffic Agent 架构
 
-- 产品版本：3.1.5
+- 产品版本：3.2.0
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-09-04
+- 更新日期：2026-09-15
 - 发布 Profile：macOS arm64（DMG）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Traffic Agent 是本地优先的交通分析桌面工作台。它是一个单仓库、单 npm 包、模块化单体：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi RPC 负责推理与工具调用，Python 运行受控的数据和空间分析，React 提供唯一的用户界面。
@@ -17,9 +17,9 @@ pi-tau-traffic/
 │  ├─ assets/                  图标、签名与平台资源
 │  └─ scripts/                 runtime 准备、发布前检查、打包钩子
 ├─ modules/                    随应用发布或由用户安装的能力单元
-│  ├─ capabilities/            Task、Geo、Citation、Video 等平台通用能力
+│  ├─ capabilities/            Task、Geo、Citation、Spatial Analysis、Web Bridge
 │  ├─ official/                Workbench、报告模板、Module Authoring
-│  └─ installable/             独立交付的交通数据、知识与风格模块源码
+│  └─ installable/             Video、交通数据、知识与风格模块源码
 ├─ prompts/                    Pi 系统与会话 Prompt
 ├─ src/
 │  ├─ contracts/               跨层协议与验证原语；不依赖具体运行时
@@ -50,8 +50,11 @@ flowchart TB
 
   workspace <--> |HTTP RPC · WebSocket 事件| host["Agent Host · Node<br/>会话 · Module · 资源 · 本地 API"]
   main -->|启动 · 健康检查 · 停止| host
-  host --> pi["Pi Agent<br/>每个任务一个 RPC 进程"]
-  host --> worker["Python 3.10 / ffmpeg<br/>数据 · 空间分析 · 制图 · 视频"]
+  host --> python["Python 3.10<br/>数据 · 空间分析 · 制图"]
+  host --> plan["Resolved Session Plan<br/>Module · Asset · Native Runtime"]
+  plan --> pi["Pi Agent<br/>每个任务一个 RPC 进程"]
+  plan --> video["Video Service<br/>会话与资源边界"]
+  video --> videoModule["可安装 Video Capability<br/>Extension · Skill · ffmpeg/ffprobe"]
 
   classDef user fill:#1e3a5f,stroke:#1e3a5f,color:#fff;
   classDef desktop fill:#e8f1ff,stroke:#4f7db8,color:#102a43;
@@ -61,8 +64,8 @@ flowchart TB
   class user user;
   class main desktop;
   class workspace workspace;
-  class host platform;
-  class pi,worker runtime;
+  class host,plan,video platform;
+  class pi,python,videoModule runtime;
 ```
 
 ### Electron Main
@@ -93,7 +96,7 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 每个任务以 Pi RPC 进程运行。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
-发布版基础安装包使用随包 Pi 与 Python 3.10；ffmpeg/ffprobe 由平台专属的可安装 Video Capability Module 提供。开发模式可通过明确环境变量覆盖。Python 作业由 Agent Host 控制工作目录、UTF-8、超时、取消与进程回收，不得依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely。
+发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Python 作业由 Agent Host 控制工作目录、UTF-8、超时、取消与进程回收，不得依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely。
 
 ### React Workspace 与 Browser Kernel
 
@@ -116,7 +119,7 @@ Canvas 在工作区顶部以具名标签承载当前任务的地图和视频。C
   → React Conversation / Task / Geo / Citation 界面
 ```
 
-新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module、入口、Asset 与运行时信息；恢复任务时以该计划校验，而不是悄然替换为当前最新 Module。内置 Module 有受控漂移容忍规则；用户安装 Module 的缺失或不一致必须明确处理。
+新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module、入口、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务时以该计划校验，而不是悄然替换为当前最新 Module。内置 Module 有受控漂移容忍规则；用户安装 Module 的缺失或不一致必须明确处理。唯一的升级迁移例外是 3.2.0 以前的内置 Video：仅当新版 Video Capability 已安装并启用时，恢复流程才会将旧条目映射到当前插件。
 
 Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更新前端状态。WebSocket 只用于实时 Pi 事件和 Snapshot；断线或刷新后由 Agent Host Snapshot 重新校正。
 
@@ -142,7 +145,8 @@ Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更
 | 地图交互上下文与等待请求 | Session Snapshot、Geo Interaction Service | Pi Geo 工具、Browser Kernel、React Geo Workspace |
 | 模型定义与密钥 | 用户目录 `models.json`、`auth.json` | Agent Host、Pi；密钥不返回前端 |
 | Module 声明与完整性 | Module `manifest.json`、`integrityFile` | Registry、Installer、Session Assembly |
-| 打包运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
+| Module Native Runtime | Module `manifest.json` 中的 `nativeRuntimes` | Installer、Session Assembly、Video Service |
+| 基础打包运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
 
 `src/contracts/` 必须保持纯粹：不依赖 Node、Electron、React、DOM 或 MapLibre。任何跨层字段先定义契约和解析规则，再实现服务端、Kernel、UI 适配。
 
@@ -150,7 +154,7 @@ Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更
 
 ## 5. Module 与资产模型
 
-Module 是唯一安装与版本冻结单元，可组合贡献 Skill、Extension、Data、Knowledge 与 Template。Skill/Extension/Data/Knowledge 不单独安装，全部由 Manifest 的 `entrypoints` 与 `contributes` 描述。
+Module 是唯一安装与版本冻结单元，可组合贡献 Skill、Extension、Native Runtime、Data、Knowledge 与 Template。这些内容不单独安装，全部由 Manifest 的 `entrypoints` 与 `contributes` 描述。
 
 | 来源 | 位置 | 用途 |
 |---|---|---|
@@ -160,9 +164,9 @@ Module 是唯一安装与版本冻结单元，可组合贡献 Skill、Extension�
 | 用户可安装源码 | `modules/installable/` | 上海数据、交通保障知识、绘图风格、演示数据；不打入应用 |
 | 用户受管 Module | 用户目录 `modules/<id>/<version>/` | 安装后显式启用，参与新任务装配 |
 
-平台能力不依赖用户 Module。Data/Knowledge 的大体积资产、原始资料、索引和精确定位映射不进入 Git 或桌面安装包；解析后通过 `TRANSPORTX_TRAFFIC_DATA_ROOT`、`TRANSPORTX_KNOWLEDGE_ROOT` 等会话环境变量提供给 Pi/脚本。
+平台核心不依赖用户 Module；数据模块可以声明对 Video、Geo 或 Citation 等能力模块的依赖，Session Assembly 会解析并冻结依赖闭包。Data/Knowledge 的大体积资产、原始资料、索引和精确定位映射不进入 Git 或桌面安装包；解析后通过会话资产映射提供给 Pi/脚本。
 
-安装器拒绝符号链接、绝对入口、路径逃逸、重复 ID 和缺少入口；带 `integrityFile` 的资产在安装及解析阶段验证 SHA-256。Module 改动必须同步提升其 `manifest.json` 版本并记录 CHANGELOG。
+安装器拒绝符号链接、绝对入口、路径逃逸、重复 ID 和缺少入口；带 `integrityFile` 的资产在安装及解析阶段验证 SHA-256。Native Runtime 还必须匹配当前平台和架构，声明的可执行文件路径、哈希和许可证说明都位于模块包内。模块显式启用后只影响新任务；活动任务正在使用模块时禁止卸载。Module 改动必须同步提升其 `manifest.json` 版本并记录 CHANGELOG。
 
 ## 6. 目录与持久化
 
@@ -235,7 +239,7 @@ desktop/electron-builder.yml
 3. electron-builder 按对应 fragment 打包；
 4. macOS 正式发行需要 Developer ID + 公证，Windows 正式发行需要 Authenticode + 可信时间戳。
 
-Video Capability 使用 `npm run video:pack` 独立生成平台专属 ZIP。该步骤编译自包含 Extension，复制并验证 ffmpeg/ffprobe，将版本、架构、SHA-256 与许可证说明写入 Module manifest。
+Video Capability 使用 `npm run video:pack` 独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。源码目录只描述能力及其运行时要求，不可代替平台专属 ZIP 安装。
 
 不要从 macOS 交叉生成 Windows 正式包。完整 Windows 验收与环境变量见 [WINDOWS_RELEASE.md](WINDOWS_RELEASE.md)。
 
