@@ -2,7 +2,7 @@
 
 TransportX Traffic Agent 是面向交通分析人员的本地桌面工作台。它把对话式分析、任务拆解、GIS 地图、视频处理、知识引用和报告输出放在同一个任务目录中，并保留数据来源、工具过程与产出文件。
 
-当前版本为 `3.1.5`。正式桌面发行目标是 macOS 12+ Apple Silicon 和 Windows 10 22H2 / Windows 11 x64；Linux 目前只作为开发环境，不提供安装包。
+当前版本为 `3.2.0`。正式桌面发行目标是 macOS 12+ Apple Silicon 和 Windows 10 22H2 / Windows 11 x64；Linux 目前只作为开发环境，不提供安装包。
 
 ## 主要能力
 
@@ -11,7 +11,7 @@ TransportX Traffic Agent 是面向交通分析人员的本地桌面工作台。�
 - 发布受任务目录约束的 GeoJSON，以增量命令构建 MapLibre 地图。
 - 在地图中选择要素、点位、矩形或当前视野，并把可审计的 Geo Context 附到下一条消息；Agent 也可以等待用户补充地图输入。
 - 将当前地图、图例和说明导出为 PNG，直接保存到任务目录。
-- 检索和处理会话内视频，支持播放、截图、裁剪、抽帧和时序指标。
+- 安装 Video Capability 后检索和处理会话内视频，支持播放、截图、裁剪、抽帧和时序指标。
 - 在回答和报告中生成可核查引用，并回到原始知识资产的具体位置。
 - 通过 Module 安装 Skill、Extension、Data、Knowledge 和 Template，按任务冻结实际使用的模块版本。
 
@@ -33,16 +33,17 @@ TransportX Traffic Agent 是面向交通分析人员的本地桌面工作台。�
 flowchart LR
   electron[Electron 桌面壳] --> host[Node Agent Host]
   react[React 工作台] <-->|HTTP RPC / WebSocket| host
-  host --> pi[Pi RPC]
   host --> python[Python 3.10]
-  host --> ffmpeg[ffmpeg / ffprobe]
-  pi --> modules[Module Skills / Extensions / Assets]
+  host --> plan[Resolved Session Plan]
+  plan --> pi[Pi RPC + Module Skills / Extensions / Assets]
+  plan --> video[Video Service]
+  video --> ffmpeg["可安装 Video Capability<br/>ffmpeg / ffprobe"]
 ```
 
 - Electron 管理窗口、应用生命周期、Agent Host 子进程和桌面 PDF 下载。
 - Node Agent Host 管理会话、模型、模块、文件、鉴权与本地资源边界。
 - Pi RPC 负责推理和工具调用；每个任务使用独立工作目录。
-- Python 执行受控的数据与空间分析，ffmpeg/ffprobe 处理视频。
+- Python 执行受控的数据与空间分析；Video Service 只从当前任务冻结的 Video Capability 中取得 ffmpeg/ffprobe。
 - React 是唯一界面，通过 Browser Kernel 消费服务端 Snapshot 和实时事件。
 
 完整边界与依赖方向见 [架构说明](./docs/ARCHITECTURE.md)。
@@ -85,7 +86,7 @@ node bin/transportx.js --print "分析当前交通数据"
 node bin/transportx.js modules list
 ```
 
-通过 `npm link` 或安装 npm 包后，入口命令为 `transportx`。命令行默认不加载任何可选 Module；Task、Citation、Web Bridge、Geo、Spatial Analysis 和 Video 都需要通过可重复的 `--module <id[@version]>` 显式启用。`--no-modules` 可用于明确声明不加载可选 Module：
+通过 `npm link` 或安装 npm 包后，入口命令为 `transportx`。命令行默认不加载任何可选 Module；随平台提供的 Task、Citation、Web Bridge、Geo、Spatial Analysis 仍需通过可重复的 `--module <id[@version]>` 显式启用。Video 还必须先安装对应平台的能力包，再用相同参数选择。`--no-modules` 可用于明确声明不加载可选 Module：
 
 ```bash
 transportx --module com.transportx.task@1.0.1
@@ -130,7 +131,9 @@ Module 是唯一安装和版本冻结单元，可以同时提供 Skill、Extensi
 
 平台内置 Module 只提供 Workbench、Task、Geo、Spatial Analysis、Citation 和 Web Bridge 等通用能力。Video Capability 与 ffmpeg/ffprobe 作为平台专属的可安装能力包交付。`modules/installable/` 保存独立交付的能力、交通数据、知识、样式和演示模块源码，它们不会进入安装包，也不是平台启动依赖。详见 [可安装模块说明](./modules/installable/README.md)。
 
-大体积数据库、原始文档和检索索引不进入 Git。每个任务的 `ResolvedSessionPlan` 会记录实际启用的 Module 版本和资产，恢复任务时按该计划校验。
+Video Capability 的使用顺序是：安装与当前操作系统、CPU 架构匹配的 ZIP，在设置中启用，再创建任务。安装器会校验包路径、平台、架构和 ffmpeg/ffprobe 的 SHA-256；活动任务正在使用模块时不能卸载。
+
+大体积数据库、原始文档和检索索引不进入 Git。每个任务的 `ResolvedSessionPlan` 会记录实际启用的 Module 版本、入口、资产和 Native Runtime，恢复任务时按该计划校验。3.2.0 以前使用内置 Video 的任务，在安装并启用新版 Video Capability 后可受控迁移；其他已安装模块仍执行精确版本和内容校验。
 
 ## 桌面打包
 
@@ -141,6 +144,14 @@ TRANSPORTX_PYTHON_RUNTIME_DIR=/absolute/path/to/python-runtime npm run desktop:p
 ```
 
 `npm run desktop:pack` 会根据当前宿主平台选择发布 Profile。macOS 正式包要求 Developer ID 签名和 Apple 公证；Windows 正式包要求 Authenticode 证书和可信时间戳。不要在 macOS 上交叉生成 Windows 正式包。
+
+Video Capability 独立构建，不参与基础桌面包：
+
+```bash
+TRANSPORTX_FFMPEG_RUNTIME_DIR=/absolute/path/to/ffmpeg-runtime npm run video:pack
+```
+
+产物位于 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`，包含编译后的 Extension、Skill、ffmpeg/ffprobe、校验值和许可证说明。必须在目标平台构建对应能力包。
 
 ### Windows 10/11 x64
 
@@ -184,7 +195,7 @@ npm run desktop:pack
 | `npm run typecheck` | 全部 TypeScript 项目 |
 | `npm test` | Agent Host 启动、任务环境、Module 安装与进程退出 |
 | `npm run test:web` | 真实 Node 服务、fake Pi 与 Chrome 中的 React 用户场景 |
-| `npm run test:platform:macos` | macOS Electron 生命周期、内置运行时、PDF 与退出清理 |
+| `npm run test:platform:macos` | macOS Electron 生命周期、内置 Pi/Python、可选视频运行时隔离、PDF 与退出清理 |
 | `npm run test:platform:windows` | Windows 未安装应用，或 NSIS 安装、启动、卸载和数据保留 |
 | `npm run test:pi-smoke` | 本机真实 Pi RPC 冒烟；不纳入默认测试 |
 
