@@ -177,6 +177,14 @@ test('enabled modules and exact selections automatically include installed depen
 
   const selected = installer.sourcesForSelectionsWithDependencies([{ id: 'local.video-data', version: '1.0.0' }]);
   assert.deepEqual(selected.map((source: any) => source.moduleId).sort(), ['com.transportx.video', 'local.video-data']);
+
+  const incompleteRoot = temp(t, 'transportx-missing-module-dependency-');
+  const incompleteInstaller = new ModuleInstaller(path.join(incompleteRoot, 'managed'));
+  incompleteInstaller.install(path.join(root, 'local.video-data'));
+  assert.throws(
+    () => incompleteInstaller.sourcesForSelectionsWithDependencies([{ id: 'local.video-data', version: '1.0.0' }]),
+    /Module dependency is not installed: com\.transportx\.video/,
+  );
 });
 
 test('ZIP archives are previewed before selected Module packages are installed', async (t: any) => {

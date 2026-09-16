@@ -18,6 +18,10 @@
 - Video Capability 从内置能力改为可安装、可禁用和可卸载的 Module；视频数据 Module 继续通过依赖关系启用该能力。
 - 基础桌面安装包不再携带 ffmpeg/ffprobe；平台专属 Video Capability ZIP 独立携带并冻结原生运行时版本与 SHA-256。
 
+### Fixed
+
+- 修复可安装模块的依赖装配：已安装依赖随上层模块自动启用；依赖缺失或不兼容的模块不再进入新任务默认选项。
+
 ### Added
 
 - Module manifest 支持声明经过哈希校验的平台/架构专属 Native Runtime。

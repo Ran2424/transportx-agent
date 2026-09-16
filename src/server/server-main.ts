@@ -46,7 +46,7 @@ import { VideoService } from './video-service.js';
 import { verifyChecksumFile } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 import { writeJson as json } from './http/response.js';
-import { moduleRuntimeCompatible } from './module-registry.js';
+import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -224,19 +224,29 @@ function currentPlatformOverview() {
 function currentSessionOptions() {
   const enabled = new Set(TAU_SETTINGS.enabledModuleIds);
   const defaultVersions = new Set(MODULE_INSTALLER.sources().map((source) => `${source.moduleId}:${path.basename(source.packageRoot!)}`));
+  const platformModules = [...MODULE_REGISTRY.modules.values()].filter((module) => module.origin !== 'installed');
+  const platformSources = platformModules.map((module) => ({ manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin }));
+  const platformModuleIds = new Set(platformModules.map((module) => module.manifest.id));
   return {
     schemaVersion: 1,
     modules: MODULE_INSTALLER.catalog().map((entry) => {
       const runtime = moduleRuntimeCompatible(entry.manifest);
+      let dependenciesCompatible = false;
+      try {
+        const selectedSources = MODULE_INSTALLER.sourcesForSelectionsWithDependencies([{ id: entry.id, version: entry.version }], platformModuleIds);
+        const selectionRegistry = new ModuleRegistry(MODULE_REGISTRY.platformVersion).load([...platformSources, ...selectedSources]);
+        dependenciesCompatible = selectionRegistry.errors.length === 0 && selectionRegistry.get(entry.id)?.enabled === true;
+      } catch {}
+      const compatible = runtime.compatible && dependenciesCompatible;
       return {
         id: entry.id,
         name: entry.manifest.name,
         version: entry.version,
         type: entry.manifest.type,
         origin: 'installed',
-        compatible: runtime.compatible,
-        enabledForNewSessions: runtime.compatible && enabled.has(entry.id),
-        selectedByDefault: runtime.compatible && enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
+        compatible,
+        enabledForNewSessions: compatible && enabled.has(entry.id),
+        selectedByDefault: compatible && enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
         dependencies: entry.manifest.dependencies,
         assets: (entry.manifest.contributes?.assets || []).map((asset) => {
           const assetPath = path.resolve((ASSET_OVERRIDES as Record<string, string>)[asset.id] || path.resolve(entry.source.packageRoot!, asset.path));
