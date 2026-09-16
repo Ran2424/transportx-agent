@@ -61,6 +61,14 @@ The desktop, Web, and CLI clients share one local Agent Host. It manages session
     <td align="center">Use map selections as structured context for the next analysis step</td>
     <td align="center">Inspect charts and other generated artifacts without leaving the task</td>
   </tr>
+  <tr>
+    <td width="50%"><img src="./docs/images/product-event-traffic-analysis.png" alt="Event-period congestion and parking-demand analysis" width="100%" /></td>
+    <td width="50%"><img src="./docs/images/product-transit-station-analysis.png" alt="Metro station shared-bike demand and route coverage analysis" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center">Compare event-period congestion with parking demand across maps and charts</td>
+    <td align="center">Rank metro stations by shared-bike demand and inspect route coverage</td>
+  </tr>
 </table>
 
 ## Design principles
