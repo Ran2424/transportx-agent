@@ -617,7 +617,6 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .thinking-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .thinking-block.is-active .thinking-toggle { color: var(--selection-fg); }
 .thinking-block pre { max-height: none; overflow: visible; margin: 0; padding: 8px 0 0; border: 0; border-radius: 0; color: var(--text-secondary); background: transparent; white-space: pre-wrap; font: 13px/1.7 var(--tx-font-mono); }
-.streaming-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .streaming-cursor { display: inline-block; width: 7px; height: 14px; vertical-align: -2px; background: var(--selection-border); animation: pulse 1s infinite; }
 .tool-card { position: relative; width: min(720px, 100%); max-width: 100%; margin: 1px 0; overflow: visible; border: 0; border-radius: 0; background: transparent; }
 .tool-card::after { position: absolute; left: 9.5px; top: 30px; bottom: -5px; width: 1px; background: var(--border-default); content: ""; }

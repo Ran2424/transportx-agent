@@ -54,6 +54,14 @@ try {
 
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
+  await composer.fill('实时-markdown');
+  await composer.press('Enter');
+  const liveMarkdown = page.locator('.assistant-message.is-streaming');
+  await liveMarkdown.locator('h2', { hasText: '实时报告' }).waitFor({ timeout: 5_000 });
+  await liveMarkdown.locator('li', { hasText: '已完成第一项' }).waitFor({ timeout: 5_000 });
+  await page.locator('.assistant-message:not(.is-streaming)', { hasText: 'Markdown 应在回复结束前完成渲染。' }).waitFor({ timeout: 10_000 });
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
+
   await composer.fill('基线-happy-collapsed');
   await composer.press('Enter');
   await page.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).waitFor({ timeout: 10_000 });
