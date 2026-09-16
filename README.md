@@ -69,6 +69,14 @@ The desktop, Web, and CLI clients share one local Agent Host. It manages session
     <td align="center">Compare event-period congestion with parking demand across maps and charts</td>
     <td align="center">Rank metro stations by shared-bike demand and inspect route coverage</td>
   </tr>
+  <tr>
+    <td width="50%"><img src="./docs/images/product-report-overview.png" alt="Generated traffic analysis report title, summary, and monitoring scope" width="100%" /></td>
+    <td width="50%"><img src="./docs/images/product-report-analysis.png" alt="Generated traffic analysis report with charts, tables, and findings" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center">Turn an analysis task into a structured report with methods and data sources</td>
+    <td align="center">Present findings with charts, tables, comparisons, and written conclusions</td>
+  </tr>
 </table>
 
 ## Design principles

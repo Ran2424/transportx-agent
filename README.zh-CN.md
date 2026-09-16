@@ -69,6 +69,14 @@ TransportX 把提问、证据核查、地图操作和成果交付放在同一个
     <td align="center">结合地图与图表分析活动时段拥堵和停车需求</td>
     <td align="center">识别共享单车需求较高的地铁站并核查线路覆盖</td>
   </tr>
+  <tr>
+    <td width="50%"><img src="./docs/images/product-report-overview.png" alt="生成的交通分析报告封面、摘要与监测范围" width="100%" /></td>
+    <td width="50%"><img src="./docs/images/product-report-analysis.png" alt="包含图表、表格与结论的交通分析报告" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center">将分析任务整理为包含方法和数据来源的结构化报告</td>
+    <td align="center">用图表、表格、对比和文字结论呈现分析结果</td>
+  </tr>
 </table>
 
 ## 设计原则
