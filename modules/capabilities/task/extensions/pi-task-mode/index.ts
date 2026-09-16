@@ -281,10 +281,14 @@ export default function taskModeExtension(pi: ExtensionAPI) {
           const options = validateOptions(params.options);
           const selected = await ctx.ui.select(dialogTitle(title, message), options.map((option) => option.display), { signal });
           const option = options.find((candidate) => candidate.display === selected);
-          if (!option) status = 'cancelled';
-          else {
+          if (option) {
             value = option.value;
             answerText = `用户选择：${option.label}（${option.value}）。`;
+          } else if (selected?.trim()) {
+            value = selected.trim();
+            answerText = `用户回答：${value}`;
+          } else {
+            status = 'cancelled';
           }
         } else if (kind === 'input') {
           value = await ctx.ui.input(dialogTitle(title, message), undefined, { signal });

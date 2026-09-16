@@ -552,6 +552,11 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .extension-options strong { font-size: 12px; }
 .extension-options small { margin-top: 5px; color: var(--text-secondary); font-size: 11px; }
 .extension-options i { color: var(--selection-fg); font-style: normal; }
+.extension-custom-answer { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-default); }
+.extension-custom-answer > label { display: block; margin-bottom: 7px; color: var(--text-secondary); font-size: 11px; }
+.extension-custom-answer > div { display: flex; gap: 8px; }
+.extension-custom-answer .extension-input { min-width: 0; }
+.extension-custom-answer .ui-button { flex: 0 0 auto; }
 .extension-editor { min-height: 180px; padding: 12px; resize: vertical; }
 .extension-toast, .runtime-notice { position: fixed; z-index: 120; right: 18px; bottom: 18px; width: min(370px, calc(100vw - 36px)); padding: 13px 38px 13px 14px; border: 1px solid var(--border-strong); border-left: 2px solid var(--selection-border); border-radius: var(--tx-radius-md); background: var(--surface-raised); box-shadow: var(--shadow-dialog); animation: toast-in 220ms ease; }
 .extension-toast strong, .extension-toast span { display: block; }
