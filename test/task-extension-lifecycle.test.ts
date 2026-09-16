@@ -69,3 +69,34 @@ test('task extension exposes task prompt content only while task mode is enabled
   await commands.get('task')!.handler('on', ctx);
   assert.deepEqual(notifications, ['任务模式已开启']);
 });
+
+test('ask user select accepts a custom answer outside the predefined options', async () => {
+  const taskModeExtension = require('../modules/capabilities/task/extensions/pi-task-mode/index.ts').default;
+  const tools = new Map<string, any>();
+  const pi = {
+    on: () => {},
+    registerCommand: () => {},
+    registerTool: (tool: any) => tools.set(tool.name, tool),
+    appendEntry: () => {},
+    getActiveTools: () => [],
+    setActiveTools: () => {},
+  };
+  taskModeExtension(pi as any);
+
+  const result = await tools.get('tau_ask_user').execute('call-custom-answer', {
+    kind: 'select',
+    title: '选择分析日期',
+    message: '请选择预设范围或输入其他范围',
+    options: [
+      { value: 'weekday', label: '只看工作日' },
+      { value: 'weekend', label: '包含周末' },
+    ],
+  }, undefined, undefined, {
+    hasUI: true,
+    ui: { select: async () => '仅分析节假日' },
+  });
+
+  assert.equal(result.details.status, 'answered');
+  assert.equal(result.details.value, '仅分析节假日');
+  assert.equal(result.content[0].text, '用户回答：仅分析节假日');
+});
