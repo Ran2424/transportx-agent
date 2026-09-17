@@ -49,10 +49,10 @@ function downloadToFile(sender: Electron.WebContents, url: string) {
       item.setSavePath(destination);
       item.once('done', (_doneEvent, state) => {
         if (state === 'completed') finish(undefined, destination);
-        else finish(new Error(`PDF download ${state}`));
+        else finish(new Error(`Download ${state}`));
       });
     };
-    const timeout = setTimeout(() => finish(new Error('PDF download timed out')), 30_000);
+    const timeout = setTimeout(() => finish(new Error('Download timed out')), 30_000);
     sender.session.on('will-download', onWillDownload);
     try { sender.downloadURL(url); }
     catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
@@ -167,7 +167,10 @@ else {
     ipcMain.handle('transportx:download', async (event: Electron.IpcMainInvokeEvent, value: unknown) => {
       if (event.sender !== mainWindow?.webContents || typeof value !== 'string') throw new Error('Invalid download request');
       const target = new URL(value, workbenchOrigin);
-      if (target.origin !== workbenchOrigin || !/^\/api\/reports\/pdf\/download\/[a-f0-9-]+$/.test(target.pathname)) throw new Error('Invalid download URL');
+      const reportPdf = /^\/api\/reports\/pdf\/download\/[a-f0-9-]+$/.test(target.pathname);
+      const sessionFile = target.pathname === '/api/file/raw' && target.searchParams.get('download') === '1';
+      const citationFile = /^\/api\/live-sessions\/[^/]+\/citation-resources\/[^/]+\/content$/.test(target.pathname) && target.searchParams.get('download') === '1';
+      if (target.origin !== workbenchOrigin || (!reportPdf && !sessionFile && !citationFile)) throw new Error('Invalid download URL');
       return await downloadToFile(event.sender, target.toString());
     });
     const paths = resolveDesktopPaths(app.getAppPath(), process.resourcesPath, app.getPath('userData'));

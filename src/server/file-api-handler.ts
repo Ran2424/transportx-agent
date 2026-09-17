@@ -109,6 +109,46 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     try { if (!fs.statSync(filePath).isFile()) throw new Error('Not a file'); res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'max-age=60' }); fs.createReadStream(filePath).pipe(res); }
     catch (error) { options.json(res, 404, { error: options.errorMessage(error) }); }
   };
+  const serveRawFile = (req: import('node:http').IncomingMessage, res: ServerResponse, filePath: string, download: boolean) => {
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf', '.csv': 'text/csv; charset=utf-8', '.tsv': 'text/tab-separated-values; charset=utf-8', '.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.json': 'application/json; charset=utf-8', '.jsonl': 'application/x-ndjson; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xls': 'application/vnd.ms-excel', '.zip': 'application/zip',
+    };
+    const rangePattern = /^bytes=(\d*)-(\d*)$/;
+    try {
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile()) throw Object.assign(new Error('Not a file'), { code: 'ENOENT' });
+      const baseHeaders = {
+        'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+        'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(filePath))}`,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      };
+      const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : '';
+      if (rangeHeader) {
+        const match = rangeHeader.match(rangePattern);
+        const start = match && match[1] !== '' ? Number(match[1]) : null;
+        const end = match && match[2] !== '' ? Number(match[2]) : null;
+        if (!match || (start === null && end === null) || (start !== null && end !== null && start > end)) {
+          res.writeHead(416, { ...baseHeaders, 'Content-Range': `bytes */${stat.size}` }); res.end(); return;
+        }
+        const rangeStart = start === null ? Math.max(0, stat.size - (end as number)) : start;
+        const rangeEnd = start === null ? stat.size - 1 : end === null ? stat.size - 1 : Math.min(end, stat.size - 1);
+        if (rangeStart >= stat.size || rangeStart > rangeEnd) {
+          res.writeHead(416, { ...baseHeaders, 'Content-Range': `bytes */${stat.size}` }); res.end(); return;
+        }
+        res.writeHead(206, { ...baseHeaders, 'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${stat.size}`, 'Content-Length': rangeEnd - rangeStart + 1 });
+        if (req.method === 'HEAD') { res.end(); return; }
+        fs.createReadStream(filePath, { start: rangeStart, end: rangeEnd }).pipe(res);
+        return;
+      }
+      res.writeHead(200, { ...baseHeaders, 'Content-Length': stat.size });
+      if (req.method === 'HEAD') { res.end(); return; }
+      fs.createReadStream(filePath).pipe(res);
+    } catch (error) {
+      options.json(res, (error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500, { error: options.errorMessage(error) });
+    }
+  };
   const resolveExportedSessionPath = (filePath: string) => {
     const resolved = path.resolve(options.expandHome(filePath || '')), root = path.resolve(options.sessionsDir);
     if (!isWithin(root, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Can only open exported session HTML without a live session') as StatusError; error.status = 403; throw error; }
@@ -131,5 +171,5 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     if (process.platform === 'win32') spawn('explorer.exe', [resolved], { detached: true, stdio: 'ignore' }).unref();
     else execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [resolved], () => {});
   };
-  return { serveFiles, serveFileContent, serveResources, servePreview, resolveOpen, openNative, resolveExportedSessionPath };
+  return { serveFiles, serveFileContent, serveResources, servePreview, serveRawFile, resolveOpen, openNative, resolveExportedSessionPath };
 }

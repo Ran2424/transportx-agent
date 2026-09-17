@@ -70,6 +70,7 @@ export function App() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'live'; session: typeof sessionState.sessions[number] } | { kind: 'history'; session: HistorySession } | null>(null);
+  const [sessionHistoryRevision, setSessionHistoryRevision] = useState(0);
   const [dismissedRuntimeError, setDismissedRuntimeError] = useState('');
   const restoredRef = useRef(false);
 
@@ -289,6 +290,17 @@ export function App() {
     if (session.filePath) setDeleteTarget({ kind: 'history', session });
   }
 
+  async function renameLiveSession(session: typeof sessionState.sessions[number], name: string) {
+    await kernel.commands.session.rename({ sessionId: session.id, name });
+    setSessionHistoryRevision((value) => value + 1);
+  }
+
+  async function renameHistorySession(session: HistorySession, name: string) {
+    if (!session.filePath) return;
+    await kernel.commands.session.rename({ filePath: session.filePath, name });
+    setSessionHistoryRevision((value) => value + 1);
+  }
+
   async function confirmDeleteSession() {
     const target = deleteTarget;
     setDeleteTarget(null);
@@ -306,6 +318,7 @@ export function App() {
       } else if (target.session.filePath) {
         await kernel.commands.session.deleteHistory(target.session.filePath);
       }
+      setSessionHistoryRevision((value) => value + 1);
     } catch (cause) {
       setNotice((cause as { message?: string })?.message || t('app.error.deleteSession'));
     }
@@ -374,7 +387,7 @@ export function App() {
   return (
     <AppShell
       header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} canvasOpen={canvas.open} taskAvailable={taskAvailable} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
-      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} />}
+      sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} onRenameLive={renameLiveSession} onRenameHistory={renameHistorySession} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}

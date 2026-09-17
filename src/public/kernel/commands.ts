@@ -72,6 +72,7 @@ export type ModelProviderAccess = {
 };
 export type CreateSessionInput = { cwd?: string; name?: string; model?: string; profile?: SessionProfileV1 };
 export type ResumeSessionInput = { filePath: string; model?: string; cwd?: string; useCurrentConfiguration?: boolean };
+export type RenameSessionInput = { name: string; sessionId?: string; filePath?: string };
 export type ExtensionUiResponseInput = {
   sessionId: string | null;
   id?: string;
@@ -175,6 +176,7 @@ export type SessionCommands = {
   searchHistory(query: string): Promise<HistorySearchResult[]>;
   create(input: CreateSessionInput): Promise<LiveSession>;
   resume(input: ResumeSessionInput): Promise<LiveSession>;
+  rename(input: RenameSessionInput): Promise<{ name: string }>;
   loadSnapshot(sessionId: string): Promise<SessionSnapshot>;
   loadHistory(filePath: string): Promise<SessionSnapshot>;
   listFiles(sessionId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
@@ -412,6 +414,14 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     async resume(input) {
       const data = await httpJson(deps.http, '/api/live-sessions/resume', { method: 'POST', body: input }, context);
       return (data as { session: LiveSession }).session;
+    },
+
+    async rename(input) {
+      const data = await rpcCommand(deps.http, { type: 'set_session_name', ...input });
+      const name = String((data as { data?: { name?: unknown } })?.data?.name || '');
+      if (!name) throw appError({ code: 'session_rename_invalid_response', category: 'session', message: '会话重命名响应无效', sessionId: input.sessionId, retryable: false });
+      if (input.sessionId) deps.dispatch({ type: 'session/updated', session: { id: input.sessionId, sessionName: name } });
+      return { name };
     },
 
     async loadSnapshot(sessionId) {
