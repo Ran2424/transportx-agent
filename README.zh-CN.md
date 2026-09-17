@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./src/web/assets/x-icon.svg" alt="TransportX" width="96" />
   <h1>TransportX Agent</h1>
-  <p><strong>面向交通分析 Agent 的本地桌面工作台。</strong></p>
+  <p><strong>一个和你看同一张地图的交通分析 Agent。</strong></p>
   <p>用自然语言分析道路、公交、轨道、出行需求与交通数据。TransportX 将分析结果整理为地图、图表、带引用的结论和报告，同时保留相关源文件与工具记录。</p>
   <p>
     <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="版本 3.2.0" />
@@ -92,7 +92,6 @@ Agent 和分析人员使用同一份地图状态。Agent 可以发布 GeoJSON、
 - **地图既是结果，也是输入。** Agent 可以生成空间图层；分析人员可以把点位、要素、矩形或当前视野作为结构化上下文交回 Agent。
 - **分析过程可以复核。** 会话保留工具活动、来源引用、附件、地图和派生文件，不把所有信息压缩成聊天文本。
 - **能力边界清楚。** 数据、领域知识、分析方法和本地工具通过 Module 安装，在任务创建时选择，并按版本恢复。
-- **工作区在本机。** 任务和凭据由本机管理；模型既可以在本地运行，也可以接入已配置的远程服务。
 
 ## 快速开始
 
