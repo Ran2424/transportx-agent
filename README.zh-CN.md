@@ -139,13 +139,13 @@ TransportX 使用并受益于以下开源项目：
 <table>
   <tr>
     <td align="center" width="33%">
-      <a href="https://github.com/aowang-ai"><img src="https://github.com/aowang-ai.png?size=96" width="64" alt="@aowang-ai" /><br /><strong>@aowang-ai</strong></a><br /><sub>Ao Wang 王奥</sub>
+      <a href="https://github.com/aowang-ai"><img src="https://github.com/aowang-ai.png?size=96" width="64" alt="@aowang-ai" /><br /><strong>@aowang-ai</strong></a><br /><sub>王奥</sub>
     </td>
     <td align="center" width="33%">
-      <a href="https://github.com/yonghenggudu"><img src="https://github.com/yonghenggudu.png?size=96" width="64" alt="@yonghenggudu" /><br /><strong>@yonghenggudu</strong></a><br /><sub>Linfeng Guo 郭林峰</sub>
+      <a href="https://github.com/yonghenggudu"><img src="https://github.com/yonghenggudu.png?size=96" width="64" alt="@yonghenggudu" /><br /><strong>@yonghenggudu</strong></a><br /><sub>郭林峰</sub>
     </td>
     <td align="center" width="33%">
-      <a href="https://github.com/runningjian-ui"><img src="https://github.com/runningjian-ui.png?size=96" width="64" alt="@runningjian-ui" /><br /><strong>@runningjian-ui</strong></a><br /><sub>Jian Li 李健</sub>
+      <a href="https://github.com/runningjian-ui"><img src="https://github.com/runningjian-ui.png?size=96" width="64" alt="@runningjian-ui" /><br /><strong>@runningjian-ui</strong></a><br /><sub>李健</sub>
     </td>
   </tr>
 </table>
