@@ -25,6 +25,10 @@ TransportX began with a simple goal: make agent-assisted analysis practical for 
 
 TransportX gives analysts one place to ask questions, inspect evidence, work with maps, and deliver results. Each task has its own workspace, conversation history, files, and resolved capability versions.
 
+### A composable module system
+
+TransportX extends through Modules instead of hard-coding domain logic into the app. Modules can wrap Agent Skills from different tools when they use a `SKILL.md` entry point, then package them with Extensions, datasets, knowledge collections, report templates, and native runtimes. Each task loads only the Modules it needs and records their exact versions, so teams can add another domain without forking the platform and later reopen the task with the same capability set.
+
 | | What TransportX provides |
 |---|---|
 | **Conversational analysis** | Ask questions in natural language and follow the model's responses, tool calls, task steps, and generated files. |
@@ -32,7 +36,7 @@ TransportX gives analysts one place to ask questions, inspect evidence, work wit
 | **Data, charts, and video** | Analyze tables, databases, and code; create charts; install Video Capability for search, playback, snapshots, clips, frame sampling, and time-series metrics. |
 | **Traceable findings** | Keep citations, map context, source files, and tool output connected to the conclusion that used them. |
 | **Report delivery** | Build Markdown reports with figures and citations, then export them as PDF from the desktop app. |
-| **Versioned capabilities** | Install Skills, Extensions, Data, Knowledge, Templates, and native runtimes as Modules. Every task records the exact versions it used. |
+| **Versioned capabilities** | Reuse `SKILL.md`-based Agent Skills or add custom Extensions, Data, Knowledge, Templates, and native runtimes through Modules. |
 
 ## How it works
 
