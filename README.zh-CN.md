@@ -134,6 +134,8 @@ TransportX 使用并受益于以下开源项目：
 
 感谢这些项目的维护者和贡献者。
 
+也感谢 [Ao Wang 王奥](https://github.com/aowang-ai)、[Linfeng Guo 郭林峰](https://github.com/yonghenggudu) 和 [Jian Li 李健](https://github.com/runningjian-ui) 提供帮助并参与产品测试。
+
 ## License
 
 MIT
