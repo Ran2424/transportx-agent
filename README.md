@@ -29,10 +29,14 @@ TransportX gives analysts one place to ask questions, inspect evidence, work wit
 
 TransportX extends through Modules instead of hard-coding domain logic into the app. Modules can wrap Agent Skills from different tools when they use a `SKILL.md` entry point, then package them with Extensions, datasets, knowledge collections, report templates, and native runtimes. Each task loads only the Modules it needs and records their exact versions, so teams can add another domain without forking the platform and later reopen the task with the same capability set.
 
+### Shared GIS context
+
+The agent and analyst work with the same map state. The agent can publish GeoJSON and update layers; the analyst can select features, mark a point, draw a rectangle, or submit the current viewport. TransportX attaches that input to the next message as structured Geo Context, so follow-up analysis keeps the same map revision and spatial scope without asking the analyst to describe the location again.
+
 | | What TransportX provides |
 |---|---|
 | **Conversational analysis** | Ask questions in natural language and follow the model's responses, tool calls, task steps, and generated files. |
-| **Interactive GIS** | Publish GeoJSON, combine routes, stations, grids, and administrative boundaries, then send selected features or map extents back to the agent. |
+| **Interactive GIS** | Share a versioned map context: the agent publishes and updates layers, while the analyst returns features, points, rectangles, or the current viewport. |
 | **Data, charts, and video** | Analyze tables, databases, and code; create charts; install Video Capability for search, playback, snapshots, clips, frame sampling, and time-series metrics. |
 | **Traceable findings** | Keep citations, map context, source files, and tool output connected to the conclusion that used them. |
 | **Report delivery** | Build Markdown reports with figures and citations, then export them as PDF from the desktop app. |
