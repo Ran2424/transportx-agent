@@ -15,6 +15,7 @@ export function createSessionRpcHandlers<T extends SessionNameTarget>(deps: Sess
       handle: (command, reply) => {
         const name = command.name?.trim();
         if (!name) return reply.failure('Name cannot be empty');
+        if (name.length > 120) return reply.failure('Name cannot exceed 120 characters');
         const session = command.sessionId ? deps.getLiveSession(command.sessionId) : null;
         const resolvedFile = command.filePath || session?.sessionFile ? deps.appendSessionName(command.filePath || session!.sessionFile!, name) : null;
         const matching = resolvedFile ? deps.findLiveSessionByFile(resolvedFile) : null;

@@ -35,6 +35,7 @@ type ApiRouteServices = {
   serveFileContent(res: ServerResponse, path: string): void;
   serveResources(res: ServerResponse, session: PiRpcSession): Promise<void>;
   servePreview(res: ServerResponse, path: string): void;
+  serveRawFile(req: IncomingMessage, res: ServerResponse, path: string, download: boolean): void;
   resolveOpen(body: RpcCommand): string;
   openNative(path: string): Promise<void>;
   handleRpc(command: RpcCommand): Promise<RpcResponse>;
@@ -69,6 +70,14 @@ export function createApiRouter(services: ApiRouteServices) {
       throw error;
     }
     return { pdf: await deps.renderReportPdf(title, html), filename: `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf` };
+  };
+  const serveRawFile = ({ req, res, url, deps }: import('./router.js').RouteContext<ApiRouteServices>) => {
+    const sessionId = url.searchParams.get('sessionId');
+    if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
+    const session = deps.sessions.get(sessionId);
+    if (!session) return deps.json(res, 404, { error: 'Live session not found' });
+    try { deps.serveRawFile(req, res, deps.resolveLivePath(session, url.searchParams.get('path')), url.searchParams.get('download') === '1'); }
+    catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
   };
   router
     .get('/api/health', ({ res, deps }) => deps.json(res, 200, deps.health()))
@@ -217,6 +226,8 @@ export function createApiRouter(services: ApiRouteServices) {
       try { deps.serveFileContent(res, deps.resolveLivePath(session, url.searchParams.get('path'))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
+    .get('/api/file/raw', serveRawFile)
+    .head('/api/file/raw', serveRawFile)
     .get('/api/session-resources', async ({ res, url, deps }) => {
       const sessionId = url.searchParams.get('sessionId');
       if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
@@ -378,7 +389,13 @@ export function createApiRouter(services: ApiRouteServices) {
       try {
         const body = await deps.readBody(req);
         if (!body.filePath || typeof body.filePath !== 'string') return deps.json(res, 400, { error: 'filePath required' });
-        fs.unlinkSync(deps.resolveSessionFile(body.filePath));
+        let sessionFile: string;
+        try { sessionFile = deps.resolveSessionFile(body.filePath); }
+        catch (error) {
+          if (deps.errorMessage(error) === 'Session not found') return deps.json(res, 200, { success: true, alreadyDeleted: true });
+          throw error;
+        }
+        fs.unlinkSync(sessionFile);
         deps.json(res, 200, { success: true });
       } catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
     })

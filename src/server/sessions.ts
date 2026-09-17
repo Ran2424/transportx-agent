@@ -26,7 +26,7 @@ import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from 
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
-import { inferSessionTitle, isGenericSessionName } from './session-title.js';
+import { appendSessionNameEntry, inferSessionTitle, isGenericSessionName } from './session-title.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
@@ -121,6 +121,7 @@ export class PiRpcSession {
   terminating: boolean;
   exitCode: number | null;
   titleSet: boolean;
+  pendingSessionNamePersistence: string | null;
   userMessages: string[];
   piVersion: string;
   capabilityTracker: SessionCapabilityTracker;
@@ -160,7 +161,8 @@ export class PiRpcSession {
     this.stdoutBuffer = '';
     this.terminating = false;
     this.exitCode = null;
-    this.titleSet = false;
+    this.titleSet = !!this.sessionName;
+    this.pendingSessionNamePersistence = !opts.sessionFile && this.sessionName ? this.sessionName : null;
     this.userMessages = [];
     this.piVersion = opts.piVersion || PI_RUNTIME_MINIMUM;
     this.capabilityTracker = new SessionCapabilityTracker(this.piVersion);
@@ -303,6 +305,7 @@ export class PiRpcSession {
     const command = resp.command || data.command;
     if (data.sessionFile) {
       this.sessionFile = data.sessionFile;
+      this.persistPendingSessionName();
       this.reconcileProjection();
     }
     if (data.sessionName) this.setSessionName(data.sessionName);
@@ -350,7 +353,10 @@ export class PiRpcSession {
       this.send({ type: 'get_session_stats' }, { timeoutMs: 5000 }).catch(() => {});
     }
     if (event.contextUsage) this.contextUsage = event.contextUsage;
-    if (event.sessionFile) this.sessionFile = event.sessionFile;
+    if (event.sessionFile) {
+      this.sessionFile = event.sessionFile;
+      this.persistPendingSessionName();
+    }
     if (type === 'session_name' && event.name) {
       if (!this.setSessionName(event.name)) return;
       event.name = this.sessionName || event.name;
@@ -486,6 +492,16 @@ export class PiRpcSession {
     if (!trimmed || isGenericSessionName(trimmed)) return false;
     this.sessionName = trimmed;
     return true;
+  }
+
+  persistPendingSessionName() {
+    if (!this.sessionFile || !this.pendingSessionNamePersistence) return;
+    try {
+      appendSessionNameEntry(this.sessionFile, this.pendingSessionNamePersistence);
+      this.pendingSessionNamePersistence = null;
+    } catch (error) {
+      console.error(`[Pi ${this.id}] Failed to persist session name: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   maybeTitle() {
@@ -652,7 +668,7 @@ export class LiveSessionManager {
     this.sessions.delete(id);
     this.liveMetadataSignatures.delete(id);
     this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
-    await termination;
+    void termination;
     return true;
   }
   removeExited(id: string, reason: string) {

@@ -103,6 +103,15 @@ test('attachment commands update the session store through kernel actions', asyn
   assert.equal(store.get().attachmentRevisionBySession['session-1'], 3);
 });
 
+test('session rename uses the RPC port and updates live session state', async () => {
+  const fixture = deps(() => ({ success: true, data: { name: '晚高峰分析' } }));
+  const session = createSessionCommands(fixture.value);
+  assert.deepEqual(await session.rename({ sessionId: 'session-1', name: '晚高峰分析' }), { name: '晚高峰分析' });
+  assert.deepEqual(fixture.paths, ['/api/rpc']);
+  assert.deepEqual(fixture.commands[0], { type: 'set_session_name', sessionId: 'session-1', name: '晚高峰分析' });
+  assert.deepEqual(fixture.actions, [{ type: 'session/updated', session: { id: 'session-1', sessionName: '晚高峰分析' } }]);
+});
+
 test('citation commands validate envelopes behind the HTTP command port', async () => {
   const citations = { protocol: 'pi-citation', version: '2.0', citationSetId: 'set-1', generatedAt: '2026-08-21T00:00:00.000Z', works: [], resources: [], locators: [], occurrences: [], provenance: [] };
   const fixture = deps((command) => command?.locatorId ? { marker: '[1]', citations } : { citations });

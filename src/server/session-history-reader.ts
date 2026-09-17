@@ -38,9 +38,9 @@ export function titleFromMessageContent(content: unknown) {
 
 export function deriveSessionName(entries: JsonRecord[], isGenericSessionName: (name: string) => boolean) {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index] as { type?: string; name?: unknown };
+    const entry = entries[index] as { type?: string; name?: unknown; explicit?: unknown };
     const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
-    if (entry?.type === 'session_info' && name && !isGenericSessionName(name)) return name;
+    if (entry?.type === 'session_info' && name && (entry.explicit === true || !isGenericSessionName(name))) return name;
   }
   for (const entry of entries) {
     const message = entry as { type?: string; message?: { role?: string; content?: unknown } };

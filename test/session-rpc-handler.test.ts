@@ -31,6 +31,16 @@ test('Session RPC handler rejects an empty name before resolving a session', () 
   assert.deepEqual(handler.handle({ type: 'set_session_name', name: ' ' }, reply), { success: false, error: 'Name cannot be empty' });
 });
 
+test('Session RPC handler rejects names longer than the create-session limit', () => {
+  const handler = createSessionRpcHandlers({
+    getLiveSession() { throw new Error('should not resolve'); },
+    findLiveSessionByFile() { throw new Error('should not resolve'); },
+    appendSessionName() { throw new Error('should not append'); },
+    updateLiveSessionName() { throw new Error('should not update'); },
+  }).set_session_name;
+  assert.deepEqual(handler.handle({ type: 'set_session_name', name: 'x'.repeat(121) }, reply), { success: false, error: 'Name cannot exceed 120 characters' });
+});
+
 test('Session read handlers keep message and snapshot responses in the registry', () => {
   const session = { id: 'session-1', entries: [{ type: 'message' }], snapshot: () => ({ schemaVersion: 1, entries: [] }) };
   const handlers = createSessionReadRpcHandlers(() => session);

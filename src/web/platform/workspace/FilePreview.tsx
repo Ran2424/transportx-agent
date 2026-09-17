@@ -22,6 +22,16 @@ export type ExternalPreviewSource = {
   page?: number;
 };
 
+export function sessionFileUrl(sessionId: string, filePath: string, download = false) {
+  return `/api/file/raw?${new URLSearchParams({ sessionId, path: filePath, ...(download ? { download: '1' } : {}) })}`;
+}
+
+function withDownload(url: string) {
+  const target = new URL(url, window.location.origin);
+  target.searchParams.set('download', '1');
+  return `${target.pathname}${target.search}`;
+}
+
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'ico']);
 const PDF_EXTENSIONS = new Set(['pdf']);
 const TABLE_EXTENSIONS = new Set(['csv', 'tsv', 'xlsx', 'xls', 'ods']);
@@ -206,12 +216,15 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
   const [error, setError] = useState('');
   const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [pdfError, setPdfError] = useState('');
+  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
+  const [downloadError, setDownloadError] = useState('');
   const bodyRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(() => ({ x: initialOffset * 26, y: initialOffset * 22 }));
   const [size, setSize] = useState(previewSize);
   const drag = useRef<{ id: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const resize = useRef<{ id: number; corner: PreviewCorner; x: number; y: number; originX: number; originY: number; width: number; height: number } | null>(null);
-  const previewUrl = useMemo(() => externalSource?.url || `/api/file/preview?${new URLSearchParams({ sessionId, path: item.path })}`, [externalSource?.url, item.path, sessionId]);
+  const previewUrl = useMemo(() => externalSource?.url || (presentation.preview === 'pdf' ? sessionFileUrl(sessionId, item.path) : `/api/file/preview?${new URLSearchParams({ sessionId, path: item.path })}`), [externalSource?.url, item.path, presentation.preview, sessionId]);
+  const originalDownloadUrl = useMemo(() => externalSource ? withDownload(externalSource.url) : sessionFileUrl(sessionId, item.path, true), [externalSource, item.path, sessionId]);
 
   useEffect(() => {
     let active = true;
@@ -221,7 +234,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
       void kernel.commands.report.loadSource(sessionId, externalSource.url).then((next) => { if (active) setContent(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.reportLoadFailed')); });
       return () => { active = false; };
     }
-    if (!presentation.preview || presentation.preview === 'image') return;
+    if (!presentation.preview || presentation.preview === 'image' || presentation.preview === 'pdf') return;
     void kernel.commands.session.readFileContent(sessionId, item.path).then((next) => { if (active) setContent(next); }).catch((cause) => { if (active) setError((cause as Error).message || t('workspace.previewLoadFailed')); });
     return () => { active = false; };
   }, [externalSource, item.path, kernel, presentation.preview, sessionId, t]);
@@ -288,6 +301,21 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
     }
   }
 
+  async function downloadOriginal() {
+    if (downloadStatus === 'loading') return;
+    setDownloadStatus('loading'); setDownloadError('');
+    try {
+      const desktop = window as Window & { transportxDesktop?: { download(url: string): Promise<string> } };
+      if (desktop.transportxDesktop) await desktop.transportxDesktop.download(originalDownloadUrl);
+      else window.location.assign(originalDownloadUrl);
+      setDownloadStatus('saved');
+      window.setTimeout(() => setDownloadStatus('idle'), 5_000);
+    } catch (cause) {
+      setDownloadError((cause as Error).message || t('workspace.downloadFailed'));
+      setDownloadStatus('error');
+    }
+  }
+
   const body = presentation.preview === 'image'
     ? <img className="file-preview-image" src={previewUrl} alt={item.name} />
     : presentation.preview === 'pdf'
@@ -305,10 +333,13 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
                 : <ReportPreview source={content.content} reportPath={item.path} sessionId={sessionId} citationProjection={citationProjection} />;
 
   return createPortal(<section className="file-preview-card" role="dialog" aria-modal="false" aria-label={t('workspace.preview', { name: item.name })} style={{ width: size.width, height: size.height, zIndex: 80 + stackIndex, transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))` }} onPointerDownCapture={onActivate}>
-    <header className={`file-preview-header${presentation.preview === 'report' ? ' has-export' : ''}`} onPointerDown={startDrag} onPointerMove={dragPreview} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
+    <header className="file-preview-header has-actions" onPointerDown={startDrag} onPointerMove={dragPreview} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
       <span className={`file-preview-type is-${presentation.kind}`}><Icon name={presentation.icon} />{presentation.label}</span>
       <strong title={item.path}>{item.name}</strong>
-      {presentation.preview === 'report' ? <button className={`file-preview-export${pdfStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={pdfStatus === 'loading'} title={pdfError || t('workspace.downloadPdf')} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadPdf()}>{pdfStatus === 'loading' ? t('workspace.generating') : pdfStatus === 'saved' ? t('workspace.downloaded') : pdfStatus === 'error' ? t('workspace.retryPdf') : t('workspace.download')}</button> : null}
+      <div className="file-preview-actions">
+        <button className={`file-preview-export${downloadStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={downloadStatus === 'loading'} title={downloadError || t('workspace.downloadOriginal')} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadOriginal()}>{downloadStatus === 'loading' ? t('workspace.downloading') : downloadStatus === 'saved' ? t('workspace.downloaded') : t('workspace.downloadOriginal')}</button>
+        {presentation.preview === 'report' ? <button className={`file-preview-export${pdfStatus === 'error' ? ' is-error' : ''}`} type="button" disabled={pdfStatus === 'loading'} title={pdfError || t('workspace.downloadPdf')} onPointerDown={(event) => event.stopPropagation()} onClick={() => void downloadPdf()}>{pdfStatus === 'loading' ? t('workspace.generating') : pdfStatus === 'saved' ? t('workspace.downloaded') : pdfStatus === 'error' ? t('workspace.retryPdf') : t('workspace.download')}</button> : null}
+      </div>
       <button className="icon-button" type="button" aria-label={t('workspace.previewClose')} onPointerDown={(event) => event.stopPropagation()} onClick={onClose}><Icon name="close" /></button>
     </header>
     <div ref={bodyRef} className={`file-preview-body is-${presentation.kind}`}>{body}</div>

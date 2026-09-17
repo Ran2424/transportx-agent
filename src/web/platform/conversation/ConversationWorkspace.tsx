@@ -23,6 +23,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   const viewportRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const data = conversation.bySession[sessionId];
+  const entries = data?.snapshotEntries || [];
   const attachments = sessions.attachmentsBySession[sessionId] || {};
   const [citationEnvelope, setCitationEnvelope] = useState<CitationEnvelope | null>(null);
   const [citationManagerOpen, setCitationManagerOpen] = useState(false);
@@ -33,8 +34,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
       if (active) setCitationEnvelope(citations);
     }).catch(() => {});
     return () => { active = false; };
-  }, [kernel, sessionId]);
-  const entries = data?.snapshotEntries || [];
+  }, [data?.live.active, entries.length, kernel, sessionId]);
   const liveTools = tools.bySession[sessionId];
   const session = sessions.sessions.find((item) => item.id === sessionId);
   const compacting = !!sessions.compactingBySession[sessionId];

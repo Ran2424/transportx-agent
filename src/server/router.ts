@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-export type HttpMethod = 'GET' | 'POST' | 'DELETE' | 'OPTIONS';
+export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'DELETE' | 'OPTIONS';
 
 export type RouteContext<Deps> = {
   req: IncomingMessage;
@@ -29,6 +29,7 @@ export class ServerRouter<Deps> {
   }
 
   get(path: string | RegExp, handler: RouteHandler<Deps>) { return this.add('GET', path, handler); }
+  head(path: string | RegExp, handler: RouteHandler<Deps>) { return this.add('HEAD', path, handler); }
   post(path: string | RegExp, handler: RouteHandler<Deps>) { return this.add('POST', path, handler); }
   delete(path: string | RegExp, handler: RouteHandler<Deps>) { return this.add('DELETE', path, handler); }
 

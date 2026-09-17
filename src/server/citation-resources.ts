@@ -54,7 +54,7 @@ export function handleCitationResourceRoute(
   }
   const knowledgeRoots = typeof deps.knowledgeRoots === 'function' ? deps.knowledgeRoots(session) : deps.knowledgeRoots;
   if (match[3] === 'preview') serveCitationPreview(req, res, session, resource, knowledgeRoots);
-  else serveCitationResource(res, session, resource, knowledgeRoots);
+  else serveCitationResource(req, res, session, resource, knowledgeRoots);
   return true;
 }
 
@@ -86,13 +86,14 @@ function resourceError(res: ServerResponse, error: unknown) {
   return json(res, 500, { error: 'Failed to read citation resource' });
 }
 
-function serveCitationResource(res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
+function serveCitationResource(req: IncomingMessage, res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
   try {
     const { resolved, buffer, sha256 } = readCitationResource(session, resource, knowledgeRoots);
+    const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
     const headers: Record<string, string | number> = {
       'Content-Type': resource.kind === 'web' && resource.mimeType === 'text/html' ? 'text/plain; charset=utf-8' : resource.mimeType,
       'Content-Length': buffer.length,
-      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(path.basename(resolved))}`,
+      'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(resolved))}`,
       'Cache-Control': 'private, max-age=0, must-revalidate',
       'ETag': `"${sha256}"`,
       'X-Content-Type-Options': 'nosniff',
