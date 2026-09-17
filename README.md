@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./src/web/assets/x-icon.svg" alt="TransportX" width="96" />
   <h1>TransportX Agent</h1>
-  <p><strong>A local-first desktop workspace for traffic analysis agents.</strong></p>
+  <p><strong>A traffic analysis agent that works from the same map as you.</strong></p>
   <p>Ask about roads, transit, traffic demand, and mobility data. TransportX turns the work into maps, charts, cited findings, and reports while keeping the source files and tool history close at hand.</p>
   <p>
     <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="Version 3.2.0" />
@@ -92,7 +92,6 @@ The desktop, Web, and CLI clients share one local Agent Host. It manages session
 - **The map is both output and input.** The agent can create spatial layers, and analysts can return a point, feature, rectangle, or viewport as structured context.
 - **Work stays inspectable.** Sessions retain tool activity, source references, attachments, maps, and derived artifacts instead of flattening everything into chat text.
 - **Capabilities are explicit.** Data, domain knowledge, analysis methods, and native tools are installed as Modules, selected when a task starts, and pinned for recovery.
-- **The workspace is local.** Tasks and credentials are managed on the machine. Models can run locally or through a configured remote provider.
 
 ## Quick start
 
