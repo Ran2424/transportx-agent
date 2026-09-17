@@ -5,6 +5,8 @@ import type { HistoryProject, HistorySession } from '../../../public/kernel/comm
 import { appKernel } from '../../app/composition-root';
 import { BrandMark } from '../../components/BrandMark';
 import { Icon } from '../../components/icons';
+import { Button } from '../../components/ui/button';
+import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { relativeTime, sessionTitle } from '../../lib/formatting';
 import { CapabilityPane } from '../capabilities/CapabilityPane';
 import i18n from '../../i18n';
@@ -13,6 +15,7 @@ type SessionSidebarProps = {
   open: boolean;
   sessions: LiveSession[];
   activeSessionId: string | null;
+  historyRevision: number;
   onClose(): void;
   onGoHome(): void;
   onNewSession(): void;
@@ -20,6 +23,8 @@ type SessionSidebarProps = {
   onSelectHistory(session: HistorySession, project: HistoryProject): void;
   onDeleteLive(session: LiveSession): Promise<void>;
   onDeleteHistory(session: HistorySession): Promise<void>;
+  onRenameLive(session: LiveSession, name: string): Promise<void>;
+  onRenameHistory(session: HistorySession, name: string): Promise<void>;
 };
 
 function historyTitle(session: HistorySession) {
@@ -59,6 +64,7 @@ export function SessionSidebar({
   open,
   sessions,
   activeSessionId,
+  historyRevision,
   onClose,
   onGoHome,
   onNewSession,
@@ -66,6 +72,8 @@ export function SessionSidebar({
   onSelectHistory,
   onDeleteLive,
   onDeleteHistory,
+  onRenameLive,
+  onRenameHistory,
 }: SessionSidebarProps) {
   const { t } = useTranslation();
   const kernel = appKernel;
@@ -77,6 +85,10 @@ export function SessionSidebar({
   const [capabilityCollapsed, setCapabilityCollapsed] = useState(initialCapabilityCollapsed);
   const [conversationCollapsed, setConversationCollapsed] = useState(initialConversationCollapsed);
   const [contextMenu, setContextMenu] = useState<{ item: SidebarSession; x: number; y: number } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<SidebarSession | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -99,7 +111,7 @@ export function SessionSidebar({
       .catch(() => { if (current) setError(t('sessions.loadFailed')); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [kernel, refreshKey, t]);
+  }, [historyRevision, kernel, refreshKey, t]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const scenarioSessions = useMemo(() => {
@@ -155,7 +167,31 @@ export function SessionSidebar({
     if (!item) return;
     if (item.live) await onDeleteLive(item.live);
     else if (item.history) await onDeleteHistory(item.history);
-    setRefreshKey((value) => value + 1);
+  }
+
+  function beginRename() {
+    const item = contextMenu?.item;
+    setContextMenu(null);
+    if (!item) return;
+    setRenameTarget(item);
+    setRenameValue(item.title);
+    setRenameError('');
+  }
+
+  async function renameConversation() {
+    const item = renameTarget;
+    const name = renameValue.trim();
+    if (!item || !name || renaming) return;
+    setRenaming(true); setRenameError('');
+    try {
+      if (item.live) await onRenameLive(item.live, name);
+      else if (item.history) await onRenameHistory(item.history, name);
+      setRenameTarget(null);
+    } catch (cause) {
+      setRenameError((cause as Error).message || t('sessions.renameFailed'));
+    } finally {
+      setRenaming(false);
+    }
   }
 
   return (
@@ -199,7 +235,11 @@ export function SessionSidebar({
         </div>
 
       </aside>
-      {contextMenu ? <div className="session-context-menu" role="menu" style={{ left: Math.min(contextMenu.x, window.innerWidth - 176), top: Math.min(contextMenu.y, window.innerHeight - 48) }}><button type="button" role="menuitem" onClick={() => void deleteConversation()}>{t('sessions.deleteConversation')}</button></div> : null}
+      {contextMenu ? <div className="session-context-menu" role="menu" style={{ left: Math.min(contextMenu.x, window.innerWidth - 176), top: Math.min(contextMenu.y, window.innerHeight - 84) }}><button type="button" role="menuitem" onClick={beginRename}>{t('sessions.renameConversation')}</button><button type="button" role="menuitem" onClick={() => void deleteConversation()}>{t('sessions.deleteConversation')}</button></div> : null}
+      <Dialog open={!!renameTarget} onOpenChange={(next) => { if (!next && !renaming) setRenameTarget(null); }} title={t('sessions.renameConversation')} className="confirmation-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={renaming}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!renameValue.trim() || renaming} onClick={() => void renameConversation()}>{renaming ? t('common.saving') : t('common.save')}</Button></>}>
+        <label className="field-label"><span>{t('sessions.taskName')}</span><input value={renameValue} maxLength={120} autoFocus onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void renameConversation(); } }} /></label>
+        {renameError ? <p className="form-error">{renameError}</p> : null}
+      </Dialog>
       <button className={`mobile-scrim${open ? ' is-visible' : ''}`} type="button" aria-label={t('sessions.toggleCloseSidebar')} onClick={onClose} />
     </>
   );

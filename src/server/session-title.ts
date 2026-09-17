@@ -1,6 +1,12 @@
+import fs = require('node:fs');
+
 export function isGenericSessionName(name: unknown) {
   const normalized = String(name || '').trim().toLowerCase();
   return normalized === 'chat' || normalized === 'new chat' || normalized === 'untitled' || normalized === 'untitled chat' || normalized === 'session';
+}
+
+export function appendSessionNameEntry(filePath: string, name: string) {
+  fs.appendFileSync(filePath, `${JSON.stringify({ type: 'session_info', name, explicit: true, timestamp: new Date().toISOString() })}\n`);
 }
 
 export function inferSessionTitle(messages: string[]) {

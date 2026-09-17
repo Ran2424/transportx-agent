@@ -12,6 +12,7 @@ test('derives a stable session name from explicit metadata or the first user mes
     { type: 'session_info', name: 'New session' },
     { type: 'session_info', name: '徐家汇早高峰分析' },
   ] as any, generic), '徐家汇早高峰分析');
+  assert.equal(deriveSessionName([{ type: 'session_info', name: 'New session', explicit: true }] as any, generic), 'New session');
   assert.equal(deriveSessionName([{ type: 'message', message: { role: 'user', content: [{ type: 'text', text: 'Please analyze weekday congestion at Xujiahui. Include delays.' }] } }] as any, generic), 'Analyze weekday congestion at Xujiahui');
   assert.equal(titleFromMessageContent([{ type: 'thinking', thinking: 'ignored' }]), null);
 });

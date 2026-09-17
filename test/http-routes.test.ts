@@ -442,6 +442,8 @@ test('serves Registry-backed citation resources without exposing arbitrary sessi
   assert.equal(response.status, 200);
   assert.equal(await response.text(), report.toString());
   assert.equal(response.headers.get('etag'), `"${sha256}"`);
+  const download = await fetch(`${url}?download=1`);
+  assert.match(String(download.headers.get('content-disposition')), /^attachment;/);
   assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/citation-resources/${encodeURIComponent(resourceId)}/content`)).status, 404);
   assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citation-resources/${encodeURIComponent('resource:secret')}/content`)).status, 404);
   const citations = await jsonBody(await fetch(`${base}/api/live-sessions/${owner.id}/citations`));
@@ -450,6 +452,54 @@ test('serves Registry-backed citation resources without exposing arbitrary sessi
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locatorId: 'locator:report', role: 'support' }),
   }));
   assert.match(occurrence.marker, /^\[\[cite:occurrence_/);
+});
+
+test('serves session files inline or as downloads with PDF byte ranges', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-file-raw-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const payload = Buffer.from('%PDF-1.7\ntransportx-preview');
+  const filePath = path.join(cwd, '课程设计.pdf');
+  fs.writeFileSync(filePath, payload);
+  const session = fakeSession('tau_file_raw');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  const url = `${base}/api/file/raw?${new URLSearchParams({ sessionId: session.id, path: filePath })}`;
+
+  const inline = await fetch(url);
+  assert.equal(inline.status, 200);
+  assert.equal(inline.headers.get('content-type'), 'application/pdf');
+  assert.match(String(inline.headers.get('content-disposition')), /^inline;/);
+  assert.deepEqual(Buffer.from(await inline.arrayBuffer()), payload);
+
+  const ranged = await fetch(url, { headers: { Range: 'bytes=5-11' } });
+  assert.equal(ranged.status, 206);
+  assert.equal(ranged.headers.get('content-range'), `bytes 5-11/${payload.length}`);
+  assert.deepEqual(Buffer.from(await ranged.arrayBuffer()), payload.subarray(5, 12));
+
+  const download = await fetch(`${url}&download=1`);
+  assert.match(String(download.headers.get('content-disposition')), /^attachment;/);
+  assert.equal((await fetch(`${base}/api/file/raw?${new URLSearchParams({ sessionId: session.id, path: path.join(cwd, '..', 'secret.pdf') })}`)).status, 403);
+});
+
+test('live and historical session deletion respond without waiting and are idempotent', async (t: TestContext) => {
+  let finishTermination!: () => void;
+  const termination = new Promise<void>((resolve) => { finishTermination = resolve; });
+  const session = fakeSession('tau_delete_fast');
+  session.sessionFile = '';
+  session.terminate = async () => termination;
+  liveManager.sessions.set(session.id, session);
+  const closed = await fetch(`${base}/api/live-sessions/${session.id}`, { method: 'DELETE' });
+  assert.equal(closed.status, 200);
+  assert.equal(liveManager.sessions.has(session.id), false);
+  finishTermination();
+
+  const filePath = writeSessionFileAt(PROJ_DIR, 'delete-idempotent.jsonl', [{ type: 'session', id: 'delete-idempotent', cwd: '/tmp' }]);
+  const request = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }) });
+  assert.equal((await request()).status, 200);
+  const repeated = await request();
+  assert.equal(repeated.status, 200);
+  assert.equal((await jsonBody(repeated)).alreadyDeleted, true);
+  t.after(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); });
 });
 
 test('serves a knowledge citation from the selected asset root instead of a task copy', async (t: TestContext) => {
