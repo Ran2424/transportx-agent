@@ -66,3 +66,62 @@ test('show_map activates a restored map without changing its revision or content
   assert.deepEqual(result.details.visualization.scene, fixture.details.visualization.scene);
   await assert.rejects(() => tools.get('present_visualization').execute('bad', { command: 'show_map', visualizationId: 'missing' }, undefined, undefined, ctx), /Visualization not found/);
 });
+
+test('manual documents survive tool snapshots, close/reopen and repeated citation navigation', async () => {
+  const { EMPTY_CANVAS, projectCanvas, syncCanvas, withCanvasDocuments, openCanvasDocument, closeCanvasTab, activateCanvas } = await canvasApi();
+  const { resolveDocument } = await import('../src/web/platform/canvas/document-state.ts');
+  const document = resolveDocument({ sessionId: 'one', title: '报告', path: 'report.md' }, '/task')!;
+  let state = openCanvasDocument(EMPTY_CANVAS, document);
+  assert.equal(state.open, true);
+  state = syncCanvas(state, withCanvasDocuments(projectCanvas([], []), state));
+  assert.deepEqual(state.tabIds, [document.id]);
+  state = openCanvasDocument(state, document);
+  assert.equal(state.documents.length, 1);
+  assert.equal(state.tabIds.length, 1);
+  const locator = { locatorId: 'section', resourceId: 'report', section: '结论' };
+  state = openCanvasDocument(state, { ...document, locator });
+  state = openCanvasDocument(state, { ...document, locator });
+  assert.equal(state.documents[0].navigationId, 2, 'repeated navigation is an explicit request');
+  state = closeCanvasTab(state, document.id);
+  assert.equal(state.open, false);
+  assert.equal(syncCanvas(state, withCanvasDocuments(projectCanvas([], []), state)), state);
+  state = activateCanvas(state, document.id);
+  const withMap = projectCanvas([mapResult('map', 'present')] as any, []);
+  state = syncCanvas(state, withCanvasDocuments(withMap, state));
+  state = syncCanvas(state, withCanvasDocuments(projectCanvas([], []), state));
+  assert.deepEqual(state.tabIds, [document.id], 'removing a map does not remove the document');
+  assert.deepEqual(EMPTY_CANVAS.documents, [], 'other sessions retain an empty initial state');
+});
+
+test('document identity uses full paths, owning sessions and pinned citation versions', async () => {
+  const { resolveDocument, documentPath } = await import('../src/web/platform/canvas/document-state.ts');
+  const request = { sessionId: 'one', title: '报告', path: 'output/../report.md' };
+  const first = resolveDocument(request, '/task')!;
+  assert.equal(first.id, resolveDocument({ ...request, path: '/task/report.md' }, '/task')!.id);
+  assert.notEqual(first.id, resolveDocument({ ...request, path: 'other/report.md' }, '/task')!.id);
+  assert.notEqual(first.id, resolveDocument({ ...request, sessionId: 'two' }, '/task')!.id);
+  assert.equal(documentPath('output\\..\\report.md', 'C:\\task'), 'C:/task/report.md');
+  const resource = { resourceId: 'report', workId: 'work', kind: 'document', scope: 'artifact', relativePath: 'report.md', mimeType: 'text/markdown', sha256: 'a'.repeat(64) } as const;
+  const registry = { resources: [resource] } as any;
+  const pinned = resolveDocument(request, '/task', registry)!;
+  assert.equal(pinned.resource, resource);
+  const canonical = resolveDocument({ ...request, path: '/private/task/report.md' }, '/task', registry, '/private/task')!;
+  assert.equal(canonical.id, pinned.id, 'the server canonical root joins directory aliases to registered resources');
+  assert.equal(resolveDocument({ ...request, path: '/task/report.md' }, '/task', registry, '/private/task')!.id, pinned.id);
+  assert.equal(pinned.id, resolveDocument({ ...request, resource }, '/task')!.id);
+  assert.notEqual(pinned.id, resolveDocument({ ...request, resource: { ...resource, sha256: 'b'.repeat(64) } }, '/task')!.id);
+  assert.equal(resolveDocument(request, '/task', { resources: [{ ...resource, scope: 'knowledge' }] } as any)!.resource, undefined);
+  assert.equal(resolveDocument(request, '/task', { resources: [resource, { ...resource, resourceId: 'second' }] } as any)!.resource, undefined, 'ambiguous registrations are not merged');
+  assert.equal(resolveDocument({ ...request, path: 'image.png' }, '/task'), null);
+});
+
+test('document headings have unique anchors and ambiguous or absent citations do not guess', async () => {
+  const { documentHeadings, documentTarget } = await import('../src/web/platform/canvas/document-state.ts');
+  const headings = documentHeadings(['结论', '结论', '结论-2', 'Methods & data'].map((text) => ({ text, level: 2 })));
+  assert.equal(new Set(headings.map((item) => item.id)).size, headings.length);
+  const locator = { locatorId: 'one', resourceId: 'report' };
+  assert.equal(documentTarget(headings, { ...locator, section: '结论' }), null);
+  assert.equal(documentTarget(headings, { ...locator, nodeId: '#结论-2', section: '结论' }), '结论-2');
+  assert.equal(documentTarget(headings, { ...locator, section: 'Methods & data' }), 'methods-data');
+  assert.equal(documentTarget(headings, { ...locator, section: '不存在', quote: '结论' }), null);
+});

@@ -1003,6 +1003,22 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .canvas-tab .canvas-tab-close { flex: 0 0 auto; padding: 0 5px; }
 .canvas-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; }
 .canvas-panel[hidden] { display: none; }
+.document-workspace { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; outline: none; background: var(--surface-canvas); }
+.document-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 9px 12px; border-bottom: 1px solid var(--border-default); }
+.document-source { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 11px; }
+.document-toolbar button { padding: 5px 8px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); background: var(--surface-raised); color: var(--text-primary); font-size: 11px; cursor: pointer; }
+.document-toolbar button:disabled { opacity: .5; cursor: default; }
+.document-toolbar button:focus-visible, .document-outline button:focus-visible { outline: 2px solid var(--selection-border); outline-offset: 2px; }
+.document-reading-layout { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.document-outline { flex: 0 0 180px; max-width: 35%; overflow: auto; padding: 10px 4px; border-right: 1px solid var(--border-default); }
+.document-outline button { display: block; width: 100%; padding: 7px 10px; border: 0; border-radius: var(--tx-radius-sm); background: transparent; color: var(--text-secondary); text-align: start; font-size: 12px; overflow-wrap: anywhere; cursor: pointer; }
+.document-outline button:hover { background: var(--selection-bg); color: var(--selection-fg); }
+.document-scroll { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; overflow-anchor: none; }
+.document-scroll .file-preview-report { overflow-wrap: anywhere; }
+.document-pdf { display: block; flex: 1; min-height: 0; width: 100%; border: 0; }
+.document-notice, .document-pdf-help { margin: 0; padding: 8px 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.document-notice.is-error { color: var(--status-danger); }
+.document-pdf-help { border-top: 1px solid var(--border-default); font-size: 11px; }
 .canvas-reopen { width: 32px; height: 28px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-primary); background: var(--surface-default); font-size: 12px; }
 
 .video-workspace { min-height: 0; flex: 1; display: flex; flex-direction: column; }

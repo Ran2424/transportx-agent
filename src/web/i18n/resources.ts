@@ -1,10 +1,21 @@
 export const zhCN = {
+  'document.reader': '文档：{{title}}',
+  'document.outline': '目录',
+  'document.refresh': '刷新文档',
+  'document.currentFile': '当前文件',
+  'document.citationVersion': '引用版本',
+  'document.locationUnavailable': '未找到引用位置，可通过目录或阅读器浏览原文。',
+  'document.versionChanged': '引用资源已变更，当前引用版本不可用。',
+  'document.loadFailed': '无法读取文档（HTTP {{status}}）。',
+  'document.pdfUnavailable': '内嵌 PDF 预览不可用，请下载原文件查看。',
+  'document.pdfHelp': '若 PDF 未显示，可使用上方“下载原文件”。',
+
   'canvas.title': '画布',
   'canvas.views': '成果视图',
   'canvas.toggle': '切换画布',
   'canvas.show': '打开画布',
   'canvas.hide': '收起画布',
-  'canvas.description': '查看当前任务的地图与视频成果',
+  'canvas.description': '查看当前任务的地图、视频与文档',
   'canvas.closeView': '关闭视图：{{title}}',
   'canvas.reopen': '重新打开成果',
 
@@ -606,12 +617,23 @@ export const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 export const enUS: Record<TranslationKey, string> = {
+  'document.reader': 'Document: {{title}}',
+  'document.outline': 'Contents',
+  'document.refresh': 'Refresh document',
+  'document.currentFile': 'Current file',
+  'document.citationVersion': 'Citation version',
+  'document.locationUnavailable': 'Citation location not found. Browse the contents or the original document.',
+  'document.versionChanged': 'The source has changed. This citation version is unavailable.',
+  'document.loadFailed': 'Could not load the document (HTTP {{status}}).',
+  'document.pdfUnavailable': 'Embedded PDF preview is unavailable. Download the original file to read it.',
+  'document.pdfHelp': 'If the PDF does not appear, use Download original above.',
+
   'canvas.title': 'Canvas',
   'canvas.views': 'Result views',
   'canvas.toggle': 'Toggle canvas',
   'canvas.show': 'Open canvas',
   'canvas.hide': 'Hide canvas',
-  'canvas.description': 'View maps and videos for this task',
+  'canvas.description': 'View maps, videos and documents for this task',
   'canvas.closeView': 'Close view: {{title}}',
   'canvas.reopen': 'Reopen result',
 

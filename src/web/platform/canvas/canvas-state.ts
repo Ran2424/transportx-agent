@@ -2,13 +2,26 @@ import type { SessionEntry } from '../../../public/app-types.js';
 import type { ToolExecution } from '../../../public/kernel/actions.js';
 import { getVisualizationFromToolResult, type VisualizationEnvelope } from '../../../contracts/geo.ts';
 import { getVideoSceneFromToolResult, type VideoSceneItemV1 } from '../../../contracts/video.ts';
+import type { DocumentView } from './document-state.ts';
 
 export type CanvasView =
+  | DocumentView
   | { id: string; kind: 'geo'; title: string; envelope: VisualizationEnvelope }
   | { id: string; kind: 'video'; title: string; item: VideoSceneItemV1; revision: number; compareItem?: VideoSceneItemV1 };
 export type CanvasContent = { views: CanvasView[]; presentation: { key: string; id: string } | null };
-export type CanvasState = { tabIds: string[]; activeId: string | null; open: boolean; presentationKey: string | null };
-export const EMPTY_CANVAS: CanvasState = { tabIds: [], activeId: null, open: false, presentationKey: null };
+export type CanvasState = { tabIds: string[]; activeId: string | null; open: boolean; presentationKey: string | null; documents: DocumentView[] };
+export const EMPTY_CANVAS: CanvasState = { tabIds: [], activeId: null, open: false, presentationKey: null, documents: [] };
+
+export function openCanvasDocument(state: CanvasState, document: DocumentView): CanvasState {
+  const previous = state.documents.find((view) => view.id === document.id);
+  const next = { ...document, locator: document.locator ?? previous?.locator, navigationId: (previous?.navigationId ?? 0) + (document.locator ? 1 : 0) };
+  const documents = previous ? state.documents.map((view) => view.id === next.id ? next : view) : [...state.documents, next];
+  return activateCanvas({ ...state, documents }, next.id);
+}
+
+export function withCanvasDocuments(content: CanvasContent, state: CanvasState): CanvasContent {
+  return { ...content, views: [...content.views, ...state.documents] };
+}
 
 // Presentation order follows tool results, never unrelated Geo/Video revision counters.
 export function projectCanvas(entries: SessionEntry[], executions: ToolExecution[]): CanvasContent {
@@ -67,7 +80,7 @@ export function syncCanvas(state: CanvasState, content: CanvasContent): CanvasSt
   if (target && target.key !== state.presentationKey) {
     next.presentationKey = target.key;
     // Restore existing results on first load; later publications open their own tab.
-    if (state.presentationKey === null) next.tabIds = content.views.map((view) => view.id);
+    if (state.presentationKey === null) next.tabIds = [...new Set([...next.tabIds, ...content.views.filter((view) => view.kind !== 'document').map((view) => view.id)])];
     if (available.has(target.id)) next = activateCanvas(next, target.id);
   }
   return JSON.stringify(next) === JSON.stringify(state) ? state : next;

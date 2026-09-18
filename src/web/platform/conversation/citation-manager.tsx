@@ -5,8 +5,10 @@ import { exportCitationBibliography } from '../../../contracts/citation-compiler
 import type { CitationEnvelope, CitationLocator, CitationResource, CitationWork } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
+import { useOpenDocument } from '../canvas/document-context';
+import { documentFormat } from '../canvas/document-state';
 import { FilePreview } from '../workspace/FilePreview';
-import { artifactPreviewKind, citationLocatorPosition, citationResourceUrl } from './citation-resource';
+import { citationLocatorPosition, citationResourceUrl } from './citation-resource';
 import type { ResolvedCitation } from '../../features/citation/citation-projection';
 
 function downloadCitationExport(envelope: CitationEnvelope, format: 'bibtex' | 'csl-json' | 'ris') {
@@ -22,6 +24,7 @@ function downloadCitationExport(envelope: CitationEnvelope, format: 'bibtex' | '
 export function CitationManager({ sessionId, onClose }: { sessionId: string; onClose(): void }) {
   const { t } = useTranslation();
   const kernel = appKernel;
+  const openDocument = useOpenDocument();
   const [envelope, setEnvelope] = useState<CitationEnvelope | null>(null);
   const [scope, setScope] = useState<'all' | CitationResource['scope']>('all');
   const [query, setQuery] = useState('');
@@ -54,6 +57,7 @@ export function CitationManager({ sessionId, onClose }: { sessionId: string; onC
   }, [envelope, query, scope]);
   const previewCitation = (resource: CitationResource, work: CitationWork, locator?: CitationLocator) => {
     if (!locator) return;
+    if (documentFormat(resource.relativePath, resource.mimeType)) { openDocument({ sessionId, title: work.title, path: resource.relativePath, resource, locator }); onClose(); return; }
     setPreview({ occurrence: { occurrenceId: `manager:${locator.locatorId}`, locatorId: locator.locatorId, containerType: 'document', containerId: 'citation-manager' }, resource, work, locator, number: 0 });
   };
   return createPortal(<div className="citation-manager-backdrop" role="presentation" onMouseDown={onClose}>
@@ -65,6 +69,6 @@ export function CitationManager({ sessionId, onClose }: { sessionId: string; onC
         return <article key={resource.resourceId}><div><span className="citation-manager-scope">{resource.scope}</span><strong>{work.title}</strong><small>{work.citekey || resource.resourceId} · {t('common.locationCount', { uses, locations: locators.length })}</small></div><div className="citation-manager-locator"><select value={locator?.locatorId || ''} disabled={!locators.length} aria-label={t('conversation.sourceLocation')} onChange={(event) => setSelectedLocators((current) => ({ ...current, [resource.resourceId]: event.target.value }))}>{locators.map((item) => <option key={item.locatorId} value={item.locatorId}>{citationLocatorPosition(item)}</option>)}</select><button type="button" disabled={!locator} onClick={() => previewCitation(resource, work, locator)}>{t('conversation.viewEvidence')}</button></div>{envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).length ? <p>{t('conversation.provenance', { relations: envelope.provenance.filter((edge) => edge.fromResourceId === resource.resourceId || edge.toResourceId === resource.resourceId).map((edge) => edge.relation).join(', ') })}</p> : null}</article>;
       }) : <p className="citation-manager-status">{t('conversation.noCitations')}</p>}</div>
     </section>
-    {preview ? <FilePreview item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }} sessionId={sessionId} stackIndex={0} initialOffset={0} externalSource={{ url: citationResourceUrl(sessionId, preview.resource.resourceId), kind: artifactPreviewKind(preview.resource), mimeType: preview.resource.mimeType, page: preview.locator.page }} onActivate={() => {}} onClose={() => setPreview(null)} /> : null}
+    {preview ? <FilePreview item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }} sessionId={sessionId} stackIndex={0} initialOffset={0} externalSource={{ url: citationResourceUrl(sessionId, preview.resource.resourceId), kind: preview.resource.kind === 'image' ? 'image' : 'document', mimeType: preview.resource.mimeType }} onActivate={() => {}} onClose={() => setPreview(null)} /> : null}
   </div>, document.body);
 }
