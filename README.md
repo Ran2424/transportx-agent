@@ -42,14 +42,6 @@ The agent and analyst work with the same map state. The agent can publish GeoJSO
 | **Report delivery** | Build Markdown reports with figures and citations, then export them as PDF from the desktop app. |
 | **Versioned capabilities** | Reuse `SKILL.md`-based Agent Skills or add custom Extensions, Data, Knowledge, Templates, and native runtimes through Modules. |
 
-## How it works
-
-<p align="center">
-  <img src="./docs/images/architecture-overview.png" alt="TransportX Agent architecture and execution flow" width="920" />
-</p>
-
-The desktop, Web, and CLI clients share one local Agent Host. It manages sessions, resources, models, and versioned Modules; Pi runs the agent loop and calls the selected model, Python analysis environment, and domain services.
-
 ## One workspace, multiple analysis surfaces
 
 <table>
@@ -86,6 +78,14 @@ The desktop, Web, and CLI clients share one local Agent Host. It manages session
     <td align="center">Present findings with charts, tables, comparisons, and written conclusions</td>
   </tr>
 </table>
+
+## How it works
+
+<p align="center">
+  <img src="./docs/images/architecture-overview-en.png" alt="TransportX Agent architecture and execution flow" width="920" />
+</p>
+
+The desktop, Web, and CLI clients share one local Agent Host. It manages sessions, resources, models, and versioned Modules; Pi runs the agent loop and calls the selected model, Python analysis environment, and domain services.
 
 ## Design principles
 

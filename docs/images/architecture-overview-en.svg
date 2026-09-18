@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="850" viewBox="0 0 1160 850" role="img" aria-labelledby="title desc">
+<title id="title">TransportX Architecture</title>
+<desc id="desc">Interaction surfaces connect to the local Agent Host, which assembles versioned Modules and starts the Pi Agent. The Pi Agent calls models, tools, Python analysis, and domain services.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#6f8297" stroke-width="1.6"/>
+  </marker>
+</defs>
+<style>
+text{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.heading{font-size:28px;font-weight:680;fill:#172e44}.subtitle{font-size:14px;fill:#65778a}
+.kicker{font-size:12px;font-weight:700;letter-spacing:1px}.name{font-size:23px;font-weight:680;fill:#172e44}
+.body{font-size:15px;fill:#42576d}.small{font-size:12px;fill:#68798a}
+.module-title{font-size:15px;font-weight:650;fill:#73521d}.module-body{font-size:13px;fill:#846840}
+.label{font-size:13px;font-weight:650;fill:#52667a}
+.edge{fill:none;stroke:#6f8297;stroke-width:1.7;marker-end:url(#arrow)}
+.dash{fill:none;stroke:#6f8297;stroke-width:1.7;stroke-dasharray:5 5;marker-end:url(#arrow)}
+</style>
+
+<rect width="1160" height="850" rx="22" fill="#f8fafc"/>
+<text x="36" y="48" class="heading">TransportX Architecture</text>
+<text x="36" y="76" class="subtitle">One local host connects workspace surfaces, versioned modules, the agent loop, models, and analysis runtimes.</text>
+
+<path class="edge" d="M580 220 V280"/>
+<text x="606" y="255" class="label">User requests / state feedback</text>
+<path class="edge" d="M580 405 V475"/>
+<text x="606" y="443" class="label">Session start / tools / events</text>
+<path class="dash" d="M306 335 H372"/>
+<text x="340" y="318" text-anchor="middle" class="label">Assembly</text>
+<path class="edge" d="M790 535 H858"/>
+<text x="824" y="518" text-anchor="middle" class="label">Model calls</text>
+<path class="edge" d="M580 595 V690"/>
+<text x="606" y="645" class="label">Analysis scripts</text>
+<path class="edge" d="M372 370 H338 V740 H372"/>
+<rect x="313" y="640" width="50" height="54" rx="7" fill="#f8fafc"/>
+<text x="338" y="663" text-anchor="middle" class="label">Domain</text>
+<text x="338" y="682" text-anchor="middle" class="label">services</text>
+
+<rect x="372" y="110" width="418" height="110" rx="13" fill="#edf3fa" stroke="#496a93" stroke-opacity=".4"/>
+<rect x="372" y="128" width="4" height="74" rx="2" fill="#496a93"/>
+<text x="396" y="139" class="kicker" fill="#496a93">01 / INTERACTION SURFACES</text>
+<text x="396" y="171" class="name">Desktop · Web · CLI</text>
+<text x="396" y="198" class="body">Electron + React / Browser / TransportX CLI</text>
+
+<rect x="372" y="280" width="418" height="125" rx="13" fill="#e9f5f2" stroke="#168278" stroke-opacity=".4"/>
+<rect x="372" y="298" width="4" height="89" rx="2" fill="#168278"/>
+<text x="396" y="309" class="kicker" fill="#168278">02 / SESSION &amp; RESOURCE BOUNDARY</text>
+<text x="396" y="341" class="name">Node Agent Host</text>
+<text x="396" y="368" class="body">Sessions · models · module resolution · domain services</text>
+<text x="396" y="390" class="body">Persists task plans and controls resource access.</text>
+
+<rect x="372" y="475" width="418" height="120" rx="13" fill="#eef0fb" stroke="#5263b5" stroke-opacity=".4"/>
+<rect x="372" y="493" width="4" height="84" rx="2" fill="#5263b5"/>
+<text x="396" y="504" class="kicker" fill="#5263b5">03 / AGENT LOOP</text>
+<text x="396" y="536" class="name">Pi Agent</text>
+<text x="396" y="563" class="body">Model loop · base tools · Extensions · Skills</text>
+<text x="396" y="585" class="body">Loads the capabilities selected for the current task.</text>
+
+<g aria-label="Module capability system">
+  <rect x="30" y="110" width="276" height="680" rx="13" fill="#faf3e7" stroke="#a57835" stroke-opacity=".4"/>
+  <text x="50" y="139" class="kicker" fill="#a57835">MODULES / CAPABILITIES</text>
+  <text x="50" y="171" class="name">Composable Modules</text>
+  <text x="50" y="195" class="module-body">Selected per task and pinned by version</text>
+
+  <rect x="48" y="222" width="240" height="58" rx="8" fill="#fffdf8" stroke="#e8dcc7"/>
+  <text x="62" y="246" class="module-title">GIS &amp; spatial analysis</text>
+  <text x="62" y="267" class="module-body">Maps and spatial computation</text>
+  <rect x="48" y="291" width="240" height="58" rx="8" fill="#fffdf8" stroke="#e8dcc7"/>
+  <text x="62" y="315" class="module-title">Video retrieval &amp; processing</text>
+  <text x="62" y="336" class="module-body">Search, playback, snapshots, clips</text>
+  <rect x="48" y="360" width="240" height="58" rx="8" fill="#fffdf8" stroke="#e8dcc7"/>
+  <text x="62" y="384" class="module-title">Citations &amp; evidence</text>
+  <text x="62" y="405" class="module-body">Evidence registration and anchors</text>
+  <rect x="48" y="429" width="240" height="58" rx="8" fill="#fffdf8" stroke="#e8dcc7"/>
+  <text x="62" y="453" class="module-title">Data &amp; knowledge</text>
+  <text x="62" y="474" class="module-body">Metrics, queries, knowledge search</text>
+  <rect x="48" y="498" width="240" height="58" rx="8" fill="#fffdf8" stroke="#e8dcc7"/>
+  <text x="62" y="522" class="module-title">Task planning &amp; interaction</text>
+  <text x="62" y="543" class="module-body">Steps, progress, and user questions</text>
+  <rect x="48" y="567" width="240" height="58" rx="8" fill="#fffdf8" stroke="#e8dcc7"/>
+  <text x="62" y="591" class="module-title">Reports &amp; charts</text>
+  <text x="62" y="612" class="module-body">Templates, figures, and cited output</text>
+
+  <path d="M50 650 H286" stroke="#e8dcc7"/>
+  <text x="50" y="680" class="module-title">Built-in + installable modules</text>
+  <text x="50" y="714" class="body">Skill · Extension · Data</text>
+  <text x="50" y="738" class="body">Knowledge · Template · Runtime</text>
+</g>
+
+<rect x="858" y="475" width="272" height="120" rx="13" fill="#eef0fb" stroke="#5263b5" stroke-opacity=".4"/>
+<rect x="858" y="493" width="4" height="84" rx="2" fill="#5263b5"/>
+<text x="882" y="504" class="kicker" fill="#5263b5">MODEL SERVICE</text>
+<text x="882" y="536" class="name">Model Provider</text>
+<text x="882" y="563" class="body">Local or remote models</text>
+<text x="882" y="585" class="body">Returns replies or tool calls.</text>
+
+<rect x="372" y="690" width="418" height="100" rx="13" fill="#f0f3f7" stroke="#627388" stroke-opacity=".4"/>
+<rect x="372" y="708" width="4" height="64" rx="2" fill="#627388"/>
+<text x="396" y="719" class="kicker" fill="#627388">ANALYSIS RUNTIME</text>
+<text x="396" y="751" class="name">Python</text>
+<text x="396" y="778" class="body">Data queries · spatial computation · statistical charts</text>
+
+<text x="36" y="822" class="small">Solid lines: runtime calls and interaction</text>
+<text x="36" y="840" class="small">Dashed line: module assembly</text>
+<text x="1124" y="822" text-anchor="end" class="small">Module versions are pinned per task</text>
+</svg>

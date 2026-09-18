@@ -42,14 +42,6 @@ Agent 和分析人员使用同一份地图状态。Agent 可以发布 GeoJSON、
 | **报告交付** | 生成包含图件和引用的 Markdown 报告，并在桌面端导出 PDF。 |
 | **版本化能力** | 复用以 `SKILL.md` 为入口的 Agent Skill，或通过 Module 加入自定义 Extension、Data、Knowledge、Template 和本地运行时。 |
 
-## 工作方式
-
-<p align="center">
-  <img src="./docs/images/architecture-overview.png" alt="TransportX Agent 整体架构与执行流程" width="920" />
-</p>
-
-桌面端、Web 与 CLI 共用本地 Agent Host。Host 管理会话、资源、模型和版本化 Module；Pi 负责 Agent 执行循环，并调用选定的模型、Python 分析环境与领域服务。
-
 ## 一个工作台，多种分析界面
 
 <table>
@@ -86,6 +78,14 @@ Agent 和分析人员使用同一份地图状态。Agent 可以发布 GeoJSON、
     <td align="center">用图表、表格、对比和文字结论呈现分析结果</td>
   </tr>
 </table>
+
+## 工作方式
+
+<p align="center">
+  <img src="./docs/images/architecture-overview-zh.png" alt="TransportX Agent 整体架构与执行流程" width="920" />
+</p>
+
+桌面端、Web 与 CLI 共用本地 Agent Host。Host 管理会话、资源、模型和版本化 Module；Pi 负责 Agent 执行循环，并调用选定的模型、Python 分析环境与领域服务。
 
 ## 设计原则
 
