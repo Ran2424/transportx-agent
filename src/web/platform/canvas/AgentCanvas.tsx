@@ -5,11 +5,14 @@ import { Icon } from '../../components/icons';
 import { GeoWorkspace } from '../../features/geo/GeoWorkspace';
 import { VideoWorkspace } from '../../features/video/VideoWorkspace';
 import type { CanvasState, CanvasView } from './canvas-state';
+import { DocumentWorkspace } from './DocumentWorkspace';
+import type { DocumentPosition } from './document-state';
 
-export function AgentCanvas({ session, views, state, onActivate, onCloseTab, onClose }: {
+export function AgentCanvas({ session, views, state, documentPositions, onActivate, onCloseTab, onClose }: {
   session: LiveSession | null;
   views: CanvasView[];
   state: CanvasState;
+  documentPositions: Map<string, DocumentPosition>;
   onActivate(id: string): void;
   onCloseTab(id: string): void;
   onClose(): void;
@@ -33,7 +36,7 @@ export function AgentCanvas({ session, views, state, onActivate, onCloseTab, onC
       <div ref={tabList} className="agent-canvas-tabs" role="tablist" aria-label={t('canvas.views')}>
         {tabs.map((view, index) => <div className={`canvas-tab${view.id === state.activeId ? ' is-active' : ''}`} key={view.id}>
           <button id={`canvas-tab-${view.id}`} type="button" role="tab" aria-selected={view.id === state.activeId} aria-controls={`canvas-panel-${view.id}`} tabIndex={view.id === state.activeId ? 0 : -1} onKeyDown={(event) => navigate(event, index)} onClick={() => onActivate(view.id)} title={view.title}>
-            <Icon name={view.kind === 'geo' ? 'map' : 'video'} /><span>{view.title}</span>
+            <Icon name={view.kind === 'geo' ? 'map' : view.kind === 'video' ? 'video' : 'file'} /><span>{view.title}</span>
           </button>
           <button className="canvas-tab-close" type="button" aria-label={t('canvas.closeView', { title: view.title })} onClick={() => onCloseTab(view.id)}><Icon name="close" /></button>
         </div>)}
@@ -45,7 +48,8 @@ export function AgentCanvas({ session, views, state, onActivate, onCloseTab, onC
       {session && tabs.map((view) => <div className="canvas-panel" role="tabpanel" id={`canvas-panel-${view.id}`} aria-labelledby={`canvas-tab-${view.id}`} key={view.id} hidden={view.id !== state.activeId}>
         {view.kind === 'geo'
           ? <GeoWorkspace session={session} envelope={view.envelope} active={state.open && view.id === state.activeId} />
-          : <VideoWorkspace session={session} item={view.item} revision={view.revision} compareItem={view.compareItem} active={state.open && view.id === state.activeId} />}
+          : view.kind === 'video' ? <VideoWorkspace session={session} item={view.item} revision={view.revision} compareItem={view.compareItem} active={state.open && view.id === state.activeId} />
+          : <DocumentWorkspace view={view} active={state.open && view.id === state.activeId} positions={documentPositions} />}
       </div>)}
     </div>
   </aside>;

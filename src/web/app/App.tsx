@@ -17,7 +17,9 @@ import { SessionSidebar } from '../platform/sessions/SessionSidebar';
 import { SettingsPage, themes, type SettingsSectionId, type ThemeId } from '../platform/settings/SettingsDialog';
 import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDock';
 import { AgentCanvas } from '../platform/canvas/AgentCanvas';
-import { projectCanvas, syncCanvas, activateCanvas, closeCanvasTab, EMPTY_CANVAS, type CanvasState } from '../platform/canvas/canvas-state';
+import { projectCanvas, syncCanvas, activateCanvas, closeCanvasTab, openCanvasDocument, withCanvasDocuments, EMPTY_CANVAS, type CanvasState } from '../platform/canvas/canvas-state';
+import { OpenDocumentContext } from '../platform/canvas/document-context';
+import { resolveDocument, type DocumentRequest, type DocumentPosition } from '../platform/canvas/document-state';
 import { geoContextStore } from '../features/geo/geo-context-store';
 import { projectTaskState } from '../features/task/task-projection';
 
@@ -59,6 +61,8 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const documentPositions = useRef<Record<string, Map<string, DocumentPosition>>>({});
+  const documentOpenSequence = useRef(0);
   const [canvases, setCanvases] = useState<Record<string, CanvasState>>({});
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -87,12 +91,13 @@ export function App() {
     Object.values(tools.bySession[activeSession.id] ?? {}),
   ) : { enabled: false, task: null }, [activeSession, conversation, tools]);
   const taskAvailable = taskState.enabled;
-  const canvasContent = useMemo(() => projectCanvas(
+  const canvas = activeSession ? canvases[activeSession.id] ?? EMPTY_CANVAS : EMPTY_CANVAS;
+  const canvasContent = useMemo(() => withCanvasDocuments(projectCanvas(
     activeSession ? conversation.bySession[activeSession.id]?.snapshotEntries ?? [] : [],
     activeSession ? Object.values(tools.bySession[activeSession.id] ?? {}) : [],
-  ), [activeSession?.id, conversation, tools]);
-  const canvas = activeSession ? canvases[activeSession.id] ?? EMPTY_CANVAS : EMPTY_CANVAS;
+  ), canvas), [activeSession?.id, conversation, tools, canvas.documents]);
   const canvasAvailable = canvasContent.views.length > 0;
+  useEffect(() => { documentOpenSequence.current += 1; }, [activeSession?.id]);
   const openedTaskSessions = useRef(new Set<string>());
   const updateCanvas = useCallback((update: (state: CanvasState) => CanvasState) => {
     if (!activeSession) return;
@@ -105,8 +110,9 @@ export function App() {
   }, [activeSession?.id]);
   useEffect(() => { updateCanvas((state) => syncCanvas(state, canvasContent)); }, [canvasContent, updateCanvas]);
   useEffect(() => {
+    const liveIds = new Set(sessionState.sessions.map((session) => session.id));
+    for (const id of Object.keys(documentPositions.current)) if (!liveIds.has(id)) delete documentPositions.current[id];
     setCanvases((current) => {
-      const liveIds = new Set(sessionState.sessions.map((session) => session.id));
       const removed = Object.keys(current).some((id) => !liveIds.has(id));
       return removed ? Object.fromEntries(Object.entries(current).filter(([id]) => liveIds.has(id))) : current;
     });
@@ -128,6 +134,24 @@ export function App() {
     if (modelSetupOrigin === 'settings') setSettingsOpen(true);
     setModelSetupOrigin(null);
   }
+
+  const openDocument = useCallback((request: DocumentRequest) => {
+    const session = kernel.stores.session.get().sessions.find((item) => item.id === request.sessionId);
+    if (!session?.cwd) return;
+    const cwd = session.cwd;
+    const sequence = ++documentOpenSequence.current;
+    void (request.resource ? Promise.resolve([null, null] as const) : Promise.all([
+      kernel.commands.citation.list(session.id).catch(() => null),
+      kernel.commands.session.listFiles(session.id).catch(() => null),
+    ])).then(([registry, files]) => {
+      const current = kernel.stores.session.get();
+      if (sequence !== documentOpenSequence.current || current.activeSessionId !== session.id || !current.sessions.some((item) => item.id === session.id)) return;
+      const document = resolveDocument(request, cwd, registry, files?.path ?? cwd);
+      if (!document) return;
+      setCanvases((states) => ({ ...states, [session.id]: openCanvasDocument(states[session.id] ?? EMPTY_CANVAS, document) }));
+      if (window.matchMedia('(max-width: 860px)').matches) { setFilesOpen(false); setSidebarOpen(false); }
+    });
+  }, [kernel]);
 
   const waitingGeoRequest = activeSession ? sessionState.geoInteractionBySession[activeSession.id]?.waitingRequest : undefined;
   const waitingGeoScreenshot = activeSession ? sessionState.geoInteractionBySession[activeSession.id]?.waitingScreenshotRequest : undefined;
@@ -158,7 +182,14 @@ export function App() {
 
   const toggleSidebar = useCallback(() => setSidebarOpen((value) => !value), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
-  const toggleFiles = useCallback(() => setFilesOpen((value) => !value), []);
+  const toggleFiles = useCallback(() => {
+    const narrow = window.matchMedia('(max-width: 860px)').matches;
+    const opening = !filesOpen || (narrow && canvas.open);
+    setFilesOpen(opening);
+    if (opening && narrow) {
+      updateCanvas((state) => ({ ...state, open: false }));
+    }
+  }, [filesOpen, canvas.open, updateCanvas]);
   const closeFiles = useCallback(() => setFilesOpen(false), []);
   const closeCanvas = useCallback(() => updateCanvas((state) => ({ ...state, open: false })), [updateCanvas]);
 
@@ -385,14 +416,14 @@ export function App() {
   const runtimeNotice = notice || (runtimeErrorMessage !== dismissedRuntimeError ? runtimeErrorMessage : '');
 
   return (
-    <AppShell
+    <OpenDocumentContext.Provider value={openDocument}><AppShell
       header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} canvasOpen={canvas.open} taskAvailable={taskAvailable} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} onRenameLive={renameLiveSession} onRenameHistory={renameHistorySession} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
       taskFloat={<WorkspaceFloat open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
-      canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} />}
+      canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} />}
       canvasOpen={canvas.open}
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}
@@ -405,6 +436,6 @@ export function App() {
         <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={t('sessions.deleteConversation')} description={t('app.confirm.deleteSession', { name: deleteTargetName })} confirmLabel={t('sessions.deleteConversation')} onConfirm={() => void confirmDeleteSession()} />
         {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label={t('app.notice.close')} onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
       </>}
-    />
+    /></OpenDocumentContext.Provider>
   );
 }

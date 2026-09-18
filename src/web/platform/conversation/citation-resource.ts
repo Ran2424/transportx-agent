@@ -1,4 +1,4 @@
-import type { CitationLocator, CitationResource } from '../../../contracts/citation.ts';
+import type { CitationLocator } from '../../../contracts/citation.ts';
 import i18n from '../../i18n';
 
 export function citationLocatorPosition(locator: CitationLocator) {
@@ -8,9 +8,4 @@ export function citationLocatorPosition(locator: CitationLocator) {
 
 export function citationResourceUrl(sessionId: string, resourceId: string, view: 'content' | 'preview' = 'content') {
   return `/api/live-sessions/${encodeURIComponent(sessionId)}/citation-resources/${encodeURIComponent(resourceId)}/${view}`;
-}
-
-export function artifactPreviewKind(resource: CitationResource) {
-  if (resource.mimeType === 'text/markdown' || /\.mdx?$/i.test(resource.relativePath)) return 'report';
-  return resource.kind === 'pdf' || resource.kind === 'image' ? resource.kind : 'document';
 }

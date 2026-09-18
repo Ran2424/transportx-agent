@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../components/icons';
 import i18n from '../../i18n';
+import { useOpenDocument } from '../canvas/document-context';
+import { documentFormat } from '../canvas/document-state';
 import { FilePreview, filePresentation } from '../workspace/FilePreview';
-import { artifactPreviewKind, citationLocatorPosition, citationResourceUrl } from './citation-resource';
+import { citationLocatorPosition, citationResourceUrl } from './citation-resource';
 import type { MessageCitationProjection, ResolvedCitation } from '../../features/citation/citation-projection';
 
 function citationPosition(item: ResolvedCitation) { return citationLocatorPosition(item.locator); }
@@ -51,15 +53,20 @@ function CitationEvidencePeek({ peek, sessionId }: { peek: CitationPeek; session
 export function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<ResolvedCitation | null>(null);
+  const openDocument = useOpenDocument();
+  function openResource(item: ResolvedCitation) {
+    if (documentFormat(item.resource.relativePath, item.resource.mimeType)) openDocument({ sessionId, title: item.work.title, path: item.resource.relativePath, resource: item.resource, locator: item.resource.scope === 'artifact' ? undefined : item.locator });
+    else setPreview(item);
+  }
   if (!projection?.artifacts.length) return null;
   return <section className="message-artifacts">
     <header><strong>{t('conversation.artifacts')}</strong><span>{t('common.itemCount', { count: projection.artifacts.length })}</span></header>
     <div>{projection.artifacts.map((item) => {
       const name = item.resource.relativePath.replaceAll('\\', '/').split('/').pop() || item.work.title;
       const presentation = filePresentation({ name, path: item.resource.relativePath, isDirectory: false });
-      return <button key={item.occurrence.occurrenceId} type="button" onClick={() => setPreview(item)}>
+      return <button key={item.occurrence.occurrenceId} type="button" data-citation-card={item.occurrence.occurrenceId} onClick={() => openResource(item)}>
         <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
-        <span><strong>{item.work.title}</strong><small>{presentation.label}</small></span>
+        <span><strong>[{item.number}] {item.work.title}</strong><small>{presentation.label}</small></span>
         <Icon name="chevron" />
       </button>;
     })}</div>
@@ -68,7 +75,6 @@ export function MessageArtifacts({ projection, sessionId }: { projection?: Messa
       sessionId={sessionId}
       stackIndex={0}
       initialOffset={0}
-      citationProjection={projection}
       onActivate={() => {}}
       onClose={() => setPreview(null)}
     /> : null}
@@ -78,6 +84,11 @@ export function MessageArtifacts({ projection, sessionId }: { projection?: Messa
 export function CitationFooter({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<ResolvedCitation | null>(null);
+  const openDocument = useOpenDocument();
+  function openResource(item: ResolvedCitation) {
+    if (documentFormat(item.resource.relativePath, item.resource.mimeType)) openDocument({ sessionId, title: item.work.title, path: item.resource.relativePath, resource: item.resource, locator: item.resource.scope === 'artifact' ? undefined : item.locator });
+    else setPreview(item);
+  }
   const [peek, setPeek] = useState<CitationPeek | null>(null);
   if (!projection || (!projection.citations.length && !projection.unavailableIds.length)) return null;
   const groups = [...projection.citations.reduce((map, item) => {
@@ -88,7 +99,7 @@ export function CitationFooter({ projection, sessionId }: { projection?: Message
     const first = items[0];
     return <li key={first.resource.resourceId}>
       <header className="citation-source-heading">
-        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => setPreview(first)} title={t('conversation.viewSource')}><Icon name="file" />{first.work.title}</button></div>
+        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => openResource(first)} title={t('conversation.viewSource')}><Icon name="file" />{first.work.title}</button></div>
         <span>{t('common.referenceCount', { count: items.length })}</span>
       </header>
       <div className="citation-locator-list">{items.map((item) => <button
@@ -96,6 +107,7 @@ export function CitationFooter({ projection, sessionId }: { projection?: Message
         type="button"
         key={item.occurrence.occurrenceId}
         data-citation-card={item.occurrence.occurrenceId}
+        onClick={() => { setPeek(null); openResource(item); }}
         onMouseEnter={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
         onMouseLeave={() => setPeek(null)}
         onFocus={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
@@ -116,9 +128,8 @@ export function CitationFooter({ projection, sessionId }: { projection?: Message
       initialOffset={0}
       externalSource={{
         url: citationResourceUrl(sessionId, preview.resource.resourceId),
-        kind: artifactPreviewKind(preview.resource),
+        kind: preview.resource.kind === 'image' ? 'image' : 'document',
         mimeType: preview.resource.mimeType,
-        page: preview.locator.page,
       }}
       onActivate={() => {}}
       onClose={() => setPreview(null)}
