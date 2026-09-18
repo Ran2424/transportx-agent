@@ -24,8 +24,10 @@ export async function documentSmoke(page, browser) {
   fs.writeFileSync(path.join(cwd, 'canvas-evidence.pdf'), pdf);
   const resource = (id, name, scope, bytes, mimeType) => ({ resourceId: id, workId: id, kind: mimeType === 'application/pdf' ? 'pdf' : 'document', scope, relativePath: name, mimeType, sha256: crypto.createHash('sha256').update(bytes).digest('hex') });
   const resources = [resource('canvas:report', 'canvas-report.md', 'artifact', report, 'text/markdown'), resource('canvas:source', 'canvas-source.md', 'attachment', source, 'text/markdown'), resource('canvas:pdf', 'canvas-evidence.pdf', 'attachment', pdf, 'application/pdf')];
+  resources.push({ ...resource('canvas:chart', 'canvas-chart.svg', 'artifact', fs.readFileSync(path.join(cwd, 'canvas-chart.svg')), 'image/svg+xml'), kind: 'image' });
   const locators = [
     { locatorId: 'canvas:report', resourceId: 'canvas:report' },
+    { locatorId: 'canvas:chart', resourceId: 'canvas:chart' },
     { locatorId: 'canvas:source:target', resourceId: 'canvas:source', section: '目标标题' },
     { locatorId: 'canvas:source:missing', resourceId: 'canvas:source', section: '没有此标题' },
     { locatorId: 'canvas:pdf:2', resourceId: 'canvas:pdf', page: 2 },
@@ -95,10 +97,21 @@ export async function documentSmoke(page, browser) {
   assert.equal(await reader.locator('h1').innerText(), 'Canvas 报告');
 
   console.log('Document smoke: refresh passed.');
-  await composer.fill('canvas-citations [[cite:canvas:report,canvas:source:target,canvas:source:missing,canvas:pdf:2,canvas:pdf:3]]');
+  await composer.fill('canvas-citations [[cite:canvas:report,canvas:chart,canvas:source:target,canvas:source:missing,canvas:pdf:2,canvas:pdf:3]]');
   await composer.press('Enter');
   await page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).waitFor();
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  for (const message of [page.locator('.user-message', { hasText: 'canvas-citations' }).last(), page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).last()]) {
+    assert.equal(await message.locator('.citation-unavailable').count(), 0);
+    await page.getByRole('tab', { name: 'canvas-source.md', exact: true }).click();
+    await message.locator('[data-citation-id="canvas:report"]').first().click();
+    await reader.locator('h1', { hasText: 'Canvas 报告', exact: true }).waitFor();
+    assert.equal(await reader.getByRole('status').filter({ hasText: '未找到引用位置' }).count(), 0);
+    await message.locator('[data-citation-id="canvas:chart"]').first().click();
+    await page.locator('.file-preview-card').waitFor();
+    await page.waitForFunction(() => document.querySelector('.file-preview-card img')?.naturalWidth > 0);
+    await page.locator('.file-preview-card').getByRole('button', { name: '关闭文件预览', exact: true }).click();
+  }
   // A citation can also be present in the optimistic prompt while the snapshot settles.
   await page.locator('[data-citation-card="canvas:source:target"]').first().click();
   await reader.locator('h1', { hasText: '规范', exact: true }).waitFor();

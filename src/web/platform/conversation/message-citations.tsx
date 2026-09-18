@@ -64,9 +64,9 @@ export function MessageArtifacts({ projection, sessionId }: { projection?: Messa
     <div>{projection.artifacts.map((item) => {
       const name = item.resource.relativePath.replaceAll('\\', '/').split('/').pop() || item.work.title;
       const presentation = filePresentation({ name, path: item.resource.relativePath, isDirectory: false });
-      return <button key={item.occurrence.occurrenceId} type="button" onClick={() => openResource(item)}>
+      return <button key={item.occurrence.occurrenceId} type="button" data-citation-card={item.occurrence.occurrenceId} onClick={() => openResource(item)}>
         <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
-        <span><strong>{item.work.title}</strong><small>{presentation.label}</small></span>
+        <span><strong>[{item.number}] {item.work.title}</strong><small>{presentation.label}</small></span>
         <Icon name="chevron" />
       </button>;
     })}</div>

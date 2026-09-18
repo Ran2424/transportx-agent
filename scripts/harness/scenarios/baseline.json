@@ -1,7 +1,7 @@
 {
   "description": "React smoke 场景：按 prompt 子串匹配回放协议一致的事件序列。provenance：协议一致的合成事件，形状与 test/fixtures 一致并经 server 实际消费验证。",
   "rules": [
-    {"match": "canvas-citations", "steps": [{"streamText": {"text": "引用导航就绪。", "chunks": 1, "delayMs": 10}}]},
+    {"match": "canvas-citations", "steps": [{"streamText": {"text": "引用导航就绪。报告 [[cite:canvas:report]]，图表 [[cite:canvas:chart]]，来源 [[cite:canvas:source:target]]，再次引用图表 [[cite:canvas:chart]]。", "chunks": 1, "delayMs": 10}}]},
     {"match": "canvas-document-read", "steps": [{"tool": {"name": "read", "args": {"path": "canvas-report.md"}, "result": {"content": "Canvas report read"}}}, {"streamText": {"text": "文档读取完成。", "chunks": 1, "delayMs": 10}}]},
     {"match": "实时-markdown", "steps": [{"streamText": {"text": "## 实时报告\n\n- 已完成第一项\n- 正在生成第二项\n\nMarkdown 应在回复结束前完成渲染。", "chunks": 30, "delayMs": 50}}]},
     {"match": "canvas-video-first", "steps": [{"tool": {"name": "video_present", "args": {}, "result": {"$fixture": "features/canvas-tool-results.json#first"}}}, {"streamText": {"text": "录像已打开。", "chunks": 1, "delayMs": 10}}]},
