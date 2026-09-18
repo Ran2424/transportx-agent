@@ -42,7 +42,7 @@ pi-tau-traffic/
 
 ### 2.1 进程与通信
 
-![TransportX Agent 整体架构与执行流程](./images/architecture-overview.png)
+![TransportX Agent 整体架构与执行流程](./images/architecture-overview-zh.png)
 
 实线表示运行时通信或调用；虚线表示桥接或装配配置。Host 图内各组件在同一进程，Module 不是独立服务。当前 Supervisor 在 macOS 使用 `utilityProcess.fork`，Windows 使用 Electron 可执行文件配合 `ELECTRON_RUN_AS_NODE=1` 启动 Node 子进程。CLI 自行启动 Host 子进程；Web 模式直接运行 Host，均使用同一组会话与领域服务。Pi 的基础工具读写任务文件，部分 Extension 直接发布资源或持久化状态；Host 负责对外提供经过校验的文件与资源。文件与资产的具体边界见第 3.4、4、6 节。
 
