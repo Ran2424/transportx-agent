@@ -24,7 +24,6 @@
   "files": [
     "bin",
     "public",
-    "prompts",
     "modules",
     "docs/**/*.md",
     "src",

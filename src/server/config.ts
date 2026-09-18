@@ -73,7 +73,7 @@ export const AUTH_CONFIGURED = !!(TAU_SETTINGS.user && TAU_SETTINGS.pass);
 export const PORT = TAU_SETTINGS.port;
 export const HOST = TAU_SETTINGS.host;
 export const REACT_STATIC_DIR = process.env.TAU_REACT_STATIC_DIR || findReactWebDir();
-export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(APP_PATHS.appRoot, 'prompts', 'PI_SYSTEM.md');
+export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(APP_PATHS.appRoot, 'src', 'server', 'prompts', 'PI_SYSTEM.md');
 export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.workbench';
 export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',

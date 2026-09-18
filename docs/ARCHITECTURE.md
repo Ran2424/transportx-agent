@@ -21,7 +21,6 @@ pi-tau-traffic/
 ├─ modules/                    随应用发布的能力单元
 │  ├─ capabilities/            Task、Geo、Citation、Spatial Analysis、Web Bridge
 │  └─ official/                Workbench/CLI Domain、报告模板、Module Authoring
-├─ prompts/                    Pi 基础系统 Prompt（会话 Prompt 在 Domain Module 中）
 ├─ src/
 │  ├─ contracts/               跨层协议与验证原语；不依赖具体运行时
 │  ├─ server/                  Node Agent Host、会话、资源、HTTP/RPC 与鉴权
@@ -121,7 +120,7 @@ flowchart LR
 
 [session-assembly.ts](../src/server/session-assembly.ts) 冻结模块和资产；[session-pi-launch.ts](../src/server/session-pi-launch.ts) 构造进程参数；[sessions.ts](../src/server/sessions.ts) 负责实际启动、停止与恢复。
 
-Prompt 分三层：`prompts/PI_SYSTEM.md` 定义基础行为；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
+Prompt 分三层：`src/server/prompts/PI_SYSTEM.md` 定义基础行为；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
 
 新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module、入口、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务时以该计划校验，而不是悄然替换为当前最新 Module。内置 Module 有受控漂移容忍规则；用户安装 Module 的缺失或不一致必须明确处理。唯一的升级迁移例外是 3.2.0 以前的内置 Video：仅当新版 Video Capability 已安装并启用时，恢复流程才会将旧条目映射到当前插件。
 

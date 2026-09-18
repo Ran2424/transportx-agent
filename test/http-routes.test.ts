@@ -727,6 +727,6 @@ test('resuming a stored session publishes the persisted conversation snapshot', 
   assert.deepEqual(snapshot.entries, entries.slice(1));
   const systemPromptIndex = piArgs.indexOf('--system-prompt');
   assert.ok(systemPromptIndex >= 0);
-  assert.equal(piArgs[systemPromptIndex + 1], fs.readFileSync(path.join(process.cwd(), 'prompts', 'PI_SYSTEM.md'), 'utf8').trim());
+  assert.equal(piArgs[systemPromptIndex + 1], fs.readFileSync(path.join(process.cwd(), 'src/server/prompts/PI_SYSTEM.md'), 'utf8').trim());
   child.stdin.end();
 });
