@@ -18,10 +18,9 @@ pi-tau-traffic/
 ├─ desktop/                    Electron 主进程、Supervisor、平台 Profile 与打包脚本
 │  ├─ assets/                  图标、签名与平台资源
 │  └─ scripts/                 runtime 准备、发布前检查、打包钩子
-├─ modules/                    随应用发布或由用户安装的能力单元
+├─ modules/                    随应用发布的能力单元
 │  ├─ capabilities/            Task、Geo、Citation、Spatial Analysis、Web Bridge
-│  ├─ official/                Workbench/CLI Domain、报告模板、Module Authoring
-│  └─ installable/             Video、交通数据、知识与风格模块源码
+│  └─ official/                Workbench/CLI Domain、报告模板、Module Authoring
 ├─ prompts/                    Pi 基础系统 Prompt（会话 Prompt 在 Domain Module 中）
 ├─ src/
 │  ├─ contracts/               跨层协议与验证原语；不依赖具体运行时
@@ -269,14 +268,9 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 | `capabilities/task`、`citation`、`web-bridge` | 步骤/提问、引用工具、Pi 元数据桥接 Extension | Workbench 基础依赖 |
 | `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖，Spatial Analysis 依赖 Geo |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
-| `installable/video` | 视频 Skill/Extension，打包时加入 Native Runtime | 独立平台 ZIP，安装并启用后可选 |
-| `installable/shanghaidata` | 上海交通数据库、字典与查询 Skill | 依赖 Geo |
-| `installable/shanghai-hub-traffic`、`shanghai-multimodal-data` | 枢纽治理数据、多方式单日快照，各带 Skill 与资产 | 两者独立，无模块依赖 |
-| `installable/traffic-assurance-knowledge` | 交通保障知识、检索脚本与 Skill | 依赖 Citation |
-| `installable/plot-style` | 静态图表样式 Skill 和参考资料 | 无模块依赖 |
-| `installable/demo-video`、`hongqiao-metro-demo` | 视频演示资产；后者另带 Skill | 依赖 Video，视频能力不等于视频数据 |
+| 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
 
-内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准；桌面打包通过 [electron-builder.common.yml](../desktop/electron-builder.common.yml) 排除整个 `modules/installable/`。用户安装后位于 `<user-data>/modules/<id>/<version>/`。`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
+内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
 
 ### 5.4 从包到会话
 
@@ -347,7 +341,7 @@ desktop/electron-builder.yml
 3. electron-builder 按对应 fragment 打包；
 4. macOS 正式发行需要 Developer ID + 公证，Windows 正式发行需要 Authenticode + 可信时间戳。
 
-Video Capability 使用 `npm run video:pack` 独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。源码目录只描述能力及其运行时要求，不可代替平台专属 ZIP 安装。
+Video Capability 使用 `TRANSPORTX_VIDEO_MODULE_DIR=/path/to/video-module npm run video:pack` 独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。源码目录只描述能力及其运行时要求，不可代替平台专属 ZIP 安装。
 
 不要从 macOS 交叉生成 Windows 正式包。Windows 验收与签名条件由 `check-desktop-release.mjs` 和平台 Profile 统一定义。
 

@@ -50,5 +50,5 @@ test/baselines/screenshots/*.png
 !/docs/images/
 !/docs/images/**
 
-# 大体积监控录像不写入仓库（虹桥 Demo 数据模块，本地准备，见模块 README）
-modules/installable/hongqiao-metro-demo/data/videos/*.mp4
+# 用户本地可安装模块不写入仓库
+modules/installable/

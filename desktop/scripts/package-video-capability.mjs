@@ -14,7 +14,10 @@ const profile = getPlatformProfile();
 const sourceRuntimeDir = process.env.TRANSPORTX_FFMPEG_RUNTIME_DIR;
 if (!sourceRuntimeDir) throw new Error('TRANSPORTX_FFMPEG_RUNTIME_DIR must point to the ffmpeg/ffprobe runtime to package');
 
-const sourceModule = path.join(root, 'modules', 'installable', 'video');
+const sourceModule = path.resolve(process.env.TRANSPORTX_VIDEO_MODULE_DIR || path.join(root, 'modules', 'installable', 'video'));
+if (!fs.existsSync(path.join(sourceModule, 'manifest.json'))) {
+  throw new Error('TRANSPORTX_VIDEO_MODULE_DIR must point to the Video Capability module source package');
+}
 const sourceManifest = JSON.parse(fs.readFileSync(path.join(sourceModule, 'manifest.json'), 'utf8'));
 const buildRoot = path.join(root, 'desktop', 'build', 'video-capability');
 const packageRoot = path.join(buildRoot, sourceManifest.id, sourceManifest.version);

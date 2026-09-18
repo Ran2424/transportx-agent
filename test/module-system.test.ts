@@ -22,17 +22,26 @@ const MANIFESTS = [
   'modules/official/cli/manifest.json',
   'modules/official/workbench/manifest.json',
 ];
-const INSTALLABLE_MODULES = [
-  'modules/installable/shanghaidata/manifest.json',
-  'modules/installable/traffic-assurance-knowledge/manifest.json',
-  'modules/installable/plot-style/manifest.json',
-];
-
 function registry(extra: Array<{ manifestPath: string; packageRoot?: string; origin?: 'builtin' | 'installed' | 'external' }> = []) {
   return new ModuleRegistry('3.0.0').load([
     ...MANIFESTS.map((manifestPath) => ({ manifestPath: path.join(ROOT, manifestPath), packageRoot: path.join(ROOT, path.dirname(manifestPath)), origin: 'builtin' })),
     ...extra,
   ]);
+}
+
+function writeInstallableModule(root: string, directoryName: string, manifest: any) {
+  const packageRoot = path.join(root, directoryName);
+  fs.mkdirSync(path.join(packageRoot, 'skill'), { recursive: true });
+  fs.writeFileSync(path.join(packageRoot, 'skill', 'SKILL.md'), `# ${manifest.name}\n`);
+  fs.writeFileSync(path.join(packageRoot, 'manifest.json'), `${JSON.stringify({
+    manifestVersion: 2,
+    type: 'module',
+    platformVersion: '>=3.0.0 <4.0.0',
+    entrypoints: { skills: ['skill/SKILL.md'] },
+    contributes: {},
+    ...manifest,
+  }, null, 2)}\n`);
+  return packageRoot;
 }
 
 test('built-in manifests register only platform capabilities', () => {
@@ -82,9 +91,16 @@ test('CLI domain loads only explicitly selected capabilities', () => {
 
 test('data, knowledge and plot-style packages install independently from the platform', (t: any) => {
   const managed = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-installable-modules-'));
+  const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-installable-module-sources-'));
   t.after(() => fs.rmSync(managed, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(sourceRoot, { recursive: true, force: true }));
+  const installableModules = [
+    writeInstallableModule(sourceRoot, 'shanghaidata', { id: 'com.transportx.shanghaidata', name: 'Shanghai Data', version: '2.0.1', dependencies: ['com.transportx.geo'] }),
+    writeInstallableModule(sourceRoot, 'traffic-assurance-knowledge', { id: 'com.transportx.traffic-assurance-knowledge', name: 'Traffic Assurance Knowledge', version: '1.0.0', dependencies: ['com.transportx.citation'] }),
+    writeInstallableModule(sourceRoot, 'plot-style', { id: 'com.transportx.plot-style', name: 'Plot Style', version: '1.0.0', dependencies: [] }),
+  ];
   const installer = new ModuleInstaller(managed);
-  for (const manifestPath of INSTALLABLE_MODULES) installer.install(path.join(ROOT, path.dirname(manifestPath)));
+  for (const packageRoot of installableModules) installer.install(packageRoot);
   const modules = registry(installer.sources());
   assert.deepEqual(modules.errors, []);
   assert.equal(modules.get('com.transportx.shanghaidata').origin, 'installed');
