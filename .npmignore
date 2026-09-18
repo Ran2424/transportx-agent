@@ -1,7 +1,11 @@
 .git
 .pi
+.plans
 .DS_Store
 docs
+evals
+motion
+modules/installable
 *.html
 !public/index.html
 ROADMAP.md

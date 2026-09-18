@@ -25,6 +25,8 @@
     "bin",
     "public",
     "modules",
+    "!modules/installable",
+    "!modules/installable/**",
     "docs/**/*.md",
     "src",
     "dist/web",

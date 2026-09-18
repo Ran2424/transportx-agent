@@ -40,6 +40,7 @@ scenario/
 .tau/
 /logs/
 evals/
+motion/
 modules/official/traffic-data/assets/
 modules/official/traffic-knowledge/assets/
 
