@@ -1,6 +1,0 @@
-interface:
-  display_name: "上海枢纽交通数据"
-  short_description: "查询两场三站铁路、预测、出租车与网约车数据"
-  default_prompt: "Use $shanghai-hub-traffic-data to analyze Shanghai airport and railway-hub traffic with governed SQLite assets."
-policy:
-  allow_implicit_invocation: true

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regenerate the two synthetic demo MP4s for modules/installable/demo-video.
+ * Regenerate the two synthetic demo MP4s for a local demo-video module.
  * Development-only helper; requires ffmpeg on PATH.
  */
 import { spawnSync } from 'node:child_process';
@@ -8,7 +8,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = path.join(root, 'modules', 'installable', 'demo-video', 'data', 'videos');
+const outDir = process.env.TRANSPORTX_DEMO_VIDEO_DIR
+  ? path.resolve(process.env.TRANSPORTX_DEMO_VIDEO_DIR)
+  : path.join(root, 'modules', 'installable', 'demo-video', 'data', 'videos');
 
 const jobs = [
   { file: 'camera_001.mp4', filter: null },

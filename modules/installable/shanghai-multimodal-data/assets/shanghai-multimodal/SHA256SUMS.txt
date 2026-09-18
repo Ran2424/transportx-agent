@@ -1,1 +1,0 @@
-f7ca83427740711cc54993085a2797dabdd17d4ce758b5305d11e4434c5aacdf  shanghai_text2sql_simplified_v1.db

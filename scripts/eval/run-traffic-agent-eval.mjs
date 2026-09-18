@@ -42,19 +42,20 @@ async function freePort() {
   });
 }
 
-function copyAgentConfig(source, target) {
+function copyAgentConfig(source, target, enabledModuleIds) {
   fs.mkdirSync(target, { recursive: true });
   if (fs.existsSync(source)) for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
     if (entry.isFile() && !['settings.json'].includes(entry.name)) fs.copyFileSync(path.join(source, entry.name), path.join(target, entry.name));
   }
   let settings = {};
   try { settings = JSON.parse(fs.readFileSync(path.join(source, 'settings.json'), 'utf8')); } catch {}
-  settings.tau = { ...(settings.tau || {}), enabledModuleIds: ['com.transportx.shanghaidata'], authEnabled: false };
+  settings.tau = { ...(settings.tau || {}), enabledModuleIds, authEnabled: false };
   fs.writeFileSync(path.join(target, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 function installEvalModule(userRoot) {
-  const source = path.join(ROOT, 'modules/installable/shanghaidata');
+  const source = path.resolve(value('--module-source', process.env.TAU_EVAL_MODULE_SOURCE || ''));
+  if (!source || !fs.existsSync(path.join(source, 'manifest.json'))) throw new Error('--module-source or TAU_EVAL_MODULE_SOURCE must point to the eval Module package root');
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'manifest.json'), 'utf8'));
   const destination = path.join(userRoot, 'modules', manifest.id, manifest.version);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
@@ -129,8 +130,8 @@ const piAgentDir = path.join(runRoot, 'pi-agent');
 const sessionsDir = path.join(runRoot, 'sessions');
 const projectsDir = path.join(runRoot, 'workspaces');
 for (const directory of [userRoot, sessionsDir, projectsDir]) fs.mkdirSync(directory, { recursive: true });
-copyAgentConfig(sourceAgentDir, piAgentDir);
 const evalModule = installEvalModule(userRoot);
+copyAgentConfig(sourceAgentDir, piAgentDir, [evalModule.id]);
 const port = await freePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const host = spawn(process.execPath, [path.join(ROOT, 'bin/tau.js')], {

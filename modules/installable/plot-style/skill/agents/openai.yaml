@@ -1,4 +1,0 @@
-interface:
-  display_name: "Plot Style Playbook"
-  short_description: "Apply reusable chart-design experience and publication styles"
-  default_prompt: "Generate a plot for my data using the bar_grouped_hatch style"

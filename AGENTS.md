@@ -30,7 +30,7 @@ src/
   server/           Agent Host：会话、模块注册、资产解析、HTTP/WebSocket、鉴权
   web/              React 工作台（app 组合根、components UI 基元、platform 面板、features 功能）
 desktop/            Electron 主进程、Agent Host supervisor、electron-builder 配置、发布脚本
-modules/installable/  用户安装模块源码（shanghaidata / traffic-assurance-knowledge / plot-style）
+modules/installable/  用户本地可安装模块暂存目录（默认不入 Git）
 prompts/            系统提示词（PI_SYSTEM.md）；内置 Skill / Extension 由 modules/capabilities 与 modules/official 贡献
 test/  scripts/     node --test 测试与 smoke（react / desktop / pi-rpc）
 docs/               架构、功能方案、验收与发布记录（见文档索引）
@@ -62,7 +62,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 
 - **不要用 `sudo` 启动**；桌面安装包使用内置 Pi/Python，Web 开发模式可用环境变量覆盖运行时。
 - **用户数据统一在 `~/.transportx/traffic-agent/`**：任务工作区 `scenario/`、模型 `models.json`、认证 `auth.json`、会话/日志/缓存、受管模块 `modules/`。API Key 不返回前端。
-- **Module 是统一安装单元**：可组合贡献 Skill / Extension / Native Runtime / Data / Knowledge。内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用能力；Video Capability 与 ffmpeg/ffprobe 位于 `modules/installable/video`，不入基础安装包。`modules/installable/` 的用户模块不是平台启动依赖。大体积交通知识库/数据库资产不写入仓库与安装包。
+- **Module 是统一安装单元**：可组合贡献 Skill / Extension / Native Runtime / Data / Knowledge。内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用能力；`modules/installable/` 是用户本地可安装模块暂存目录，默认不入 Git，不是平台启动依赖。大体积交通知识库/数据库资产不写入仓库与安装包。
 - **模块版本纪律**：每次改动某个 Module（manifest、Skill、Extension、脚本、数据目录内容）后，必须同步提升该模块 `manifest.json` 的 `version`（新能力升 minor、修复升 patch），并在 CHANGELOG 中说明；Resolved Session Plan 按精确版本冻结，版本号是会话可复现性的依据。
 - **主题纪律（UI 改造后）**：`src/web/styles/tokens.css` 是 Light / Dark / Sand 三主题的**唯一 token 声明源**（primitive + semantic）。组件只消费 semantic token，禁止 `[data-theme] .component` 式覆盖，禁止在组件中写主题专属色值。功能文字不得低于 11px。新的样式修改应直接落在 `src/web/styles.css` 或遵循其分层结构，不要重复定义 token。
 - **会话侧栏**：固定工具栏下方为能力扩展区 30% / 会话列表 70%（能力区可收起，移动端默认收起）。能力数据来自 `platform.getOverview()` 投影（`src/web/platform/capabilities/capability-projection.ts`），不要自行推测或复制服务端状态。
@@ -88,7 +88,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
    - Windows x64（已在 `platform-profile.win`）：`npm run desktop:pack` 在 Windows x64 主机上直接走入 `check-desktop-release.mjs` 的 win 分支。
 
    - 本机持久化的自包含 Python 3.10 runtime 位于 `~/Library/Application Support/TransportX/python-3.10-runtime`（mac）或 `C:\TransportX\runtime\python-3.10-win-x64`（win）；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
-   - Video Capability 单独设置 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`；mac arm64 runtime 位于 `~/Library/Application Support/TransportX/ffmpeg-runtime`，win x64 位于 `C:\TransportX\runtime\ffmpeg-win-x64`，LICENSE/NOTICES 随模块包携带。
+   - Video Capability 单独设置 `TRANSPORTX_VIDEO_MODULE_DIR` 与 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`；mac arm64 runtime 位于 `~/Library/Application Support/TransportX/ffmpeg-runtime`，win x64 位于 `C:\TransportX\runtime\ffmpeg-win-x64`，LICENSE/NOTICES 随模块包携带。
    - 产物在 `release/`：mac 产出 `latest-mac.yml` + DMG + blockmap + sha256 + `README-安装说明.txt`；win 产出 NSIS `setup.exe` + sha256 + 清单文件。同一句 `npm run desktop:pack` 下由 `process.platform` 决定产出哪个 artifact，**不要**在 macOS 上交叉打 Windows 包。
 4. 正式对外分发需为各 profile 提供证书：
 
