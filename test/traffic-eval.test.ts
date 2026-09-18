@@ -7,14 +7,24 @@ const { spawnSync } = require('node:child_process');
 
 const ROOT = process.cwd();
 
-test('Shanghai eval fixture contains the 25 documented questions plus spatial and full-task cases', async () => {
+test('eval suite parser accepts a local traffic suite and documented question bank remains intact', async (t: any) => {
   const { loadSuite } = await import('../scripts/eval/traffic-eval-lib.mjs');
-  const suite = loadSuite(path.join(ROOT, 'evals/traffic-agent/shanghai-v1.json'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-eval-suite-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const suitePath = path.join(root, 'suite.json');
+  fs.writeFileSync(suitePath, JSON.stringify({
+    schemaVersion: 1,
+    id: 'local-fixture',
+    cases: [
+      { id: 'SH-001', kind: 'question', category: 'bus', turns: [{ user: 'q', expected: { facts: [{ label: 'count', value: 1, unit: '笔' }] } }], requiredModuleVersions: [{ id: 'module', version: '1.0.0' }], grading: { requireSuccessfulTurn: true, requireNoToolError: true } },
+      { id: 'TASK-001', kind: 'task', category: 'spatial', turns: [{ user: 'task' }], requiredModuleVersions: [{ id: 'module', version: '1.0.0' }], grading: { requireSuccessfulTurn: true, requireNoToolError: true } },
+    ],
+  }));
+  const suite = loadSuite(suitePath);
   const questions = suite.cases.filter((item: any) => item.kind === 'question');
-  assert.equal(questions.length, 25);
-  assert.deepEqual(questions.map((item: any) => item.id), Array.from({ length: 25 }, (_, index) => `SH-${String(index + 1).padStart(3, '0')}`));
-  assert.ok(suite.cases.filter((item: any) => item.category === 'spatial').length >= 3);
-  assert.ok(suite.cases.filter((item: any) => item.id.startsWith('TASK-')).length >= 3);
+  assert.equal(questions.length, 1);
+  assert.deepEqual(questions.map((item: any) => item.id), ['SH-001']);
+  assert.equal(suite.cases.filter((item: any) => item.category === 'spatial').length, 1);
   const markdown = fs.readFileSync(path.join(ROOT, 'test/fixtures/shanghai-data-question-bank.md'), 'utf8');
   assert.equal((markdown.match(/^\| \d+ \|/gm) || []).length, 50);
 });
@@ -59,6 +69,18 @@ test('Headless runner completes Host create, prompt, final answer, plan audit an
   const fixtureHash = require('node:crypto').createHash('sha256').update('fixture').digest('hex');
   fs.writeFileSync(path.join(data, 'SHA256SUMS.txt'), `${fixtureHash}  fixture.sqlite\n`);
   fs.writeFileSync(path.join(agent, 'models.json'), JSON.stringify({ providers: {} }));
+  const moduleSource = path.join(root, 'shanghaidata-module');
+  fs.mkdirSync(moduleSource);
+  fs.writeFileSync(path.join(moduleSource, 'manifest.json'), JSON.stringify({
+    manifestVersion: 2,
+    id: 'com.transportx.shanghaidata',
+    name: 'Shanghai Data Fixture',
+    version: '2.0.2',
+    type: 'module',
+    platformVersion: '>=3.0.0 <4.0.0',
+    dependencies: ['com.transportx.geo'],
+    contributes: {},
+  }));
   const wrapper = path.join(root, 'fake-pi');
   fs.writeFileSync(wrapper, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "0.80.10"; exit 0; fi\nexec "${process.execPath}" "${path.join(ROOT, 'scripts/harness/fake-pi.mjs')}" "$@"\n`);
   fs.chmodSync(wrapper, 0o755);
@@ -66,6 +88,7 @@ test('Headless runner completes Host create, prompt, final answer, plan audit an
     path.join(ROOT, 'scripts/eval/run-traffic-agent-eval.mjs'),
     '--suite', path.join(ROOT, 'test/fixtures/eval/headless-suite.json'),
     '--model', 'fixture/model', '--pi-agent-dir', agent, '--data-root', data,
+    '--module-source', moduleSource,
     '--output-dir', output, '--timeout-ms', '15000',
   ], {
     cwd: ROOT,

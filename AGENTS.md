@@ -31,7 +31,7 @@ src/
   web/              React 工作台（app 组合根、components UI 基元、platform 面板、features 功能）
 desktop/            Electron 主进程、Agent Host supervisor、electron-builder 配置、发布脚本
 modules/installable/  用户本地可安装模块暂存目录（默认不入 Git）
-prompts/            系统提示词（PI_SYSTEM.md）；内置 Skill / Extension 由 modules/capabilities 与 modules/official 贡献
+src/server/prompts/ 系统提示词（PI_SYSTEM.md）；内置 Skill / Extension 由 modules/capabilities 与 modules/official 贡献
 test/  scripts/     node --test 测试与 smoke（react / desktop / pi-rpc）
 docs/               架构、功能方案、验收与发布记录（见文档索引）
 ```

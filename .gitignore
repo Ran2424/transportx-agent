@@ -34,9 +34,12 @@ references/pi-development-guide.md
 
 # Local agent/runtime workspaces
 .agents/
+.pi/
+.plans/
 scenario/
 .tau/
 /logs/
+evals/
 modules/official/traffic-data/assets/
 modules/official/traffic-knowledge/assets/
 

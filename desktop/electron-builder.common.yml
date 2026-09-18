@@ -17,10 +17,10 @@ files:
   - dist-desktop/**
   - bin/**
   - dist/web/**
-  - prompts/**
   - modules/**
   - "!modules/installable/**"
   - src/contracts/**
+  - src/server/prompts/**
 extraResources:
   - from: desktop/build/runtime-manifest.json
     to: runtime-manifest.json

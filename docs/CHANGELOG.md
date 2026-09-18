@@ -12,6 +12,7 @@
 - `com.transportx.workbench` 升级至 1.0.2，`com.transportx.cli` 升级至 1.0.1：同步会话 Prompt 中的产品名称。
 - `docs/` 仅保留架构说明、变更记录和 README 使用的产品图片；测试数据迁移至 `test/fixtures/`。
 - `modules/installable/` 改为用户本地可安装模块暂存目录，默认不再纳入 Git；视频能力打包与真实评测改为显式接收本地 Module 源码路径。
+- `.pi/`、`.plans/` 与 `evals/` 改为本地工作目录，默认不再纳入 Git；Pi 基础系统提示词移至 `src/server/prompts/`。
 
 - 重构 README 首屏与产品说明，以共享地图和按任务装配的领域能力替代泛化的 local-first 定位；补充项目初衷、Module 扩展机制、共享 GIS 上下文、开源项目与测试协作者致谢、品牌图标、最新工作台截图、中英文入口、产品架构流程图，以及活动交通、轨道接驳和报告生成案例。开发、运行、打包和测试说明移至开发文档。架构说明补充技术栈分工、运行链路、功能源码映射、Module 依赖图、资产边界和会话装配规则。
 
