@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
-import { useConversationState, useSessionState } from '../../app/store-hooks';
+import { useSessionState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
-import { projectMessageCitations, type MessageCitationProjection } from '../../features/citation/citation-projection';
 import { TaskBoard } from '../../features/task/TaskBoard';
 import { basename } from '../../lib/formatting';
 import { FilePreview, filePresentation } from './FilePreview';
+import { useOpenDocument } from '../canvas/document-context';
+import { documentFormat } from '../canvas/document-state';
 
 function parentPath(path: string) {
   const separator = path.includes('\\') ? '\\' : '/';
@@ -36,7 +37,7 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
 export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: LiveSession | null; onClose(): void }) {
   const { t } = useTranslation();
   const kernel = appKernel;
-  const conversation = useConversationState();
+  const openDocument = useOpenDocument();
   const sessions = useSessionState();
   const attachmentRevision = sessions.attachmentRevisionBySession[session?.id || ''] || 0;
   const [path, setPath] = useState('');
@@ -45,16 +46,6 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
   const [error, setError] = useState('');
   const [copiedPath, setCopiedPath] = useState('');
   const [previewFiles, setPreviewFiles] = useState<WorkspaceFile[]>([]);
-  const artifactProjections = useMemo(() => {
-    const result = new Map<string, MessageCitationProjection>();
-    if (!session) return result;
-    const entries = conversation.bySession[session.id]?.snapshotEntries || [];
-    for (const projection of projectMessageCitations(entries).byEntry.values()) {
-      for (const artifact of projection.artifacts) result.set(artifact.resource.relativePath.replaceAll('\\', '/'), projection);
-    }
-    return result;
-  }, [conversation.bySession, session]);
-
   const load = useCallback(async (nextPath?: string) => {
     if (!session) { setPath(''); setItems([]); return; }
     setLoading(true); setError('');
@@ -75,6 +66,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
 
   async function openFile(item: WorkspaceFile) {
     if (item.isDirectory) { await load(item.path); return; }
+    if (session && documentFormat(item.path)) { openDocument({ sessionId: session.id, title: item.name, path: item.path }); return; }
     if (filePresentation(item).preview) { setPreviewFiles((current) => [...current.filter((file) => file.path !== item.path), item]); return; }
     await navigator.clipboard?.writeText(item.path);
     setCopiedPath(item.path);
@@ -104,11 +96,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
       {!session ? <WorkspaceEmpty title={t('task.waitingContext')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
     </div>
     <footer className="workspace-dock-footer"><span>SESSION SCOPED</span><span>{session?.id.slice(-8) || 'NO SESSION'}</span></footer>
-    {session ? previewFiles.map((file, index) => {
-      const normalizedPath = file.path.replaceAll('\\', '/');
-      const citationProjection = [...artifactProjections].find(([relativePath]) => normalizedPath === relativePath || normalizedPath.endsWith(`/${relativePath}`))?.[1];
-      return <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} citationProjection={citationProjection} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />;
-    }) : null}
+    {session ? previewFiles.map((file, index) => <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />) : null}
   </aside>;
 }
 

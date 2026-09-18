@@ -2,7 +2,7 @@
 
 - 产品版本：3.2.0
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-09-15
+- 更新日期：2026-09-18
 - 发布 Profile：macOS arm64（DMG）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
@@ -172,13 +172,16 @@ sequenceDiagram
 | 地图选取与截图 | Geo：`inspect_map_context`、`request_geo_input`、`capture_geo_screenshot` | `geo-interaction-service.ts` 维护上下文与等待请求 | GeoWorkspace 收集选择、渲染并上传 PNG；结果返回 Agent |
 | 视频检索与处理 | 可安装 Video Extension：search / present / snapshot / clip / sample_frames | `video-service.ts` → 会话冻结的 `VideoRunner`；资源与预计算指标接口 | `features/video/VideoWorkspace.tsx`，Canvas 视频标签 |
 | 知识检索与引用 | Knowledge Module 的 Skill/脚本检索；Citation Extension 注册和解析证据 | `citation-service.ts`、`citation-registry.ts`、`citation-resources.ts` | `platform/conversation/` 引用标记与原文定位 |
-| 报告与 PDF | 报告 Template + Agent 写 Markdown，引用分析文件/图件 | 文件 API、`report-pdf.ts`；桌面请求交给 Electron PDF 渲染 | Workspace 预览/导出；Markdown 渲染在 `src/public/markdown.ts` |
+| 报告与 PDF | 报告 Template + Agent 写 Markdown，引用分析文件/图件 | 文件 API、`report-pdf.ts`；桌面请求交给 Electron PDF 渲染 | Canvas `DocumentWorkspace.tsx` 浏览/导出；Markdown 渲染复用 `src/public/markdown.ts` |
 | 能力安装与任务选择 | Module manifest 声明能力、依赖与资产 | Registry / Installer / Assembler、`platform-overview.ts` | Settings、NewSessionDialog、`platform/capabilities/` |
 
 Task 是同一 Agent 的步骤与交互状态管理，当前内置模块没有独立的多 Agent 调度器。Web Bridge 是 Pi 的模型/工具元数据桥，不是网页搜索或浏览器自动化服务。报告不是独立 Agent 或服务流水线：Agent 将数据、空间、视频与知识工具的结果组织成文件。
 
 ### 3.4 文件、引用、地图与视频
 
+- Canvas 的文档标签由用户打开请求产生，与 Geo/Video 的工具结果投影合并；标签和阅读位置按会话保存在前端内存，文件写入或快照更新不会自动弹出文档。WorkspaceDock 负责查找文件，MD/PDF 的文件、工具、成果和引用入口统一调用 `OpenDocumentContext`。
+- Markdown 文档复用共享渲染器，由 `report-renderer.ts` 补充公式、Mermaid、图片和标题目录；文档定位在自己的容器内完成，不改变聊天 Markdown。PDF 通过受控 URL 在原生 iframe 阅读器中显示，引用传入物理页码；同会话标签切换保留 iframe，跨会话重建只恢复最后一次明确请求的页码，不读取原生阅读器内部滚动或缩放状态。
+- 普通文件以会话与规范路径识别；引用文档以会话、resourceId 与 SHA-256 识别。引用 URL 携带预期哈希，Host 同时检查注册版本与磁盘内容，失效时返回 409，不能回退到普通文件接口。手动刷新重新读取内容；关闭标签和切换会话后的迟到结果不会替换当前阅读内容。
 - 附件先上传到任务工作区，再以 `attachmentIds` 关联后续消息；服务端再次校验归属、状态、真实路径和文件存在性后才向 Pi 提供上下文。
 - File、Preview、Geo 和 Spatial Analysis 以活动 Session cwd 为边界。Citation/Video 还可读取会话计划中明确解析的 Knowledge/Data 资产根目录，并将派生资源发布到当前任务。模块资产不必复制进 cwd；边界校验不能简化成“只允许读取 cwd”。
 - 用户可从地图提交要素、点位、矩形或当前视野四类 Geo Context，并显式附到下一轮消息。Agent 通过 `inspect_map_context` 读取本轮上下文，也可用 `request_geo_input` 等待用户在指定地图 revision 上补充输入；提交、取消、超时、中止和地图失效都有明确终态。

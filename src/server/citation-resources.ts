@@ -52,6 +52,11 @@ export function handleCitationResourceRoute(
     json(res, 404, { error: 'Citation resource not found in this session' });
     return true;
   }
+  const expectedHash = new URL(req.url || '/', 'http://localhost').searchParams.get('sha256');
+  if (expectedHash && expectedHash !== resource.sha256) {
+    json(res, 409, { error: 'Citation resource version no longer matches this view' });
+    return true;
+  }
   const knowledgeRoots = typeof deps.knowledgeRoots === 'function' ? deps.knowledgeRoots(session) : deps.knowledgeRoots;
   if (match[3] === 'preview') serveCitationPreview(req, res, session, resource, knowledgeRoots);
   else serveCitationResource(req, res, session, resource, knowledgeRoots);
