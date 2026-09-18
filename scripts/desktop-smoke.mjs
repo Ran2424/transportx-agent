@@ -100,6 +100,31 @@ try {
     return await window.transportxDesktop.download(url);
   }, new URL(window.url()).origin);
   if (!downloadedPdfPath.startsWith(`${downloadsDir}${path.sep}`) || !fs.existsSync(downloadedPdfPath) || fs.readFileSync(downloadedPdfPath).subarray(0, 4).toString() !== '%PDF') throw new Error('Desktop PDF download was not saved');
+  // Exercise the same sandboxed native PDF embedding used by the Canvas reader.
+  const previewUrl = await window.evaluate(async () => {
+    const response = await fetch('/api/reports/pdf/download', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Canvas page navigation', html: [1, 2, 3].map((page) => `<section style="${page < 3 ? 'break-after:page;' : ''}font-size:40px">CANVAS PDF PAGE ${page}</section>`).join('') }),
+    });
+    const { url } = await response.json();
+    return url;
+  });
+  const inlinePdf = await (await fetch(new URL(previewUrl, window.url()))).arrayBuffer();
+  await window.route('**/canvas-smoke.pdf', (route) => route.fulfill({ contentType: 'application/pdf', body: Buffer.from(inlinePdf) }));
+  await window.evaluate(() => {
+    const frame = document.createElement('iframe');
+    frame.id = 'canvas-pdf-smoke'; frame.title = 'Canvas native PDF';
+    frame.style.cssText = 'position:fixed;inset:60px 20px 20px;width:90%;height:80%;z-index:9999;background:white';
+    frame.src = '/canvas-smoke.pdf#page=3&view=FitH';
+    document.body.append(frame);
+  });
+  await window.locator('#canvas-pdf-smoke').waitFor();
+  await window.waitForTimeout(1_000);
+  const documentValidationDir = path.resolve('.plans/canvas-document-viewer/validation');
+  fs.mkdirSync(documentValidationDir, { recursive: true });
+  await window.locator('#canvas-pdf-smoke').screenshot({ path: path.join(documentValidationDir, 'electron-pdf-page-3.png') });
+  await window.evaluate(() => document.querySelector('#canvas-pdf-smoke')?.remove());
+  console.log('[desktop-smoke] native PDF page-navigation screenshot captured');
   await window.getByRole('button', { name: '打开设置' }).click();
   const settings = window.getByTestId('settings-workspace');
   await settings.waitFor();

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import net from 'node:net';
+import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { documentSmoke } from './harness/document-smoke.mjs';
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -37,11 +39,13 @@ child.stdout.on('data', (chunk) => { output += chunk; });
 child.stderr.on('data', (chunk) => { output += chunk; });
 
 let browser;
+let page;
 const pageErrors = [];
 try {
   const { baseUrl } = await waitForReady(child, () => output);
   browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.setDefaultTimeout(20_000);
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
@@ -54,6 +58,7 @@ try {
 
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
+  await documentSmoke(page, browser);
   await composer.fill('实时-markdown');
   await composer.press('Enter');
   const liveMarkdown = page.locator('.assistant-message.is-streaming');
@@ -267,6 +272,11 @@ try {
   if (pageErrors.length) throw new Error(`Web scenario raised page errors: ${pageErrors.join('\n')}`);
   console.log('Web scenario passed: baseline workflow plus Geo user Context, Agent request, audited result, and refresh recovery.');
 } catch (error) {
+  fs.mkdirSync('.plans/canvas-document-viewer/validation', { recursive: true });
+  if (page && !page.isClosed()) {
+    await page.screenshot({ path: '.plans/canvas-document-viewer/validation/web-failure.png' }).catch(() => {});
+    fs.writeFileSync('.plans/canvas-document-viewer/validation/web-failure.txt', await page.locator('body').innerText().catch(() => 'Page unavailable'));
+  }
   throw new Error(`${error instanceof Error ? error.stack || error.message : String(error)}\n\nPage errors:\n${pageErrors.join('\n')}\n\nFake server output:\n${output}`);
 } finally {
   await browser?.close();

@@ -444,6 +444,8 @@ test('serves Registry-backed citation resources without exposing arbitrary sessi
   assert.equal(response.headers.get('etag'), `"${sha256}"`);
   const download = await fetch(`${url}?download=1`);
   assert.match(String(download.headers.get('content-disposition')), /^attachment;/);
+  assert.equal((await fetch(`${url}?sha256=${sha256}`)).status, 200);
+  assert.equal((await fetch(`${url}?sha256=${'b'.repeat(64)}`)).status, 409, 'a view pinned to another registry version cannot read current bytes');
   assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/citation-resources/${encodeURIComponent(resourceId)}/content`)).status, 404);
   assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citation-resources/${encodeURIComponent('resource:secret')}/content`)).status, 404);
   const citations = await jsonBody(await fetch(`${base}/api/live-sessions/${owner.id}/citations`));
