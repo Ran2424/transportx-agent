@@ -18,10 +18,12 @@ function focusCitationCard(event: MouseEvent<HTMLElement>, projection: MessageCi
   if (!id) return;
   const citation = projection?.available.get(id);
   if (citation && documentFormat(citation.resource.relativePath, citation.resource.mimeType)) {
-    openDocument({ sessionId, title: citation.work.title, path: citation.resource.relativePath, resource: citation.resource, locator: citation.locator });
+    const locator = citation.resource.scope !== 'artifact' || citation.locator.page || citation.locator.nodeId || citation.locator.section ? citation.locator : undefined;
+    openDocument({ sessionId, title: citation.work.title, path: citation.resource.relativePath, resource: citation.resource, locator });
     return;
   }
   const card = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-citation-card]')].find((candidate) => candidate.dataset.citationCard === id);
+  if (citation?.resource.scope === 'artifact') { card?.click(); return; }
   card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   card?.focus({ preventScroll: true });
 }
@@ -31,7 +33,7 @@ export const UserMessage = memo(function UserMessage({ message, sessionId, attac
   const openDocument = useOpenDocument();
   const text = messageText(message);
   const [copied, setCopied] = useState(false);
-  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} />{message.geoContextIds?.length ? <div className="message-geo-contexts">{message.geoContextIds.map((id) => <span key={id}>地图上下文 · {id.slice(-8)}</span>)}</div> : null}<article className="conversation-message user-message" onClick={(event) => focusCitationCard(event, projection, sessionId, openDocument)}><div className="message-content"><div dangerouslySetInnerHTML={renderConversationMarkdown(text, projection?.numbers)} /><CitationFooter projection={projection} sessionId={sessionId} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copyText(citationCopyText(text, projection)).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
+  return <div className="user-message-group"><AttachmentCards sessionId={sessionId} attachmentIds={message.attachmentIds} attachments={attachments} />{message.geoContextIds?.length ? <div className="message-geo-contexts">{message.geoContextIds.map((id) => <span key={id}>地图上下文 · {id.slice(-8)}</span>)}</div> : null}<article className="conversation-message user-message" onClick={(event) => focusCitationCard(event, projection, sessionId, openDocument)}><div className="message-content"><div dangerouslySetInnerHTML={renderConversationMarkdown(text, projection?.numbers)} /><MessageArtifacts projection={projection} sessionId={sessionId} /><CitationFooter projection={projection} sessionId={sessionId} /></div><button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copyText(citationCopyText(text, projection)).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button></article></div>;
 });
 
 function ThinkingStatus({ active, startedAt, durationMs }: { active: boolean; startedAt: number | null; durationMs: number | null }) {

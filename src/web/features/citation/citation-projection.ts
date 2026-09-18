@@ -46,13 +46,14 @@ function projectionForIds(ids: string[], available: Map<string, AvailableCitatio
     return citation ? [citation] : [];
   });
   const workNumbers = new Map<string, number>();
-  const citations = resolved.filter((item) => item.resource.scope !== 'artifact').map((item) => {
+  const numbered = resolved.map((item) => {
     const number = workNumbers.get(item.work.workId) || workNumbers.size + 1;
     workNumbers.set(item.work.workId, number);
     return { ...item, number };
   });
-  const artifacts = resolved.filter((item) => item.resource.scope === 'artifact').map((item) => ({ ...item, number: 0 }));
-  const numbers = Object.fromEntries(citations.map((item) => [item.occurrence.occurrenceId, item.number]));
+  const citations = numbered.filter((item) => item.resource.scope !== 'artifact');
+  const artifacts = numbered.filter((item) => item.resource.scope === 'artifact');
+  const numbers = Object.fromEntries(numbered.map((item) => [item.occurrence.occurrenceId, item.number]));
   return { citations, artifacts, numbers, unavailableIds: ids.filter((id) => !available.has(id)), available: new Map(available) };
 }
 
@@ -94,9 +95,9 @@ function locatorText(locator: CitationLocator) {
 }
 
 export function citationReferenceMarkdown(projection?: MessageCitationProjection) {
-  if (!projection?.citations.length) return '';
+  if (!projection || (!projection.citations.length && !projection.artifacts.length)) return '';
   const english = i18n.language === 'en-US';
-  const references = [...projection.citations.reduce((items, item) => {
+  const references = [...[...projection.citations, ...projection.artifacts].sort((a, b) => a.number - b.number).reduce((items, item) => {
     if (!items.has(item.work.workId)) items.set(item.work.workId, item);
     return items;
   }, new Map<string, ResolvedCitation>()).values()];
@@ -109,6 +110,6 @@ export function citationReferenceMarkdown(projection?: MessageCitationProjection
 export function citationCopyText(text: string, projection?: MessageCitationProjection) {
   if (!projection) return text;
   let output = text.replace(CITATION_MARKER_RE, (_marker, raw: string) => raw.split(',').map((id) => projection.numbers[id.trim()] ? `[${projection.numbers[id.trim()]}]` : `[${i18n.language === 'en-US' ? 'citation unavailable' : '引用不可用'}]`).join(''));
-  if (projection.citations.length) output += `\n\n${citationReferenceMarkdown(projection)}`;
+  if (projection.citations.length || projection.artifacts.length) output += `\n\n${citationReferenceMarkdown(projection)}`;
   return output;
 }
