@@ -138,14 +138,17 @@ Thanks also to these product testers:
 
 <table>
   <tr>
-    <td align="center" width="33%">
-      <a href="https://github.com/aowang-ai"><img src="https://github.com/aowang-ai.png?size=96" width="64" alt="@aowang-ai" /><br /><strong>@aowang-ai</strong></a><br /><sub>Ao Wang</sub>
+    <td align="center" width="25%">
+      <a href="https://github.com/aowang-ai"><img src="https://github.com/aowang-ai.png?size=96" width="64" alt="@aowang-ai" /><br /><strong>@aowang-ai</strong></a>
     </td>
-    <td align="center" width="33%">
-      <a href="https://github.com/yonghenggudu"><img src="https://github.com/yonghenggudu.png?size=96" width="64" alt="@yonghenggudu" /><br /><strong>@yonghenggudu</strong></a><br /><sub>Linfeng Guo</sub>
+    <td align="center" width="25%">
+      <a href="https://github.com/yonghenggudu"><img src="https://github.com/yonghenggudu.png?size=96" width="64" alt="@yonghenggudu" /><br /><strong>@yonghenggudu</strong></a>
     </td>
-    <td align="center" width="33%">
-      <a href="https://github.com/runningjian-ui"><img src="https://github.com/runningjian-ui.png?size=96" width="64" alt="@runningjian-ui" /><br /><strong>@runningjian-ui</strong></a><br /><sub>Jian Li</sub>
+    <td align="center" width="25%">
+      <a href="https://github.com/runningjian-ui"><img src="https://github.com/runningjian-ui.png?size=96" width="64" alt="@runningjian-ui" /><br /><strong>@runningjian-ui</strong></a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/tataxing123"><img src="https://github.com/tataxing123.png?size=96" width="64" alt="@tataxing123" /><br /><strong>@tataxing123</strong></a>
     </td>
   </tr>
 </table>
