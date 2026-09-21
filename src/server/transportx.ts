@@ -225,10 +225,10 @@ async function runPrompt(host: HostHandle, socket: WebSocket, sessionId: string,
   let streamed = '';
   let cancelWait = () => {};
   const completion = new Promise<void>((resolve, reject) => {
-    const configuredTimeoutSeconds = Number(process.env.TRANSPORTX_AGENT_RESPONSE_TIMEOUT_SECONDS || 600);
+    const configuredTimeoutSeconds = Number(process.env.TRANSPORTX_AGENT_RESPONSE_TIMEOUT_SECONDS || 1000);
     const responseTimeoutMs = Number.isFinite(configuredTimeoutSeconds) && configuredTimeoutSeconds > 0
       ? configuredTimeoutSeconds * 1000
-      : 600_000;
+      : 1_000_000;
     const timer = setTimeout(() => finish(new CliError('Agent response timed out')), responseTimeoutMs);
     const finish = (error?: Error) => {
       clearTimeout(timer);
@@ -255,7 +255,7 @@ async function runPrompt(host: HostHandle, socket: WebSocket, sessionId: string,
       } else if (event?.type === 'extension_ui_request' || envelope.type === 'geo_interaction_updated' || envelope.type === 'geo_screenshot_updated') {
         void rpc(host, { type: 'abort', sessionId }).catch(() => {});
         finish(new CliError('This request requires interaction in the desktop workbench.'));
-      } else if (event?.type === 'agent_end') finish();
+      } else if (event?.type === 'agent_end' || event?.type === 'agent_settled') finish();
     };
     cancelWait = () => finish();
     socket.on('message', receive);
