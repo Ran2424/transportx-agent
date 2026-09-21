@@ -165,14 +165,10 @@ function resolveSessionFile(filePath: string) {
 
 function appendSessionName(filePath: string, name: string) {
   const resolved = resolveSessionFile(filePath);
-  // ===== 修复 BEGIN：第二条消息起全部卡死（EEXIST）=====
-  // 原实现见 fix-backup/server-main.ts.orig。
-  // Pi 尚未首次 flush 的文件不能被抢先追加（会让 Pi 的 wx 建文件抛
-  // EEXIST）。此时跳过文件写入：活跃会话的名称已在内存中并会由
-  // persistPendingSessionName 在 agent_settled 后补写；历史会话文件
-  // 若从未被 Pi flush 过则本来就没有消息内容，名称不落盘影响可忽略。
+  // Never pre-create or append before Pi's first flush (see
+  // sessionFileReadyForNameAppend): the in-memory name is unaffected and a
+  // live session's pending name is persisted after agent_settled.
   if (sessionFileReadyForNameAppend(resolved)) appendSessionNameEntry(resolved, name);
-  // ===== 修复 END =====
   return resolved;
 }
 
