@@ -26,7 +26,7 @@ import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from 
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
-import { appendSessionNameEntry, inferSessionTitle, isGenericSessionName } from './session-title.js';
+import { appendSessionNameEntry, inferSessionTitle, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
@@ -350,6 +350,10 @@ export class PiRpcSession {
     if (type === 'agent_settled') {
       this.isStreaming = false;
       this.pendingExtensionUiRequests.clear();
+      // ===== 修复 BEGIN：第二条消息起全部卡死（EEXIST）=====
+      // run 结束时 Pi 已完成首次落盘，是重试写入会话名称的可靠时机。
+      this.persistPendingSessionName();
+      // ===== 修复 END =====
       this.send({ type: 'get_session_stats' }, { timeoutMs: 5000 }).catch(() => {});
     }
     if (event.contextUsage) this.contextUsage = event.contextUsage;
@@ -496,6 +500,13 @@ export class PiRpcSession {
 
   persistPendingSessionName() {
     if (!this.sessionFile || !this.pendingSessionNamePersistence) return;
+    // ===== 修复 BEGIN：第二条消息起全部卡死（EEXIST）=====
+    // 原实现见 fix-backup/sessions.ts.orig。
+    // Pi 尚未完成首次 wx flush 时文件要么不存在、要么只有 session_info；
+    // 此时追加会抢先创建文件，导致 Pi 首次 flush 抛 EEXIST。改为等文件
+    // 含 Pi 头部（type === 'session'）后再追加；保持 pending 等待重试。
+    if (!sessionFileReadyForNameAppend(this.sessionFile)) return;
+    // ===== 修复 END =====
     try {
       appendSessionNameEntry(this.sessionFile, this.pendingSessionNamePersistence);
       this.pendingSessionNamePersistence = null;
