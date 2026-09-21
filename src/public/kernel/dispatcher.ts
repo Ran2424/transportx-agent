@@ -35,34 +35,28 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         break;
 
       case 'session/listReceived': {
-        // ===== 原实现（保留）=====
         stores.session.listReceived(action.sessions);
-        // ===== 修复 BEGIN：第二条消息卡死 =====
-        // 原实现见 fix-backup/dispatcher.ts.orig。
-        // 问题：conversation overlay 的 live.active 只由 agent_settled 复位，
-        // 该事件一旦丢失，输入框永远停留在 steer 模式，后续消息被静默吞掉。
-        // 修复：服务端权威状态（全量列表/轮询）说会话不在流式时，同步关闭卡住的 overlay。
+        // The conversation overlay's live.active is only reset by agent_settled;
+        // if that event is lost the input stays stuck in steer mode. When the
+        // server-authoritative state says a session is not streaming, close the
+        // stale overlay as well.
         for (const session of action.sessions) {
           if (session.id && session.isStreaming === false) {
             const conv = stores.conversation.get().bySession[session.id];
             if (conv?.live.active) stores.conversation.streamEnded(session.id);
           }
         }
-        // ===== 修复 END =====
         break;
       }
       case 'session/created':
       case 'session/updated': {
-        // ===== 原实现（保留）=====
         stores.session.upsert(action.session);
-        // ===== 修复 BEGIN：第二条消息卡死 =====
-        // 同上：live_session_updated 广播把 isStreaming 纠正为 false 时，
-        // 同步复位 overlay（isStreaming 为 undefined 表示未携带该字段，不动）。
+        // Same guard as above for live_session_updated broadcasts (isStreaming
+        // undefined means the field was not included; leave the overlay alone).
         if (action.session.id && action.session.isStreaming === false) {
           const conv = stores.conversation.get().bySession[action.session.id];
           if (conv?.live.active) stores.conversation.streamEnded(action.session.id);
         }
-        // ===== 修复 END =====
         break;
       }
       case 'session/closed':
