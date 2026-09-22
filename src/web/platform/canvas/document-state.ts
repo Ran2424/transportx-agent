@@ -1,13 +1,28 @@
 import type { CitationEnvelope, CitationLocator, CitationResource } from '../../../contracts/citation.ts';
 
 export type DocumentRequest = { sessionId: string; title: string; path: string; resource?: CitationResource; locator?: CitationLocator };
-export type DocumentView = DocumentRequest & { id: string; kind: 'document'; format: 'markdown' | 'pdf'; navigationId: number };
+export type DocumentFormat = 'markdown' | 'pdf' | 'docx' | 'xlsx' | 'pptx';
+export type DocumentView = DocumentRequest & { id: string; kind: 'document'; format: DocumentFormat; navigationId: number };
 export type DocumentPosition = { scrollTop: number; navigationId: number };
 
-export function documentFormat(path: string, mimeType?: string): DocumentView['format'] | null {
-  if (mimeType === 'application/pdf' || /\.pdf$/i.test(path)) return 'pdf';
-  if (mimeType === 'text/markdown' || /\.mdx?$/i.test(path)) return 'markdown';
+const OFFICE_MIME_TYPES: Record<string, Extract<DocumentFormat, 'docx' | 'xlsx' | 'pptx'>> = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+};
+
+export function documentFormat(path: string, mimeType?: string): DocumentFormat | null {
+  const mime = mimeType?.split(';')[0].trim().toLowerCase();
+  if (mime === 'application/pdf' || /\.pdf$/i.test(path)) return 'pdf';
+  if (mime === 'text/markdown' || /\.mdx?$/i.test(path)) return 'markdown';
+  const extension = path.match(/\.(docx|xlsx|pptx)$/i)?.[1].toLowerCase() as 'docx' | 'xlsx' | 'pptx' | undefined;
+  if (extension) return extension;
+  if (mime && OFFICE_MIME_TYPES[mime]) return OFFICE_MIME_TYPES[mime];
   return null;
+}
+
+export function isOfficeFormat(format: DocumentFormat): format is 'docx' | 'xlsx' | 'pptx' {
+  return format === 'docx' || format === 'xlsx' || format === 'pptx';
 }
 
 // Identity only; authorization and realpath checks remain on the server.

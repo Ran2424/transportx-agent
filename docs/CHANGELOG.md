@@ -38,6 +38,7 @@
 
 ### Added
 
+- Canvas 新增本地只读 OOXML Viewer：DOCX、XLSX 和 PPTX 可从工作区、工具结果、成果与引用入口打开，支持搜索、缩放、连续页或 Sheet 导航、选择与批注；XLSX 支持复制选择，PPTX 支持备注面板。三种格式按需加载 Rust/WASM Viewer，禁用在线字体与超链接，并通过 HEAD、32 MiB 文件上限、解压资源限制及 Citation SHA-256 版本校验保持现有文件安全边界。
 - Canvas 支持 Markdown/PDF 文档标签，文件栏、工具文件预览、成果和引用入口统一打开文档；支持 Markdown 目录与标题定位、PDF 引用页码跳转、会话内阅读状态、手动刷新、原文件下载和报告 PDF 导出。引用文档绑定注册版本，内容变化时显示失效提示；其他文件保留原有浮窗预览。PDF 使用原生阅读器，未引入 PDF.js 或自定义搜索、缩略图、页内高亮、大文件优化。
 - Module manifest 支持声明经过哈希校验的平台/架构专属 Native Runtime。
 - 新增 `npm run video:pack`，生成包含自包含 Extension、Skill、ffmpeg/ffprobe 和许可证说明的视频能力包。

@@ -26,7 +26,7 @@ export function handleCitationResourceRoute(
   deps: CitationResourceDeps,
 ) {
   const match = cleanPath.match(ROUTE_RE);
-  if (!match || req.method !== 'GET') return false;
+  if (!match || (req.method !== 'GET' && !(req.method === 'HEAD' && match[3] === 'content'))) return false;
   let sessionId: string;
   let resourceId: string;
   try {
@@ -71,12 +71,18 @@ function resourceRoot(session: CitationResourceSession, resource: CitationResour
   return { root, relativePath: segments.join('/') };
 }
 
-function readCitationResource(session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
+function locateCitationResource(session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
   const location = resourceRoot(session, resource, knowledgeRoots);
   const root = fs.realpathSync(location.root);
   const candidate = path.resolve(root, location.relativePath);
   const resolved = fs.realpathSync(candidate);
-  if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw Object.assign(new Error('Citation resource path is not allowed'), { code: 'EACCES' });
+  const stat = fs.statSync(resolved);
+  if (!isWithin(root, resolved) || !stat.isFile()) throw Object.assign(new Error('Citation resource path is not allowed'), { code: 'EACCES' });
+  return { resolved, stat };
+}
+
+function readCitationResource(session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
+  const { resolved } = locateCitationResource(session, resource, knowledgeRoots);
   const buffer = fs.readFileSync(resolved);
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
   if (sha256 !== resource.sha256) throw Object.assign(new Error('Citation resource has changed since it was registered'), { code: 'ECHANGED' });
@@ -93,19 +99,22 @@ function resourceError(res: ServerResponse, error: unknown) {
 
 function serveCitationResource(req: IncomingMessage, res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
   try {
-    const { resolved, buffer, sha256 } = readCitationResource(session, resource, knowledgeRoots);
+    const loaded = req.method === 'HEAD'
+      ? { ...locateCitationResource(session, resource, knowledgeRoots), buffer: null }
+      : { ...readCitationResource(session, resource, knowledgeRoots), stat: null };
     const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
     const headers: Record<string, string | number> = {
       'Content-Type': resource.kind === 'web' && resource.mimeType === 'text/html' ? 'text/plain; charset=utf-8' : resource.mimeType,
-      'Content-Length': buffer.length,
-      'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(resolved))}`,
+      'Content-Length': loaded.buffer?.length ?? loaded.stat!.size,
+      'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(loaded.resolved))}`,
       'Cache-Control': 'private, max-age=0, must-revalidate',
-      'ETag': `"${sha256}"`,
+      'ETag': `"${resource.sha256}"`,
       'X-Content-Type-Options': 'nosniff',
     };
     if (resource.mimeType === 'image/svg+xml') headers['Content-Security-Policy'] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
     res.writeHead(200, headers);
-    res.end(buffer);
+    if (req.method === 'HEAD') { res.end(); return; }
+    res.end(loaded.buffer);
   } catch (error) { resourceError(res, error); }
 }
 

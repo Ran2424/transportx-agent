@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import { Icon } from '../../components/icons';
 import { GeoWorkspace } from '../../features/geo/GeoWorkspace';
+import { OfficeWorkspace } from '../../features/office/OfficeWorkspace';
 import { VideoWorkspace } from '../../features/video/VideoWorkspace';
 import type { CanvasState, CanvasView } from './canvas-state';
 import { DocumentWorkspace } from './DocumentWorkspace';
-import type { DocumentPosition } from './document-state';
+import { isOfficeFormat, type DocumentPosition } from './document-state';
 
 export function AgentCanvas({ session, views, state, documentPositions, onActivate, onCloseTab, onClose }: {
   session: LiveSession | null;
@@ -49,6 +50,7 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
         {view.kind === 'geo'
           ? <GeoWorkspace session={session} envelope={view.envelope} active={state.open && view.id === state.activeId} />
           : view.kind === 'video' ? <VideoWorkspace session={session} item={view.item} revision={view.revision} compareItem={view.compareItem} active={state.open && view.id === state.activeId} />
+          : isOfficeFormat(view.format) ? <OfficeWorkspace view={view} active={state.open && view.id === state.activeId} />
           : <DocumentWorkspace view={view} active={state.open && view.id === state.activeId} positions={documentPositions} />}
       </div>)}
     </div>
