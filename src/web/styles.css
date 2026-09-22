@@ -1030,6 +1030,68 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .document-notice, .document-pdf-help { margin: 0; padding: 8px 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .document-notice.is-error { color: var(--status-danger); }
 .document-pdf-help { border-top: 1px solid var(--border-default); font-size: 11px; }
+.office-workspace {
+  --ooxml-comment-author-accent: var(--selection-border);
+  --ooxml-comment-author-color: var(--text-primary);
+  --ooxml-comment-body-color: var(--text-primary);
+  --ooxml-comment-card-active-background: var(--selection-bg);
+  --ooxml-comment-card-active-border: var(--selection-border);
+  --ooxml-comment-card-background: var(--surface-raised);
+  --ooxml-comment-card-border: var(--border-default);
+  --ooxml-comment-muted-color: var(--text-secondary);
+  --ooxml-comment-marker-color: var(--selection-border);
+  --ooxml-comment-reply-border: var(--border-default);
+  --ooxml-comment-target-background: var(--selection-bg);
+  --ooxml-comment-target-border: var(--selection-border);
+  --ooxml-xlsx-chrome-accent: var(--selection-border);
+  --ooxml-xlsx-chrome-background: var(--surface-canvas);
+  --ooxml-xlsx-chrome-border: var(--border-default);
+  --ooxml-xlsx-chrome-scrollbar-color: var(--text-tertiary);
+  --ooxml-xlsx-chrome-selection-background: var(--selection-bg);
+  --ooxml-xlsx-chrome-surface: var(--surface-raised);
+  --ooxml-xlsx-chrome-surface-muted: var(--surface-default);
+  --ooxml-xlsx-chrome-text: var(--text-primary);
+  --ooxml-xlsx-chrome-text-muted: var(--text-secondary);
+  --ooxml-xlsx-focus-ring: var(--selection-border);
+  display: flex;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--surface-canvas);
+  outline: none;
+}
+.office-toolbar { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-bottom: 1px solid var(--border-default); background: var(--surface-default); }
+.office-source { display: flex; min-width: 140px; flex: 1 1 220px; align-items: baseline; gap: 7px; overflow: hidden; white-space: nowrap; }
+.office-source b { overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; }
+.office-source span { color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.office-search, .office-actions { display: flex; align-items: center; gap: 4px; }
+.office-search input { width: 150px; height: 27px; padding: 0 8px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-primary); background: var(--surface-raised); font-size: 11px; }
+.office-search span { min-width: 54px; color: var(--text-secondary); font-size: 11px; text-align: center; }
+.office-toolbar button, .office-empty button { min-height: 27px; padding: 4px 7px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-primary); background: var(--surface-raised); cursor: pointer; font-size: 11px; white-space: nowrap; }
+.office-toolbar button:hover:not(:disabled), .office-empty button:hover { border-color: var(--selection-border); background: var(--interactive-hover-bg); }
+.office-toolbar button:disabled { cursor: default; opacity: .48; }
+.office-toolbar button:focus-visible, .office-toolbar input:focus-visible, .office-empty button:focus-visible { outline: 2px solid var(--selection-border); outline-offset: 1px; }
+.office-reading-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.office-reading-layout[hidden] { display: none; }
+.office-viewer { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface-default); }
+.office-notes { flex: 0 0 260px; max-width: 34%; padding: 14px; overflow: auto; border-left: 1px solid var(--border-default); color: var(--text-primary); background: var(--surface-default); }
+.office-notes strong { font-size: 12px; }
+.office-notes p { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
+.office-status { margin: 0; padding: 6px 10px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); background: var(--surface-default); font-size: 11px; }
+.office-loading { position: absolute; z-index: 1; align-self: center; margin-top: 64px; padding: 8px 12px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-secondary); background: var(--surface-raised); box-shadow: var(--shadow-menu); font-size: 12px; }
+.office-empty { display: flex; flex: 1; align-items: center; justify-content: center; flex-direction: column; gap: 8px; padding: 24px; color: var(--text-secondary); text-align: center; }
+.office-empty strong { color: var(--text-primary); font-size: 14px; }
+.office-empty span { max-width: 560px; font-size: 12px; line-height: 1.6; }
+.office-empty div { display: flex; gap: 6px; }
+@media (max-width: 980px) {
+  .office-toolbar { flex-wrap: wrap; }
+  .office-source { flex-basis: 100%; }
+  .office-search { flex: 1; }
+  .office-search input { flex: 1; width: auto; }
+  .office-actions { max-width: 100%; overflow-x: auto; }
+}
 .canvas-reopen { width: 32px; height: 28px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-primary); background: var(--surface-default); font-size: 12px; }
 
 .video-workspace { min-height: 0; flex: 1; display: flex; flex-direction: column; }

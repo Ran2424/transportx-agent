@@ -94,7 +94,7 @@ test('manual documents survive tool snapshots, close/reopen and repeated citatio
 });
 
 test('document identity uses full paths, owning sessions and pinned citation versions', async () => {
-  const { resolveDocument, documentPath } = await import('../src/web/platform/canvas/document-state.ts');
+  const { resolveDocument, documentPath, documentFormat, isOfficeFormat } = await import('../src/web/platform/canvas/document-state.ts');
   const request = { sessionId: 'one', title: '报告', path: 'output/../report.md' };
   const first = resolveDocument(request, '/task')!;
   assert.equal(first.id, resolveDocument({ ...request, path: '/task/report.md' }, '/task')!.id);
@@ -113,6 +113,13 @@ test('document identity uses full paths, owning sessions and pinned citation ver
   assert.equal(resolveDocument(request, '/task', { resources: [{ ...resource, scope: 'knowledge' }] } as any)!.resource, undefined);
   assert.equal(resolveDocument(request, '/task', { resources: [resource, { ...resource, resourceId: 'second' }] } as any)!.resource, undefined, 'ambiguous registrations are not merged');
   assert.equal(resolveDocument({ ...request, path: 'image.png' }, '/task'), null);
+  assert.equal(documentFormat('report.docx'), 'docx');
+  assert.equal(documentFormat('sheet.bin', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), 'xlsx');
+  assert.equal(documentFormat('slides.PPTX'), 'pptx');
+  assert.equal(documentFormat('legacy.xls'), null);
+  assert.equal(documentFormat('legacy.ods'), null);
+  assert.equal(isOfficeFormat('docx'), true);
+  assert.equal(isOfficeFormat('pdf'), false);
 });
 
 test('document headings have unique anchors and ambiguous or absent citations do not guess', async () => {
