@@ -42,7 +42,7 @@
 
 ### Added
 
-- 新增 `com.transportx.canvas` 1.0.0 与 `com.transportx.document` 1.0.0。Agent 可用 `canvas_present` 在 Canvas 中主动打开 Markdown、PDF、DOCX、XLSX、PPTX，并定位页面、幻灯片、Sheet、单元格或搜索结果；资源由 Host 按当前任务目录、Citation 固定版本和 Session Plan 校验。
+- 新增 `com.transportx.canvas` 1.1.0 与 `com.transportx.document` 1.1.0。Agent 可用 `canvas_present` 在 Canvas 中主动打开 Markdown、CSV、PDF、DOCX、XLSX、PPTX，并定位页面、幻灯片、Sheet、单元格或搜索结果；CSV 以只读表格显示，不加载 OOXML runtime；资源由 Host 按当前任务目录、Citation 固定版本和 Session Plan 校验。
 - 新增显式 `CanvasContextV1` 共享：用户可以把当前文档位置、视频时间点或地图选区附到下一轮消息，Agent 仅能通过 `canvas_inspect_context` 读取本轮附加的 Context ID。
 
 - Canvas 新增本地只读 OOXML Viewer：DOCX、XLSX 和 PPTX 可从工作区、工具结果、成果与引用入口打开，支持搜索、缩放、连续页或 Sheet 导航、选择与批注；XLSX 支持复制选择，PPTX 支持备注面板。三种格式按需加载 Rust/WASM Viewer，禁用在线字体与超链接，并通过 HEAD、32 MiB 文件上限、解压资源限制及 Citation SHA-256 版本校验保持现有文件安全边界。

@@ -4,7 +4,7 @@ export const DOCUMENT_CANVAS_ADAPTER_ID = 'com.transportx.canvas.document';
 export const GEO_CANVAS_ADAPTER_ID = 'com.transportx.canvas.geo';
 export const VIDEO_CANVAS_ADAPTER_ID = 'com.transportx.canvas.video';
 
-export type DocumentCanvasFormat = 'markdown' | 'pdf' | 'docx' | 'xlsx' | 'pptx';
+export type DocumentCanvasFormat = 'markdown' | 'pdf' | 'csv' | 'docx' | 'xlsx' | 'pptx';
 
 export type DocumentCanvasPayloadV1 = {
   format: DocumentCanvasFormat;
@@ -23,6 +23,7 @@ export type DocumentCanvasTarget =
 const DOCUMENT_MIME_FORMATS: Record<string, DocumentCanvasFormat> = {
   'text/markdown': 'markdown',
   'application/pdf': 'pdf',
+  'text/csv': 'csv',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
@@ -31,8 +32,8 @@ const DOCUMENT_MIME_FORMATS: Record<string, DocumentCanvasFormat> = {
 export function documentCanvasFormat(path: string, mimeType?: string): DocumentCanvasFormat | null {
   const mime = mimeType?.split(';')[0].trim().toLowerCase();
   if (mime && DOCUMENT_MIME_FORMATS[mime]) return DOCUMENT_MIME_FORMATS[mime];
-  const extension = path.match(/\.(mdx?|pdf|docx|xlsx|pptx)$/i)?.[1].toLowerCase();
-  return extension === 'md' || extension === 'mdx' ? 'markdown' : extension === 'pdf' || extension === 'docx' || extension === 'xlsx' || extension === 'pptx' ? extension : null;
+  const extension = path.match(/\.(mdx?|pdf|csv|docx|xlsx|pptx)$/i)?.[1].toLowerCase();
+  return extension === 'md' || extension === 'mdx' ? 'markdown' : extension === 'pdf' || extension === 'csv' || extension === 'docx' || extension === 'xlsx' || extension === 'pptx' ? extension : null;
 }
 
 function exactKeys(record: Record<string, unknown>, allowed: string[]): boolean {
@@ -47,7 +48,7 @@ function positiveInteger(value: unknown): number | null {
 export function parseDocumentCanvasPayload(value: unknown): DocumentCanvasPayloadV1 | null {
   const record = asRecord(value);
   if (!record || !exactKeys(record, ['format', 'path', 'mimeType'])) return null;
-  const format = record.format === 'markdown' || record.format === 'pdf' || record.format === 'docx' || record.format === 'xlsx' || record.format === 'pptx' ? record.format : null;
+  const format = record.format === 'markdown' || record.format === 'pdf' || record.format === 'csv' || record.format === 'docx' || record.format === 'xlsx' || record.format === 'pptx' ? record.format : null;
   const path = record.path === undefined ? undefined : asString(record.path, 1000) ?? undefined;
   const mimeType = record.mimeType === undefined ? undefined : asString(record.mimeType, 200) ?? undefined;
   if (!format || record.path !== undefined && !path || record.mimeType !== undefined && !mimeType) return null;

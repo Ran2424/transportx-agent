@@ -63,3 +63,10 @@ test('Geo and Video Canvas targets are validated by their domain contracts', asy
   assert.deepEqual(parseVideoCanvasTarget({ kind: 'timestamp', at: '2026-08-16T08:32:10+08:00' }), { kind: 'timestamp', at: '2026-08-16T08:32:10+08:00' });
   assert.equal(parseVideoCanvasTarget({ kind: 'offset', seconds: -1 }), null);
 });
+
+test('Document Canvas recognizes CSV by extension or MIME type', async () => {
+  const { documentCanvasFormat, parseDocumentCanvasPayload } = await import('../src/contracts/canvas-document.ts');
+  assert.equal(documentCanvasFormat('results.csv'), 'csv');
+  assert.equal(documentCanvasFormat('results.bin', 'text/csv; charset=utf-8'), 'csv');
+  assert.deepEqual(parseDocumentCanvasPayload({ format: 'csv', path: 'results.csv', mimeType: 'text/csv' }), { format: 'csv', path: 'results.csv', mimeType: 'text/csv' });
+});
