@@ -6,7 +6,11 @@
 
 ## Unreleased
 
+## 3.21.0 - 2026-09-23
+
 ### Changed
+
+- Canvas 升级为共享、模块化会话表面：Geo、Video 与 Document 通过受信任 Adapter Registry 使用统一 `pi-canvas` 生命周期，历史 Geo / Video Tool Result 继续兼容重放。Module manifest 新增 `contributes.canvasViews`，Resolved Session Plan 冻结 Adapter 声明；`com.transportx.workbench` 升级至 1.1.0，`com.transportx.geo` 升级至 1.4.0。
 
 - 产品正式名称由 TransportX Traffic Agent 调整为 TransportX Agent；npm 包与 GitHub 仓库更名为 `transportx-agent`。桌面 `appId`、CLI 命令 `transportx` 和用户数据目录保持不变，旧会话计划中的产品标识继续兼容读取。
 - `com.transportx.workbench` 升级至 1.0.2，`com.transportx.cli` 升级至 1.0.1：同步会话 Prompt 中的产品名称。
@@ -38,6 +42,10 @@
 
 ### Added
 
+- 新增 `com.transportx.canvas` 1.1.0 与 `com.transportx.document` 1.1.0。Agent 可用 `canvas_present` 在 Canvas 中主动打开 Markdown、CSV、PDF、DOCX、XLSX、PPTX，并定位页面、幻灯片、Sheet、单元格或搜索结果；CSV 以只读表格显示，不加载 OOXML runtime；资源由 Host 按当前任务目录、Citation 固定版本和 Session Plan 校验。
+- 新增显式 `CanvasContextV1` 共享：用户可以把当前文档位置、视频时间点或地图选区附到下一轮消息，Agent 仅能通过 `canvas_inspect_context` 读取本轮附加的 Context ID。
+
+- Canvas 新增本地只读 OOXML Viewer：DOCX、XLSX 和 PPTX 可从工作区、工具结果、成果与引用入口打开，支持搜索、缩放、连续页或 Sheet 导航、选择与批注；XLSX 支持复制选择，PPTX 支持备注面板。三种格式按需加载 Rust/WASM Viewer，禁用在线字体与超链接，并通过 HEAD、32 MiB 文件上限、解压资源限制及 Citation SHA-256 版本校验保持现有文件安全边界。
 - Canvas 支持 Markdown/PDF 文档标签，文件栏、工具文件预览、成果和引用入口统一打开文档；支持 Markdown 目录与标题定位、PDF 引用页码跳转、会话内阅读状态、手动刷新、原文件下载和报告 PDF 导出。引用文档绑定注册版本，内容变化时显示失效提示；其他文件保留原有浮窗预览。PDF 使用原生阅读器，未引入 PDF.js 或自定义搜索、缩略图、页内高亮、大文件优化。
 - Module manifest 支持声明经过哈希校验的平台/架构专属 Native Runtime。
 - 新增 `npm run video:pack`，生成包含自包含 Extension、Skill、ffmpeg/ffprobe 和许可证说明的视频能力包。

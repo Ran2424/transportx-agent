@@ -41,7 +41,7 @@ function fakeSession(id: string) {
     contextUsage: null,
     entries: [],
     pendingExtensionUiRequests: new Map(),
-    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token' },
+    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token', canvas: 'canvas-token' },
     manager: liveManager,
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     liveMetadata: () => ({ id, model: 'openai/gpt-5.5', isStreaming: false, isCompacting: false, autoCompactionEnabled: true }),
@@ -52,6 +52,8 @@ function fakeSession(id: string) {
     discardPromptAttachments: () => {},
     registerPromptGeoContexts: () => {},
     discardPromptGeoContexts: () => {},
+    registerPromptCanvasContexts: () => {},
+    discardPromptCanvasContexts: () => {},
     abortGeoInteraction: () => {},
   };
 }
@@ -442,6 +444,10 @@ test('serves Registry-backed citation resources without exposing arbitrary sessi
   assert.equal(response.status, 200);
   assert.equal(await response.text(), report.toString());
   assert.equal(response.headers.get('etag'), `"${sha256}"`);
+  const head = await fetch(url, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get('content-length'), String(report.length));
+  assert.equal(await head.text(), '');
   const download = await fetch(`${url}?download=1`);
   assert.match(String(download.headers.get('content-disposition')), /^attachment;/);
   assert.equal((await fetch(`${url}?sha256=${sha256}`)).status, 200);
@@ -481,6 +487,28 @@ test('serves session files inline or as downloads with PDF byte ranges', async (
   const download = await fetch(`${url}&download=1`);
   assert.match(String(download.headers.get('content-disposition')), /^attachment;/);
   assert.equal((await fetch(`${base}/api/file/raw?${new URLSearchParams({ sessionId: session.id, path: path.join(cwd, '..', 'secret.pdf') })}`)).status, 403);
+});
+
+test('serves Office files with standard MIME types and HEAD metadata', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-file-office-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const session = fakeSession('tau_file_office');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  const formats = [
+    ['document.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['workbook.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['slides.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ];
+  for (const [name, mime] of formats) {
+    const filePath = path.join(cwd, name);
+    fs.writeFileSync(filePath, 'ooxml');
+    const url = `${base}/api/file/raw?${new URLSearchParams({ sessionId: session.id, path: filePath })}`;
+    const response = await fetch(url, { method: 'HEAD' });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), mime);
+    assert.equal(response.headers.get('content-length'), '5');
+  }
 });
 
 test('live and historical session deletion respond without waiting and are idempotent', async (t: TestContext) => {

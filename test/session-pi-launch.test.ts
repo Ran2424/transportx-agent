@@ -33,8 +33,8 @@ test('builds Pi startup arguments and session-scoped asset environment', (t: any
     modelSpec: 'openai/gpt-5',
     appendSystemPrompt: '# Evaluation policy\nAnswer exactly.',
     resolvedSessionPlan: plan,
-    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token' },
-    endpoints: { citation: 'http://127.0.0.1:3000', spatial: 'http://127.0.0.1:3001', video: 'http://127.0.0.1:3002' },
+    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token', canvas: 'canvas-token' },
+    endpoints: { citation: 'http://127.0.0.1:3000', spatial: 'http://127.0.0.1:3001', video: 'http://127.0.0.1:3002', geo: 'http://127.0.0.1:3003', canvas: 'http://127.0.0.1:3004' },
   });
 
   assert.deepEqual(launch.args.slice(-10), [
@@ -45,6 +45,7 @@ test('builds Pi startup arguments and session-scoped asset environment', (t: any
     '--model', 'openai/gpt-5',
   ]);
   assert.equal(launch.env.TAU_VIDEO_TOKEN, 'video-token');
+  assert.equal(launch.env.TAU_CANVAS_TOKEN, 'canvas-token');
   assert.deepEqual(JSON.parse(launch.env.TRANSPORTX_DATA_ASSETS_JSON), { 'data:roads': '/assets/roads' });
   assert.deepEqual(JSON.parse(launch.env.TRANSPORTX_KNOWLEDGE_ASSETS_JSON), { 'knowledge:rules': '/assets/rules' });
 });

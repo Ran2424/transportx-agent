@@ -84,6 +84,7 @@ function resolvedPlanModule(module: RegisteredModule, domainId: string): Resolve
     manifestSha256: sha256File(module.manifestPath),
     entrypoints: resolvedEntrypoints(module, domainId),
     nativeRuntimes: resolvedNativeRuntimes(module),
+    canvasViews: module.manifest.contributes?.canvasViews || [],
   };
 }
 
