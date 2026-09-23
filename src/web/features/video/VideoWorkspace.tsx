@@ -39,7 +39,7 @@ function formatDuration(seconds: number) {
  * (camera, recording range, current absolute recording time, source/derived)
  * lives in the toolbar. Player transient state never leaves this component.
  */
-export function VideoWorkspace({ session, active, item: selected, compareItem, revision }: { session: LiveSession; active: boolean; item: VideoSceneItemV1; compareItem?: VideoSceneItemV1; revision: number }) {
+export function VideoWorkspace({ session, active, item: selected, compareItem, revision, onContextChange }: { session: LiveSession; active: boolean; item: VideoSceneItemV1; compareItem?: VideoSceneItemV1; revision: number; onContextChange?(target: unknown): void }) {
   const { t } = useTranslation();
   const [dismissedCompareKey, setDismissedCompareKey] = useState('');
   const compareKey = compareItem ? `${revision}:${compareItem.id}` : '';
@@ -56,6 +56,7 @@ export function VideoWorkspace({ session, active, item: selected, compareItem, r
               item={selected}
               active={active}
               compact
+              onContextChange={onContextChange}
             />
           </div>
           <div className="video-compare-pane">
@@ -80,17 +81,19 @@ export function VideoWorkspace({ session, active, item: selected, compareItem, r
         sessionId={session.id}
         item={selected}
         active={active}
+        onContextChange={onContextChange}
       />
     </div>
   );
 }
 
-function VideoPlayer({ sessionId, item, active, compact = false, trailingAction }: {
+function VideoPlayer({ sessionId, item, active, compact = false, trailingAction, onContextChange }: {
   sessionId: string;
   item: VideoSceneItemV1;
   active: boolean;
   compact?: boolean;
   trailingAction?: ReactNode;
+  onContextChange?(target: unknown): void;
 }) {
   const { t } = useTranslation();
   const kernel = appKernel;
@@ -124,8 +127,10 @@ function VideoPlayer({ sessionId, item, active, compact = false, trailingAction 
 
   const updateClock = (seconds: number) => {
     if (!recordingStart) return;
-    setClock(formatVideoTimestamp(recordingStart.epochMs + seconds * 1000, recordingStart.offsetMinutes).slice(11, 19));
+    const at = formatVideoTimestamp(recordingStart.epochMs + seconds * 1000, recordingStart.offsetMinutes);
+    setClock(at.slice(11, 19));
     setCurrentSecond(Math.floor(seconds));
+    onContextChange?.({ kind: 'timestamp', at });
   };
 
   const src = `/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(item.resourceId)}/data`;

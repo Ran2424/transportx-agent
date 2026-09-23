@@ -41,12 +41,14 @@ child.stderr.on('data', (chunk) => { output += chunk; });
 let browser;
 let page;
 const pageErrors = [];
+const requestedUrls = [];
 try {
   const { baseUrl } = await waitForReady(child, () => output);
   browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(20_000);
   page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('request', (request) => requestedUrls.push(request.url()));
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('[data-testid="agent-status"]:is([data-state="connected"], [data-state="streaming"])').waitFor();
@@ -59,6 +61,7 @@ try {
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
   await documentSmoke(page, browser);
+  assert.equal(requestedUrls.some((url) => /(?:docx|xlsx|pptx)_parser_bg|render-worker/.test(url)), false, 'non-Office workflows do not load OOXML WASM or workers');
   await composer.fill('实时-markdown');
   await composer.press('Enter');
   const liveMarkdown = page.locator('.assistant-message.is-streaming');

@@ -109,6 +109,7 @@ export type AppMessage = {
   usage?: UsageRecord;
   attachmentIds?: string[];
   geoContextIds?: string[];
+  canvasContextIds?: string[];
   toolCallId?: string;
   toolName?: string;
   details?: unknown;

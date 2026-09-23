@@ -5,6 +5,7 @@ import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel
 import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
 import i18n from '../../i18n';
+import { parseDelimited } from './delimited-table';
 import { sessionFileUrl, withDownload } from './file-urls';
 
 type FileIcon = 'workspace' | 'file' | 'report' | 'code' | 'image' | 'table';
@@ -41,25 +42,6 @@ function externalPresentation(source: ExternalPreviewSource): FilePresentation {
 
 function syntaxLanguage(extension: string) {
   return ({ ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx', mjs: 'javascript', cjs: 'javascript', py: 'python', sh: 'bash', bash: 'bash', zsh: 'bash', scss: 'scss', yml: 'yaml', html: 'html', json: 'json', xml: 'xml', cpp: 'cpp', hpp: 'cpp' } as Record<string, string>)[extension] || extension || 'text';
-}
-
-function parseDelimited(source: string, delimiter: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let quoted = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index];
-    if (char === '"') {
-      if (quoted && source[index + 1] === '"') { cell += '"'; index += 1; } else quoted = !quoted;
-    } else if (char === delimiter && !quoted) { row.push(cell); cell = ''; }
-    else if ((char === '\n' || char === '\r') && !quoted) {
-      if (char === '\r' && source[index + 1] === '\n') index += 1;
-      row.push(cell); if (row.some(Boolean)) rows.push(row); row = []; cell = '';
-    } else cell += char;
-  }
-  row.push(cell); if (row.some(Boolean)) rows.push(row);
-  return rows;
 }
 
 function CodePreview({ source, extension }: { source: string; extension: string }) {

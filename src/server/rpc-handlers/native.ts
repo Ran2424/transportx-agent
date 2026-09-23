@@ -15,6 +15,8 @@ type NativeSession = {
   discardPromptAttachments(attachmentIds: string[]): void;
   registerPromptGeoContexts(contextIds: string[]): void;
   discardPromptGeoContexts(contextIds: string[]): void;
+  registerPromptCanvasContexts(contextIds: string[]): void;
+  discardPromptCanvasContexts(contextIds: string[]): void;
   abortGeoInteraction(): void;
 };
 
@@ -25,6 +27,8 @@ type NativeRpcDependencies<T extends NativeSession> = {
   buildAttachmentContext(attachments: SessionAttachment[]): string;
   validateGeoContexts(session: T, contextIds: unknown): string[];
   buildGeoContext(contextIds: string[]): string;
+  validateCanvasContexts(session: T, contextIds: unknown): string[];
+  buildCanvasContext(contextIds: string[]): string;
   parseModel(model: unknown): { model: { provider?: string; id?: string } | null };
   errorMessage(error: unknown): string;
 };
@@ -42,6 +46,7 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
     if (command.type === 'abort') session.abortGeoInteraction();
     let trackedPromptAttachments: string[] | null = null;
     let trackedPromptGeoContexts: string[] | null = null;
+    let trackedPromptCanvasContexts: string[] | null = null;
     try {
       let rpcCommand = { ...command };
       delete rpcCommand.clientCommandId;
@@ -51,13 +56,15 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
         if (!attachmentIds) return reply.failure('attachmentIds must be an array');
         const attachments = deps.resolveAttachments(session.cwd, attachmentIds);
         const geoContextIds = command.geoContextIds === undefined ? [] : deps.validateGeoContexts(session, command.geoContextIds);
+        const canvasContextIds = command.canvasContextIds === undefined ? [] : deps.validateCanvasContexts(session, command.canvasContextIds);
         const message = typeof command.message === 'string' ? command.message : '';
         const imageInputs = session.model && (session.model.images === true || (Array.isArray(session.model.input) && session.model.input.includes('image')))
           ? attachments.filter((attachment) => attachment.kind === 'image').map((attachment) => ({ type: 'image', data: deps.attachmentBase64(session.cwd, attachment), mimeType: attachment.mimeType }))
           : [];
-        rpcCommand = { ...command, message: `${message}${deps.buildAttachmentContext(attachments)}${deps.buildGeoContext(geoContextIds)}`, ...(imageInputs.length ? { images: imageInputs } : {}) } as RpcCommand;
+        rpcCommand = { ...command, message: `${message}${deps.buildAttachmentContext(attachments)}${deps.buildGeoContext(geoContextIds)}${deps.buildCanvasContext(canvasContextIds)}`, ...(imageInputs.length ? { images: imageInputs } : {}) } as RpcCommand;
         delete rpcCommand.attachmentIds;
         delete rpcCommand.geoContextIds;
+        delete rpcCommand.canvasContextIds;
       }
       if (command.type === 'set_model' && (!command.provider || !command.modelId)) {
         const parsed = deps.parseModel(command.model);
@@ -69,6 +76,8 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
         session.registerPromptAttachments(trackedPromptAttachments);
         trackedPromptGeoContexts = command.geoContextIds === undefined ? [] : deps.validateGeoContexts(session, command.geoContextIds);
         session.registerPromptGeoContexts(trackedPromptGeoContexts);
+        trackedPromptCanvasContexts = command.canvasContextIds === undefined ? [] : deps.validateCanvasContexts(session, command.canvasContextIds);
+        session.registerPromptCanvasContexts(trackedPromptCanvasContexts);
       }
       const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 300000 : 60000 });
       if (command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
@@ -82,6 +91,7 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
       if (previousLevel !== null) session.thinkingLevel = previousLevel;
       if (trackedPromptAttachments) session.discardPromptAttachments(trackedPromptAttachments);
       if (trackedPromptGeoContexts) session.discardPromptGeoContexts(trackedPromptGeoContexts);
+      if (trackedPromptCanvasContexts) session.discardPromptCanvasContexts(trackedPromptCanvasContexts);
       return reply.failure(deps.errorMessage(error));
     }
   };

@@ -40,6 +40,8 @@ import {
 import { stripAttachmentContext } from '../contracts/attachments.js';
 import { getVisualizationFromToolResult, stripGeoContextPrompt } from '../contracts/geo.js';
 import { geoInteractionService } from './geo-interaction-service.js';
+import { restoreCanvasContextMessage } from './canvas-service.js';
+import { stripCanvasContextPrompt } from '../contracts/canvas.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
@@ -95,6 +97,8 @@ let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
 export function setVideoEndpoint(value: string) { videoEndpoint = value; }
 let geoEndpoint = process.env.TAU_GEO_ENDPOINT || '';
 export function setGeoEndpoint(value: string) { geoEndpoint = value; }
+let canvasEndpoint = process.env.TAU_CANVAS_ENDPOINT || '';
+export function setCanvasEndpoint(value: string) { canvasEndpoint = value; }
 
 export class PiRpcSession {
   manager: LiveSessionManager;
@@ -128,7 +132,9 @@ export class PiRpcSession {
   resolvedSessionPlan: ResolvedSessionPlan | null;
   pendingAttachmentRefs: string[][];
   pendingGeoContextRefs: string[][];
+  pendingCanvasContextRefs: string[][];
   activeGeoContextIds: string[];
+  activeCanvasContextIds: string[];
   serviceTokens: Record<SessionService, string>;
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
@@ -149,7 +155,7 @@ export class PiRpcSession {
     this.isCompacting = false;
     this.autoCompactionEnabled = true;
     this.timingMetrics = new TimingMetricsStore(this.cwd);
-    this.projection = new SessionProjection(this.timingMetrics.enrichEntries(opts.entries || []), readAttachmentMessageRefs(this.cwd), geoInteractionService.readMessageRefs(this.cwd));
+    this.projection = new SessionProjection(this.timingMetrics.enrichEntries((opts.entries || []).map(restoreCanvasContextMessage)), readAttachmentMessageRefs(this.cwd), geoInteractionService.readMessageRefs(this.cwd));
     this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
@@ -169,8 +175,10 @@ export class PiRpcSession {
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
     this.pendingAttachmentRefs = [];
     this.pendingGeoContextRefs = [];
+    this.pendingCanvasContextRefs = [];
     this.activeGeoContextIds = [];
-    this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID() };
+    this.activeCanvasContextIds = [];
+    this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID(), canvas: crypto.randomUUID() };
     this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.eventTiming = new SessionEventTiming(this.timingMetrics);
@@ -208,7 +216,7 @@ export class PiRpcSession {
       appendSystemPrompt: this.appendSystemPrompt,
       resolvedSessionPlan: this.resolvedSessionPlan,
       serviceTokens: this.serviceTokens,
-      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint, geo: geoEndpoint },
+      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint, geo: geoEndpoint, canvas: canvasEndpoint },
     });
     const spawnFn: SpawnFn = _spawnPiForTest || spawn;
     const child = spawnFn(PI_COMMAND, launch.args, {
@@ -417,7 +425,7 @@ export class PiRpcSession {
 
   reconcileProjection() {
     if (!this.sessionFile || !fs.existsSync(this.sessionFile)) return false;
-    this.projection.replace(this.timingMetrics.enrichEntries(readSessionFileEntries(this.sessionFile)));
+    this.projection.replace(this.timingMetrics.enrichEntries(readSessionFileEntries(this.sessionFile).map(restoreCanvasContextMessage)));
     const lastConversationAt = latestConversationTimestamp(this.projection.entries);
     if (lastConversationAt) this.lastConversationAt = lastConversationAt;
     this.applyLatestBridgeEnvelope();
@@ -433,10 +441,9 @@ export class PiRpcSession {
       if (text) this.userMessages.push(text.slice(0, 300));
       const attachmentIds = this.pendingAttachmentRefs.shift() || [];
       const geoContextIds = this.pendingGeoContextRefs.shift() || [];
-      const enriched = attachmentIds.length
-        ? { ...message, attachmentIds, ...(geoContextIds.length ? { geoContextIds } : {}), content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
-        : geoContextIds.length
-        ? { ...message, geoContextIds, content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
+      const canvasContextIds = this.pendingCanvasContextRefs.shift() || [];
+      const enriched = attachmentIds.length || geoContextIds.length || canvasContextIds.length
+        ? { ...message, ...(attachmentIds.length ? { attachmentIds } : {}), ...(geoContextIds.length ? { geoContextIds } : {}), ...(canvasContextIds.length ? { canvasContextIds } : {}), content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
         : (typeof message.content === 'string' && message.content !== text ? { ...message, content: text } : message);
       if (attachmentIds.length) recordAttachmentMessageRefs(this.cwd, { text, timestamp: typeof message.timestamp === 'number' ? message.timestamp : undefined, attachmentIds });
       if (geoContextIds.length) geoInteractionService.recordMessageRefs(this, { text, timestamp: typeof message.timestamp === 'number' || typeof message.timestamp === 'string' ? message.timestamp : undefined, contextIds: geoContextIds });
@@ -479,8 +486,24 @@ export class PiRpcSession {
     if (this.activeGeoContextIds.length === contextIds.length && this.activeGeoContextIds.every((id, index) => id === contextIds[index])) this.activeGeoContextIds = [];
   }
 
+  registerPromptCanvasContexts(contextIds: string[]) {
+    this.activeCanvasContextIds = [...contextIds];
+    this.pendingCanvasContextRefs.push([...contextIds]);
+  }
+
+  discardPromptCanvasContexts(contextIds: string[]) {
+    for (let index = this.pendingCanvasContextRefs.length - 1; index >= 0; index -= 1) {
+      const pending = this.pendingCanvasContextRefs[index];
+      if (pending.length === contextIds.length && pending.every((id, itemIndex) => id === contextIds[itemIndex])) {
+        this.pendingCanvasContextRefs.splice(index, 1);
+        break;
+      }
+    }
+    if (this.activeCanvasContextIds.length === contextIds.length && this.activeCanvasContextIds.every((id, index) => id === contextIds[index])) this.activeCanvasContextIds = [];
+  }
+
   messageText(message: PiMessage) {
-    if (typeof message.content === 'string') return stripGeoContextPrompt(stripAttachmentContext(message.content));
+    if (typeof message.content === 'string') return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content)));
     if (Array.isArray(message.content)) return stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n')));
     return '';
   }

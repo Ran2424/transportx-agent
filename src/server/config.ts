@@ -43,7 +43,7 @@ export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
     return null; // Video processing reports a clear error when ffmpeg is unavailable.
   }
 })();
-export const PLATFORM_VERSION = '3.2.0';
+export const PLATFORM_VERSION = '3.21.0';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -79,6 +79,8 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
+  'modules/capabilities/canvas/manifest.json',
+  'modules/capabilities/document/manifest.json',
   'modules/capabilities/geo/manifest.json',
   'modules/capabilities/spatial-analysis/manifest.json',
   'modules/official/traffic-report/manifest.json',
@@ -177,7 +179,7 @@ export const MIME_TYPES = {
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
+  '.woff2': 'font/woff2', '.wasm': 'application/wasm',
 };
 
 export function saveTauSetting(key: string, value: unknown): boolean {
