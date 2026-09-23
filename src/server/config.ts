@@ -79,6 +79,8 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
+  'modules/capabilities/canvas/manifest.json',
+  'modules/capabilities/document/manifest.json',
   'modules/capabilities/geo/manifest.json',
   'modules/capabilities/spatial-analysis/manifest.json',
   'modules/official/traffic-report/manifest.json',

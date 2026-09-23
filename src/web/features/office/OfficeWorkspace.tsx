@@ -15,7 +15,7 @@ function parserErrorKey(error: unknown) {
   return null;
 }
 
-export function OfficeWorkspace({ view, active }: { view: DocumentView; active: boolean }) {
+export function OfficeWorkspace({ view, active, onContextChange }: { view: DocumentView; active: boolean; onContextChange?(target: unknown): void }) {
   const { t, i18n } = useTranslation();
   const [mount, setMount] = useState<HTMLDivElement | null>(null);
   const [sized, setSized] = useState(false);
@@ -88,6 +88,24 @@ export function OfficeWorkspace({ view, active }: { view: DocumentView; active: 
     void Promise.resolve(action(current)).catch((cause) => setNotice((cause as Error).message || t('office.error.action')));
   }, [t]);
 
+  useEffect(() => {
+    const target = view.canvasTarget;
+    const current = controller.current;
+    if (!active || !ready || !target || !current) return;
+    let action: Promise<void> | null = null;
+    if (target.kind === 'page' && current.goToPage) action = Promise.resolve(current.goToPage(target.number));
+    else if (target.kind === 'slide' && current.goToSlide) action = Promise.resolve(current.goToSlide(target.number));
+    else if (target.kind === 'sheet' && current.goToSheet) action = current.goToSheet(target.name);
+    else if (target.kind === 'sheet-cell' && current.goToSheet && current.scrollToCell) action = current.goToSheet(target.sheet).then(() => current.scrollToCell!(target.cell));
+    else if (target.kind === 'search') {
+      setQuery(target.query);
+      action = current.findText(target.query).then((count) => { setMatchCount(count); });
+    } else if (target.kind === 'locator' && target.page && current.goToPage) action = Promise.resolve(current.goToPage(target.page));
+    if (!action) { setNotice(t('document.locationUnavailable')); return; }
+    setNotice('');
+    void action.catch((cause) => setNotice((cause as Error).message || t('document.locationUnavailable')));
+  }, [active, ready, view.navigationId, view.canvasTarget, t]);
+
   function runSearch(event: FormEvent) {
     event.preventDefault();
     const current = controller.current;
@@ -116,6 +134,13 @@ export function OfficeWorkspace({ view, active }: { view: DocumentView; active: 
   const positionText = position.total
     ? t(view.format === 'xlsx' ? 'office.sheetPosition' : view.format === 'pptx' ? 'office.slidePosition' : 'office.pagePosition', position)
     : t('office.positionPending');
+
+  useEffect(() => {
+    if (!position.current) return;
+    if (view.format === 'pptx') onContextChange?.({ kind: 'slide', number: position.current });
+    else if (view.format === 'docx') onContextChange?.({ kind: 'page', number: position.current });
+    else if (view.format === 'xlsx' && position.label) onContextChange?.({ kind: 'sheet', name: position.label });
+  }, [position.current, position.label, view.format]);
 
   return <section ref={root} className="office-workspace" tabIndex={-1} aria-label={t('office.reader', { title: view.title })} data-testid="office-workspace" data-format={view.format}>
     <header className="office-toolbar">

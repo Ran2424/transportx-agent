@@ -27,6 +27,12 @@ export type ModuleNativeRuntime = {
   notices?: string;
 };
 
+export type ModuleCanvasView = {
+  adapterId: string;
+  kind: string;
+  protocolVersion: string;
+};
+
 export type ModuleManifest = {
   manifestVersion: 2;
   id: string;
@@ -45,6 +51,7 @@ export type ModuleManifest = {
     assets?: ModuleAsset[];
     nativeRuntimes?: ModuleNativeRuntime[];
     requiredNativeRuntimes?: string[];
+    canvasViews?: ModuleCanvasView[];
   };
 };
 
@@ -114,6 +121,22 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
   const prompts = entrypointsRecord ? stringList(entrypointsRecord.prompts, '$.entrypoints.prompts', diagnostics) : undefined;
   const artifactTypes = contributesRecord ? stringList(contributesRecord.artifactTypes, '$.contributes.artifactTypes', diagnostics) : undefined;
   const requiredNativeRuntimes = contributesRecord ? stringList(contributesRecord.requiredNativeRuntimes, '$.contributes.requiredNativeRuntimes', diagnostics) : undefined;
+
+  const canvasViews: ModuleCanvasView[] = [];
+  if (contributesRecord?.canvasViews !== undefined) {
+    if (!Array.isArray(contributesRecord.canvasViews)) diagnostics.push(diagnostic({ code: 'invalid_type', path: '$.contributes.canvasViews', message: 'canvasViews must be an array.' }));
+    else contributesRecord.canvasViews.forEach((item, index) => {
+      const view = asRecord(item);
+      const adapterId = asString(view?.adapterId, 200);
+      const kind = asString(view?.kind, 80);
+      const protocolVersion = asString(view?.protocolVersion, 40);
+      if (!view || !adapterId || !kind || !protocolVersion || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(adapterId) || Object.keys(view).some((key) => !['adapterId', 'kind', 'protocolVersion'].includes(key))) {
+        diagnostics.push(diagnostic({ code: 'invalid_type', path: `$.contributes.canvasViews[${index}]`, message: 'Canvas view requires adapterId, kind and protocolVersion.' }));
+      } else if (canvasViews.some((candidate) => candidate.adapterId === adapterId)) {
+        diagnostics.push(diagnostic({ code: 'duplicate_id', path: `$.contributes.canvasViews[${index}].adapterId`, message: `Duplicate Canvas adapterId: ${adapterId}` }));
+      } else canvasViews.push({ adapterId, kind, protocolVersion });
+    });
+  }
 
   const assets: ModuleAsset[] = [];
   if (contributesRecord?.assets !== undefined) {
@@ -185,6 +208,7 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
         ...(assets.length ? { assets } : {}),
         ...(nativeRuntimes.length ? { nativeRuntimes } : {}),
         ...(requiredNativeRuntimes ? { requiredNativeRuntimes } : {}),
+        ...(canvasViews.length ? { canvasViews } : {}),
       } } : {}),
     },
   };

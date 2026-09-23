@@ -15,6 +15,8 @@ const MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
   'modules/capabilities/task/manifest.json',
   'modules/capabilities/citation/manifest.json',
+  'modules/capabilities/canvas/manifest.json',
+  'modules/capabilities/document/manifest.json',
   'modules/capabilities/geo/manifest.json',
   'modules/capabilities/spatial-analysis/manifest.json',
   'modules/official/traffic-report/manifest.json',
@@ -47,7 +49,7 @@ function writeInstallableModule(root: string, directoryName: string, manifest: a
 test('built-in manifests register only platform capabilities', () => {
   const modules = registry();
   assert.deepEqual(modules.errors, []);
-  assert.equal(modules.enabled().length, 9);
+  assert.equal(modules.enabled().length, 11);
   assert.equal(modules.get('com.transportx.shanghaidata'), undefined);
   assert.equal(modules.get('com.transportx.traffic-assurance-knowledge'), undefined);
   const order = modules.dependencyOrder('com.transportx.workbench');
@@ -82,7 +84,7 @@ test('CLI domain loads only explicitly selected capabilities', () => {
     ...profile,
     modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.spatial-analysis', version: '1.0.1' }] },
   });
-  assert.deepEqual(spatialPlan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.geo', 'com.transportx.spatial-analysis']);
+  assert.deepEqual(spatialPlan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.canvas', 'com.transportx.geo', 'com.transportx.spatial-analysis']);
   assert.throws(() => assembler.assemble('com.transportx.cli', process.cwd(), {
     ...profile,
     modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: '9.9.9' }] },
@@ -109,7 +111,7 @@ test('data, knowledge and plot-style packages install independently from the pla
   assert.deepEqual(modules.get('com.transportx.shanghaidata').manifest.dependencies, ['com.transportx.geo']);
   assert.deepEqual(modules.get('com.transportx.traffic-assurance-knowledge').manifest.dependencies, ['com.transportx.citation']);
   const plan = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [] }, { command: 'python', args: [] }).assemble('com.transportx.workbench', managed);
-  assert.equal(planSkills(plan).length, 6);
+  assert.equal(planSkills(plan).length, 8);
   assert.ok(planExtensions(plan).every((entry: string) => entry.includes(`${path.sep}modules${path.sep}`)));
   assert.ok(planSkills(plan).some((entry: string) => entry.includes(path.join('modules', 'official', 'module-authoring'))));
   assert.equal(plan.assets.some((asset: any) => asset.kind === 'data' || asset.kind === 'knowledge'), false);
@@ -128,8 +130,8 @@ test('Session Assembly resolves extensions, skills, assets and persists a versio
   const modules = registry([{ manifestPath: path.join(installed, 'manifest.json'), packageRoot: installed, origin: 'installed' }]);
   const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [], version: '0.80.10' }, { command: 'python', args: [], version: '3.10' });
   const plan = assembler.assemble('com.transportx.workbench', workspace);
-  assert.equal(planExtensions(plan).length, 5);
-  assert.equal(planSkills(plan).length, 4);
+  assert.equal(planExtensions(plan).length, 6);
+  assert.equal(planSkills(plan).length, 6);
   assert.ok(plan.assets.some((asset: any) => asset.id === 'data:installed-test'));
   assert.ok(plan.assets.some((asset: any) => asset.id === 'template:traffic-analysis-report'));
   assert.ok(plan.modules.some((module: any) => module.id === 'local.installed.test'));
@@ -139,6 +141,7 @@ test('Session Assembly resolves extensions, skills, assets and persists a versio
   assert.equal(persisted.domain.id, 'com.transportx.workbench');
   assert.equal(persisted.profile.modules.selectionMode, 'compat-default');
   assert.ok(persisted.modules.every((module: any) => /^[a-f0-9]{64}$/.test(module.manifestSha256)));
+  assert.ok(persisted.modules.find((module: any) => module.id === 'com.transportx.document').canvasViews.some((view: any) => view.adapterId === 'com.transportx.canvas.document'));
   assert.deepEqual(assembler.load(workspace), plan);
 
   persisted.platform.name = 'TransportX Traffic Agent';

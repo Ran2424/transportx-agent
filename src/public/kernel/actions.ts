@@ -58,8 +58,8 @@ export type AppAction =
   | { type: 'conversation/streamCompleted'; sessionId: string; message: AppMessage }
   | { type: 'conversation/streamEnded'; sessionId: string }
   | { type: 'conversation/messageAppended'; sessionId: string; entry: SessionEntry }
-  | { type: 'conversation/promptSent'; sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[] }
-  | { type: 'conversation/promptQueued'; sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; clientCommandId: string }
+  | { type: 'conversation/promptSent'; sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[] }
+  | { type: 'conversation/promptQueued'; sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[]; clientCommandId: string }
   | { type: 'conversation/queueItemRemoved'; sessionId: string; index: number }
   | { type: 'conversation/queueDrained'; sessionId: string }
   // tool execution

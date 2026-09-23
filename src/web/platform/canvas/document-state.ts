@@ -1,8 +1,19 @@
 import type { CitationEnvelope, CitationLocator, CitationResource } from '../../../contracts/citation.ts';
+import type { CanvasPresentationV1, CanvasResourceRef } from '../../../contracts/canvas.ts';
+import type { DocumentCanvasTarget } from '../../../contracts/canvas-document.ts';
 
 export type DocumentRequest = { sessionId: string; title: string; path: string; resource?: CitationResource; locator?: CitationLocator };
 export type DocumentFormat = 'markdown' | 'pdf' | 'docx' | 'xlsx' | 'pptx';
-export type DocumentView = DocumentRequest & { id: string; kind: 'document'; format: DocumentFormat; navigationId: number };
+export type DocumentView = DocumentRequest & {
+  id: string;
+  kind: 'document';
+  format: DocumentFormat;
+  navigationId: number;
+  revision?: number;
+  canvasResources?: CanvasResourceRef[];
+  canvasTarget?: DocumentCanvasTarget;
+  canvas?: CanvasPresentationV1;
+};
 export type DocumentPosition = { scrollTop: number; navigationId: number };
 
 const OFFICE_MIME_TYPES: Record<string, Extract<DocumentFormat, 'docx' | 'xlsx' | 'pptx'>> = {

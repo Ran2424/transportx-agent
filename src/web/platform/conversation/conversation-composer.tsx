@@ -9,6 +9,7 @@ import { ComposerAttachmentList, useComposerAttachments } from './composer-attac
 import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, useComposerCitationPicker } from './composer-citation-picker';
 import { geoContextStore } from '../../features/geo/geo-context-store';
+import { canvasContextStore } from '../canvas/canvas-context-store';
 
 export function ConversationComposer({ sessionId, session, streaming, compacting, queued, taskModeEnabled, attachments, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
@@ -18,6 +19,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
   const { pending, setPending, addAttachments, removeAttachment } = useComposerAttachments(sessionId, setError);
   const [taskModeBusy, setTaskModeBusy] = useState(false);
   const geoContexts = useSyncExternalStore(geoContextStore.subscribe, () => geoContextStore.get(sessionId));
+  const canvasContexts = useSyncExternalStore(canvasContextStore.subscribe, () => canvasContextStore.get(sessionId));
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { citeOpen, citeLoading, citeCandidates, setCiteOpen, openCitePicker, insertCitation } = useComposerCitationPicker({ sessionId, onCitationEnvelope, onInsert: (marker) => setValue((current) => current.replace('/cite', marker)), onError: setError, onFocus: () => inputRef.current?.focus() });
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
@@ -26,9 +28,10 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
     const attachmentIds = pending.filter((item) => item.status === 'ready' && item.attachment).map((item) => item.attachment!.id);
     if (pending.some((item) => item.status === 'uploading')) { setError(t('conversation.uploadingWait')); return; }
     const geoContextIds = geoContexts.map((item) => item.contextId);
-    const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : '');
+    const canvasContextIds = canvasContexts.map((item) => item.contextId);
+    const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : canvasContextIds.length ? t('conversation.canvasContextOnly') : '');
     if (!message) return;
-    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds }); setValue(''); setPending([]); geoContextStore.clear(sessionId); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
+    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); setValue(''); setPending([]); geoContextStore.clear(sessionId); canvasContextStore.clear(sessionId); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
   }
   async function toggleTaskMode() {
     if (streaming || compacting || taskModeBusy) return;
@@ -46,6 +49,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
     <ComposerAttachmentList sessionId={sessionId} pending={pending} onRemove={(item) => void removeAttachment(item)} />
     {geoContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.geoContexts')}>{geoContexts.map((item) => <span key={item.contextId}><strong>{t(`geo.mode.${item.mode}`)}</strong>{item.summary}<button type="button" aria-label={t('conversation.removeGeoContext', { summary: item.summary })} onClick={() => geoContextStore.remove(sessionId, item.contextId)}>×</button></span>)}</div> : null}
+    {canvasContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.canvasContexts')}>{canvasContexts.map((item) => <span key={item.contextId}><strong>{t('canvas.title')}</strong>{item.viewId}<button type="button" aria-label={t('conversation.removeCanvasContext')} onClick={() => canvasContextStore.remove(sessionId, item.contextId)}>×</button></span>)}</div> : null}
     <div className="composer-row">
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <textarea
@@ -85,7 +89,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
             ? <span className="composer-compacting" role="status">{t('conversation.compacting')}</span>
             : streaming
             ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId)}>{t('conversation.abortShort')}</button></div>
-            : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0 && geoContexts.length === 0}>↑</button>}
+            : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0 && geoContexts.length === 0 && canvasContexts.length === 0}>↑</button>}
         </div>
       </form>
     </div>

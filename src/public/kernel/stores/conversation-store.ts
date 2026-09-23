@@ -13,10 +13,11 @@
 import type { AppMessage, MessageContentBlock, SessionEntry, SessionSnapshot } from '../../app-types.js';
 import { stripAttachmentContext } from '../../../contracts/attachments.js';
 import { stripGeoContextPrompt } from '../../../contracts/geo.js';
+import { stripCanvasContextPrompt } from '../../../contracts/canvas.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
 
-export type QueuedPrompt = { message: string; attachmentIds?: string[]; geoContextIds?: string[]; clientCommandId: string };
-export type OptimisticPrompt = { message: string; attachmentIds?: string[]; geoContextIds?: string[] };
+export type QueuedPrompt = { message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[]; clientCommandId: string };
+export type OptimisticPrompt = { message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[] };
 
 export type LiveOverlay = {
   runId: string | null;
@@ -53,9 +54,9 @@ const emptyConversation = (): ConversationState => ({ snapshotEntries: [], live:
 
 export function messageText(message: AppMessage | undefined): string {
   if (!message) return '';
-  if (typeof message.content === 'string') return stripGeoContextPrompt(stripAttachmentContext(message.content));
+  if (typeof message.content === 'string') return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content)));
   if (Array.isArray(message.content)) {
-    return stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n')));
+    return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n'))));
   }
   return '';
 }
@@ -168,9 +169,9 @@ export class ConversationStore {
       if (message?.role === 'user') {
         const text = messageText(message);
         const optimistic = conv.live.optimisticPrompt;
-        const enrichedMessage = message.attachmentIds?.length || message.geoContextIds?.length || optimistic?.message !== text || (!optimistic?.attachmentIds?.length && !optimistic?.geoContextIds?.length)
+        const enrichedMessage = message.attachmentIds?.length || message.geoContextIds?.length || message.canvasContextIds?.length || optimistic?.message !== text || (!optimistic?.attachmentIds?.length && !optimistic?.geoContextIds?.length && !optimistic?.canvasContextIds?.length)
           ? message
-          : { ...message, ...(optimistic.attachmentIds?.length ? { attachmentIds: optimistic.attachmentIds } : {}), ...(optimistic.geoContextIds?.length ? { geoContextIds: optimistic.geoContextIds } : {}) };
+          : { ...message, ...(optimistic.attachmentIds?.length ? { attachmentIds: optimistic.attachmentIds } : {}), ...(optimistic.geoContextIds?.length ? { geoContextIds: optimistic.geoContextIds } : {}), ...(optimistic.canvasContextIds?.length ? { canvasContextIds: optimistic.canvasContextIds } : {}) };
         // Replace the optimistic prompt with the authoritative event. Keeping
         // the event in the stable entries is essential until the next snapshot
         // arrives; otherwise a fast user echo makes the prompt disappear.
