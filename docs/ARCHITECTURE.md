@@ -101,7 +101,7 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 ### 2.7 React Workspace 与 Browser Kernel
 
-Canvas 在工作区顶部以具名标签承载当前任务的地图、视频和文档。Canvas 统一管理打开的引用与活动标签，领域面板接收指定成果并维护缩放、图层、播放和阅读状态。Agent 的展示工具激活对应标签；`show_map` 只显示已有地图，不推进 revision。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。
+Canvas 在工作区顶部以具名标签承载当前任务的地图、视频和文档。`pi-canvas` Presentation Envelope 统一 `present / focus / update / clear` 生命周期、受控资源引用、`viewId`、`revision` 与每次呈现意图的 `presentationId`；Projection Core 兼容旧 Geo / Video Tool Result。受信任的 Adapter Registry 负责领域 payload、target、延迟 Renderer 和显式 Context，Canvas Shell 只管理标签与生命周期，不动态加载 Module 提供的前端代码。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。
 
 `src/public/` 提供浏览器端的 Kernel、Markdown/工具结果处理和 Geo runtime；`src/web/` 负责 React 应用、功能面板、i18n 与样式。React 通过 Kernel 消费 Snapshot/事件并发送命令，不解析原始 Pi RPC，也不直接访问本机文件。
 
@@ -179,7 +179,8 @@ Task 是同一 Agent 的步骤与交互状态管理，当前内置模块没有�
 
 ### 3.4 文件、引用、地图与视频
 
-- Canvas 的文档标签由用户打开请求产生，与 Geo/Video 的工具结果投影合并；标签和阅读位置按会话保存在前端内存，文件写入或快照更新不会自动弹出文档。WorkspaceDock 负责查找文件，MD/PDF/DOCX/XLSX/PPTX 的文件、工具、成果和引用入口统一调用 `OpenDocumentContext`。
+- 文档既可由用户通过 WorkspaceDock、成果或引用入口打开，也可由 Agent 通过 `canvas_present` 呈现并定位。Agent 呈现事件写入 Session JSONL，可随会话重放；用户手动标签、活动标签和连续滚动状态留在前端。MD/PDF/DOCX/XLSX/PPTX 的既有入口继续调用 `OpenDocumentContext`。
+- 用户只有执行“附加当前 Canvas”时才生成 `CanvasContextV1`。Host 固定 View revision 与资源版本，并把 Context ID 附到下一轮用户消息；Agent 必须调用 `canvas_inspect_context` 读取本轮 ID，不能回退读取历史选区。连续滚动、播放和鼠标事件不进入会话。
 - Markdown 文档复用共享渲染器，由 `report-renderer.ts` 补充公式、Mermaid、图片和标题目录；文档定位在自己的容器内完成，不改变聊天 Markdown。PDF 通过受控 URL 在原生 iframe 阅读器中显示，引用传入物理页码；同会话标签切换保留 iframe，跨会话重建只恢复最后一次明确请求的页码，不读取原生阅读器内部滚动或缩放状态。
 - DOCX、XLSX 和 PPTX 由 `@silurus/ooxml` 在浏览器内通过 Rust/WASM 解析、Canvas 2D 只读渲染。`features/office/office-resource.ts` 在 GET 前用 HEAD 校验状态和 32 MiB 压缩文件上限；`office-viewer.ts` 按格式动态导入 Viewer，禁用在线字体与超链接并限制解压和图片内存。普通启动、Markdown 和 PDF 路径不加载 OOXML chunk、Worker 或 WASM。
 - 普通文件以会话与规范路径识别；引用文档以会话、resourceId 与 SHA-256 识别。引用 URL 携带预期哈希，Host 同时检查注册版本与磁盘内容，失效时返回 409，不能回退到普通文件接口。手动刷新重新读取内容；关闭标签和切换会话后的迟到结果不会替换当前阅读内容。
@@ -225,6 +226,7 @@ Module 是统一安装与版本冻结单元，manifest 的 `type` 分为 `domain
 | Extension | TypeScript/JavaScript 扩展，在 Pi 进程中注册工具或监听事件 | `entrypoints.piExtensions` → Pi `--extension` |
 | Data / Knowledge / Template | 数据库、知识原文/索引、报告模板等文件资产 | `contributes.assets` → Asset Resolver → 会话计划和 Prompt |
 | Native Runtime | 平台与架构专属可执行文件；当前实现为 ffmpeg/ffprobe 组合 | `contributes.nativeRuntimes` → 安装/装配校验 → Video Service |
+| Canvas View | Module 声明使用的平台内置受信任 Adapter；不包含前端代码 | `contributes.canvasViews` → Resolved Session Plan → Canvas Host 校验与 Adapter Registry |
 | Session Profile | 用户对任务范围与模块版本的选择 | 装配输入；不是执行进程 |
 | ResolvedSessionPlan v3 | 已解析的 Domain、模块版本、入口、资产与运行时清单 | 保存到任务 `.tau/`；用于启动、恢复和完整性校验 |
 

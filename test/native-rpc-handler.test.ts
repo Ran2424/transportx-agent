@@ -21,6 +21,8 @@ test('Native RPC registry owns Pi transport metadata and attachment enrichment',
     discardPromptAttachments() {},
     registerPromptGeoContexts() {},
     discardPromptGeoContexts() {},
+    registerPromptCanvasContexts() {},
+    discardPromptCanvasContexts() {},
     abortGeoInteraction() { geoAborted = true; },
   };
   const handlers = createNativeRpcHandlers({
@@ -30,6 +32,8 @@ test('Native RPC registry owns Pi transport metadata and attachment enrichment',
     buildAttachmentContext: () => '\nattachment context',
     validateGeoContexts: (_session: unknown, ids: unknown) => ids as string[],
     buildGeoContext: () => '',
+    validateCanvasContexts: (_session: unknown, ids: unknown) => ids as string[],
+    buildCanvasContext: () => '',
     parseModel: () => ({ model: { provider: 'openai', id: 'gpt-5.5' } }),
     errorMessage(error: unknown) { return String(error); },
   });

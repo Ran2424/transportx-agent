@@ -1,21 +1,20 @@
 {
   "manifestVersion": 2,
-  "id": "com.transportx.geo",
-  "name": "Geo Visualization",
-  "version": "1.4.0",
+  "id": "com.transportx.document",
+  "name": "Document Canvas",
+  "version": "1.0.0",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": ["com.transportx.canvas"],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-geo-visualization/index.ts"],
     "skills": ["skills/SKILL.md"]
   },
   "contributes": {
-    "artifactTypes": ["geo.scene"],
+    "artifactTypes": ["document.markdown", "document.pdf", "document.ooxml"],
     "canvasViews": [
       {
-        "adapterId": "com.transportx.canvas.geo",
-        "kind": "geo",
+        "adapterId": "com.transportx.canvas.document",
+        "kind": "document",
         "protocolVersion": "1.0"
       }
     ]

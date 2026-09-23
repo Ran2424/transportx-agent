@@ -41,7 +41,7 @@ function fakeSession(id: string) {
     contextUsage: null,
     entries: [],
     pendingExtensionUiRequests: new Map(),
-    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token' },
+    serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token', canvas: 'canvas-token' },
     manager: liveManager,
     metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     liveMetadata: () => ({ id, model: 'openai/gpt-5.5', isStreaming: false, isCompacting: false, autoCompactionEnabled: true }),
@@ -52,6 +52,8 @@ function fakeSession(id: string) {
     discardPromptAttachments: () => {},
     registerPromptGeoContexts: () => {},
     discardPromptGeoContexts: () => {},
+    registerPromptCanvasContexts: () => {},
+    discardPromptCanvasContexts: () => {},
     abortGeoInteraction: () => {},
   };
 }

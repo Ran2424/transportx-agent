@@ -25,3 +25,6 @@ export * from './session-profile.ts';
 export * from './resolved-session-plan.ts';
 export * from './spatial.ts';
 export * from './video.ts';
+export * from './canvas.ts';
+export * from './canvas-document.ts';
+export * from './canvas-media.ts';

@@ -1003,6 +1003,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .workspace-float--canvas .geo-map { min-height: 0; }
 .agent-canvas-tabs { min-width: 0; flex: 1; display: flex; align-items: stretch; gap: 2px; overflow-x: auto; scrollbar-width: thin; }
 .canvas-header { padding-bottom: 0; }
+.canvas-context-action { min-height: 28px; padding: 4px 8px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); background: var(--surface-raised); color: var(--text-secondary); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.canvas-context-action:disabled { opacity: .5; cursor: default; }
 .canvas-tab { display: flex; flex: 0 0 auto; align-items: center; max-width: 240px; border-bottom: 2px solid transparent; }
 .canvas-tab.is-active { border-bottom-color: var(--selection-border); background: var(--selection-bg); }
 .canvas-tab button { display: inline-flex; align-items: center; gap: 7px; min-width: 0; height: 36px; padding: 0 10px; border: 0; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 12px; }

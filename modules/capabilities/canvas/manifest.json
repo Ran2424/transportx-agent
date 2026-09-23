@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.canvas",
+  "name": "Shared Canvas",
+  "version": "1.0.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "entrypoints": {
+    "piExtensions": ["extensions/pi-canvas/index.ts"],
+    "skills": ["skills/SKILL.md"]
+  }
+}

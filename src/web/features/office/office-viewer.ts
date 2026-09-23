@@ -20,6 +20,10 @@ export type OfficeViewerController = {
   fitWidth(): void | Promise<void>;
   fitPage(): void | Promise<void>;
   copySelection?(): Promise<XlsxCopyResult>;
+  goToPage?(number: number): void | Promise<void>;
+  goToSlide?(number: number): void | Promise<void>;
+  goToSheet?(name: string): Promise<void>;
+  scrollToCell?(ref: string): Promise<void>;
   destroy(): void;
 };
 
@@ -51,7 +55,8 @@ export async function createOfficeViewer(format: OfficeFormat, container: HTMLEl
         format, findText: async (query) => (await viewer.findText(query)).length,
         findNext: async () => { await viewer.findNext(); }, findPrev: async () => { await viewer.findPrev(); },
         clearFind: () => viewer.clearFind(), zoomIn: () => viewer.zoomIn(), zoomOut: () => viewer.zoomOut(),
-        fitWidth: () => viewer.fitWidth(), fitPage: () => viewer.fitPage(), destroy: () => viewer.destroy(),
+        fitWidth: () => viewer.fitWidth(), fitPage: () => viewer.fitPage(),
+        goToPage: (number) => viewer.scrollToPage(number - 1), destroy: () => viewer.destroy(),
       };
     } catch (error) { viewer.destroy(); throw error; }
   }
@@ -72,7 +77,13 @@ export async function createOfficeViewer(format: OfficeFormat, container: HTMLEl
         findNext: async () => { await viewer.findNext(); }, findPrev: async () => { await viewer.findPrev(); },
         clearFind: () => viewer.clearFind(), zoomIn: () => viewer.zoomIn(), zoomOut: () => viewer.zoomOut(),
         fitWidth: () => viewer.fitWidth(), fitPage: () => viewer.fitPage(),
-        copySelection: () => viewer.copySelection(), destroy: () => viewer.destroy(),
+        copySelection: () => viewer.copySelection(),
+        goToSheet: async (name) => {
+          const index = viewer.sheetNames.indexOf(name);
+          if (index < 0) throw new Error(`Sheet not found: ${name}`);
+          await viewer.goToSheet(index);
+        },
+        scrollToCell: (ref) => viewer.scrollToCell(ref), destroy: () => viewer.destroy(),
       };
     } catch (error) { viewer.destroy(); throw error; }
   }
@@ -99,6 +110,7 @@ export async function createOfficeViewer(format: OfficeFormat, container: HTMLEl
       findNext: async () => { await pptxViewer.findNext(); }, findPrev: async () => { await pptxViewer.findPrev(); },
       clearFind: () => pptxViewer.clearFind(), zoomIn: () => pptxViewer.zoomIn(), zoomOut: () => pptxViewer.zoomOut(),
       fitWidth: () => pptxViewer.fitWidth(), fitPage: () => pptxViewer.fitPage(),
+      goToSlide: (number) => pptxViewer.scrollToSlide(number - 1),
       destroy: () => { pptxViewer.destroy(); presentation.destroy(); },
     };
   } catch (error) {
