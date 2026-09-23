@@ -52,11 +52,6 @@ export function handleCitationResourceRoute(
     json(res, 404, { error: 'Citation resource not found in this session' });
     return true;
   }
-  const expectedHash = new URL(req.url || '/', 'http://localhost').searchParams.get('sha256');
-  if (expectedHash && expectedHash !== resource.sha256) {
-    json(res, 409, { error: 'Citation resource version no longer matches this view' });
-    return true;
-  }
   const knowledgeRoots = typeof deps.knowledgeRoots === 'function' ? deps.knowledgeRoots(session) : deps.knowledgeRoots;
   if (match[3] === 'preview') serveCitationPreview(req, res, session, resource, knowledgeRoots);
   else serveCitationResource(req, res, session, resource, knowledgeRoots);
@@ -79,8 +74,8 @@ function readCitationResource(session: CitationResourceSession, resource: Citati
   if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw Object.assign(new Error('Citation resource path is not allowed'), { code: 'EACCES' });
   const buffer = fs.readFileSync(resolved);
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
-  if (sha256 !== resource.sha256) throw Object.assign(new Error('Citation resource has changed since it was registered'), { code: 'ECHANGED' });
-  return { resolved, buffer, sha256 };
+  const changed = sha256 !== resource.sha256;
+  return { resolved, buffer, sha256, changed };
 }
 
 function resourceError(res: ServerResponse, error: unknown) {
@@ -93,7 +88,7 @@ function resourceError(res: ServerResponse, error: unknown) {
 
 function serveCitationResource(req: IncomingMessage, res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
   try {
-    const { resolved, buffer, sha256 } = readCitationResource(session, resource, knowledgeRoots);
+    const { resolved, buffer, sha256, changed } = readCitationResource(session, resource, knowledgeRoots);
     const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
     const headers: Record<string, string | number> = {
       'Content-Type': resource.kind === 'web' && resource.mimeType === 'text/html' ? 'text/plain; charset=utf-8' : resource.mimeType,
@@ -102,6 +97,7 @@ function serveCitationResource(req: IncomingMessage, res: ServerResponse, sessio
       'Cache-Control': 'private, max-age=0, must-revalidate',
       'ETag': `"${sha256}"`,
       'X-Content-Type-Options': 'nosniff',
+      'X-Citation-Resource-Stale': changed ? '1' : '0',
     };
     if (resource.mimeType === 'image/svg+xml') headers['Content-Security-Policy'] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
     res.writeHead(200, headers);
