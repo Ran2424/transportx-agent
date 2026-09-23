@@ -20,6 +20,7 @@ test('Canvas Host validates a session document and returns a stable restorable p
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'reports'));
   fs.writeFileSync(path.join(root, 'reports', 'slides.pptx'), 'fixture');
+  fs.writeFileSync(path.join(root, 'reports', 'counts.csv'), 'road,count\nA1,12\n');
   const current = session(root);
   const citation = { registry: () => ({ load: () => ({ resources: [] }) }) };
   const service = new CanvasService(citation, (_session: any, requested: string) => path.resolve(root, requested));
@@ -37,6 +38,12 @@ test('Canvas Host validates a session document and returns a stable restorable p
   assert.equal(focused.revision, presented.revision);
   assert.notEqual(focused.presentationId, presented.presentationId);
   assert.equal(focused.operation, 'focus');
+  const csv = service.present(current, {
+    adapterId: 'com.transportx.canvas.document',
+    resource: { scope: 'session-file', path: 'reports/counts.csv' },
+  });
+  assert.equal((csv.payload as any).format, 'csv');
+  assert.deepEqual(csv.resources, [{ scope: 'session-file', path: 'reports/counts.csv' }]);
   const shared = service.createContext(current, { viewId: presented.viewId, revision: presented.revision, target: { kind: 'slide', number: 8 } });
   assert.throws(() => service.inspectContexts(current, [shared.contextId]), /current user turn/);
   current.activeCanvasContextIds = [shared.contextId];

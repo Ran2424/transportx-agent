@@ -1,11 +1,13 @@
 ---
 name: document-canvas
-description: Open and navigate Markdown, PDF, DOCX, XLSX, and PPTX resources in the shared Canvas.
+description: Open and navigate Markdown, PDF, CSV, DOCX, XLSX, and PPTX resources in the shared Canvas.
 ---
 
 # Document Canvas
 
 Call `canvas_present` with `adapterId: "com.transportx.canvas.document"` and a controlled resource.
+
+CSV files open as read-only tables in Canvas. They do not use the XLSX Viewer or Sheet targets.
 
 Supported targets:
 

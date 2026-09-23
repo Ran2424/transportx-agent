@@ -132,7 +132,7 @@ export class CanvasService {
     } else throw serviceError('Unsupported Canvas resource reference.');
 
     const format = documentCanvasFormat(resourcePath, mimeType);
-    if (!format) throw serviceError('Document Canvas supports Markdown, PDF, DOCX, XLSX and PPTX resources.');
+    if (!format) throw serviceError('Document Canvas supports Markdown, PDF, CSV, DOCX, XLSX and PPTX resources.');
     const target = validateTarget(adapterId, input.target);
     if (input.target !== undefined && !target) throw serviceError('Document Canvas target is invalid.');
     const viewId = stableViewId(adapterId, reference);

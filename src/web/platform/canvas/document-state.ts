@@ -3,7 +3,7 @@ import type { CanvasPresentationV1, CanvasResourceRef } from '../../../contracts
 import type { DocumentCanvasTarget } from '../../../contracts/canvas-document.ts';
 
 export type DocumentRequest = { sessionId: string; title: string; path: string; resource?: CitationResource; locator?: CitationLocator };
-export type DocumentFormat = 'markdown' | 'pdf' | 'docx' | 'xlsx' | 'pptx';
+export type DocumentFormat = 'markdown' | 'pdf' | 'csv' | 'docx' | 'xlsx' | 'pptx';
 export type DocumentView = DocumentRequest & {
   id: string;
   kind: 'document';
@@ -26,6 +26,7 @@ export function documentFormat(path: string, mimeType?: string): DocumentFormat 
   const mime = mimeType?.split(';')[0].trim().toLowerCase();
   if (mime === 'application/pdf' || /\.pdf$/i.test(path)) return 'pdf';
   if (mime === 'text/markdown' || /\.mdx?$/i.test(path)) return 'markdown';
+  if (mime === 'text/csv' || /\.csv$/i.test(path)) return 'csv';
   const extension = path.match(/\.(docx|xlsx|pptx)$/i)?.[1].toLowerCase() as 'docx' | 'xlsx' | 'pptx' | undefined;
   if (extension) return extension;
   if (mime && OFFICE_MIME_TYPES[mime]) return OFFICE_MIME_TYPES[mime];

@@ -148,11 +148,22 @@ test('document identity uses full paths, owning sessions and pinned citation ver
   assert.equal(resolveDocument({ ...request, path: 'image.png' }, '/task'), null);
   assert.equal(documentFormat('report.docx'), 'docx');
   assert.equal(documentFormat('sheet.bin', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), 'xlsx');
+  assert.equal(documentFormat('counts.csv'), 'csv');
+  assert.equal(documentFormat('counts.bin', 'text/csv; charset=utf-8'), 'csv');
   assert.equal(documentFormat('slides.PPTX'), 'pptx');
   assert.equal(documentFormat('legacy.xls'), null);
   assert.equal(documentFormat('legacy.ods'), null);
   assert.equal(isOfficeFormat('docx'), true);
   assert.equal(isOfficeFormat('pdf'), false);
+});
+
+test('CSV parser preserves quoted delimiters and line breaks for Canvas tables', async () => {
+  const { parseDelimited } = await import('../src/web/platform/workspace/delimited-table.ts');
+  assert.deepEqual(parseDelimited('name,note\nA,"one,two"\nB,"line 1\nline 2"\n', ','), [
+    ['name', 'note'],
+    ['A', 'one,two'],
+    ['B', 'line 1\nline 2'],
+  ]);
 });
 
 test('document headings have unique anchors and ambiguous or absent citations do not guess', async () => {

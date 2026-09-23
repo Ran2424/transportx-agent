@@ -1028,6 +1028,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .document-outline button:hover { background: var(--selection-bg); color: var(--selection-fg); }
 .document-scroll { flex: 1; min-width: 0; overflow: auto; padding: 20px 24px 40px; overflow-anchor: none; }
 .document-scroll .file-preview-report { overflow-wrap: anywhere; }
+.document-csv-table { margin: 0 auto; }
+.document-csv-table .file-preview-table { min-width: 100%; }
+.document-csv-table .file-preview-table th { top: -20px; }
 .document-pdf { display: block; flex: 1; min-height: 0; width: 100%; border: 0; }
 .document-notice, .document-pdf-help { margin: 0; padding: 8px 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .document-notice.is-error { color: var(--status-danger); }
