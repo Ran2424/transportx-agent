@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 3.21.0 - 2026-09-23
+
 ### Changed
 
 - Canvas 升级为共享、模块化会话表面：Geo、Video 与 Document 通过受信任 Adapter Registry 使用统一 `pi-canvas` 生命周期，历史 Geo / Video Tool Result 继续兼容重放。Module manifest 新增 `contributes.canvasViews`，Resolved Session Plan 冻结 Adapter 声明；`com.transportx.workbench` 升级至 1.1.0，`com.transportx.geo` 升级至 1.4.0。
