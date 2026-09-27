@@ -444,6 +444,7 @@ test('serves Registry-backed citation resources without exposing arbitrary sessi
   assert.equal(response.status, 200);
   assert.equal(await response.text(), report.toString());
   assert.equal(response.headers.get('etag'), `"${sha256}"`);
+  assert.equal(response.headers.get('x-citation-resource-stale'), '0');
   const head = await fetch(url, { method: 'HEAD' });
   assert.equal(head.status, 200);
   assert.equal(head.headers.get('content-length'), String(report.length));
@@ -452,6 +453,20 @@ test('serves Registry-backed citation resources without exposing arbitrary sessi
   assert.match(String(download.headers.get('content-disposition')), /^attachment;/);
   assert.equal((await fetch(`${url}?sha256=${sha256}`)).status, 200);
   assert.equal((await fetch(`${url}?sha256=${'b'.repeat(64)}`)).status, 409, 'a view pinned to another registry version cannot read current bytes');
+  const rewritten = Buffer.from('# 交通报告\n\n入口拥堵已缓解。');
+  fs.writeFileSync(path.join(cwd, 'report.md'), rewritten);
+  const rewrittenHash = crypto.createHash('sha256').update(rewritten).digest('hex');
+  const updated = await fetch(`${url}?sha256=${sha256}`);
+  assert.equal(updated.status, 200);
+  assert.equal(await updated.text(), rewritten.toString());
+  assert.equal(updated.headers.get('etag'), `"${rewrittenHash}"`);
+  assert.equal(updated.headers.get('x-citation-resource-stale'), '1');
+  const updatedHead = await fetch(`${url}?sha256=${sha256}`, { method: 'HEAD' });
+  assert.equal(updatedHead.status, 200);
+  assert.equal(updatedHead.headers.get('content-length'), String(rewritten.length));
+  assert.equal(updatedHead.headers.get('etag'), `"${rewrittenHash}"`);
+  assert.equal(updatedHead.headers.get('x-citation-resource-stale'), '1');
+  assert.equal((await fetch(`${url}?sha256=${'b'.repeat(64)}`)).status, 409);
   assert.equal((await fetch(`${base}/api/live-sessions/${other.id}/citation-resources/${encodeURIComponent(resourceId)}/content`)).status, 404);
   assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citation-resources/${encodeURIComponent('resource:secret')}/content`)).status, 404);
   const citations = await jsonBody(await fetch(`${base}/api/live-sessions/${owner.id}/citations`));
@@ -558,6 +573,8 @@ test('serves a knowledge citation from the selected asset root instead of a task
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/pdf');
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), original);
+  fs.writeFileSync(path.join(knowledgeRoot, 'standard', 'source', 'original.pdf'), '%PDF-rewritten-source');
+  assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citation-resources/${encodeURIComponent(resourceId)}/content`)).status, 409);
 });
 
 test('projects the selected history branch and sorts sessions by conversation time', async () => {

@@ -166,6 +166,17 @@ test('report source stays behind the HTTP command port', async () => {
   assert.deepEqual(fixture.paths, ['/api/citations/report.md']);
 });
 
+test('report source exposes an updated citation to the document reader', async () => {
+  const fixture = deps(() => ({}));
+  fixture.value.http = async () => ({
+    ok: true, status: 200,
+    headers: { get: (name: string) => name === 'X-Citation-Resource-Stale' ? '1' : null },
+    async json() { return {}; }, async text() { return '# 新版报告'; },
+  });
+  const report = createReportCommands(fixture.value);
+  assert.deepEqual(await report.loadSource('session-1', '/api/citations/report.md'), { content: '# 新版报告', encoding: 'utf8', size: 14, stale: true });
+});
+
 test('extension response closes the dialog before the HTTP RPC acknowledges it', async () => {
   const fixture = deps(() => ({ type: 'response', success: false, error: 'request expired' }));
   const extension = createExtensionUiCommands(fixture.value);

@@ -19,6 +19,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [stale, setStale] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [report, setReport] = useState<Awaited<ReturnType<typeof renderReport>> | null>(null);
   const [rows, setRows] = useState<string[][]>([]);
@@ -35,7 +36,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
   useEffect(() => {
     let current = true;
     const controller = new AbortController();
-    setReady(false); setError(''); setNotice(''); setReport(null); setRows([]); setCitations(null);
+    setReady(false); setError(''); setNotice(''); setStale(false); setReport(null); setRows([]); setCitations(null);
     async function load() {
       if (view.format === 'pdf') {
         // Check HTTP errors before embedding; iframe load does not prove a PDF rendered.
@@ -48,6 +49,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
           appKernel.commands.citation.list(view.sessionId).catch(() => null),
         ]);
         if (!current) return;
+        setStale(content.stale === true);
         if (view.format === 'csv') setRows(parseDelimited(content.content, ','));
         else {
           const rendered = await renderReport(content.content, view, envelope);
@@ -110,6 +112,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
       <button type="button" disabled={!!action} onClick={() => void runAction('download')}>{action === 'download' ? t('workspace.downloading') : t('workspace.downloadOriginal')}</button>
       {view.format === 'markdown' ? <button type="button" disabled={!ready || !!action} onClick={() => void runAction('export')}>{action === 'export' ? t('workspace.generating') : t('workspace.downloadPdf')}</button> : null}
     </header>
+    {stale ? <p className="document-notice" role="status">{t('document.sourceUpdated')}</p> : null}
     {notice ? <p className="document-notice" role="status">{notice}</p> : null}
     {error ? <p className="document-notice is-error" role="alert">{error}</p> : !ready ? <p className="document-notice" role="status">{t('workspace.reading')}</p> : view.format === 'pdf' ? <>
       <iframe key={`${view.navigationId}:${refresh}`} className="document-pdf" src={`${resourceUrl}#page=${pdfPage}&view=FitH`} title={t('workspace.originalPdfTitle', { name: view.title })} onError={() => setError(t('document.pdfUnavailable'))} />

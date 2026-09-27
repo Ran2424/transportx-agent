@@ -85,8 +85,13 @@ function readCitationResource(session: CitationResourceSession, resource: Citati
   const { resolved } = locateCitationResource(session, resource, knowledgeRoots);
   const buffer = fs.readFileSync(resolved);
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
-  if (sha256 !== resource.sha256) throw Object.assign(new Error('Citation resource has changed since it was registered'), { code: 'ECHANGED' });
-  return { resolved, buffer, sha256 };
+  const changed = sha256 !== resource.sha256;
+  if (changed && !allowsChangedContent(resource)) throw Object.assign(new Error('Citation resource has changed since it was registered'), { code: 'ECHANGED' });
+  return { resolved, buffer, sha256, changed };
+}
+
+function allowsChangedContent(resource: CitationResource) {
+  return resource.scope === 'artifact' && resource.kind === 'document' && resource.mimeType === 'text/markdown';
 }
 
 function resourceError(res: ServerResponse, error: unknown) {
@@ -99,8 +104,8 @@ function resourceError(res: ServerResponse, error: unknown) {
 
 function serveCitationResource(req: IncomingMessage, res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
   try {
-    const loaded = req.method === 'HEAD'
-      ? { ...locateCitationResource(session, resource, knowledgeRoots), buffer: null }
+    const loaded = req.method === 'HEAD' && !allowsChangedContent(resource)
+      ? { ...locateCitationResource(session, resource, knowledgeRoots), buffer: null, sha256: resource.sha256, changed: false }
       : { ...readCitationResource(session, resource, knowledgeRoots), stat: null };
     const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
     const headers: Record<string, string | number> = {
@@ -108,8 +113,9 @@ function serveCitationResource(req: IncomingMessage, res: ServerResponse, sessio
       'Content-Length': loaded.buffer?.length ?? loaded.stat!.size,
       'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(loaded.resolved))}`,
       'Cache-Control': 'private, max-age=0, must-revalidate',
-      'ETag': `"${resource.sha256}"`,
+      'ETag': `"${loaded.sha256}"`,
       'X-Content-Type-Options': 'nosniff',
+      'X-Citation-Resource-Stale': loaded.changed ? '1' : '0',
     };
     if (resource.mimeType === 'image/svg+xml') headers['Content-Security-Policy'] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
     res.writeHead(200, headers);
