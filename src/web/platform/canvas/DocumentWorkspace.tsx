@@ -5,6 +5,7 @@ import type { CitationEnvelope } from '../../../contracts/citation';
 import { citationOccurrenceIndex } from '../../../contracts/citation-compiler';
 import { appKernel } from '../../app/composition-root';
 import { citationResourceUrl } from '../conversation/citation-resource';
+import { parseDelimited } from '../workspace/delimited-table';
 import { sessionFileUrl, withDownload } from '../workspace/file-urls';
 import { useOpenDocument } from './document-context';
 import { documentFormat, documentTarget, type DocumentPosition, type DocumentView } from './document-state';
@@ -18,8 +19,10 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [stale, setStale] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [report, setReport] = useState<Awaited<ReturnType<typeof renderReport>> | null>(null);
+  const [rows, setRows] = useState<string[][]>([]);
   const [citations, setCitations] = useState<CitationEnvelope | null>(null);
   const [action, setAction] = useState<'download' | 'export' | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -33,7 +36,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
   useEffect(() => {
     let current = true;
     const controller = new AbortController();
-    setReady(false); setError(''); setNotice(''); setReport(null);
+    setReady(false); setError(''); setNotice(''); setStale(false); setReport(null); setRows([]); setCitations(null);
     async function load() {
       if (view.format === 'pdf') {
         // Check HTTP errors before embedding; iframe load does not prove a PDF rendered.
@@ -46,15 +49,20 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
           appKernel.commands.citation.list(view.sessionId).catch(() => null),
         ]);
         if (!current) return;
-        const rendered = await renderReport(content.content, view, envelope);
-        if (!current) return;
-        setReport(rendered); setCitations(envelope);
+        setStale(content.stale === true);
+        if (view.format === 'csv') setRows(parseDelimited(content.content, ','));
+        else {
+          const rendered = await renderReport(content.content, view, envelope);
+          if (!current) return;
+          setReport(rendered);
+        }
+        setCitations(envelope);
       }
       if (current) setReady(true);
     }
     void load().catch((cause) => { if (current) setError((cause as Error).message || t('workspace.previewLoadFailed')); });
     return () => { current = false; controller.abort(); };
-  }, [view.id, refresh, i18n.language, resourceUrl]);
+  }, [view.id, view.format, refresh, i18n.language, resourceUrl]);
 
   useEffect(() => {
     if (active && document.activeElement?.getAttribute('role') !== 'tab') root.current?.focus({ preventScroll: true });
@@ -75,13 +83,13 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
     if (!ready || !active) return;
     const saved = positions.get(view.id);
     const navigate = view.locator && saved?.navigationId !== view.navigationId;
-    if (view.format === 'markdown' && viewport.current) {
+    if ((view.format === 'markdown' || view.format === 'csv') && viewport.current) {
       viewport.current.scrollTop = saved?.scrollTop ?? 0;
-      if (navigate) {
+      if (navigate && view.format === 'markdown') {
         const target = documentTarget(report?.headings ?? [], view.locator!);
         if (target) { scrollToHeading(target); setNotice(''); }
         else setNotice(t('document.locationUnavailable'));
-      }
+      } else if (navigate) setNotice(t('document.locationUnavailable'));
       positions.set(view.id, { scrollTop: viewport.current.scrollTop, navigationId: view.navigationId });
     } else if (navigate && !view.locator?.page) setNotice(t('document.locationUnavailable'));
   }, [ready, active, report, view.navigationId, positions, t]);
@@ -104,11 +112,16 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
       <button type="button" disabled={!!action} onClick={() => void runAction('download')}>{action === 'download' ? t('workspace.downloading') : t('workspace.downloadOriginal')}</button>
       {view.format === 'markdown' ? <button type="button" disabled={!ready || !!action} onClick={() => void runAction('export')}>{action === 'export' ? t('workspace.generating') : t('workspace.downloadPdf')}</button> : null}
     </header>
+    {stale ? <p className="document-notice" role="status">{t('document.sourceUpdated')}</p> : null}
     {notice ? <p className="document-notice" role="status">{notice}</p> : null}
     {error ? <p className="document-notice is-error" role="alert">{error}</p> : !ready ? <p className="document-notice" role="status">{t('workspace.reading')}</p> : view.format === 'pdf' ? <>
       <iframe key={`${view.navigationId}:${refresh}`} className="document-pdf" src={`${resourceUrl}#page=${pdfPage}&view=FitH`} title={t('workspace.originalPdfTitle', { name: view.title })} onError={() => setError(t('document.pdfUnavailable'))} />
       <p className="document-pdf-help">{t('document.pdfHelp')}</p>
-    </> : <div className="document-reading-layout">
+    </> : view.format === 'csv' ? <div className="document-reading-layout">
+      <div ref={viewport} className="document-scroll" onScroll={(event) => { if (active && ready) positions.set(view.id, { scrollTop: event.currentTarget.scrollTop, navigationId: view.navigationId }); }}>
+        {!rows.length ? <p className="file-preview-empty">{t('workspace.tableEmpty')}</p> : <div className="file-preview-table-wrap document-csv-table"><table className="file-preview-table"><thead><tr>{rows[0].map((cell, index) => <th key={`${cell}-${index}`}>{cell}</th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex}>{rows[0].map((_, cellIndex) => <td key={cellIndex}>{row[cellIndex] || ''}</td>)}</tr>)}</tbody></table></div>}
+      </div>
+    </div> : <div className="document-reading-layout">
       {outlineOpen ? <nav className="document-outline" aria-label={t('document.outline')}>{report?.headings.map((heading) => <button type="button" key={heading.id} style={{ paddingInlineStart: 10 + (heading.level - 1) * 10 }} onClick={() => scrollToHeading(heading.id)}>{heading.text}</button>)}</nav> : null}
       <div ref={viewport} className="document-scroll" onScroll={(event) => { if (active && ready) positions.set(view.id, { scrollTop: event.currentTarget.scrollTop, navigationId: view.navigationId }); }}>
         <article ref={article} className="file-preview-report" onClick={(event) => {

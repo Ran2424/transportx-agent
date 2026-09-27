@@ -22,6 +22,39 @@ test('Canvas follows presentation order across types and deduplicates history/li
   assert.equal(content.presentation?.id, 'video:video_abc');
 });
 
+test('unified Canvas presentations project through registered adapters and use presentation identity for focus', async () => {
+  const { projectCanvas, syncCanvas, closeCanvasTab, EMPTY_CANVAS } = await canvasApi();
+  const canvas = {
+    protocol: 'pi-canvas', version: '1.0', presentationId: 'present-1',
+    adapterId: 'com.transportx.canvas.document', kind: 'document', viewId: 'document:slides', revision: 0,
+    operation: 'present', title: '路口分析', resources: [{ scope: 'session-file', path: 'reports/slides.pptx' }],
+    payload: { format: 'pptx' }, target: { kind: 'slide', number: 8 }, generatedAt: '2026-09-23T10:00:00+08:00',
+  };
+  const context = { sessionId: 'session-1', cwd: '/task' };
+  const content = projectCanvas([{ message: { toolCallId: 'canvas-1', details: { canvas } } }] as any, [], context);
+  assert.equal(content.views.length, 1);
+  assert.equal(content.views[0].kind, 'document');
+  assert.equal((content.views[0] as any).path, '/task/reports/slides.pptx');
+  assert.deepEqual((content.views[0] as any).canvasTarget, { kind: 'slide', number: 8 });
+  let state = syncCanvas(EMPTY_CANVAS, content);
+  state = closeCanvasTab(state, 'document:slides');
+  const focused = projectCanvas([{ message: { toolCallId: 'canvas-1', details: { canvas } } }, { message: { toolCallId: 'canvas-2', details: { canvas: { ...canvas, presentationId: 'focus-2', operation: 'focus' } } } }] as any, [], context);
+  state = syncCanvas(state, focused);
+  assert.equal(state.activeId, 'document:slides');
+  assert.equal(state.open, true);
+});
+
+test('Geo and Video adapters validate and apply their own Canvas targets', async () => {
+  const { projectCanvas } = await canvasApi();
+  const geoPayload = structuredClone(fixture.details.visualization);
+  const base = { protocol: 'pi-canvas', version: '1.0', revision: 1, operation: 'present', resources: [], generatedAt: '2026-09-23T10:00:00+08:00' };
+  const geo = { ...base, presentationId: 'geo-target', adapterId: 'com.transportx.canvas.geo', kind: 'geo', viewId: 'geo:target', title: '地图', payload: geoPayload, target: { kind: 'map-view', bounds: [121.39, 31.16, 121.53, 31.28] } };
+  const videoCanvas = { ...base, presentationId: 'video-target', adapterId: 'com.transportx.canvas.video', kind: 'video', viewId: 'video:target', title: '视频', payload: { schemaVersion: 1, revision: 1, scene: { schemaVersion: 1, revision: 1, videos: [video], activeVideoId: video.id } }, target: { kind: 'offset', seconds: 12 } };
+  const content = projectCanvas([{ message: { details: { canvas: geo } } }, { message: { details: { canvas: videoCanvas } } }] as any, []);
+  assert.deepEqual((content.views.find((view: any) => view.kind === 'geo') as any).envelope.scene.view.bounds, geo.target.bounds);
+  assert.equal((content.views.find((view: any) => view.kind === 'video') as any).item.initialSeekSeconds, 12);
+});
+
 test('closing and selecting tabs survives unchanged snapshots; explicit Agent focus reopens a tab without a new revision', async () => {
   const { projectCanvas, syncCanvas, closeCanvasTab, activateCanvas, EMPTY_CANVAS } = await canvasApi();
   const entries = [mapResult('first', 'map-1'), mapResult('second', 'map-2')];
@@ -94,7 +127,7 @@ test('manual documents survive tool snapshots, close/reopen and repeated citatio
 });
 
 test('document identity uses full paths, owning sessions and pinned citation versions', async () => {
-  const { resolveDocument, documentPath } = await import('../src/web/platform/canvas/document-state.ts');
+  const { resolveDocument, documentPath, documentFormat, isOfficeFormat } = await import('../src/web/platform/canvas/document-state.ts');
   const request = { sessionId: 'one', title: '报告', path: 'output/../report.md' };
   const first = resolveDocument(request, '/task')!;
   assert.equal(first.id, resolveDocument({ ...request, path: '/task/report.md' }, '/task')!.id);
@@ -113,6 +146,24 @@ test('document identity uses full paths, owning sessions and pinned citation ver
   assert.equal(resolveDocument(request, '/task', { resources: [{ ...resource, scope: 'knowledge' }] } as any)!.resource, undefined);
   assert.equal(resolveDocument(request, '/task', { resources: [resource, { ...resource, resourceId: 'second' }] } as any)!.resource, undefined, 'ambiguous registrations are not merged');
   assert.equal(resolveDocument({ ...request, path: 'image.png' }, '/task'), null);
+  assert.equal(documentFormat('report.docx'), 'docx');
+  assert.equal(documentFormat('sheet.bin', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), 'xlsx');
+  assert.equal(documentFormat('counts.csv'), 'csv');
+  assert.equal(documentFormat('counts.bin', 'text/csv; charset=utf-8'), 'csv');
+  assert.equal(documentFormat('slides.PPTX'), 'pptx');
+  assert.equal(documentFormat('legacy.xls'), null);
+  assert.equal(documentFormat('legacy.ods'), null);
+  assert.equal(isOfficeFormat('docx'), true);
+  assert.equal(isOfficeFormat('pdf'), false);
+});
+
+test('CSV parser preserves quoted delimiters and line breaks for Canvas tables', async () => {
+  const { parseDelimited } = await import('../src/web/platform/workspace/delimited-table.ts');
+  assert.deepEqual(parseDelimited('name,note\nA,"one,two"\nB,"line 1\nline 2"\n', ','), [
+    ['name', 'note'],
+    ['A', 'one,two'],
+    ['B', 'line 1\nline 2'],
+  ]);
 });
 
 test('document headings have unique anchors and ambiguous or absent citations do not guess', async () => {

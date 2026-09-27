@@ -25,6 +25,26 @@ const MAX_BYTES = 100 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
 const EXTENSION_RUNTIME_ID = 'pi-geo-visualization-command-v2';
 
+function canvasPresentation(envelope: VisualizationEnvelope) {
+  const resources = envelope.scene?.sources.flatMap((source) => source.type === 'geojson-resource'
+    ? [{ scope: 'capability' as const, moduleId: 'com.transportx.geo', resourceId: source.resourceId, revision: envelope.revision }]
+    : []) ?? [];
+  return {
+    protocol: 'pi-canvas' as const,
+    version: '1.0' as const,
+    presentationId: crypto.randomUUID(),
+    adapterId: 'com.transportx.canvas.geo',
+    kind: 'geo',
+    viewId: `geo:${envelope.visualizationId}`,
+    revision: envelope.revision,
+    operation: envelope.operation === 'focus' ? 'focus' as const : envelope.operation === 'clear' ? 'clear' as const : envelope.revision === 1 ? 'present' as const : 'update' as const,
+    title: envelope.summary.title,
+    resources,
+    payload: envelope,
+    generatedAt: envelope.generatedAt,
+  };
+}
+
 const BasemapIdSchema = Type.Union(
   [Type.Literal('default'), Type.Literal('light'), Type.Literal('dark'), Type.Literal('none')],
   { description: 'Use light/default for most maps, dark for high-contrast dashboards, and none only for an intentionally blank or offline canvas' },
@@ -495,7 +515,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
           visualizationId: params.visualizationId, revision: current!.revision,
           operation: 'focus', scene, summary: { title: scene.metadata.title }, generatedAt: new Date().toISOString(),
         };
-        return { content: [{ type: 'text' as const, text: `Showing map "${scene.metadata.title}" in Canvas.` }], details: { visualization: envelope } };
+        return { content: [{ type: 'text' as const, text: `Showing map "${scene.metadata.title}" in Canvas.` }], details: { visualization: envelope, canvas: canvasPresentation(envelope) } };
       }
       let scene: GeoSceneSnapshot | null = null;
       let operation: VisualizationEnvelope['operation'] = 'patch';
@@ -652,7 +672,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       scenes.set(params.visualizationId, { revision, scene });
       return {
         content: [{ type: 'text', text: scene ? `Map "${title}" updated (${scene.layers.length} layers, revision ${revision}).` : `Map "${title}" cleared.` }],
-        details: { visualization: envelope },
+        details: { visualization: envelope, canvas: canvasPresentation(envelope) },
       };
     },
   });

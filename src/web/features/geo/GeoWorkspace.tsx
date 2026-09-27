@@ -29,7 +29,7 @@ type RuntimeModule = { createGeoMapRuntime(container: HTMLElement, onError: (mes
 
 const MODES: Array<'browse' | GeoContextMode> = ['browse', 'feature', 'point', 'rectangle', 'viewport'];
 
-export function GeoWorkspace({ session, active, envelope: selected }: { session: LiveSession; active: boolean; envelope: VisualizationEnvelope }) {
+export function GeoWorkspace({ session, active, envelope: selected, onContextChange }: { session: LiveSession; active: boolean; envelope: VisualizationEnvelope; onContextChange?(target: unknown, selection?: unknown): void }) {
   const { t } = useTranslation();
   const sessions = useSessionState();
   const [runtime, setRuntime] = useState<GeoRuntime | null>(null);
@@ -100,7 +100,7 @@ export function GeoWorkspace({ session, active, envelope: selected }: { session:
   }
 
   function handleRuntimeEvent(event: GeoInteractionEvent) {
-    if (event.type === 'draft_changed') { setDraft(event.draft); if (event.draft) setNotice(''); return; }
+    if (event.type === 'draft_changed') { setDraft(event.draft); onContextChange?.(undefined, event.draft ?? undefined); if (event.draft) setNotice(''); return; }
     if (event.type === 'draft_stale') { setDraft(null); setNotice(t('geo.draftStale')); if (request) void respondInvalidated('scene_revision_changed'); return; }
     if (event.type === 'limit_reached') setNotice(t('geo.limitReached', { count: event.limit }));
     if (event.type === 'unselectable_layer') setNotice(t('geo.unselectableLayer', { layer: event.layerId }));

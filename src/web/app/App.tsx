@@ -17,6 +17,7 @@ import { SessionSidebar } from '../platform/sessions/SessionSidebar';
 import { SettingsPage, themes, type SettingsSectionId, type ThemeId } from '../platform/settings/SettingsDialog';
 import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDock';
 import { AgentCanvas } from '../platform/canvas/AgentCanvas';
+import { canvasContextStore } from '../platform/canvas/canvas-context-store';
 import { projectCanvas, syncCanvas, activateCanvas, closeCanvasTab, openCanvasDocument, withCanvasDocuments, EMPTY_CANVAS, type CanvasState } from '../platform/canvas/canvas-state';
 import { OpenDocumentContext } from '../platform/canvas/document-context';
 import { resolveDocument, type DocumentRequest, type DocumentPosition } from '../platform/canvas/document-state';
@@ -95,7 +96,8 @@ export function App() {
   const canvasContent = useMemo(() => withCanvasDocuments(projectCanvas(
     activeSession ? conversation.bySession[activeSession.id]?.snapshotEntries ?? [] : [],
     activeSession ? Object.values(tools.bySession[activeSession.id] ?? {}) : [],
-  ), canvas), [activeSession?.id, conversation, tools, canvas.documents]);
+    activeSession?.cwd ? { sessionId: activeSession.id, cwd: activeSession.cwd } : undefined,
+  ), canvas), [activeSession?.id, activeSession?.cwd, conversation, tools, canvas.documents]);
   const canvasAvailable = canvasContent.views.length > 0;
   useEffect(() => { documentOpenSequence.current += 1; }, [activeSession?.id]);
   const openedTaskSessions = useRef(new Set<string>());
@@ -423,7 +425,7 @@ export function App() {
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
       taskFloat={<WorkspaceFloat open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
-      canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} />}
+      canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input)); }} />}
       canvasOpen={canvas.open}
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}

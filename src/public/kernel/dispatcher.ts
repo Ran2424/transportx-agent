@@ -119,10 +119,10 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         stores.conversation.appendEntry(action.sessionId, action.entry);
         break;
       case 'conversation/promptSent':
-        stores.conversation.promptSent(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, geoContextIds: action.geoContextIds });
+        stores.conversation.promptSent(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, geoContextIds: action.geoContextIds, ...(action.canvasContextIds?.length ? { canvasContextIds: action.canvasContextIds } : {}) });
         break;
       case 'conversation/promptQueued':
-        stores.conversation.promptQueued(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, geoContextIds: action.geoContextIds, clientCommandId: action.clientCommandId });
+        stores.conversation.promptQueued(action.sessionId, { message: action.message, attachmentIds: action.attachmentIds, geoContextIds: action.geoContextIds, ...(action.canvasContextIds?.length ? { canvasContextIds: action.canvasContextIds } : {}), clientCommandId: action.clientCommandId });
         break;
       case 'conversation/queueItemRemoved':
         stores.conversation.removeQueued(action.sessionId, action.index);
