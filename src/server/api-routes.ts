@@ -12,6 +12,7 @@ import type { VideoService } from './video-service.js';
 import { parseSessionProfileStructured } from '../contracts/index.js';
 import { sessionServiceLabel, type SessionService } from './session-service.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
+import type { CanvasService } from './canvas-service.js';
 
 type ApiRouteServices = {
   sessions: LiveSessionManager;
@@ -48,6 +49,7 @@ type ApiRouteServices = {
   spatial: SpatialAnalysisService;
   video: VideoService;
   geo: GeoInteractionService;
+  canvas: CanvasService;
 };
 
 export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
@@ -172,6 +174,12 @@ export function createApiRouter(services: ApiRouteServices) {
         const created = deps.geo.createContext(session, await deps.readBody(req));
         deps.json(res, 200, created);
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+    })
+    .post(/^\/api\/sessions\/([^/]+)\/canvas-contexts$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, { context: deps.canvas.createContext(session, await deps.readBody(req) as Parameters<CanvasService['createContext']>[1]) }); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .get(/^\/api\/sessions\/([^/]+)\/geo-contexts\/([^/]+)$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
@@ -323,6 +331,22 @@ export function createApiRouter(services: ApiRouteServices) {
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
         deps.json(res, 200, { result: deps.geo.inspect(session, body) });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/canvas/present', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'canvas');
+        if (!session) return;
+        deps.json(res, 200, { canvas: deps.canvas.present(session, body as Parameters<CanvasService['present']>[1]) });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/internal/canvas/inspect', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'canvas');
+        if (!session) return;
+        deps.json(res, 200, { contexts: deps.canvas.inspectContexts(session, body.contextIds) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/geo/request', async ({ req, res, deps }) => {

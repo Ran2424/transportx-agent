@@ -12,6 +12,7 @@ import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
 import type { ModuleArchiveInspection } from '../../contracts/module.ts';
 import { parseCitationEnvelope, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
+import type { CanvasContextV1 } from '../../contracts/canvas.ts';
 
 export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
@@ -19,6 +20,7 @@ export type HttpInit = { method?: string; body?: unknown; headers?: Record<strin
 export type HttpResponse = {
   ok: boolean;
   status: number;
+  headers?: { get(name: string): string | null };
   json(): Promise<unknown>;
   text(): Promise<string>;
 };
@@ -32,9 +34,9 @@ export type CommandDeps = {
   isCompacting: (sessionId: string) => boolean;
 };
 
-export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; clientCommandId?: string };
+export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[]; clientCommandId?: string };
 export type SetTaskModeInput = { sessionId: string; enabled: boolean };
-export type SteerInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[] };
+export type SteerInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[] };
 export type FollowUpInput = { sessionId: string; message: string };
 export type SetModelInput = { sessionId: string; model: string };
 export type SetThinkingLevelInput = { sessionId: string; level: string };
@@ -110,7 +112,7 @@ export type WorkspaceFile = {
   mtime?: number;
 };
 
-export type WorkspaceFileContent = { content: string; size: number; encoding?: 'utf8' | 'base64' };
+export type WorkspaceFileContent = { content: string; size: number; encoding?: 'utf8' | 'base64'; stale?: boolean };
 
 export type UploadAttachmentInput = { sessionId: string; file: File; source: SessionAttachmentSource };
 
@@ -232,6 +234,10 @@ export type GeoCommands = {
   respond(sessionId: string, requestId: string, response: { status: 'submitted'; context: GeoClientContextV1 } | { status: 'cancelled' } | { status: 'invalidated'; reason: 'scene_revision_changed' | 'visualization_changed' | 'resource_changed' }): Promise<{ response: GeoInteractionResponseV1; context?: GeoClientContextV1 }>;
 };
 
+export type CanvasCommands = {
+  createContext(sessionId: string, input: { viewId: string; revision: number; target?: unknown; selection?: unknown }): Promise<CanvasContextV1>;
+};
+
 export type ReportCommands = {
   loadSource(sessionId: string, url: string): Promise<WorkspaceFileContent>;
   exportPdf(title: string, html: string): Promise<{ url: string }>;
@@ -290,7 +296,7 @@ async function httpJson(
   return data;
 }
 
-async function httpText(http: HttpClient, path: string, context: { category: AppErrorCategory; sessionId?: string }): Promise<string> {
+async function httpText(http: HttpClient, path: string, context: { category: AppErrorCategory; sessionId?: string }) {
   let response: HttpResponse;
   try {
     response = await http(path);
@@ -300,7 +306,7 @@ async function httpText(http: HttpClient, path: string, context: { category: App
   if (!response.ok) {
     throw appError({ code: 'http_error', category: context.category, message: `HTTP ${response.status}`, sessionId: context.sessionId, retryable: response.status >= 500, diagnostics: { status: response.status, path } });
   }
-  return response.text();
+  return { content: await response.text(), stale: response.headers?.get('X-Citation-Resource-Stale') === '1' };
 }
 
 async function rpcCommand(http: HttpClient, command: Record<string, unknown>): Promise<unknown> {
@@ -328,19 +334,19 @@ function clientCommandId() {
 export function createAgentCommands(deps: CommandDeps): AgentCommands {
   const pendingPromptIds = new Map<string, string>();
   return {
-    async sendPrompt({ sessionId, message, attachmentIds, geoContextIds, clientCommandId: requestedId }) {
-      const promptKey = `${sessionId}\0${message}\0${(attachmentIds || []).join(',')}\0${(geoContextIds || []).join(',')}`;
+    async sendPrompt({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds, clientCommandId: requestedId }) {
+      const promptKey = `${sessionId}\0${message}\0${(attachmentIds || []).join(',')}\0${(geoContextIds || []).join(',')}\0${(canvasContextIds || []).join(',')}`;
       const commandId = requestedId || pendingPromptIds.get(promptKey) || clientCommandId();
       pendingPromptIds.set(promptKey, commandId);
       // While streaming, prompts queue per session instead of hitting the
       // transport; the kernel flushes them when the run ends.
       if (deps.isStreaming(sessionId) || deps.isCompacting(sessionId)) {
-        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, geoContextIds, clientCommandId: commandId });
+        deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, geoContextIds, ...(canvasContextIds?.length ? { canvasContextIds } : {}), clientCommandId: commandId });
         return;
       }
-      await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}) });
+      await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
       pendingPromptIds.delete(promptKey);
-      deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds, geoContextIds });
+      deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds, geoContextIds, ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
     },
 
     async setTaskMode({ sessionId, enabled }) {
@@ -356,8 +362,8 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       await rpcCommand(deps.http, { type: 'abort', sessionId, clientCommandId: clientCommandId() });
     },
 
-    async steer({ sessionId, message, attachmentIds, geoContextIds }) {
-      await rpcCommand(deps.http, { type: 'steer', sessionId, message, clientCommandId: clientCommandId(), ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}) });
+    async steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }) {
+      await rpcCommand(deps.http, { type: 'steer', sessionId, message, clientCommandId: clientCommandId(), ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
     },
 
     async followUp({ sessionId, message }) {
@@ -535,11 +541,20 @@ export function createGeoCommands(deps: CommandDeps): GeoCommands {
   };
 }
 
+export function createCanvasCommands(deps: CommandDeps): CanvasCommands {
+  return {
+    async createContext(sessionId, input) {
+      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/canvas-contexts`, { method: 'POST', body: input }, { category: 'session', sessionId });
+      return (data as { context: CanvasContextV1 }).context;
+    },
+  };
+}
+
 export function createReportCommands(deps: CommandDeps): ReportCommands {
   return {
     async loadSource(sessionId, url) {
-      const content = await httpText(deps.http, url, { category: 'session', sessionId });
-      return { content, encoding: 'utf8', size: new Blob([content]).size };
+      const { content, stale } = await httpText(deps.http, url, { category: 'session', sessionId });
+      return { content, encoding: 'utf8', size: new Blob([content]).size, ...(stale ? { stale: true } : {}) };
     },
 
     async exportPdf(title, html) {
@@ -676,6 +691,7 @@ export type KernelCommands = {
   citation: CitationCommands;
   video: VideoCommands;
   geo: GeoCommands;
+  canvas: CanvasCommands;
   report: ReportCommands;
   platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
@@ -688,6 +704,7 @@ export function createCommands(deps: CommandDeps): KernelCommands {
     citation: createCitationCommands(deps),
     video: createVideoCommands(deps),
     geo: createGeoCommands(deps),
+    canvas: createCanvasCommands(deps),
     report: createReportCommands(deps),
     platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),

@@ -69,7 +69,7 @@ export async function documentSmoke(page, browser) {
   assert.ok(Math.abs(await reader.locator('.document-scroll').evaluate((node) => node.scrollTop) - scrollTop) < 2);
 
   console.log('Document smoke: tab and scroll state preserved.');
-  // Refresh reads new bytes for an ordinary file; citation readers remain pinned.
+  // Refresh reads new bytes for an ordinary file.
   await dock.getByRole('button', { name: /canvas-current.md/ }).click();
   await reader.getByText('初始内容。', { exact: true }).waitFor();
   fs.writeFileSync(path.join(cwd, 'canvas-current.md'), '# 当前文件\n\n更新内容。');
@@ -206,10 +206,15 @@ export async function documentSmoke(page, browser) {
   await page.getByRole('button', { name: '展开或收起会话侧栏', exact: true }).click();
   fs.writeFileSync(path.join(cwd, 'canvas-report.md'), '# 修改后的版本');
   await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
+  await reader.locator('h1', { hasText: '修改后的版本', exact: true }).waitFor();
+  await reader.getByText('文档已重写，当前显示的是最新内容，与引用时的版本不同。', { exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'canvas-source.md', exact: true }).click();
+  fs.writeFileSync(path.join(cwd, 'canvas-source.md'), '# 已修改的附件');
+  await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
   await reader.getByRole('alert').waitFor();
   assert.equal(await reader.locator('h1').count(), 0);
 
   // Close all documents so existing map/video smoke expectations remain unchanged.
   while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
-  console.log('Document smoke: unified entries, report rendering, outline, navigation, refresh, version errors, downloads and tab preservation passed.');
+  console.log('Document smoke: unified entries, report rendering, outline, navigation, refresh, citation updates, version errors, downloads and tab preservation passed.');
 }

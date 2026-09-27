@@ -1,6 +1,6 @@
 {
   "name": "transportx-agent",
-  "version": "3.2.0",
+  "version": "3.21.0",
   "description": "TransportX Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
@@ -71,6 +71,7 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.80.10",
     "@radix-ui/react-dialog": "^1.1.20",
+    "@silurus/ooxml": "0.87.0",
     "i18next": "^26.3.6",
     "katex": "^0.18.1",
     "mermaid": "^11.16.0",
