@@ -17,6 +17,12 @@ Coding agents such as Codex and Claude Code have improved quickly, but using the
 
 TransportX began with a simple goal: make agent-assisted analysis practical for transport professionals. It is a lightweight desktop workspace for asking questions, inspecting maps and charts, and delivering results with their evidence attached. The core stays small. Modules add the data, knowledge, methods, and tools required by a field, which also makes the platform useful beyond transport.
 
+<p align="center">
+  <img src="./docs/images/product-home.png" alt="TransportX Agent home screen with a button to create a traffic task" width="920" />
+</p>
+
+The home screen starts a traffic task and links the core workflow: ask a question, analyze it on a map, and deliver a report.
+
 ## Built for traffic analysis
 
 TransportX gives analysts one place to ask questions, inspect evidence, work with maps, and deliver results. Each task has its own workspace, conversation history, files, and resolved capability versions.
@@ -37,6 +43,25 @@ The agent and analyst work with the same map state. The agent can publish GeoJSO
 | **Traceable findings** | Keep citations, map context, source files, and tool output connected to the conclusion that used them. |
 | **Report delivery** | Build Markdown reports with figures and citations, then export them as PDF from the desktop app. |
 | **Versioned capabilities** | Reuse `SKILL.md`-based Agent Skills or add custom Extensions, Data, Knowledge, Templates, and native runtimes through Modules. |
+
+## Product screenshots
+
+The screenshots show how TransportX combines maps, analysis, figures, and reports in one workspace. They capture example tasks; the underlying traffic datasets are not included in this repository.
+
+| Monthly passenger-flow report | Event traffic around Shanghai Stadium |
+|---|---|
+| ![Monthly report preview with a passenger-flow chart, outline, and cited analysis](./docs/images/product-monthly-report.png) | ![Map of event-period road speeds and parking demand beside the agent's findings](./docs/images/product-event-traffic.png) |
+| Review a generated report with charts and citations, then export it as PDF. | Compare road speeds and parking demand around an event venue on the map. |
+
+| Metro and shared-bike connections | Holiday ride-hailing demand |
+|---|---|
+| ![Metro lines and the five stations with the highest shared-bike demand beside a ranked table](./docs/images/product-bike-transfer.png) | ![Holiday ride-hailing demand chart opened beside the agent's comparison](./docs/images/product-holiday-ridehail.png) |
+| Inspect station rankings and nearby transit lines on the same map. | Compare ride-hailing demand before, during, and after a holiday alongside rail arrivals. |
+
+| Set up an analysis task | Select an area on the map |
+|---|---|
+| ![New traffic task dialog with model and Module version choices](./docs/images/product-task-setup.png) | ![Transit map with a selected area, demand layer, and agent analysis](./docs/images/product-map-selection.png) |
+| Choose a model and Module versions when creating a task. | Send a selected map area back to the agent as geographic context. |
 
 ## How it works
 

@@ -53,10 +53,19 @@ skills/search-traffic-assurance-knowledge/
 # 浏览器截图基线 PNG（体积大，只保留 manifest.json 哈希清单）
 test/baselines/screenshots/*.png
 
-# GitHub 只发布架构与变更记录
+# GitHub 发布架构、变更记录与 README 产品截图
 /docs/*
 !/docs/ARCHITECTURE.md
 !/docs/CHANGELOG.md
+!/docs/images/
+/docs/images/*
+!/docs/images/product-task-setup.png
+!/docs/images/product-map-selection.png
+!/docs/images/product-monthly-report.png
+!/docs/images/product-event-traffic.png
+!/docs/images/product-bike-transfer.png
+!/docs/images/product-holiday-ridehail.png
+!/docs/images/product-home.png
 
 # 用户本地可安装模块不写入仓库
 modules/installable/

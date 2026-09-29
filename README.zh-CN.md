@@ -17,6 +17,12 @@ Codex、Claude Code 等编程 Agent 进步很快，但实际使用通常仍离�
 
 TransportX 的出发点很简单：让交通分析人员能直接使用 Agent 完成提问、分析、制图和成果交付，并保留结果所依据的数据与过程。平台本身保持轻量，具体数据、知识、方法和工具通过 Module 装配，因此也可以适配交通之外的数据分析场景。
 
+<p align="center">
+  <img src="./docs/images/product-home.png" alt="TransportX Agent 首页，展示新建交通任务入口" width="920" />
+</p>
+
+从首页创建交通任务，再沿着交通问数、地图分析和报告生成完成分析。
+
 ## 为交通分析设计
 
 TransportX 把提问、证据核查、地图操作和成果交付放在同一个工作台中。每个任务都有独立的工作目录、会话记录、文件和确定的能力版本。
@@ -37,6 +43,25 @@ Agent 和分析人员使用同一份地图状态。Agent 可以发布 GeoJSON、
 | **可核查结论** | 让引用、地图上下文、源文件和工具输出与使用它们的结论保持关联。 |
 | **报告交付** | 生成包含图件和引用的 Markdown 报告，并在桌面端导出 PDF。 |
 | **版本化能力** | 复用以 `SKILL.md` 为入口的 Agent Skill，或通过 Module 加入自定义 Extension、Data、Knowledge、Template 和本地运行时。 |
+
+## 产品截图
+
+以下截图展示 TransportX 如何在同一工作台呈现地图、分析结论、图表和报告。画面来自示例任务，所用交通数据不随仓库提供。
+
+| 综合客流月报 | 上海体育场活动交通 |
+|---|---|
+| ![包含客流趋势图、目录和引用分析的月报预览](./docs/images/product-monthly-report.png) | ![上海体育场周边道路速度和停车需求地图及 Agent 分析](./docs/images/product-event-traffic.png) |
+| 在工作台中核查带图表和引用的报告，并导出 PDF。 | 在地图上对比活动周边道路速度与停车需求。 |
+
+| 地铁与共享单车接驳 | 节假日网约车需求 |
+|---|---|
+| ![地铁线路、共享单车需求最高的五个站点及排名表](./docs/images/product-bike-transfer.png) | ![节假日网约车需求图表与 Agent 的对比分析](./docs/images/product-holiday-ridehail.png) |
+| 对照地图和排名表查看站点接驳需求。 | 结合铁路到发量，比较节前、节中、节后的网约车需求。 |
+
+| 创建分析任务 | 在地图上框选区域 |
+|---|---|
+| ![新建交通任务对话框，展示模型和 Module 版本选择](./docs/images/product-task-setup.png) | ![轨道交通地图中的框选区域、需求图层与 Agent 分析](./docs/images/product-map-selection.png) |
+| 创建任务时选择模型和 Module 版本。 | 将框选区域作为地理上下文交给 Agent。 |
 
 ## 工作方式
 
