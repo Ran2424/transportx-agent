@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./src/web/assets/x-icon.svg" alt="TransportX" width="96" />
   <h1>TransportX Agent</h1>
-  <p><strong>A traffic analysis agent that works from the same map as you.</strong></p>
+  <p><strong>TransportX Agent — an AI agent working alongside you to solve real-world transportation problems.</strong></p>
   <p>Ask about roads, transit, traffic demand, and mobility data. TransportX turns the work into maps, charts, cited findings, and reports while keeping the source files and tool history close at hand.</p>
   <p>
     <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="Version 3.2.0" />

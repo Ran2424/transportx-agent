@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./src/web/assets/x-icon.svg" alt="TransportX" width="96" />
   <h1>TransportX Agent</h1>
-  <p><strong>一个和你看同一张地图的交通分析 Agent。</strong></p>
+  <p><strong>TransportX Agent —— 一个和你并肩作战解决实际交通问题的智能体</strong></p>
   <p>用自然语言分析道路、公交、轨道、出行需求与交通数据。TransportX 将分析结果整理为地图、图表、带引用的结论和报告，同时保留相关源文件与工具记录。</p>
   <p>
     <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="版本 3.2.0" />
