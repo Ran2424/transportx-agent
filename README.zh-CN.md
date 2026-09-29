@@ -6,7 +6,7 @@
   <p>
     <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="版本 3.2.0" />
     <img src="https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Windows%20x64-6B7280?style=flat-square" alt="macOS arm64 和 Windows x64" />
-    <img src="https://img.shields.io/badge/license-MIT-3B82F6?style=flat-square" alt="MIT License" />
+    <img src="https://img.shields.io/badge/license-AGPLv3-3B82F6?style=flat-square" alt="AGPL-3.0 许可" />
   </p>
   <p><a href="./README.md">English</a> · <strong>简体中文</strong></p>
 </div>
@@ -110,4 +110,6 @@ TransportX 使用并受益于以下开源项目：
 
 ## License
 
-MIT
+TransportX Agent 采用 [AGPL-3.0-only](./LICENSE) 许可。遵守该许可即可用于商业用途。如需项目自有代码的其他商业授权条件，请联系维护者协商。
+
+上游 MIT 许可代码保留原有条款及通知，见[第三方源码许可说明](./THIRD_PARTY_NOTICES.md)。
