@@ -6,7 +6,7 @@
   <p>
     <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="Version 3.2.0" />
     <img src="https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Windows%20x64-6B7280?style=flat-square" alt="macOS arm64 and Windows x64" />
-    <img src="https://img.shields.io/badge/license-MIT-3B82F6?style=flat-square" alt="MIT License" />
+    <img src="https://img.shields.io/badge/license-AGPLv3-3B82F6?style=flat-square" alt="AGPL-3.0 License" />
   </p>
   <p><strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a></p>
 </div>
@@ -110,4 +110,6 @@ Thanks also to these product testers:
 
 ## License
 
-MIT
+TransportX Agent is licensed under [AGPL-3.0-only](./LICENSE). Commercial use is permitted under its terms. For alternative commercial terms covering project-owned code, contact the maintainers.
+
+Upstream MIT-licensed material retains its original terms and notices; see [Third-party source notices](./THIRD_PARTY_NOTICES.md).
