@@ -61,9 +61,6 @@
     "test": "npm run test:core",
     "test:core": "npm run build && node --test test/agent-host-desktop.test.ts test/transportx-cli.test.ts",
     "test:pi-smoke": "npm run build:server && node scripts/pi-rpc-smoke.mjs",
-    "eval:traffic": "npm run build && node scripts/eval/run-traffic-agent-eval.mjs --mode headless",
-    "eval:traffic:tasks": "npm run build && node scripts/eval/run-traffic-agent-eval.mjs --mode headless --kind task",
-    "eval:traffic:grade": "node scripts/eval/grade-traffic-agent-eval.mjs",
     "test:web": "npm run build && node scripts/react-smoke.mjs",
     "test:platform:macos": "npm run build && node scripts/macos-desktop-smoke.mjs",
     "test:platform:windows": "node scripts/windows-platform-smoke.mjs"

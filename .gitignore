@@ -40,19 +40,23 @@ scenario/
 .tau/
 /logs/
 evals/
+eval-results/
+scripts/eval/
+test/fixtures/eval/
+test/fixtures/shanghai-data-question-bank.md
+test/traffic-eval.test.ts
 motion/
 modules/official/traffic-data/assets/
 modules/official/traffic-knowledge/assets/
+skills/search-traffic-assurance-knowledge/
 
 # 浏览器截图基线 PNG（体积大，只保留 manifest.json 哈希清单）
 test/baselines/screenshots/*.png
 
-# GitHub 只发布架构、变更记录与产品图片
+# GitHub 只发布架构与变更记录
 /docs/*
 !/docs/ARCHITECTURE.md
 !/docs/CHANGELOG.md
-!/docs/images/
-!/docs/images/**
 
 # 用户本地可安装模块不写入仓库
 modules/installable/

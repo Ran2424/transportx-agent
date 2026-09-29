@@ -17,10 +17,6 @@ Codex、Claude Code 等编程 Agent 进步很快，但实际使用通常仍离�
 
 TransportX 的出发点很简单：让交通分析人员能直接使用 Agent 完成提问、分析、制图和成果交付，并保留结果所依据的数据与过程。平台本身保持轻量，具体数据、知识、方法和工具通过 Module 装配，因此也可以适配交通之外的数据分析场景。
 
-<p align="center">
-  <img src="./docs/images/product-home.png" alt="TransportX Agent 首页" width="920" />
-</p>
-
 ## 为交通分析设计
 
 TransportX 把提问、证据核查、地图操作和成果交付放在同一个工作台中。每个任务都有独立的工作目录、会话记录、文件和确定的能力版本。
@@ -42,48 +38,7 @@ Agent 和分析人员使用同一份地图状态。Agent 可以发布 GeoJSON、
 | **报告交付** | 生成包含图件和引用的 Markdown 报告，并在桌面端导出 PDF。 |
 | **版本化能力** | 复用以 `SKILL.md` 为入口的 Agent Skill，或通过 Module 加入自定义 Extension、Data、Knowledge、Template 和本地运行时。 |
 
-## 一个工作台，多种分析界面
-
-<table>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-task-setup.png" alt="为新任务选择模型和模块版本" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-multilayer-map.png" alt="在同一地图中展示轨道线路、站点和交通热力网格" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">为每个任务选择模型与能力版本</td>
-    <td align="center">叠加线路、站点、需求等空间图层</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-map-selection.png" alt="在地图中框选区域并交回 Agent" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-chart-analysis.png" alt="交通数据分析图表预览" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">把地图选择作为下一步分析的结构化上下文</td>
-    <td align="center">在任务内查看图表和其他分析产物</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-event-traffic-analysis.png" alt="活动时段拥堵与停车需求联合分析" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-transit-station-analysis.png" alt="地铁站共享单车需求与线路覆盖分析" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">结合地图与图表分析活动时段拥堵和停车需求</td>
-    <td align="center">识别共享单车需求较高的地铁站并核查线路覆盖</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-report-overview.png" alt="生成的交通分析报告封面、摘要与监测范围" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-report-analysis.png" alt="包含图表、表格与结论的交通分析报告" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">将分析任务整理为包含方法和数据来源的结构化报告</td>
-    <td align="center">用图表、表格、对比和文字结论呈现分析结果</td>
-  </tr>
-</table>
-
 ## 工作方式
-
-<p align="center">
-  <img src="./docs/images/architecture-overview-zh.png" alt="TransportX Agent 整体架构与执行流程" width="920" />
-</p>
 
 桌面端、Web 与 CLI 共用本地 Agent Host。Host 管理会话、资源、模型和版本化 Module；Pi 负责 Agent 执行循环，并调用选定的模型、Python 分析环境与领域服务。
 

@@ -17,10 +17,6 @@ Coding agents such as Codex and Claude Code have improved quickly, but using the
 
 TransportX began with a simple goal: make agent-assisted analysis practical for transport professionals. It is a lightweight desktop workspace for asking questions, inspecting maps and charts, and delivering results with their evidence attached. The core stays small. Modules add the data, knowledge, methods, and tools required by a field, which also makes the platform useful beyond transport.
 
-<p align="center">
-  <img src="./docs/images/product-home.png" alt="TransportX Agent home screen" width="920" />
-</p>
-
 ## Built for traffic analysis
 
 TransportX gives analysts one place to ask questions, inspect evidence, work with maps, and deliver results. Each task has its own workspace, conversation history, files, and resolved capability versions.
@@ -42,48 +38,7 @@ The agent and analyst work with the same map state. The agent can publish GeoJSO
 | **Report delivery** | Build Markdown reports with figures and citations, then export them as PDF from the desktop app. |
 | **Versioned capabilities** | Reuse `SKILL.md`-based Agent Skills or add custom Extensions, Data, Knowledge, Templates, and native runtimes through Modules. |
 
-## One workspace, multiple analysis surfaces
-
-<table>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-task-setup.png" alt="Select a model and module versions for a new task" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-multilayer-map.png" alt="Transit lines, stations, and a traffic heat grid on one map" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">Select the model and capability versions for each task</td>
-    <td align="center">Combine routes, stations, demand, and other spatial layers</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-map-selection.png" alt="Select a region on the map and return it to the agent" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-chart-analysis.png" alt="Traffic analysis chart preview" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">Use map selections as structured context for the next analysis step</td>
-    <td align="center">Inspect charts and other generated artifacts without leaving the task</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-event-traffic-analysis.png" alt="Event-period congestion and parking-demand analysis" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-transit-station-analysis.png" alt="Metro station shared-bike demand and route coverage analysis" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">Compare event-period congestion with parking demand across maps and charts</td>
-    <td align="center">Rank metro stations by shared-bike demand and inspect route coverage</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="./docs/images/product-report-overview.png" alt="Generated traffic analysis report title, summary, and monitoring scope" width="100%" /></td>
-    <td width="50%"><img src="./docs/images/product-report-analysis.png" alt="Generated traffic analysis report with charts, tables, and findings" width="100%" /></td>
-  </tr>
-  <tr>
-    <td align="center">Turn an analysis task into a structured report with methods and data sources</td>
-    <td align="center">Present findings with charts, tables, comparisons, and written conclusions</td>
-  </tr>
-</table>
-
 ## How it works
-
-<p align="center">
-  <img src="./docs/images/architecture-overview-en.png" alt="TransportX Agent architecture and execution flow" width="920" />
-</p>
 
 The desktop, Web, and CLI clients share one local Agent Host. It manages sessions, resources, models, and versioned Modules; Pi runs the agent loop and calls the selected model, Python analysis environment, and domain services.
 
