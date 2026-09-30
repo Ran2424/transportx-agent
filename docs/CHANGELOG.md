@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 3.22.0 - 2026-09-30
+
 ### Added
 
 - 新增本地可安装 `com.transportx.train-impact-report` 1.0.0 模块，将交通运行表图片整理为可追溯的结构化班次数据，并通过确定性跨日、去重、影响时段与汇总规则生成 DOCX 运行事件报告单。
@@ -15,14 +17,17 @@
 - 自本次变更起，项目自有代码采用 AGPL-3.0-only 许可；保留上游 MIT 代码的许可说明，并提供另行商业授权的咨询方式。
 - 更新 README 中英文标语，强调与用户协作解决实际交通问题。
 - 恢复 README 的任务创建与地图框选截图，加入用户提供的首页、月报、活动交通、轨道接驳和网约车分析截图，并补充中英文画面说明。
+- 测试入口合并为 40 个领域套件以内；`npm run test:budget` 强制校验上限及 case 文件唯一归属，新增场景需合并到既有套件。
 
 ### Fixed
 
+- `com.transportx.geo` 升级至 1.4.1：修复地图工具参数 schema 导致模型请求被 API 拒绝、提问后无回复的问题。
 - Markdown 成果引用重写后仍可打开最新内容，并提示内容已不同于引用时的版本；其他引用资源继续校验注册版本。
 
 ### Removed
 
 - 仓库不再包含交通评估脚本与评估样例；交通数据库、视频和知识库资产保持为本地安装内容。
+- `com.transportx.workbench` 升级至 1.2.0：移除 Task Mode、`tau_task`、任务计划面板及其新会话装配；`tau_ask_user` 拆分为独立的 `com.transportx.interaction` 1.0.0 Module。旧 Task Module 与 Task Snapshot 契约文件保留，用于恢复历史会话。
 
 ## 3.21.0 - 2026-09-23
 

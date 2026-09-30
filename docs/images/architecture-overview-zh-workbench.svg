@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="850" viewBox="0 0 1500 850" role="img" aria-labelledby="title description">
+  <title id="title">TransportX 执行架构</title>
+  <desc id="description">Host 按会话装配 Module 并提供领域服务。Pi 持有四个基础工具和 Extension 注册的工具：工具可在 Pi 内执行，也可调用 Host 领域服务；bash 或 Host 空间服务按需调用 Python。Pi 还调用外部模型，结果作为事件返回客户端。</desc>
+  <defs>
+    <style>
+      .ui { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .ink { fill: #242424; }
+      .secondary { fill: #716c65; }
+      .muted { fill: #918b83; }
+      .accent { fill: #a85a3a; }
+      .rule { fill: none; stroke: #e1ddd6; stroke-width: 1; }
+      .line { fill: none; stroke: #6f6b65; stroke-width: 1.8; stroke-linecap: square; stroke-linejoin: miter; }
+      .strong { fill: none; stroke: #32302d; stroke-width: 2.6; stroke-linecap: square; stroke-linejoin: miter; }
+    </style>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1.5 7 4.5 1 7.5" fill="none" stroke="#6f6b65" stroke-width="1.6" stroke-linejoin="miter"/>
+    </marker>
+    <marker id="strong-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1.5 7 4.5 1 7.5" fill="none" stroke="#32302d" stroke-width="2" stroke-linejoin="miter"/>
+    </marker>
+    <marker id="module-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1.5 7 4.5 1 7.5" fill="none" stroke="#a85a3a" stroke-width="1.6" stroke-linejoin="miter"/>
+    </marker>
+  </defs>
+
+  <rect width="1500" height="850" fill="#f7f5f1"/>
+  <rect x="22" y="22" width="1456" height="806" rx="10" fill="#fbfaf8" stroke="#ddd9d2" stroke-width="1.2"/>
+  <path d="M32 22H270V828H32a10 10 0 0 1-10-10V32a10 10 0 0 1 10-10Z" fill="#f0eeea"/>
+  <path d="M22 82H1478M270 22V828" class="rule"/>
+
+  <g class="ui">
+    <path d="m46 43 16 16m0-16L46 59" fill="none" stroke="#a85a3a" stroke-width="3.3" stroke-linecap="square"/>
+    <text x="79" y="59" class="ink" font-size="17" font-weight="700">TransportX</text>
+    <text x="311" y="59" class="ink" font-size="15" font-weight="600">执行架构</text>
+    <text x="312" y="136" class="ink" font-size="29" font-weight="700">从请求到结果</text>
+    <text x="313" y="168" class="secondary" font-size="14">Host 负责会话与资源边界；Pi 执行工具和模型调用。</text>
+  </g>
+  <path d="M312 190H1437" class="rule"/>
+
+  <!-- Module contribution types: one package may contain several types -->
+  <g class="ui">
+    <text x="46" y="131" class="accent mono" font-size="11" font-weight="700" letter-spacing="1.2">MODULES</text>
+    <text x="46" y="157" class="secondary" font-size="12">能力组成 · 按任务冻结</text>
+    <path d="M46 182H246" class="rule"/>
+    <rect x="46" y="201" width="3" height="306" fill="#a85a3a"/>
+    <text x="64" y="222" class="ink mono" font-size="15" font-weight="700">Extension</text>
+    <text x="64" y="246" class="secondary" font-size="12">工具注册 · 事件监听</text>
+    <path d="M64 265H246" class="rule"/>
+    <text x="64" y="302" class="ink mono" font-size="15" font-weight="700">Skill</text>
+    <text x="64" y="326" class="secondary" font-size="12">工作方法与脚本指引</text>
+    <path d="M64 345H246" class="rule"/>
+    <text x="64" y="382" class="ink mono" font-size="15" font-weight="700">Knowledge</text>
+    <text x="64" y="406" class="secondary" font-size="12">原文、索引与定位</text>
+    <path d="M64 425H246" class="rule"/>
+    <text x="64" y="462" class="ink mono" font-size="15" font-weight="700">Data</text>
+    <text x="64" y="486" class="secondary" font-size="12">数据库与地理数据</text>
+    <path d="M46 526H246" class="rule"/>
+    <text x="46" y="747" class="muted" font-size="11">一个 Module 可组合多类贡献</text>
+    <text x="46" y="770" class="muted" font-size="11">由 Host 解析版本与资产路径</text>
+  </g>
+
+  <!-- Entry -->
+  <text x="328" y="272" class="accent mono" font-size="11" font-weight="700" letter-spacing="1.1">ENTRY</text>
+  <rect x="328" y="295" width="217" height="252" rx="3" fill="none" stroke="#c7c1b8" stroke-width="1.2"/>
+  <g class="ui">
+    <text x="349" y="331" class="ink" font-size="21" font-weight="650">Client</text>
+    <path d="M349 348H524" class="rule"/>
+    <rect x="352" y="374" width="21" height="15" rx="1" fill="none" stroke="#79736b" stroke-width="1.4"/>
+    <path d="M358 393H367M362.5 389V393" class="line" stroke-width="1.2"/>
+    <text x="391" y="389" class="ink" font-size="14">桌面</text>
+    <path d="M349 407H524" class="rule"/>
+    <circle cx="363" cy="438" r="10" fill="none" stroke="#79736b" stroke-width="1.3"/>
+    <path d="M353 438H373M363 428c-7 6-7 14 0 20m0-20c7 6 7 14 0 20" fill="none" stroke="#79736b" stroke-width="1"/>
+    <text x="391" y="443" class="ink" font-size="14">Web</text>
+    <path d="M349 461H524" class="rule"/>
+    <rect x="352" y="483" width="22" height="17" rx="1" fill="none" stroke="#79736b" stroke-width="1.3"/>
+    <path d="m356 488 4 3-4 3m6 1h7" fill="none" stroke="#79736b" stroke-width="1.1"/>
+    <text x="391" y="497" class="ink" font-size="14">CLI</text>
+  </g>
+
+  <!-- Host is a management boundary, not a process boundary -->
+  <rect x="643" y="207" width="789" height="445" rx="5" fill="#fffefd" stroke="#aaa49b" stroke-width="1.7"/>
+  <rect x="644" y="208" width="787" height="77" fill="#f4f1ec"/>
+  <path d="M643 285H1432" class="rule"/>
+  <g class="ui">
+    <text x="670" y="235" class="accent mono" font-size="11" font-weight="700" letter-spacing="1.1">HOST</text>
+    <text x="670" y="267" class="ink" font-size="27" font-weight="700">Node Agent Host</text>
+    <text x="1403" y="258" class="secondary" font-size="12" text-anchor="end">会话装配 · 资源与领域服务</text>
+  </g>
+
+  <!-- Session layer -->
+  <g class="ui">
+    <text x="679" y="330" class="muted mono" font-size="12">01</text>
+    <text x="725" y="333" class="ink" font-size="20" font-weight="650">Session</text>
+    <text x="725" y="362" class="secondary" font-size="14">Config · Extensions · Skills · Asset paths</text>
+  </g>
+  <path d="M679 386H1396" class="rule"/>
+
+  <!-- Pi owns tool registration and dispatch; Host provides selected services -->
+  <path d="M699 425V590" fill="none" stroke="#34312e" stroke-width="3"/>
+  <g class="ui">
+    <text x="724" y="453" class="muted mono" font-size="12">02</text>
+    <text x="724" y="482" class="ink" font-size="25" font-weight="700">Pi Agent</text>
+    <text x="724" y="509" class="muted mono" font-size="11">BASE TOOLS</text>
+    <text x="724" y="531" class="secondary mono" font-size="13">read · write · edit · bash</text>
+    <text x="724" y="558" class="accent mono" font-size="11">MODULE TOOLS</text>
+    <text x="724" y="580" class="ink" font-size="13">Extension 注册</text>
+  </g>
+  <rect x="1058" y="421" width="337" height="96" rx="2" fill="#fbfaf8" stroke="#bbb5ad" stroke-width="1.3"/>
+  <rect x="1059" y="422" width="335" height="29" fill="#ebe7e0"/>
+  <path d="M1058 451H1395" class="rule"/>
+  <g class="ui">
+    <text x="1077" y="442" class="secondary mono" font-size="11" font-weight="700" letter-spacing="1">HOST SERVICES</text>
+    <text x="1077" y="479" class="ink" font-size="18" font-weight="650">领域服务</text>
+    <text x="1077" y="500" class="secondary" font-size="12">Geo · Citation · Spatial · Video（按需）</text>
+  </g>
+  <rect x="1058" y="554" width="337" height="64" rx="2" fill="#fbfaf8" stroke="#bbb5ad" stroke-width="1.3"/>
+  <g class="ui">
+    <text x="1077" y="581" class="ink" font-size="17" font-weight="650">Python Runtime</text>
+    <text x="1077" y="602" class="secondary mono" font-size="11">query / spatial / plot</text>
+    <text x="1402" y="632" class="muted" font-size="11" text-anchor="end">Pi RPC 与 Python 为独立进程</text>
+  </g>
+
+  <!-- External model service -->
+  <text x="1058" y="704" class="accent mono" font-size="11" font-weight="700" letter-spacing="1.1">EXTERNAL</text>
+  <rect x="1058" y="724" width="374" height="78" rx="2" fill="none" stroke="#a9a39a" stroke-width="1.3"/>
+  <path d="M1059 725V801" fill="none" stroke="#a85a3a" stroke-width="2"/>
+  <g class="ui">
+    <text x="1081" y="756" class="ink" font-size="21" font-weight="650">Model Provider</text>
+    <text x="1082" y="781" class="secondary" font-size="13">本地服务或远程 API</text>
+  </g>
+
+  <!-- Named relationships -->
+  <path d="M545 364H669" class="strong" marker-end="url(#strong-arrow)"/>
+  <text x="575" y="348" class="secondary mono" font-size="11">request</text>
+  <path d="M773 387V416" class="line" marker-end="url(#arrow)"/>
+  <text x="789" y="408" class="muted mono" font-size="11">launch</text>
+  <path d="M925 474H1048" class="strong" marker-end="url(#strong-arrow)"/>
+  <text x="931" y="456" class="secondary mono" font-size="11">extension call</text>
+  <path d="M1048 503H925" class="line" marker-end="url(#arrow)"/>
+  <text x="961" y="521" class="muted mono" font-size="11">result</text>
+  <path d="M925 580H1048" class="line" marker-end="url(#arrow)"/>
+  <text x="935" y="562" class="secondary mono" font-size="11">bash / script</text>
+  <path d="M1367 518V545" class="line" marker-end="url(#arrow)"/>
+  <text x="1264" y="539" class="muted mono" font-size="10">spatial job</text>
+  <path d="M920 590V685H1241V714" class="line" marker-end="url(#arrow)"/>
+  <text x="985" y="679" class="secondary mono" font-size="11">model call</text>
+  <path d="M699 591V606H436V548" class="line" marker-end="url(#arrow)"/>
+  <text x="470" y="628" class="secondary mono" font-size="11">events / result</text>
+  <path d="M270 242H615V348H669" fill="none" stroke="#a85a3a" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#module-arrow)"/>
+  <text x="451" y="228" class="accent mono" font-size="11">module load</text>
+  <path d="M680 371V578H713" fill="none" stroke="#a85a3a" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#module-arrow)"/>
+</svg>

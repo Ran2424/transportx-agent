@@ -11,13 +11,12 @@ import { ComposerCitationPicker, useComposerCitationPicker } from './composer-ci
 import { geoContextStore } from '../../features/geo/geo-context-store';
 import { canvasContextStore } from '../canvas/canvas-context-store';
 
-export function ConversationComposer({ sessionId, session, streaming, compacting, queued, taskModeEnabled, attachments, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; taskModeEnabled: boolean; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
+export function ConversationComposer({ sessionId, session, streaming, compacting, queued, attachments, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const { pending, setPending, addAttachments, removeAttachment } = useComposerAttachments(sessionId, setError);
-  const [taskModeBusy, setTaskModeBusy] = useState(false);
   const geoContexts = useSyncExternalStore(geoContextStore.subscribe, () => geoContextStore.get(sessionId));
   const canvasContexts = useSyncExternalStore(canvasContextStore.subscribe, () => canvasContextStore.get(sessionId));
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -32,18 +31,6 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
     const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : canvasContextIds.length ? t('conversation.canvasContextOnly') : '');
     if (!message) return;
     try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); setValue(''); setPending([]); geoContextStore.clear(sessionId); canvasContextStore.clear(sessionId); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
-  }
-  async function toggleTaskMode() {
-    if (streaming || compacting || taskModeBusy) return;
-    setTaskModeBusy(true);
-    setError('');
-    try {
-      await kernel.commands.agent.setTaskMode({ sessionId, enabled: !taskModeEnabled });
-    } catch (cause) {
-      setError((cause as Error).message || t('conversation.toggleTaskFailed'));
-    } finally {
-      setTaskModeBusy(false);
-    }
   }
   return <footer className="conversation-composer">
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
@@ -78,11 +65,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
               <span className="sr-only">{t('conversation.addAttachment')}</span>
               <input type="file" accept="*/*" multiple onChange={(event) => { if (event.currentTarget.files) void addAttachments(event.currentTarget.files, 'picker'); event.currentTarget.value = ''; }} />
             </label>
-            <button className={`composer-task-toggle${taskModeEnabled ? ' is-on' : ''}`} type="button" role="switch" aria-checked={taskModeEnabled} aria-label={taskModeEnabled ? t('task.mode.disable') : t('task.mode.enable')} disabled={streaming || compacting || taskModeBusy} onClick={() => void toggleTaskMode()}>
-              <Icon name="task" />
-              <span className="composer-action-hint" aria-hidden="true">{taskModeEnabled ? t('task.mode.disable') : t('task.mode.enable')}</span>
-            </button>
-            <button className="composer-task-toggle" type="button" aria-label={t('conversation.openCitationManager')} onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">{t('conversation.citationManager')}</span></button>
+            <button className="composer-tool-toggle" type="button" aria-label={t('conversation.openCitationManager')} onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">{t('conversation.citationManager')}</span></button>
             <ComposerContextUsage session={session} />
           </div>
           {compacting

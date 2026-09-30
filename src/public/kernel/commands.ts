@@ -35,7 +35,6 @@ export type CommandDeps = {
 };
 
 export type SendPromptInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[]; clientCommandId?: string };
-export type SetTaskModeInput = { sessionId: string; enabled: boolean };
 export type SteerInput = { sessionId: string; message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[] };
 export type FollowUpInput = { sessionId: string; message: string };
 export type SetModelInput = { sessionId: string; model: string };
@@ -161,7 +160,6 @@ export type SessionOptions = { schemaVersion: 1; modules: SessionModuleOption[] 
 
 export type AgentCommands = {
   sendPrompt(input: SendPromptInput): Promise<void>;
-  setTaskMode(input: SetTaskModeInput): Promise<void>;
   abort(sessionId: string): Promise<void>;
   steer(input: SteerInput): Promise<void>;
   followUp(input: FollowUpInput): Promise<void>;
@@ -347,15 +345,6 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
       await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
       pendingPromptIds.delete(promptKey);
       deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds, geoContextIds, ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
-    },
-
-    async setTaskMode({ sessionId, enabled }) {
-      await rpcCommand(deps.http, {
-        type: 'prompt',
-        sessionId,
-        clientCommandId: clientCommandId(),
-        message: `/task ${enabled ? 'on' : 'off'} --silent`,
-      });
     },
 
     async abort(sessionId) {

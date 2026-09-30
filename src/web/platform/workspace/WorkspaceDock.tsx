@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
 import { useSessionState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
-import { TaskBoard } from '../../features/task/TaskBoard';
 import { basename } from '../../lib/formatting';
 import { FilePreview, filePresentation } from './FilePreview';
 import { useOpenDocument } from '../canvas/document-context';
@@ -93,71 +92,10 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
       <button className="icon-button" type="button" aria-label={t('workspace.refresh')} disabled={!session || loading} onClick={() => void load(path || undefined)}><Icon name="refresh" /></button>
     </div>
     <div className="workspace-file-list" role="tabpanel" aria-label={t('workspace.taskFiles')}>
-      {!session ? <WorkspaceEmpty title={t('task.waitingContext')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
+      {!session ? <WorkspaceEmpty title={t('workspace.noTask')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
     </div>
     <footer className="workspace-dock-footer"><span>SESSION SCOPED</span><span>{session?.id.slice(-8) || 'NO SESSION'}</span></footer>
     {session ? previewFiles.map((file, index) => <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />) : null}
-  </aside>;
-}
-
-export function WorkspaceFloat({ open, session, fileOpen = false, onClose }: { open: boolean; session: LiveSession | null; fileOpen?: boolean; onClose(): void }) {
-  const { t } = useTranslation();
-  const panelRef = useRef<HTMLElement>(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const dragState = useRef<null | { pointerId: number; startX: number; startY: number; originX: number; originY: number; minX: number; maxX: number; minY: number; maxY: number }>(null);
-  const [dragging, setDragging] = useState(false);
-
-  useEffect(() => {
-    dragOffset.current = { x: 0, y: 0 };
-    panelRef.current?.style.setProperty('--workspace-drag-x', '0px');
-    panelRef.current?.style.setProperty('--workspace-drag-y', '0px');
-  }, [session?.id]);
-
-  function startDrag(event: ReactPointerEvent<HTMLElement>) {
-    if (event.button !== 0 || window.matchMedia('(max-width: 760px)').matches || (event.target as HTMLElement).closest('button')) return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const rect = panel.getBoundingClientRect();
-    const bounds = panel.offsetParent?.getBoundingClientRect() || { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
-    const origin = dragOffset.current;
-    const inset = 8;
-    dragState.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: origin.x,
-      originY: origin.y,
-      minX: origin.x + bounds.left + inset - rect.left,
-      maxX: origin.x + bounds.right - inset - rect.right,
-      minY: origin.y + bounds.top + inset - rect.top,
-      maxY: origin.y + bounds.bottom - inset - rect.bottom,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDragging(true);
-  }
-
-  function moveDrag(event: ReactPointerEvent<HTMLElement>) {
-    const drag = dragState.current;
-    const panel = panelRef.current;
-    if (!drag || !panel || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    const x = Math.min(drag.maxX, Math.max(drag.minX, drag.originX + event.clientX - drag.startX));
-    const y = Math.min(drag.maxY, Math.max(drag.minY, drag.originY + event.clientY - drag.startY));
-    dragOffset.current = { x, y };
-    panel.style.setProperty('--workspace-drag-x', `${x}px`);
-    panel.style.setProperty('--workspace-drag-y', `${y}px`);
-  }
-
-  function endDrag(event: ReactPointerEvent<HTMLElement>) {
-    if (dragState.current?.pointerId !== event.pointerId) return;
-    dragState.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    setDragging(false);
-  }
-
-  return <aside ref={panelRef} className={`workspace-float workspace-float--tasks${open ? ' is-open' : ''}${fileOpen ? ' is-file-offset' : ''}${dragging ? ' is-dragging' : ''}`} aria-label={t('workspace.taskPanel')} data-testid="workspace-float-tasks">
-    <header className="workspace-float-header" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><strong>{t('workspace.task')}</strong><button className="icon-button" type="button" aria-label={t('workspace.closeTasks')} onClick={onClose}><Icon name="close" /></button></header>
-    <div className="workspace-float-body"><TaskBoard session={session} /></div>
   </aside>;
 }
 

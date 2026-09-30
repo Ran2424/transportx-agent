@@ -12,13 +12,10 @@ type HeaderProps = {
   streaming: boolean;
   sidebarOpen: boolean;
   fileOpen: boolean;
-  taskOpen: boolean;
   canvasOpen: boolean;
-  taskAvailable: boolean;
   canvasAvailable: boolean;
   onToggleSidebar(): void;
   onToggleFiles(): void;
-  onToggleTasks(): void;
   onToggleCanvas(): void;
   onGoHome(): void;
   onOpenModel(): void;
@@ -32,13 +29,10 @@ export function Header({
   streaming,
   sidebarOpen,
   fileOpen,
-  taskOpen,
   canvasOpen,
-  taskAvailable,
   canvasAvailable,
   onToggleSidebar,
   onToggleFiles,
-  onToggleTasks,
   onToggleCanvas,
   onGoHome,
   onOpenModel,
@@ -95,9 +89,6 @@ export function Header({
         </button>
         <button className="icon-button" type="button" aria-label={t('header.toggleFiles')} aria-pressed={fileOpen} onClick={onToggleFiles}>
           <Icon name="workspace" />
-        </button>
-        <button className="icon-button" type="button" aria-label={t('header.toggleTasks')} aria-pressed={taskOpen} disabled={!taskAvailable} title={taskAvailable ? t('app.command.tasks.open') : t('app.command.tasks.unavailable')} onClick={onToggleTasks}>
-          <Icon name="task" />
         </button>
         <button className="icon-button" type="button" aria-label={t('canvas.toggle')} aria-pressed={canvasOpen} disabled={!canvasAvailable} title={t('canvas.description')} onClick={onToggleCanvas}>
           <Icon name="panel" />

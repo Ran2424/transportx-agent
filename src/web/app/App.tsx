@@ -15,14 +15,13 @@ import { NewSessionDialog } from '../platform/sessions/NewSessionDialog';
 import { LiveTabs } from '../platform/sessions/LiveTabs';
 import { SessionSidebar } from '../platform/sessions/SessionSidebar';
 import { SettingsPage, themes, type SettingsSectionId, type ThemeId } from '../platform/settings/SettingsDialog';
-import { WorkspaceDock, WorkspaceFloat } from '../platform/workspace/WorkspaceDock';
+import { WorkspaceDock } from '../platform/workspace/WorkspaceDock';
 import { AgentCanvas } from '../platform/canvas/AgentCanvas';
 import { canvasContextStore } from '../platform/canvas/canvas-context-store';
 import { projectCanvas, syncCanvas, activateCanvas, closeCanvasTab, openCanvasDocument, withCanvasDocuments, EMPTY_CANVAS, type CanvasState } from '../platform/canvas/canvas-state';
 import { OpenDocumentContext } from '../platform/canvas/document-context';
 import { resolveDocument, type DocumentRequest, type DocumentPosition } from '../platform/canvas/document-state';
 import { geoContextStore } from '../features/geo/geo-context-store';
-import { projectTaskState } from '../features/task/task-projection';
 
 const LEGACY_THEME_MIGRATION: Record<string, ThemeId> = {
   clean: 'light',
@@ -61,7 +60,6 @@ export function App() {
   const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
-  const [tasksOpen, setTasksOpen] = useState(false);
   const documentPositions = useRef<Record<string, Map<string, DocumentPosition>>>({});
   const documentOpenSequence = useRef(0);
   const [canvases, setCanvases] = useState<Record<string, CanvasState>>({});
@@ -87,11 +85,6 @@ export function App() {
     : '';
   const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
   const activeCompacting = !!(activeSession && sessionState.compactingBySession[activeSession.id]);
-  const taskState = useMemo(() => activeSession ? projectTaskState(
-    conversation.bySession[activeSession.id]?.snapshotEntries ?? [],
-    Object.values(tools.bySession[activeSession.id] ?? {}),
-  ) : { enabled: false, task: null }, [activeSession, conversation, tools]);
-  const taskAvailable = taskState.enabled;
   const canvas = activeSession ? canvases[activeSession.id] ?? EMPTY_CANVAS : EMPTY_CANVAS;
   const canvasContent = useMemo(() => withCanvasDocuments(projectCanvas(
     activeSession ? conversation.bySession[activeSession.id]?.snapshotEntries ?? [] : [],
@@ -100,7 +93,6 @@ export function App() {
   ), canvas), [activeSession?.id, activeSession?.cwd, conversation, tools, canvas.documents]);
   const canvasAvailable = canvasContent.views.length > 0;
   useEffect(() => { documentOpenSequence.current += 1; }, [activeSession?.id]);
-  const openedTaskSessions = useRef(new Set<string>());
   const updateCanvas = useCallback((update: (state: CanvasState) => CanvasState) => {
     if (!activeSession) return;
     const id = activeSession.id;
@@ -164,18 +156,6 @@ export function App() {
     const id = `geo:${waitingGeoTarget.visualizationId}`;
     updateCanvas((state) => activateCanvas(state, id));
   }, [waitingGeoTarget?.requestId, waitingGeoTarget?.visualizationId, waitingViewAvailable, updateCanvas]);
-
-  useEffect(() => {
-    const sessionId = activeSession?.id;
-    if (!sessionId || !taskState.task || openedTaskSessions.current.has(sessionId)) return;
-    openedTaskSessions.current.add(sessionId);
-    setTasksOpen(true);
-  }, [activeSession?.id, taskState.task]);
-
-  useEffect(() => { if (!taskAvailable) setTasksOpen(false); }, [taskAvailable]);
-  const toggleTasks = useCallback(() => {
-    if (taskAvailable) setTasksOpen((value) => !value);
-  }, [taskAvailable]);
 
   const toggleCanvas = useCallback(() => {
     if (!canvasAvailable) return;
@@ -254,7 +234,6 @@ export function App() {
     kernel.dispatch({ type: 'session/activated', sessionId: null });
     window.localStorage.removeItem('tau-active-live-session-id');
     closeFiles();
-    setTasksOpen(false);
     closeCanvas();
     setNotice('');
   }, [closeCanvas, closeFiles, kernel]);
@@ -360,7 +339,6 @@ export function App() {
   const commandItems = useMemo<CommandItem[]>(() => [
     { id: 'new', label: t('app.command.new.label'), description: t('app.command.new.description'), shortcut: '⌘N', action: () => setNewSessionOpen(true) },
     { id: 'files', label: filesOpen ? t('app.command.files.close') : t('app.command.files.open'), description: t('app.command.files.description'), shortcut: '⌘⇧W', action: toggleFiles },
-    { id: 'tasks', label: tasksOpen ? t('app.command.tasks.close') : t('app.command.tasks.open'), description: taskAvailable ? t('app.command.tasks.description') : t('app.command.tasks.unavailable'), disabled: !taskAvailable, action: toggleTasks },
     { id: 'canvas', label: canvas.open ? t('canvas.hide') : t('canvas.show'), description: t('canvas.description'), disabled: !canvasAvailable, action: toggleCanvas },
     { id: 'model', label: t('app.command.model.label'), description: activeSession ? t('app.command.model.description') : t('app.command.requiresSession'), disabled: !activeSession, action: () => setModelOpen(true) },
     { id: 'compact', label: t('app.command.compact.label'), description: activeSession ? t('app.command.compact.description') : t('app.command.requiresSession'), disabled: !activeSession || activeStreaming || activeCompacting, action: async () => {
@@ -369,7 +347,7 @@ export function App() {
       catch (cause) { setNotice((cause as { message?: string })?.message || t('app.error.compact')); }
     } },
     { id: 'settings', label: t('app.command.settings.label'), description: t('app.command.settings.description'), shortcut: '⌘,', action: () => setSettingsOpen(true) },
-  ], [activeCompacting, activeSession, activeStreaming, filesOpen, kernel, canvasAvailable, canvas.open, t, taskAvailable, tasksOpen, toggleFiles, toggleCanvas, toggleTasks]);
+  ], [activeCompacting, activeSession, activeStreaming, filesOpen, kernel, canvasAvailable, canvas.open, t, toggleFiles, toggleCanvas]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -397,8 +375,6 @@ export function App() {
       if (event.key === 'Escape' && !hasOverlay) {
         if (canvas.open) {
           closeCanvas();
-        } else if (tasksOpen) {
-          setTasksOpen(false);
         } else if (filesOpen) {
           closeFiles();
         } else if (window.innerWidth <= 860 && sidebarOpen) {
@@ -411,7 +387,7 @@ export function App() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [activeSession, canvas.open, closeCanvas, closeFiles, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t, tasksOpen]);
+  }, [activeSession, canvas.open, closeCanvas, closeFiles, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t]);
 
   const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
   const runtimeErrorMessage = runtime.lastError?.message || '';
@@ -419,12 +395,11 @@ export function App() {
 
   return (
     <OpenDocumentContext.Provider value={openDocument}><AppShell
-      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} taskOpen={tasksOpen} canvasOpen={canvas.open} taskAvailable={taskAvailable} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleTasks={toggleTasks} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
+      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} onRenameLive={renameLiveSession} onRenameHistory={renameHistorySession} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
-      taskFloat={<WorkspaceFloat open={tasksOpen} fileOpen={filesOpen} session={activeSession} onClose={() => setTasksOpen(false)} />}
       canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input)); }} />}
       canvasOpen={canvas.open}
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
