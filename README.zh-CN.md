@@ -4,7 +4,7 @@
   <p><strong>TransportX Agent —— 一个和你并肩作战解决实际交通问题的智能体</strong></p>
   <p>用自然语言分析道路、公交、轨道、出行需求与交通数据。TransportX 将分析结果整理为地图、图表、带引用的结论和报告，同时保留相关源文件与工具记录。</p>
   <p>
-    <img src="https://img.shields.io/badge/version-3.2.0-C46543?style=flat-square" alt="版本 3.2.0" />
+    <img src="https://img.shields.io/badge/version-3.22.0-C46543?style=flat-square" alt="版本 3.22.0" />
     <img src="https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Windows%20x64-6B7280?style=flat-square" alt="macOS arm64 和 Windows x64" />
     <img src="https://img.shields.io/badge/license-AGPLv3-3B82F6?style=flat-square" alt="AGPL-3.0 许可" />
   </p>
