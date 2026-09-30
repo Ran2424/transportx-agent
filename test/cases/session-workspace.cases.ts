@@ -1,6 +1,7 @@
 const { suiteCase } = require('../support/test-suite.ts');
 const caseTest = (...args: any[]) => suiteCase(__filename, ...args);
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -23,4 +24,23 @@ caseTest('creates unique, safe task directories under an explicit project root',
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+caseTest('uses the configured cross-platform scenario directory when no project root is supplied', (t: any) => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-default-workspace-'));
+  t.after(() => fs.rmSync(userDataDir, { recursive: true, force: true }));
+  const created = execFileSync(process.execPath, ['-e', [
+    "const { createSessionWorkingDirectory } = require('./bin/session-workspace.js');",
+    "process.stdout.write(createSessionWorkingDirectory(undefined, 'default-root'));",
+  ].join('')], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      TAU_USER_DATA_DIR: userDataDir,
+      TAU_PROJECTS_DIR: '',
+      PI_CODING_AGENT_DIR: path.join(userDataDir, 'pi'),
+    },
+  });
+  assert.equal(path.dirname(created), path.join(userDataDir, 'scenario'));
 });

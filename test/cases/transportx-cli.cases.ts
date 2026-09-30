@@ -68,7 +68,7 @@ caseTest('transportx runs a headless prompt without optional Modules by default'
         PI_CODING_AGENT_SESSION_DIR: sessionsDir,
         TAU_PROJECTS_DIR: projectsDir,
         TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'scripts', 'harness', 'fake-pi.mjs'),
-        TAU_PYTHON_COMMAND: '/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10',
+        TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
         FAKE_PI_LAUNCH_FILE: launchFile,
       },
     }, (error: Error | null, stdout: string, stderr: string) => error ? reject(new Error(`${error.message}\n${stderr}`)) : resolve({ stdout, stderr }));

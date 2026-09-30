@@ -272,6 +272,15 @@ caseTest('project prompt makes resolved Module skills and assets discoverable to
   assert.match(prompt, /assets\/policy-library/);
 });
 
+caseTest('built-in guidance does not expose platform-specific local paths', () => {
+  const workbenchPrompt = fs.readFileSync(path.join(process.cwd(), 'modules/official/workbench/prompts/PI_SESSION_CONTEXT.md'), 'utf8');
+  const authoringSkill = fs.readFileSync(path.join(process.cwd(), 'modules/official/module-authoring/skill/SKILL.md'), 'utf8');
+  assert.doesNotMatch(workbenchPrompt, /\/System\/Library\/Fonts/);
+  assert.match(workbenchPrompt, /当前系统的已安装字体/);
+  assert.doesNotMatch(authoringSkill, /~\/\.transportx\/traffic-agent/);
+  assert.match(authoringSkill, /Settings →\s+Local directories/);
+});
+
 caseTest('a broken optional module is recorded without blocking built-in modules', (t: any) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-broken-module-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

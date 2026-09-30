@@ -319,7 +319,7 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 └─ auth.json                    模型密钥
 ```
 
-以上为桌面布局；CLI 默认共用根目录，Web 开发的 Pi 配置与历史默认在 `~/.pi/agent/` 下，可由 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` 覆盖。`TAU_USER_DATA_DIR` 只用于开发或受控部署覆盖。安装包资源始终只读；升级和卸载不应删除用户数据。任务工作区中的附件、计划和派生资源均属于该任务，不可被其他任务直接读取。
+以上为桌面布局；CLI 默认共用根目录。Web 开发的 Pi 配置与历史默认在 `~/.pi/agent/` 下，任务工作区默认使用当前平台的 `<user-data>/scenario/`，可分别由 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` 与 `TAU_PROJECTS_DIR` 覆盖。`TAU_USER_DATA_DIR` 只用于开发或受控部署覆盖。安装包资源始终只读；升级和卸载不应删除用户数据。任务工作区中的附件、计划和派生资源均属于该任务，不可被其他任务直接读取。
 
 ## 7. 安全边界
 

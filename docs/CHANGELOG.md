@@ -23,6 +23,10 @@
 
 - `com.transportx.geo` 升级至 1.4.1：修复地图工具参数 schema 导致模型请求被 API 拒绝、提问后无回复的问题。
 - Markdown 成果引用重写后仍可打开最新内容，并提示内容已不同于引用时的版本；其他引用资源继续校验注册版本。
+- Web 开发模式的任务工作区统一使用设置页展示的跨平台 `scenario` 目录，不再隐式落到仓库工作目录；新建任务提示不再写死 macOS 用户目录。
+- `com.transportx.workbench` 升级至 1.2.1：移除固定的 macOS 中文字体路径，改为从当前系统选择可用字体。
+- `com.transportx.module-authoring` 升级至 1.0.1：安装目录说明改为引用设置页展示的实际跨平台路径。
+- 测试与协作说明不再绑定开发者个人 Python 路径，解释器通过 `TAU_PYTHON_COMMAND` 或 `PATH` 解析。
 
 ### Removed
 

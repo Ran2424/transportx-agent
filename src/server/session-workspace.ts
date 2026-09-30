@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-import { TAU_SETTINGS, expandHome } from './config.js';
+import { APP_PATHS, TAU_SETTINGS, expandHome } from './config.js';
 
 export function makeSessionId() {
   return `tau_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
@@ -37,7 +37,7 @@ function safeDirectoryName(name: unknown) {
 
 export function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
   const explicitParent = Boolean(parentCwd);
-  const parent = path.resolve(expandHome(parentCwd || TAU_SETTINGS.projectsDir || path.join(process.cwd(), 'scenario')));
+  const parent = path.resolve(expandHome(parentCwd || TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir));
   if (explicitParent) {
     if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
       throw new Error(`Directory not found: ${parent}`);

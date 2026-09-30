@@ -56,12 +56,12 @@ npm run test:platform:windows     # Windows NSIS 安装器冒烟（仅 Windows x
 npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认测试）
 ```
 
-> 执行 Python 命令时使用本机环境：`/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10`（仅开发机；发布打包使用独立自包含 Python 3.10 runtime）。
+> 执行 Python 命令时优先使用 `TAU_PYTHON_COMMAND`，未设置时使用 `PATH` 中的 `python3`；不要提交开发者个人的绝对解释器路径。发布打包使用独立自包含 Python 3.10 runtime。
 
 ## 关键约束（改动前必读）
 
 - **不要用 `sudo` 启动**；桌面安装包使用内置 Pi/Python，Web 开发模式可用环境变量覆盖运行时。
-- **用户数据统一在 `~/.transportx/traffic-agent/`**：任务工作区 `scenario/`、模型 `models.json`、认证 `auth.json`、会话/日志/缓存、受管模块 `modules/`。API Key 不返回前端。
+- **用户数据根目录按平台解析**：macOS 为 `~/.transportx/traffic-agent/`，Windows 与 Linux 见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；任务工作区 `scenario/`、模型 `models.json`、认证 `auth.json`、会话/日志/缓存、受管模块 `modules/` 均位于对应根目录。API Key 不返回前端。
 - **Module 是统一安装单元**：可组合贡献 Skill / Extension / Native Runtime / Data / Knowledge。内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用能力；`modules/installable/` 是用户本地可安装模块暂存目录，默认不入 Git，不是平台启动依赖。大体积交通知识库/数据库资产不写入仓库与安装包。
 - **模块版本纪律**：每次改动某个 Module（manifest、Skill、Extension、脚本、数据目录内容）后，必须同步提升该模块 `manifest.json` 的 `version`（新能力升 minor、修复升 patch），并在 CHANGELOG 中说明；Resolved Session Plan 按精确版本冻结，版本号是会话可复现性的依据。
 - **测试预算纪律**：`test/suites/*.test.ts` 注册的测试套件总数不得超过 40 个；新增场景必须合并到现有套件或现有 case 文件，先运行 `npm run test:budget`，不得通过新增入口绕过上限。
@@ -81,15 +81,15 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
    - macOS（已在 `platform-profile.darwin`）：
 
      ```bash
-     TRANSPORTX_PYTHON_RUNTIME_DIR="$HOME/Library/Application Support/TransportX/python-3.10-runtime" \
+     TRANSPORTX_PYTHON_RUNTIME_DIR="<python-3.10-runtime-directory>" \
      TRANSPORTX_ALLOW_UNSIGNED_BUILD=1 npm run desktop:pack    # 结构验收 / ad-hoc 签名测试包
      npm run desktop:pack                                       # 正式包，需要 Developer ID + 公证
      ```
 
    - Windows x64（已在 `platform-profile.win`）：`npm run desktop:pack` 在 Windows x64 主机上直接走入 `check-desktop-release.mjs` 的 win 分支。
 
-   - 本机持久化的自包含 Python 3.10 runtime 位于 `~/Library/Application Support/TransportX/python-3.10-runtime`（mac）或 `C:\TransportX\runtime\python-3.10-win-x64`（win）；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
-   - Video Capability 单独设置 `TRANSPORTX_VIDEO_MODULE_DIR` 与 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`；mac arm64 runtime 位于 `~/Library/Application Support/TransportX/ffmpeg-runtime`，win x64 位于 `C:\TransportX\runtime\ffmpeg-win-x64`，LICENSE/NOTICES 随模块包携带。
+   - 自包含 Python 3.10 runtime 的源目录由 `TRANSPORTX_PYTHON_RUNTIME_DIR` 显式指定；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
+   - Video Capability 单独设置 `TRANSPORTX_VIDEO_MODULE_DIR` 与 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`；ffmpeg runtime 不使用仓库内或开发者个人目录的隐式默认值，LICENSE/NOTICES 随模块包携带。
    - 产物在 `release/`：mac 产出 `latest-mac.yml` + DMG + blockmap + sha256 + `README-安装说明.txt`；win 产出 NSIS `setup.exe` + sha256 + 清单文件。同一句 `npm run desktop:pack` 下由 `process.platform` 决定产出哪个 artifact，**不要**在 macOS 上交叉打 Windows 包。
 4. 正式对外分发需为各 profile 提供证书：
 

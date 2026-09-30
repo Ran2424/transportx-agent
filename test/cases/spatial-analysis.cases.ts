@@ -8,7 +8,7 @@ const path = require('node:path');
 const { SpatialAnalysisService } = require('../../bin/spatial-analysis-service.js');
 const { parseSpatialAnalysisResultStructured } = require('../../bin/contracts/spatial.js');
 
-const PYTHON = '/Users/ran/WorkSpace/SoftWare/miniconda3/envs/research/bin/python3.10';
+const PYTHON = process.env.TAU_PYTHON_COMMAND || 'python3';
 const SCRIPT = path.join(process.cwd(), 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py');
 
 function collection(features: any[]) { return { type: 'FeatureCollection', features }; }

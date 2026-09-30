@@ -60,11 +60,11 @@ Use `manifestVersion: 2`. Set `type` to `module` for user content; use `capabili
   `Modules: N enabled, 1 error(s)`. Symptom: the Skill and its assets never appear in the
   Agent after restart even though the package files are present. Always mirror the full
   required field set from the Manifest example above.
-- **Manual copies to the installed modules directory are not enough.** Besides placing the
-  package under `~/.transportx/traffic-agent/modules/<id>/<version>/`, the module id must be
-  registered in `tau.enabledModuleIds` inside `~/.transportx/traffic-agent/settings.json`
-  (a strict allow-list). TransportX only loads ids present there. Prefer installing through
-  TransportX settings so this registration happens automatically.
+- **Manual copies to the installed modules directory are not enough.** The managed Modules
+  directory and settings file are platform-specific and are shown under TransportX Settings →
+  Local directories. The module id must also be registered in `tau.enabledModuleIds` (a strict
+  allow-list). TransportX only loads ids present there. Prefer installing through TransportX
+  settings so package placement and registration happen automatically.
 - **A misplaced edit can break JSON integrity.** When patching `settings.json` by hand,
   back it up first and re-validate the JSON afterwards; the host only enables modules that
   pass the `enabledModuleIds` allow-list filter.

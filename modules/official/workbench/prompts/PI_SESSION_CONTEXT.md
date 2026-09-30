@@ -7,7 +7,7 @@
 - 项目根目录：`{{PROJECT_ROOT}}`
 - 当前任务工作目录：`{{TASK_WORKING_DIRECTORY}}`
 - Python 解释器：`{{PYTHON_COMMAND}}`
-- Python 设置中文字体时使用：`/System/Library/Fonts/Supplemental/Songti.ttc`（Songti SC／宋体）。
+- Python 绘图需要中文字体时，从当前系统的已安装字体中选择可用字体；不要假定固定的操作系统字体路径。
 
 ## 已装载 Module 资源
 
