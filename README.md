@@ -22,7 +22,7 @@ TransportX began with a simple goal: make agent-assisted analysis practical for 
     <img src="./docs/images/product-video-preview.gif" alt="Animated preview of the TransportX Agent product overview" width="920" />
   </a>
   <br />
-  <sub><strong>Animated preview · Click to watch the full 68-second TransportX Agent overview with sound (1080p)</strong></sub>
+  <sub><strong>34-second animated preview covering the full story at 2× speed · Click to watch the 68-second video with sound (1080p)</strong></sub>
 </p>
 
 The video follows the core workflow: start a traffic task, ask a question, analyze it on a shared map, and deliver a report.

@@ -22,7 +22,7 @@ TransportX 的出发点很简单：让交通分析人员能直接使用 Agent �
     <img src="./docs/images/product-video-preview.gif" alt="TransportX Agent 产品演示动态预览" width="920" />
   </a>
   <br />
-  <sub><strong>自动循环预览 · 点击观看带声音的 68 秒英文完整视频（1080p）</strong></sub>
+  <sub><strong>34 秒自动循环预览，以 2 倍速覆盖完整内容 · 点击观看带声音的 68 秒英文视频（1080p）</strong></sub>
 </p>
 
 视频展示完整工作流：创建交通任务、提出问题、在共享地图中分析，并交付报告。
