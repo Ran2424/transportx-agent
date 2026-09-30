@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="820" viewBox="0 0 1440 820" role="img" aria-labelledby="title description">
+  <title id="title">TransportX 整体架构</title>
+  <desc id="description">模块能力由 Node Agent Host 按任务装配。桌面、Web 和 CLI 进入 Host，Host 启动 Pi Agent，Pi 调用模型服务和 Python 分析环境。</desc>
+  <defs>
+    <style>
+      .ui { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .ink { fill: #242424; }
+      .muted { fill: #66635f; }
+      .quiet { fill: #96918b; }
+      .accent { fill: #8f4a2e; }
+      .card { fill: #fff; stroke: #dedbd6; stroke-width: 1.5; }
+      .rule { stroke: #e6e3de; stroke-width: 1.5; }
+      .wire { fill: none; stroke: #8b8680; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1.5 6 4 1 6.5" fill="none" stroke="#8b8680" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="assembly-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1.5 6 4 1 6.5" fill="none" stroke="#a85a3a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1440" height="820" fill="#f7f7f5"/>
+  <rect x="20" y="20" width="1400" height="780" rx="17" fill="#fbfbfa" stroke="#e4e1dc" stroke-width="1.5"/>
+  <path d="M37 20h276a17 17 0 0 1 17 17v746a17 17 0 0 1-17 17H37a17 17 0 0 1-17-17V37a17 17 0 0 1 17-17Z" fill="#f1f1ef"/>
+  <path d="M20 84H1420M330 20V800" class="rule"/>
+
+  <!-- Workbench header -->
+  <g class="ui">
+    <rect x="42" y="39" width="28" height="28" rx="8" fill="#fff"/>
+    <path d="m50 47 12 12m0-12L50 59" fill="none" stroke="#a85a3a" stroke-width="3.2" stroke-linecap="round"/>
+    <text x="82" y="60" class="ink" font-size="17" font-weight="700">TransportX</text>
+    <text x="381" y="61" class="ink" font-size="16" font-weight="650">整体架构</text>
+    <text x="1368" y="60" class="quiet" font-size="12" text-anchor="end">本地 Agent 工作台</text>
+    <circle cx="1389" cy="55" r="4" fill="#3d7a4e"/>
+  </g>
+
+  <!-- Capability sidebar -->
+  <g class="ui">
+    <text x="48" y="134" class="ink" font-size="17" font-weight="700">模块能力</text>
+    <text x="48" y="159" class="muted" font-size="12">按任务装配 · 精确版本冻结</text>
+
+    <rect x="40" y="195" width="270" height="50" rx="9" fill="#fbfbfa"/>
+    <rect x="48" y="208" width="3" height="24" rx="1.5" fill="#a85a3a"/>
+    <text x="65" y="216" class="ink" font-size="14" font-weight="650">GIS 与空间分析</text>
+    <text x="65" y="235" class="muted" font-size="11">地图发布 · 空间计算</text>
+
+    <path d="M48 257H302" class="rule"/>
+    <text x="65" y="279" class="ink" font-size="14" font-weight="600">视频检索与处理</text>
+    <text x="65" y="299" class="muted" font-size="11">检索 · 播放 · 截图与裁剪</text>
+
+    <path d="M48 319H302" class="rule"/>
+    <text x="65" y="341" class="ink" font-size="14" font-weight="600">引用与证据</text>
+    <text x="65" y="361" class="muted" font-size="11">原文定位 · 来源追溯</text>
+
+    <path d="M48 381H302" class="rule"/>
+    <text x="65" y="403" class="ink" font-size="14" font-weight="600">数据与知识</text>
+    <text x="65" y="423" class="muted" font-size="11">查询 · 指标 · 知识检索</text>
+
+    <path d="M48 443H302" class="rule"/>
+    <text x="65" y="465" class="ink" font-size="14" font-weight="600">用户交互</text>
+    <text x="65" y="485" class="muted" font-size="11">结构化提问 · 状态反馈</text>
+
+    <path d="M48 505H302" class="rule"/>
+    <text x="65" y="527" class="ink" font-size="14" font-weight="600">报告与图表</text>
+    <text x="65" y="547" class="muted" font-size="11">模板 · 制图 · 引用汇集</text>
+
+    <path d="M48 611H302" class="rule"/>
+    <text x="48" y="646" class="muted" font-size="12" font-weight="650">能力组成</text>
+    <text x="48" y="676" class="ink" font-size="13">Skill  ·  Extension  ·  Data</text>
+    <text x="48" y="699" class="ink" font-size="13">Knowledge  ·  Template</text>
+    <text x="48" y="758" class="quiet" font-size="11">内置能力与可安装模块</text>
+  </g>
+
+  <!-- Main content -->
+  <g class="ui">
+    <text x="380" y="139" class="ink" font-size="25" font-weight="700">从交互入口到分析执行</text>
+    <text x="380" y="170" class="muted" font-size="14">一套本地 Host 串联工作台、会话、Agent 与分析运行时。</text>
+    <text x="380" y="215" class="quiet mono" font-size="11" letter-spacing="1.3">EXECUTION FLOW</text>
+  </g>
+
+  <!-- Main runtime cards -->
+  <rect x="380" y="240" width="284" height="220" rx="12" class="card"/>
+  <rect x="708" y="240" width="315" height="220" rx="12" fill="#fcf8f6" stroke="#dfc1b2" stroke-width="1.5"/>
+  <rect x="708" y="252" width="3" height="196" rx="1.5" fill="#a85a3a"/>
+  <rect x="1067" y="240" width="309" height="220" rx="12" class="card"/>
+
+  <g class="ui">
+    <text x="404" y="277" class="accent mono" font-size="12" font-weight="700">01 / CLIENT</text>
+    <text x="404" y="321" class="ink" font-size="24" font-weight="700">交互入口</text>
+    <text x="404" y="358" class="ink" font-size="16" font-weight="600">桌面 · Web · CLI</text>
+    <path d="M404 387H640" class="rule"/>
+    <text x="404" y="417" class="muted" font-size="13">Electron + React / 浏览器</text>
+    <text x="404" y="438" class="muted" font-size="13">TransportX CLI</text>
+
+    <text x="732" y="277" class="accent mono" font-size="12" font-weight="700">02 / SESSION BOUNDARY</text>
+    <text x="732" y="321" class="ink" font-size="24" font-weight="700">Node Agent Host</text>
+    <text x="732" y="358" class="ink" font-size="15" font-weight="600">会话 · 模型配置 · 模块装配</text>
+    <path d="M732 387H999" class="rule"/>
+    <text x="732" y="417" class="muted" font-size="13">统一管理资源访问与执行进程</text>
+    <text x="732" y="438" class="muted" font-size="13">向界面提供状态与分析结果</text>
+
+    <text x="1091" y="277" class="accent mono" font-size="12" font-weight="700">03 / AGENT LOOP</text>
+    <text x="1091" y="321" class="ink" font-size="24" font-weight="700">Pi Agent</text>
+    <text x="1091" y="358" class="ink" font-size="15" font-weight="600">模型调用 · 工具 · Extensions</text>
+    <path d="M1091 387H1352" class="rule"/>
+    <text x="1091" y="417" class="muted" font-size="13">按会话加载 Skills 与模块能力</text>
+    <text x="1091" y="438" class="muted" font-size="13">执行工具并返回事件</text>
+  </g>
+
+  <!-- Flow wires and labels -->
+  <path d="M665 350H701" class="wire" marker-end="url(#arrow)"/>
+  <path d="M1024 350H1060" class="wire" marker-end="url(#arrow)"/>
+  <path d="M330 554H682V444H701" fill="none" stroke="#a85a3a" stroke-width="1.8" stroke-dasharray="5 6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#assembly-arrow)"/>
+  <text x="515" y="540" class="accent ui" font-size="11" text-anchor="middle">模块装配</text>
+
+  <!-- Runtime services -->
+  <text x="708" y="555" class="quiet mono" font-size="11" letter-spacing="1.3">ANALYSIS RUNTIME</text>
+  <text x="1067" y="555" class="quiet mono" font-size="11" letter-spacing="1.3">MODEL SERVICE</text>
+  <path d="M1182 460V522H865V579" class="wire" marker-end="url(#arrow)"/>
+  <path d="M1255 460V579" class="wire" marker-end="url(#arrow)"/>
+  <rect x="708" y="586" width="315" height="132" rx="12" class="card"/>
+  <rect x="1067" y="586" width="309" height="132" rx="12" class="card"/>
+  <g class="ui">
+    <text x="732" y="625" class="ink" font-size="21" font-weight="700">Python</text>
+    <text x="732" y="656" class="muted" font-size="13">数据查询 · 空间计算 · 统计制图</text>
+    <text x="732" y="688" class="quiet" font-size="11">受 Host 管理的分析环境</text>
+    <text x="1091" y="625" class="ink" font-size="21" font-weight="700">Model Provider</text>
+    <text x="1091" y="656" class="muted" font-size="13">本地或远程模型</text>
+    <text x="1091" y="688" class="quiet" font-size="11">返回回复或工具调用</text>
+  </g>
+
+  <path d="M380 751H1376" class="rule"/>
+  <g class="ui quiet" font-size="11">
+    <text x="380" y="777">实线：运行时调用与交互</text>
+    <text x="562" y="777">虚线：模块装配</text>
+    <text x="1376" y="777" text-anchor="end">模块版本随任务冻结</text>
+  </g>
+</svg>

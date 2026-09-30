@@ -59,6 +59,11 @@ test/baselines/screenshots/*.png
 !/docs/CHANGELOG.md
 !/docs/images/
 /docs/images/*
+!/docs/images/architecture-overview-zh.png
+!/docs/images/architecture-overview-zh-workbench.svg
+!/docs/images/architecture-overview-zh-workbench.png
+!/docs/images/architecture-overview-zh-workbench-v1.svg
+!/docs/images/architecture-overview-zh-workbench-v1.png
 !/docs/images/product-task-setup.png
 !/docs/images/product-map-selection.png
 !/docs/images/product-monthly-report.png

@@ -1,0 +1,204 @@
+const { suiteCase } = require('../support/test-suite.ts');
+const caseTest = (...args: any[]) => suiteCase(__filename, ...args);
+const assert = require('node:assert/strict');
+
+const {
+  parseVideoTimestamp,
+  formatVideoTimestamp,
+  videoOffsetSeconds,
+  recordingIntervalOverlaps,
+  parseVideoSceneStructured,
+  parseVideoEnvelopeStructured,
+  getVideoSceneFromToolResult,
+  parseVideoResourceManifestStructured,
+  parseVideoCatalogStructured,
+} = require('../../bin/contracts/video.js');
+
+caseTest('video timestamps require ISO 8601 with an explicit numeric offset', () => {
+  assert.ok(parseVideoTimestamp('2026-08-16T08:32:10+08:00'));
+  assert.ok(parseVideoTimestamp('2026-08-16T00:32:10.500-05:30'));
+  assert.equal(parseVideoTimestamp('2026-08-16T08:32:10'), null, 'missing offset');
+  assert.equal(parseVideoTimestamp('2026-08-16T08:32:10Z'), null, 'Z suffix is not a numeric offset');
+  assert.equal(parseVideoTimestamp('2026-08-16 08:32:10+08:00'), null, 'space separator');
+  assert.equal(parseVideoTimestamp('2026-08-16'), null, 'date only');
+  assert.equal(parseVideoTimestamp('2026-13-16T08:32:10+08:00'), null, 'month 13');
+  assert.equal(parseVideoTimestamp('2026-02-31T08:32:10+08:00'), null, 'impossible date rolls over');
+  assert.equal(parseVideoTimestamp('2026-08-16T24:00:00+08:00'), null, 'hour 24');
+  assert.equal(parseVideoTimestamp(1735900330), null, 'non-string');
+});
+
+caseTest('timestamp epoch math respects the numeric offset', () => {
+  const a = parseVideoTimestamp('2026-08-16T08:00:00+08:00');
+  const b = parseVideoTimestamp('2026-08-16T00:00:00+00:00');
+  assert.equal(a.epochMs, b.epochMs);
+  assert.equal(formatVideoTimestamp(a.epochMs + 90_000, a.offsetMinutes), '2026-08-16T08:01:30+08:00');
+  assert.equal(videoOffsetSeconds('2026-08-16T08:00:00+08:00', '2026-08-16T08:01:30+08:00'), 90);
+  assert.equal(videoOffsetSeconds('2026-08-16T08:00:00+08:00', '2026-08-16T07:59:00+08:00'), -60);
+});
+
+caseTest('recording overlap uses strict interval intersection', () => {
+  const start = '2026-08-16T08:00:00+08:00';
+  const end = '2026-08-16T09:00:00+08:00';
+  const ms = (iso: string) => parseVideoTimestamp(iso).epochMs;
+  assert.equal(recordingIntervalOverlaps(ms('2026-08-16T08:30:00+08:00'), ms('2026-08-16T08:31:00+08:00'), start, end), true);
+  assert.equal(recordingIntervalOverlaps(ms('2026-08-16T07:00:00+08:00'), ms('2026-08-16T08:00:01+08:00'), start, end), true, 'partial overlap at the start');
+  assert.equal(recordingIntervalOverlaps(ms('2026-08-16T09:00:00+08:00'), ms('2026-08-16T10:00:00+08:00'), start, end), false, 'touching end does not overlap');
+  assert.equal(recordingIntervalOverlaps(ms('2026-08-16T06:00:00+08:00'), ms('2026-08-16T07:00:00+08:00'), start, end), false);
+});
+
+const sceneItem = {
+  id: 'video_abc',
+  videoId: 'video_001',
+  resourceId: 'video_abc',
+  title: '人民路—中山路口',
+  cameraId: 'camera_001',
+  recordingStartTime: '2026-08-16T08:00:00+08:00',
+  recordingEndTime: '2026-08-16T08:01:00+08:00',
+  durationSeconds: 60,
+  initialSeekSeconds: 32,
+  kind: 'source',
+};
+
+caseTest('video scene parser accepts a valid scene and rejects malformed ones', () => {
+  const ok = parseVideoSceneStructured({ schemaVersion: 1, revision: 3, videos: [sceneItem], activeVideoId: 'video_abc' });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.value.videos[0].initialSeekSeconds, 32);
+
+  // Optional comparison pane: valid pair parses, dangling or self-referencing pairs are rejected.
+  const pair = parseVideoSceneStructured({ schemaVersion: 1, revision: 4, videos: [sceneItem, { ...sceneItem, id: 'video_def', resourceId: 'video_def' }], activeVideoId: 'video_abc', compareVideoId: 'video_def' });
+  assert.equal(pair.ok, true);
+  assert.equal(pair.value.compareVideoId, 'video_def');
+  assert.equal(parseVideoSceneStructured({ schemaVersion: 1, revision: 4, videos: [sceneItem], activeVideoId: 'video_abc', compareVideoId: 'missing' }).ok, false, 'dangling compareVideoId');
+  assert.equal(parseVideoSceneStructured({ schemaVersion: 1, revision: 4, videos: [sceneItem, { ...sceneItem, id: 'video_def', resourceId: 'video_def' }], activeVideoId: 'video_abc', compareVideoId: 'video_abc' }).ok, false, 'compare must differ from active');
+
+  for (const [name, candidate] of Object.entries({
+    wrongSchema: { schemaVersion: 2, revision: 1, videos: [] },
+    badActive: { schemaVersion: 1, revision: 1, videos: [sceneItem], activeVideoId: 'missing' },
+    duplicated: { schemaVersion: 1, revision: 1, videos: [sceneItem, sceneItem] },
+    reversedRange: { schemaVersion: 1, revision: 1, videos: [{ ...sceneItem, recordingEndTime: '2026-08-16T07:00:00+08:00' }] },
+    naiveTime: { schemaVersion: 1, revision: 1, videos: [{ ...sceneItem, recordingStartTime: '2026-08-16 08:00:00' }] },
+    missingKind: { schemaVersion: 1, revision: 1, videos: [{ ...sceneItem, kind: undefined }] },
+  })) {
+    const result = parseVideoSceneStructured(candidate);
+    assert.equal(result.ok, false, name);
+  }
+});
+
+caseTest('present reducer builds comparison pairs, keeps seek variants distinct and evicts safely', () => {
+  const { reduceVideoScenePresent, videoSceneItemId, VIDEO_SCENE_MAX_ITEMS } = require('../../bin/contracts/video.js');
+  const item = (resourceId: string, seek?: number) => ({ ...sceneItem, id: videoSceneItemId(resourceId, seek), resourceId, ...(seek ? { initialSeekSeconds: seek } : {}) });
+  const empty = { schemaVersion: 1, revision: 0, videos: [] };
+
+  assert.equal(videoSceneItemId('video_a'), 'video_a');
+  assert.equal(videoSceneItemId('video_a', 1320), 'video_a@1320');
+
+  const first = reduceVideoScenePresent(empty, item('video_a'));
+  assert.equal(first.activeVideoId, 'video_a');
+  assert.equal(first.compareVideoId, undefined);
+
+  // compare=true keeps the active pane and fills the comparison pane.
+  const compared = reduceVideoScenePresent(first, item('video_b'), { compare: true });
+  assert.equal(compared.activeVideoId, 'video_a');
+  assert.equal(compared.compareVideoId, 'video_b');
+
+  // Same recording at two absolute times becomes two items (image comparison).
+  const t1 = reduceVideoScenePresent(empty, item('video_a', 1200));
+  const t2 = reduceVideoScenePresent(t1, item('video_a', 2400), { compare: true });
+  assert.equal(t2.videos.length, 2);
+  assert.equal(t2.activeVideoId, 'video_a@1200');
+  assert.equal(t2.compareVideoId, 'video_a@2400');
+
+  // Presenting a new primary keeps the comparison pane; presenting the compared item as primary clears the duplicate role.
+  const replaced = reduceVideoScenePresent(compared, item('video_c'));
+  assert.equal(replaced.activeVideoId, 'video_c');
+  assert.equal(replaced.compareVideoId, 'video_b');
+  const promoted = reduceVideoScenePresent(compared, item('video_b'));
+  assert.equal(promoted.activeVideoId, 'video_b');
+  assert.equal(promoted.compareVideoId, undefined);
+
+  // compare=true on the very first present degrades to a normal present.
+  const degraded = reduceVideoScenePresent(empty, item('video_a'), { compare: true });
+  assert.equal(degraded.activeVideoId, 'video_a');
+  assert.equal(degraded.compareVideoId, undefined);
+
+  // Eviction never removes the visible pair and clears dangling comparisons.
+  let scene = compared;
+  for (let index = 0; index < VIDEO_SCENE_MAX_ITEMS + 2; index += 1) scene = reduceVideoScenePresent(scene, item(`video_x${index}`));
+  assert.ok(scene.videos.length <= VIDEO_SCENE_MAX_ITEMS);
+  assert.ok(scene.videos.some((entry: any) => entry.id === scene.activeVideoId));
+  if (scene.compareVideoId) assert.ok(scene.videos.some((entry: any) => entry.id === scene.compareVideoId));
+});
+
+caseTest('video envelope projects from tool results and ignores other messages', () => {
+  const envelope = { schemaVersion: 1, revision: 5, scene: { schemaVersion: 1, revision: 5, videos: [sceneItem], activeVideoId: 'video_abc' } };
+  const parsed = parseVideoEnvelopeStructured(envelope);
+  assert.equal(parsed.ok, true);
+  assert.equal(getVideoSceneFromToolResult({ role: 'toolResult', details: { video: envelope } }).revision, 5);
+  assert.equal(getVideoSceneFromToolResult({ role: 'toolResult', details: { visualization: {} } }), null, 'geo envelopes are not video');
+  assert.equal(getVideoSceneFromToolResult({ role: 'assistant' }), null);
+  assert.equal(getVideoSceneFromToolResult({ role: 'toolResult', details: { video: { schemaVersion: 9 } } }), null, 'invalid video envelope is skipped');
+});
+
+const sourceManifest = {
+  schemaVersion: 1,
+  resourceId: 'video_0123456789abcdef',
+  videoId: 'video_001',
+  kind: 'source',
+  relativePath: 'video.mp4',
+  mimeType: 'video/mp4',
+  bytes: 522309,
+  sha256: 'a'.repeat(64),
+  recordingStartTime: '2026-08-16T08:00:00+08:00',
+  recordingEndTime: '2026-08-16T08:01:00+08:00',
+  durationSeconds: 60,
+  sourceAssetId: 'data:demo-videos',
+  sourceRelativePath: 'videos/camera_001.mp4',
+};
+
+caseTest('resource manifest requires provenance per kind', () => {
+  assert.equal(parseVideoResourceManifestStructured(sourceManifest).ok, true);
+  assert.equal(parseVideoResourceManifestStructured({ ...sourceManifest, sourceAssetId: undefined }).ok, false, 'source without asset origin');
+  const derived = {
+    ...sourceManifest,
+    resourceId: 'video_fedcba9876543210',
+    kind: 'derived',
+    sourceAssetId: undefined,
+    sourceRelativePath: undefined,
+    parentResourceId: 'video_0123456789abcdef',
+    clipStartTime: '2026-08-16T08:00:10+08:00',
+    clipEndTime: '2026-08-16T08:00:40+08:00',
+  };
+  assert.equal(parseVideoResourceManifestStructured(derived).ok, true);
+  assert.equal(parseVideoResourceManifestStructured({ ...derived, parentResourceId: undefined }).ok, false, 'derived without parent');
+  assert.equal(parseVideoResourceManifestStructured({ ...derived, clipEndTime: '2026-08-16T08:00:05+08:00' }).ok, false, 'clip end before start');
+  assert.equal(parseVideoResourceManifestStructured({ ...sourceManifest, sha256: 'xyz' }).ok, false, 'bad sha256');
+});
+
+caseTest('catalog parser enforces unique ids, safe relative files and strict times', () => {
+  const entry = {
+    videoId: 'video_001',
+    cameraId: 'camera_001',
+    title: '人民路—中山路口',
+    locationName: '人民路—中山路口',
+    startTime: '2026-08-16T08:00:00+08:00',
+    endTime: '2026-08-16T08:01:00+08:00',
+    file: 'videos/camera_001.mp4',
+    mimeType: 'video/mp4',
+    longitude: 121.47,
+    latitude: 31.23,
+  };
+  const ok = parseVideoCatalogStructured({ schemaVersion: 1, videos: [entry] });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.value.videos[0].videoId, 'video_001');
+  const metricCatalog = parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', file: 'metrics/visible_people.csv', sampleIntervalSeconds: 1 }] }] });
+  assert.equal(metricCatalog.value.videos[0].metrics[0].id, 'visible_people');
+
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [entry, { ...entry, videoId: 'video_002' }] }).ok, true);
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [entry, entry] }).ok, false, 'duplicate videoId');
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, file: '/etc/passwd' }] }).ok, false, 'absolute path');
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, file: '../escape.mp4' }] }).ok, false, 'dot-dot escape');
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, metrics: [{ id: 'unsafe', label: 'Unsafe', unit: 'x', file: '../escape.csv', sampleIntervalSeconds: 1 }] }] }).ok, false, 'metrics cannot escape the data root');
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, startTime: '2026-08-16T08:00:00' }] }).ok, false, 'naive startTime');
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 1, videos: [{ ...entry, mimeType: 'video/webm' }] }).ok, false, 'non-mp4');
+  assert.equal(parseVideoCatalogStructured({ schemaVersion: 2, videos: [entry] }).ok, false, 'unknown schemaVersion');
+});

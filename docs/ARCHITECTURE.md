@@ -40,9 +40,13 @@ pi-tau-traffic/
 
 ### 2.1 进程与通信
 
-![TransportX Agent 整体架构与执行流程](./images/architecture-overview-zh.png)
+![TransportX Agent 整体架构与执行流程](./images/architecture-overview-zh-workbench.png)
 
-实线表示运行时通信或调用；虚线表示桥接或装配配置。Host 图内各组件在同一进程，Module 不是独立服务。当前 Supervisor 在 macOS 使用 `utilityProcess.fork`，Windows 使用 Electron 可执行文件配合 `ELECTRON_RUN_AS_NODE=1` 启动 Node 子进程。CLI 自行启动 Host 子进程；Web 模式直接运行 Host，均使用同一组会话与领域服务。Pi 的基础工具读写任务文件，部分 Extension 直接发布资源或持久化状态；Host 负责对外提供经过校验的文件与资源。文件与资产的具体边界见第 3.4、4、6 节。
+[可编辑 SVG](./images/architecture-overview-zh-workbench.svg) · [上一版图](./images/architecture-overview-zh-workbench-v1.png) · [原始架构图](./images/architecture-overview-zh.png)
+
+实线表示运行时请求、调用或结果；虚线表示模块装配。图中的 Host 边框表示会话与资源管理边界：Pi RPC 是 Host 启动的独立进程，Python 可由 Pi 工具或 Host 领域服务调用；Module 不是独立服务。当前 Supervisor 在 macOS 使用 `utilityProcess.fork`，Windows 使用 Electron 可执行文件配合 `ELECTRON_RUN_AS_NODE=1` 启动 Node 子进程。CLI 自行启动 Host 子进程；Web 模式直接运行 Host，均使用同一组会话与领域服务。Pi 的基础工具读写任务文件，部分 Extension 直接发布资源或持久化状态；Host 负责对外提供经过校验的文件与资源。文件与资产的具体边界见第 3.4、4、6 节。
+
+图左侧的 Extension、Skill、Knowledge、Data 是 Module 可组合的贡献类型，不是四种互斥的安装包。Pi 默认启用 `read`、`write`、`edit`、`bash` 四个基础工具；Extension 可注册额外工具，Skill 提供工作方法，Knowledge 和 Data 作为会话资产供工具与脚本使用。Pi 维护活动工具集合并发起调用：基础工具和部分 Extension 在 Pi 侧执行，另一些 Extension 调用 Host 领域服务。Host 负责会话装配、资源校验与领域服务，并非所有工具的统一执行器。Python 仅由 `bash` 或 Host 受控作业按需调用。
 
 ### 2.2 技术栈分工
 
@@ -165,7 +169,7 @@ sequenceDiagram
 | 用户功能 | Agent / Module 侧 | Host 与持久化 | 展示或交互位置 |
 |---|---|---|---|
 | 对话、模型、历史恢复 | Pi 基础循环，Web Bridge 发布模型/工具清单 | `sessions.ts`、`session-projection.ts`、`pi-model-config.ts` | `platform/conversation/`、`platform/model/`，Kernel stores |
-| 多步任务与提问 | Task Extension：`tau_task`、`tau_ask_user` | Pi 历史中的任务状态、Snapshot 与 Extension UI 请求 | `features/task/TaskBoard.tsx`、`platform/extension-ui/` |
+| 用户交互与提问 | Interaction Extension：`tau_ask_user` | Pi Extension UI 请求与工具结果 | `platform/extension-ui/` |
 | 交通数据查询与统计制图 | 数据/绘图 Module 的 Skill + Pi 基础工具执行 Python/SQL | 冻结资产根目录；分析输出写入任务 cwd | 对话工具卡、`platform/workspace/` 文件预览 |
 | 地图发布与显示 | Geo：`publish_geodata`、`present_visualization`（含 `show_map` 操作） | Extension 写资源 manifest；`geo-resources.ts` 校验并提供 GeoJSON | `features/geo/GeoWorkspace.tsx` + `src/public/visualization/geo/` |
 | 空间分析 | Spatial Analysis Extension：buffer / nearest / spatial_join | `spatial-analysis-service.ts` → `PythonRunner` → 模块脚本，生成 GeoJSON + manifest | 结果经 Geo 发布后进入地图 |
@@ -175,7 +179,7 @@ sequenceDiagram
 | 报告、表格、PDF 与 OOXML | 报告 Template + Agent 写 Markdown，引用分析文件/图件 | 文件 API、Citation SHA-256 资源路由、`report-pdf.ts`；桌面请求交给 Electron PDF 渲染 | Canvas `DocumentWorkspace.tsx` 浏览 Markdown/CSV/PDF；`features/office/OfficeWorkspace.tsx` 按格式加载本地只读 DOCX/XLSX/PPTX Viewer |
 | 能力安装与任务选择 | Module manifest 声明能力、依赖与资产 | Registry / Installer / Assembler、`platform-overview.ts` | Settings、NewSessionDialog、`platform/capabilities/` |
 
-Task 是同一 Agent 的步骤与交互状态管理，当前内置模块没有独立的多 Agent 调度器。Web Bridge 是 Pi 的模型/工具元数据桥，不是网页搜索或浏览器自动化服务。报告不是独立 Agent 或服务流水线：Agent 将数据、空间、视频与知识工具的结果组织成文件。
+内置模块不再提供步骤规划器；`tau_ask_user` 只负责在缺少必要信息或审批时向用户发起结构化提问。历史会话仍保留 Task Snapshot 的读取兼容路径，但新会话不会装配 `tau_task` 或任务面板。Web Bridge 是 Pi 的模型/工具元数据桥，不是网页搜索或浏览器自动化服务。报告不是独立 Agent 或服务流水线：Agent 将数据、空间、视频与知识工具的结果组织成文件。
 
 ### 3.4 文件、引用、地图与视频
 
@@ -195,7 +199,8 @@ Task 是同一 Agent 的步骤与交互状态管理，当前内置模块没有�
 
 | 内容 | 权威来源 | 主要消费者 |
 |---|---|---|
-| Session、Task、Geo、Citation、附件等跨层协议 | `src/contracts/` | Extension、Server、Kernel、React |
+| Session、Geo、Citation、附件等跨层协议 | `src/contracts/` | Extension、Server、Kernel、React |
+| 历史 Task Snapshot 兼容协议 | `src/contracts/task.ts` | 旧 Task Module 恢复与历史测试 |
 | 已完成的对话历史 | Pi Session JSONL | Session Projection、历史 API |
 | 实时会话状态 | Agent Host live overlay | WebSocket、Browser Kernel |
 | 任务装配结果 | `<task>/.tau/resolved-session-plan*.json` | Session 恢复、审计 |
@@ -240,7 +245,7 @@ Module 是统一安装与版本冻结单元，manifest 的 `type` 分为 `domain
 flowchart LR
   wb["workbench：Domain"]
   cliDomain["cli：Domain<br/>无默认依赖"]
-  wb --> task["task"]
+  wb --> interaction["interaction"]
   wb --> bridge["web-bridge"]
   wb --> citation["citation"]
   wb --> geo["geo"]
@@ -270,7 +275,7 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 | 源码位置（相对 `modules/`） | 内容 | 装配与交付 |
 |---|---|---|
 | `official/workbench`、`official/cli` | 两种 Domain 的会话 Prompt | 随包注册，按入口选择一个 Domain |
-| `capabilities/task`、`citation`、`web-bridge` | 步骤/提问、引用工具、Pi 元数据桥接 Extension | Workbench 基础依赖 |
+| `capabilities/interaction`、`citation`、`web-bridge` | 用户提问、引用工具、Pi 元数据桥接 Extension | Workbench 基础依赖 |
 | `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖，Spatial Analysis 依赖 Geo |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
 | 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
@@ -371,11 +376,12 @@ Geo runtime ────────────────> contracts + MapLib
 
 ## 10. 场景验证
 
-测试入口按用户可见场景划分；细粒度 `test/` 用例仅用于定位协议或边界问题，不是日常发布门禁。
+测试入口按领域场景划分；`test/suites/` 是 Node 测试门禁，最多注册 40 个套件，`test/cases/` 只承载可合并的细粒度场景，不单独注册测试入口。
 
 | 入口 | 场景 | 运行条件 |
 |---|---|---|
-| `npm test` | Agent Host 启动、创建任务环境、安装/卸载 Module、健康检查与退出 | 任意开发主机 |
+| `npm test` | 构建、40 个以内的领域测试套件，以及 Agent Host、Module、协议与安全边界回归 | 任意开发主机 |
+| `npm run test:budget` | 校验测试套件不超过 40 个，并确保每个 case 文件只被注册一次 | 任意开发主机 |
 | `npm run test:web` | 浏览器中创建交通任务、获得分析、发布地图 | 本机 Chrome + fake Pi |
 | `npm run test:platform:macos` | Electron、Agent Host、PDF、内置 Python、退出清理 | macOS；可用 `TRANSPORTX_PACKAGED_APP` 验证 DMG/.app |
 | `npm run test:platform:windows` | Windows 未安装应用启动，或 NSIS 安装/启动/卸载/数据保留 | Windows x64；设置 `TRANSPORTX_PACKAGED_APP` 或 `TRANSPORTX_WINDOWS_INSTALLER` |

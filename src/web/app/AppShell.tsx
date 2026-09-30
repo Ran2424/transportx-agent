@@ -20,13 +20,12 @@ function savedConversationWidth() {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_CONVERSATION_WIDTH;
 }
 
-export function AppShell({ header, sidebar, tabs, conversation, workspace, taskFloat, canvas, canvasOpen, settings, settingsOpen, overlays }: {
+export function AppShell({ header, sidebar, tabs, conversation, workspace, canvas, canvasOpen, settings, settingsOpen, overlays }: {
   header: ReactNode;
   sidebar: ReactNode;
   tabs: ReactNode;
   conversation: ReactNode;
   workspace: ReactNode;
-  taskFloat: ReactNode;
   canvas: ReactNode;
   canvasOpen: boolean;
   settings: ReactNode;
@@ -154,7 +153,6 @@ export function AppShell({ header, sidebar, tabs, conversation, workspace, taskF
               {tabs}
               {conversation}
             </section>
-            {taskFloat}
           </section>
           {workspace}
         </>}

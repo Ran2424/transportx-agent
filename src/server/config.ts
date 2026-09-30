@@ -43,7 +43,7 @@ export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
     return null; // Video processing reports a clear error when ffmpeg is unavailable.
   }
 })();
-export const PLATFORM_VERSION = '3.21.0';
+export const PLATFORM_VERSION = '3.22.0';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -77,7 +77,7 @@ export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(APP_PATHS.appRoot, 'src',
 export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.workbench';
 export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
-  'modules/capabilities/task/manifest.json',
+  'modules/capabilities/interaction/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/canvas/manifest.json',
   'modules/capabilities/document/manifest.json',

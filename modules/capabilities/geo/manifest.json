@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.geo",
   "name": "Geo Visualization",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": ["com.transportx.canvas"],

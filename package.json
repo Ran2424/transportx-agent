@@ -1,6 +1,6 @@
 {
   "name": "transportx-agent",
-  "version": "3.21.0",
+  "version": "3.22.0",
   "description": "TransportX Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
@@ -60,12 +60,14 @@
     "typecheck:extensions": "tsc -p tsconfig.extensions.json --noEmit",
     "typecheck:desktop": "tsc -p tsconfig.desktop.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
-    "test": "npm run test:core",
-    "test:core": "npm run build && node --test test/agent-host-desktop.test.ts test/transportx-cli.test.ts",
-    "test:pi-smoke": "npm run build:server && node scripts/pi-rpc-smoke.mjs",
-    "test:web": "npm run build && node scripts/react-smoke.mjs",
-    "test:platform:macos": "npm run build && node scripts/macos-desktop-smoke.mjs",
-    "test:platform:windows": "node scripts/windows-platform-smoke.mjs"
+    "test": "npm run test:all",
+    "test:budget": "node scripts/check-test-budget.mjs",
+    "test:all": "npm run build && npm run test:budget && node --test test/suites/*.test.ts",
+    "test:core": "npm run build && npm run test:budget && node --test test/suites/desktop-launch.test.ts test/suites/transportx-cli.test.ts",
+    "test:pi-smoke": "npm run build:server && npm run test:budget && node scripts/pi-rpc-smoke.mjs",
+    "test:web": "npm run build && npm run test:budget && node scripts/react-smoke.mjs",
+    "test:platform:macos": "npm run build && npm run test:budget && node scripts/macos-desktop-smoke.mjs",
+    "test:platform:windows": "npm run test:budget && node scripts/windows-platform-smoke.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.80.10",

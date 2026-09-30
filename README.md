@@ -37,7 +37,7 @@ The agent and analyst work with the same map state. The agent can publish GeoJSO
 
 | | What TransportX provides |
 |---|---|
-| **Conversational analysis** | Ask questions in natural language and follow the model's responses, tool calls, task steps, and generated files. |
+| **Conversational analysis** | Ask questions in natural language and follow the model's responses, tool calls, and generated files. |
 | **Interactive GIS** | Share a versioned map context: the agent publishes and updates layers, while the analyst returns features, points, rectangles, or the current viewport. |
 | **Data, charts, and video** | Analyze tables, databases, and code; create charts; install Video Capability for search, playback, snapshots, clips, frame sampling, and time-series metrics. |
 | **Traceable findings** | Keep citations, map context, source files, and tool output connected to the conclusion that used them. |
