@@ -18,10 +18,14 @@ Codex、Claude Code 等编程 Agent 进步很快，但实际使用通常仍离�
 TransportX 的出发点很简单：让交通分析人员能直接使用 Agent 完成提问、分析、制图和成果交付，并保留结果所依据的数据与过程。平台本身保持轻量，具体数据、知识、方法和工具通过 Module 装配，因此也可以适配交通之外的数据分析场景。
 
 <p align="center">
-  <img src="./docs/images/product-home.png" alt="TransportX Agent 首页，展示新建交通任务入口" width="920" />
+  <a href="./docs/videos/transportx-v6-en-68s-1080p.mp4">
+    <img src="./docs/images/product-video-cover.jpg" alt="播放 68 秒 TransportX Agent 英文产品演示视频" width="920" />
+  </a>
+  <br />
+  <sub><strong>▶ 播放 68 秒 TransportX Agent 英文产品演示（1080p）</strong></sub>
 </p>
 
-从首页创建交通任务，再沿着交通问数、地图分析和报告生成完成分析。
+视频展示完整工作流：创建交通任务、提出问题、在共享地图中分析，并交付报告。
 
 ## 为交通分析设计
 

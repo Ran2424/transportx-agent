@@ -18,10 +18,14 @@ Coding agents such as Codex and Claude Code have improved quickly, but using the
 TransportX began with a simple goal: make agent-assisted analysis practical for transport professionals. It is a lightweight desktop workspace for asking questions, inspecting maps and charts, and delivering results with their evidence attached. The core stays small. Modules add the data, knowledge, methods, and tools required by a field, which also makes the platform useful beyond transport.
 
 <p align="center">
-  <img src="./docs/images/product-home.png" alt="TransportX Agent home screen with a button to create a traffic task" width="920" />
+  <a href="./docs/videos/transportx-v6-en-68s-1080p.mp4">
+    <img src="./docs/images/product-video-cover.jpg" alt="Play the 68-second TransportX Agent product overview" width="920" />
+  </a>
+  <br />
+  <sub><strong>▶ Watch the 68-second TransportX Agent overview (1080p)</strong></sub>
 </p>
 
-The home screen starts a traffic task and links the core workflow: ask a question, analyze it on a map, and deliver a report.
+The video follows the core workflow: start a traffic task, ask a question, analyze it on a shared map, and deliver a report.
 
 ## Built for traffic analysis
 

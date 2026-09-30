@@ -71,6 +71,10 @@ test/baselines/screenshots/*.png
 !/docs/images/product-bike-transfer.png
 !/docs/images/product-holiday-ridehail.png
 !/docs/images/product-home.png
+!/docs/images/product-video-cover.jpg
+!/docs/videos/
+/docs/videos/*
+!/docs/videos/transportx-v6-en-68s-1080p.mp4
 
 # 用户本地可安装模块不写入仓库
 modules/installable/
