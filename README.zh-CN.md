@@ -19,10 +19,10 @@ TransportX 的出发点很简单：让交通分析人员能直接使用 Agent �
 
 <p align="center">
   <a href="./docs/videos/transportx-v6-en-68s-1080p.mp4">
-    <img src="./docs/images/product-video-cover.jpg" alt="播放 68 秒 TransportX Agent 英文产品演示视频" width="920" />
+    <img src="./docs/images/product-video-preview.gif" alt="TransportX Agent 产品演示动态预览" width="920" />
   </a>
   <br />
-  <sub><strong>▶ 播放 68 秒 TransportX Agent 英文产品演示（1080p）</strong></sub>
+  <sub><strong>自动循环预览 · 点击观看带声音的 68 秒英文完整视频（1080p）</strong></sub>
 </p>
 
 视频展示完整工作流：创建交通任务、提出问题、在共享地图中分析，并交付报告。
@@ -70,6 +70,10 @@ Agent 和分析人员使用同一份地图状态。Agent 可以发布 GeoJSON、
 ## 工作方式
 
 桌面端、Web 与 CLI 共用本地 Agent Host。Host 管理会话、资源、模型和版本化 Module；Pi 负责 Agent 执行循环，并调用选定的模型、Python 分析环境与领域服务。
+
+<p align="center">
+  <img src="./docs/images/architecture-overview-zh-workbench.png" alt="TransportX 从客户端和 Module 到 Node Agent Host、Pi Agent、领域服务、Python Runtime 与模型服务的执行架构" width="920" />
+</p>
 
 ## 设计原则
 

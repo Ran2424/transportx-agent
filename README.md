@@ -19,10 +19,10 @@ TransportX began with a simple goal: make agent-assisted analysis practical for 
 
 <p align="center">
   <a href="./docs/videos/transportx-v6-en-68s-1080p.mp4">
-    <img src="./docs/images/product-video-cover.jpg" alt="Play the 68-second TransportX Agent product overview" width="920" />
+    <img src="./docs/images/product-video-preview.gif" alt="Animated preview of the TransportX Agent product overview" width="920" />
   </a>
   <br />
-  <sub><strong>▶ Watch the 68-second TransportX Agent overview (1080p)</strong></sub>
+  <sub><strong>Animated preview · Click to watch the full 68-second TransportX Agent overview with sound (1080p)</strong></sub>
 </p>
 
 The video follows the core workflow: start a traffic task, ask a question, analyze it on a shared map, and deliver a report.
@@ -70,6 +70,10 @@ The screenshots show how TransportX combines maps, analysis, figures, and report
 ## How it works
 
 The desktop, Web, and CLI clients share one local Agent Host. It manages sessions, resources, models, and versioned Modules; Pi runs the agent loop and calls the selected model, Python analysis environment, and domain services.
+
+<p align="center">
+  <img src="./docs/images/architecture-overview-zh-workbench.png" alt="TransportX execution architecture from clients and Modules through the Node Agent Host and Pi Agent to domain services, Python runtime, and model provider" width="920" />
+</p>
 
 ## Design principles
 

@@ -71,7 +71,7 @@ test/baselines/screenshots/*.png
 !/docs/images/product-bike-transfer.png
 !/docs/images/product-holiday-ridehail.png
 !/docs/images/product-home.png
-!/docs/images/product-video-cover.jpg
+!/docs/images/product-video-preview.gif
 !/docs/videos/
 /docs/videos/*
 !/docs/videos/transportx-v6-en-68s-1080p.mp4
