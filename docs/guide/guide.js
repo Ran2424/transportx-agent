@@ -58,8 +58,8 @@ const pages = [
     ${figure('model-provider', '选择供应商并填写 API Key 的真实表单', '供应商模式：选供应商、填密钥，再接入', 'compact')}
     <p>需要填写自定义接口地址时，选择“自定义服务”，按 <a href="#models">模型 API 接入</a> 的字段说明配置。</p>
     ${note('怎样验证接入成功', '创建任务后发一句简短提问，确认收到回复。顶部“已连接”表示工作台连接本地服务，不代表远程模型 API 已验证。', true)}
-    <h2 id="module">第二步 准备所需模块</h2><p>模块把常用功能、分析方法和资料打包保存，供不同任务重复使用。例如，一套交通数据库可以连同字段说明、统计方法和报告模板一起封装，下次分析时直接选用。</p>
-    <p>你可以直接与 Agent 对话，把自己的数据、资料或常用流程交给它，说明后续用途，让它帮忙<a href="#modules/author">制作模块</a>。只用一次的文件，作为任务附件添加即可。</p>
+    <h2 id="module">第二步 准备所需模块</h2><p>模块是 TransportX 积累和复用能力的方式。共用的数据、知识和技能可以封装为模块，安装到平台，供后续任务选用。</p>
+    <p>把资料和常用方法交给 Agent，说明用途，就可以让它帮忙<a href="#modules/author">整理并制作模块</a>。只用一次的文件，作为任务附件添加即可。</p>
     <p>已有模块包时，打开 <strong>设置 → 模块</strong>，选择或拖入 ZIP，确认名称、版本与安装项后安装。</p>
     ${figure('module-install', '模块 ZIP 压缩包选择和拖入入口', '模块在设置页安装，普通数据文件在任务中添加')}
     <p>安装后启用模块，在下一步创建任务时勾选。详细说明见 <a href="#modules">模块与能力</a>。</p>
@@ -127,9 +127,9 @@ const pages = [
   },
   {
     id: 'modules', group: '能力与数据', title: '模块与能力', description: '安装工具、方法、数据、知识与视频运行时。',
-    body: `<p class="lead">模块把常用功能、分析方法和资料打包保存。安装后，在创建任务时选择需要的模块，就能沿用其中的工具、数据和使用说明。</p>
+    body: `<p class="lead">模块是 TransportX 积累和复用能力的方式。它把共用的数据、知识、技能和工具整理成可安装的包，让平台保留这些内容，供不同任务选用。</p>
     <h2 id="contents">一个模块可以带来什么</h2>${table(['贡献内容', '作用'], [['Skill', '告诉 Agent 怎样使用方法、数据与工具。'], ['Extension', '注册工具或界面交互能力。'], ['Data / Knowledge', '提供数据库、资料与检索所需资产。'], ['Template', '提供报告等成果的模板资产。'], ['Native Runtime', '携带本地运行工具，如视频模块的 ffmpeg / ffprobe。']])}
-    <h2 id="author">让 Agent 制作模块</h2><p>在任务中添加数据或资料，说明哪些内容需要保留、以后怎样使用。Agent 可以整理文件、补充字段与来源说明，将分析方法和报告模板一起封装为模块。</p>
+    <h2 id="author">让 Agent 制作模块</h2><p>把数据、资料或常用分析流程交给 Agent，说明希望以后怎样使用。它可以整理原始文件、知识和操作方法，补充使用说明并封装为模块。安装后，新任务就能继续使用。</p>
     ${prompt('请把这份交通量数据封装为可安装的模块，供以后的任务使用。保留原始数据，补充字段、单位和来源说明，并加入按日统计与高峰时段分析的方法。完成后检查模块包，告诉我怎样安装。')}
     <p>确认内容后，通过“设置 → 模块”安装生成的模块包，再创建任务使用。若 Agent 提示缺少模块制作能力，先检查当前任务是否提供 Module Authoring。</p>
     <h2 id="install">从 ZIP 安装</h2>${figure('module-install', '设置中模块 ZIP 安装区域', '点击或拖入 ZIP 后，先识别再确认安装')}
@@ -170,7 +170,10 @@ const pages = [
     <details class="faq-item"><summary>看不到地图、报告或文件怎么办？</summary><p>确认选择了正确任务，并打开顶部文件栏或画布按钮。Agent 必须先生成文件或发布地图资源，对应内容才会出现。</p></details>
     <details class="faq-item"><summary>报告无法导出 PDF 怎么办？</summary><p>先检查 Markdown 报告和图片是否正常预览，再重试“生成并下载 PDF”。仍失败时可先下载原文件，并保留错误信息排查。</p></details>
     <details class="faq-item"><summary>本地应用可以完全离线使用吗？</summary><p>取决于所用模型和资源。远程 API、在线底图或其他外部服务需要联网；本机保存记录不代表所有分析都不访问网络。</p></details>
-    <h2 id="feedback">反馈问题时提供什么</h2><p>说明应用版本、操作系统、操作步骤和错误提示。截图中隐藏 API Key 与敏感材料；不要上传 auth.json。可通过 <a href="https://github.com/Ran2424/transportx-agent/issues" target="_blank" rel="noreferrer">项目 Issues ↗</a> 反馈可复现的问题。</p>`
+    <h2 id="feedback">反馈问题时提供什么</h2><p>说明应用版本、操作系统、操作步骤和错误提示。截图中隐藏 API Key 与敏感材料；不要上传 auth.json。可通过 <a href="https://github.com/Ran2424/transportx-agent/issues" target="_blank" rel="noreferrer">项目 Issues ↗</a> 反馈可复现的问题。</p>
+    <h2 id="community">内测交流</h2><p>扫描二维码加入 TransportX 内测交流群，交流使用问题、反馈建议。</p>
+    <figure class="figure community"><button type="button" class="image-open" aria-label="放大图片 TransportX 内测交流群二维码"><img src="assets/community-wechat.jpg" width="966" height="1482" alt="TransportX 内测交流群微信二维码，有效期至 2026 年 10 月 14 日" loading="lazy" decoding="async"></button><figcaption>二维码有效期至 2026 年 10 月 14 日 · 点击图片放大</figcaption></figure>
+    <p>二维码过期后，请通过项目 Issues 联系维护者获取新入口。</p>`
   }
 ];
 

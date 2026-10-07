@@ -320,6 +320,11 @@ strong {
   border-radius:var(--radius);
   box-shadow:0 12px 35px #2020200b;
 }
+.figure.community {
+  max-width:340px;
+  margin-left:auto;
+  margin-right:auto;
+}
 .product-video {
   display:block;
   width:100%;
