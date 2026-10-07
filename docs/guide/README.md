@@ -12,3 +12,11 @@
 参考 DeepStudent 的文档信息结构与三栏布局，文案和图片均对应 TransportX。未复制其产品功能或配置流程。
 
 此站点提供使用说明，不在网页中保存 API Key，也不调用模型。安装包入口链接到项目发布页，具体发行版本与平台产物以实际发布内容为准。
+
+## 官网同步
+
+本目录是官网快速上手文档的唯一内容来源，官网入口为 <https://transportxlab.com/application/transportx-agent/guide/#start>。HTML、CSS、JavaScript 和 `assets/` 均在本目录维护，不直接修改网站仓库中的副本。
+
+将修改提交并推送到本仓库 `main` 后，网站仓库 `transportx-public/website-resource` 的发布流程会在每次网站发布时拉取 `docs/guide/`，并每小时自动同步一次。也可以在网站仓库的 Actions 中手动运行 `web-deploy` 立即同步。GitHub 定时运行可能延迟。
+
+本机尚未推送的修改，可使用网站仓库的 `scripts/sync_transportx_guide.py` 同步本目录后预览；命令见网站仓库 README。官网源文件与本目录保持一致，不添加仅存在于官网副本的内容。
