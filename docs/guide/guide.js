@@ -53,17 +53,19 @@ const pages = [
     id: 'start', group: '开始', title: '快速上手', description: '从配置 API 到第一次交通数据分析。',
     body: `<p class="lead">先跑通一个模型、一份数据和一次分析。地图、知识库和视频能力可以随后按需加入。</p>
     ${note('开始前', '确认已安装桌面应用，并准备 API Key 和一份小型 Excel 或 CSV。还没安装？先查看 <a href="#install">安装与首次启动</a>。')}
-    <h2 id="connect">第一步 接入模型服务</h2><p>打开 <strong>设置 → Agent → 添加模型</strong>。供应商出现在列表中时，可使用“Pi 供应商”模式：</p>
-    <ol class="steps"><li>在服务商平台创建并复制 API Key。</li><li>选择与密钥对应的供应商，粘贴 API Key。</li><li>点击“接入供应商”；返回设置，确认模型列表已加载。</li></ol>
-    ${figure('model-provider', '选择供应商并填写 API Key 的真实表单', '供应商模式：选供应商、填密钥，再接入', 'compact')}
-    <p>需要填写自定义接口地址时，选择“自定义服务”，按 <a href="#models">模型 API 接入</a> 的字段说明配置。</p>
+    <h2 id="connect">第一步 接入模型服务</h2><p>以 DeepSeek 为例，先申请 API Key，再将它填入 TransportX。其他供应商的步骤类似。</p>
+    <h3>申请 DeepSeek API Key</h3><ol class="steps"><li>打开 <a href="https://platform.deepseek.com/" target="_blank" rel="noreferrer">DeepSeek 开放平台 ↗</a>，注册或登录。</li><li>进入 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer">API keys ↗</a>，创建密钥并复制保存。API Key 用于调用模型，不是登录密码。</li><li>在开放平台检查可用余额，按需充值。API 调用按用量计费，详见 <a href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noreferrer">官方说明 ↗</a>。</li></ol>
+    <h3>在 TransportX 中接入</h3><ol class="steps"><li>打开 <strong>设置 → Agent → 添加模型</strong>，选择“Pi 供应商”。</li><li>在“模型供应商”中选 <strong>DeepSeek</strong>，将刚复制的密钥粘贴到“API Key”。</li><li>点击“接入供应商”。若已经接入，按钮显示“更新凭据”，用于替换原来的密钥。</li></ol>
+    <figure class="figure compact"><button type="button" class="image-open" aria-label="放大图片 DeepSeek 模型接入表单"><img src="assets/deepseek-provider.png" width="1138" height="1032" alt="Pi 供应商中选择 DeepSeek 并填写 API Key" loading="lazy" decoding="async"></button><figcaption>截图是已接入状态；首次接入时按钮显示“接入供应商” · 点击图片放大</figcaption></figure>
+    <h3>选择模型</h3><p>接入后，返回设置确认 DeepSeek 模型已出现在列表中。创建任务时，在“模型”下拉框选择要使用的模型，步骤见下方“第三步”。供应商模式会提供内置目录中的模型，无需逐个添加。</p>
+    <p>若所需模型未列出，或列表中的名称已停用，可通过“自定义服务”<a href="#models/deepseek">添加 DeepSeek 模型配置</a>。模型名称以官方文档为准，截图中的数量仅代表当时的目录。</p>
     ${note('怎样验证接入成功', '创建任务后发一句简短提问，确认收到回复。顶部“已连接”表示工作台连接本地服务，不代表远程模型 API 已验证。', true)}
     <h2 id="module">第二步 准备所需模块</h2><p>模块是 TransportX 积累和复用能力的方式。共用的数据、知识和技能可以封装为模块，安装到平台，供后续任务选用。</p>
     <p>把资料和常用方法交给 Agent，说明用途，就可以让它帮忙<a href="#modules/author">整理并制作模块</a>。只用一次的文件，作为任务附件添加即可。</p>
     <p>已有模块包时，打开 <strong>设置 → 模块</strong>，选择或拖入 ZIP，确认名称、版本与安装项后安装。</p>
     ${figure('module-install', '模块 ZIP 压缩包选择和拖入入口', '模块在设置页安装，普通数据文件在任务中添加')}
     <p>安装后启用模块，在下一步创建任务时勾选。详细说明见 <a href="#modules">模块与能力</a>。</p>
-    <h2 id="create">第三步 创建交通任务</h2><ol class="steps"><li>回到首页，点击“新建交通任务”。</li><li>填写任务名称，例如“路口一周交通量分析”。</li><li>选择本次需要的模块与版本，取消无关业务模块。</li><li>按需补充城市、项目、空间范围与起止时间，选择刚接入的模型。</li><li>点击“创建任务”，进入对话区。应用会自动创建任务工作目录。</li></ol>
+    <h2 id="create">第三步 创建交通任务</h2><ol class="steps"><li>回到首页，点击“新建交通任务”。</li><li>填写任务名称，例如“路口一周交通量分析”。</li><li>选择本次需要的模块与版本，取消无关业务模块。</li><li>在“模型”下拉框中选择刚接入的 DeepSeek 模型；城市、范围和时间按需填写。</li><li>点击“创建任务”。进入对话后，先发送“你好，请简短回复”，确认模型能正常回答，再添加数据。</li></ol>
     ${figure('new-task', '新建任务中的名称、模块版本和模型选择', '截图中的业务模块来自示例环境，需要另行安装', 'narrow')}
     <h2 id="attach">第四步 添加数据并提问</h2><p>点击输入区左下角“＋”添加 Excel 或 CSV，或将文件拖入输入框。等待上传完成后，再输入问题。</p>
     ${figure('attachment', '输入区左下角添加附件与右下角发送按钮', '单个附件上限为 50 MiB', 'compact')}
@@ -121,6 +123,9 @@ const pages = [
     <h2 id="custom">使用自定义服务</h2><p>需要指定接口地址或模型时，选择“自定义服务”。按服务商提供的接入说明填写，不要直接照抄截图中的占位提示。</p>
     ${figure('model-custom', '自定义服务的 Provider ID Model ID API 类型和基础地址', '模型名称与 API 地址的示例占位符不代表可用配置', 'narrow')}
     ${table(['字段', '填写方式'], [['Provider ID', '该供应商的标识。同一供应商下的模型可按界面提示复用已有凭据。'], ['Model ID', '服务商要求的准确模型标识，不能用显示名称代替。'], ['Pi API 类型', '选择服务实际使用的协议：OpenAI Responses、OpenAI Chat Completions、Anthropic Messages 或 Google Generative AI。'], ['API Base URL', '填写服务商给出的 API 基础地址，不是浏览器中的聊天网页地址。'], ['API Key', '与该模型和接口对应的密钥。已有凭据时可按界面提示留空。'], ['其他字段', '显示名称可选；上下文窗口、推理和图像输入能力按服务实际支持情况填写。']])}
+    <h2 id="deepseek">示例：添加 DeepSeek 模型配置</h2><p>在“添加模型”中切换到“自定义服务”，按下表填写，再点击“保存模型”。这里添加的是调用配置，模型由 DeepSeek 提供。</p>
+    ${table(['字段', 'DeepSeek 示例'], [['Provider ID', '<code>deepseek</code>'], ['Model ID', '<code>deepseek-flash</code>'], ['Pi API 类型', 'OpenAI Chat Completions'], ['API Base URL', '<code>https://api.deepseek.com</code>'], ['API Key', '在 DeepSeek 开放平台创建的密钥。'], ['显示名称', '可填 DeepSeek Flash，便于在任务中识别。']])}
+    <p>上下文窗口、推理与图像输入按所选模型的实际能力填写。上述模型名和接口依据 <a href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noreferrer">DeepSeek 官方文档 ↗</a>（2026 年 10 月核对）；服务更新后，以官方最新说明为准。保存后创建任务，在模型列表中选择该模型并发一句简短提问验证。</p>
     <h2 id="check">保存后怎样验证</h2><ol class="steps"><li>返回设置页确认模型列表可见。</li><li>创建新任务，选择刚接入的模型。</li><li>发出简短提问，确认收到正常回复，再上传分析材料。</li></ol>
     <p>接入变更用于新任务；已有运行任务需重新启动后载入。认证失败时检查密钥和额度，接口错误时核对 Model ID、API 类型与 Base URL。</p>
     <h2 id="credential">凭据与费用</h2><p>API Key 保存在本机，工作台不会返回已有密钥原文。不要在截图、报告或问题反馈中公开密钥。使用远程服务时，请了解服务商对材料内容的处理规则与计费方式。</p>`
