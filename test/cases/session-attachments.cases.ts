@@ -49,6 +49,19 @@ caseTest('uploads multiple files into session-scoped attachment directories', as
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(cwd, '.tau', 'attachments.json'), 'utf8')).version, 1);
 });
 
+caseTest('oversized uploads drain the request and clean temporary files', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-attachment-limit-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const payload = multipart([{ name: 'large.bin', type: 'application/octet-stream', body: 'x'.repeat(50 * 1024 * 1024 + 1) }]);
+  const req = new PassThrough() as any;
+  req.headers = { 'content-type': `multipart/form-data; boundary=${payload.boundary}` };
+  const promise = saveUploadedAttachments(cwd, req, 'picker');
+  req.end(payload.body);
+  await assert.rejects(promise, (error: any) => error.status === 413 && /Please provide the file's path/.test(error.message));
+  assert.equal(req.readableEnded, true);
+  assert.equal(listSessionAttachments(cwd).length, 0);
+});
+
 caseTest('message attachment refs survive index reload and protect sent files', async (t: any) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-attachment-refs-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
