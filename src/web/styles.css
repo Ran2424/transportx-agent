@@ -766,7 +766,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .pending-attachment > img, .pending-attachment-icon { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; object-fit: cover; border-radius: 4px; }
 .pending-attachment-icon { color: var(--text-secondary); }
 .pending-attachment.is-uploading { opacity: .72; }
-.pending-attachment.is-error { border-color: var(--status-danger); }
+.pending-attachment.is-error { border-color: var(--status-danger); align-items: flex-start; }
+.pending-attachment.is-error .pending-attachment-icon { margin-top: 1px; }
+.pending-attachment-error { display: grid; gap: 2px; font-size: 11px; opacity: .72; color: inherit; min-width: 0; }
+.pending-attachment-error-line { display: block; overflow: visible; text-overflow: clip; white-space: normal; word-break: break-word; }
 .attachment-list button, .queued-prompts button { position: absolute; right: -5px; top: -5px; width: 16px; height: 16px; padding: 0; border: 1px solid var(--border-default); border-radius: 50%; color: var(--text-primary); background: var(--surface-raised); cursor: pointer; }
 .queued-prompts { display: grid; gap: 5px; padding-bottom: 7px; }
 .queued-prompts > div { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 28px 7px 9px; border-left: 2px solid var(--status-warning); background: var(--selection-bg); }

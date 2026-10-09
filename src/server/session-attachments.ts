@@ -137,9 +137,12 @@ export function attachmentFilePath(cwd: string, attachment: SessionAttachment) {
 
 function makeId() { return `att_${crypto.randomBytes(8).toString('hex')}`; }
 
-async function writeMultipartPart(handle: fsp.FileHandle, hash: crypto.Hash, chunk: Buffer, state: { size: number }) {
+async function writeMultipartPart(handle: fsp.FileHandle, hash: crypto.Hash, chunk: Buffer, state: { size: number }, limitError: { value: Error | null }) {
   state.size += chunk.length;
-  if (state.size > MAX_ATTACHMENT_BYTES) throw error(`Attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB limit`, 413);
+  if (state.size > MAX_ATTACHMENT_BYTES) {
+    if (!limitError.value) limitError.value = error(`Attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB limit\nPlease provide the file's path.`, 413);
+    return;
+  }
   hash.update(chunk);
   await handle.write(chunk);
 }
@@ -186,10 +189,10 @@ async function parseMultipart(req: IncomingMessage, tempDir: string): Promise<Mu
         const index = buffer.indexOf(dataBoundary);
         if (index < 0) {
           const safeLength = Math.max(0, buffer.length - dataBoundary.length);
-          if (safeLength && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, safeLength), current.stats);
+          if (safeLength && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, safeLength), current.stats, limitError);
           buffer = buffer.slice(safeLength); return;
         }
-        if (index && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, index), current.stats);
+        if (index && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, index), current.stats, limitError);
         await closeCurrent();
         buffer = buffer.slice(index + dataBoundary.length);
         if (buffer.subarray(0, 2).equals(Buffer.from('--'))) { state = 'done'; return; }
@@ -198,7 +201,13 @@ async function parseMultipart(req: IncomingMessage, tempDir: string): Promise<Mu
       } else return;
     }
   };
+  const limitError = { value: null as Error | null };
   for await (const chunk of req) await consume(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  if (limitError.value) {
+    const leftover = current as { handle: fsp.FileHandle; path: string } | null;
+    if (leftover) { try { await leftover.handle.close(); } catch {} try { fs.rmSync(leftover.path, { force: true }); } catch {} }
+    throw limitError.value;
+  }
   if ((state as string) === 'data' || current) throw error('Incomplete multipart upload', 400);
   if ((state as string) !== 'done') throw error('Malformed multipart upload', 400);
   return files;
