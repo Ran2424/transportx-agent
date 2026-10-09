@@ -86,6 +86,10 @@ export function assertAcceptance(plan, acceptance, sourceRevision) {
   for (const file of plan.files) if (acceptance.sha256?.[file.name] !== file.sha256) throw new Error('Acceptance does not match the artifacts');
 }
 
+export function assertBuildProvenance(runtime, version, revision, lockHash) {
+  if (runtime.product?.version !== version || runtime.source?.revision !== revision || runtime.source?.dirty !== false || runtime.source?.dependencyLockSha256 !== lockHash) throw new Error('Build provenance does not match the clean release source');
+}
+
 async function request(url, options = {}) {
   const response = await fetch(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(30_000), headers: { 'Cache-Control': 'no-cache', ...options.headers } });
   if (!response.ok && response.status !== 404) throw new Error(`Release endpoint returned HTTP ${response.status}`);
@@ -116,6 +120,8 @@ async function main() {
   const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout?.trim();
   const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: ROOT, encoding: 'utf8' });
   if (status.status !== 0 || status.stdout.trim()) throw new Error('Release source must be a clean checkout');
+  const runtime = JSON.parse(fs.readFileSync(path.join(ROOT, 'desktop/build/runtime-manifest.json'), 'utf8'));
+  assertBuildProvenance(runtime, version, revision, digest(path.join(ROOT, 'package-lock.json'), 'sha256'));
   assertAcceptance(plan, acceptance, revision);
   const toolVersion = spawnSync('ossutil', ['version'], { encoding: 'utf8' });
   if (toolVersion.status !== 0 || !/^2\./.test(toolVersion.stdout.trim())) throw new Error('ossutil 2.x is required');

@@ -241,7 +241,7 @@ caseTest('Host update preparation locks new work, refuses active work and unlock
 caseTest('OSS release validation checks architecture/hashes and publishes the manifest last', async (t: any) => {
   const { pathToFileURL } = require('node:url');
   const yaml = require('js-yaml');
-  const { createReleasePlan, publishRelease, assertAcceptance } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/publish-oss.mjs')).href);
+  const { createReleasePlan, publishRelease, assertAcceptance, assertBuildProvenance } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/publish-oss.mjs')).href);
   const { PLATFORM_PROFILES } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/platform-profile.mjs')).href);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-release-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -273,6 +273,11 @@ caseTest('OSS release validation checks architecture/hashes and publishes the ma
   await publishRelease(plan, io);
   assert.deepEqual(sequence, ['prepared', ...Array.from({ length: 7 }, () => ['package', 'verify-package']).flat(), 'manifest', 'verify-manifest', 'published']);
   const revision = 'a'.repeat(40);
+  const runtime = { product: { version: plan.version }, source: { revision, dirty: false, dependencyLockSha256: 'lock-hash' } };
+  assert.doesNotThrow(() => assertBuildProvenance(runtime, plan.version, revision, 'lock-hash'));
+  assert.throws(() => assertBuildProvenance({ ...runtime, source: { ...runtime.source, dirty: true } }, plan.version, revision, 'lock-hash'), /provenance/);
+  assert.throws(() => assertBuildProvenance(runtime, plan.version, 'b'.repeat(40), 'lock-hash'), /provenance/);
+  assert.throws(() => assertBuildProvenance(runtime, plan.version, revision, 'different-lock'), /provenance/);
   const acceptance = { version: plan.version, profile: plan.profile, sourceRevision: revision, testedFromVersion: '3.22.1', testedAt: '2026-10-09T00:00:00Z', testedBy: 'tester', signingIdentity: 'Developer ID fixture', evidence: ['upgrade.log'], signed: true, upgradePassed: true, dataPreserved: true, normalQuitDoesNotInstall: true, sha256: Object.fromEntries(plan.files.map((file: any) => [file.name, file.sha256])) };
   assert.doesNotThrow(() => assertAcceptance(plan, acceptance, revision));
   assert.throws(() => assertAcceptance(plan, acceptance, 'b'.repeat(40)), /source commit/);
