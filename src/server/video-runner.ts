@@ -19,6 +19,7 @@ const MAX_CAPTURE_BYTES = 256 * 1024;
  * flags, inputs or outputs.
  */
 export class VideoRunner {
+  get activeCount() { return this.runner.activeCount; }
   private readonly runner = new ProcessRunner();
 
   constructor(private executables: VideoExecutables) {}

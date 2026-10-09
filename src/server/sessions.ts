@@ -546,6 +546,28 @@ export class PiRpcSession {
     if (broadcast) this.manager.broadcastUpdated(this.id);
   }
 
+  async stopForUpdate() {
+    const child = this.child;
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    this.terminating = true;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const finish = (error?: Error) => {
+          clearTimeout(timer);
+          child.removeListener('exit', onExit);
+          if (error) reject(error); else resolve();
+        };
+        const onExit = () => finish();
+        const timer = setTimeout(() => finish(new Error('Pi did not stop for update')), 5000);
+        child.once('exit', onExit);
+        try { signalProcessTree(child, 'SIGTERM'); } catch (error) { finish(error as Error); }
+      });
+    } catch (error) {
+      this.terminating = false;
+      throw error;
+    }
+  }
+
   async terminate(reason = 'closed') {
     if (this.terminating) return;
     this.terminating = true;

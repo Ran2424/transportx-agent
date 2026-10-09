@@ -14,6 +14,7 @@ export type ProcessRunOptions = {
 };
 
 export class ProcessRunner {
+  get activeCount() { return this.children.size; }
   private readonly children = new Set<ChildProcess>();
 
   run(executable: Executable, args: string[], options: ProcessRunOptions): Promise<{ stdout: string; stderr: string }> {

@@ -405,6 +405,7 @@ export function App() {
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}
       overlays={<>
+        <SoftwareUpdateNotice onOpen={() => { setSettingsSection('general'); setSettingsOpen(true); }} />
         <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} onAddModel={() => openModelSetup('new')} />
         <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
@@ -416,3 +417,4 @@ export function App() {
     /></OpenDocumentContext.Provider>
   );
 }
+import { SoftwareUpdateNotice } from '../platform/settings/SoftwareUpdate';

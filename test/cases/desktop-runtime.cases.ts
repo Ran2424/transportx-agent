@@ -14,6 +14,161 @@ function digest(filePath: string) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+caseTest('desktop updates require explicit download and install, deduplicate actions and recover failures', async () => {
+  const { EventEmitter } = require('node:events');
+  const { UpdateService } = require('../../dist-desktop/update-service.js');
+  let checks = 0, downloads = 0, installs = 0, preparations = 0, recoveries = 0;
+  let busy = false;
+  const updater = new EventEmitter();
+  updater.checkForUpdates = async () => { checks += 1; updater.emit('update-available', { version: '3.23.0', releaseNotes: '<script>plain text</script>' }); };
+  updater.downloadUpdate = async () => { downloads += 1; updater.emit('download-progress', { percent: 40 }); updater.emit('update-downloaded', { version: '3.23.0', releaseNotes: 'Notes' }); };
+  updater.quitAndInstall = () => { installs += 1; };
+  const service = new UpdateService(updater, '3.22.0', true, {
+    prepare: async () => { preparations += 1; if (busy) throw Object.assign(new Error('busy'), { code: 'host_busy' }); },
+    recover: async () => { recoveries += 1; },
+    onInstalling: () => {},
+  });
+  assert.equal(updater.autoDownload, false);
+  assert.equal(updater.autoInstallOnAppQuit, false);
+  assert.equal(updater.allowDowngrade, false);
+  await service.install();
+  assert.equal(preparations, 0);
+  const check = service.check();
+  assert.equal(service.check(), check);
+  await check;
+  assert.equal(checks, 1);
+  assert.equal(downloads, 0);
+  assert.equal(service.getState().phase, 'available');
+  const download = service.download();
+  assert.equal(service.download(), download);
+  await download;
+  assert.equal(downloads, 1);
+  assert.equal(service.getState().percent, 100);
+  busy = true;
+  await service.install();
+  assert.equal(service.getState().phase, 'downloaded');
+  assert.equal(service.getState().errorCode, 'host_busy');
+  assert.equal(installs, 0);
+  assert.equal(recoveries, 1);
+  busy = false;
+  const install = service.install();
+  assert.equal(service.install(), install);
+  await install;
+  assert.equal(installs, 1);
+  updater.emit('error', new Error('https://host/token=secret'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(service.getState().errorCode, 'install_failed');
+  assert.equal(JSON.stringify(service.getState()).includes('secret'), false);
+  let notifications = 0;
+  const unsubscribe = service.subscribe(() => { notifications += 1; });
+  unsubscribe();
+  updater.emit('update-not-available', {});
+  assert.equal(notifications, 0);
+  service.dispose();
+  assert.equal(updater.listenerCount('error'), 0);
+});
+
+caseTest('update check/download failures keep the application running and support retries', async () => {
+  const { EventEmitter } = require('node:events');
+  const { UpdateService } = require('../../dist-desktop/update-service.js');
+  const updater = new EventEmitter();
+  updater.checkForUpdates = async () => { throw new Error('403'); };
+  updater.downloadUpdate = async () => { throw new Error('checksum failed'); };
+  updater.quitAndInstall = () => { throw new Error('must not install'); };
+  const service = new UpdateService(updater, '3.22.0', true, { prepare: async () => {}, recover: async () => {}, onInstalling: () => {} });
+  await service.check();
+  assert.equal(service.getState().errorCode, 'check_failed');
+  updater.checkForUpdates = async () => updater.emit('update-available', { version: '3.23.0' });
+  await service.check();
+  await service.download();
+  assert.equal(service.getState().errorCode, 'download_failed');
+  await service.install();
+  updater.downloadUpdate = async () => updater.emit('update-downloaded', { version: '3.23.0' });
+  await service.download();
+  assert.equal(service.getState().phase, 'downloaded');
+  service.dispose();
+  const disabled = new UpdateService(updater, '3.22.0', false, { prepare: async () => {}, recover: async () => {}, onInstalling: () => {} });
+  await disabled.check();
+  assert.equal(disabled.getState().phase, 'disabled');
+  disabled.dispose();
+});
+
+caseTest('update IPC rejects unrelated windows, subframes and foreign origins', () => {
+  const { assertUpdateSender } = require('../../dist-desktop/update-service.js');
+  const frame = { url: 'http://127.0.0.1:3000/' };
+  const contents = { mainFrame: frame };
+  const window = { webContents: contents };
+  const event = { sender: contents, senderFrame: frame };
+  assert.doesNotThrow(() => assertUpdateSender(event, window, 'http://127.0.0.1:3000'));
+  assert.throws(() => assertUpdateSender(event, null, 'http://127.0.0.1:3000'));
+  assert.throws(() => assertUpdateSender({ ...event, sender: {} }, window, 'http://127.0.0.1:3000'));
+  assert.throws(() => assertUpdateSender({ ...event, senderFrame: { ...frame } }, window, 'http://127.0.0.1:3000'));
+  assert.throws(() => assertUpdateSender(event, window, 'https://example.org'));
+});
+
+caseTest('Host update preparation locks new work, refuses active work and unlocks on failure/cancellation', async () => {
+  const { UpdatePreparation } = require('../../bin/update-preparation.js');
+  const gate = new UpdatePreparation();
+  const complete = gate.beginOperation();
+  await assert.rejects(gate.prepare('one', async () => {}), (error: any) => error.code === 'host_busy');
+  complete(); complete();
+  await assert.rejects(gate.prepare('one', async () => { throw new Error('save failed'); }), /save failed/);
+  const finish = gate.beginOperation(); finish();
+  let save: () => void = () => {};
+  const preparing = gate.prepare('two', () => new Promise<void>((resolve) => { save = resolve; }));
+  assert.throws(() => gate.beginOperation(), (error: any) => error.status === 503);
+  gate.cancel('wrong-token');
+  assert.throws(() => gate.beginOperation());
+  gate.cancel('two'); save();
+  await assert.rejects(preparing, /cancelled/);
+  await gate.prepare('three', async () => {});
+  gate.assertPrepared('three');
+  gate.cancel('three');
+  gate.beginOperation()();
+});
+
+caseTest('OSS release validation checks architecture/hashes and publishes the manifest last', async (t: any) => {
+  const { pathToFileURL } = require('node:url');
+  const yaml = require('js-yaml');
+  const { createReleasePlan, publishRelease } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/publish-oss.mjs')).href);
+  const { PLATFORM_PROFILES } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/platform-profile.mjs')).href);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-release-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const profile = PLATFORM_PROFILES.darwin;
+  const files = profile.update.requiredExtensions.map((extension: string) => {
+    const name = profile.update.artifactName.replace('${version}', '3.23.0').replace('${ext}', extension.slice(1));
+    const file = path.join(directory, name);
+    fs.writeFileSync(file, `signed-artifact-fixture${extension}`);
+    return { url: name, size: fs.statSync(file).size, sha512: crypto.createHash('sha512').update(fs.readFileSync(file)).digest('base64') };
+  });
+  const manifest = { version: '3.23.0', releaseNotes: 'Notes', files };
+  const manifestPath = path.join(directory, profile.update.manifest);
+  fs.writeFileSync(manifestPath, yaml.dump(manifest));
+  const plan = createReleasePlan(directory, '3.23.0', profile);
+  assert.equal(plan.files.length, 2);
+  assert.throws(() => createReleasePlan(directory, '3.24.0', profile), /mixed-version/);
+  files[0].sha512 = 'invalid'; fs.writeFileSync(manifestPath, yaml.dump(manifest));
+  assert.throws(() => createReleasePlan(directory, '3.23.0', profile), /SHA-512/);
+  files[0].sha512 = crypto.createHash('sha512').update(fs.readFileSync(path.join(directory, files[0].url))).digest('base64');
+  fs.writeFileSync(manifestPath, yaml.dump(manifest));
+  const sequence: string[] = [];
+  const io = {
+    readManifest: async () => 'version: 3.22.0\n',
+    record: async (record: any) => { sequence.push(record.stage); },
+    assertAbsent: async () => {},
+    upload: async (_file: any, mutable: boolean) => { sequence.push(mutable ? 'manifest' : 'package'); },
+    verify: async (_file: any, mutable: boolean) => { sequence.push(mutable ? 'verify-manifest' : 'verify-package'); },
+  };
+  await publishRelease(plan, io);
+  assert.deepEqual(sequence, ['prepared', 'package', 'verify-package', 'package', 'verify-package', 'manifest', 'verify-manifest', 'published']);
+  sequence.length = 0;
+  await assert.rejects(publishRelease(plan, { ...io, upload: async () => { throw new Error('upload failed'); } }), /upload failed/);
+  assert.equal(sequence.includes('manifest'), false);
+  await assert.rejects(publishRelease(plan, { ...io, verify: async () => { throw new Error('verification failed'); } }), /verification failed/);
+  assert.equal(sequence.includes('manifest'), false);
+  await assert.rejects(publishRelease(plan, { ...io, readManifest: async () => 'version: 3.24.0\n' }), /newer/);
+});
+
 caseTest('path utilities produce host-stable POSIX output', () => {
   // toPosixPath on a Windows-shaped path must always yield forward slashes.
   assert.equal(toPosixPath('a\\b\\c'), 'a/b/c');
