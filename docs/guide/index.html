@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TransportX Agent 产品介绍与使用文档。从安装、API 接入、模块与数据准备，到第一次交通分析和报告交付。">
+  <title>什么是 TransportX · TransportX 文档</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=4">
+  <script src="guide.js?v=4" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#article">跳到正文</a>
+  <header class="header">
+    <a class="brand" href="#overview" aria-label="TransportX 文档首页"><img src="assets/logo.svg" alt="" width="30" height="30"><span>TransportX <span class="brand-label">文档</span></span></a>
+    <nav class="header-nav" aria-label="顶部导航">
+      <a href="https://transportxlab.com/zh/application/transportx-agent/">产品介绍</a>
+      <a class="current" href="#overview">使用文档</a>
+      <a href="#faq">常见问题</a>
+      <a href="https://github.com/Ran2424/transportx-agent" target="_blank" rel="noreferrer">开源仓库 <span aria-hidden="true">↗</span></a>
+    </nav>
+    <div class="header-actions">
+      <button id="search-open" class="search-trigger" aria-label="搜索文档"><span>搜索文档</span><kbd>⌘ K</kbd></button>
+      <a class="download" href="#install">安装指引</a>
+      <button id="menu-toggle" class="menu-toggle" aria-controls="sidebar" aria-expanded="false">目录</button>
+    </div>
+  </header>
+  <div class="layout">
+    <aside id="sidebar" class="sidebar" aria-label="文档导航"><nav id="navigation"></nav><div class="sidebar-bottom"><span>TransportX Agent</span><span>桌面版 3.22.0</span></div></aside>
+    <main id="main"><article id="article" tabindex="-1"></article><nav id="pager" class="pager" aria-label="上一篇与下一篇"></nav><footer class="footer">适用版本 3.22.0 · 更新于 2026年10月7日<br>TransportX Agent · AGPL-3.0-only</footer></main>
+    <aside class="toc" aria-label="本页目录"><div class="toc-heading">本页目录</div><nav id="toc"></nav></aside>
+  </div>
+  <button class="sidebar-scrim" id="sidebar-scrim" aria-label="收起文档导航" hidden></button>
+  <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title">
+    <div class="dialog-header"><label id="search-title" for="search-input">搜索文档</label><button data-close="search-dialog" aria-label="关闭搜索">关闭 <kbd>Esc</kbd></button></div>
+    <input id="search-input" type="search" placeholder="搜索模型、模块、数据、地图…" autocomplete="off">
+    <div id="search-results" class="search-results" aria-live="polite"></div>
+  </dialog>
+  <dialog id="image-dialog" class="image-dialog" aria-label="图片预览"><button data-close="image-dialog" aria-label="关闭图片预览">关闭 <kbd>Esc</kbd></button><img id="image-preview" alt=""><p id="image-caption"></p></dialog>
+  <div id="status" class="sr-only" role="status"></div>
+  <noscript><p class="noscript">请启用 JavaScript 后阅读文档。该页面不连接模型服务，也不需要登录。</p></noscript>
+</body>
+</html>
