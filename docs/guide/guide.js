@@ -72,7 +72,10 @@ const pages = [
     ${prompt('请分析我上传的交通量表。先检查字段、时间范围、缺失值和交通量单位；遇到不明确的口径先问我。确认后，统计每日交通量和高峰时段，绘制趋势图，并生成一份 Markdown 简报，写明数据来源、计算方法和主要结论。')}
     <p><kbd>Enter</kbd> 发送，<kbd>Shift + Enter</kbd> 换行。Agent 提问时补充必要信息；要修改结果，继续在同一任务中说明要求。</p>
     <h2 id="result">第五步 核查并导出成果</h2><ol class="steps"><li>打开文件栏或回复中的文件链接，查看生成的图表和报告。</li><li>核对单位、时间范围、计算口径与数据来源。有引用时点击标记查看证据。</li><li>在文档画布中下载原文件，或点击“生成并下载 PDF”。</li></ol>
-    ${note('第一次使用的完成标志', '模型能回复，材料已读入，分析口径已核对，成果文件能打开。接下来可以继续 <a href="#map">地图分析</a> 或了解 <a href="#reports">报告与引用</a>。', true)}`
+    ${note('第一次使用的完成标志', '模型能回复，材料已读入，分析口径已核对，成果文件能打开。接下来可以继续 <a href="#map">地图分析</a> 或了解 <a href="#reports">报告与引用</a>。', true)}
+    <h2 id="community">内测交流</h2><p>扫描二维码加入 TransportX 内测交流群，交流使用问题、反馈建议。</p>
+    <figure class="figure community"><button type="button" class="image-open" aria-label="放大图片 TransportX 内测交流群二维码"><img src="assets/community-wechat.jpg" width="966" height="1482" alt="TransportX 内测交流群微信二维码，有效期至 2026 年 10 月 14 日" loading="lazy" decoding="async"></button><figcaption>二维码有效期至 2026 年 10 月 14 日 · 点击图片放大</figcaption></figure>
+    <p>二维码过期后，请通过项目 Issues 联系维护者获取新入口。</p>`
   },
   {
     id: 'workbench', group: '开始', title: '认识工作台', description: '了解侧栏、对话、文件与画布分别用来做什么。',
@@ -175,10 +178,7 @@ const pages = [
     <details class="faq-item"><summary>看不到地图、报告或文件怎么办？</summary><p>确认选择了正确任务，并打开顶部文件栏或画布按钮。Agent 必须先生成文件或发布地图资源，对应内容才会出现。</p></details>
     <details class="faq-item"><summary>报告无法导出 PDF 怎么办？</summary><p>先检查 Markdown 报告和图片是否正常预览，再重试“生成并下载 PDF”。仍失败时可先下载原文件，并保留错误信息排查。</p></details>
     <details class="faq-item"><summary>本地应用可以完全离线使用吗？</summary><p>取决于所用模型和资源。远程 API、在线底图或其他外部服务需要联网；本机保存记录不代表所有分析都不访问网络。</p></details>
-    <h2 id="feedback">反馈问题时提供什么</h2><p>说明应用版本、操作系统、操作步骤和错误提示。截图中隐藏 API Key 与敏感材料；不要上传 auth.json。可通过 <a href="https://github.com/Ran2424/transportx-agent/issues" target="_blank" rel="noreferrer">项目 Issues ↗</a> 反馈可复现的问题。</p>
-    <h2 id="community">内测交流</h2><p>扫描二维码加入 TransportX 内测交流群，交流使用问题、反馈建议。</p>
-    <figure class="figure community"><button type="button" class="image-open" aria-label="放大图片 TransportX 内测交流群二维码"><img src="assets/community-wechat.jpg" width="966" height="1482" alt="TransportX 内测交流群微信二维码，有效期至 2026 年 10 月 14 日" loading="lazy" decoding="async"></button><figcaption>二维码有效期至 2026 年 10 月 14 日 · 点击图片放大</figcaption></figure>
-    <p>二维码过期后，请通过项目 Issues 联系维护者获取新入口。</p>`
+    <h2 id="feedback">反馈问题时提供什么</h2><p>说明应用版本、操作系统、操作步骤和错误提示。截图中隐藏 API Key 与敏感材料；不要上传 auth.json。可通过 <a href="https://github.com/Ran2424/transportx-agent/issues" target="_blank" rel="noreferrer">项目 Issues ↗</a> 反馈可复现的问题。</p>`
   }
 ];
 
