@@ -434,6 +434,9 @@ function attachDesktopUpdateChannel() {
           setImmediate(() => process.exit(0));
         });
         server.closeIdleConnections();
+        // Writes have settled under the gate. Remaining connections can only
+        // be static/resource reads and must not delay the confirmed shutdown.
+        server.closeAllConnections();
       } catch (error) {
         updatePreparation.cancel(id);
         channel.send({ type: 'transportx-update-stopped', id, ok: false, code: (error as { code?: string }).code === 'host_busy' ? 'host_busy' : 'prepare_failed' });

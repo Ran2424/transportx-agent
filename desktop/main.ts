@@ -7,6 +7,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { AgentHostSupervisor } from './agent-host-supervisor.js';
 import { resolveDesktopPaths, resolveDesktopUserDataDir } from './app-paths.js';
 import { UpdateService, assertUpdateSender } from './update-service.js';
+import { restoreCachedUpdate } from './update-cache.js';
 
 let mainWindow: BrowserWindowType | null = null;
 let supervisor: AgentHostSupervisor | null = null;
@@ -161,6 +162,7 @@ else {
     const { autoUpdater } = require('electron-updater');
     // Updater diagnostics can include complete URLs. Log only our state codes.
     autoUpdater.logger = { info() {}, warn() {}, error() {}, debug() {} };
+    autoUpdater.disableWebInstaller = true;
     updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, {
       prepare: async () => {
         if (!supervisor) throw new Error('Agent Host is unavailable');
@@ -177,7 +179,7 @@ else {
         }
       },
       onInstalling: () => { installingUpdate = true; },
-    });
+    }, () => restoreCachedUpdate(autoUpdater));
     let loggedState = '';
     updateService.subscribe((state) => {
       const key = `${state.phase}:${state.errorCode || ''}`;

@@ -25,6 +25,7 @@ type SupervisorOptions = {
   paths: DesktopPaths;
   startupTimeoutMs?: number;
   shutdownTimeoutMs?: number;
+  updatePreparationTimeoutMs?: number;
   onUnexpectedExit?: (message: string) => void;
   renderPdf?: (title: string, html: string) => Promise<Buffer>;
 };
@@ -243,7 +244,7 @@ export class AgentHostSupervisor {
           exited = true;
           confirm();
         };
-        const timeout = setTimeout(() => finish(new Error('Host update preparation timed out')), 15_000);
+        const timeout = setTimeout(() => finish(new Error('Host update preparation timed out')), this.options.updatePreparationTimeoutMs ?? 15_000);
         child.on('message', onMessage);
         const removeExit = onceExit(child, onExit);
         try { sendMessage(child, { type: 'transportx-update-stop', id }); } catch (error) { finish(error as Error); }

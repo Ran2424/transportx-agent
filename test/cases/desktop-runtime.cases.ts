@@ -106,6 +106,117 @@ caseTest('update IPC rejects unrelated windows, subframes and foreign origins', 
   assert.throws(() => assertUpdateSender(event, window, 'https://example.org'));
 });
 
+caseTest('cache restoration uses the pinned updater verifier and never downloads on a miss', async (t: any) => {
+  const { AppUpdater } = require('electron-updater/out/AppUpdater.js');
+  const { DownloadedUpdateHelper } = require('electron-updater/out/DownloadedUpdateHelper.js');
+  const { restoreCachedUpdate } = require('../../dist-desktop/update-cache.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-update-cache-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const body = Buffer.from('verified cached installer');
+  const sha512 = crypto.createHash('sha512').update(body).digest('base64');
+  const info = { version: '3.23.0', files: [{ url: 'installer.zip', size: body.length, sha512 }] };
+  let networkDownloads = 0;
+  class CacheTestUpdater extends AppUpdater {
+    constructor() {
+      super(null, { version: '3.22.0', name: 'TransportX', isPackaged: true });
+      this.logger = { info() {}, warn() {}, error() {} };
+      this.downloadedUpdateHelper = new DownloadedUpdateHelper(root);
+      this.updateInfoAndProvider = { info, provider: {} };
+    }
+    getOrCreateDownloadHelper() { return Promise.resolve(this.downloadedUpdateHelper); }
+    doDownloadUpdate(options: any) {
+      return this.executeDownload({ fileExtension: 'zip', fileInfo: { url: new URL('https://updates.test/installer.zip'), info: info.files[0] }, downloadUpdateOptions: options,
+        task: async (destination: string) => { networkDownloads += 1; fs.writeFileSync(destination, body); },
+        done: async (event: any) => this.dispatchUpdateDownloaded(event),
+      });
+    }
+  }
+  const pending = path.join(root, 'pending');
+  fs.mkdirSync(pending);
+  fs.writeFileSync(path.join(pending, 'installer.zip'), body);
+  fs.writeFileSync(path.join(pending, 'update-info.json'), JSON.stringify({ fileName: 'installer.zip', sha512 }));
+  const updater = new CacheTestUpdater();
+  let restored = 0;
+  updater.on('update-downloaded', () => { restored += 1; });
+  const execute = updater.executeDownload;
+  assert.equal(await restoreCachedUpdate(updater), true);
+  assert.equal(restored, 1);
+  assert.equal(networkDownloads, 0);
+  assert.equal(updater.executeDownload, execute);
+  // A new launch must rehash the file, even if the previous launch accepted it.
+  fs.writeFileSync(path.join(pending, 'installer.zip'), 'corrupt');
+  const restarted = new CacheTestUpdater();
+  assert.equal(await restoreCachedUpdate(restarted), false);
+  assert.equal(networkDownloads, 0);
+  assert.equal(await restoreCachedUpdate(new CacheTestUpdater()), false);
+  assert.equal(networkDownloads, 0);
+  // A subsequent explicit download still uses the original network task.
+  await restarted.downloadUpdate();
+  assert.equal(networkDownloads, 1);
+});
+
+caseTest('checking restores verified downloaded state while a cache miss keeps user download consent', async () => {
+  const { EventEmitter } = require('node:events');
+  const { UpdateService } = require('../../dist-desktop/update-service.js');
+  const updater = new EventEmitter();
+  updater.checkForUpdates = async () => updater.emit('update-available', { version: '3.23.0' });
+  updater.downloadUpdate = async () => { throw new Error('Must not automatically download'); };
+  updater.quitAndInstall = () => {};
+  const installation = { prepare: async () => {}, recover: async () => {}, onInstalling() {} };
+  const restored = new UpdateService(updater, '3.22.0', true, installation, async () => { updater.emit('update-downloaded', { version: '3.23.0' }); return true; });
+  await restored.check();
+  assert.equal(restored.getState().phase, 'downloaded');
+  assert.equal(restored.getState().currentVersion, '3.22.0');
+  restored.dispose();
+  const missed = new UpdateService(updater, '3.22.0', true, installation, async () => false);
+  await missed.check();
+  assert.equal(missed.getState().phase, 'available');
+  missed.dispose();
+});
+
+caseTest('supervisor requires acknowledgement and exit, cancels timed-out preparation and can restart', async () => {
+  const { EventEmitter } = require('node:events');
+  const { AgentHostSupervisor } = require('../../dist-desktop/agent-host-supervisor.js');
+  const make = (reply: (child: any, message: any) => void) => {
+    const sent: any[] = [];
+    const child = new EventEmitter();
+    child.postMessage = (message: any) => { sent.push(message); reply(child, message); };
+    child.kill = () => { throw new Error('Update must not force termination'); };
+    const supervisor = new AgentHostSupervisor({ paths: {}, updatePreparationTimeoutMs: 20 });
+    supervisor.child = child;
+    child.on('exit', () => { supervisor.child = null; });
+    return { child, supervisor, sent };
+  };
+  for (const exitFirst of [false, true]) {
+    const { supervisor } = make((child, message) => {
+      if (message.type !== 'transportx-update-stop') return;
+      setImmediate(() => {
+        if (exitFirst) child.emit('exit', 0);
+        child.emit('message', { type: 'transportx-update-stopped', id: message.id, ok: true });
+        if (!exitFirst) child.emit('exit', 0);
+      });
+    });
+    await supervisor.stopForUpdate();
+    let starts = 0;
+    supervisor.start = async () => { starts += 1; return 'http://127.0.0.1:1234'; };
+    assert.equal(await supervisor.recoverAfterUpdate(), 'http://127.0.0.1:1234');
+    assert.equal(starts, 1);
+  }
+  const busy = make((child, message) => {
+    if (message.type === 'transportx-update-stop') setImmediate(() => child.emit('message', { type: 'transportx-update-stopped', id: message.id, ok: false, code: 'host_busy' }));
+  });
+  await assert.rejects(busy.supervisor.stopForUpdate(), (error: any) => error.code === 'host_busy');
+  assert.equal(busy.supervisor.stopping, false);
+  assert.equal(await busy.supervisor.recoverAfterUpdate(), null);
+  const timedOut = make(() => {});
+  await assert.rejects(timedOut.supervisor.stopForUpdate(), /timed out/);
+  assert.equal(timedOut.sent.at(-1).type, 'transportx-update-cancel');
+  assert.equal(timedOut.supervisor.stopping, false);
+  assert.equal(timedOut.child.listenerCount('message'), 0);
+  const noConfirmation = make((child, message) => { if (message.type === 'transportx-update-stop') setImmediate(() => child.emit('exit', 0)); });
+  await assert.rejects(noConfirmation.supervisor.stopForUpdate(), /timed out/);
+});
+
 caseTest('Host update preparation locks new work, refuses active work and unlocks on failure/cancellation', async () => {
   const { UpdatePreparation } = require('../../bin/update-preparation.js');
   const gate = new UpdatePreparation();
@@ -130,7 +241,7 @@ caseTest('Host update preparation locks new work, refuses active work and unlock
 caseTest('OSS release validation checks architecture/hashes and publishes the manifest last', async (t: any) => {
   const { pathToFileURL } = require('node:url');
   const yaml = require('js-yaml');
-  const { createReleasePlan, publishRelease } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/publish-oss.mjs')).href);
+  const { createReleasePlan, publishRelease, assertAcceptance } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/publish-oss.mjs')).href);
   const { PLATFORM_PROFILES } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/platform-profile.mjs')).href);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-release-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -160,7 +271,14 @@ caseTest('OSS release validation checks architecture/hashes and publishes the ma
     verify: async (_file: any, mutable: boolean) => { sequence.push(mutable ? 'verify-manifest' : 'verify-package'); },
   };
   await publishRelease(plan, io);
-  assert.deepEqual(sequence, ['prepared', 'package', 'verify-package', 'package', 'verify-package', 'manifest', 'verify-manifest', 'published']);
+  assert.deepEqual(sequence, ['prepared', ...Array.from({ length: 7 }, () => ['package', 'verify-package']).flat(), 'manifest', 'verify-manifest', 'published']);
+  const revision = 'a'.repeat(40);
+  const acceptance = { version: plan.version, profile: plan.profile, sourceRevision: revision, testedFromVersion: '3.22.1', testedAt: '2026-10-09T00:00:00Z', testedBy: 'tester', signingIdentity: 'Developer ID fixture', evidence: ['upgrade.log'], signed: true, upgradePassed: true, dataPreserved: true, normalQuitDoesNotInstall: true, sha256: Object.fromEntries(plan.files.map((file: any) => [file.name, file.sha256])) };
+  assert.doesNotThrow(() => assertAcceptance(plan, acceptance, revision));
+  assert.throws(() => assertAcceptance(plan, acceptance, 'b'.repeat(40)), /source commit/);
+  assert.throws(() => assertAcceptance(plan, { ...acceptance, sha256: {} }, revision), /artifacts/);
+  assert.throws(() => assertAcceptance(plan, { ...acceptance, evidence: [] }, revision), /evidence/);
+  assert.throws(() => assertAcceptance(plan, { ...acceptance, testedFromVersion: '3.24.0' }, revision), /previous version/);
   sequence.length = 0;
   await assert.rejects(publishRelease(plan, { ...io, upload: async () => { throw new Error('upload failed'); } }), /upload failed/);
   assert.equal(sequence.includes('manifest'), false);

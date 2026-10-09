@@ -25,7 +25,7 @@ export class UpdateService {
   private installTimeout: ReturnType<typeof setTimeout> | null = null;
   private recovery: Promise<void> | null = null;
 
-  constructor(private updater: Updater, currentVersion: string, enabled: boolean, private installation: Installation) {
+  constructor(private updater: Updater, currentVersion: string, enabled: boolean, private installation: Installation, private restoreCache?: () => Promise<boolean>) {
     this.state = { currentVersion, phase: enabled ? 'idle' : 'disabled' };
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
@@ -64,7 +64,10 @@ export class UpdateService {
     if (!['idle', 'up-to-date', 'available', 'error'].includes(this.state.phase)) return Promise.resolve(this.getState());
     return this.run(async () => {
       this.publish({ phase: 'checking', errorCode: undefined, percent: undefined });
-      try { await this.updater.checkForUpdates(); }
+      try {
+        await this.updater.checkForUpdates();
+        if (this.state.phase === 'available') await this.restoreCache?.();
+      }
       catch { this.fail('check_failed'); }
     });
   }
