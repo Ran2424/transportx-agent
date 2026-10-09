@@ -5,6 +5,7 @@ import { appKernel, reconnectBrowserApplication } from './composition-root';
 import { AppShell } from './AppShell';
 import { useConversationState, useExtensionUiState, useRuntimeState, useSessionState, useToolExecutionState } from './store-hooks';
 import { Header } from '../components/shell/Header';
+import { SoftwareUpdateNotice } from '../platform/settings/SoftwareUpdate';
 import { ConfirmationDialog } from '../components/ui/confirmation-dialog';
 import { CommandPalette, type CommandItem } from '../platform/commands/CommandPalette';
 import { ConversationStage } from '../platform/conversation/ConversationStage';
@@ -417,4 +418,3 @@ export function App() {
     /></OpenDocumentContext.Provider>
   );
 }
-import { SoftwareUpdateNotice } from '../platform/settings/SoftwareUpdate';
