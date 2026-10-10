@@ -1,8 +1,8 @@
 # TransportX Agent 架构
 
-- 产品版本：3.2.0
+- 产品版本：3.22.0 + Unreleased 架构整改
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-09-18
+- 更新日期：2026-10-10
 - 发布 Profile：macOS arm64（DMG）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
@@ -71,7 +71,7 @@ pi-tau-traffic/
 | Web 开发 | `start.sh` → `bin/tau.js` → Host；可另启 Vite | 脚本默认 `127.0.0.1:3000`；Vite `5173` 代理 API/WS；Pi 配置默认 `~/.pi/agent/` |
 | CLI | `bin/transportx.js` → 启动 `bin/tau.js` → HTTP/WS 客户端 | 显式 `127.0.0.1:0`，随机凭据；Pi 配置默认 TransportX 用户目录，可覆盖 |
 
-直接运行 `bin/tau.js` 且无参数、环境变量或设置覆盖时，代码默认监听 `0.0.0.0:3001`；不能把桌面回环地址规则泛化到所有启动方式。参见 [config.ts](../src/server/config.ts)、[start.sh](../start.sh)、[transportx.ts](../src/server/transportx.ts)。
+直接运行 `bin/tau.js` 默认监听 `127.0.0.1:3001`。非回环监听必须显式开启 remote 并配置、启用认证；监听期间不能关闭认证。参见 [config.ts](../src/server/config.ts)、[start.sh](../start.sh)、[transportx.ts](../src/server/transportx.ts)。
 
 ### 2.4 Electron Main
 
@@ -216,6 +216,14 @@ sequenceDiagram
 
 磁盘、JSON 和跨平台协议中的相对路径一律采用 POSIX `/`；路径边界在 Node 中通过 `path.relative` 和统一的 `isWithin` 判定，不使用字符串前缀比较。
 
+### 4.1 消息、恢复与持久边界
+
+- 附件、Geo、Canvas 随 PendingMessage 交付；拒绝 ACK 按命令身份移除，Pi 用户消息按完整富化文本匹配。Pi 0.80.10 的消息事件不携带 RPC ID；外部 input transform 不属于已验证的关联保证。
+- 可靠命令的 pending/unknown 记录不会因 TTL 淘汰。完成记录保留 10 分钟或 200 条容量范围，Host 重启不保证去重；未知结果禁止自动重发，不提供无条件 exactly-once。
+- Snapshot 表示当前分支及 live overlay。每次 Host 启动生成 UUID，WS 事件递增 revision；客户端以请求代次和连接代次拒绝迟到结果，回放快照读取期间更新的事件。缓冲超限拒绝快照并安排后续校正。
+- close、resume、历史 delete 共用 Writer 门禁；删除必须等待 Writer 和受管作业停止，停止失败保留文件。Host 最多 32 会话、4 受管作业/分析进程，每会话最多 2 作业；这些限制不覆盖 Pi bash 自行启动的全部进程。
+- 同一 Agent 目录只允许一个 Host，租约在异常退出后保留，恢复前需停止旧 Writer；settings/models/附件索引损坏拒绝覆盖并保全证据。资源策略、恢复步骤与兼容范围见 [整改 ADR](ADR-架构整改边界.md)。
+
 ## 5. Module 与资产模型
 
 ### 5.1 名词与位置
@@ -280,7 +288,7 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
 | 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
 
-内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
+配置与路径读取位于 config；Registry、Installer、AssetResolver 与 Assembler 的实例装配位于 [platform-composition.ts](../src/server/platform-composition.ts)。server-main 是组合根，向 Manager 注入已有装配器、工作区创建、启动函数、spawn 与服务 endpoint；sessions 不再在 import 时创建全局 Manager。内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
 
 ### 5.4 从包到会话
 
@@ -327,7 +335,7 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 2. 可靠命令使用 HTTP RPC，WebSocket 是事件通道，不接受副作用操作。
 3. Renderer 隔离 Node 与 Electron；Preload 能力按参数和调用方严格限制。
 4. Session cwd 与冻结计划中的资产根目录共同限定资源服务的访问范围；读取前验证真实路径、文件类型、哈希或资源清单。Pi 基础工具与可信 Module 代码并不因此获得操作系统级隔离。
-5. API Key 不返回 Renderer；模型配置与密钥分离并采用原子写入，密钥文件仅允许当前用户读写。
+5. API Key 不返回 Renderer；模型配置采用原子替换及有效备份；密钥由 Pi AuthStorage 管理，不能将 models 的原子写入保证推广到 auth.json。
 6. 基础打包运行时在桌面启动前校验相对路径与 SHA-256；Module Installer 对 Native Runtime 执行路径和 SHA-256 校验，并拒绝不匹配当前平台/架构的能力模块。
 7. PDF 使用禁用 JavaScript 的临时隐藏窗口，阻断 `about:`/`data:` 以外的请求。
 
@@ -335,7 +343,7 @@ Module 是本机可信代码与数据包，而非操作系统级沙箱插件。�
 
 ## 8. 打包与平台 Profile
 
-`desktop/scripts/platform-profile.mjs` 是发布平台事实的唯一来源：Python 入口与架构、ffmpeg 名称/权限/架构检查、签名要求、安装器类型与冒烟能力均在此声明。
+`desktop/scripts/platform-profile.mjs` 是平台事实的唯一来源：Host 进程组/终止、打开命令、数据目录及桌面启动方式由其生成 `bin/host-platform.json`，桌面与 Server 共用该产物；Python 入口与架构、ffmpeg 名称/权限/架构检查、签名要求、安装器类型与冒烟能力均在此声明。
 
 ```text
 desktop/electron-builder.yml
@@ -376,7 +384,7 @@ Geo runtime ────────────────> contracts + MapLib
 
 ## 10. 场景验证
 
-测试入口按领域场景划分；`test/suites/` 是 Node 测试门禁，最多注册 40 个套件，`test/cases/` 只承载可合并的细粒度场景，不单独注册测试入口。
+测试使用原生 Node subtest 显示场景名、skip/todo 和失败。套件 after 钩子由 Node 在所有子测试结束后执行。测试入口按领域场景划分；`test/suites/` 是 Node 测试门禁，最多注册 40 个套件，`test/cases/` 只承载可合并的细粒度场景，不单独注册测试入口。
 
 | 入口 | 场景 | 运行条件 |
 |---|---|---|
@@ -385,6 +393,8 @@ Geo runtime ────────────────> contracts + MapLib
 | `npm run test:web` | 浏览器中创建交通任务、获得分析、发布地图 | 本机 Chrome + fake Pi |
 | `npm run test:platform:macos` | Electron、Agent Host、PDF、内置 Python、退出清理 | macOS；可用 `TRANSPORTX_PACKAGED_APP` 验证 DMG/.app |
 | `npm run test:platform:windows` | Windows 未安装应用启动，或 NSIS 安装/启动/卸载/数据保留 | Windows x64；设置 `TRANSPORTX_PACKAGED_APP` 或 `TRANSPORTX_WINDOWS_INSTALLER` |
+
+测试证据与未完成的外部验收见 [执行计划](架构整改执行计划.md)。默认套件、fake Pi 浏览器、真实 Pi + 本地模拟 Provider、目标 OS 实机和签名发布各自证明不同边界。
 
 此外，`npm run typecheck` 检查全部 TypeScript 项目，`npm run test:pi-smoke` 是显式运行的真实 Pi RPC 冒烟。
 ## 开发与发布记录

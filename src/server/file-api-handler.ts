@@ -1,6 +1,6 @@
+import { openNativeTarget } from './host-platform.js';
 import fs = require('node:fs');
 import path = require('node:path');
-import { execFile, spawn } from 'node:child_process';
 
 import { containedFile } from './util/resource-path.js';
 import { resourceSecurityHeaders } from './resource-policy.js';
@@ -170,8 +170,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
     const resolved = path.resolve(options.expandHome(filePath));
     if (!fs.existsSync(resolved)) throw new Error('File not found');
-    if (process.platform === 'win32') spawn('explorer.exe', [resolved], { detached: true, stdio: 'ignore' }).unref();
-    else execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [resolved], () => {});
+    await openNativeTarget(resolved);
   };
   return { serveFiles, serveFileContent, serveResources, servePreview, serveRawFile, resolveOpen, openNative, resolveExportedSessionPath };
 }

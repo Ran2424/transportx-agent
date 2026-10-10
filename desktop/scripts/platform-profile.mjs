@@ -119,6 +119,7 @@ const RELEASE_PROFILE = {
     productExeName: 'TransportX Agent.exe',
     uninstallName: 'Uninstall TransportX Agent.exe',
     installerSilentArgs: (installDir) => ['/S', `/D=${installDir}`],
+    uninstallerSilentArgs: ['/S'],
     requiresFfmpeg: false,
     supportsInstallerSmoke: true,
     notes: 'NSIS silent install/launch/uninstall validated by test:windows-installer-smoke.',
@@ -160,3 +161,17 @@ export const PLATFORM_PROFILES = Object.freeze({
     }),
   }),
 });
+
+// Runtime operations are also generated into bin/host-platform.json. Linux
+// keeps its existing Web development behavior; it is not a desktop release.
+export const HOST_PLATFORM_OPERATIONS = Object.freeze({
+  darwin: { detached: true, tree: 'process-group', openCommand: 'open', detachedOpen: false, utilityHost: true, insetTitleBar: true, dataRoot: { env: null, fallback: [], parts: ['.transportx', 'traffic-agent'] }, packaged: { executableParts: ['Contents', 'MacOS', RELEASE_PROFILE.darwin.productExeBasename], resourcesParts: ['Contents', 'Resources'], executableExtension: '' } },
+  win32: { detached: false, tree: 'taskkill', treeCommand: 'taskkill', treeArgs: ['/pid', '/T'], treeForceArg: '/F', openCommand: 'explorer.exe', detachedOpen: true, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'APPDATA', fallback: ['AppData', 'Roaming'], parts: ['TransportX', 'traffic-agent'] }, packaged: { executableParts: [RELEASE_PROFILE.win.productExeName], resourcesParts: ['resources'], executableExtension: RELEASE_PROFILE.win.productExeSuffix } },
+  linux: { desktopDataRoot: 'electron', detached: true, tree: 'process-group', openCommand: 'xdg-open', detachedOpen: false, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'XDG_CONFIG_HOME', fallback: ['.config'], parts: ['transportx-traffic-agent'] }, packaged: null },
+});
+
+export function hostPlatformOperations(platform = process.platform) {
+  const profile = HOST_PLATFORM_OPERATIONS[platform];
+  if (!profile) throw new Error(`Host operations missing for ${platform}`);
+  return profile;
+}

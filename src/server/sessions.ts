@@ -1,17 +1,12 @@
+import { boundedDiagnostics } from '../contracts/diagnostics.js';
+import { hostPlatform } from './host-platform.js';
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
 const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
-import {
-  DEFAULT_DOMAIN_ID,
-  PI_COMMAND,
-  SESSION_ASSEMBLER,
-  sessionAssemblerForProfile,
-} from './config.js';
 import { normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import type { SessionService } from './session-service.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
@@ -20,9 +15,9 @@ import { TimingMetricsStore } from './timing-metrics.js';
 import { PiRpcTransport } from './pi-rpc-transport.js';
 import { retryState, classifyFailure, messageOutcome, type RunOutcome, type RetryState } from '../contracts/run-feedback.js';
 import { signalProcessTree, terminateProcessTree } from './process-tree.js';
-import type { ResolvedSessionPlan } from './session-assembly.js';
-import { buildSessionPiLaunch } from './session-pi-launch.js';
-import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
+import type { ResolvedSessionPlan, SessionAssembler } from './session-assembly.js';
+import type { SessionPiLaunchInput } from './session-pi-launch.js';
+import { makeSessionId } from './session-workspace.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
@@ -90,16 +85,7 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
   return latest;
 }
 
-let citationEndpoint = process.env.TAU_CITATION_ENDPOINT || '';
-export function setCitationEndpoint(value: string) { citationEndpoint = value; }
-let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
-export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
-let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
-export function setVideoEndpoint(value: string) { videoEndpoint = value; }
-let geoEndpoint = process.env.TAU_GEO_ENDPOINT || '';
-export function setGeoEndpoint(value: string) { geoEndpoint = value; }
-let canvasEndpoint = process.env.TAU_CANVAS_ENDPOINT || '';
-export function setCanvasEndpoint(value: string) { canvasEndpoint = value; }
+
 
 export class PiRpcSession {
   manager: LiveSessionManager;
@@ -205,12 +191,14 @@ export class PiRpcSession {
     return this.projection.entries;
   }
 
+  private readonly diagnose = boundedDiagnostics();
+
   async start() {
     if (!fs.existsSync(this.cwd) || !fs.statSync(this.cwd).isDirectory()) {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
     if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
-    const launch = buildSessionPiLaunch({
+    const launch = this.manager.runtime.launch({
       cwd: this.cwd,
       sessionId: this.id,
       sessionFile: this.sessionFile,
@@ -218,13 +206,13 @@ export class PiRpcSession {
       appendSystemPrompt: this.appendSystemPrompt,
       resolvedSessionPlan: this.resolvedSessionPlan,
       serviceTokens: this.serviceTokens,
-      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint, geo: geoEndpoint, canvas: canvasEndpoint },
+      endpoints: this.manager.runtime.endpoints,
     });
-    const spawnFn: SpawnFn = _spawnPiForTest || spawn;
-    const child = spawnFn(PI_COMMAND, launch.args, {
+    const spawnFn = this.manager.runtime.spawn;
+    const child = spawnFn(this.manager.runtime.command, launch.args, {
       cwd: this.cwd,
       env: launch.env,
-      detached: process.platform !== 'win32',
+      detached: hostPlatform.detached,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.child = child;
@@ -234,7 +222,7 @@ export class PiRpcSession {
     child.stdout!.on('data', (chunk: string) => this.handleStdout(chunk));
     child.stderr!.setEncoding('utf8');
     child.stderr!.on('data', (chunk: string) => {
-      for (const line of chunk.split(/\r?\n/).filter(Boolean)) console.error(`[Pi ${this.id}] ${line}`);
+      this.diagnose('pi_stderr', { sessionId: this.id, bytes: Buffer.byteLength(chunk) });
     });
     child.on('error', (err: Error) => this.handleExit(null, null, err));
     child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => this.handleExit(code, signal));
@@ -301,7 +289,7 @@ export class PiRpcSession {
     const trimmed = line.trim();
     if (!trimmed) return;
     let msg;
-    try { msg = JSON.parse(trimmed); } catch { console.log(`[Pi ${this.id}] ${trimmed}`); return; }
+    try { msg = JSON.parse(trimmed); } catch { this.diagnose('pi_stdout_non_json', { sessionId: this.id, bytes: Buffer.byteLength(trimmed) }); return; }
     if (msg.type === 'response') {
       this.handleResponse(msg);
       return;
@@ -589,6 +577,17 @@ function existingCitationRegistryId(cwd: string) {
   catch { return null; }
 }
 
+export type SessionManagerDependencies = {
+  defaultDomainId: string;
+  assembler: Pick<SessionAssembler, 'assemble' | 'save' | 'load'>;
+  assemblerForProfile(profile: SessionProfileV1): Pick<SessionAssembler, 'assemble' | 'save' | 'load'>;
+  createWorkspace(cwd?: string, name?: string | null): string;
+  command: string;
+  spawn: SpawnFn;
+  endpoints: Record<SessionService, string>;
+  launch(input: SessionPiLaunchInput): { args: string[]; env: NodeJS.ProcessEnv };
+};
+
 export class LiveSessionManager {
   sessions: Map<string, PiRpcSession>;
   clients: Set<LiveClient>;
@@ -598,13 +597,19 @@ export class LiveSessionManager {
   liveMetadataSignatures: Map<string, string>;
   private closingSessions = new Map<string, Promise<boolean>>();
   private historyDeletes = new Map<string, Promise<void>>();
-  private jobs = new Map<string, Set<{ controller: AbortController; completion: Promise<unknown> }>>();
+  private jobs = new Map<string, Set<{ id: string; controller: AbortController; completion: Promise<unknown> }>>();
+  private readonly diagnose = boundedDiagnostics();
   private startingSessions = 0;
   private readonly hostGeneration = crypto.randomUUID();
   private revision = 0;
   clock() { return { hostGeneration: this.hostGeneration, revision: this.revision }; }
 
-  constructor() {
+  get runtime() {
+    if (!this.dependencies) throw new Error('Session runtime dependencies were not provided');
+    return this.dependencies;
+  }
+
+  constructor(private readonly dependencies?: SessionManagerDependencies) {
     this.sessions = new Map();
     this.clients = new Set();
     this.pendingResumes = new Map();
@@ -679,12 +684,15 @@ export class LiveSessionManager {
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
-    const job = { controller, completion: Promise.resolve() as Promise<unknown> };
+    const job = { id: crypto.randomUUID(), controller, completion: Promise.resolve() as Promise<unknown> };
     owned.add(job);
     this.jobs.set(id, owned);
     const completion = Promise.resolve().then(() => {
       if (controller.signal.aborted) throw new Error('Analysis cancelled');
       return execute(controller.signal);
+    }).catch((error) => {
+      this.diagnose('analysis_job_failed', { sessionId: id, jobId: job.id });
+      throw error;
     }).finally(() => {
       signal?.removeEventListener('abort', abort);
       owned.delete(job);
@@ -704,16 +712,19 @@ export class LiveSessionManager {
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('Analysis jobs did not stop'), { code: 'process_stop_unconfirmed', status: 503 })), 5500); }),
       ]);
       const failed = results.find((result) => result.status === 'rejected' && result.reason?.code === 'process_stop_unconfirmed');
-      if (failed?.status === 'rejected') throw failed.reason;
+      if (failed?.status === 'rejected') {
+        for (const job of jobs) this.diagnose('job_stop_unconfirmed', { sessionId: id, jobId: job.id });
+        throw failed.reason;
+      }
     } finally { clearTimeout(timer); }
   }
-  async create({ cwd, model, sessionName, profile, domainId = DEFAULT_DOMAIN_ID, appendSystemPrompt = '' }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string }) {
+  async create({ cwd, model, sessionName, profile, domainId = this.runtime.defaultDomainId, appendSystemPrompt = '' }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string }) {
     if (!model?.trim()) throw new Error('请先添加并选择模型');
     if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
     this.startingSessions++;
     try {
-    const resolved = createSessionWorkingDirectory(cwd, sessionName);
-    const assembler = profile ? sessionAssemblerForProfile(profile) : SESSION_ASSEMBLER;
+    const resolved = this.runtime.createWorkspace(cwd, sessionName);
+    const assembler = profile ? this.runtime.assemblerForProfile(profile) : this.runtime.assembler;
     const resolvedSessionPlan = assembler.assemble(domainId, resolved, profile);
     assembler.save(resolvedSessionPlan);
     const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), appendSystemPrompt, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
@@ -748,11 +759,11 @@ export class LiveSessionManager {
         const migratedPlanPath = path.join(cwd, '.tau', 'resolved-session-plan.v3.json');
         let resolvedSessionPlan: ResolvedSessionPlan;
         try {
-          resolvedSessionPlan = SESSION_ASSEMBLER.load(cwd, fs.existsSync(migratedPlanPath) ? 'resolved-session-plan.v3.json' : 'resolved-session-plan.json');
+          resolvedSessionPlan = this.runtime.assembler.load(cwd, fs.existsSync(migratedPlanPath) ? 'resolved-session-plan.v3.json' : 'resolved-session-plan.json');
         } catch (error) {
           if (!useCurrentConfiguration || !(error instanceof Error) || !('code' in error) || error.code !== 'legacy_plan_requires_confirmation') throw error;
-          resolvedSessionPlan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, cwd);
-          SESSION_ASSEMBLER.save(resolvedSessionPlan, 'resolved-session-plan.v3.json');
+          resolvedSessionPlan = this.runtime.assembler.assemble(this.runtime.defaultDomainId, cwd);
+          this.runtime.assembler.save(resolvedSessionPlan, 'resolved-session-plan.v3.json');
         }
         const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
         await session.start();
@@ -820,8 +831,3 @@ export class LiveSessionManager {
     await Promise.all([...this.sessions.keys()].map((id) => this.delete(id, 'server_shutdown')));
   }
 }
-
-
-export const liveManager = new LiveSessionManager();
-let _spawnPiForTest: SpawnFn | null = null;
-export function _setSpawnPiForTest(fn: SpawnFn | null | undefined) { _spawnPiForTest = fn || null; }

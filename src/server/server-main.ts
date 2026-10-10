@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { openNativeTarget } from './host-platform.js';
+
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,10 +12,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
 import { containedFile } from './util/resource-path.js';
 import { acquireWriteLease } from './util/json-storage.js';
-import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
+import { APP_PATHS, ARGS, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SESSION_ASSEMBLER, reloadModules, setModuleEnabled, sessionAssemblerForProfile } from './platform-composition.js';
+import { buildSessionPiLaunch } from './session-pi-launch.js';
+import { createSessionWorkingDirectory } from './session-workspace.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
-import { LiveSessionManager, PiRpcSession, liveManager, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, setGeoEndpoint, setCanvasEndpoint, _setSpawnPiForTest } from './sessions.js';
+import { LiveSessionManager, PiRpcSession } from './sessions.js';
 import { makeSessionId as makeId } from './session-workspace.js';
 import { appendSessionNameEntry, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
@@ -54,6 +59,17 @@ import { CanvasService, buildCanvasContextPrompt } from './canvas-service.js';
 import { isLoopbackHost, validateHostAccess } from './host-access.js';
 import { readJsonBody } from './http/request.js';
 import { createHash } from 'node:crypto';
+import { parseRpcCommand } from './rpc-command-input.js';
+import { boundedDiagnostics } from '../contracts/diagnostics.js';
+const diagnoseCommand = boundedDiagnostics(200);
+
+const liveManager = new LiveSessionManager({
+  defaultDomainId: DEFAULT_DOMAIN_ID, assembler: SESSION_ASSEMBLER, assemblerForProfile: sessionAssemblerForProfile,
+  createWorkspace: createSessionWorkingDirectory, command: PI_COMMAND, launch: buildSessionPiLaunch, spawn,
+  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '' },
+});
+
+function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -224,8 +240,7 @@ async function runPiHtmlExport({ file, cwd, outputPath }: { file: string; cwd: s
 
 function openUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url)) return Promise.reject(new Error('Invalid URL'));
-  if (process.platform === 'win32') { spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref(); return Promise.resolve(); }
-  return new Promise((resolve, reject) => execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], (error: NodeJS.ErrnoException | null) => error ? reject(error) : resolve()));
+  return openNativeTarget(url);
 }
 
 function currentPlatformOverview() {
@@ -292,7 +307,8 @@ async function dispatchRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   return failure(`Unknown command: ${command.type}`);
 }
 
-async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
+async function handleRpcCommand(input: RpcCommand): Promise<RpcResponse> {
+  const command = parseRpcCommand(input);
   const clientCommandId = typeof command.clientCommandId === 'string' && command.clientCommandId.trim() ? command.clientCommandId.trim() : '';
   if (!clientCommandId || !reliableCommandTypes.has(command.type || '')) return handleRpcCommandOnce(command);
   if (clientCommandId.length > 200) return { success: false, error: 'clientCommandId is too long', delivery: 'rejected' };
@@ -300,6 +316,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value;
   return rpcCommandLedger.run(key, async () => {
     const response = await handleRpcCommandOnce(command);
+    if (response.delivery === 'unknown' || response.success === false) diagnoseCommand('command_delivery_unconfirmed', { sessionId: createHash('sha256').update(String(command.sessionId || '')).digest('hex').slice(0, 16), commandId: createHash('sha256').update(clientCommandId).digest('hex').slice(0, 16) });
     return response.success === false ? { ...response, clientCommandId } : {
       ...response,
       clientCommandId,
@@ -374,11 +391,11 @@ function computeUrls(port: number) {
   const endpointHost = HOST === '0.0.0.0' ? '127.0.0.1' : HOST === '::' ? '::1' : HOST;
   const endpoint = `http://${endpointHost.includes(':') ? `[${endpointHost}]` : endpointHost}:${port}`;
   lanUrl = loopback ? endpoint : `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
-  setCitationEndpoint(endpoint);
-  setSpatialEndpoint(endpoint);
-  setVideoEndpoint(endpoint);
-  setGeoEndpoint(endpoint);
-  setCanvasEndpoint(endpoint);
+  liveManager.runtime.endpoints.citation = endpoint;
+  liveManager.runtime.endpoints.spatial = endpoint;
+  liveManager.runtime.endpoints.video = endpoint;
+  liveManager.runtime.endpoints.geo = endpoint;
+  liveManager.runtime.endpoints.canvas = endpoint;
 }
 
 let releaseHostWriter: (() => void) | null = null;

@@ -1,3 +1,4 @@
+import { hostPlatform } from './host-platform.js';
 const { spawn } = require('node:child_process');
 
 import type { ChildProcess } from 'node:child_process';
@@ -25,7 +26,7 @@ export class ProcessRunner {
     const child: ChildProcess = spawn(executable.command, [...executable.args, ...args], {
       ...(options.cwd ? { cwd: options.cwd } : {}),
       env: { ...process.env, ...options.env },
-      detached: process.platform !== 'win32',
+      detached: hostPlatform.detached,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     hostChildren.add(child);

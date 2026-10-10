@@ -7,7 +7,7 @@ import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } 
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import type { SessionService } from './session-service.js';
 
-type SessionPiLaunchInput = {
+export type SessionPiLaunchInput = {
   cwd: string;
   sessionId: string;
   sessionFile: string | null;

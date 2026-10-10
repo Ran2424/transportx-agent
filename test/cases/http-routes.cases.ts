@@ -905,3 +905,14 @@ caseTest('history symlinks escaping the root are refused and SVG routes share sa
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   }
 });
+
+caseTest('RPC rejects invalid envelopes and shared fields before invoking effects', async () => {
+  for (const body of [null, [], { type: 7 }, { type: 'set_session_name', name: 7 }, { type: 'prompt', sessionId: 'missing', message: 'x', attachmentIds: [7] }, { type: 'set_auto_compaction', enabled: 'false' }]) {
+    const response = await fetch(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 400);
+    assert.match((await jsonBody(response)).error, /Invalid RPC field/);
+  }
+  const { parseRpcCommand } = require('../../bin/rpc-command-input.js');
+  const extension = { type: 'extension_ui_response', id: 'id', sessionId: 'session', value: { custom: true } };
+  assert.equal(parseRpcCommand(extension), extension);
+});

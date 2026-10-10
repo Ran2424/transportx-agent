@@ -555,6 +555,20 @@ caseTest('Windows NSIS release stages x64 .exe runtimes and has a profile-aware 
   assert.match(releaseCheck, /WIN_CSC_LINK/);
   assert.match(releaseCheck, /profile\.signing\.description/);
   assert.match(installerSmoke, /TRANSPORTX_WINDOWS_INSTALLER/);
-  assert.match(installerSmoke, /Uninstall TransportX Agent\.exe/);
-  assert.match(smoke, /process\.platform === 'win32'/);
+  assert.match(installerSmoke, /release\.uninstallName/);
+  assert.match(smoke, /hostPlatformOperations\(\)\.packaged/);
+});
+
+caseTest('generated Host operations match the single profile and include process-tree and opening facts', async () => {
+  const { pathToFileURL } = require('node:url');
+  const { HOST_PLATFORM_OPERATIONS } = await import(pathToFileURL(path.resolve('desktop/scripts/platform-profile.mjs')).href);
+  const generated = JSON.parse(fs.readFileSync(path.resolve('bin/host-platform.json'), 'utf8'));
+  assert.deepEqual(generated, HOST_PLATFORM_OPERATIONS);
+  assert.equal(generated.win32.detached, false);
+  assert.equal(generated.win32.treeCommand, 'taskkill');
+  assert.deepEqual(generated.win32.treeArgs, ['/pid', '/T']);
+  assert.equal(generated.darwin.utilityHost, true);
+  assert.equal(generated.linux.packaged, null);
+  const source = ['src/server/sessions.ts', 'src/server/process-runner.ts', 'src/server/process-tree.ts', 'src/server/file-api-handler.ts', 'src/server/server-main.ts', 'desktop/main.ts', 'desktop/agent-host-supervisor.ts'].map(file => fs.readFileSync(path.resolve(file), 'utf8')).join('\n');
+  assert.doesNotMatch(source, /process\.platform\s*[!=]==\s*['"]/);
 });

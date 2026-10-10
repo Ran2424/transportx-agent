@@ -1,3 +1,4 @@
+const { hostPlatform } = require('../bin/host-platform.js');
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -101,7 +102,7 @@ function createWindow(url: string) {
   const windowUrl = new URL(url);
   workbenchOrigin = windowUrl.origin;
   windowUrl.searchParams.set('desktop-platform', process.platform);
-  const isMac = process.platform === 'darwin';
+  const isMac = hostPlatform.insetTitleBar;
   const window = new BrowserWindow({
     title: 'TransportX Agent',
     width: 1440,

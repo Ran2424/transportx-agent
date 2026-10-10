@@ -63,3 +63,60 @@ caseTest('live snapshots include Host clock, current partial message and active 
   assert.equal(session.snapshot().activeToolEvents.length, 0);
   assert.notEqual(new LiveSessionManager().clock().hostGeneration, manager.clock().hostGeneration);
 });
+
+caseTest('core managers import without reading configuration and accept independent runtime dependencies', (t: any) => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { execFileSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-manager-isolation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'settings.json'), 'corrupt');
+  const output = execFileSync(process.execPath, ['-e', `
+    const assert = require('node:assert/strict');
+    const { LiveSessionManager, PiRpcSession } = require('./bin/sessions.js');
+    assert.equal(require.cache[require.resolve('./bin/config.js')], undefined);
+    assert.equal(require.cache[require.resolve('./bin/platform-composition.js')], undefined);
+    const calls = [];
+    const assembler = { assemble: (domain, cwd) => { calls.push(domain); return { modules: [], assets: [], workingDirectory: cwd }; }, save: () => {}, load: () => {} };
+    PiRpcSession.prototype.start = async function () { calls.push(this.manager.runtime.command); };
+    const dependencies = (domain) => ({ defaultDomainId: domain, assembler, assemblerForProfile: () => assembler, createWorkspace: () => process.env.PI_CODING_AGENT_DIR, command: domain + '-pi', spawn: () => {}, endpoints: {}, launch: () => ({ args: [], env: {} }) });
+    (async () => {
+      const a = new LiveSessionManager(dependencies('a'));
+      const b = new LiveSessionManager(dependencies('b'));
+      const sa = await a.create({ model: 'provider/model' });
+      const sb = await b.create({ model: 'provider/model' });
+      assert.deepEqual(calls, ['a','a-pi','b','b-pi']);
+      assert.equal(a.get(sb.id), undefined);
+      assert.equal(b.get(sa.id), undefined);
+      process.stdout.write('isolated');
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `], { encoding: 'utf8', env: { ...process.env, PI_CODING_AGENT_DIR: root, TAU_APP_ROOT: path.join(root, 'missing') } });
+  assert.equal(output, 'isolated');
+});
+
+caseTest('suite reporter preserves named failures, skip and todo as native subtests', (t: any) => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-subtest-report-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'report.test.cjs');
+  const helper = path.resolve('test/support/test-suite.ts');
+  fs.writeFileSync(file, `const {suiteCase, suiteAfter, registerSuite}=require(${JSON.stringify(helper)});
+suiteCase(__filename,'named pass',()=>{});
+suiteCase(__filename,'named skip',{skip:'environment unavailable'},()=>{throw Error('must not run')});
+suiteCase(__filename,'named todo',{todo:'pending'},()=>{throw Error('pending')});
+suiteCase(__filename,'named failure',()=>{throw Error('reproduction')});
+suiteAfter(()=>{console.log('cleanup first');throw Error('cleanup failed')});
+suiteAfter(()=>console.log('cleanup second'));
+registerSuite('report fixture');`);
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const report = spawnSync(process.execPath, ['--test', '--test-reporter=tap', file], { encoding: 'utf8', env });
+  assert.equal(report.status, 1);
+  assert.match(report.stdout, /not ok .*named failure/);
+  assert.match(report.stdout, /named skip.*# SKIP environment unavailable/);
+  assert.match(report.stdout, /named todo.*# TODO pending/);
+  assert.match(report.stdout, /# skipped 1/);
+  assert.match(report.stdout, /# todo 1/);
+  assert.match(report.stdout, /cleanup first/);
+  assert.match(report.stdout, /cleanup second/);
+});

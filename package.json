@@ -33,6 +33,7 @@
     "src",
     "dist/web",
     "scripts/postbuild-layout.mjs",
+    "desktop/scripts/platform-profile.mjs",
     "vite.config.ts",
     "tsconfig.json",
     "tsconfig.server.json",

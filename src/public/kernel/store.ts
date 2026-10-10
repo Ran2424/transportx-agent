@@ -1,3 +1,6 @@
+import { boundedDiagnostics } from '../../contracts/diagnostics.js';
+const diagnoseStore = boundedDiagnostics();
+
 /**
  * Minimal external store: a snapshot getter plus subscribe/unsubscribe. Listeners are isolated so a
  * throwing subscriber cannot break state fan-out for the others.
@@ -20,7 +23,7 @@ export function createStore<T>(initial: T): Store<T> {
       try {
         listener(state);
       } catch {
-        // Listener isolation: one bad subscriber must not affect the rest.
+        diagnoseStore('store_listener_failed');
       }
     }
   };
@@ -36,7 +39,7 @@ export function createStore<T>(initial: T): Store<T> {
       try {
         listener(state);
       } catch {
-        // Same isolation for the immediate call.
+        diagnoseStore('store_initial_listener_failed');
       }
       return () => {
         listeners.delete(listener);

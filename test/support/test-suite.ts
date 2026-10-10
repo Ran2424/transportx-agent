@@ -9,7 +9,8 @@ const beforeHooks: Hook[] = [];
 const afterHooks: Hook[] = [];
 const beforeEachHooks: Hook[] = [];
 
-export function suiteCase(name: string, ...args: unknown[]) {
+export function suiteCase(source: string, ...args: unknown[]) {
+  const name = args.find((item): item is string => typeof item === 'string') || source;
   const callback = args.find((item): item is TestCallback => typeof item === 'function');
   if (!callback) throw new Error(`Test case has no callback: ${name}`);
   const options = args.find((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item)) || {};
@@ -53,7 +54,6 @@ function caseContext(context: TestContext, cleanups: Array<() => unknown>) {
 }
 
 async function runCase(item: SuiteCase, context: TestContext, failures: Error[]) {
-  if (item.options.skip || item.options.todo) return;
   const cleanups: Array<() => unknown> = [];
   try {
     for (const hook of beforeEachHooks) await invokeHook(hook, context);
@@ -70,18 +70,18 @@ async function runCase(item: SuiteCase, context: TestContext, failures: Error[])
 
 export function registerSuite(name: string) {
   nodeTest(name, async (context) => {
-    const failures: Error[] = [];
-    try {
-      for (const hook of beforeHooks) await invokeHook(hook, context);
-      for (const item of cases) await runCase(item, context, failures);
-    } catch (error) {
-      failures.push(error instanceof Error ? error : new Error(String(error)));
-    } finally {
+    context.after(async () => {
+      const failures: unknown[] = [];
       for (const hook of afterHooks) {
-        try { await invokeHook(hook, context); }
-        catch (error) { failures.push(error instanceof Error ? error : new Error(String(error))); }
+        try { await invokeHook(hook, context); } catch (error) { failures.push(error); }
       }
-    }
-    if (failures.length) throw new AggregateError(failures, `${failures.length} case(s) failed in ${name}`);
+      if (failures.length) throw new AggregateError(failures, `Suite cleanup failed: ${name}`);
+    });
+    for (const hook of beforeHooks) await invokeHook(hook, context);
+    for (const item of cases) context.test(item.name, item.options, async (child) => {
+      const failures: Error[] = [];
+      await runCase(item, child, failures);
+      if (failures.length) throw new AggregateError(failures, `${failures.length} failure(s) in ${item.name}`);
+    });
   });
 }

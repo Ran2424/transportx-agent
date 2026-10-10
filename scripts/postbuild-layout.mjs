@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { HOST_PLATFORM_OPERATIONS } from '../desktop/scripts/platform-profile.mjs';
 
 const target = process.argv[2];
 if (target !== 'server' && target !== 'public') {
@@ -42,3 +43,5 @@ function moveTree(source, destination) {
 
 moveTree(nestedRoot, outputRoot);
 fs.rmSync(nestedRoot, { recursive: true, force: true });
+
+if (target === 'server') fs.writeFileSync(path.join(outputRoot, 'host-platform.json'), JSON.stringify(HOST_PLATFORM_OPERATIONS));
