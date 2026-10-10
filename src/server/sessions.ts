@@ -18,7 +18,7 @@ import { readSessionFileEntries, SessionProjection } from './session-projection.
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { PiRpcTransport } from './pi-rpc-transport.js';
-import { signalProcessTree } from './process-tree.js';
+import { signalProcessTree, terminateProcessTree } from './process-tree.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import { buildSessionPiLaunch } from './session-pi-launch.js';
 import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
@@ -138,6 +138,7 @@ export class PiRpcSession {
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
   timingMetrics: TimingMetricsStore;
   eventTiming: SessionEventTiming;
+  private termination: Promise<void> | null = null;
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -280,6 +281,11 @@ export class PiRpcSession {
   }
 
   handleStdout(chunk: string) {
+    if (Buffer.byteLength(this.stdoutBuffer) + Buffer.byteLength(chunk) > 16 * 1024 * 1024) {
+      this.stdoutBuffer = '';
+      void this.terminate('rpc_frame_too_large').catch((error) => console.error(`[Pi ${this.id}] ${error.message}`));
+      return;
+    }
     this.stdoutBuffer += chunk;
     const lines = this.stdoutBuffer.split(/\r?\n/);
     this.stdoutBuffer = lines.pop() || '';
@@ -475,6 +481,7 @@ export class PiRpcSession {
 
   abortGeoInteraction() {
     geoInteractionService.abortSession(this, 'agent_aborted');
+    return this.manager.cancelJobs(this.id);
   }
 
   setSessionName(name: unknown) {
@@ -534,16 +541,12 @@ export class PiRpcSession {
   }
 
   async terminate(reason = 'closed') {
-    if (this.terminating) return;
+    if (this.termination) return this.termination;
     this.terminating = true;
     geoInteractionService.abortSession(this, reason === 'aborted_by_user' ? 'agent_aborted' : 'session_closed');
     this.transport.rejectAll(new Error(`Session terminated: ${reason}`));
-    if (!this.child || this.child.exitCode !== null) return;
-    signalProcessTree(this.child, 'SIGTERM');
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    if (this.child && this.child.exitCode === null && this.child.signalCode === null) {
-      signalProcessTree(this.child, 'SIGKILL');
-    }
+    this.termination = (this.child ? terminateProcessTree(this.child) : Promise.resolve()).then(() => { this.pendingMessages = []; }).catch((error) => { this.termination = null; throw error; });
+    return this.termination;
   }
 
   handleExit(code: number | null, signal: string | null, err?: { message?: string }) {
@@ -567,6 +570,10 @@ export class LiveSessionManager {
   terminatingResumes: Map<string, Promise<void>>;
   piVersion: string;
   liveMetadataSignatures: Map<string, string>;
+  private closingSessions = new Map<string, Promise<boolean>>();
+  private historyDeletes = new Map<string, Promise<void>>();
+  private jobs = new Map<string, Set<{ controller: AbortController; completion: Promise<unknown> }>>();
+  private startingSessions = 0;
 
   constructor() {
     this.sessions = new Map();
@@ -581,7 +588,13 @@ export class LiveSessionManager {
   removeClient(ws: LiveClient) { this.clients.delete(ws); }
   broadcast(data: unknown) {
     const payload = JSON.stringify(data);
+    const bytes = Buffer.byteLength(payload);
     for (const client of this.clients) {
+      if ((client.bufferedAmount || 0) + bytes > 8 * 1024 * 1024) {
+        client.terminate();
+        this.removeClient(client);
+        continue;
+      }
       if (client.readyState === WebSocket.OPEN) client.send(payload);
     }
   }
@@ -626,8 +639,49 @@ export class LiveSessionManager {
   }
   hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
+  runJob<T>(id: string, execute: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const session = this.sessions.get(id);
+    if (!session || session.terminating) return Promise.reject(Object.assign(new Error('Session is closing or unavailable'), { status: 409 }));
+    const owned = this.jobs.get(id) || new Set();
+    const total = [...this.jobs.values()].reduce((count, jobs) => count + jobs.size, 0);
+    if (owned.size >= 2 || total >= 4) return Promise.reject(Object.assign(new Error('Analysis job capacity reached'), { status: 503 }));
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    const job = { controller, completion: Promise.resolve() as Promise<unknown> };
+    owned.add(job);
+    this.jobs.set(id, owned);
+    const completion = Promise.resolve().then(() => {
+      if (controller.signal.aborted) throw new Error('Analysis cancelled');
+      return execute(controller.signal);
+    }).finally(() => {
+      signal?.removeEventListener('abort', abort);
+      owned.delete(job);
+      if (!owned.size) this.jobs.delete(id);
+    });
+    job.completion = completion;
+    return completion;
+  }
+  async cancelJobs(id: string) {
+    const jobs = [...(this.jobs.get(id) || [])];
+    if (!jobs.length) return;
+    for (const job of jobs) job.controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const results = await Promise.race([
+        Promise.allSettled(jobs.map((job) => job.completion)),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('Analysis jobs did not stop'), { code: 'process_stop_unconfirmed', status: 503 })), 5500); }),
+      ]);
+      const failed = results.find((result) => result.status === 'rejected' && result.reason?.code === 'process_stop_unconfirmed');
+      if (failed?.status === 'rejected') throw failed.reason;
+    } finally { clearTimeout(timer); }
+  }
   async create({ cwd, model, sessionName, profile, domainId = DEFAULT_DOMAIN_ID, appendSystemPrompt = '' }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string }) {
     if (!model?.trim()) throw new Error('请先添加并选择模型');
+    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
+    this.startingSessions++;
+    try {
     const resolved = createSessionWorkingDirectory(cwd, sessionName);
     const assembler = profile ? sessionAssemblerForProfile(profile) : SESSION_ASSEMBLER;
     const resolvedSessionPlan = assembler.assemble(domainId, resolved, profile);
@@ -637,18 +691,28 @@ export class LiveSessionManager {
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
     return session;
+    } finally { this.startingSessions--; }
   }
   async resume({ sessionFile, cwd, model, entries, sessionName, useCurrentConfiguration = false }: { sessionFile: string; cwd: string; model?: string; entries?: JsonRecord[]; sessionName?: string | null; useCurrentConfiguration?: boolean }) {
     const resolved = path.resolve(sessionFile);
+    if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
+    const closing = this.terminatingResumes.get(resolved);
+    if (closing) await closing;
+    if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
     const existing = this.findBySessionFile(resolved);
+    if (existing?.terminating) throw Object.assign(new Error('Session Writer has not stopped'), { status: 409 });
     if (existing) return existing;
     const pending = this.pendingResumes.get(resolved);
     if (pending) return pending;
+    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
+    this.startingSessions++;
     const resumePromise = (async () => {
       try {
         await Promise.resolve();
+        if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
         const terminating = this.terminatingResumes.get(resolved);
-        if (terminating) await terminating.catch(() => {});
+        if (terminating) await terminating;
+        if (!fs.existsSync(resolved)) throw new Error('Session not found');
         const afterTerminationExisting = this.findBySessionFile(resolved);
         if (afterTerminationExisting) return afterTerminationExisting;
         const migratedPlanPath = path.join(cwd, '.tau', 'resolved-session-plan.v3.json');
@@ -666,6 +730,7 @@ export class LiveSessionManager {
         this.broadcast({ type: 'live_session_created', session: session.metadata() });
         return session;
       } finally {
+        this.startingSessions--;
         this.pendingResumes.delete(resolved);
       }
     })();
@@ -673,30 +738,56 @@ export class LiveSessionManager {
     return resumePromise;
   }
   async delete(id: string, reason = 'closed_by_user') {
+    const closing = this.closingSessions.get(id);
+    if (closing) return closing;
     const session = this.sessions.get(id);
     if (!session) return false;
     const resolvedFile = session.sessionFile ? path.resolve(session.sessionFile) : null;
-    const termination = session.terminate(reason).then(() => undefined, () => undefined).finally(() => {
-      if (resolvedFile && this.terminatingResumes.get(resolvedFile) === termination) this.terminatingResumes.delete(resolvedFile);
+    session.terminating = true;
+    const termination = (async () => {
+      await Promise.resolve();
+      await this.cancelJobs(id);
+      await session.terminate(reason);
+      const registered = this.sessions.delete(id);
+      this.liveMetadataSignatures.delete(id);
+      if (registered) this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
+      return true;
+    })();
+    this.closingSessions.set(id, termination);
+    const writer = termination.then(() => undefined);
+    // Observers awaiting close/resume receive the rejection; avoid an orphan
+    // rejection when no resume is currently waiting on this gate.
+    writer.catch(() => {});
+    if (resolvedFile) this.terminatingResumes.set(resolvedFile, writer);
+    try { return await termination; }
+    finally {
+      this.closingSessions.delete(id);
+      if (resolvedFile && this.terminatingResumes.get(resolvedFile) === writer) this.terminatingResumes.delete(resolvedFile);
+    }
+  }
+  deleteHistory(sessionFile: string) {
+    const resolved = path.resolve(sessionFile);
+    const existing = this.historyDeletes.get(resolved);
+    if (existing) return existing;
+    const deletion = (async () => {
+      await Promise.resolve();
+      await this.pendingResumes.get(resolved)?.catch(() => {});
+      const session = this.findBySessionFile(resolved);
+      if (session) await this.delete(session.id, 'history_deleted');
+      await this.terminatingResumes.get(resolved);
+      fs.rmSync(resolved, { force: true });
     });
-    if (resolvedFile) this.terminatingResumes.set(resolvedFile, termination);
-    this.sessions.delete(id);
-    this.liveMetadataSignatures.delete(id);
-    this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
-    void termination;
-    return true;
+    const operation = deletion().finally(() => this.historyDeletes.delete(resolved));
+    this.historyDeletes.set(resolved, operation);
+    return operation;
   }
   removeExited(id: string, reason: string) {
     if (!this.sessions.has(id)) return;
-    this.sessions.delete(id);
-    this.liveMetadataSignatures.delete(id);
-    this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
+    if (this.closingSessions.has(id)) return;
+    this.delete(id, reason).catch((error) => console.error(`[Pi ${id}] Cleanup failed:`, error));
   }
   async shutdown() {
-    const sessions = Array.from(this.sessions.values());
-    this.sessions.clear();
-    this.liveMetadataSignatures.clear();
-    await Promise.allSettled(sessions.map((s) => s.terminate('server_shutdown')));
+    await Promise.all([...this.sessions.keys()].map((id) => this.delete(id, 'server_shutdown')));
   }
 }
 

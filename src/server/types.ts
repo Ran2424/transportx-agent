@@ -83,6 +83,7 @@ export type PendingCommand = {
 
 export type LiveClient = {
   readyState: number;
+  bufferedAmount?: number;
   send(payload: string): void;
   close(code?: number, reason?: string): void;
   terminate(): void;

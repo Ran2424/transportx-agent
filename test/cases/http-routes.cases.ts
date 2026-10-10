@@ -584,17 +584,23 @@ caseTest('serves Office files with standard MIME types and HEAD metadata', async
   }
 });
 
-caseTest('live and historical session deletion respond without waiting and are idempotent', async (t: TestContext) => {
+caseTest('live close waits for termination and historical deletion is idempotent', async (t: TestContext) => {
   let finishTermination!: () => void;
+  let started!: () => void;
+  const start = new Promise<void>((resolve) => { started = resolve; });
   const termination = new Promise<void>((resolve) => { finishTermination = resolve; });
+  t.after(() => finishTermination());
   const session = fakeSession('tau_delete_fast');
   session.sessionFile = '';
-  session.terminate = async () => termination;
+  session.terminate = async () => { started(); await termination; };
   liveManager.sessions.set(session.id, session);
-  const closed = await fetch(`${base}/api/live-sessions/${session.id}`, { method: 'DELETE' });
+  const response = fetch(`${base}/api/live-sessions/${session.id}`, { method: 'DELETE' });
+  await start;
+  assert.equal(liveManager.sessions.has(session.id), true);
+  finishTermination();
+  const closed = await response;
   assert.equal(closed.status, 200);
   assert.equal(liveManager.sessions.has(session.id), false);
-  finishTermination();
 
   const filePath = writeSessionFileAt(PROJ_DIR, 'delete-idempotent.jsonl', [{ type: 'session', id: 'delete-idempotent', cwd: '/tmp' }]);
   const request = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }) });
@@ -830,4 +836,43 @@ caseTest('resuming a stored session publishes the persisted conversation snapsho
   assert.ok(systemPromptIndex >= 0);
   assert.equal(piArgs[systemPromptIndex + 1], fs.readFileSync(path.join(process.cwd(), 'src/server/prompts/PI_SYSTEM.md'), 'utf8').trim());
   child.stdin.end();
+});
+
+caseTest('PDF render and download cache enforce concurrency, byte and entry capacity', async (t: TestContext) => {
+  let size = 1;
+  let blocked = true;
+  const renders: Array<() => void> = [];
+  const router = createApiRouter({
+    readBody: async () => ({ title: 'report', html: '<p>report</p>' }),
+    renderReportPdf: async () => { if (blocked) await new Promise<void>((resolve) => renders.push(resolve)); return Buffer.alloc(size); },
+    json: (res: any, status: number, data: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); },
+    errorMessage: (error: unknown) => error instanceof Error ? error.message : String(error),
+    errorStatus: (error: any) => error.status || 400,
+  } as any);
+  const reportServer = require('node:http').createServer((req: any, res: any) => router.dispatch(req, res, new URL(req.url, 'http://127.0.0.1')));
+  await new Promise<void>((resolve) => reportServer.listen(0, '127.0.0.1', resolve));
+  t.after(() => reportServer.close());
+  const origin = `http://127.0.0.1:${reportServer.address().port}`;
+  const post = () => fetch(`${origin}/api/reports/pdf/download`, { method: 'POST' });
+  const pending = [post(), post()];
+  while (renders.length < 2) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await post()).status, 503);
+  blocked = false;
+  renders.forEach((release) => release());
+  await Promise.all(pending);
+  const urls: string[] = [];
+  for (let index = 0; index < 9; index++) urls.push((await jsonBody(await post())).url);
+  assert.equal((await fetch(`${origin}${urls[0]}`)).status, 404);
+  const consumed = await fetch(`${origin}${urls[8]}`);
+  assert.equal(consumed.status, 200);
+  await consumed.arrayBuffer();
+  assert.equal((await fetch(`${origin}${urls[8]}`)).status, 404);
+  size = 32 * 1024 * 1024;
+  const first = (await jsonBody(await post())).url;
+  await post();
+  size = 1;
+  await post();
+  assert.equal((await fetch(`${origin}${first}`)).status, 404);
+  size = 32 * 1024 * 1024 + 1;
+  assert.equal((await post()).status, 413);
 });

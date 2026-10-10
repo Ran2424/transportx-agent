@@ -14,7 +14,7 @@ type NativeSession = {
   send(command: RpcCommand, options: { timeoutMs: number; onLateResponse?: (response: RpcResponse) => void }): Promise<RpcResponse>;
   registerPendingMessage(pending: { commandId: string; text: string; attachmentIds: string[]; geoContextIds: string[]; canvasContextIds: string[] }): void;
   discardPendingMessage(commandId: string): void;
-  abortGeoInteraction(): void;
+  abortGeoInteraction(): void | Promise<void>;
 };
 
 type NativeRpcDependencies<T extends NativeSession> = {
@@ -41,9 +41,9 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
     const previousLevel = command.type === 'set_thinking_level' ? session.thinkingLevel : null;
     if (command.type === 'extension_ui_response' && (typeof command.id !== 'string' || !session.pendingExtensionUiRequests.has(command.id))) return reply.failure('Extension UI request is no longer pending');
     if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
-    if (command.type === 'abort') session.abortGeoInteraction();
     let pendingId: string | null = null;
     try {
+      if (command.type === 'abort') await session.abortGeoInteraction();
       let rpcCommand = { ...command };
       delete rpcCommand.clientCommandId;
       if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {

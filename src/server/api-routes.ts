@@ -57,22 +57,42 @@ export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
 
 export function createApiRouter(services: ApiRouteServices) {
   const router = new ServerRouter(services, services.beginOperation);
-  const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number }>();
+  const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number; timer: ReturnType<typeof setTimeout> }>();
+  let renderingPdfs = 0;
+  const removePdf = (id: string) => {
+    const entry = pdfDownloads.get(id);
+    if (entry) clearTimeout(entry.timer);
+    pdfDownloads.delete(id);
+  };
   const createPdf = async (req: IncomingMessage, deps: ApiRouteServices) => {
-    const body = await deps.readBody(req);
-    const title = typeof body.title === 'string' ? body.title.trim().slice(0, 300) : '';
-    const html = typeof body.html === 'string' ? body.html : '';
-    if (!title || !html) {
-      const error = new Error('title and html required') as Error & { status?: number };
-      error.status = 400;
-      throw error;
-    }
-    if (Buffer.byteLength(html, 'utf8') > REPORT_PDF_MAX_HTML_BYTES) {
-      const error = new Error('Rendered report is too large') as Error & { status?: number };
-      error.status = 413;
-      throw error;
-    }
-    return { pdf: await deps.renderReportPdf(title, html), filename: `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf` };
+    if (renderingPdfs >= 2) { req.resume(); throw Object.assign(new Error('PDF render capacity reached'), { status: 503 }); }
+    renderingPdfs++;
+    try {
+      const body = await deps.readBody(req);
+      const title = typeof body.title === 'string' ? body.title.trim().slice(0, 300) : '';
+      const html = typeof body.html === 'string' ? body.html : '';
+      if (!title || !html) {
+        const error = new Error('title and html required') as Error & { status?: number };
+        error.status = 400;
+        throw error;
+      }
+      if (Buffer.byteLength(html, 'utf8') > REPORT_PDF_MAX_HTML_BYTES) {
+        const error = new Error('Rendered report is too large') as Error & { status?: number };
+        error.status = 413;
+        throw error;
+      }
+      const pdf = await deps.renderReportPdf(title, html);
+      if (pdf.length > 32 * 1024 * 1024) throw Object.assign(new Error('Rendered PDF exceeds 32 MB'), { status: 413 });
+      return { pdf, filename: `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf` };
+    } finally { renderingPdfs--; }
+  };
+  const runJob = async <T>(req: IncomingMessage, res: ServerResponse, session: PiRpcSession, execute: (signal: AbortSignal) => Promise<T>) => {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    req.once('aborted', cancel);
+    res.once('close', cancel);
+    try { return await services.sessions.runJob(session.id, execute, controller.signal); }
+    finally { req.off('aborted', cancel); res.off('close', cancel); }
   };
   const serveRawFile = ({ req, res, url, deps }: import('./router.js').RouteContext<ApiRouteServices>) => {
     const sessionId = url.searchParams.get('sessionId');
@@ -104,7 +124,6 @@ export function createApiRouter(services: ApiRouteServices) {
         if (!body.filePath || typeof body.filePath !== 'string') return deps.json(res, 400, { error: 'filePath required' });
         const resolvedFile = deps.resolveSessionFile(body.filePath);
         const existing = deps.sessions.findBySessionFile(resolvedFile);
-        if (existing) return deps.json(res, 200, { session: existing.metadata(), reused: true });
         const cwd = deps.sessionCwd(body.cwd) || deps.readSessionHeaderCwd(resolvedFile);
         if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
           return deps.json(res, 400, { error: 'Cannot resume session because its project directory no longer exists' });
@@ -113,7 +132,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const sessionName = deps.deriveSessionName(entries);
         const reusedPending = deps.sessions.hasPendingResume(resolvedFile);
         const session = await deps.sessions.resume({ sessionFile: resolvedFile, cwd, model: body.model || '', entries, sessionName, useCurrentConfiguration: body.useCurrentConfiguration === true });
-        deps.json(res, 200, { session: session.metadata(), ...(reusedPending ? { reused: true } : {}) });
+        deps.json(res, 200, { session: session.metadata(), ...(reusedPending || existing?.id === session.id ? { reused: true } : {}) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
     })
     .get(/^\/api\/live-sessions\/([^/]+)\/snapshot$/, ({ res, params, deps }) => {
@@ -213,8 +232,8 @@ export function createApiRouter(services: ApiRouteServices) {
     .delete(/^\/api\/live-sessions\/([^/]+)$/, async ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
-      await deps.sessions.delete(session.id, 'closed_by_user');
-      deps.json(res, 200, { success: true });
+      try { await deps.sessions.delete(session.id, 'closed_by_user'); deps.json(res, 200, { success: true }); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .get('/api/projects', ({ res, deps }) => deps.serveProjects(res))
     .get('/api/sessions', ({ res, deps }) => deps.serveSessions(res))
@@ -275,16 +294,20 @@ export function createApiRouter(services: ApiRouteServices) {
       try {
         const { pdf, filename } = await createPdf(req, deps);
         const now = Date.now();
-        for (const [id, entry] of pdfDownloads) if (entry.expiresAt <= now) pdfDownloads.delete(id);
+        for (const [id, entry] of pdfDownloads) if (entry.expiresAt <= now) removePdf(id);
+        const cachedBytes = () => [...pdfDownloads.values()].reduce((total, entry) => total + entry.pdf.length, 0);
+        while (pdfDownloads.size >= 8 || cachedBytes() + pdf.length > 64 * 1024 * 1024) removePdf(pdfDownloads.keys().next().value!);
         const id = crypto.randomUUID();
-        pdfDownloads.set(id, { pdf, filename, expiresAt: now + 5 * 60 * 1000 });
+        const timer = setTimeout(() => removePdf(id), 5 * 60 * 1000);
+        timer.unref();
+        pdfDownloads.set(id, { pdf, filename, expiresAt: now + 5 * 60 * 1000, timer });
         deps.json(res, 200, { url: `/api/reports/pdf/download/${id}` });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .get(/^\/api\/reports\/pdf\/download\/([a-f0-9-]+)$/, ({ res, params }) => {
       const entry = pdfDownloads.get(params[0]);
       if (!entry || entry.expiresAt <= Date.now()) { res.writeHead(404); res.end(); return; }
-      pdfDownloads.delete(params[0]);
+      removePdf(params[0]);
       res.writeHead(200, {
         'Content-Type': 'application/pdf',
         'Content-Length': String(entry.pdf.length),
@@ -323,7 +346,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
-        deps.json(res, 200, { result: await deps.spatial.analyze(session, body) });
+        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.spatial.analyze(session, body, signal)) });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/geo/inspect', async ({ req, res, deps }) => {
@@ -379,7 +402,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await deps.video.present(session, body));
+        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.present(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/video/snapshot', async ({ req, res, deps }) => {
@@ -387,7 +410,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await deps.video.snapshot(session, body));
+        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.snapshot(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/video/clip', async ({ req, res, deps }) => {
@@ -395,7 +418,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await deps.video.clip(session, body));
+        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.clip(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/video/sample-frames', async ({ req, res, deps }) => {
@@ -403,7 +426,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await deps.video.sampleFrames(session, body));
+        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.sampleFrames(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/rpc', async ({ req, res, deps }) => {
@@ -420,7 +443,7 @@ export function createApiRouter(services: ApiRouteServices) {
           if (deps.errorMessage(error) === 'Session not found') return deps.json(res, 200, { success: true, alreadyDeleted: true });
           throw error;
         }
-        fs.unlinkSync(sessionFile);
+        await deps.sessions.deleteHistory(sessionFile);
         deps.json(res, 200, { success: true });
       } catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
     })

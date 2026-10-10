@@ -89,7 +89,7 @@ export class VideoRunner {
   }
 
   terminateAll() {
-    this.runner.terminateAll();
+    return this.runner.terminateAll();
   }
 }
 

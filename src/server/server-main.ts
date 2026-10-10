@@ -459,7 +459,14 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true; console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
   socketHandler.close(); try { wss.close(); } catch {}
-  spatialAnalysisService.terminateAll(); videoService.terminateAll(); await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
+  try {
+    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), liveManager.shutdown()]);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2500).unref();
+  } catch (error) {
+    console.error('[Tau] Shutdown could not confirm process exit:', error);
+    process.exitCode = 1;
+  }
 }
 function startCli() {
   validateHostAccess(TAU_SETTINGS);

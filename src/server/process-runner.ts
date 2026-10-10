@@ -1,4 +1,4 @@
-const { execFile } = require('node:child_process');
+const { spawn } = require('node:child_process');
 
 import type { ChildProcess } from 'node:child_process';
 import type { Executable } from './runtime-resolver.js';
@@ -13,33 +13,77 @@ export type ProcessRunOptions = {
   errorMessage?(stderr: string, error: Error): string;
 };
 
+const hostChildren = new Set<ChildProcess>();
+
 export class ProcessRunner {
   get activeCount() { return this.children.size; }
-  private readonly children = new Set<ChildProcess>();
+  private readonly children = new Map<ChildProcess, { stop(): void; completion: Promise<unknown> }>();
 
   run(executable: Executable, args: string[], options: ProcessRunOptions): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      const child: ChildProcess = execFile(executable.command, [...executable.args, ...args], {
-        ...(options.cwd ? { cwd: options.cwd } : {}),
-        env: { ...process.env, ...options.env },
-        encoding: 'utf8',
-        timeout: options.timeoutMs,
-        maxBuffer: options.maxBuffer,
-        signal: options.signal,
-        detached: process.platform !== 'win32',
-      }, (error: Error | null, stdout: string, stderr: string) => {
+    if (hostChildren.size >= 4) return Promise.reject(Object.assign(new Error('Host process capacity reached'), { status: 503 }));
+    if (options.signal?.aborted) return Promise.reject(new Error('Analysis cancelled'));
+    const child: ChildProcess = spawn(executable.command, [...executable.args, ...args], {
+      ...(options.cwd ? { cwd: options.cwd } : {}),
+      env: { ...process.env, ...options.env },
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    hostChildren.add(child);
+    let stop!: () => void;
+    const completion = new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      let stopped: Error | null = null;
+      let spawnError: Error | null = null;
+      let forceTimer: ReturnType<typeof setTimeout> | undefined;
+      let stopDeadline: ReturnType<typeof setTimeout> | undefined;
+      const halt = (reason: Error) => {
+        if (stopped) return;
+        stopped = reason;
+        signalProcessTree(child, 'SIGTERM');
+        forceTimer = setTimeout(() => signalProcessTree(child, 'SIGKILL'), 1500);
+        stopDeadline = setTimeout(() => reject(Object.assign(new Error('Analysis process exit was not confirmed'), { code: 'process_stop_unconfirmed', status: 503 })), 5000);
+      };
+      const cancelled = () => halt(new Error('Analysis cancelled'));
+      stop = cancelled;
+      const timer = setTimeout(() => halt(new Error('Analysis timed out')), options.timeoutMs);
+      options.signal?.addEventListener('abort', cancelled, { once: true });
+      const capture = (stream: ChildProcess['stdout']) => {
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        stream?.on('data', (chunk: Buffer) => {
+          if (stopped) return;
+          bytes += chunk.length;
+          if (bytes > options.maxBuffer) { halt(new Error('Analysis output exceeds the buffer limit')); return; }
+          chunks.push(chunk);
+        });
+        return () => Buffer.concat(chunks).toString('utf8');
+      };
+      const stdout = capture(child.stdout);
+      const stderr = capture(child.stderr);
+      child.once('error', (error) => { spawnError = error; });
+      child.once('exit', () => { if (stopped) signalProcessTree(child, 'SIGKILL'); });
+      child.once('close', (code, signal) => {
+        clearTimeout(timer); clearTimeout(forceTimer); clearTimeout(stopDeadline);
+        options.signal?.removeEventListener('abort', cancelled);
         this.children.delete(child);
-        if (!error) return resolve({ stdout, stderr });
-        const wrapped = new Error(options.errorMessage?.(stderr, error) || stderr.trim() || error.message) as Error & { stderr?: string };
-        wrapped.stderr = stderr;
+        hostChildren.delete(child);
+        if (stopped) return reject(stopped);
+        if (!spawnError && code === 0) return resolve({ stdout: stdout(), stderr: stderr() });
+        signalProcessTree(child, 'SIGKILL');
+        const error = spawnError || new Error(`Analysis process exited (${signal || code})`);
+        const output = stderr();
+        const wrapped = Object.assign(new Error(options.errorMessage?.(output, error) || output.trim() || error.message), { stderr: output });
         reject(wrapped);
       });
-      this.children.add(child);
     });
+    this.children.set(child, { stop, completion });
+    return completion;
   }
 
-  terminateAll() {
-    for (const child of this.children) signalProcessTree(child, 'SIGTERM');
-    this.children.clear();
+  async terminateAll() {
+    const running = [...this.children.values()];
+    for (const run of running) run.stop();
+    const results = await Promise.allSettled(running.map((run) => run.completion));
+    const failed = results.find((result) => result.status === 'rejected' && result.reason?.code === 'process_stop_unconfirmed');
+    if (failed?.status === 'rejected') throw failed.reason;
   }
 }

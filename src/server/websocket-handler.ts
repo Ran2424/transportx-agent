@@ -16,7 +16,7 @@ type WebSocketHandlerOptions = {
 };
 
 export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
   options.server.on('upgrade', (request, socket: Socket, head) => {
     if (!options.isAllowedOrigin(request)) {

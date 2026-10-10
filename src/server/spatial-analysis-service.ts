@@ -51,7 +51,7 @@ export class SpatialAnalysisService {
     this.runner = new PythonRunner(executable);
   }
 
-  async analyze(session: PiRpcSession, body: JsonRecord): Promise<SpatialAnalysisResultV1> {
+  async analyze(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal): Promise<SpatialAnalysisResultV1> {
     const operation = requiredString(body, 'operation', 40);
     if (operation !== 'buffer' && operation !== 'nearest' && operation !== 'spatial_join') throw new Error('Unsupported spatial operation');
     const analysisId = `spatial_${Date.now().toString(36)}_${crypto.randomBytes(5).toString('hex')}`;
@@ -97,7 +97,7 @@ export class SpatialAnalysisService {
     const requestPath = path.join(path.dirname(manifestPath), 'request.json');
     fs.writeFileSync(requestPath, `${JSON.stringify({ analysisId, operation, inputs, parameters, resultPath, resultRelativePath }, null, 2)}\n`);
     try {
-      const { stdout } = await this.runner.run(this.scriptPath, ['--request', requestPath], { cwd: session.cwd, timeoutMs: 120_000 });
+      const { stdout } = await this.runner.run(this.scriptPath, ['--request', requestPath], { cwd: session.cwd, timeoutMs: 120_000, signal });
       const parsed = parseSpatialAnalysisResultStructured(JSON.parse(stdout));
       if (!parsed.ok) throw new Error(parsed.diagnostics.map(diagnosticMessage).join('; '));
       const result = parsed.value;
@@ -116,5 +116,5 @@ export class SpatialAnalysisService {
     }
   }
 
-  terminateAll() { this.runner.terminateAll(); }
+  terminateAll() { return this.runner.terminateAll(); }
 }
