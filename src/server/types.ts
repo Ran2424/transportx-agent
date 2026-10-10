@@ -35,6 +35,7 @@ export type TauSettingsFile = {
 export type TauSettings = {
   port: number;
   host: string;
+  remoteAccess?: boolean;
   user: string;
   pass: string;
   authEnabled?: boolean;

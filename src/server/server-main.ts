@@ -49,6 +49,7 @@ import { isWithin } from './util/path.js';
 import { writeJson as json } from './http/response.js';
 import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
 import { CanvasService, buildCanvasContextPrompt } from './canvas-service.js';
+import { isLoopbackHost, validateHostAccess } from './host-access.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -64,6 +65,7 @@ const rpcHandlers: RpcHandlerRegistry = {
   ...createPlatformRpcHandlers(currentPlatformOverview),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
+    required: !isLoopbackHost(HOST),
     getEnabled: () => authEnabled,
     setEnabled: (enabled) => { authEnabled = enabled; saveTauSetting('authEnabled', enabled); },
     notifyChanged: (enabled) => liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled } }),
@@ -362,15 +364,18 @@ function computeUrls(port: number) {
     if (localIp === 'localhost') outer: for (const name of Object.keys(nets)) { if (/^(bridge|utun|lo)/.test(name)) continue; for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal) { localIp = net.address; break outer; } }
     for (const name of Object.keys(nets)) for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal && net.address.startsWith('100.')) tailscaleIp = net.address;
   }
-  lanUrl = `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
-  setCitationEndpoint(`http://127.0.0.1:${port}`);
-  setSpatialEndpoint(`http://127.0.0.1:${port}`);
-  setVideoEndpoint(`http://127.0.0.1:${port}`);
-  setGeoEndpoint(`http://127.0.0.1:${port}`);
-  setCanvasEndpoint(`http://127.0.0.1:${port}`);
+  const endpointHost = HOST === '0.0.0.0' ? '127.0.0.1' : HOST === '::' ? '::1' : HOST;
+  const endpoint = `http://${endpointHost.includes(':') ? `[${endpointHost}]` : endpointHost}:${port}`;
+  lanUrl = loopback ? endpoint : `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
+  setCitationEndpoint(endpoint);
+  setSpatialEndpoint(endpoint);
+  setVideoEndpoint(endpoint);
+  setGeoEndpoint(endpoint);
+  setCanvasEndpoint(endpoint);
 }
 
 function listen(port: number, attemptsLeft = 10) {
+  validateHostAccess(TAU_SETTINGS);
   server.once('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE' && attemptsLeft > 0) { console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`); server.removeAllListeners('error'); listen(port + 1, attemptsLeft - 1); }
     else { console.error(`[Tau] Failed to start: ${error.message}`); process.exit(1); }
@@ -452,6 +457,7 @@ async function shutdown(signal: string) {
   spatialAnalysisService.terminateAll(); videoService.terminateAll(); await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
 }
 function startCli() {
+  validateHostAccess(TAU_SETTINGS);
   if (DESKTOP_MODE) attachDesktopUpdateChannel();
   const runtime = inspectPiRuntime(PI_COMMAND, PI_COMMAND_ARGS); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);
   console.log(`[Tau] Modules: ${MODULE_REGISTRY.enabled().length} enabled, ${MODULE_REGISTRY.errors.length} error(s)`);

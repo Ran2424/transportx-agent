@@ -17,7 +17,7 @@ export function parseArgs(argv: string[]): TauArgs {
     const arg = argv[i];
     if (!arg.startsWith('--')) continue;
     const key = arg.slice(2);
-    if (key === 'open' || key === 'desktop' || key === 'ready-json') { out[key] = true; continue; }
+    if (key === 'open' || key === 'desktop' || key === 'ready-json' || key === 'remote') { out[key] = true; continue; }
     const next = argv[i + 1];
     if (next && !next.startsWith('--')) { out[key] = next; i++; }
   }
@@ -58,7 +58,8 @@ export function loadTauSettings(): TauSettings {
   } catch {}
   return {
     port: DESKTOP_MODE ? 0 : parseInt(String(ARGS.port || process.env.TAU_PORT || settings.port || '3001'), 10),
-    host: DESKTOP_MODE ? '127.0.0.1' : ARGS.host || process.env.TAU_HOST || settings.host || '0.0.0.0',
+    host: DESKTOP_MODE ? '127.0.0.1' : ARGS.host || process.env.TAU_HOST || settings.host || '127.0.0.1',
+    remoteAccess: ARGS.remote === true || process.env.TAU_REMOTE === '1' || settings.remoteAccess === true,
     user: process.env.TAU_USER || settings.user || '',
     pass: process.env.TAU_PASS || settings.pass || '',
     authEnabled: settings.authEnabled,

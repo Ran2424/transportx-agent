@@ -2,6 +2,7 @@ import type { RpcHandlerRegistry } from '../rpc-handlers.js';
 
 type AuthRpcDependencies = {
   configured: boolean;
+  required?: boolean;
   getEnabled(): boolean;
   setEnabled(enabled: boolean): void;
   notifyChanged(enabled: boolean): void;
@@ -18,6 +19,7 @@ export function createAuthRpcHandlers(deps: AuthRpcDependencies): RpcHandlerRegi
         if (!deps.configured) return reply.failure('No credentials configured. Set tau.user and tau.pass in settings.json');
         const wasEnabled = deps.getEnabled();
         const enabled = command.enabled === true;
+        if (!enabled && deps.required) return reply.failure('Authentication is required for non-loopback listening');
         deps.setEnabled(enabled);
         deps.notifyChanged(enabled);
         if (!wasEnabled && enabled) deps.disconnectClients();

@@ -85,6 +85,34 @@ before((_: TestContext, done: () => void) => {
 after((_: TestContext, done: () => void) => server.close(done));
 beforeEach(() => liveManager.sessions.clear());
 
+caseTest('Internal service tokens authenticate independently of user credentials and require scope', async (t: TestContext) => {
+  const { _setAuthForTest, _setCredentialsForTest } = require('../../bin/tau.js');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-service-auth-'));
+  t.after(() => { _setAuthForTest(false); fs.rmSync(cwd, { recursive: true, force: true }); });
+  const session = fakeSession('tau_internal_auth') as any;
+  session.cwd = cwd;
+  session.resolvedSessionPlan = { modules: [{ id: 'com.transportx.canvas', canvasViews: [] }, { id: 'com.transportx.document', canvasViews: [{ adapterId: 'com.transportx.canvas.document', kind: 'document', protocolVersion: '1.0' }] }] };
+  fs.writeFileSync(path.join(cwd, 'counts.csv'), 'road,count\nA,12\n');
+  const { CanvasService } = require('../../bin/canvas-service.js');
+  const canvas = new CanvasService({}, (_session: unknown, requested: string) => path.resolve(cwd, requested));
+  const presentation = canvas.present(session, { adapterId: 'com.transportx.canvas.document', resource: { scope: 'session-file', path: 'counts.csv' } });
+  session.entries.push({ message: { details: { canvas: presentation } } });
+  const context = canvas.createContext(session, { viewId: presentation.viewId, revision: presentation.revision });
+  session.activeCanvasContextIds = [context.contextId];
+  liveManager.sessions.set(session.id, session);
+  _setCredentialsForTest('test-user', 'test-pass');
+  _setAuthForTest(true);
+  const call = (body: Record<string, unknown>) => fetch(`${base}/api/internal/canvas/inspect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contextIds: [context.contextId], ...body }) });
+  assert.equal((await call({ sessionId: session.id, token: 'canvas-token' })).status, 200);
+  for (const body of [{ sessionId: session.id }, { sessionId: session.id, token: 'geo-token' }, { sessionId: 'other', token: 'canvas-token' }]) assert.equal((await call(body)).status, 403);
+  session.resolvedSessionPlan.modules = [];
+  assert.equal((await call({ sessionId: session.id, token: 'canvas-token' })).status, 403);
+  session.resolvedSessionPlan.modules = [{ id: 'com.transportx.canvas' }];
+  session.terminating = true;
+  assert.equal((await call({ sessionId: session.id, token: 'canvas-token' })).status, 403);
+  for (const route of ['/api/live-sessions', '/api/health-extra', '/api/internal/unknown', '/api/internal/canvas/inspect']) assert.equal((await fetch(`${base}${route}`)).status, 401, route);
+});
+
 caseTest('PDF report routes accept rendered HTML larger than the previous 5 MiB limit', async (t: TestContext) => {
   assert.equal(REPORT_PDF_MAX_HTML_BYTES, 50 * 1024 * 1024);
   const html = `<article>${'x'.repeat(6 * 1024 * 1024)}</article>`;
@@ -259,7 +287,7 @@ caseTest('video internal endpoints require the session video token', async (t: T
   const session = fakeSession('tau_video_internal') as any;
   session.cwd = cwd;
   session.serviceTokens.video = 'video-secret';
-  session.resolvedSessionPlan = { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
+  session.resolvedSessionPlan = { modules: [{ id: 'com.transportx.video' }], assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
   liveManager.sessions.set(session.id, session);
 
   const denied = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'wrong', location: '人民路' }) });

@@ -10,7 +10,7 @@ import type { CitationService } from './citation-service.js';
 import type { SpatialAnalysisService } from './spatial-analysis-service.js';
 import type { VideoService } from './video-service.js';
 import { parseSessionProfileStructured } from '../contracts/index.js';
-import { sessionServiceLabel, type SessionService } from './session-service.js';
+import { serviceModuleIds, sessionServiceLabel, type SessionService } from './session-service.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
 import type { CanvasService } from './canvas-service.js';
 
@@ -438,7 +438,7 @@ function resolveServiceSession(res: ServerResponse, body: RpcCommand, services: 
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
   const token = typeof body.token === 'string' ? body.token : '';
   const session = services.sessions.get(sessionId);
-  if (!session || !token || token !== session.serviceTokens[service]) { services.json(res, 403, { error: `${sessionServiceLabel[service]} host access denied` }); return null; }
+  if (!session || session.terminating || !session.resolvedSessionPlan?.modules?.some((module) => module.id === serviceModuleIds[service]) || !token || token !== session.serviceTokens[service]) { services.json(res, 403, { error: `${sessionServiceLabel[service]} host access denied` }); return null; }
   return session;
 }
 

@@ -9,6 +9,25 @@ const reply = {
   failure(error: string) { return { success: false, error }; },
 };
 
+caseTest('Remote Host cannot disable authentication', () => {
+  const handlers = createAuthRpcHandlers({ configured: true, required: true, getEnabled: () => true, setEnabled() { assert.fail('must remain enabled'); }, notifyChanged() {}, disconnectClients() {} });
+  assert.equal(handlers.set_auth.handle({ enabled: false }, reply).success, false);
+});
+
+caseTest('Host access rejects unsafe remote settings and accepts authenticated explicit remote mode', () => {
+  const { validateHostAccess } = require('../../bin/host-access.js');
+  const local = { host: '127.0.0.1', user: '', pass: '' };
+  validateHostAccess(local);
+  validateHostAccess({ ...local, host: '::1' });
+  for (const value of [
+    { host: '0.0.0.0', user: '', pass: '' },
+    { host: '0.0.0.0', user: 'u', pass: 'p' },
+    { host: '0.0.0.0', user: 'u', pass: 'p', remoteAccess: true, authEnabled: false },
+    { host: 'localhost', user: '', pass: '' },
+  ]) assert.throws(() => validateHostAccess(value), /Non-loopback/);
+  validateHostAccess({ host: '0.0.0.0', user: 'u', pass: 'p', remoteAccess: true });
+});
+
 caseTest('Auth RPC handler persists the new state and disconnects only when enabling', () => {
   let enabled = false;
   const changes: boolean[] = [];
