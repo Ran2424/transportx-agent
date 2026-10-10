@@ -85,7 +85,6 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         // compaction retries and queued continuations have completed. It is
         // normally preceded by a final agent_end, but also repairs a stream
         // when a client attached after that event.
-        if (!currentRunBySession.has(sessionId)) return [];
         currentRunBySession.delete(sessionId);
         return [{ type: 'conversation/streamEnded', sessionId }];
       case 'turn_start':

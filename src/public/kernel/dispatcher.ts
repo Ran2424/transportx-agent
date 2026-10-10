@@ -5,6 +5,7 @@
  */
 
 import type { AppAction } from './actions.js';
+import { createEventNormalizer } from './event-normalizer.js';
 import type { ConversationStore } from './stores/conversation-store.js';
 import type { ExtensionUiStore } from './stores/extension-ui-store.js';
 import type { RuntimeStore } from './stores/runtime-store.js';
@@ -22,6 +23,7 @@ export type KernelStores = {
 export type Dispatch = (action: AppAction) => void;
 
 export function createDispatcher(stores: KernelStores): Dispatch {
+  const normalizer = createEventNormalizer();
   return function dispatch(action: AppAction): void {
     switch (action.type) {
       case 'runtime/connecting':
@@ -35,6 +37,12 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         break;
 
       case 'session/listReceived': {
+        for (const previous of stores.session.get().sessions) {
+          if (action.sessions.some((session) => session.id === previous.id)) continue;
+          stores.conversation.dropSession(previous.id);
+          stores.toolExecution.dropSession(previous.id);
+          stores.extensionUi.dropSession(previous.id);
+        }
         stores.session.listReceived(action.sessions);
         // The conversation overlay's live.active is only reset by agent_settled;
         // if that event is lost the input stays stuck in steer mode. When the
@@ -72,7 +80,16 @@ export function createDispatcher(stores: KernelStores): Dispatch {
       case 'session/snapshotReceived':
         stores.session.applySnapshot(action.sessionId, action.snapshot);
         stores.conversation.hydrate(action.sessionId, action.snapshot);
-        for (const request of action.snapshot.pendingExtensionUiRequests || []) {
+        stores.toolExecution.dropSession(action.sessionId);
+        stores.extensionUi.dropSession(action.sessionId);
+        for (const entry of action.snapshot.entries) {
+          if (entry.message?.toolCallId) stores.toolExecution.ended(action.sessionId, entry.message.toolCallId, { toolName: entry.message.toolName, result: { content: entry.message.content, details: entry.message.details }, isError: entry.message.isError, durationMs: entry.message.durationMs });
+        }
+        for (const event of action.snapshot.activeToolEvents || []) {
+          for (const toolAction of normalizer.normalizeMessage({ type: 'event', sessionId: action.sessionId, event })) dispatch(toolAction);
+          if (event.toolCallId && event.partialResult !== undefined) stores.toolExecution.updated(action.sessionId, event.toolCallId, event.partialResult);
+        }
+        for (const request of action.snapshot.pendingExtensionUiRequests || action.snapshot.session?.pendingExtensionUiRequests || []) {
           stores.extensionUi.requested(action.sessionId, request, stores.session.get().activeSessionId);
         }
         break;

@@ -35,6 +35,8 @@ export type SessionEntry = JsonRecord & {
 export type SessionSnapshot = {
   readonly schemaVersion: typeof SESSION_SNAPSHOT_SCHEMA_VERSION;
   entries: SessionEntry[];
+  hostGeneration?: string;
+  revision?: number;
   geoInteraction?: { contextCount: number; waitingRequest?: GeoInteractionRequestV1; waitingScreenshotRequest?: GeoScreenshotRequestV1 };
 };
 
@@ -105,6 +107,9 @@ export function parseSessionSnapshot(value: unknown): SessionBranchResult<Sessio
   if (!Array.isArray(root.entries)) {
     return { ok: false, value: null, diagnostics: [diagnostic({ code: 'invalid_type', path: 'session.entries', message: 'entries must be an array.' })] };
   }
+  if ((root.hostGeneration !== undefined && (typeof root.hostGeneration !== 'string' || !root.hostGeneration)) || (root.revision !== undefined && (!Number.isSafeInteger(root.revision) || Number(root.revision) < 0))) {
+    return { ok: false, value: null, diagnostics: [diagnostic({ code: 'invalid_type', path: 'session.revision', message: 'Snapshot clock must have a generation and non-negative safe integer revision.' })] };
+  }
   const entries = selectCurrentSessionBranch(root.entries);
   const interaction = root.geoInteraction === undefined ? null : asRecord(root.geoInteraction);
   if (root.geoInteraction !== undefined && (!interaction || !Number.isInteger(interaction.contextCount) || Number(interaction.contextCount) < 0)) {
@@ -125,7 +130,7 @@ export function parseSessionSnapshot(value: unknown): SessionBranchResult<Sessio
   const geoInteraction = interaction
     ? { contextCount: Number(interaction.contextCount), ...(waitingRequest ? { waitingRequest } : {}), ...(waitingScreenshotRequest ? { waitingScreenshotRequest } : {}) }
     : undefined;
-  return { ok: true, value: { schemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, entries, ...(geoInteraction ? { geoInteraction } : {}) }, diagnostics: [] };
+  return { ok: true, value: { schemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, entries, ...(typeof root.hostGeneration === 'string' ? { hostGeneration: root.hostGeneration } : {}), ...(typeof root.revision === 'number' ? { revision: root.revision } : {}), ...(geoInteraction ? { geoInteraction } : {}) }, diagnostics: [] };
 }
 
 /** Linearize a snapshot back to a plain JSONL-friendly row array. */

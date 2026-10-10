@@ -16,6 +16,10 @@ export type { SessionAttachment, SessionAttachmentKind, SessionAttachmentSource,
 
 export type SessionSnapshot = {
   schemaVersion: 1;
+  hostGeneration?: string;
+  revision?: number;
+  streamingMessage?: AppMessage | null;
+  activeToolEvents?: AppEvent[];
   entries: SessionEntry[];
   sessionId?: string;
   sessionFile?: string | null;
@@ -58,6 +62,7 @@ export type ModelRecord = {
 
 export type LiveSession = {
   id: string;
+  pendingExtensionUiRequests?: AppEvent[];
   cwd?: string;
   sessionFile?: string | null;
   sessionName?: string | null;

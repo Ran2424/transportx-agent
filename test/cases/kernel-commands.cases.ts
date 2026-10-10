@@ -394,3 +394,80 @@ caseTest('kernel projects streamed tool arguments before execution without expos
     animationGlobal.cancelAnimationFrame = originalCancelAnimationFrame;
   }
 });
+
+caseTest('authoritative snapshots replace abandoned branches, overlays, tools and dialogs', () => {
+  const kernel = createAppKernel({ transport: { subscribe: () => () => {} }, http: async () => { throw new Error('unused'); } });
+  kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+  kernel.dispatch({ type: 'conversation/messageAppended', sessionId: 'a', entry: { id: 'abandoned', message: { role: 'assistant', content: 'old branch' } } });
+  kernel.dispatch({ type: 'conversation/streamDelta', sessionId: 'a', channel: 'text', delta: 'orphan partial' });
+  kernel.dispatch({ type: 'tool/started', sessionId: 'a', execution: { toolCallId: 'orphan', status: 'running' } });
+  kernel.dispatch({ type: 'extensionUi/requested', sessionId: 'a', request: { id: 'orphan-dialog' } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: { schemaVersion: 1, entries: [{ id: 'selected', message: { role: 'assistant', content: 'selected branch' } }], isStreaming: false, pendingExtensionUiRequests: [] } });
+  const state = kernel.stores.conversation.get().bySession.a;
+  assert.deepEqual(state.snapshotEntries.map((entry: any) => entry.id), ['selected']);
+  assert.equal(state.live.streamingText, '');
+  assert.equal(kernel.stores.toolExecution.get().bySession.a, undefined);
+  assert.equal(kernel.stores.extensionUi.get().current, null);
+  kernel.dispose();
+});
+
+caseTest('reconnect recovers missed completion and rejects late revision, request and Host generation', async () => {
+  let emit!: (signal: any) => void;
+  const pending: Array<(data: any) => void> = [];
+  const kernel = createAppKernel({
+    transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => {}; } },
+    http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => pending.push(resolve)), text: async () => '' }),
+  });
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+  const snapshot = (generation: string, revision: number, text: string) => ({ schemaVersion: 1, hostGeneration: generation, revision, entries: [{ message: { role: 'assistant', content: text } }], isStreaming: false, isCompacting: false });
+  emit({ kind: 'connected' });
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 1, liveSessions: [{ id: 'a', isStreaming: true }] } });
+  kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+  emit({ kind: 'disconnected' });
+  emit({ kind: 'connected' });
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 5, liveSessions: [{ id: 'a', isStreaming: false }] } });
+  await tick();
+  assert.equal(pending.length, 1);
+  pending.shift()!(snapshot('host-1', 5, 'finished while disconnected'));
+  await tick();
+  assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries[0].message.content, 'finished while disconnected');
+  const delayed = kernel.commands.session.loadSnapshot('a');
+  await tick();
+  emit({ kind: 'message', message: { type: 'event', sessionId: 'a', hostGeneration: 'host-1', revision: 6, event: { type: 'message_end', message: { role: 'assistant', content: 'new event' } } } });
+  pending.shift()!(snapshot('host-1', 5, 'stale response'));
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await delayed });
+  assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries.at(-1).message.content, 'new event');
+  const old = kernel.commands.session.loadSnapshot('a');
+  const latest = kernel.commands.session.loadSnapshot('a');
+  await tick();
+  const oldResponse = pending.shift()!;
+  pending.shift()!(snapshot('host-1', 6, 'latest request'));
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await latest });
+  oldResponse(snapshot('host-1', 6, 'old request'));
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await old });
+  assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries[0].message.content, 'latest request');
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-2', revision: 0, liveSessions: [] } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: snapshot('host-1', 99, 'old Host') });
+  assert.equal(kernel.stores.conversation.get().bySession.a, undefined);
+  kernel.dispose();
+});
+
+caseTest('in-flight snapshot restores partial output then replays newer stream deltas', async () => {
+  let emit!: (signal: any) => void;
+  let respond!: (data: any) => void;
+  const kernel = createAppKernel({
+    transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => {}; } },
+    http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = resolve; }), text: async () => '' }),
+  });
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host', revision: 1, liveSessions: [{ id: 'a', isStreaming: true }] } });
+  kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+  const loading = kernel.commands.session.loadSnapshot('a');
+  await new Promise((resolve) => setImmediate(resolve));
+  emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 3, sessionId: 'a', event: { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' newer' } } } });
+  respond({ schemaVersion: 1, hostGeneration: 'host', revision: 2, entries: [], isStreaming: true, streamingMessage: { role: 'assistant', content: 'authoritative partial' } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await loading });
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.streamingText, 'authoritative partial newer');
+  emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 4, sessionId: 'a', event: { type: 'agent_settled' } } });
+  assert.equal(kernel.stores.session.isStreaming('a'), false);
+  kernel.dispose();
+});

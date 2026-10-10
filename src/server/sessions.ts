@@ -139,6 +139,8 @@ export class PiRpcSession {
   timingMetrics: TimingMetricsStore;
   eventTiming: SessionEventTiming;
   private termination: Promise<void> | null = null;
+  private streamingMessage: PiMessage | null = null;
+  private activeTools = new Map<string, PiRpcMessage>();
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -193,7 +195,7 @@ export class PiRpcSession {
   snapshot() {
     const snapshot = sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
     const geoInteraction = geoInteractionService.snapshot(this);
-    return { ...snapshot, ...(geoInteraction ? { geoInteraction } : {}) };
+    return { ...snapshot, ...this.manager.clock(), streamingMessage: this.streamingMessage, activeToolEvents: [...this.activeTools.values()], pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
   }
 
   get entries() {
@@ -348,6 +350,20 @@ export class PiRpcSession {
       }
     }
     this.eventTiming.apply(event, now);
+    if (type === 'message_start' && event.message?.role === 'assistant') this.streamingMessage = event.message;
+    if (type === 'message_update') {
+      const partial = event.message || (event.assistantMessageEvent as { partial?: PiMessage } | undefined)?.partial;
+      if (partial?.role === 'assistant') this.streamingMessage = partial;
+    }
+    if (type === 'message_end' && event.message?.role === 'assistant') this.streamingMessage = null;
+    if (typeof event.toolCallId === 'string') {
+      if (type === 'tool_execution_start') this.activeTools.set(event.toolCallId, event);
+      if (type === 'tool_execution_update') {
+        const previous = this.activeTools.get(event.toolCallId);
+        this.activeTools.set(event.toolCallId, { ...previous, ...event, type: 'tool_execution_start' });
+      }
+      if (type === 'tool_execution_end') this.activeTools.delete(event.toolCallId);
+    }
     if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
     if (type === 'compaction_start' || type === 'auto_compaction_start') this.isCompacting = true;
@@ -359,6 +375,8 @@ export class PiRpcSession {
     }
     if (type === 'agent_settled') {
       this.isStreaming = false;
+      this.streamingMessage = null;
+      this.activeTools.clear();
       this.pendingExtensionUiRequests.clear();
       // Pi has flushed by the time a run settles; retry the pending name write.
       this.persistPendingSessionName();
@@ -574,6 +592,9 @@ export class LiveSessionManager {
   private historyDeletes = new Map<string, Promise<void>>();
   private jobs = new Map<string, Set<{ controller: AbortController; completion: Promise<unknown> }>>();
   private startingSessions = 0;
+  private readonly hostGeneration = crypto.randomUUID();
+  private revision = 0;
+  clock() { return { hostGeneration: this.hostGeneration, revision: this.revision }; }
 
   constructor() {
     this.sessions = new Map();
@@ -587,7 +608,8 @@ export class LiveSessionManager {
   addClient(ws: LiveClient) { this.clients.add(ws); }
   removeClient(ws: LiveClient) { this.clients.delete(ws); }
   broadcast(data: unknown) {
-    const payload = JSON.stringify(data);
+    this.revision++;
+    const payload = JSON.stringify({ ...(data as JsonRecord), ...this.clock() });
     const bytes = Buffer.byteLength(payload);
     for (const client of this.clients) {
       if ((client.bufferedAmount || 0) + bytes > 8 * 1024 * 1024) {

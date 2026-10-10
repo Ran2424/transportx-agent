@@ -44,3 +44,22 @@ caseTest('combines the projection snapshot with the authoritative session metada
   assert.equal(snapshot.session.resolvedSessionPlan, source.resolvedSessionPlan);
   assert.equal(snapshot.contextUsage.percent, 23);
 });
+
+caseTest('live snapshots include Host clock, current partial message and active tools', () => {
+  const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
+  const manager = new LiveSessionManager();
+  const session = new PiRpcSession(manager, { id: 'clocked', cwd: '/tmp/clocked' });
+  session.handleEvent({ type: 'agent_start' });
+  session.handleEvent({ type: 'message_update', message: { role: 'assistant', content: [{ type: 'text', text: 'current partial' }] } });
+  session.handleEvent({ type: 'tool_execution_start', toolCallId: 'call', toolName: 'read', args: { path: 'file' } });
+  const snapshot = session.snapshot();
+  assert.equal(typeof snapshot.hostGeneration, 'string');
+  assert.ok(snapshot.revision >= 3);
+  assert.equal(snapshot.streamingMessage.content[0].text, 'current partial');
+  assert.equal(snapshot.activeToolEvents[0].toolCallId, 'call');
+  session.handleEvent({ type: 'tool_execution_end', toolCallId: 'call', result: {} });
+  session.handleEvent({ type: 'message_end', message: { role: 'assistant', content: 'finished' } });
+  assert.equal(session.snapshot().streamingMessage, null);
+  assert.equal(session.snapshot().activeToolEvents.length, 0);
+  assert.notEqual(new LiveSessionManager().clock().hostGeneration, manager.clock().hostGeneration);
+});
