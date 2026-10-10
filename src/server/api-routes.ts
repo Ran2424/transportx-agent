@@ -408,7 +408,7 @@ export function createApiRouter(services: ApiRouteServices) {
     })
     .post('/api/rpc', async ({ req, res, deps }) => {
       try { deps.json(res, 200, await deps.handleRpc(await deps.readBody(req))); }
-      catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/sessions/delete', async ({ req, res, deps }) => {
       try {

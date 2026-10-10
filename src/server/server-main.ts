@@ -50,6 +50,7 @@ import { writeJson as json } from './http/response.js';
 import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
 import { CanvasService, buildCanvasContextPrompt } from './canvas-service.js';
 import { isLoopbackHost, validateHostAccess } from './host-access.js';
+import { readJsonBody } from './http/request.js';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -155,12 +156,10 @@ function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
 }
 
 function readBody(req: IncomingMessage): Promise<RpcCommand> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk: Buffer) => { body += chunk.toString(); if (Buffer.byteLength(body, 'utf8') > REPORT_PDF_MAX_HTML_BYTES + 1024 * 1024) reject(new Error('Request body too large')); });
-    req.on('end', () => { try { resolve(body ? JSON.parse(body) as RpcCommand : {}); } catch (error) { reject(error); } });
-    req.on('error', reject);
-  });
+  const pathname = req.url?.split('?')[0];
+  const limit = pathname === '/api/reports/pdf' || pathname === '/api/reports/pdf/download' ? REPORT_PDF_MAX_HTML_BYTES + 1024 * 1024
+    : /\/geo-screenshots(?:\/[^/]+\/respond)?$/.test(pathname || '') ? 16 * 1024 * 1024 : 1024 * 1024;
+  return readJsonBody(req, limit) as Promise<RpcCommand>;
 }
 
 function resolveSessionFile(filePath: string) {

@@ -85,6 +85,39 @@ before((_: TestContext, done: () => void) => {
 after((_: TestContext, done: () => void) => server.close(done));
 beforeEach(() => liveManager.sessions.clear());
 
+caseTest('bounded JSON requests preserve UTF-8 and return readable 413 responses', async () => {
+  const { readJsonBody } = require('../../bin/http/request.js');
+  const req = new PassThrough() as any;
+  const parsed = readJsonBody(req, 100);
+  const value = Buffer.from('{"text":"道路"}');
+  for (const byte of value) req.write(Buffer.from([byte]));
+  req.end();
+  assert.deepEqual(await parsed, { text: '道路' });
+  const over = new PassThrough() as any;
+  const rejected = assert.rejects(readJsonBody(over, 4), (error: any) => error.status === 413);
+  over.write(Buffer.from('12345'));
+  await rejected;
+  for (let index = 0; index < 100; index++) over.write(Buffer.alloc(1024));
+  over.end();
+  const response = await fetch(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'prompt', message: 'x'.repeat(1024 * 1024) }) });
+  assert.equal(response.status, 413);
+  assert.match((await jsonBody(response)).error, /too large/);
+});
+
+caseTest('multipart limits return a readable error over HTTP', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upload-http-limit-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const session = fakeSession('tau_upload_limit');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  const form = new FormData();
+  for (let index = 0; index < 21; index++) form.append('file', new Blob(['x']), `${index}.txt`);
+  const response = await fetch(`${base}/api/live-sessions/${session.id}/attachments?source=picker`, { method: 'POST', body: form });
+  assert.equal(response.status, 413);
+  assert.match((await jsonBody(response)).error, /20 file limit/);
+  assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
+});
+
 caseTest('Internal service tokens authenticate independently of user credentials and require scope', async (t: TestContext) => {
   const { _setAuthForTest, _setCredentialsForTest } = require('../../bin/tau.js');
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-service-auth-'));

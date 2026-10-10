@@ -24,6 +24,100 @@ function multipart(files: Array<{ name: string; type: string; body: string }>) {
   return { boundary, body: Buffer.from(chunks.join('')) };
 }
 
+function request(boundary: string) {
+  const req = new PassThrough() as any;
+  req.headers = { 'content-type': `multipart/form-data; boundary=${boundary}` };
+  return req;
+}
+
+caseTest('a failed upload cannot remove the temporary file of another active request', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upload-owner-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const payload = multipart([{ name: 'owner.txt', type: 'text/plain', body: 'a'.repeat(1024) }]);
+  const active = request(payload.boundary);
+  const completion = saveUploadedAttachments(cwd, active, 'picker');
+  completion.catch(() => {});
+  const suffix = Buffer.from(`\r\n--${payload.boundary}--\r\n`);
+  active.write(payload.body.subarray(0, payload.body.length - suffix.length));
+  const tempRoot = path.join(cwd, '.tau', 'attachment-tmp');
+  const deadline = Date.now() + 2000;
+  while (!fs.readdirSync(tempRoot, { recursive: true }).some((name: string) => name.endsWith('.tmp'))) {
+    assert.ok(Date.now() < deadline, 'active upload opened its temporary file');
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const failed = new PassThrough() as any;
+  failed.headers = {};
+  failed.end('bad');
+  await assert.rejects(saveUploadedAttachments(cwd, failed, 'picker'));
+  active.end(suffix);
+  const [attachment] = await completion;
+  assert.equal(fs.readFileSync(path.join(cwd, attachment.relativePath), 'utf8'), 'a'.repeat(1024));
+  assert.deepEqual(fs.readdirSync(tempRoot), []);
+});
+
+caseTest('concurrent successful uploads preserve both index entries and clean request directories', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upload-concurrent-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const uploads = ['first', 'second'].map((name) => {
+    const payload = multipart([{ name: `${name}.txt`, type: 'text/plain', body: name }]);
+    const req = request(payload.boundary);
+    const result = saveUploadedAttachments(cwd, req, 'picker');
+    req.end(payload.body);
+    return result;
+  });
+  await Promise.all(uploads);
+  assert.deepEqual(listSessionAttachments(cwd).map((file: any) => file.name).sort(), ['first.txt', 'second.txt']);
+  assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
+});
+
+caseTest('fragmented boundaries, incomplete and aborted requests release only their own files', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upload-abort-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const payload = multipart([{ name: 'split.txt', type: 'text/plain', body: 'split body' }]);
+  const split = request(payload.boundary);
+  const success = saveUploadedAttachments(cwd, split, 'picker');
+  success.catch(() => {});
+  for (const byte of payload.body) { split.write(Buffer.from([byte])); await new Promise((resolve) => setImmediate(resolve)); }
+  split.end();
+  assert.equal((await success).length, 1);
+  for (const abort of [false, true]) {
+    const req = request(payload.boundary);
+    const result = saveUploadedAttachments(cwd, req, 'picker');
+    const rejection = assert.rejects(result);
+    req.write(payload.body.subarray(0, payload.body.length - 20));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    if (abort) req.destroy(new Error('client disconnected')); else req.end();
+    await rejection;
+    assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
+  }
+});
+
+caseTest('uploads reject more than twenty files without retaining any temporary files', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upload-count-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const payload = multipart(Array.from({ length: 21 }, (_, index) => ({ name: `${index}.txt`, type: 'text/plain', body: 'x' })));
+  const req = request(payload.boundary);
+  const result = saveUploadedAttachments(cwd, req, 'picker');
+  req.end(payload.body);
+  await assert.rejects(result, (error: any) => error.status === 413);
+  assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
+});
+
+caseTest('total multipart bytes include non-file fields and stop at 100 MB', async (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upload-total-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const boundary = 'total-limit-boundary';
+  const chunk = Buffer.alloc(1024 * 1024, 'x');
+  const req = require('node:stream').Readable.from((async function* () {
+    yield Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="description"\r\n\r\n`);
+    for (let index = 0; index < 101; index++) yield chunk;
+    yield Buffer.from(`\r\n--${boundary}--\r\n`);
+  })());
+  req.headers = { 'content-type': `multipart/form-data; boundary=${boundary}` };
+  await assert.rejects(saveUploadedAttachments(cwd, req, 'picker'), (error: any) => error.status === 413 && /100 MB/.test(error.message));
+  assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
+});
+
 caseTest('uploads multiple files into session-scoped attachment directories', async (t: any) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-attachments-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
