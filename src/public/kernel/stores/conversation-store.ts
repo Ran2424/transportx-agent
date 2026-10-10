@@ -20,6 +20,8 @@ export type QueuedPrompt = { message: string; attachmentIds?: string[]; geoConte
 export type OptimisticPrompt = { message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[] };
 
 export type LiveOverlay = {
+  retry: import('../../../contracts/run-feedback.ts').RetryState | null;
+  outcome: import('../../../contracts/run-feedback.ts').RunOutcome | null;
   runId: string | null;
   optimisticPrompt: OptimisticPrompt | null;
   streamingText: string;
@@ -40,6 +42,8 @@ export type ConversationStoreState = {
 };
 
 const emptyOverlay = (): LiveOverlay => ({
+  retry: null,
+  outcome: null,
   runId: null,
   optimisticPrompt: null,
   streamingText: '',
@@ -156,8 +160,15 @@ export class ConversationStore {
     });
   }
 
+  retryStarted(sessionId: string, retry: import('../../../contracts/run-feedback.ts').RetryState) {
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, retry, outcome: null } }));
+  }
+  retryEnded(sessionId: string, outcome: import('../../../contracts/run-feedback.ts').RunOutcome | null) {
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, retry: null, outcome } }));
+  }
+
   streamStarted(sessionId: string, runId: string) {
-    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, active: true } }));
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, active: true, retry: null, outcome: null } }));
   }
 
   messageStarted(sessionId: string, message: AppMessage) {
@@ -237,7 +248,7 @@ export class ConversationStore {
   streamEnded(sessionId: string) {
     this.update(sessionId, (conv) => ({
       snapshotEntries: this.foldOverlay(conv, conv.snapshotEntries),
-      live: { ...emptyOverlay(), optimisticPrompt: conv.live.optimisticPrompt, queued: conv.live.queued },
+      live: { ...emptyOverlay(), optimisticPrompt: conv.live.optimisticPrompt, queued: conv.live.queued, outcome: conv.live.outcome },
     }));
   }
 
@@ -293,6 +304,8 @@ export class ConversationStore {
       live: {
         ...emptyOverlay(),
         active: !!snapshot.isStreaming,
+        retry: snapshot.retry ?? null,
+        outcome: snapshot.outcome ?? null,
         streamingText: messageText(snapshot.streamingMessage ?? undefined),
         streamingThinking: messageThinking(snapshot.streamingMessage ?? undefined),
         queued: conv.live.queued,

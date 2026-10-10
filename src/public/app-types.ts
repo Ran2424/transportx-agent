@@ -19,6 +19,8 @@ export type SessionSnapshot = {
   hostGeneration?: string;
   revision?: number;
   streamingMessage?: AppMessage | null;
+  retry?: import('../contracts/run-feedback.ts').RetryState | null;
+  outcome?: import('../contracts/run-feedback.ts').RunOutcome | null;
   activeToolEvents?: AppEvent[];
   entries: SessionEntry[];
   sessionId?: string;
@@ -108,6 +110,8 @@ export type MessageContentBlock = {
 };
 
 export type AppMessage = {
+  stopReason?: string;
+  errorMessage?: string;
   id?: string;
   role?: string;
   content?: string | MessageContentBlock[];

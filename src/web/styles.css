@@ -1224,3 +1224,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .software-update-progress progress { flex: 1; accent-color: var(--text-primary); }
 .software-update-notice { position: fixed; right: 20px; bottom: 64px; z-index: 80; display: flex; align-items: center; gap: 12px; padding: 12px 16px; max-width: calc(100vw - 40px); border: 1px solid var(--border-default); background: var(--surface-raised); color: var(--text-primary); font-size: 12px; }
 .software-update-notice button { color: var(--text-primary); background: transparent; border: 0; cursor: pointer; font-size: 12px; }
+
+.model-feedback { display: grid; gap: 6px; margin-top: 12px; padding: 12px; border: 1px solid var(--border-default); color: var(--text-primary); background: var(--selection-bg); font-size: 13px; }
+.model-feedback p { margin: 0; }
+.model-feedback small { color: var(--text-secondary); font-size: 11px; }
+.model-feedback button { justify-self: start; border: 1px solid var(--border-default); border-radius: 4px; padding: 5px 8px; color: var(--text-primary); background: var(--surface-default); }

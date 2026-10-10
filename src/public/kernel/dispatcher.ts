@@ -115,6 +115,12 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         stores.session.geoScreenshotUpdated(action.sessionId, action.request, action.requestId);
         break;
 
+      case 'conversation/retryStarted':
+        stores.conversation.retryStarted(action.sessionId, action.retry);
+        break;
+      case 'conversation/retryEnded':
+        stores.conversation.retryEnded(action.sessionId, action.outcome);
+        break;
       case 'conversation/streamStarted':
         stores.conversation.streamStarted(action.sessionId, action.runId);
         stores.session.setStreaming(action.sessionId, true);

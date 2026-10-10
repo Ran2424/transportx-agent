@@ -52,6 +52,8 @@ export type AppAction =
   | { type: 'session/geoInteractionUpdated'; sessionId: string; request?: GeoInteractionRequestV1; response?: GeoInteractionResponseV1 }
   | { type: 'session/geoScreenshotUpdated'; sessionId: string; request?: GeoScreenshotRequestV1; requestId?: string }
   // conversation
+  | { type: 'conversation/retryStarted'; sessionId: string; retry: import('../../contracts/run-feedback.ts').RetryState }
+  | { type: 'conversation/retryEnded'; sessionId: string; outcome: import('../../contracts/run-feedback.ts').RunOutcome | null }
   | { type: 'conversation/streamStarted'; sessionId: string; runId: string }
   | { type: 'conversation/messageStarted'; sessionId: string; runId: string | null; message: AppMessage }
   | { type: 'conversation/streamDelta'; sessionId: string; runId: string | null; channel: StreamChannel; delta: string }

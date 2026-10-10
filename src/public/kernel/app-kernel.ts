@@ -162,8 +162,8 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   const dispatch = (action: AppAction) => {
     trackLifecycle(action);
     if (action.type === 'session/snapshotReceived') {
-      recoveryNeeded.delete(action.sessionId);
       if (!acceptSnapshot(action.sessionId, action.snapshot)) return;
+      recoveryNeeded.delete(action.sessionId);
       flushBufferedActions();
     }
     apply(action);

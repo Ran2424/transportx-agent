@@ -18,6 +18,7 @@ import { readSessionFileEntries, SessionProjection } from './session-projection.
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { PiRpcTransport } from './pi-rpc-transport.js';
+import { retryState, classifyFailure, messageOutcome, type RunOutcome, type RetryState } from '../contracts/run-feedback.js';
 import { signalProcessTree, terminateProcessTree } from './process-tree.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import { buildSessionPiLaunch } from './session-pi-launch.js';
@@ -139,6 +140,8 @@ export class PiRpcSession {
   timingMetrics: TimingMetricsStore;
   eventTiming: SessionEventTiming;
   private termination: Promise<void> | null = null;
+  private retry: RetryState | null = null;
+  private runOutcome: RunOutcome | null = null;
   private streamingMessage: PiMessage | null = null;
   private activeTools = new Map<string, PiRpcMessage>();
 
@@ -195,7 +198,7 @@ export class PiRpcSession {
   snapshot() {
     const snapshot = sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
     const geoInteraction = geoInteractionService.snapshot(this);
-    return { ...snapshot, ...this.manager.clock(), streamingMessage: this.streamingMessage, activeToolEvents: [...this.activeTools.values()], pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
+    return { ...snapshot, ...this.manager.clock(), streamingMessage: this.streamingMessage, retry: this.retry, outcome: this.runOutcome, activeToolEvents: [...this.activeTools.values()], pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
   }
 
   get entries() {
@@ -350,6 +353,11 @@ export class PiRpcSession {
       }
     }
     this.eventTiming.apply(event, now);
+    if (type === 'agent_start' || type === 'auto_retry_start') this.runOutcome = null;
+    if (type === 'message_end' && event.message?.role === 'assistant') this.runOutcome = messageOutcome(event.message);
+    if (type === 'auto_retry_start') this.retry = retryState(event);
+    if (type === 'auto_retry_end') this.runOutcome = event.success ? null : /cancelled/i.test(String(event.finalError)) ? { status: 'cancelled' } : { status: 'failed', reason: classifyFailure(event.finalError) };
+    if (type === 'auto_retry_end' || type === 'agent_settled') this.retry = null;
     if (type === 'message_start' && event.message?.role === 'assistant') this.streamingMessage = event.message;
     if (type === 'message_update') {
       const partial = event.message || (event.assistantMessageEvent as { partial?: PiMessage } | undefined)?.partial;

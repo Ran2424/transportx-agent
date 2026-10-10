@@ -471,3 +471,52 @@ caseTest('in-flight snapshot restores partial output then replays newer stream d
   assert.equal(kernel.stores.session.isStreaming('a'), false);
   kernel.dispose();
 });
+
+caseTest('retry feedback is session scoped, clears on success and distinguishes cancellation', () => {
+  let emit!: (signal: any) => void;
+  const kernel = createAppKernel({ transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => {}; } }, http: async () => { throw new Error('unused'); } });
+  const event = (sessionId: string, value: any) => emit({ kind: 'message', message: { type: 'event', sessionId, event: value } });
+  event('a', { type: 'agent_start' });
+  event('a', { type: 'message_end', message: { role: 'assistant', content: '', stopReason: 'error', errorMessage: '401 Bearer secret-token request-body-sensitive' } });
+  event('a', { type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: '401 Bearer secret-token' });
+  assert.deepEqual(kernel.stores.conversation.get().bySession.a.live.retry, { attempt: 1, maxAttempts: 3, delayMs: 2000, reason: 'authentication' });
+  assert.equal(kernel.stores.conversation.get().bySession.b, undefined);
+  event('a', { type: 'auto_retry_end', success: true });
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.retry, null);
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.outcome, null);
+  event('b', { type: 'auto_retry_end', success: false, finalError: 'Retry cancelled' });
+  assert.deepEqual(kernel.stores.conversation.get().bySession.b.live.outcome, { status: 'cancelled' });
+  event('a', { type: 'auto_retry_end', success: false, finalError: '429 secret-token' });
+  event('a', { type: 'agent_settled' });
+  assert.deepEqual(kernel.stores.conversation.get().bySession.a.live.outcome, { status: 'failed', reason: 'rate_limit' });
+  event('a', { type: 'agent_start' });
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.outcome, null);
+  kernel.dispose();
+});
+
+caseTest('a background stream preserves active conversation and tool slice references', () => {
+  const conversation = new ConversationStore();
+  const tools = new ToolExecutionStore();
+  conversation.streamStarted('a', 'a-run');
+  tools.started('a', { toolCallId: 'a-call', status: 'running' });
+  const activeConversation = conversation.get().bySession.a;
+  const activeTools = tools.get().bySession.a;
+  conversation.streamDelta('b', 'text', 'background');
+  tools.started('b', { toolCallId: 'b-call', status: 'running' });
+  assert.equal(conversation.get().bySession.a, activeConversation);
+  assert.equal(tools.get().bySession.a, activeTools);
+});
+
+caseTest('closing a session prevents a late snapshot from resurrecting its stores', async () => {
+  let respond!: (data: any) => void;
+  const kernel = createAppKernel({ transport: { subscribe: () => () => {} }, http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = resolve; }), text: async () => '' }) });
+  kernel.dispatch({ type: 'session/created', session: { id: 'a' } });
+  const pending = kernel.commands.session.loadSnapshot('a');
+  await new Promise((resolve) => setImmediate(resolve));
+  kernel.dispatch({ type: 'session/closed', sessionId: 'a' });
+  respond({ schemaVersion: 1, entries: [{ message: { role: 'assistant', content: 'late' } }], session: { id: 'a' } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await pending });
+  assert.equal(kernel.stores.conversation.get().bySession.a, undefined);
+  assert.equal(kernel.stores.session.get().sessions.length, 0);
+  kernel.dispose();
+});

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { documentSmoke } from './harness/document-smoke.mjs';
+import { feedbackSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
 
 function freePort() {
@@ -44,7 +45,7 @@ let page;
 const pageErrors = [];
 const requestedUrls = [];
 try {
-  const { baseUrl } = await waitForReady(child, () => output);
+  const { baseUrl, longHistoryFile, longHistoryCwd } = await waitForReady(child, () => output);
   browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(20_000);
@@ -61,6 +62,7 @@ try {
 
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
+  await feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryCwd);
   await documentSmoke(page, browser);
   assert.equal(requestedUrls.some((url) => /(?:docx|xlsx|pptx)_parser_bg|render-worker/.test(url)), false, 'non-Office workflows do not load OOXML WASM or workers');
   await composer.fill('实时-markdown');
