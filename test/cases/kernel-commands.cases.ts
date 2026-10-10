@@ -59,6 +59,27 @@ caseTest('unknown prompt delivery keeps the original identity without automatic 
   assert.equal(fixture.commands[0].clientCommandId, fixture.commands[1].clientCommandId);
 });
 
+caseTest('failed queued prompts do not resend on unrelated actions', async () => {
+  let calls = 0;
+  const kernel = createAppKernel({ transport: { subscribe() { return () => {}; } }, http: async () => {
+    calls++;
+    return { ok: true, status: 200, async json() { return { success: false, delivery: 'unknown', error: 'response lost' }; } };
+  } });
+  try {
+    kernel.dispatch({ type: 'conversation/promptQueued', sessionId: 'one', message: 'queued', clientCommandId: 'original-id' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1);
+    kernel.dispatch({ type: 'session/activated', sessionId: 'other' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1);
+    assert.equal(kernel.stores.conversation.get().bySession.one.live.queued.length, 1);
+    kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId: 'one', index: 0 });
+    kernel.dispatch({ type: 'conversation/promptQueued', sessionId: 'one', message: 'next', clientCommandId: 'next-id' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 2);
+  } finally { kernel.dispose(); }
+});
+
 caseTest('streaming prompt keeps a stable command ID in the queue', async () => {
   const fixture = deps(() => ({ type: 'response', success: true }), true);
   const agent = createAgentCommands(fixture.value);

@@ -99,6 +99,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
 
   let commands: KernelCommands;
   const flushingSessions = new Set<string>();
+  const failedQueuedPrompts = new WeakSet<object>();
 
   // Flush prompts that were queued while a session was busy. A prompt is
   // removed only after the Agent Host acknowledges it; failures leave it in
@@ -107,17 +108,20 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     const { streamingBySession, compactingBySession } = stores.session.get();
     const { bySession } = stores.conversation.get();
     for (const [sessionId, conv] of Object.entries(bySession)) {
-      if (streamingBySession[sessionId] || compactingBySession[sessionId] || conv.live.queued.length === 0 || flushingSessions.has(sessionId)) continue;
+      if (streamingBySession[sessionId] || compactingBySession[sessionId] || conv.live.queued.length === 0 || flushingSessions.has(sessionId) || failedQueuedPrompts.has(conv.live.queued[0])) continue;
       flushingSessions.add(sessionId);
       void (async () => {
+        let attempted: object | null = null;
         try {
           while (!stores.session.isStreaming(sessionId) && !stores.session.isCompacting(sessionId)) {
             const queued = stores.conversation.get().bySession[sessionId]?.live.queued[0];
             if (!queued) break;
+            attempted = queued;
             await commands.agent.sendPrompt({ sessionId, message: queued.message, attachmentIds: queued.attachmentIds, geoContextIds: queued.geoContextIds, canvasContextIds: queued.canvasContextIds, clientCommandId: queued.clientCommandId });
             apply({ type: 'conversation/queueItemRemoved', sessionId, index: 0 });
           }
         } catch (cause) {
+          if (attempted) failedQueuedPrompts.add(attempted);
           apply({ type: 'error/raised', error: toAppError(cause, { code: 'queued_prompt_failed', category: 'transport', sessionId, retryable: true }) });
         } finally {
           flushingSessions.delete(sessionId);
