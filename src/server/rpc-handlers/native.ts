@@ -1,6 +1,7 @@
 import type { RpcHandlerRegistry } from '../rpc-handlers.js';
 import type { RpcCommand, RpcResponse } from '../types.js';
 import type { SessionAttachment } from '../../contracts/attachments.js';
+import crypto from 'node:crypto';
 
 type NativeSession = {
   id: string;
@@ -10,13 +11,9 @@ type NativeSession = {
   autoCompactionEnabled: boolean;
   pendingExtensionUiRequests: Map<string, unknown>;
   manager: { broadcastUpdated(sessionId: string): void };
-  send(command: RpcCommand, options: { timeoutMs: number }): Promise<RpcResponse>;
-  registerPromptAttachments(attachmentIds: string[]): void;
-  discardPromptAttachments(attachmentIds: string[]): void;
-  registerPromptGeoContexts(contextIds: string[]): void;
-  discardPromptGeoContexts(contextIds: string[]): void;
-  registerPromptCanvasContexts(contextIds: string[]): void;
-  discardPromptCanvasContexts(contextIds: string[]): void;
+  send(command: RpcCommand, options: { timeoutMs: number; onLateResponse?: (response: RpcResponse) => void }): Promise<RpcResponse>;
+  registerPendingMessage(pending: { commandId: string; text: string; attachmentIds: string[]; geoContextIds: string[]; canvasContextIds: string[] }): void;
+  discardPendingMessage(commandId: string): void;
   abortGeoInteraction(): void;
 };
 
@@ -31,6 +28,7 @@ type NativeRpcDependencies<T extends NativeSession> = {
   buildCanvasContext(contextIds: string[]): string;
   parseModel(model: unknown): { model: { provider?: string; id?: string } | null };
   errorMessage(error: unknown): string;
+  completeCommand?(command: RpcCommand, response: RpcResponse): void;
 };
 
 const NATIVE_COMMANDS = ['prompt', 'steer', 'follow_up', 'abort', 'compact', 'get_state', 'set_auto_compaction', 'set_model', 'cycle_model', 'set_thinking_level', 'cycle_thinking_level', 'get_session_stats', 'get_commands', 'extension_ui_response'] as const;
@@ -44,20 +42,19 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
     if (command.type === 'extension_ui_response' && (typeof command.id !== 'string' || !session.pendingExtensionUiRequests.has(command.id))) return reply.failure('Extension UI request is no longer pending');
     if (previousLevel !== null && command.level) session.thinkingLevel = command.level;
     if (command.type === 'abort') session.abortGeoInteraction();
-    let trackedPromptAttachments: string[] | null = null;
-    let trackedPromptGeoContexts: string[] | null = null;
-    let trackedPromptCanvasContexts: string[] | null = null;
+    let pendingId: string | null = null;
     try {
       let rpcCommand = { ...command };
       delete rpcCommand.clientCommandId;
       if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
         const rawIds = command.attachmentIds;
-        const attachmentIds = rawIds === undefined ? [] : Array.isArray(rawIds) ? rawIds.filter((id): id is string => typeof id === 'string') : null;
+        const attachmentIds = rawIds === undefined ? [] : Array.isArray(rawIds) && rawIds.every((id) => typeof id === 'string') ? rawIds as string[] : null;
         if (!attachmentIds) return reply.failure('attachmentIds must be an array');
         const attachments = deps.resolveAttachments(session.cwd, attachmentIds);
         const geoContextIds = command.geoContextIds === undefined ? [] : deps.validateGeoContexts(session, command.geoContextIds);
         const canvasContextIds = command.canvasContextIds === undefined ? [] : deps.validateCanvasContexts(session, command.canvasContextIds);
         const message = typeof command.message === 'string' ? command.message : '';
+        if (!message.trim()) return reply.failure('message must be a non-empty string');
         const imageInputs = session.model && (session.model.images === true || (Array.isArray(session.model.input) && session.model.input.includes('image')))
           ? attachments.filter((attachment) => attachment.kind === 'image').map((attachment) => ({ type: 'image', data: deps.attachmentBase64(session.cwd, attachment), mimeType: attachment.mimeType }))
           : [];
@@ -65,34 +62,41 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
         delete rpcCommand.attachmentIds;
         delete rpcCommand.geoContextIds;
         delete rpcCommand.canvasContextIds;
+        delete rpcCommand.clientCommandId;
+        // Pi events contain text, not the RPC id; match enriched content rather
+        // than queue order (steer can overtake follow_up).
+        if (!message.startsWith('/') || attachmentIds.length || geoContextIds.length || canvasContextIds.length) {
+          pendingId = crypto.randomUUID();
+          rpcCommand.id = pendingId;
+          session.registerPendingMessage({ commandId: pendingId, text: rpcCommand.message as string, attachmentIds, geoContextIds, canvasContextIds });
+        }
       }
       if (command.type === 'set_model' && (!command.provider || !command.modelId)) {
         const parsed = deps.parseModel(command.model);
         if (!parsed.model?.provider || !parsed.model.id) return reply.failure('模型格式无效，请使用 provider/model');
         rpcCommand = { ...command, provider: parsed.model.provider, modelId: parsed.model.id };
       }
-      if (['prompt', 'steer', 'follow_up'].includes(command.type || '')) {
-        trackedPromptAttachments = Array.isArray(command.attachmentIds) ? command.attachmentIds.filter((id): id is string => typeof id === 'string') : [];
-        session.registerPromptAttachments(trackedPromptAttachments);
-        trackedPromptGeoContexts = command.geoContextIds === undefined ? [] : deps.validateGeoContexts(session, command.geoContextIds);
-        session.registerPromptGeoContexts(trackedPromptGeoContexts);
-        trackedPromptCanvasContexts = command.canvasContextIds === undefined ? [] : deps.validateCanvasContexts(session, command.canvasContextIds);
-        session.registerPromptCanvasContexts(trackedPromptCanvasContexts);
-      }
-      const response = await session.send(rpcCommand, { timeoutMs: command.type === 'prompt' ? 300000 : 60000 });
-      if (command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
+      delete rpcCommand.clientCommandId;
+      const response = await session.send(rpcCommand, {
+        timeoutMs: command.type === 'prompt' ? 300000 : 60000,
+        onLateResponse: (late) => {
+          if (late.success === false && pendingId) session.discardPendingMessage(pendingId);
+          deps.completeCommand?.(command, { ...late, delivery: late.success === false ? 'rejected' : 'accepted' });
+        },
+      });
+      if (response.success === false && pendingId) session.discardPendingMessage(pendingId);
+      if (response.success !== false && command.type === 'extension_ui_response' && typeof command.id === 'string') session.pendingExtensionUiRequests.delete(command.id);
       if (command.type === 'set_auto_compaction' && response.success !== false) {
         session.autoCompactionEnabled = command.enabled === true;
         session.manager.broadcastUpdated(session.id);
       }
       if (response.success === false && previousLevel !== null) session.thinkingLevel = previousLevel;
-      return { ...response, success: response.success !== false };
+      return { ...response, success: response.success !== false, delivery: response.success === false ? 'rejected' : 'accepted' };
     } catch (error) {
       if (previousLevel !== null) session.thinkingLevel = previousLevel;
-      if (trackedPromptAttachments) session.discardPromptAttachments(trackedPromptAttachments);
-      if (trackedPromptGeoContexts) session.discardPromptGeoContexts(trackedPromptGeoContexts);
-      if (trackedPromptCanvasContexts) session.discardPromptCanvasContexts(trackedPromptCanvasContexts);
-      return reply.failure(deps.errorMessage(error));
+      const unknown = (error as { delivery?: string })?.delivery === 'unknown' || deps.errorMessage(error).includes('RPC command timed out:');
+      if (!unknown && pendingId) session.discardPendingMessage(pendingId);
+      return { ...reply.failure(deps.errorMessage(error)), delivery: unknown ? 'unknown' : 'rejected' };
     }
   };
   return Object.fromEntries(NATIVE_COMMANDS.map((type) => [type, { native: true, reliable: RELIABLE_COMMANDS.has(type), handle }])) as RpcHandlerRegistry;

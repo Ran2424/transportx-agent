@@ -8,8 +8,9 @@ type WritableInput = {
 export class PiRpcTransport {
   get pendingCount() { return this.pending.size; }
   private readonly pending = new Map<string, PendingCommand>();
+  private readonly late = new Map<string, (response: RpcResponse) => void>();
 
-  send(input: WritableInput, command: RpcCommand, opts: { timeoutMs?: number } = {}) {
+  send(input: WritableInput, command: RpcCommand, opts: { timeoutMs?: number; onLateResponse?: (response: RpcResponse) => void } = {}) {
     const id = command.id || `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const outbound = { ...command, id };
     delete outbound.sessionId;
@@ -24,7 +25,8 @@ export class PiRpcTransport {
     return new Promise<RpcResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`RPC command timed out: ${outbound.type}`));
+        if (opts.onLateResponse && this.late.size < 200) this.late.set(id, opts.onLateResponse);
+        reject(Object.assign(new Error(`RPC command timed out: ${outbound.type}`), { delivery: 'unknown' }));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, command: outbound.type });
       try {
@@ -32,7 +34,7 @@ export class PiRpcTransport {
           if (!error) return;
           clearTimeout(timer);
           this.pending.delete(id);
-          reject(error);
+          reject(Object.assign(error, { delivery: 'unknown' }));
         });
       } catch (error) {
         clearTimeout(timer);
@@ -46,7 +48,13 @@ export class PiRpcTransport {
     const id = response.id;
     if (typeof id !== 'string') return false;
     const pending = this.pending.get(id);
-    if (!pending) return false;
+    if (!pending) {
+      const late = this.late.get(id);
+      if (!late) return false;
+      this.late.delete(id);
+      late(response);
+      return true;
+    }
     clearTimeout(pending.timer);
     this.pending.delete(id);
     pending.resolve(response);
@@ -56,8 +64,9 @@ export class PiRpcTransport {
   rejectAll(error: unknown) {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
-      pending.reject(error);
+      pending.reject(Object.assign(new Error(error instanceof Error ? error.message : String(error)), { delivery: 'unknown' }));
     }
     this.pending.clear();
+    this.late.clear();
   }
 }

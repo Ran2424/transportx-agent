@@ -47,7 +47,16 @@ caseTest('failed prompt does not create optimistic sent state', async () => {
   assert.deepEqual(fixture.actions, []);
   const firstId = fixture.commands[0].clientCommandId;
   await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: '不会假成功' }));
-  assert.equal(fixture.commands[1].clientCommandId, firstId);
+  assert.notEqual(fixture.commands[1].clientCommandId, firstId);
+});
+
+caseTest('unknown prompt delivery keeps the original identity without automatic resend', async () => {
+  const fixture = deps(() => ({ success: false, delivery: 'unknown', error: 'response lost' }));
+  const agent = createAgentCommands(fixture.value);
+  await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: 'unknown delivery' }), (error: any) => error.code === 'delivery_unknown');
+  assert.equal(fixture.commands.length, 1);
+  await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: 'unknown delivery' }));
+  assert.equal(fixture.commands[0].clientCommandId, fixture.commands[1].clientCommandId);
 });
 
 caseTest('streaming prompt keeps a stable command ID in the queue', async () => {

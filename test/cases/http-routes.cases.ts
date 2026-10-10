@@ -49,12 +49,8 @@ function fakeSession(id: string) {
     snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
     send: async () => ({ data: { commands: [] } }),
-    registerPromptAttachments: () => {},
-    discardPromptAttachments: () => {},
-    registerPromptGeoContexts: () => {},
-    discardPromptGeoContexts: () => {},
-    registerPromptCanvasContexts: () => {},
-    discardPromptCanvasContexts: () => {},
+    registerPendingMessage: () => {},
+    discardPendingMessage: () => {},
     abortGeoInteraction: () => {},
   };
 }
@@ -757,8 +753,6 @@ caseTest('reliable prompt command IDs are acknowledged and executed once', async
       await new Promise((resolve) => setTimeout(resolve, 5));
       return { success: true };
     },
-    registerPromptAttachments: () => {},
-    discardPromptAttachments: () => {},
   };
   liveManager.sessions.set(session.id, session);
   const command = { type: 'prompt', sessionId: session.id, message: '一次即可', clientCommandId: 'client-command-one' };
@@ -774,8 +768,6 @@ caseTest('Pi RPC prompt timeout is reported instead of optimistic success', asyn
   const session = {
     ...fakeSession('tau_prompt_timeout'),
     send: async () => { throw new Error('RPC command timed out: prompt'); },
-    registerPromptAttachments: () => {},
-    discardPromptAttachments: () => {},
   };
   liveManager.sessions.set(session.id, session);
   const response = await handleRpcCommand({ type: 'prompt', sessionId: session.id, message: '不要假成功', clientCommandId: 'client-command-timeout' });

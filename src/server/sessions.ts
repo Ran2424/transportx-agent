@@ -130,9 +130,7 @@ export class PiRpcSession {
   piVersion: string;
   capabilityTracker: SessionCapabilityTracker;
   resolvedSessionPlan: ResolvedSessionPlan | null;
-  pendingAttachmentRefs: string[][];
-  pendingGeoContextRefs: string[][];
-  pendingCanvasContextRefs: string[][];
+  pendingMessages: Array<{ commandId: string; text: string; attachmentIds: string[]; geoContextIds: string[]; canvasContextIds: string[] }>;
   activeGeoContextIds: string[];
   activeCanvasContextIds: string[];
   serviceTokens: Record<SessionService, string>;
@@ -173,9 +171,7 @@ export class PiRpcSession {
     this.piVersion = opts.piVersion || PI_RUNTIME_MINIMUM;
     this.capabilityTracker = new SessionCapabilityTracker(this.piVersion);
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
-    this.pendingAttachmentRefs = [];
-    this.pendingGeoContextRefs = [];
-    this.pendingCanvasContextRefs = [];
+    this.pendingMessages = [];
     this.activeGeoContextIds = [];
     this.activeCanvasContextIds = [];
     this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID(), canvas: crypto.randomUUID() };
@@ -275,7 +271,7 @@ export class PiRpcSession {
     }, 250);
   }
 
-  send(command: RpcCommand, opts: { timeoutMs?: number } = {}) {
+  send(command: RpcCommand, opts: { timeoutMs?: number; onLateResponse?: (response: RpcResponse) => void } = {}) {
     const child = this.child;
     if (!child || !child.stdin!.writable || this.terminating) {
       return Promise.reject(new Error('Pi RPC session is not running'));
@@ -439,9 +435,14 @@ export class PiRpcSession {
     if (message.role === 'user' && eventType === 'message_start') {
       const text = this.messageText(message);
       if (text) this.userMessages.push(text.slice(0, 300));
-      const attachmentIds = this.pendingAttachmentRefs.shift() || [];
-      const geoContextIds = this.pendingGeoContextRefs.shift() || [];
-      const canvasContextIds = this.pendingCanvasContextRefs.shift() || [];
+      const rawText = typeof message.content === 'string' ? message.content : (message.content || []).filter((block) => block.type === 'text').map((block) => block.text || '').join('\n');
+      const index = this.pendingMessages.findIndex((pending) => pending.text === rawText);
+      const pending = index < 0 ? null : this.pendingMessages.splice(index, 1)[0];
+      const attachmentIds = pending?.attachmentIds || [];
+      const geoContextIds = pending?.geoContextIds || [];
+      const canvasContextIds = pending?.canvasContextIds || [];
+      this.activeGeoContextIds = [...geoContextIds];
+      this.activeCanvasContextIds = [...canvasContextIds];
       const enriched = attachmentIds.length || geoContextIds.length || canvasContextIds.length
         ? { ...message, ...(attachmentIds.length ? { attachmentIds } : {}), ...(geoContextIds.length ? { geoContextIds } : {}), ...(canvasContextIds.length ? { canvasContextIds } : {}), content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
         : (typeof message.content === 'string' && message.content !== text ? { ...message, content: text } : message);
@@ -456,55 +457,19 @@ export class PiRpcSession {
     }
   }
 
-  registerPromptAttachments(attachmentIds: string[]) {
-    this.pendingAttachmentRefs.push([...attachmentIds]);
+  registerPendingMessage(pending: PiRpcSession['pendingMessages'][number]) {
+    if (this.pendingMessages.length >= 200) throw new Error('Pending message capacity reached');
+    this.pendingMessages.push(pending);
   }
 
-  discardPromptAttachments(attachmentIds: string[]) {
-    for (let index = this.pendingAttachmentRefs.length - 1; index >= 0; index -= 1) {
-      const pending = this.pendingAttachmentRefs[index];
-      if (pending.length === attachmentIds.length && pending.every((id, itemIndex) => id === attachmentIds[itemIndex])) {
-        this.pendingAttachmentRefs.splice(index, 1);
-        return;
-      }
-    }
-  }
-
-  registerPromptGeoContexts(contextIds: string[]) {
-    this.activeGeoContextIds = [...contextIds];
-    this.pendingGeoContextRefs.push([...contextIds]);
-  }
-
-  discardPromptGeoContexts(contextIds: string[]) {
-    for (let index = this.pendingGeoContextRefs.length - 1; index >= 0; index -= 1) {
-      const pending = this.pendingGeoContextRefs[index];
-      if (pending.length === contextIds.length && pending.every((id, itemIndex) => id === contextIds[itemIndex])) {
-        this.pendingGeoContextRefs.splice(index, 1);
-        break;
-      }
-    }
-    if (this.activeGeoContextIds.length === contextIds.length && this.activeGeoContextIds.every((id, index) => id === contextIds[index])) this.activeGeoContextIds = [];
-  }
-
-  registerPromptCanvasContexts(contextIds: string[]) {
-    this.activeCanvasContextIds = [...contextIds];
-    this.pendingCanvasContextRefs.push([...contextIds]);
-  }
-
-  discardPromptCanvasContexts(contextIds: string[]) {
-    for (let index = this.pendingCanvasContextRefs.length - 1; index >= 0; index -= 1) {
-      const pending = this.pendingCanvasContextRefs[index];
-      if (pending.length === contextIds.length && pending.every((id, itemIndex) => id === contextIds[itemIndex])) {
-        this.pendingCanvasContextRefs.splice(index, 1);
-        break;
-      }
-    }
-    if (this.activeCanvasContextIds.length === contextIds.length && this.activeCanvasContextIds.every((id, index) => id === contextIds[index])) this.activeCanvasContextIds = [];
+  discardPendingMessage(commandId: string) {
+    const index = this.pendingMessages.findIndex((pending) => pending.commandId === commandId);
+    if (index >= 0) this.pendingMessages.splice(index, 1);
   }
 
   messageText(message: PiMessage) {
     if (typeof message.content === 'string') return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content)));
-    if (Array.isArray(message.content)) return stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n')));
+    if (Array.isArray(message.content)) return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n'))));
     return '';
   }
 

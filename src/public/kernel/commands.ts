@@ -312,7 +312,7 @@ async function rpcCommand(http: HttpClient, command: Record<string, unknown>): P
   const data = await httpJson(http, '/api/rpc', { method: 'POST', body: command }, { category: 'session', sessionId });
   if (data && typeof data === 'object' && (data as { success?: unknown }).success === false) {
     const message = String((data as { error?: unknown }).error ?? 'RPC command failed');
-    const deliveryUnknown = message.startsWith('RPC command timed out:');
+    const deliveryUnknown = (data as { delivery?: string }).delivery === 'unknown' || message.startsWith('RPC command timed out:');
     throw appError({
       code: deliveryUnknown ? 'delivery_unknown' : 'rpc_command_failed',
       category: 'session',
@@ -342,7 +342,13 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
         deps.dispatch({ type: 'conversation/promptQueued', sessionId, message, attachmentIds, geoContextIds, ...(canvasContextIds?.length ? { canvasContextIds } : {}), clientCommandId: commandId });
         return;
       }
-      await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
+      try {
+        await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== 'delivery_unknown' && code !== 'http_network_error') pendingPromptIds.delete(promptKey);
+        throw error;
+      }
       pendingPromptIds.delete(promptKey);
       deps.dispatch({ type: 'conversation/promptSent', sessionId, message, attachmentIds, geoContextIds, ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
     },

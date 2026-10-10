@@ -51,6 +51,7 @@ import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
 import { CanvasService, buildCanvasContextPrompt } from './canvas-service.js';
 import { isLoopbackHost, validateHostAccess } from './host-access.js';
 import { readJsonBody } from './http/request.js';
+import { createHash } from 'node:crypto';
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -59,7 +60,7 @@ const citationService = new CitationService();
 const canvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath));
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
-const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
+const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (response) => response.delivery === 'unknown');
 const updatePreparation = new UpdatePreparation();
 const rpcHandlers: RpcHandlerRegistry = {
   ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
@@ -104,6 +105,9 @@ const rpcHandlers: RpcHandlerRegistry = {
     buildCanvasContext: buildCanvasContextPrompt,
     parseModel: parseModelSpecToModel,
     errorMessage,
+    completeCommand: (command, response) => {
+      if (command.clientCommandId && reliableCommandTypes.has(command.type || '')) rpcCommandLedger.settle(`${command.sessionId || ''}:${command.clientCommandId}`, { ...response, clientCommandId: command.clientCommandId });
+    },
   }),
 };
 const reliableCommandTypes = new Set(Object.entries(rpcHandlers).flatMap(([type, handler]) => handler.reliable ? [type] : []));
@@ -289,7 +293,9 @@ async function dispatchRpcCommand(command: RpcCommand): Promise<RpcResponse> {
 async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const clientCommandId = typeof command.clientCommandId === 'string' && command.clientCommandId.trim() ? command.clientCommandId.trim() : '';
   if (!clientCommandId || !reliableCommandTypes.has(command.type || '')) return handleRpcCommandOnce(command);
-  const key = `${command.sessionId || ''}:${command.type}:${clientCommandId}`;
+  if (clientCommandId.length > 200) return { success: false, error: 'clientCommandId is too long', delivery: 'rejected' };
+  const key = `${command.sessionId || ''}:${clientCommandId}`;
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value;
   return rpcCommandLedger.run(key, async () => {
     const response = await handleRpcCommandOnce(command);
     return response.success === false ? { ...response, clientCommandId } : {
@@ -298,7 +304,7 @@ async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
       delivery: 'accepted',
       acceptedAt: new Date().toISOString(),
     };
-  });
+  }, createHash('sha256').update(JSON.stringify(canonical({ ...command, clientCommandId }))).digest('hex')).catch((error) => ({ success: false, error: errorMessage(error), code: error.code, delivery: 'rejected', clientCommandId }));
 }
 
 function isAllowedApiOrigin(req: IncomingMessage) {
