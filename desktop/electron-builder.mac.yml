@@ -12,5 +12,7 @@ mac:
   target:
     - target: dmg
       arch: arm64
+    - target: zip
+      arch: arm64
   hardenedRuntime: true
   gatekeeperAssess: false

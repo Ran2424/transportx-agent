@@ -12,6 +12,7 @@ export type PythonRunOptions = {
 export type PythonResult = { stdout: string; stderr: string };
 
 export class PythonRunner {
+  get activeCount() { return this.runner.activeCount; }
   executable: Executable;
   private readonly runner = new ProcessRunner();
 

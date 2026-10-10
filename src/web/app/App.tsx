@@ -5,6 +5,7 @@ import { appKernel, reconnectBrowserApplication } from './composition-root';
 import { AppShell } from './AppShell';
 import { useConversationState, useExtensionUiState, useRuntimeState, useSessionState, useToolExecutionState } from './store-hooks';
 import { Header } from '../components/shell/Header';
+import { SoftwareUpdateNotice } from '../platform/settings/SoftwareUpdate';
 import { ConfirmationDialog } from '../components/ui/confirmation-dialog';
 import { CommandPalette, type CommandItem } from '../platform/commands/CommandPalette';
 import { ConversationStage } from '../platform/conversation/ConversationStage';
@@ -405,6 +406,7 @@ export function App() {
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}
       overlays={<>
+        <SoftwareUpdateNotice onOpen={() => { setSettingsSection('general'); setSettingsOpen(true); }} />
         <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} onCreated={(id) => void selectSession(id)} onAddModel={() => openModelSetup('new')} />
         <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />

@@ -67,12 +67,14 @@
     "test:pi-smoke": "npm run build:server && npm run test:budget && node scripts/pi-rpc-smoke.mjs",
     "test:web": "npm run build && npm run test:budget && node scripts/react-smoke.mjs",
     "test:platform:macos": "npm run build && npm run test:budget && node scripts/macos-desktop-smoke.mjs",
-    "test:platform:windows": "npm run test:budget && node scripts/windows-platform-smoke.mjs"
+    "test:platform:windows": "npm run test:budget && node scripts/windows-platform-smoke.mjs",
+    "release:oss": "node desktop/scripts/publish-oss.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.80.10",
     "@radix-ui/react-dialog": "^1.1.20",
     "@silurus/ooxml": "0.87.0",
+    "electron-updater": "6.8.3",
     "i18next": "^26.3.6",
     "katex": "^0.18.1",
     "mermaid": "^11.16.0",
@@ -97,6 +99,7 @@
     "electron": "43.3.0",
     "electron-builder": "26.15.3",
     "esbuild": "^0.28.1",
+    "js-yaml": "4.3.1",
     "maplibre-gl": "^5.24.0",
     "playwright": "^1.61.1",
     "tailwindcss": "^4.3.3",

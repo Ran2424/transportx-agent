@@ -25,6 +25,7 @@ type SupervisorOptions = {
   paths: DesktopPaths;
   startupTimeoutMs?: number;
   shutdownTimeoutMs?: number;
+  updatePreparationTimeoutMs?: number;
   onUnexpectedExit?: (message: string) => void;
   renderPdf?: (title: string, html: string) => Promise<Buffer>;
 };
@@ -96,8 +97,13 @@ function sendMessage(child: AgentHostProcess, message: unknown) {
 }
 
 function onceExit(child: AgentHostProcess, listener: (code: number | null, signal?: NodeJS.Signals | null) => void) {
-  if (isUtilityProcess(child)) child.once('exit', (code) => listener(code));
-  else child.once('exit', listener);
+  if (isUtilityProcess(child)) {
+    const wrapped = (code: number) => listener(code);
+    child.once('exit', wrapped);
+    return () => child.removeListener('exit', wrapped);
+  }
+  child.once('exit', listener);
+  return () => child.removeListener('exit', listener);
 }
 
 function terminateProcessTree(child: AgentHostProcess) {
@@ -124,6 +130,7 @@ export class AgentHostSupervisor {
 
   async start(): Promise<string> {
     if (this.child) throw new Error('Agent Host is already running');
+    this.stopping = false;
     const { paths } = this.options;
     if (!fs.existsSync(paths.agentHostEntrypoint)) throw new Error(`Agent Host entrypoint is missing: ${paths.agentHostEntrypoint}`);
     const logFile = path.join(paths.logsDir, 'agent-host.log');
@@ -207,6 +214,53 @@ export class AgentHostSupervisor {
         else if (!this.stopping) this.options.onUnexpectedExit?.(message);
       });
     });
+  }
+
+  async stopForUpdate(): Promise<void> {
+    const child = this.child;
+    if (!child) throw new Error('Agent Host is unavailable');
+    const id = crypto.randomUUID();
+    this.stopping = true;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let acknowledged = false;
+        let exited = false;
+        const finish = (error?: Error) => {
+          clearTimeout(timeout);
+          child.removeListener('message', onMessage);
+          removeExit();
+          if (error) reject(error); else resolve();
+        };
+        const confirm = () => { if (acknowledged && exited) finish(); };
+        const onMessage = (value: unknown) => {
+          const response = value as { type?: string; id?: string; ok?: boolean; code?: string };
+          if (response?.type !== 'transportx-update-stopped' || response.id !== id) return;
+          if (!response.ok) return finish(Object.assign(new Error('Host refused update preparation'), { code: response.code }));
+          acknowledged = true;
+          confirm();
+        };
+        const onExit = (code: number | null) => {
+          if (code !== 0) return finish(new Error('Host did not exit cleanly'));
+          exited = true;
+          confirm();
+        };
+        const timeout = setTimeout(() => finish(new Error('Host update preparation timed out')), this.options.updatePreparationTimeoutMs ?? 15_000);
+        child.on('message', onMessage);
+        const removeExit = onceExit(child, onExit);
+        try { sendMessage(child, { type: 'transportx-update-stop', id }); } catch (error) { finish(error as Error); }
+      });
+    } catch (error) {
+      if (this.child === child) {
+        try { sendMessage(child, { type: 'transportx-update-cancel', id }); } catch {}
+        this.stopping = false;
+      }
+      throw error;
+    }
+  }
+
+  async recoverAfterUpdate(): Promise<string | null> {
+    if (this.child) return null;
+    return this.start();
   }
 
   async stop(): Promise<void> {

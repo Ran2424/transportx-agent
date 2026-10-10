@@ -17,7 +17,8 @@ import { appendSessionNameEntry, isGenericSessionName, sessionFileReadyForNameAp
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleVideoResourceRoute } from './video-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
-import { renderReportPdf } from './report-pdf.js';
+import { renderReportPdf, desktopMessageChannel } from './report-pdf.js';
+import { UpdatePreparation } from './update-preparation.js';
 import { inspectPiRuntime, piProcessEnv } from './pi-runtime.js';
 import { readSessionBranch } from './session-projection.js';
 import { createApiRouter, REPORT_PDF_MAX_HTML_BYTES } from './api-routes.js';
@@ -57,6 +58,7 @@ const canvasService = new CanvasService(citationService, (session, requestedPath
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
+const updatePreparation = new UpdatePreparation();
 const rpcHandlers: RpcHandlerRegistry = {
   ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
   ...createPlatformRpcHandlers(currentPlatformOverview),
@@ -269,6 +271,13 @@ function currentSessionOptions() {
 }
 
 async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
+  let complete: () => void;
+  try { complete = updatePreparation.beginOperation(); }
+  catch { return { type: 'response', command: command.type, success: false, id: command.id, error: 'Host is preparing an update' }; }
+  try { return await dispatchRpcCommand(command); } finally { complete(); }
+}
+
+async function dispatchRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
   const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
   const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
@@ -308,6 +317,7 @@ function setCorsForAllowedOrigin(req: IncomingMessage, res: ServerResponse) {
 const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projectsDir: TAU_SETTINGS.projectsDir, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, expandHome, json, errorMessage, readBranch: readSessionBranch, isGenericSessionName, sessions: liveManager });
 const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath: isWithin, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
 const apiRouter = createApiRouter({
+  beginOperation: (url) => url.pathname === '/api/health' ? () => {} : updatePreparation.beginOperation(),
   sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), sessionOptions: currentSessionOptions, json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, serveRawFile: files.serveRawFile, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
   listAttachments: listSessionAttachments,
   uploadAttachments: saveUploadedAttachments,
@@ -320,6 +330,14 @@ const apiRouter = createApiRouter({
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
+  if (new URL(req.url || urlPath, 'http://localhost').pathname !== '/api/health') {
+    let complete: () => void;
+    try { complete = updatePreparation.beginOperation(); }
+    catch { return json(res, 503, { error: 'Host is preparing an update', code: 'update_preparing' }); }
+    // Check the lock here; the router retains its own lease until the
+    // handler settles, even if the client disconnects during a write.
+    complete();
+  }
   const originAllowed = setCorsForAllowedOrigin(req, res);
   if (req.method === 'OPTIONS') { if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' }); res.writeHead(200); res.end(); return; }
   if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
@@ -369,6 +387,64 @@ function listen(port: number, attemptsLeft = 10) {
 }
 
 let shuttingDown = false;
+async function verifyIdleAndSave() {
+  const busy = () => { throw Object.assign(new Error('Host is busy'), { code: 'host_busy' }); };
+  if (shuttingDown || liveManager.pendingResumes.size || liveManager.terminatingResumes.size || spatialAnalysisService.activeCount || videoService.activeCount) busy();
+  const sessions = [...liveManager.sessions.values()];
+  for (const session of sessions) {
+    if (session.isStreaming || session.isCompacting || session.terminating || session.transport.pendingCount || session.pendingExtensionUiRequests.size) busy();
+    if (session.child) {
+      const response = await session.send({ type: 'get_state' }, { timeoutMs: 5000 });
+      const state = response.data as { isStreaming?: boolean; isCompacting?: boolean; pendingMessageCount?: number } | undefined;
+      if (!response.success || typeof state?.isStreaming !== 'boolean' || typeof state.isCompacting !== 'boolean' || typeof state.pendingMessageCount !== 'number') throw new Error('Pi idle state could not be confirmed');
+      if (state.isStreaming || state.isCompacting || state.pendingMessageCount) busy();
+    }
+    session.persistPendingSessionName();
+    if (session.pendingSessionNamePersistence && session.userMessages.length) throw new Error('Session name could not be saved');
+  }
+}
+
+function attachDesktopUpdateChannel() {
+  const channel = desktopMessageChannel();
+  if (!channel) return;
+  channel.onMessage((value) => {
+    const message = value as { type?: string; id?: string };
+    if (!message || typeof message.id !== 'string') return;
+    const id = message.id;
+    if (message.type === 'transportx-update-cancel') { updatePreparation.cancel(id); return; }
+    if (message.type !== 'transportx-update-stop') return;
+    void (async () => {
+      try {
+        await updatePreparation.prepare(id, verifyIdleAndSave);
+        const sessions = [...liveManager.sessions.values()];
+        const results = await Promise.allSettled(sessions.map((session) => session.stopForUpdate()));
+        if (results.some((result) => result.status === 'rejected')) throw new Error('Pi stop was not confirmed');
+        updatePreparation.assertPrepared(id);
+        for (const session of sessions) {
+          session.persistPendingSessionName();
+          if (session.pendingSessionNamePersistence && session.userMessages.length) throw new Error('Session save was not confirmed');
+        }
+        shuttingDown = true;
+        socketHandler.close();
+        for (const client of liveManager.clients) client.terminate();
+        wss.close();
+        server.close(() => {
+          channel.send({ type: 'transportx-update-stopped', id, ok: true });
+          // Let the acknowledgement reach the parent before terminating.
+          setImmediate(() => process.exit(0));
+        });
+        server.closeIdleConnections();
+        // Writes have settled under the gate. Remaining connections can only
+        // be static/resource reads and must not delay the confirmed shutdown.
+        server.closeAllConnections();
+      } catch (error) {
+        updatePreparation.cancel(id);
+        channel.send({ type: 'transportx-update-stopped', id, ok: false, code: (error as { code?: string }).code === 'host_busy' ? 'host_busy' : 'prepare_failed' });
+      }
+    })();
+  });
+}
+
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true; console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
@@ -376,6 +452,7 @@ async function shutdown(signal: string) {
   spatialAnalysisService.terminateAll(); videoService.terminateAll(); await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
 }
 function startCli() {
+  if (DESKTOP_MODE) attachDesktopUpdateChannel();
   const runtime = inspectPiRuntime(PI_COMMAND, PI_COMMAND_ARGS); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);
   console.log(`[Tau] Modules: ${MODULE_REGISTRY.enabled().length} enabled, ${MODULE_REGISTRY.errors.length} error(s)`);
   process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));

@@ -45,6 +45,7 @@ function safeInput(cwd: string, relativePath: string) {
 }
 
 export class SpatialAnalysisService {
+  get activeCount() { return this.runner.activeCount; }
   private runner: PythonRunner;
   constructor(executable: ConstructorParameters<typeof PythonRunner>[0], private scriptPath: string) {
     this.runner = new PythonRunner(executable);

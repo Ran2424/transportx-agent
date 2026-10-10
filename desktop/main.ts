@@ -6,11 +6,15 @@ const { pathToFileURL } = require('node:url');
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { AgentHostSupervisor } from './agent-host-supervisor.js';
 import { resolveDesktopPaths, resolveDesktopUserDataDir } from './app-paths.js';
+import { UpdateService, assertUpdateSender } from './update-service.js';
+import { restoreCachedUpdate } from './update-cache.js';
 
 let mainWindow: BrowserWindowType | null = null;
 let supervisor: AgentHostSupervisor | null = null;
 let quitting = false;
 let workbenchOrigin = '';
+let updateService: UpdateService | null = null;
+let installingUpdate = false;
 
 app.setPath('userData', resolveDesktopUserDataDir(app.getPath('home'), app.getPath('userData')));
 
@@ -133,7 +137,10 @@ function createWindow(url: string) {
     event.preventDefault();
     if (isHttpUrl(target)) shell.openExternal(target).catch(() => {});
   });
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => {
+    window.show();
+    void updateService?.check();
+  });
   window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
   window.loadURL(windowUrl.toString()).catch((error: Error) => {
     dialog.showErrorBox('TransportX Agent', `${nativeText('无法加载本地工作台', 'Could not load the local workbench')}: ${error.message}`);
@@ -152,6 +159,42 @@ else {
   });
 
   app.whenReady().then(async () => {
+    const { autoUpdater } = require('electron-updater');
+    // Updater diagnostics can include complete URLs. Log only our state codes.
+    autoUpdater.logger = { info() {}, warn() {}, error() {}, debug() {} };
+    autoUpdater.disableWebInstaller = true;
+    updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, {
+      prepare: async () => {
+        if (!supervisor) throw new Error('Agent Host is unavailable');
+        await supervisor.stopForUpdate();
+      },
+      recover: async () => {
+        installingUpdate = false;
+        const url = await supervisor?.recoverAfterUpdate();
+        if (url && mainWindow) {
+          workbenchOrigin = new URL(url).origin;
+          const target = new URL(url);
+          target.searchParams.set('desktop-platform', process.platform);
+          await mainWindow.loadURL(target.toString());
+        }
+      },
+      onInstalling: () => { installingUpdate = true; },
+    }, () => restoreCachedUpdate(autoUpdater));
+    let loggedState = '';
+    updateService.subscribe((state) => {
+      const key = `${state.phase}:${state.errorCode || ''}`;
+      if (key !== loggedState) {
+        loggedState = key;
+        fs.appendFile(path.join(paths.logsDir, 'updates.log'), `${JSON.stringify({ at: new Date().toISOString(), currentVersion: state.currentVersion, targetVersion: state.targetVersion, phase: state.phase, errorCode: state.errorCode })}\n`, () => {});
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('transportx:update:state', state);
+    });
+    for (const action of ['getState', 'check', 'download', 'install'] as const) {
+      ipcMain.handle(`transportx:update:${action}`, (event: Electron.IpcMainInvokeEvent) => {
+        assertUpdateSender(event, mainWindow, workbenchOrigin);
+        return updateService![action]();
+      });
+    }
     // Window-control IPC for the frameless Win/Linux chrome. The renderer
     // sends 'transportx:window:minimize' / 'maximize' / 'close' and the main
     // process drives the underlying BrowserWindow. isMaximized() lets the UI
@@ -190,6 +233,7 @@ else {
   });
 
   app.on('before-quit', (event: Electron.Event) => {
+    if (installingUpdate) return;
     if (quitting || !supervisor) return;
     event.preventDefault();
     quitting = true;

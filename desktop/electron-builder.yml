@@ -2,3 +2,4 @@ extends:
   - ./desktop/electron-builder.common.yml
   - ./desktop/electron-builder.mac.yml
   - ./desktop/electron-builder.win.yml
+  - ./desktop/scripts/update-builder-config.cjs

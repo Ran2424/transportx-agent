@@ -15,6 +15,7 @@ import type { GeoInteractionService } from './geo-interaction-service.js';
 import type { CanvasService } from './canvas-service.js';
 
 type ApiRouteServices = {
+  beginOperation?(url: URL): () => void;
   sessions: LiveSessionManager;
   snapshotSchemaVersion: number;
   health(): JsonRecord;
@@ -55,7 +56,7 @@ type ApiRouteServices = {
 export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
 
 export function createApiRouter(services: ApiRouteServices) {
-  const router = new ServerRouter(services);
+  const router = new ServerRouter(services, services.beginOperation);
   const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number }>();
   const createPdf = async (req: IncomingMessage, deps: ApiRouteServices) => {
     const body = await deps.readBody(req);
