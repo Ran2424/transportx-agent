@@ -7,6 +7,7 @@ import type { JsonRecord } from './types.js';
 import type { LiveSessionManager } from './sessions.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { isWithin } from './util/path.js';
+import { containedFile } from './util/resource-path.js';
 import { deriveSessionName, readSessionHeaderCwd as readHistoryHeaderCwd, readSessionSummary, searchSessionFile } from './session-history-reader.js';
 
 type HistoryHandlersOptions = {
@@ -36,7 +37,7 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
         files.push({ dirName: entry.name, file, filePath: path.join(projectDir, file) });
       }
     }
-    return files;
+    return files.filter(({ filePath }) => { try { containedFile(options.sessionsDir, filePath); return true; } catch { return false; } });
   };
   const isWithinPath = isWithin;
   const normalizeSessionCwd = (cwd: unknown) => typeof cwd === 'string' && cwd.trim() ? path.resolve(options.expandHome(cwd)) : null;
@@ -116,7 +117,8 @@ export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
   const serveSessionFile = (res: ServerResponse, dirName: string, file: string) => {
     const filePath = path.join(options.sessionsDir, dirName, file);
     if (!fs.existsSync(filePath)) return options.json(res, 404, { error: 'Session not found' });
-    return options.json(res, 200, { schemaVersion: options.snapshotSchemaVersion, entries: readSessionEntries(filePath) });
+    try { return options.json(res, 200, { schemaVersion: options.snapshotSchemaVersion, entries: readSessionEntries(containedFile(options.sessionsDir, filePath)) }); }
+    catch (error) { return options.json(res, (error as { status?: number }).status || 400, { error: options.errorMessage(error) }); }
   };
 
   return { normalizeSessionCwd, readSessionEntries, deriveSessionName: resolveSessionName, readSessionHeaderCwd, serveProjects, serveSessions, serveSearch, serveSessionFile };

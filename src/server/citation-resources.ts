@@ -3,6 +3,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
+import { resourceSecurityHeaders } from './resource-policy.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CitationResource } from '../contracts/index.js';
 import { CitationRegistryStore } from './citation-registry.js';
@@ -104,20 +105,17 @@ function resourceError(res: ServerResponse, error: unknown) {
 
 function serveCitationResource(req: IncomingMessage, res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
   try {
-    const loaded = req.method === 'HEAD' && !allowsChangedContent(resource)
-      ? { ...locateCitationResource(session, resource, knowledgeRoots), buffer: null, sha256: resource.sha256, changed: false }
-      : { ...readCitationResource(session, resource, knowledgeRoots), stat: null };
+    const loaded = readCitationResource(session, resource, knowledgeRoots);
     const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
     const headers: Record<string, string | number> = {
       'Content-Type': resource.kind === 'web' && resource.mimeType === 'text/html' ? 'text/plain; charset=utf-8' : resource.mimeType,
-      'Content-Length': loaded.buffer?.length ?? loaded.stat!.size,
+      'Content-Length': loaded.buffer.length,
       'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(loaded.resolved))}`,
       'Cache-Control': 'private, max-age=0, must-revalidate',
       'ETag': `"${loaded.sha256}"`,
-      'X-Content-Type-Options': 'nosniff',
+      ...resourceSecurityHeaders(resource.mimeType),
       'X-Citation-Resource-Stale': loaded.changed ? '1' : '0',
     };
-    if (resource.mimeType === 'image/svg+xml') headers['Content-Security-Policy'] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
     res.writeHead(200, headers);
     if (req.method === 'HEAD') { res.end(); return; }
     res.end(loaded.buffer);
@@ -133,8 +131,7 @@ function serveCitationPreview(req: IncomingMessage, res: ServerResponse, session
         'Content-Length': buffer.length,
         'Cache-Control': 'private, max-age=3600',
         'ETag': `"${sha256}"`,
-        'X-Content-Type-Options': 'nosniff',
-        ...(resource.mimeType === 'image/svg+xml' ? { 'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'" } : {}),
+        ...resourceSecurityHeaders(resource.mimeType),
       });
       res.end(buffer);
       return;

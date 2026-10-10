@@ -26,7 +26,7 @@ import {
 } from '../contracts/geo.js';
 import { stripAttachmentContext } from '../contracts/attachments.js';
 import type { JsonRecord } from './types.js';
-import { sha256File } from './asset-integrity.js';
+import { readVerifiedGeoResource } from './geo-resource-storage.js';
 import { isWithin } from './util/path.js';
 
 const GEO_MODULE_ID = 'com.transportx.geo';
@@ -138,22 +138,10 @@ function requireVisualization(session: GeoInteractionSession, visualizationId: s
 }
 
 function parseResource(session: GeoInteractionSession, resourceId: string) {
-  const root = path.resolve(session.cwd, '.tau', 'geo-resources');
-  const dir = path.resolve(root, resourceId);
-  if (!isWithin(root, dir)) throw serviceError('Geo resource is outside the session.', 403);
-  const manifestPath = path.join(dir, 'manifest.json');
-  const dataPath = path.join(dir, 'data.geojson');
-  const realSession = fs.realpathSync(session.cwd);
-  const realManifest = fs.realpathSync(manifestPath);
-  const realData = fs.realpathSync(dataPath);
-  if (!isWithin(realSession, realManifest) || !isWithin(realSession, realData)) throw serviceError('Geo resource path is not allowed.', 403);
-  const manifest = JSON.parse(fs.readFileSync(realManifest, 'utf8')) as { resourceId?: unknown; sha256?: unknown; bytes?: unknown };
-  const bytes = fs.statSync(realData).size;
-  const sha256 = sha256File(realData);
-  if (manifest.resourceId !== resourceId || manifest.sha256 !== sha256 || manifest.bytes !== bytes) throw serviceError('Geo resource integrity check failed.', 409, 'resource_changed');
-  const data = JSON.parse(fs.readFileSync(realData, 'utf8')) as { type?: unknown; features?: unknown };
+  const { manifest, buffer } = readVerifiedGeoResource(session.cwd, resourceId);
+  const data = JSON.parse(buffer.toString('utf8')) as { type?: unknown; features?: unknown };
   if (data.type !== 'FeatureCollection' || !Array.isArray(data.features)) throw serviceError('Geo resource is not a FeatureCollection.', 409);
-  return { manifest: { resourceId, sha256, bytes }, features: data.features as GeoJsonFeature[] };
+  return { manifest, features: data.features as GeoJsonFeature[] };
 }
 
 function featureKey(value: string | number) { return `${typeof value}:${String(value)}`; }

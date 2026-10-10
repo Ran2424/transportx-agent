@@ -63,6 +63,21 @@ try {
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
   await feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryCwd);
+  await composer.fill('资源-svg-policy');
+  await composer.press('Enter');
+  await page.locator('.assistant-message', { hasText: 'SVG 策略测试文件已生成' }).waitFor();
+  const svgSessionId = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
+  for (const route of ['preview', 'raw']) {
+    const svgPage = await browser.newPage();
+    const requests = [];
+    svgPage.on('request', (request) => requests.push(request.url()));
+    const response = await svgPage.goto(`${baseUrl}/api/file/${route}?sessionId=${svgSessionId}&path=active.svg`);
+    assert.match(response.headers()['content-security-policy'], /sandbox/);
+    assert.equal(await svgPage.evaluate(() => globalThis.svgExecuted === true), false);
+    assert.equal(requests.some((url) => url.includes('svg-executed=1')), false);
+    await svgPage.close();
+  }
+  console.log('Resource smoke: direct SVG preview/raw navigation cannot execute scripts.');
   await documentSmoke(page, browser);
   assert.equal(requestedUrls.some((url) => /(?:docx|xlsx|pptx)_parser_bg|render-worker/.test(url)), false, 'non-Office workflows do not load OOXML WASM or workers');
   await composer.fill('实时-markdown');

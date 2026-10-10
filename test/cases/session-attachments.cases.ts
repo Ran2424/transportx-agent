@@ -171,3 +171,15 @@ caseTest('message attachment refs survive index reload and protect sent files', 
   assert.deepEqual(entries[0].message.attachmentIds, [attachment.id]);
   assert.throws(() => deleteSessionAttachment(cwd, attachment.id), /already used/);
 });
+
+caseTest('corrupt and unsupported attachment indexes are preserved and refused', (t: any) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-attachments-corrupt-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(cwd, '.tau'));
+  const file = path.join(cwd, '.tau', 'attachments.json');
+  for (const value of ['{broken', '{"version":2,"attachments":[]}']) {
+    fs.writeFileSync(file, value);
+    assert.throws(() => require('../../bin/session-attachments.js').listSessionAttachments(cwd), /corrupt|Unsupported/);
+    assert.equal(fs.readFileSync(file, 'utf8'), value);
+  }
+});

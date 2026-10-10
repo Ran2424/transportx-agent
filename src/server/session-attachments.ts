@@ -8,6 +8,7 @@ import type {
   SessionAttachmentKind,
   SessionAttachmentSource,
 } from '../contracts/attachments.js';
+import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 import { isWithin } from './util/path.js';
 import { relativePosixPath } from './util/path.js';
 
@@ -74,22 +75,15 @@ function kindFor(name: string, mimeType: string): SessionAttachmentKind {
 function readIndex(cwd: string): AttachmentIndex {
   assertNotSymlink(tauDir(cwd));
   assertNotSymlink(indexPath(cwd));
-  try {
-    const parsed = JSON.parse(fs.readFileSync(indexPath(cwd), 'utf8')) as Partial<AttachmentIndex>;
-    if (parsed.version === INDEX_VERSION && Array.isArray(parsed.attachments)) {
-      return { version: INDEX_VERSION, attachments: parsed.attachments, messageRefs: Array.isArray(parsed.messageRefs) ? parsed.messageRefs : [] };
-    }
-  } catch { /* first upload or an interrupted old write */ }
-  return { version: INDEX_VERSION, attachments: [], messageRefs: [] };
+  const parsed = readJsonObject(indexPath(cwd), { version: INDEX_VERSION, attachments: [], messageRefs: [] }) as Partial<AttachmentIndex>;
+  if (parsed.version !== INDEX_VERSION || !Array.isArray(parsed.attachments) || (parsed.messageRefs !== undefined && !Array.isArray(parsed.messageRefs))) throw error('Unsupported or corrupt attachment index', 409);
+  return { version: INDEX_VERSION, attachments: parsed.attachments, messageRefs: parsed.messageRefs || [] };
 }
 
 function writeIndex(cwd: string, index: AttachmentIndex) {
   assertNotSymlink(tauDir(cwd));
   assertNotSymlink(indexPath(cwd));
-  fs.mkdirSync(tauDir(cwd), { recursive: true });
-  const target = indexPath(cwd), temp = `${target}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temp, target);
+  writeJsonAtomic(indexPath(cwd), index);
 }
 
 function ensureWithin(root: string, target: string) {

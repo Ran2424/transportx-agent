@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
+import { readJsonObject, writeJsonAtomic, assertHostWriter } from './util/json-storage.js';
 import type { TauArgs, TauSettings, TauSettingsFile } from './types.js';
 import { ensureWritableAppPaths, resolveAppPaths } from './app-paths.js';
 import { resolveFfmpegExecutables, resolvePiExecutable, resolvePythonExecutable, type VideoExecutables } from './runtime-resolver.js';
@@ -51,11 +52,9 @@ export function expandHome(p: string) {
 }
 
 export function loadTauSettings(): TauSettings {
-  let settings: TauSettingsFile['tau'] = {};
-  try {
-    const settingsPath = path.join(PI_AGENT_DIR, 'settings.json');
-    settings = ((JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as TauSettingsFile).tau || {});
-  } catch {}
+  const file = readJsonObject(path.join(PI_AGENT_DIR, 'settings.json'));
+  if (file.tau !== undefined && (!file.tau || typeof file.tau !== 'object' || Array.isArray(file.tau))) throw new Error('Invalid tau settings');
+  const settings = (file.tau || {}) as NonNullable<TauSettingsFile['tau']>;
   return {
     port: DESKTOP_MODE ? 0 : parseInt(String(ARGS.port || process.env.TAU_PORT || settings.port || '3001'), 10),
     host: DESKTOP_MODE ? '127.0.0.1' : ARGS.host || process.env.TAU_HOST || settings.host || '127.0.0.1',
@@ -186,12 +185,12 @@ export const MIME_TYPES = {
 export function saveTauSetting(key: string, value: unknown): boolean {
   const settingsPath = path.join(PI_AGENT_DIR, 'settings.json');
   try {
-    let settings: TauSettingsFile = {};
-    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as TauSettingsFile; } catch {}
+    assertHostWriter(PI_AGENT_DIR);
+    const settings = readJsonObject(settingsPath) as TauSettingsFile;
+    if (settings.tau !== undefined && (!settings.tau || typeof settings.tau !== 'object' || Array.isArray(settings.tau))) throw new Error('Invalid tau settings');
     if (!settings.tau) settings.tau = {};
     settings.tau[key] = value;
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    writeJsonAtomic(settingsPath, settings);
     return true;
   } catch {
     return false;

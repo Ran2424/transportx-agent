@@ -2,6 +2,8 @@ import fs = require('node:fs');
 import path = require('node:path');
 import { execFile, spawn } from 'node:child_process';
 
+import { containedFile } from './util/resource-path.js';
+import { resourceSecurityHeaders } from './resource-policy.js';
 import type { ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, StatusError } from './types.js';
 import type { PiRpcSession } from './sessions.js';
@@ -106,7 +108,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     const mimes: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon' };
     const mime = mimes[path.extname(filePath).toLowerCase().slice(1)];
     if (!mime) return options.json(res, 415, { error: 'Not a previewable image' });
-    try { if (!fs.statSync(filePath).isFile()) throw new Error('Not a file'); res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'max-age=60' }); fs.createReadStream(filePath).pipe(res); }
+    try { if (!fs.statSync(filePath).isFile()) throw new Error('Not a file'); res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'private, no-store', ...resourceSecurityHeaders(mime) }); fs.createReadStream(filePath).pipe(res); }
     catch (error) { options.json(res, 404, { error: options.errorMessage(error) }); }
   };
   const serveRawFile = (req: import('node:http').IncomingMessage, res: ServerResponse, filePath: string, download: boolean) => {
@@ -122,7 +124,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
         'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(filePath))}`,
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'private, no-store',
-        'X-Content-Type-Options': 'nosniff',
+        ...resourceSecurityHeaders(mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream'),
       };
       const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : '';
       if (rangeHeader) {
@@ -153,7 +155,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     const resolved = path.resolve(options.expandHome(filePath || '')), root = path.resolve(options.sessionsDir);
     if (!isWithin(root, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Can only open exported session HTML without a live session') as StatusError; error.status = 403; throw error; }
     if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) { const error = new Error('File not found') as StatusError; error.status = 404; throw error; }
-    return resolved;
+    return containedFile(root, resolved);
   };
   const resolveOpen = (body: RpcCommand) => {
     if (!body?.filePath || typeof body.filePath !== 'string') throw new Error('filePath required');

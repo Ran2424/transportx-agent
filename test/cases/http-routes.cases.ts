@@ -167,10 +167,10 @@ caseTest('PDF report routes accept rendered HTML larger than the previous 5 MiB 
 caseTest('serves only session-scoped GeoJSON and supports ETag revalidation', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-resource-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-  const sha256 = 'a'.repeat(64);
+  const geojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
+  const sha256 = crypto.createHash('sha256').update(geojson).digest('hex');
   const resourceId = `geo_${sha256.slice(0, 24)}`;
   const dir = path.join(cwd, '.tau', 'geo-resources', resourceId);
-  const geojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'data.geojson'), geojson);
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256, bytes: Buffer.byteLength(geojson), featureCount: 0 }));
@@ -184,6 +184,9 @@ caseTest('serves only session-scoped GeoJSON and supports ETag revalidation', as
   assert.deepEqual(await jsonBody(resource), { type: 'FeatureCollection', features: [] });
   assert.equal((await fetch(url, { headers: { 'If-None-Match': `"${sha256}"` } })).status, 304);
   assert.equal((await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/..%2Fsecret/data`)).status, 400);
+  fs.writeFileSync(path.join(dir, 'data.geojson'), geojson.replace('FeatureCollection', 'FeatureCollectioN'));
+  assert.equal((await fetch(url, { headers: { 'If-None-Match': `"${sha256}"` } })).status, 409);
+  assert.equal((await fetch(url.replace('/data', '/manifest'))).status, 409);
 });
 
 function fakeVideoResource(cwd: string, resourceId: string, bytes: Buffer) {
@@ -340,7 +343,7 @@ caseTest('Geo resources cannot be read through another live session', async (t: 
   const dir = path.join(firstRoot, '.tau', 'geo-resources', resourceId);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'data.geojson'), JSON.stringify({ type: 'FeatureCollection', features: [] }));
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256: 'b'.repeat(64), bytes: 42, featureCount: 0 }));
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256: crypto.createHash('sha256').update(JSON.stringify({ type: 'FeatureCollection', features: [] })).digest('hex'), bytes: 42, featureCount: 0 }));
   const owner = fakeSession('tau_geo_owner'); owner.cwd = firstRoot;
   const other = fakeSession('tau_geo_other'); other.cwd = secondRoot;
   liveManager.sessions.set(owner.id, owner); liveManager.sessions.set(other.id, other);
@@ -875,4 +878,30 @@ caseTest('PDF render and download cache enforce concurrency, byte and entry capa
   assert.equal((await fetch(`${origin}${first}`)).status, 404);
   size = 32 * 1024 * 1024 + 1;
   assert.equal((await post()).status, 413);
+});
+
+caseTest('history symlinks escaping the root are refused and SVG routes share sandbox headers', async (t: TestContext) => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-history-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const file = path.join(outside, 'secret.jsonl');
+  fs.writeFileSync(file, '{"type":"session","cwd":"/tmp"}\n');
+  const linked = path.join(SESSIONS_DIR, 'outside.jsonl');
+  fs.symlinkSync(file, linked);
+  t.after(() => fs.rmSync(linked, { force: true }));
+  const rejected = await fetch(`${base}/api/session-history?filePath=${encodeURIComponent(linked)}`);
+  assert.notEqual(rejected.status, 200);
+  assert.notEqual((await fetch(`${base}/api/sessions/./outside.jsonl`)).status, 200);
+  assert.equal((await rejected.text()).includes('"cwd":"/tmp"'), false);
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-svg-policy-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(cwd, 'active.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>window.svgExecuted=true</script></svg>');
+  const session = fakeSession('svg-policy');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  for (const route of ['preview', 'raw']) {
+    const response = await fetch(`${base}/api/file/${route}?sessionId=${session.id}&path=active.svg`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-security-policy') || '', /sandbox; default-src 'none'/);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  }
 });

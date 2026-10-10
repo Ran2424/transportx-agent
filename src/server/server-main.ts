@@ -8,6 +8,8 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
+import { containedFile } from './util/resource-path.js';
+import { acquireWriteLease } from './util/json-storage.js';
 import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
@@ -171,7 +173,7 @@ function resolveSessionFile(filePath: string) {
   const resolved = path.resolve(filePath), root = path.resolve(SESSIONS_DIR);
   if (!isWithin(root, resolved) || !resolved.endsWith('.jsonl')) throw new Error('Invalid session file');
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Session not found');
-  return resolved;
+  return containedFile(root, resolved);
 }
 
 function appendSessionName(filePath: string, name: string) {
@@ -379,8 +381,15 @@ function computeUrls(port: number) {
   setCanvasEndpoint(endpoint);
 }
 
+let releaseHostWriter: (() => void) | null = null;
 function listen(port: number, attemptsLeft = 10) {
   validateHostAccess(TAU_SETTINGS);
+  if (!releaseHostWriter) {
+    releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host'));
+    const release = () => { if (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount) return; releaseHostWriter?.(); releaseHostWriter = null; };
+    server.once('close', release);
+    process.once('exit', release);
+  }
   server.once('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE' && attemptsLeft > 0) { console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`); server.removeAllListeners('error'); listen(port + 1, attemptsLeft - 1); }
     else { console.error(`[Tau] Failed to start: ${error.message}`); process.exit(1); }
