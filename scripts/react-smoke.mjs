@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { documentSmoke } from './harness/document-smoke.mjs';
+import { feedbackSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
 
 function freePort() {
@@ -44,7 +45,7 @@ let page;
 const pageErrors = [];
 const requestedUrls = [];
 try {
-  const { baseUrl } = await waitForReady(child, () => output);
+  const { baseUrl, longHistoryFile, longHistoryCwd } = await waitForReady(child, () => output);
   browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(20_000);
@@ -61,6 +62,22 @@ try {
 
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
+  await feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryCwd);
+  await composer.fill('资源-svg-policy');
+  await composer.press('Enter');
+  await page.locator('.assistant-message', { hasText: 'SVG 策略测试文件已生成' }).waitFor();
+  const svgSessionId = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
+  for (const route of ['preview', 'raw']) {
+    const svgPage = await browser.newPage();
+    const requests = [];
+    svgPage.on('request', (request) => requests.push(request.url()));
+    const response = await svgPage.goto(`${baseUrl}/api/file/${route}?sessionId=${svgSessionId}&path=active.svg`);
+    assert.match(response.headers()['content-security-policy'], /sandbox/);
+    assert.equal(await svgPage.evaluate(() => globalThis.svgExecuted === true), false);
+    assert.equal(requests.some((url) => url.includes('svg-executed=1')), false);
+    await svgPage.close();
+  }
+  console.log('Resource smoke: direct SVG preview/raw navigation cannot execute scripts.');
   await documentSmoke(page, browser);
   assert.equal(requestedUrls.some((url) => /(?:docx|xlsx|pptx)_parser_bg|render-worker/.test(url)), false, 'non-Office workflows do not load OOXML WASM or workers');
   await composer.fill('实时-markdown');

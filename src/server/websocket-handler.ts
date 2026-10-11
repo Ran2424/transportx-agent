@@ -16,7 +16,7 @@ type WebSocketHandlerOptions = {
 };
 
 export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
   options.server.on('upgrade', (request, socket: Socket, head) => {
     if (!options.isAllowedOrigin(request)) {
@@ -37,7 +37,7 @@ export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
     options.sessions.addClient(ws);
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
-    ws.send(JSON.stringify({ type: 'state', liveSessions: options.sessions.list() }));
+    ws.send(JSON.stringify({ type: 'state', liveSessions: options.sessions.list(), ...options.sessions.clock() }));
     ws.on('message', () => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', code: 'websocket_event_only', message: 'Use HTTP /api/rpc for commands.' }));
     });

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { openNativeTarget } from './host-platform.js';
+
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -8,10 +10,15 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { APP_PATHS, ARGS, ASSET_OVERRIDES, ASSET_RESOLVER, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, MODULE_INSTALLER, MODULE_REGISTRY, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSION_ASSEMBLER, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, reloadModules, saveTauSetting, setModuleEnabled } from './config.js';
+import { containedFile } from './util/resource-path.js';
+import { acquireWriteLease } from './util/json-storage.js';
+import { APP_PATHS, ARGS, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SESSION_ASSEMBLER, reloadModules, setModuleEnabled, sessionAssemblerForProfile } from './platform-composition.js';
+import { buildSessionPiLaunch } from './session-pi-launch.js';
+import { createSessionWorkingDirectory } from './session-workspace.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
-import { LiveSessionManager, PiRpcSession, liveManager, setCitationEndpoint, setSpatialEndpoint, setVideoEndpoint, setGeoEndpoint, setCanvasEndpoint, _setSpawnPiForTest } from './sessions.js';
+import { LiveSessionManager, PiRpcSession } from './sessions.js';
 import { makeSessionId as makeId } from './session-workspace.js';
 import { appendSessionNameEntry, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
@@ -49,6 +56,20 @@ import { isWithin } from './util/path.js';
 import { writeJson as json } from './http/response.js';
 import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
 import { CanvasService, buildCanvasContextPrompt } from './canvas-service.js';
+import { isLoopbackHost, validateHostAccess } from './host-access.js';
+import { readJsonBody } from './http/request.js';
+import { createHash } from 'node:crypto';
+import { parseRpcCommand } from './rpc-command-input.js';
+import { boundedDiagnostics } from '../contracts/diagnostics.js';
+const diagnoseCommand = boundedDiagnostics(200);
+
+const liveManager = new LiveSessionManager({
+  defaultDomainId: DEFAULT_DOMAIN_ID, assembler: SESSION_ASSEMBLER, assemblerForProfile: sessionAssemblerForProfile,
+  createWorkspace: createSessionWorkingDirectory, command: PI_COMMAND, launch: buildSessionPiLaunch, spawn,
+  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '' },
+});
+
+function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
 
 let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
 let lanUrl = '';
@@ -57,13 +78,14 @@ const citationService = new CitationService();
 const canvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath));
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
-const rpcCommandLedger = new RpcCommandLedger<RpcResponse>();
+const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (response) => response.delivery === 'unknown');
 const updatePreparation = new UpdatePreparation();
 const rpcHandlers: RpcHandlerRegistry = {
   ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
   ...createPlatformRpcHandlers(currentPlatformOverview),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
+    required: !isLoopbackHost(HOST),
     getEnabled: () => authEnabled,
     setEnabled: (enabled) => { authEnabled = enabled; saveTauSetting('authEnabled', enabled); },
     notifyChanged: (enabled) => liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled } }),
@@ -101,6 +123,9 @@ const rpcHandlers: RpcHandlerRegistry = {
     buildCanvasContext: buildCanvasContextPrompt,
     parseModel: parseModelSpecToModel,
     errorMessage,
+    completeCommand: (command, response) => {
+      if (command.clientCommandId && reliableCommandTypes.has(command.type || '')) rpcCommandLedger.settle(`${command.sessionId || ''}:${command.clientCommandId}`, { ...response, clientCommandId: command.clientCommandId });
+    },
   }),
 };
 const reliableCommandTypes = new Set(Object.entries(rpcHandlers).flatMap(([type, handler]) => handler.reliable ? [type] : []));
@@ -153,12 +178,10 @@ function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
 }
 
 function readBody(req: IncomingMessage): Promise<RpcCommand> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk: Buffer) => { body += chunk.toString(); if (Buffer.byteLength(body, 'utf8') > REPORT_PDF_MAX_HTML_BYTES + 1024 * 1024) reject(new Error('Request body too large')); });
-    req.on('end', () => { try { resolve(body ? JSON.parse(body) as RpcCommand : {}); } catch (error) { reject(error); } });
-    req.on('error', reject);
-  });
+  const pathname = req.url?.split('?')[0];
+  const limit = pathname === '/api/reports/pdf' || pathname === '/api/reports/pdf/download' ? REPORT_PDF_MAX_HTML_BYTES + 1024 * 1024
+    : /\/geo-screenshots(?:\/[^/]+\/respond)?$/.test(pathname || '') ? 16 * 1024 * 1024 : 1024 * 1024;
+  return readJsonBody(req, limit) as Promise<RpcCommand>;
 }
 
 function resolveSessionFile(filePath: string) {
@@ -166,7 +189,7 @@ function resolveSessionFile(filePath: string) {
   const resolved = path.resolve(filePath), root = path.resolve(SESSIONS_DIR);
   if (!isWithin(root, resolved) || !resolved.endsWith('.jsonl')) throw new Error('Invalid session file');
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Session not found');
-  return resolved;
+  return containedFile(root, resolved);
 }
 
 function appendSessionName(filePath: string, name: string) {
@@ -217,8 +240,7 @@ async function runPiHtmlExport({ file, cwd, outputPath }: { file: string; cwd: s
 
 function openUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url)) return Promise.reject(new Error('Invalid URL'));
-  if (process.platform === 'win32') { spawn('explorer.exe', [url], { detached: true, stdio: 'ignore' }).unref(); return Promise.resolve(); }
-  return new Promise((resolve, reject) => execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], (error: NodeJS.ErrnoException | null) => error ? reject(error) : resolve()));
+  return openNativeTarget(url);
 }
 
 function currentPlatformOverview() {
@@ -285,19 +307,23 @@ async function dispatchRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   return failure(`Unknown command: ${command.type}`);
 }
 
-async function handleRpcCommand(command: RpcCommand): Promise<RpcResponse> {
+async function handleRpcCommand(input: RpcCommand): Promise<RpcResponse> {
+  const command = parseRpcCommand(input);
   const clientCommandId = typeof command.clientCommandId === 'string' && command.clientCommandId.trim() ? command.clientCommandId.trim() : '';
   if (!clientCommandId || !reliableCommandTypes.has(command.type || '')) return handleRpcCommandOnce(command);
-  const key = `${command.sessionId || ''}:${command.type}:${clientCommandId}`;
+  if (clientCommandId.length > 200) return { success: false, error: 'clientCommandId is too long', delivery: 'rejected' };
+  const key = `${command.sessionId || ''}:${clientCommandId}`;
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value;
   return rpcCommandLedger.run(key, async () => {
     const response = await handleRpcCommandOnce(command);
+    if (response.delivery === 'unknown' || response.success === false) diagnoseCommand('command_delivery_unconfirmed', { sessionId: createHash('sha256').update(String(command.sessionId || '')).digest('hex').slice(0, 16), commandId: createHash('sha256').update(clientCommandId).digest('hex').slice(0, 16) });
     return response.success === false ? { ...response, clientCommandId } : {
       ...response,
       clientCommandId,
       delivery: 'accepted',
       acceptedAt: new Date().toISOString(),
     };
-  });
+  }, createHash('sha256').update(JSON.stringify(canonical({ ...command, clientCommandId }))).digest('hex')).catch((error) => ({ success: false, error: errorMessage(error), code: error.code, delivery: 'rejected', clientCommandId }));
 }
 
 function isAllowedApiOrigin(req: IncomingMessage) {
@@ -362,15 +388,25 @@ function computeUrls(port: number) {
     if (localIp === 'localhost') outer: for (const name of Object.keys(nets)) { if (/^(bridge|utun|lo)/.test(name)) continue; for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal) { localIp = net.address; break outer; } }
     for (const name of Object.keys(nets)) for (const net of nets[name] || []) if (net.family === 'IPv4' && !net.internal && net.address.startsWith('100.')) tailscaleIp = net.address;
   }
-  lanUrl = `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
-  setCitationEndpoint(`http://127.0.0.1:${port}`);
-  setSpatialEndpoint(`http://127.0.0.1:${port}`);
-  setVideoEndpoint(`http://127.0.0.1:${port}`);
-  setGeoEndpoint(`http://127.0.0.1:${port}`);
-  setCanvasEndpoint(`http://127.0.0.1:${port}`);
+  const endpointHost = HOST === '0.0.0.0' ? '127.0.0.1' : HOST === '::' ? '::1' : HOST;
+  const endpoint = `http://${endpointHost.includes(':') ? `[${endpointHost}]` : endpointHost}:${port}`;
+  lanUrl = loopback ? endpoint : `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
+  liveManager.runtime.endpoints.citation = endpoint;
+  liveManager.runtime.endpoints.spatial = endpoint;
+  liveManager.runtime.endpoints.video = endpoint;
+  liveManager.runtime.endpoints.geo = endpoint;
+  liveManager.runtime.endpoints.canvas = endpoint;
 }
 
+let releaseHostWriter: (() => void) | null = null;
 function listen(port: number, attemptsLeft = 10) {
+  validateHostAccess(TAU_SETTINGS);
+  if (!releaseHostWriter) {
+    releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host'));
+    const release = () => { if (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount) return; releaseHostWriter?.(); releaseHostWriter = null; };
+    server.once('close', release);
+    process.once('exit', release);
+  }
   server.once('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE' && attemptsLeft > 0) { console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`); server.removeAllListeners('error'); listen(port + 1, attemptsLeft - 1); }
     else { console.error(`[Tau] Failed to start: ${error.message}`); process.exit(1); }
@@ -449,9 +485,17 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true; console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
   socketHandler.close(); try { wss.close(); } catch {}
-  spatialAnalysisService.terminateAll(); videoService.terminateAll(); await liveManager.shutdown(); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 2500).unref();
+  try {
+    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), liveManager.shutdown()]);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2500).unref();
+  } catch (error) {
+    console.error('[Tau] Shutdown could not confirm process exit:', error);
+    process.exitCode = 1;
+  }
 }
 function startCli() {
+  validateHostAccess(TAU_SETTINGS);
   if (DESKTOP_MODE) attachDesktopUpdateChannel();
   const runtime = inspectPiRuntime(PI_COMMAND, PI_COMMAND_ARGS); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);
   console.log(`[Tau] Modules: ${MODULE_REGISTRY.enabled().length} enabled, ${MODULE_REGISTRY.errors.length} error(s)`);

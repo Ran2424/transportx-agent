@@ -1,3 +1,4 @@
+import { boundedDiagnostics } from '../contracts/diagnostics.js';
 import fs from 'node:fs';
 
 import { selectCurrentSessionBranch, SESSION_SNAPSHOT_SCHEMA_VERSION } from '../contracts/index.js';
@@ -18,8 +19,11 @@ export {
  * (Pi tools occasionally emit heartbeat or progress lines that are not full
  * JSON objects).
  */
+const diagnoseHistory = boundedDiagnostics(200);
+
 export function readSessionFileEntries(filePath: string): JsonRecord[] {
   const entries: JsonRecord[] = [];
+  let malformed = 0;
   try {
     const text = fs.readFileSync(filePath, 'utf8');
     for (const line of text.split(/\r?\n/)) {
@@ -29,9 +33,15 @@ export function readSessionFileEntries(filePath: string): JsonRecord[] {
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           entries.push(parsed as JsonRecord);
         }
-      } catch { /* skip malformed lines */ }
+      } catch { malformed++; }
     }
-  } catch { /* session may not have been persisted yet */ }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      diagnoseHistory('session_history_read_failed', { sessionId: filePath.split(/[\\/]/).pop() });
+      throw error;
+    }
+  }
+  if (malformed) diagnoseHistory('session_history_malformed_rows', { sessionId: filePath.split(/[\\/]/).pop(), count: malformed });
   return entries;
 }
 

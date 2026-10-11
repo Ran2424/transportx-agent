@@ -1,4 +1,17 @@
 export const zhCN = {
+  'conversation.failed': '模型请求失败',
+  'conversation.cancelled': '已取消',
+  'conversation.waiting': '等待模型响应…',
+  'conversation.retrying': '自动重试 {{attempt}}/{{max}} · 等待 {{seconds}} 秒',
+  'conversation.diagnostic': '诊断标识 {{id}}',
+  'conversation.prepareRetry': '编辑后重新提问',
+  'conversation.failure.authentication': '供应商认证失败，请检查模型密钥。',
+  'conversation.failure.rate_limit': '供应商限流，请稍后再试。',
+  'conversation.failure.context_limit': '上下文超过模型限制，请整理上下文或新建任务。',
+  'conversation.failure.invalid_request': '供应商拒绝了请求，请检查模型与 API 配置。',
+  'conversation.failure.network': '连接供应商失败，请检查网络后再试。',
+  'conversation.failure.provider': '供应商请求失败，请检查模型配置后再试。',
+
   'update.title': '软件更新',
   'update.currentVersion': '当前版本 {{version}}',
   'update.targetVersion': '新版本 {{version}}',
@@ -673,6 +686,19 @@ export const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 export const enUS: Record<TranslationKey, string> = {
+  'conversation.failed': 'Model request failed',
+  'conversation.cancelled': 'Cancelled',
+  'conversation.waiting': 'Waiting for the model…',
+  'conversation.retrying': 'Retry {{attempt}}/{{max}} · waiting {{seconds}} seconds',
+  'conversation.diagnostic': 'Diagnostic ID {{id}}',
+  'conversation.prepareRetry': 'Edit and ask again',
+  'conversation.failure.authentication': 'Provider authentication failed. Check the model credential.',
+  'conversation.failure.rate_limit': 'The provider rate limit was reached. Try again later.',
+  'conversation.failure.context_limit': 'The model context limit was reached. Compact context or create a task.',
+  'conversation.failure.invalid_request': 'The provider rejected the request. Check the model and API configuration.',
+  'conversation.failure.network': 'Could not reach the provider. Check the connection.',
+  'conversation.failure.provider': 'The provider request failed. Check the model configuration.',
+
   'update.title': 'Software updates',
   'update.currentVersion': 'Current version {{version}}',
   'update.targetVersion': 'New version {{version}}',

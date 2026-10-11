@@ -35,6 +35,7 @@ export type TauSettingsFile = {
 export type TauSettings = {
   port: number;
   host: string;
+  remoteAccess?: boolean;
   user: string;
   pass: string;
   authEnabled?: boolean;
@@ -82,6 +83,7 @@ export type PendingCommand = {
 
 export type LiveClient = {
   readyState: number;
+  bufferedAmount?: number;
   send(payload: string): void;
   close(code?: number, reason?: string): void;
   terminate(): void;

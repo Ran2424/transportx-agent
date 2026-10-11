@@ -31,6 +31,6 @@ export class PythonRunner {
   }
 
   terminateAll() {
-    this.runner.terminateAll();
+    return this.runner.terminateAll();
   }
 }

@@ -53,3 +53,22 @@ caseTest('reads and searches a JSONL session without leaking parsing into the HT
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+caseTest('malformed history warns once without content, while read failures remain visible', (t: any) => {
+  const { readSessionFileEntries } = require('../../bin/session-projection.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-history-diagnostic-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'redacted.jsonl');
+  fs.writeFileSync(file, '{"type":"session"}\nsecret-key-do-not-log\n');
+  const warnings: unknown[][] = [];
+  const original = console.warn;
+  console.warn = (...values) => { warnings.push(values); };
+  try {
+    assert.equal(readSessionFileEntries(file).length, 1);
+    readSessionFileEntries(file);
+    assert.equal(warnings.length, 1);
+    assert.equal(JSON.stringify(warnings).includes('secret-key'), false);
+    assert.throws(() => readSessionFileEntries(root));
+    assert.deepEqual(readSessionFileEntries(path.join(root, 'missing')), []);
+  } finally { console.warn = original; }
+});

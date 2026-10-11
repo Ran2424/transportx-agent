@@ -1,3 +1,4 @@
+const { hostPlatform } = require('../bin/host-platform.js');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -112,8 +113,8 @@ function terminateProcessTree(child: AgentHostProcess) {
     try { process.kill(child.pid, 'SIGKILL'); } catch {}
     return;
   }
-  if (process.platform === 'win32') {
-    execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
+  if (hostPlatform.tree === 'taskkill') {
+    execFile(hostPlatform.treeCommand, [hostPlatform.treeArgs[0], String(child.pid), ...hostPlatform.treeArgs.slice(1), hostPlatform.treeForceArg], () => {});
     return;
   }
   try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch {} }
@@ -152,7 +153,7 @@ export class AgentHostSupervisor {
       PYTHONDONTWRITEBYTECODE: '1',
       ...developmentRuntime,
     };
-    const child: AgentHostProcess = process.platform === 'darwin'
+    const child: AgentHostProcess = hostPlatform.utilityHost
       ? utilityProcess.fork(paths.agentHostEntrypoint, args, {
           env,
           serviceName: 'TransportX Agent Host',
@@ -160,7 +161,7 @@ export class AgentHostSupervisor {
         })
       : spawn(process.execPath, [paths.agentHostEntrypoint, ...args], {
           env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
-          detached: process.platform !== 'win32',
+          detached: hostPlatform.detached,
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
         });
     this.child = child;

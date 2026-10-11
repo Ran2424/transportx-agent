@@ -1,6 +1,7 @@
 import process from 'node:process';
+import { builderPlatformFor } from '../desktop/scripts/platform-profile.mjs';
 
-if (process.platform !== 'win32') throw new Error('Windows platform smoke must run on Windows.');
+if (builderPlatformFor() !== 'win') throw new Error('Windows platform smoke must run on Windows.');
 
 if (process.env.TRANSPORTX_WINDOWS_INSTALLER) {
   await import('./windows-installer-smoke.mjs');

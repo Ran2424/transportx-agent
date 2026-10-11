@@ -11,7 +11,7 @@ import { ComposerCitationPicker, useComposerCitationPicker } from './composer-ci
 import { geoContextStore } from '../../features/geo/geo-context-store';
 import { canvasContextStore } from '../canvas/canvas-context-store';
 
-export function ConversationComposer({ sessionId, session, streaming, compacting, queued, attachments, onCitationEnvelope, onOpenCitationManager }: { sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
+export function ConversationComposer({ retryDraft, sessionId, session, streaming, compacting, queued, attachments, onCitationEnvelope, onOpenCitationManager }: { retryDraft?: { message: string }; sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const [value, setValue] = useState('');
@@ -21,6 +21,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
   const canvasContexts = useSyncExternalStore(canvasContextStore.subscribe, () => canvasContextStore.get(sessionId));
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { citeOpen, citeLoading, citeCandidates, setCiteOpen, openCitePicker, insertCitation } = useComposerCitationPicker({ sessionId, onCitationEnvelope, onInsert: (marker) => setValue((current) => current.replace('/cite', marker)), onError: setError, onFocus: () => inputRef.current?.focus() });
+  useEffect(() => { if (retryDraft) { setValue(retryDraft.message); inputRef.current?.focus(); } }, [retryDraft]);
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
   useEffect(resize, [value]);
   async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
@@ -71,7 +72,7 @@ export function ConversationComposer({ sessionId, session, streaming, compacting
           {compacting
             ? <span className="composer-compacting" role="status">{t('conversation.compacting')}</span>
             : streaming
-            ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId)}>{t('conversation.abortShort')}</button></div>
+            ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId).catch((cause) => setError((cause as Error).message || t('conversation.sendFailed')))}>{t('conversation.abortShort')}</button></div>
             : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0 && geoContexts.length === 0 && canvasContexts.length === 0}>↑</button>}
         </div>
       </form>

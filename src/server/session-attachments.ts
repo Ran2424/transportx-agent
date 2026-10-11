@@ -8,11 +8,14 @@ import type {
   SessionAttachmentKind,
   SessionAttachmentSource,
 } from '../contracts/attachments.js';
+import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 import { isWithin } from './util/path.js';
 import { relativePosixPath } from './util/path.js';
 
 const INDEX_VERSION = 1;
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_UPLOAD_FILES = 20;
 const ATTACHMENT_ID_RE = /^att_[a-z0-9]{12,32}$/;
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'svg', 'ico']);
 const TABLE_EXTENSIONS = new Set(['csv', 'tsv', 'xlsx', 'xls', 'ods']);
@@ -72,22 +75,15 @@ function kindFor(name: string, mimeType: string): SessionAttachmentKind {
 function readIndex(cwd: string): AttachmentIndex {
   assertNotSymlink(tauDir(cwd));
   assertNotSymlink(indexPath(cwd));
-  try {
-    const parsed = JSON.parse(fs.readFileSync(indexPath(cwd), 'utf8')) as Partial<AttachmentIndex>;
-    if (parsed.version === INDEX_VERSION && Array.isArray(parsed.attachments)) {
-      return { version: INDEX_VERSION, attachments: parsed.attachments, messageRefs: Array.isArray(parsed.messageRefs) ? parsed.messageRefs : [] };
-    }
-  } catch { /* first upload or an interrupted old write */ }
-  return { version: INDEX_VERSION, attachments: [], messageRefs: [] };
+  const parsed = readJsonObject(indexPath(cwd), { version: INDEX_VERSION, attachments: [], messageRefs: [] }) as Partial<AttachmentIndex>;
+  if (parsed.version !== INDEX_VERSION || !Array.isArray(parsed.attachments) || (parsed.messageRefs !== undefined && !Array.isArray(parsed.messageRefs))) throw error('Unsupported or corrupt attachment index', 409);
+  return { version: INDEX_VERSION, attachments: parsed.attachments, messageRefs: parsed.messageRefs || [] };
 }
 
 function writeIndex(cwd: string, index: AttachmentIndex) {
   assertNotSymlink(tauDir(cwd));
   assertNotSymlink(indexPath(cwd));
-  fs.mkdirSync(tauDir(cwd), { recursive: true });
-  const target = indexPath(cwd), temp = `${target}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temp, target);
+  writeJsonAtomic(indexPath(cwd), index);
 }
 
 function ensureWithin(root: string, target: string) {
@@ -137,11 +133,10 @@ export function attachmentFilePath(cwd: string, attachment: SessionAttachment) {
 
 function makeId() { return `att_${crypto.randomBytes(8).toString('hex')}`; }
 
-async function writeMultipartPart(handle: fsp.FileHandle, hash: crypto.Hash, chunk: Buffer, state: { size: number }, limitError: { value: Error | null }) {
+async function writeMultipartPart(handle: fsp.FileHandle, hash: crypto.Hash, chunk: Buffer, state: { size: number }) {
   state.size += chunk.length;
   if (state.size > MAX_ATTACHMENT_BYTES) {
-    if (!limitError.value) limitError.value = error(`Attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB limit\nPlease provide the file's path.`, 413);
-    return;
+    throw error(`Attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB limit\nPlease provide the file's path.`, 413);
   }
   hash.update(chunk);
   await handle.write(chunk);
@@ -151,12 +146,18 @@ async function parseMultipart(req: IncomingMessage, tempDir: string): Promise<Mu
   const contentType = String(req.headers['content-type'] || '');
   const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
   if (!boundaryMatch) throw error('Expected multipart/form-data upload', 415);
+  if ((boundaryMatch[1] || boundaryMatch[2]).length > 200) throw error('Multipart boundary is too large');
   const boundary = Buffer.from(`--${boundaryMatch[1] || boundaryMatch[2]}`);
   const dataBoundary = Buffer.from(`\r\n${boundary.toString()}`);
   let buffer = Buffer.alloc(0);
-  let state: 'preamble' | 'headers' | 'data' | 'done' = 'preamble';
+  let state: 'preamble' | 'delimiter' | 'headers' | 'data' | 'done' = 'preamble';
   let current: { name: string; mimeType: string; path: string; handle: fsp.FileHandle; hash: crypto.Hash; stats: { size: number } } | null = null;
   const files: MultipartFile[] = [];
+  const discardCurrent = async () => {
+    if (!current) return;
+    await current.handle.close();
+    current = null;
+  };
   const closeCurrent = async () => {
     if (!current) return;
     await current.handle.close();
@@ -164,22 +165,28 @@ async function parseMultipart(req: IncomingMessage, tempDir: string): Promise<Mu
     current = null;
   };
   const consume = async (chunk: Buffer) => {
+    if (state === 'done') return;
     buffer = Buffer.concat([buffer, chunk]);
     while (true) {
       if (state === 'preamble') {
         const index = buffer.indexOf(boundary);
         if (index < 0) { buffer = buffer.slice(Math.max(0, buffer.length - boundary.length)); return; }
         buffer = buffer.slice(index + boundary.length);
-        if (buffer.subarray(0, 2).equals(Buffer.from('--'))) { state = 'done'; return; }
+        state = 'delimiter';
+      } else if (state === 'delimiter') {
+        if (buffer.length < 2) return;
+        if (buffer.subarray(0, 2).equals(Buffer.from('--'))) { state = 'done'; buffer = Buffer.alloc(0); return; }
         if (!buffer.subarray(0, 2).equals(Buffer.from('\r\n'))) throw error('Malformed multipart boundary');
         buffer = buffer.slice(2); state = 'headers';
       } else if (state === 'headers') {
         const end = buffer.indexOf(Buffer.from('\r\n\r\n'));
         if (end < 0) { if (buffer.length > 64 * 1024) throw error('Multipart headers are too large'); return; }
+        if (end > 64 * 1024) throw error('Multipart headers are too large');
         const headerText = buffer.slice(0, end).toString('utf8');
         const disposition = headerText.match(/content-disposition:\s*[^\r\n]*/i)?.[0] || '';
         const filename = disposition.match(/filename="([^"]*)"/i)?.[1];
         if (filename !== undefined) {
+          if (files.length >= MAX_UPLOAD_FILES) throw error(`Upload exceeds the ${MAX_UPLOAD_FILES} file limit`, 413);
           const mimeType = headerText.match(/content-type:\s*([^\r\n]+)/i)?.[1]?.trim() || 'application/octet-stream';
           const tempPath = path.join(tempDir, `upload-${crypto.randomBytes(8).toString('hex')}.tmp`);
           current = { name: safeName(filename), mimeType, path: tempPath, handle: await fsp.open(tempPath, 'w', 0o600), hash: crypto.createHash('sha256'), stats: { size: 0 } };
@@ -189,52 +196,60 @@ async function parseMultipart(req: IncomingMessage, tempDir: string): Promise<Mu
         const index = buffer.indexOf(dataBoundary);
         if (index < 0) {
           const safeLength = Math.max(0, buffer.length - dataBoundary.length);
-          if (safeLength && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, safeLength), current.stats, limitError);
+          if (safeLength && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, safeLength), current.stats);
           buffer = buffer.slice(safeLength); return;
         }
-        if (index && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, index), current.stats, limitError);
+        if (index && current) await writeMultipartPart(current.handle, current.hash, buffer.slice(0, index), current.stats);
         await closeCurrent();
         buffer = buffer.slice(index + dataBoundary.length);
-        if (buffer.subarray(0, 2).equals(Buffer.from('--'))) { state = 'done'; return; }
-        if (!buffer.subarray(0, 2).equals(Buffer.from('\r\n'))) throw error('Malformed multipart boundary');
-        buffer = buffer.slice(2); state = 'headers';
+        state = 'delimiter';
       } else return;
     }
   };
-  const limitError = { value: null as Error | null };
-  for await (const chunk of req) await consume(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  if (limitError.value) {
-    const leftover = current as { handle: fsp.FileHandle; path: string } | null;
-    if (leftover) { try { await leftover.handle.close(); } catch {} try { fs.rmSync(leftover.path, { force: true }); } catch {} }
-    throw limitError.value;
+  let failure: Error | null = null;
+  let receivedBytes = 0;
+  try {
+    for await (const chunk of req) {
+      receivedBytes += chunk.length;
+      if (failure) continue; // Drain without retaining any more request bytes.
+      try {
+        if (receivedBytes > MAX_UPLOAD_BYTES) throw error('Upload exceeds the 100 MB total limit\nPlease provide the file\'s path.', 413);
+        await consume(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      } catch (cause) {
+        failure = cause as Error;
+        buffer = Buffer.alloc(0);
+        await discardCurrent();
+      }
+    }
+    if (failure) throw failure;
+    if ((state as string) !== 'done' || current) throw error('Incomplete multipart upload', 400);
+    return files;
+  } finally {
+    await discardCurrent();
   }
-  if ((state as string) === 'data' || current) throw error('Incomplete multipart upload', 400);
-  if ((state as string) !== 'done') throw error('Malformed multipart upload', 400);
-  return files;
 }
 
 export async function saveUploadedAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource) {
   assertNotSymlink(tauDir(cwd));
   assertNotSymlink(sessionAttachmentsDir(cwd));
   fs.mkdirSync(sessionAttachmentsDir(cwd), { recursive: true, mode: 0o700 });
-  const tempDir = path.join(tauDir(cwd), 'attachment-tmp');
-  fs.mkdirSync(tempDir, { recursive: true, mode: 0o700 });
-  let files: MultipartFile[];
-  try {
-    files = await parseMultipart(req, tempDir);
-  } catch (cause) {
-    for (const name of fs.readdirSync(tempDir)) { try { fs.rmSync(path.join(tempDir, name), { force: true }); } catch {} }
-    throw cause;
-  }
-  if (!files.length) throw error('No file was provided', 400);
-  const index = readIndex(cwd);
+  const tempRoot = path.join(tauDir(cwd), 'attachment-tmp');
+  assertNotSymlink(tempRoot);
+  fs.mkdirSync(tempRoot, { recursive: true, mode: 0o700 });
+  const tempDir = fs.mkdtempSync(path.join(tempRoot, 'request-'));
   const created: SessionAttachment[] = [];
+  const createdDirs: string[] = [];
   try {
+    const files = await parseMultipart(req, tempDir);
+    if (!files.length) throw error('No file was provided', 400);
+    // Commit the fresh index in one synchronous segment after parsing finishes.
+    const index = readIndex(cwd);
     for (const file of files) {
       const id = makeId();
       const dir = path.join(sessionAttachmentsDir(cwd), id);
       const target = path.join(dir, file.name);
       fs.mkdirSync(dir, { recursive: false, mode: 0o700 });
+      createdDirs.push(dir);
       ensureWithin(sessionAttachmentsDir(cwd), dir);
       fs.renameSync(file.tempPath, target);
       const attachment: SessionAttachment = { id, name: file.name, relativePath: relativePosixPath(cwd, target), mimeType: file.mimeType, size: file.size, sha256: file.sha256, kind: kindFor(file.name, file.mimeType), source, status: 'ready', createdAt: new Date().toISOString() };
@@ -243,11 +258,10 @@ export async function saveUploadedAttachments(cwd: string, req: IncomingMessage,
     writeIndex(cwd, index);
     return created;
   } catch (cause) {
-    for (const file of files) { try { fs.rmSync(file.tempPath, { force: true }); } catch {} }
-    for (const attachment of created) { try { fs.rmSync(path.join(cwd, attachment.relativePath.split('/').slice(0, -1).join('/')), { recursive: true, force: true }); } catch {} }
+    for (const dir of createdDirs) fs.rmSync(dir, { recursive: true, force: true });
     throw cause;
   } finally {
-    for (const file of files) { try { fs.rmSync(file.tempPath, { force: true }); } catch {} }
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 

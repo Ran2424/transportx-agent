@@ -1,5 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs');
+import { assertHostWriter, readJsonObject } from './util/json-storage.js';
 
 export type PiModelProviderAccess = {
   id: string;
@@ -15,6 +16,8 @@ export type PiModelProviderAccess = {
 };
 
 async function createRuntime(agentDir: string) {
+  readJsonObject(path.join(agentDir, 'auth.json'));
+  readJsonObject(path.join(agentDir, 'models.json'));
   const { ModelRuntime } = await import('@earendil-works/pi-coding-agent');
   return ModelRuntime.create({
     authPath: path.join(agentDir, 'auth.json'),
@@ -82,6 +85,7 @@ export async function listAvailablePiModels(agentDir: string) {
 }
 
 export async function connectPiModelProvider(providerIdInput: string, apiKeyInput: string, agentDir: string) {
+  assertHostWriter(agentDir);
   const providerId = providerIdInput.trim();
   const apiKey = apiKeyInput.trim();
   if (!providerId) throw new Error('请选择模型供应商');
@@ -107,6 +111,7 @@ export async function connectPiModelProvider(providerIdInput: string, apiKeyInpu
 }
 
 export async function disconnectPiModelProvider(providerIdInput: string, agentDir: string) {
+  assertHostWriter(agentDir);
   const providerId = providerIdInput.trim();
   if (!providerId) throw new Error('模型供应商不能为空');
   const runtime = await createRuntime(agentDir);
@@ -128,6 +133,7 @@ export async function ensurePiModelProviderConfigured(providerIdInput: string, a
 }
 
 export async function removePiModelProviderCredential(providerIdInput: string, agentDir: string) {
+  assertHostWriter(agentDir);
   const providerId = providerIdInput.trim();
   const runtime = await createRuntime(agentDir);
   const provider = runtime.getProvider(providerId);

@@ -10,6 +10,7 @@ import type { AppEvent, AppMessage, LiveSession, SessionEntry, SessionSnapshot }
 import type { AppAction } from './actions.js';
 import { appError, type AppError } from '../../contracts/errors.ts';
 import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured, parseGeoScreenshotRequestStructured } from '../../contracts/geo.ts';
+import { retryState, classifyFailure } from '../../contracts/run-feedback.ts';
 import type { TransportSignal } from './transport.js';
 
 type RawMessage = { type?: unknown; [key: string]: unknown };
@@ -85,7 +86,6 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         // compaction retries and queued continuations have completed. It is
         // normally preceded by a final agent_end, but also repairs a stream
         // when a client attached after that event.
-        if (!currentRunBySession.has(sessionId)) return [];
         currentRunBySession.delete(sessionId);
         return [{ type: 'conversation/streamEnded', sessionId }];
       case 'turn_start':
@@ -156,7 +156,9 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       case 'auto_compaction_end':
         return [{ type: 'session/compactionEnded', sessionId }];
       case 'auto_retry_start':
+        return [{ type: 'conversation/retryStarted', sessionId, retry: retryState(event) }];
       case 'auto_retry_end':
+        return [{ type: 'conversation/retryEnded', sessionId, outcome: event.success ? null : /cancelled/i.test(String(event.finalError)) ? { status: 'cancelled' } : { status: 'failed', reason: classifyFailure(event.finalError) } }];
       case 'thinking_level_changed':
       case 'response':
         // Pi command responses are resolved by the server-side command port.

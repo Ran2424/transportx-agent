@@ -25,3 +25,14 @@ caseTest('Pi RPC transport acknowledges extension replies on write and rejects p
   transport.rejectAll(new Error('closed'));
   await assert.rejects(pending, /closed/);
 });
+
+caseTest('timeouts report unknown delivery and late responses are reconciled once', async () => {
+  const transport = new PiRpcTransport();
+  const responses: unknown[] = [];
+  const input = { writable: true, write(_payload: string, done: () => void) { done(); } };
+  await assert.rejects(transport.send(input, { id: 'late', type: 'prompt' }, { timeoutMs: 5, onLateResponse: (response: unknown) => responses.push(response) }), (error: any) => error.delivery === 'unknown');
+  const response = { id: 'late', success: true };
+  assert.equal(transport.resolve(response), true);
+  assert.deepEqual(responses, [response]);
+  assert.equal(transport.resolve(response), false);
+});

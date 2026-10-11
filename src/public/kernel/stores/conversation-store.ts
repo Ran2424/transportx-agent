@@ -20,6 +20,8 @@ export type QueuedPrompt = { message: string; attachmentIds?: string[]; geoConte
 export type OptimisticPrompt = { message: string; attachmentIds?: string[]; geoContextIds?: string[]; canvasContextIds?: string[] };
 
 export type LiveOverlay = {
+  retry: import('../../../contracts/run-feedback.ts').RetryState | null;
+  outcome: import('../../../contracts/run-feedback.ts').RunOutcome | null;
   runId: string | null;
   optimisticPrompt: OptimisticPrompt | null;
   streamingText: string;
@@ -40,6 +42,8 @@ export type ConversationStoreState = {
 };
 
 const emptyOverlay = (): LiveOverlay => ({
+  retry: null,
+  outcome: null,
   runId: null,
   optimisticPrompt: null,
   streamingText: '',
@@ -156,8 +160,15 @@ export class ConversationStore {
     });
   }
 
+  retryStarted(sessionId: string, retry: import('../../../contracts/run-feedback.ts').RetryState) {
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, retry, outcome: null } }));
+  }
+  retryEnded(sessionId: string, outcome: import('../../../contracts/run-feedback.ts').RunOutcome | null) {
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, retry: null, outcome } }));
+  }
+
   streamStarted(sessionId: string, runId: string) {
-    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, active: true } }));
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, active: true, retry: null, outcome: null } }));
   }
 
   messageStarted(sessionId: string, message: AppMessage) {
@@ -237,7 +248,7 @@ export class ConversationStore {
   streamEnded(sessionId: string) {
     this.update(sessionId, (conv) => ({
       snapshotEntries: this.foldOverlay(conv, conv.snapshotEntries),
-      live: { ...emptyOverlay(), optimisticPrompt: conv.live.optimisticPrompt, queued: conv.live.queued },
+      live: { ...emptyOverlay(), optimisticPrompt: conv.live.optimisticPrompt, queued: conv.live.queued, outcome: conv.live.outcome },
     }));
   }
 
@@ -286,24 +297,20 @@ export class ConversationStore {
     return appendDedup(entries, { type: 'message', message: { role: 'assistant', content } });
   }
 
-  /**
-   * Snapshot hydration reuses the same reconcile rules as live events:
-   * merge entries with dedup; when the server says the session is not
-   * streaming, reconcile the overlay once and reset it.
-   */
+  /** A snapshot replaces the current branch and its transient overlay. */
   hydrate(sessionId: string, snapshot: SessionSnapshot) {
-    this.update(sessionId, (conv) => {
-      let entries = conv.snapshotEntries;
-      for (const entry of snapshot.entries ?? []) entries = appendDedup(entries, entry);
-      if (snapshot.isStreaming) {
-        return { snapshotEntries: entries, live: { ...conv.live, active: true } };
-      }
-      const withOverlay = this.foldOverlay({ ...conv, snapshotEntries: entries }, entries);
-      return {
-        snapshotEntries: withOverlay,
-        live: { ...emptyOverlay(), optimisticPrompt: conv.live.optimisticPrompt, queued: conv.live.queued },
-      };
-    });
+    this.update(sessionId, (conv) => ({
+      snapshotEntries: snapshot.entries ?? [],
+      live: {
+        ...emptyOverlay(),
+        active: !!snapshot.isStreaming,
+        retry: snapshot.retry ?? null,
+        outcome: snapshot.outcome ?? null,
+        streamingText: messageText(snapshot.streamingMessage ?? undefined),
+        streamingThinking: messageThinking(snapshot.streamingMessage ?? undefined),
+        queued: conv.live.queued,
+      },
+    }));
   }
 
   dropSession(sessionId: string) {

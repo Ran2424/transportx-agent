@@ -3,10 +3,31 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 
 const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-pi-rpc-smoke-'));
-const command = process.env.TAU_PI_COMMAND || 'pi';
+let releaseFirst;
+let calls = 0;
+const provider = http.createServer((req, res) => {
+  req.resume();
+  req.on('end', () => {
+    const complete = () => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      const chunk = (delta, finish_reason = null) => ({ id: 'smoke', object: 'chat.completion.chunk', created: 1, model: 'smoke', choices: [{ index: 0, delta, finish_reason }] });
+      res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: 'smoke answer' }))}\n\n`);
+      res.write(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\n`);
+      res.end('data: [DONE]\n\n');
+    };
+    if (++calls === 1) releaseFirst = complete; else complete();
+  });
+});
+await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
+fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: {
+  'traffic-smoke': { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'local-smoke-only', models: [{ id: 'smoke', reasoning: false, input: ['text'], contextWindow: 8192, maxTokens: 128, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] },
+} }));
+const command = process.env.TAU_PI_COMMAND || process.execPath;
 const child = spawn(command, [
+  ...(process.env.TAU_PI_COMMAND ? [] : [path.resolve('node_modules/@earendil-works/pi-coding-agent/dist/cli.js')]),
   '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--approve',
   '--extension', path.resolve('modules/capabilities/task/extensions/pi-task-mode/index.ts'),
   '--extension', path.resolve('modules/capabilities/web-bridge/extensions/pi-web-bridge/index.ts'),
@@ -80,8 +101,32 @@ try {
   assert.equal((await waitFor((line) => line.type === 'response' && line.id === 'task-on')).success, true);
   const appended = await waitFor((line) => line.type === 'entry_appended' && line.entry?.customType === 'pi-task-mode');
   assert.equal(appended.entry?.data?.enabled, true);
-  console.log('Pi RPC smoke passed: bridge, task command, and task-mode event are available.');
+  send({ id: 'smoke-model', type: 'set_model', provider: 'traffic-smoke', modelId: 'smoke' });
+  assert.equal((await waitFor((line) => line.id === 'smoke-model')).success, true);
+  send({ id: 'initial', type: 'prompt', message: 'initial message' });
+  assert.equal((await waitFor((line) => line.id === 'initial')).success, true);
+  // Hold the provider response until both queues are populated.
+  const deadline = Date.now() + 10_000;
+  while (!releaseFirst) {
+    assert.ok(Date.now() < deadline, 'local model request started');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  send({ id: 'follow', type: 'follow_up', message: 'follow-up message' });
+  assert.equal((await waitFor((line) => line.id === 'follow')).success, true);
+  send({ id: 'steer', type: 'steer', message: 'steering message' });
+  assert.equal((await waitFor((line) => line.id === 'steer')).success, true);
+  send({ id: 'rejected', type: 'prompt', message: 'cannot prompt while streaming' });
+  assert.equal((await waitFor((line) => line.id === 'rejected')).success, false);
+  releaseFirst();
+  await waitFor((line) => line.type === 'message_start' && line.message?.role === 'user' && line.message.content?.some((block) => block.text === 'follow-up message'));
+  await waitFor((line) => line.type === 'agent_settled');
+  const users = lines.filter((line) => line.type === 'message_start' && line.message?.role === 'user');
+  assert.deepEqual(users.map((line) => line.message.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n')), ['initial message', 'steering message', 'follow-up message']);
+  assert.ok(users.every((line) => line.id === undefined && line.message.id === undefined), 'Pi user messages do not echo the command id');
+  console.log('Pi RPC smoke passed: bridge, task command, rejection ACK, text correlation and steer-before-follow-up delivery (local provider).');
 } finally {
   if (child.exitCode === null) child.kill('SIGTERM');
+  provider.closeAllConnections();
+  await new Promise((resolve) => provider.close(resolve));
   fs.rmSync(agentDir, { recursive: true, force: true });
 }

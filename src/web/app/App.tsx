@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { HistoryProject, HistorySession } from '../../public/kernel/commands.js';
 import { appKernel, reconnectBrowserApplication } from './composition-root';
 import { AppShell } from './AppShell';
-import { useConversationState, useExtensionUiState, useRuntimeState, useSessionState, useToolExecutionState } from './store-hooks';
+import { useConversation, useExtensionUiState, useRuntimeState, useSessionState, useToolExecutions } from './store-hooks';
 import { Header } from '../components/shell/Header';
 import { SoftwareUpdateNotice } from '../platform/settings/SoftwareUpdate';
 import { ConfirmationDialog } from '../components/ui/confirmation-dialog';
@@ -54,8 +54,8 @@ export function App() {
   const runtime = useRuntimeState();
   const sessionState = useSessionState();
   const extensionUi = useExtensionUiState();
-  const conversation = useConversationState();
-  const tools = useToolExecutionState();
+  const conversation = useConversation(sessionState.activeSessionId);
+  const tools = useToolExecutions(sessionState.activeSessionId);
   const [theme, setTheme] = useState<ThemeId>(initialTheme);
   const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-thinking') !== 'false');
   const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') === 'true');
@@ -77,6 +77,8 @@ export function App() {
   const [sessionHistoryRevision, setSessionHistoryRevision] = useState(0);
   const [dismissedRuntimeError, setDismissedRuntimeError] = useState('');
   const restoredRef = useRef(false);
+  const navigationSequence = useRef(0);
+  useEffect(() => () => { navigationSequence.current++; }, []);
 
   const activeSession = sessionState.sessions.find((session) => session.id === sessionState.activeSessionId) || null;
   const deleteTargetName = deleteTarget
@@ -88,8 +90,8 @@ export function App() {
   const activeCompacting = !!(activeSession && sessionState.compactingBySession[activeSession.id]);
   const canvas = activeSession ? canvases[activeSession.id] ?? EMPTY_CANVAS : EMPTY_CANVAS;
   const canvasContent = useMemo(() => withCanvasDocuments(projectCanvas(
-    activeSession ? conversation.bySession[activeSession.id]?.snapshotEntries ?? [] : [],
-    activeSession ? Object.values(tools.bySession[activeSession.id] ?? {}) : [],
+    activeSession ? conversation?.snapshotEntries ?? [] : [],
+    activeSession ? Object.values(tools ?? {}) : [],
     activeSession?.cwd ? { sessionId: activeSession.id, cwd: activeSession.cwd } : undefined,
   ), canvas), [activeSession?.id, activeSession?.cwd, conversation, tools, canvas.documents]);
   const canvasAvailable = canvasContent.views.length > 0;
@@ -216,6 +218,7 @@ export function App() {
   const selectSession = useCallback(async (sessionId: string) => {
     const session = kernel.stores.session.get().sessions.find((item) => item.id === sessionId);
     if (!session) return;
+    const request = ++navigationSequence.current;
     kernel.dispatch({ type: 'session/activated', sessionId });
     window.localStorage.setItem('tau-active-live-session-id', sessionId);
     setSessionLoading(true);
@@ -223,15 +226,18 @@ export function App() {
     if (window.innerWidth <= 860) closeSidebar();
     try {
       const snapshot = await kernel.commands.session.loadSnapshot(sessionId);
+      if (request !== navigationSequence.current) return;
       kernel.dispatch({ type: 'session/snapshotReceived', sessionId, snapshot });
     } catch (cause) {
-      setNotice((cause as { message?: string })?.message || t('app.error.loadSnapshot'));
+      if (request === navigationSequence.current) setNotice((cause as { message?: string })?.message || t('app.error.loadSnapshot'));
     } finally {
-      setSessionLoading(false);
+      if (request === navigationSequence.current) setSessionLoading(false);
     }
   }, [closeSidebar, kernel, t]);
 
   const goHome = useCallback(() => {
+    navigationSequence.current++;
+    setSessionLoading(false);
     kernel.dispatch({ type: 'session/activated', sessionId: null });
     window.localStorage.removeItem('tau-active-live-session-id');
     closeFiles();
@@ -254,44 +260,48 @@ export function App() {
       await selectSession(live.id);
       return;
     }
+    const request = ++navigationSequence.current;
     setSessionLoading(true);
     setNotice('');
     try {
       const resumed = await kernel.commands.session.resume({ filePath: session.filePath, ...(project.path ? { cwd: project.path } : {}) });
       kernel.dispatch({ type: 'session/created', session: resumed });
-      await selectSession(resumed.id);
+      if (request === navigationSequence.current) await selectSession(resumed.id);
     } catch (cause) {
+      if (request !== navigationSequence.current) return;
       if ((cause as { code?: string })?.code === 'legacy_plan_requires_confirmation' && window.confirm(t('app.confirm.resumeCurrentConfiguration'))) {
         try {
           const resumed = await kernel.commands.session.resume({ filePath: session.filePath, ...(project.path ? { cwd: project.path } : {}), useCurrentConfiguration: true });
           kernel.dispatch({ type: 'session/created', session: resumed });
-          await selectSession(resumed.id);
+          if (request === navigationSequence.current) await selectSession(resumed.id);
           return;
         } catch (retryCause) {
+          if (request !== navigationSequence.current) return;
           setNotice((retryCause as { message?: string })?.message || t('app.error.resumeSession'));
           return;
         }
       }
       setNotice((cause as { message?: string })?.message || t('app.error.resumeSession'));
     } finally {
-      setSessionLoading(false);
+      if (request === navigationSequence.current) setSessionLoading(false);
     }
   }
 
   async function closeSession(sessionId: string) {
     const isStreaming = !!kernel.stores.session.get().streamingBySession[sessionId];
     if (isStreaming && !window.confirm(t('app.confirm.closeStreaming'))) return;
+    const request = navigationSequence.current;
     try {
       await kernel.commands.session.close(sessionId);
       geoContextStore.clear(sessionId);
       kernel.dispatch({ type: 'session/closed', sessionId });
-      if (kernel.stores.session.get().activeSessionId === null) {
+      if (request === navigationSequence.current && kernel.stores.session.get().activeSessionId === null) {
         window.localStorage.removeItem('tau-active-live-session-id');
         const next = mostRecentSessionId(kernel.stores.session.get().sessions);
         if (next) await selectSession(next);
       }
     } catch (cause) {
-      setNotice((cause as { message?: string })?.message || t('app.error.closeSession'));
+      if (request === navigationSequence.current) setNotice((cause as { message?: string })?.message || t('app.error.closeSession'));
     }
   }
 
@@ -318,12 +328,13 @@ export function App() {
     const target = deleteTarget;
     setDeleteTarget(null);
     if (!target) return;
+    const request = navigationSequence.current;
     try {
       if (target.kind === 'live') {
         await kernel.commands.session.close(target.session.id);
         kernel.dispatch({ type: 'session/closed', sessionId: target.session.id });
         if (target.session.sessionFile) await kernel.commands.session.deleteHistory(target.session.sessionFile);
-        if (kernel.stores.session.get().activeSessionId === null) {
+        if (request === navigationSequence.current && kernel.stores.session.get().activeSessionId === null) {
           window.localStorage.removeItem('tau-active-live-session-id');
           const next = mostRecentSessionId(kernel.stores.session.get().sessions);
           if (next) await selectSession(next);
@@ -333,7 +344,7 @@ export function App() {
       }
       setSessionHistoryRevision((value) => value + 1);
     } catch (cause) {
-      setNotice((cause as { message?: string })?.message || t('app.error.deleteSession'));
+      if (request === navigationSequence.current) setNotice((cause as { message?: string })?.message || t('app.error.deleteSession'));
     }
   }
 
@@ -391,7 +402,7 @@ export function App() {
   }, [activeSession, canvas.open, closeCanvas, closeFiles, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t]);
 
   const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
-  const runtimeErrorMessage = runtime.lastError?.message || '';
+  const runtimeErrorMessage = !runtime.lastError?.sessionId || runtime.lastError.sessionId === activeSession?.id ? runtime.lastError?.message || '' : '';
   const runtimeNotice = notice || (runtimeErrorMessage !== dismissedRuntimeError ? runtimeErrorMessage : '');
 
   return (

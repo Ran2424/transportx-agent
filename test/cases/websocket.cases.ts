@@ -71,6 +71,21 @@ beforeEach(() => {
   liveManager.sessions.clear();
 });
 
+caseTest('slow WebSocket clients are removed before adding more buffered data', () => {
+  const { LiveSessionManager } = require('../../bin/sessions.js');
+  const manager = new LiveSessionManager();
+  let sent = 0;
+  let closed = 0;
+  const slow = { readyState: WebSocket.OPEN, bufferedAmount: 8 * 1024 * 1024, send() { assert.fail('must not buffer more'); }, terminate() { closed++; } };
+  const healthy = { readyState: WebSocket.OPEN, bufferedAmount: 0, send() { sent++; }, terminate() {} };
+  manager.addClient(slow);
+  manager.addClient(healthy);
+  manager.broadcast({ type: 'event' });
+  assert.equal(closed, 1);
+  assert.equal(sent, 1);
+  assert.equal(manager.clients.has(slow), false);
+});
+
 function connect(opts: any = {}) {
   const headers = opts.headers || {};
   if (opts.origin !== null) headers.Origin = opts.origin ?? base;

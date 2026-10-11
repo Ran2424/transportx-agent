@@ -1,27 +1,23 @@
+import { boundedDiagnostics } from '../contracts/diagnostics.js';
+import { hostPlatform } from './host-platform.js';
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
 const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
-import {
-  DEFAULT_DOMAIN_ID,
-  PI_COMMAND,
-  SESSION_ASSEMBLER,
-  sessionAssemblerForProfile,
-} from './config.js';
 import { normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import type { SessionService } from './session-service.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { PiRpcTransport } from './pi-rpc-transport.js';
-import { signalProcessTree } from './process-tree.js';
-import type { ResolvedSessionPlan } from './session-assembly.js';
-import { buildSessionPiLaunch } from './session-pi-launch.js';
-import { createSessionWorkingDirectory, makeSessionId } from './session-workspace.js';
+import { retryState, classifyFailure, messageOutcome, type RunOutcome, type RetryState } from '../contracts/run-feedback.js';
+import { signalProcessTree, terminateProcessTree } from './process-tree.js';
+import type { ResolvedSessionPlan, SessionAssembler } from './session-assembly.js';
+import type { SessionPiLaunchInput } from './session-pi-launch.js';
+import { makeSessionId } from './session-workspace.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
@@ -89,16 +85,7 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
   return latest;
 }
 
-let citationEndpoint = process.env.TAU_CITATION_ENDPOINT || '';
-export function setCitationEndpoint(value: string) { citationEndpoint = value; }
-let spatialEndpoint = process.env.TAU_SPATIAL_ENDPOINT || '';
-export function setSpatialEndpoint(value: string) { spatialEndpoint = value; }
-let videoEndpoint = process.env.TAU_VIDEO_ENDPOINT || '';
-export function setVideoEndpoint(value: string) { videoEndpoint = value; }
-let geoEndpoint = process.env.TAU_GEO_ENDPOINT || '';
-export function setGeoEndpoint(value: string) { geoEndpoint = value; }
-let canvasEndpoint = process.env.TAU_CANVAS_ENDPOINT || '';
-export function setCanvasEndpoint(value: string) { canvasEndpoint = value; }
+
 
 export class PiRpcSession {
   manager: LiveSessionManager;
@@ -130,9 +117,7 @@ export class PiRpcSession {
   piVersion: string;
   capabilityTracker: SessionCapabilityTracker;
   resolvedSessionPlan: ResolvedSessionPlan | null;
-  pendingAttachmentRefs: string[][];
-  pendingGeoContextRefs: string[][];
-  pendingCanvasContextRefs: string[][];
+  pendingMessages: Array<{ commandId: string; text: string; attachmentIds: string[]; geoContextIds: string[]; canvasContextIds: string[] }>;
   activeGeoContextIds: string[];
   activeCanvasContextIds: string[];
   serviceTokens: Record<SessionService, string>;
@@ -140,6 +125,11 @@ export class PiRpcSession {
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
   timingMetrics: TimingMetricsStore;
   eventTiming: SessionEventTiming;
+  private termination: Promise<void> | null = null;
+  private retry: RetryState | null = null;
+  private runOutcome: RunOutcome | null = null;
+  private streamingMessage: PiMessage | null = null;
+  private activeTools = new Map<string, PiRpcMessage>();
 
   constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
@@ -173,9 +163,7 @@ export class PiRpcSession {
     this.piVersion = opts.piVersion || PI_RUNTIME_MINIMUM;
     this.capabilityTracker = new SessionCapabilityTracker(this.piVersion);
     this.resolvedSessionPlan = opts.resolvedSessionPlan || null;
-    this.pendingAttachmentRefs = [];
-    this.pendingGeoContextRefs = [];
-    this.pendingCanvasContextRefs = [];
+    this.pendingMessages = [];
     this.activeGeoContextIds = [];
     this.activeCanvasContextIds = [];
     this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID(), canvas: crypto.randomUUID() };
@@ -196,19 +184,21 @@ export class PiRpcSession {
   snapshot() {
     const snapshot = sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
     const geoInteraction = geoInteractionService.snapshot(this);
-    return { ...snapshot, ...(geoInteraction ? { geoInteraction } : {}) };
+    return { ...snapshot, ...this.manager.clock(), streamingMessage: this.streamingMessage, retry: this.retry, outcome: this.runOutcome, activeToolEvents: [...this.activeTools.values()], pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
   }
 
   get entries() {
     return this.projection.entries;
   }
 
+  private readonly diagnose = boundedDiagnostics();
+
   async start() {
     if (!fs.existsSync(this.cwd) || !fs.statSync(this.cwd).isDirectory()) {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
     if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
-    const launch = buildSessionPiLaunch({
+    const launch = this.manager.runtime.launch({
       cwd: this.cwd,
       sessionId: this.id,
       sessionFile: this.sessionFile,
@@ -216,13 +206,13 @@ export class PiRpcSession {
       appendSystemPrompt: this.appendSystemPrompt,
       resolvedSessionPlan: this.resolvedSessionPlan,
       serviceTokens: this.serviceTokens,
-      endpoints: { citation: citationEndpoint, spatial: spatialEndpoint, video: videoEndpoint, geo: geoEndpoint, canvas: canvasEndpoint },
+      endpoints: this.manager.runtime.endpoints,
     });
-    const spawnFn: SpawnFn = _spawnPiForTest || spawn;
-    const child = spawnFn(PI_COMMAND, launch.args, {
+    const spawnFn = this.manager.runtime.spawn;
+    const child = spawnFn(this.manager.runtime.command, launch.args, {
       cwd: this.cwd,
       env: launch.env,
-      detached: process.platform !== 'win32',
+      detached: hostPlatform.detached,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.child = child;
@@ -232,7 +222,7 @@ export class PiRpcSession {
     child.stdout!.on('data', (chunk: string) => this.handleStdout(chunk));
     child.stderr!.setEncoding('utf8');
     child.stderr!.on('data', (chunk: string) => {
-      for (const line of chunk.split(/\r?\n/).filter(Boolean)) console.error(`[Pi ${this.id}] ${line}`);
+      this.diagnose('pi_stderr', { sessionId: this.id, bytes: Buffer.byteLength(chunk) });
     });
     child.on('error', (err: Error) => this.handleExit(null, null, err));
     child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => this.handleExit(code, signal));
@@ -275,7 +265,7 @@ export class PiRpcSession {
     }, 250);
   }
 
-  send(command: RpcCommand, opts: { timeoutMs?: number } = {}) {
+  send(command: RpcCommand, opts: { timeoutMs?: number; onLateResponse?: (response: RpcResponse) => void } = {}) {
     const child = this.child;
     if (!child || !child.stdin!.writable || this.terminating) {
       return Promise.reject(new Error('Pi RPC session is not running'));
@@ -284,6 +274,11 @@ export class PiRpcSession {
   }
 
   handleStdout(chunk: string) {
+    if (Buffer.byteLength(this.stdoutBuffer) + Buffer.byteLength(chunk) > 16 * 1024 * 1024) {
+      this.stdoutBuffer = '';
+      void this.terminate('rpc_frame_too_large').catch((error) => console.error(`[Pi ${this.id}] ${error.message}`));
+      return;
+    }
     this.stdoutBuffer += chunk;
     const lines = this.stdoutBuffer.split(/\r?\n/);
     this.stdoutBuffer = lines.pop() || '';
@@ -294,7 +289,7 @@ export class PiRpcSession {
     const trimmed = line.trim();
     if (!trimmed) return;
     let msg;
-    try { msg = JSON.parse(trimmed); } catch { console.log(`[Pi ${this.id}] ${trimmed}`); return; }
+    try { msg = JSON.parse(trimmed); } catch { this.diagnose('pi_stdout_non_json', { sessionId: this.id, bytes: Buffer.byteLength(trimmed) }); return; }
     if (msg.type === 'response') {
       this.handleResponse(msg);
       return;
@@ -346,6 +341,25 @@ export class PiRpcSession {
       }
     }
     this.eventTiming.apply(event, now);
+    if (type === 'agent_start' || type === 'auto_retry_start') this.runOutcome = null;
+    if (type === 'message_end' && event.message?.role === 'assistant') this.runOutcome = messageOutcome(event.message);
+    if (type === 'auto_retry_start') this.retry = retryState(event);
+    if (type === 'auto_retry_end') this.runOutcome = event.success ? null : /cancelled/i.test(String(event.finalError)) ? { status: 'cancelled' } : { status: 'failed', reason: classifyFailure(event.finalError) };
+    if (type === 'auto_retry_end' || type === 'agent_settled') this.retry = null;
+    if (type === 'message_start' && event.message?.role === 'assistant') this.streamingMessage = event.message;
+    if (type === 'message_update') {
+      const partial = event.message || (event.assistantMessageEvent as { partial?: PiMessage } | undefined)?.partial;
+      if (partial?.role === 'assistant') this.streamingMessage = partial;
+    }
+    if (type === 'message_end' && event.message?.role === 'assistant') this.streamingMessage = null;
+    if (typeof event.toolCallId === 'string') {
+      if (type === 'tool_execution_start') this.activeTools.set(event.toolCallId, event);
+      if (type === 'tool_execution_update') {
+        const previous = this.activeTools.get(event.toolCallId);
+        this.activeTools.set(event.toolCallId, { ...previous, ...event, type: 'tool_execution_start' });
+      }
+      if (type === 'tool_execution_end') this.activeTools.delete(event.toolCallId);
+    }
     if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
     if (type === 'compaction_start' || type === 'auto_compaction_start') this.isCompacting = true;
@@ -357,6 +371,8 @@ export class PiRpcSession {
     }
     if (type === 'agent_settled') {
       this.isStreaming = false;
+      this.streamingMessage = null;
+      this.activeTools.clear();
       this.pendingExtensionUiRequests.clear();
       // Pi has flushed by the time a run settles; retry the pending name write.
       this.persistPendingSessionName();
@@ -439,9 +455,14 @@ export class PiRpcSession {
     if (message.role === 'user' && eventType === 'message_start') {
       const text = this.messageText(message);
       if (text) this.userMessages.push(text.slice(0, 300));
-      const attachmentIds = this.pendingAttachmentRefs.shift() || [];
-      const geoContextIds = this.pendingGeoContextRefs.shift() || [];
-      const canvasContextIds = this.pendingCanvasContextRefs.shift() || [];
+      const rawText = typeof message.content === 'string' ? message.content : (message.content || []).filter((block) => block.type === 'text').map((block) => block.text || '').join('\n');
+      const index = this.pendingMessages.findIndex((pending) => pending.text === rawText);
+      const pending = index < 0 ? null : this.pendingMessages.splice(index, 1)[0];
+      const attachmentIds = pending?.attachmentIds || [];
+      const geoContextIds = pending?.geoContextIds || [];
+      const canvasContextIds = pending?.canvasContextIds || [];
+      this.activeGeoContextIds = [...geoContextIds];
+      this.activeCanvasContextIds = [...canvasContextIds];
       const enriched = attachmentIds.length || geoContextIds.length || canvasContextIds.length
         ? { ...message, ...(attachmentIds.length ? { attachmentIds } : {}), ...(geoContextIds.length ? { geoContextIds } : {}), ...(canvasContextIds.length ? { canvasContextIds } : {}), content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
         : (typeof message.content === 'string' && message.content !== text ? { ...message, content: text } : message);
@@ -456,60 +477,25 @@ export class PiRpcSession {
     }
   }
 
-  registerPromptAttachments(attachmentIds: string[]) {
-    this.pendingAttachmentRefs.push([...attachmentIds]);
+  registerPendingMessage(pending: PiRpcSession['pendingMessages'][number]) {
+    if (this.pendingMessages.length >= 200) throw new Error('Pending message capacity reached');
+    this.pendingMessages.push(pending);
   }
 
-  discardPromptAttachments(attachmentIds: string[]) {
-    for (let index = this.pendingAttachmentRefs.length - 1; index >= 0; index -= 1) {
-      const pending = this.pendingAttachmentRefs[index];
-      if (pending.length === attachmentIds.length && pending.every((id, itemIndex) => id === attachmentIds[itemIndex])) {
-        this.pendingAttachmentRefs.splice(index, 1);
-        return;
-      }
-    }
-  }
-
-  registerPromptGeoContexts(contextIds: string[]) {
-    this.activeGeoContextIds = [...contextIds];
-    this.pendingGeoContextRefs.push([...contextIds]);
-  }
-
-  discardPromptGeoContexts(contextIds: string[]) {
-    for (let index = this.pendingGeoContextRefs.length - 1; index >= 0; index -= 1) {
-      const pending = this.pendingGeoContextRefs[index];
-      if (pending.length === contextIds.length && pending.every((id, itemIndex) => id === contextIds[itemIndex])) {
-        this.pendingGeoContextRefs.splice(index, 1);
-        break;
-      }
-    }
-    if (this.activeGeoContextIds.length === contextIds.length && this.activeGeoContextIds.every((id, index) => id === contextIds[index])) this.activeGeoContextIds = [];
-  }
-
-  registerPromptCanvasContexts(contextIds: string[]) {
-    this.activeCanvasContextIds = [...contextIds];
-    this.pendingCanvasContextRefs.push([...contextIds]);
-  }
-
-  discardPromptCanvasContexts(contextIds: string[]) {
-    for (let index = this.pendingCanvasContextRefs.length - 1; index >= 0; index -= 1) {
-      const pending = this.pendingCanvasContextRefs[index];
-      if (pending.length === contextIds.length && pending.every((id, itemIndex) => id === contextIds[itemIndex])) {
-        this.pendingCanvasContextRefs.splice(index, 1);
-        break;
-      }
-    }
-    if (this.activeCanvasContextIds.length === contextIds.length && this.activeCanvasContextIds.every((id, index) => id === contextIds[index])) this.activeCanvasContextIds = [];
+  discardPendingMessage(commandId: string) {
+    const index = this.pendingMessages.findIndex((pending) => pending.commandId === commandId);
+    if (index >= 0) this.pendingMessages.splice(index, 1);
   }
 
   messageText(message: PiMessage) {
     if (typeof message.content === 'string') return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content)));
-    if (Array.isArray(message.content)) return stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n')));
+    if (Array.isArray(message.content)) return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n'))));
     return '';
   }
 
   abortGeoInteraction() {
     geoInteractionService.abortSession(this, 'agent_aborted');
+    return this.manager.cancelJobs(this.id);
   }
 
   setSessionName(name: unknown) {
@@ -569,16 +555,12 @@ export class PiRpcSession {
   }
 
   async terminate(reason = 'closed') {
-    if (this.terminating) return;
+    if (this.termination) return this.termination;
     this.terminating = true;
     geoInteractionService.abortSession(this, reason === 'aborted_by_user' ? 'agent_aborted' : 'session_closed');
     this.transport.rejectAll(new Error(`Session terminated: ${reason}`));
-    if (!this.child || this.child.exitCode !== null) return;
-    signalProcessTree(this.child, 'SIGTERM');
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    if (this.child && this.child.exitCode === null && this.child.signalCode === null) {
-      signalProcessTree(this.child, 'SIGKILL');
-    }
+    this.termination = (this.child ? terminateProcessTree(this.child) : Promise.resolve()).then(() => { this.pendingMessages = []; }).catch((error) => { this.termination = null; throw error; });
+    return this.termination;
   }
 
   handleExit(code: number | null, signal: string | null, err?: { message?: string }) {
@@ -595,6 +577,17 @@ function existingCitationRegistryId(cwd: string) {
   catch { return null; }
 }
 
+export type SessionManagerDependencies = {
+  defaultDomainId: string;
+  assembler: Pick<SessionAssembler, 'assemble' | 'save' | 'load'>;
+  assemblerForProfile(profile: SessionProfileV1): Pick<SessionAssembler, 'assemble' | 'save' | 'load'>;
+  createWorkspace(cwd?: string, name?: string | null): string;
+  command: string;
+  spawn: SpawnFn;
+  endpoints: Record<SessionService, string>;
+  launch(input: SessionPiLaunchInput): { args: string[]; env: NodeJS.ProcessEnv };
+};
+
 export class LiveSessionManager {
   sessions: Map<string, PiRpcSession>;
   clients: Set<LiveClient>;
@@ -602,8 +595,21 @@ export class LiveSessionManager {
   terminatingResumes: Map<string, Promise<void>>;
   piVersion: string;
   liveMetadataSignatures: Map<string, string>;
+  private closingSessions = new Map<string, Promise<boolean>>();
+  private historyDeletes = new Map<string, Promise<void>>();
+  private jobs = new Map<string, Set<{ id: string; controller: AbortController; completion: Promise<unknown> }>>();
+  private readonly diagnose = boundedDiagnostics();
+  private startingSessions = 0;
+  private readonly hostGeneration = crypto.randomUUID();
+  private revision = 0;
+  clock() { return { hostGeneration: this.hostGeneration, revision: this.revision }; }
 
-  constructor() {
+  get runtime() {
+    if (!this.dependencies) throw new Error('Session runtime dependencies were not provided');
+    return this.dependencies;
+  }
+
+  constructor(private readonly dependencies?: SessionManagerDependencies) {
     this.sessions = new Map();
     this.clients = new Set();
     this.pendingResumes = new Map();
@@ -615,8 +621,15 @@ export class LiveSessionManager {
   addClient(ws: LiveClient) { this.clients.add(ws); }
   removeClient(ws: LiveClient) { this.clients.delete(ws); }
   broadcast(data: unknown) {
-    const payload = JSON.stringify(data);
+    this.revision++;
+    const payload = JSON.stringify({ ...(data as JsonRecord), ...this.clock() });
+    const bytes = Buffer.byteLength(payload);
     for (const client of this.clients) {
+      if ((client.bufferedAmount || 0) + bytes > 8 * 1024 * 1024) {
+        client.terminate();
+        this.removeClient(client);
+        continue;
+      }
       if (client.readyState === WebSocket.OPEN) client.send(payload);
     }
   }
@@ -661,10 +674,57 @@ export class LiveSessionManager {
   }
   hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
-  async create({ cwd, model, sessionName, profile, domainId = DEFAULT_DOMAIN_ID, appendSystemPrompt = '' }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string }) {
+  runJob<T>(id: string, execute: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const session = this.sessions.get(id);
+    if (!session || session.terminating) return Promise.reject(Object.assign(new Error('Session is closing or unavailable'), { status: 409 }));
+    const owned = this.jobs.get(id) || new Set();
+    const total = [...this.jobs.values()].reduce((count, jobs) => count + jobs.size, 0);
+    if (owned.size >= 2 || total >= 4) return Promise.reject(Object.assign(new Error('Analysis job capacity reached'), { status: 503 }));
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    const job = { id: crypto.randomUUID(), controller, completion: Promise.resolve() as Promise<unknown> };
+    owned.add(job);
+    this.jobs.set(id, owned);
+    const completion = Promise.resolve().then(() => {
+      if (controller.signal.aborted) throw new Error('Analysis cancelled');
+      return execute(controller.signal);
+    }).catch((error) => {
+      this.diagnose('analysis_job_failed', { sessionId: id, jobId: job.id });
+      throw error;
+    }).finally(() => {
+      signal?.removeEventListener('abort', abort);
+      owned.delete(job);
+      if (!owned.size) this.jobs.delete(id);
+    });
+    job.completion = completion;
+    return completion;
+  }
+  async cancelJobs(id: string) {
+    const jobs = [...(this.jobs.get(id) || [])];
+    if (!jobs.length) return;
+    for (const job of jobs) job.controller.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const results = await Promise.race([
+        Promise.allSettled(jobs.map((job) => job.completion)),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('Analysis jobs did not stop'), { code: 'process_stop_unconfirmed', status: 503 })), 5500); }),
+      ]);
+      const failed = results.find((result) => result.status === 'rejected' && result.reason?.code === 'process_stop_unconfirmed');
+      if (failed?.status === 'rejected') {
+        for (const job of jobs) this.diagnose('job_stop_unconfirmed', { sessionId: id, jobId: job.id });
+        throw failed.reason;
+      }
+    } finally { clearTimeout(timer); }
+  }
+  async create({ cwd, model, sessionName, profile, domainId = this.runtime.defaultDomainId, appendSystemPrompt = '' }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string }) {
     if (!model?.trim()) throw new Error('请先添加并选择模型');
-    const resolved = createSessionWorkingDirectory(cwd, sessionName);
-    const assembler = profile ? sessionAssemblerForProfile(profile) : SESSION_ASSEMBLER;
+    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
+    this.startingSessions++;
+    try {
+    const resolved = this.runtime.createWorkspace(cwd, sessionName);
+    const assembler = profile ? this.runtime.assemblerForProfile(profile) : this.runtime.assembler;
     const resolvedSessionPlan = assembler.assemble(domainId, resolved, profile);
     assembler.save(resolvedSessionPlan);
     const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), appendSystemPrompt, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
@@ -672,28 +732,38 @@ export class LiveSessionManager {
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
     return session;
+    } finally { this.startingSessions--; }
   }
   async resume({ sessionFile, cwd, model, entries, sessionName, useCurrentConfiguration = false }: { sessionFile: string; cwd: string; model?: string; entries?: JsonRecord[]; sessionName?: string | null; useCurrentConfiguration?: boolean }) {
     const resolved = path.resolve(sessionFile);
+    if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
+    const closing = this.terminatingResumes.get(resolved);
+    if (closing) await closing;
+    if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
     const existing = this.findBySessionFile(resolved);
+    if (existing?.terminating) throw Object.assign(new Error('Session Writer has not stopped'), { status: 409 });
     if (existing) return existing;
     const pending = this.pendingResumes.get(resolved);
     if (pending) return pending;
+    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
+    this.startingSessions++;
     const resumePromise = (async () => {
       try {
         await Promise.resolve();
+        if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
         const terminating = this.terminatingResumes.get(resolved);
-        if (terminating) await terminating.catch(() => {});
+        if (terminating) await terminating;
+        if (!fs.existsSync(resolved)) throw new Error('Session not found');
         const afterTerminationExisting = this.findBySessionFile(resolved);
         if (afterTerminationExisting) return afterTerminationExisting;
         const migratedPlanPath = path.join(cwd, '.tau', 'resolved-session-plan.v3.json');
         let resolvedSessionPlan: ResolvedSessionPlan;
         try {
-          resolvedSessionPlan = SESSION_ASSEMBLER.load(cwd, fs.existsSync(migratedPlanPath) ? 'resolved-session-plan.v3.json' : 'resolved-session-plan.json');
+          resolvedSessionPlan = this.runtime.assembler.load(cwd, fs.existsSync(migratedPlanPath) ? 'resolved-session-plan.v3.json' : 'resolved-session-plan.json');
         } catch (error) {
           if (!useCurrentConfiguration || !(error instanceof Error) || !('code' in error) || error.code !== 'legacy_plan_requires_confirmation') throw error;
-          resolvedSessionPlan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, cwd);
-          SESSION_ASSEMBLER.save(resolvedSessionPlan, 'resolved-session-plan.v3.json');
+          resolvedSessionPlan = this.runtime.assembler.assemble(this.runtime.defaultDomainId, cwd);
+          this.runtime.assembler.save(resolvedSessionPlan, 'resolved-session-plan.v3.json');
         }
         const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
         await session.start();
@@ -701,6 +771,7 @@ export class LiveSessionManager {
         this.broadcast({ type: 'live_session_created', session: session.metadata() });
         return session;
       } finally {
+        this.startingSessions--;
         this.pendingResumes.delete(resolved);
       }
     })();
@@ -708,34 +779,55 @@ export class LiveSessionManager {
     return resumePromise;
   }
   async delete(id: string, reason = 'closed_by_user') {
+    const closing = this.closingSessions.get(id);
+    if (closing) return closing;
     const session = this.sessions.get(id);
     if (!session) return false;
     const resolvedFile = session.sessionFile ? path.resolve(session.sessionFile) : null;
-    const termination = session.terminate(reason).then(() => undefined, () => undefined).finally(() => {
-      if (resolvedFile && this.terminatingResumes.get(resolvedFile) === termination) this.terminatingResumes.delete(resolvedFile);
+    session.terminating = true;
+    const termination = (async () => {
+      await Promise.resolve();
+      await this.cancelJobs(id);
+      await session.terminate(reason);
+      const registered = this.sessions.delete(id);
+      this.liveMetadataSignatures.delete(id);
+      if (registered) this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
+      return true;
+    })();
+    this.closingSessions.set(id, termination);
+    const writer = termination.then(() => undefined);
+    // Observers awaiting close/resume receive the rejection; avoid an orphan
+    // rejection when no resume is currently waiting on this gate.
+    writer.catch(() => {});
+    if (resolvedFile) this.terminatingResumes.set(resolvedFile, writer);
+    try { return await termination; }
+    finally {
+      this.closingSessions.delete(id);
+      if (resolvedFile && this.terminatingResumes.get(resolvedFile) === writer) this.terminatingResumes.delete(resolvedFile);
+    }
+  }
+  deleteHistory(sessionFile: string) {
+    const resolved = path.resolve(sessionFile);
+    const existing = this.historyDeletes.get(resolved);
+    if (existing) return existing;
+    const deletion = (async () => {
+      await Promise.resolve();
+      await this.pendingResumes.get(resolved)?.catch(() => {});
+      const session = this.findBySessionFile(resolved);
+      if (session) await this.delete(session.id, 'history_deleted');
+      await this.terminatingResumes.get(resolved);
+      fs.rmSync(resolved, { force: true });
     });
-    if (resolvedFile) this.terminatingResumes.set(resolvedFile, termination);
-    this.sessions.delete(id);
-    this.liveMetadataSignatures.delete(id);
-    this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
-    void termination;
-    return true;
+    const operation = deletion().finally(() => this.historyDeletes.delete(resolved));
+    this.historyDeletes.set(resolved, operation);
+    return operation;
   }
   removeExited(id: string, reason: string) {
     if (!this.sessions.has(id)) return;
-    this.sessions.delete(id);
-    this.liveMetadataSignatures.delete(id);
-    this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
+    if (this.closingSessions.has(id)) return;
+    this.delete(id, reason).catch((error) => console.error(`[Pi ${id}] Cleanup failed:`, error));
   }
   async shutdown() {
-    const sessions = Array.from(this.sessions.values());
-    this.sessions.clear();
-    this.liveMetadataSignatures.clear();
-    await Promise.allSettled(sessions.map((s) => s.terminate('server_shutdown')));
+    await Promise.all([...this.sessions.keys()].map((id) => this.delete(id, 'server_shutdown')));
   }
 }
-
-
-export const liveManager = new LiveSessionManager();
-let _spawnPiForTest: SpawnFn | null = null;
-export function _setSpawnPiForTest(fn: SpawnFn | null | undefined) { _spawnPiForTest = fn || null; }

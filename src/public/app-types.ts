@@ -16,6 +16,12 @@ export type { SessionAttachment, SessionAttachmentKind, SessionAttachmentSource,
 
 export type SessionSnapshot = {
   schemaVersion: 1;
+  hostGeneration?: string;
+  revision?: number;
+  streamingMessage?: AppMessage | null;
+  retry?: import('../contracts/run-feedback.ts').RetryState | null;
+  outcome?: import('../contracts/run-feedback.ts').RunOutcome | null;
+  activeToolEvents?: AppEvent[];
   entries: SessionEntry[];
   sessionId?: string;
   sessionFile?: string | null;
@@ -58,6 +64,7 @@ export type ModelRecord = {
 
 export type LiveSession = {
   id: string;
+  pendingExtensionUiRequests?: AppEvent[];
   cwd?: string;
   sessionFile?: string | null;
   sessionName?: string | null;
@@ -103,6 +110,8 @@ export type MessageContentBlock = {
 };
 
 export type AppMessage = {
+  stopReason?: string;
+  errorMessage?: string;
   id?: string;
   role?: string;
   content?: string | MessageContentBlock[];

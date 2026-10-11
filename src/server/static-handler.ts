@@ -4,6 +4,7 @@ import path = require('node:path');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Stats } from 'node:fs';
 import { isWithin } from './util/path.js';
+import { INTERNAL_SERVICE_PATHS } from './session-service.js';
 
 type AuthResult = { ok: boolean };
 
@@ -66,11 +67,12 @@ export function createStaticHandler(options: StaticHandlerOptions) {
 
   function serveStaticFile(req: IncomingMessage, res: ServerResponse) {
     const urlPath = req.url || '/';
+    const pathname = urlPath.split('?')[0];
+    if (req.method === 'POST' && INTERNAL_SERVICE_PATHS.has(pathname)) return options.handleApi(req, res, urlPath);
     const auth = options.checkAuth(req);
-    if (options.authEnabled() && !urlPath.startsWith('/api/health') && !auth.ok) return options.sendAuthRequired(res, req);
+    if (options.authEnabled() && pathname !== '/api/health' && !auth.ok) return options.sendAuthRequired(res, req);
     options.maybeSetSessionCookie(req, res, auth);
     if (urlPath.startsWith('/api/')) return options.handleApi(req, res, urlPath);
-    const pathname = urlPath.split('?')[0];
     if (pathname === '/legacy' || pathname.startsWith('/legacy/')) { res.writeHead(404); res.end('Not Found'); return; }
     return serveReactStaticFile(res, urlPath);
   }

@@ -2,14 +2,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
+import { readJsonObject, writeJsonAtomic, assertHostWriter } from './util/json-storage.js';
 import type { TauArgs, TauSettings, TauSettingsFile } from './types.js';
 import { ensureWritableAppPaths, resolveAppPaths } from './app-paths.js';
 import { resolveFfmpegExecutables, resolvePiExecutable, resolvePythonExecutable, type VideoExecutables } from './runtime-resolver.js';
-import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
-import { AssetResolver } from './asset-resolver.js';
-import { SessionAssembler } from './session-assembly.js';
-import { ModuleInstaller } from './module-installer.js';
-import { parseSessionProfileStructured, type SessionProfileV1 } from '../contracts/index.js';
 
 export function parseArgs(argv: string[]): TauArgs {
   const out: TauArgs = {};
@@ -17,7 +13,7 @@ export function parseArgs(argv: string[]): TauArgs {
     const arg = argv[i];
     if (!arg.startsWith('--')) continue;
     const key = arg.slice(2);
-    if (key === 'open' || key === 'desktop' || key === 'ready-json') { out[key] = true; continue; }
+    if (key === 'open' || key === 'desktop' || key === 'ready-json' || key === 'remote') { out[key] = true; continue; }
     const next = argv[i + 1];
     if (next && !next.startsWith('--')) { out[key] = next; i++; }
   }
@@ -51,14 +47,13 @@ export function expandHome(p: string) {
 }
 
 export function loadTauSettings(): TauSettings {
-  let settings: TauSettingsFile['tau'] = {};
-  try {
-    const settingsPath = path.join(PI_AGENT_DIR, 'settings.json');
-    settings = ((JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as TauSettingsFile).tau || {});
-  } catch {}
+  const file = readJsonObject(path.join(PI_AGENT_DIR, 'settings.json'));
+  if (file.tau !== undefined && (!file.tau || typeof file.tau !== 'object' || Array.isArray(file.tau))) throw new Error('Invalid tau settings');
+  const settings = (file.tau || {}) as NonNullable<TauSettingsFile['tau']>;
   return {
     port: DESKTOP_MODE ? 0 : parseInt(String(ARGS.port || process.env.TAU_PORT || settings.port || '3001'), 10),
-    host: DESKTOP_MODE ? '127.0.0.1' : ARGS.host || process.env.TAU_HOST || settings.host || '0.0.0.0',
+    host: DESKTOP_MODE ? '127.0.0.1' : ARGS.host || process.env.TAU_HOST || settings.host || '127.0.0.1',
+    remoteAccess: ARGS.remote === true || process.env.TAU_REMOTE === '1' || settings.remoteAccess === true,
     user: process.env.TAU_USER || settings.user || '',
     pass: process.env.TAU_PASS || settings.pass || '',
     authEnabled: settings.authEnabled,
@@ -96,70 +91,6 @@ export const LOCAL_MODULE_MANIFESTS = String(process.env.TAU_MODULE_MANIFESTS ||
   .map((manifestPath) => expandHome(manifestPath.trim()))
   .filter(Boolean)
   .map((manifestPath) => ({ manifestPath, packageRoot: path.dirname(path.resolve(manifestPath)), origin: 'external' as const }));
-export const MODULE_INSTALLER = new ModuleInstaller(APP_PATHS.modulesDir);
-export function moduleSources() {
-  return [
-    ...BUILTIN_MODULE_MANIFESTS,
-    ...MODULE_INSTALLER.sourcesForEnabledModules(TAU_SETTINGS.enabledModuleIds),
-    ...LOCAL_MODULE_MANIFESTS,
-  ];
-}
-export const MODULE_REGISTRY = new ModuleRegistry(PLATFORM_VERSION).load(moduleSources());
-export const ASSET_OVERRIDES = {
-  ...(process.env.TAU_KNOWLEDGE_ROOT && process.env.TAU_KNOWLEDGE_ASSET_ID ? { [process.env.TAU_KNOWLEDGE_ASSET_ID]: process.env.TAU_KNOWLEDGE_ROOT } : {}),
-  ...(process.env.TAU_DATA_ROOT && process.env.TAU_DATA_ASSET_ID ? { [process.env.TAU_DATA_ASSET_ID]: process.env.TAU_DATA_ROOT } : {}),
-};
-export const ASSET_RESOLVER = new AssetResolver(MODULE_REGISTRY, ASSET_OVERRIDES);
-export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RESOLVER, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE);
-export function sessionAssemblerForProfile(profile: SessionProfileV1) {
-  const parsed = parseSessionProfileStructured(profile);
-  if (!parsed.ok) throw new Error(parsed.diagnostics.map((item) => item.message).join('; '));
-  const builtinIds = new Set(BUILTIN_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
-  const externalIds = new Set(LOCAL_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
-  const allowed = new Set([...builtinIds, ...externalIds, ...TAU_SETTINGS.enabledModuleIds]);
-  for (const selection of parsed.value.modules.selected) if (!allowed.has(selection.id)) throw new Error(`Selected Module is not enabled for new tasks: ${selection.id}`);
-  const registry = new ModuleRegistry(PLATFORM_VERSION).load([
-    ...BUILTIN_MODULE_MANIFESTS,
-    ...MODULE_INSTALLER.sourcesForSelectionsWithDependencies(parsed.value.modules.selected, new Set([...builtinIds, ...externalIds])),
-    ...LOCAL_MODULE_MANIFESTS,
-  ]);
-  if (registry.errors.length) throw new Error(registry.errors.map((item) => item.message).join('; '));
-  for (const selection of parsed.value.modules.selected) {
-    const module = registry.get(selection.id);
-    if (!module?.enabled) throw new Error(`Selected Module is unavailable: ${selection.id}@${selection.version}`);
-    if (module.manifest.version !== selection.version) throw new Error(`Selected Module version is unavailable: ${selection.id}@${selection.version}`);
-  }
-  const assets = new AssetResolver(registry, ASSET_OVERRIDES);
-  for (const selection of parsed.value.modules.selected) {
-    const module = registry.get(selection.id)!;
-    for (const asset of module.manifest.contributes?.assets || []) if ((asset.kind === 'data' || asset.kind === 'knowledge') && !assets.resolve(asset.id)) throw new Error(`Selected Module asset is not configured: ${asset.id}`);
-  }
-  return new SessionAssembler(registry, assets, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE);
-}
-export function reloadModules() {
-  MODULE_REGISTRY.reload(moduleSources());
-  ASSET_RESOLVER.reload(MODULE_REGISTRY);
-  return MODULE_REGISTRY;
-}
-
-export function setModuleEnabled(moduleId: string, enabled: boolean) {
-  const module = MODULE_REGISTRY.get(moduleId);
-  if (!module || module.origin !== 'installed') throw new Error(`Only installed modules can be enabled or disabled: ${moduleId}`);
-  if (enabled) {
-    const runtime = moduleRuntimeCompatible(module.manifest);
-    if (!runtime.compatible) throw new Error(`Module ${moduleId} has no ${runtime.missingRuntime} runtime for ${process.platform}/${process.arch}`);
-  } else {
-    const dependent = TAU_SETTINGS.enabledModuleIds.find((id) => id !== moduleId && MODULE_INSTALLER.sourcesForEnabledModules([id]).some((source) => source.moduleId === moduleId && source.enabled));
-    if (dependent) throw new Error(`Module ${moduleId} is required by enabled Module ${dependent}`);
-  }
-  const selected = new Set(TAU_SETTINGS.enabledModuleIds);
-  if (enabled) selected.add(moduleId); else selected.delete(moduleId);
-  const value = [...selected].sort();
-  if (!saveTauSetting('enabledModuleIds', value)) throw new Error('Unable to save module selection');
-  TAU_SETTINGS.enabledModuleIds = value;
-  reloadModules();
-  return MODULE_REGISTRY;
-}
 
 function findReactWebDir() {
   const candidates: string[] = [];
@@ -185,12 +116,12 @@ export const MIME_TYPES = {
 export function saveTauSetting(key: string, value: unknown): boolean {
   const settingsPath = path.join(PI_AGENT_DIR, 'settings.json');
   try {
-    let settings: TauSettingsFile = {};
-    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as TauSettingsFile; } catch {}
+    assertHostWriter(PI_AGENT_DIR);
+    const settings = readJsonObject(settingsPath) as TauSettingsFile;
+    if (settings.tau !== undefined && (!settings.tau || typeof settings.tau !== 'object' || Array.isArray(settings.tau))) throw new Error('Invalid tau settings');
     if (!settings.tau) settings.tau = {};
     settings.tau[key] = value;
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    writeJsonAtomic(settingsPath, settings);
     return true;
   } catch {
     return false;

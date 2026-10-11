@@ -49,12 +49,8 @@ function fakeSession(id: string) {
     snapshot: () => ({ schemaVersion: 1, session: { id }, entries: [], model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
     terminate: async () => {},
     send: async () => ({ data: { commands: [] } }),
-    registerPromptAttachments: () => {},
-    discardPromptAttachments: () => {},
-    registerPromptGeoContexts: () => {},
-    discardPromptGeoContexts: () => {},
-    registerPromptCanvasContexts: () => {},
-    discardPromptCanvasContexts: () => {},
+    registerPendingMessage: () => {},
+    discardPendingMessage: () => {},
     abortGeoInteraction: () => {},
   };
 }
@@ -85,6 +81,67 @@ before((_: TestContext, done: () => void) => {
 after((_: TestContext, done: () => void) => server.close(done));
 beforeEach(() => liveManager.sessions.clear());
 
+caseTest('bounded JSON requests preserve UTF-8 and return readable 413 responses', async () => {
+  const { readJsonBody } = require('../../bin/http/request.js');
+  const req = new PassThrough() as any;
+  const parsed = readJsonBody(req, 100);
+  const value = Buffer.from('{"text":"道路"}');
+  for (const byte of value) req.write(Buffer.from([byte]));
+  req.end();
+  assert.deepEqual(await parsed, { text: '道路' });
+  const over = new PassThrough() as any;
+  const rejected = assert.rejects(readJsonBody(over, 4), (error: any) => error.status === 413);
+  over.write(Buffer.from('12345'));
+  await rejected;
+  for (let index = 0; index < 100; index++) over.write(Buffer.alloc(1024));
+  over.end();
+  const response = await fetch(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'prompt', message: 'x'.repeat(1024 * 1024) }) });
+  assert.equal(response.status, 413);
+  assert.match((await jsonBody(response)).error, /too large/);
+});
+
+caseTest('multipart limits return a readable error over HTTP', async (t: TestContext) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upload-http-limit-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const session = fakeSession('tau_upload_limit');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  const form = new FormData();
+  for (let index = 0; index < 21; index++) form.append('file', new Blob(['x']), `${index}.txt`);
+  const response = await fetch(`${base}/api/live-sessions/${session.id}/attachments?source=picker`, { method: 'POST', body: form });
+  assert.equal(response.status, 413);
+  assert.match((await jsonBody(response)).error, /20 file limit/);
+  assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
+});
+
+caseTest('Internal service tokens authenticate independently of user credentials and require scope', async (t: TestContext) => {
+  const { _setAuthForTest, _setCredentialsForTest } = require('../../bin/tau.js');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-service-auth-'));
+  t.after(() => { _setAuthForTest(false); fs.rmSync(cwd, { recursive: true, force: true }); });
+  const session = fakeSession('tau_internal_auth') as any;
+  session.cwd = cwd;
+  session.resolvedSessionPlan = { modules: [{ id: 'com.transportx.canvas', canvasViews: [] }, { id: 'com.transportx.document', canvasViews: [{ adapterId: 'com.transportx.canvas.document', kind: 'document', protocolVersion: '1.0' }] }] };
+  fs.writeFileSync(path.join(cwd, 'counts.csv'), 'road,count\nA,12\n');
+  const { CanvasService } = require('../../bin/canvas-service.js');
+  const canvas = new CanvasService({}, (_session: unknown, requested: string) => path.resolve(cwd, requested));
+  const presentation = canvas.present(session, { adapterId: 'com.transportx.canvas.document', resource: { scope: 'session-file', path: 'counts.csv' } });
+  session.entries.push({ message: { details: { canvas: presentation } } });
+  const context = canvas.createContext(session, { viewId: presentation.viewId, revision: presentation.revision });
+  session.activeCanvasContextIds = [context.contextId];
+  liveManager.sessions.set(session.id, session);
+  _setCredentialsForTest('test-user', 'test-pass');
+  _setAuthForTest(true);
+  const call = (body: Record<string, unknown>) => fetch(`${base}/api/internal/canvas/inspect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contextIds: [context.contextId], ...body }) });
+  assert.equal((await call({ sessionId: session.id, token: 'canvas-token' })).status, 200);
+  for (const body of [{ sessionId: session.id }, { sessionId: session.id, token: 'geo-token' }, { sessionId: 'other', token: 'canvas-token' }]) assert.equal((await call(body)).status, 403);
+  session.resolvedSessionPlan.modules = [];
+  assert.equal((await call({ sessionId: session.id, token: 'canvas-token' })).status, 403);
+  session.resolvedSessionPlan.modules = [{ id: 'com.transportx.canvas' }];
+  session.terminating = true;
+  assert.equal((await call({ sessionId: session.id, token: 'canvas-token' })).status, 403);
+  for (const route of ['/api/live-sessions', '/api/health-extra', '/api/internal/unknown', '/api/internal/canvas/inspect']) assert.equal((await fetch(`${base}${route}`)).status, 401, route);
+});
+
 caseTest('PDF report routes accept rendered HTML larger than the previous 5 MiB limit', async (t: TestContext) => {
   assert.equal(REPORT_PDF_MAX_HTML_BYTES, 50 * 1024 * 1024);
   const html = `<article>${'x'.repeat(6 * 1024 * 1024)}</article>`;
@@ -110,10 +167,10 @@ caseTest('PDF report routes accept rendered HTML larger than the previous 5 MiB 
 caseTest('serves only session-scoped GeoJSON and supports ETag revalidation', async (t: TestContext) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-geo-resource-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-  const sha256 = 'a'.repeat(64);
+  const geojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
+  const sha256 = crypto.createHash('sha256').update(geojson).digest('hex');
   const resourceId = `geo_${sha256.slice(0, 24)}`;
   const dir = path.join(cwd, '.tau', 'geo-resources', resourceId);
-  const geojson = JSON.stringify({ type: 'FeatureCollection', features: [] });
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'data.geojson'), geojson);
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256, bytes: Buffer.byteLength(geojson), featureCount: 0 }));
@@ -127,6 +184,9 @@ caseTest('serves only session-scoped GeoJSON and supports ETag revalidation', as
   assert.deepEqual(await jsonBody(resource), { type: 'FeatureCollection', features: [] });
   assert.equal((await fetch(url, { headers: { 'If-None-Match': `"${sha256}"` } })).status, 304);
   assert.equal((await fetch(`${base}/api/live-sessions/${session.id}/geo-resources/..%2Fsecret/data`)).status, 400);
+  fs.writeFileSync(path.join(dir, 'data.geojson'), geojson.replace('FeatureCollection', 'FeatureCollectioN'));
+  assert.equal((await fetch(url, { headers: { 'If-None-Match': `"${sha256}"` } })).status, 409);
+  assert.equal((await fetch(url.replace('/data', '/manifest'))).status, 409);
 });
 
 function fakeVideoResource(cwd: string, resourceId: string, bytes: Buffer) {
@@ -259,7 +319,7 @@ caseTest('video internal endpoints require the session video token', async (t: T
   const session = fakeSession('tau_video_internal') as any;
   session.cwd = cwd;
   session.serviceTokens.video = 'video-secret';
-  session.resolvedSessionPlan = { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
+  session.resolvedSessionPlan = { modules: [{ id: 'com.transportx.video' }], assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] };
   liveManager.sessions.set(session.id, session);
 
   const denied = await fetch(`${base}/api/internal/video/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'wrong', location: '人民路' }) });
@@ -283,7 +343,7 @@ caseTest('Geo resources cannot be read through another live session', async (t: 
   const dir = path.join(firstRoot, '.tau', 'geo-resources', resourceId);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'data.geojson'), JSON.stringify({ type: 'FeatureCollection', features: [] }));
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256: 'b'.repeat(64), bytes: 42, featureCount: 0 }));
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ resourceId, sha256: crypto.createHash('sha256').update(JSON.stringify({ type: 'FeatureCollection', features: [] })).digest('hex'), bytes: 42, featureCount: 0 }));
   const owner = fakeSession('tau_geo_owner'); owner.cwd = firstRoot;
   const other = fakeSession('tau_geo_other'); other.cwd = secondRoot;
   liveManager.sessions.set(owner.id, owner); liveManager.sessions.set(other.id, other);
@@ -527,17 +587,23 @@ caseTest('serves Office files with standard MIME types and HEAD metadata', async
   }
 });
 
-caseTest('live and historical session deletion respond without waiting and are idempotent', async (t: TestContext) => {
+caseTest('live close waits for termination and historical deletion is idempotent', async (t: TestContext) => {
   let finishTermination!: () => void;
+  let started!: () => void;
+  const start = new Promise<void>((resolve) => { started = resolve; });
   const termination = new Promise<void>((resolve) => { finishTermination = resolve; });
+  t.after(() => finishTermination());
   const session = fakeSession('tau_delete_fast');
   session.sessionFile = '';
-  session.terminate = async () => termination;
+  session.terminate = async () => { started(); await termination; };
   liveManager.sessions.set(session.id, session);
-  const closed = await fetch(`${base}/api/live-sessions/${session.id}`, { method: 'DELETE' });
+  const response = fetch(`${base}/api/live-sessions/${session.id}`, { method: 'DELETE' });
+  await start;
+  assert.equal(liveManager.sessions.has(session.id), true);
+  finishTermination();
+  const closed = await response;
   assert.equal(closed.status, 200);
   assert.equal(liveManager.sessions.has(session.id), false);
-  finishTermination();
 
   const filePath = writeSessionFileAt(PROJ_DIR, 'delete-idempotent.jsonl', [{ type: 'session', id: 'delete-idempotent', cwd: '/tmp' }]);
   const request = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }) });
@@ -696,8 +762,6 @@ caseTest('reliable prompt command IDs are acknowledged and executed once', async
       await new Promise((resolve) => setTimeout(resolve, 5));
       return { success: true };
     },
-    registerPromptAttachments: () => {},
-    discardPromptAttachments: () => {},
   };
   liveManager.sessions.set(session.id, session);
   const command = { type: 'prompt', sessionId: session.id, message: '一次即可', clientCommandId: 'client-command-one' };
@@ -713,8 +777,6 @@ caseTest('Pi RPC prompt timeout is reported instead of optimistic success', asyn
   const session = {
     ...fakeSession('tau_prompt_timeout'),
     send: async () => { throw new Error('RPC command timed out: prompt'); },
-    registerPromptAttachments: () => {},
-    discardPromptAttachments: () => {},
   };
   liveManager.sessions.set(session.id, session);
   const response = await handleRpcCommand({ type: 'prompt', sessionId: session.id, message: '不要假成功', clientCommandId: 'client-command-timeout' });
@@ -777,4 +839,80 @@ caseTest('resuming a stored session publishes the persisted conversation snapsho
   assert.ok(systemPromptIndex >= 0);
   assert.equal(piArgs[systemPromptIndex + 1], fs.readFileSync(path.join(process.cwd(), 'src/server/prompts/PI_SYSTEM.md'), 'utf8').trim());
   child.stdin.end();
+});
+
+caseTest('PDF render and download cache enforce concurrency, byte and entry capacity', async (t: TestContext) => {
+  let size = 1;
+  let blocked = true;
+  const renders: Array<() => void> = [];
+  const router = createApiRouter({
+    readBody: async () => ({ title: 'report', html: '<p>report</p>' }),
+    renderReportPdf: async () => { if (blocked) await new Promise<void>((resolve) => renders.push(resolve)); return Buffer.alloc(size); },
+    json: (res: any, status: number, data: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); },
+    errorMessage: (error: unknown) => error instanceof Error ? error.message : String(error),
+    errorStatus: (error: any) => error.status || 400,
+  } as any);
+  const reportServer = require('node:http').createServer((req: any, res: any) => router.dispatch(req, res, new URL(req.url, 'http://127.0.0.1')));
+  await new Promise<void>((resolve) => reportServer.listen(0, '127.0.0.1', resolve));
+  t.after(() => reportServer.close());
+  const origin = `http://127.0.0.1:${reportServer.address().port}`;
+  const post = () => fetch(`${origin}/api/reports/pdf/download`, { method: 'POST' });
+  const pending = [post(), post()];
+  while (renders.length < 2) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await post()).status, 503);
+  blocked = false;
+  renders.forEach((release) => release());
+  await Promise.all(pending);
+  const urls: string[] = [];
+  for (let index = 0; index < 9; index++) urls.push((await jsonBody(await post())).url);
+  assert.equal((await fetch(`${origin}${urls[0]}`)).status, 404);
+  const consumed = await fetch(`${origin}${urls[8]}`);
+  assert.equal(consumed.status, 200);
+  await consumed.arrayBuffer();
+  assert.equal((await fetch(`${origin}${urls[8]}`)).status, 404);
+  size = 32 * 1024 * 1024;
+  const first = (await jsonBody(await post())).url;
+  await post();
+  size = 1;
+  await post();
+  assert.equal((await fetch(`${origin}${first}`)).status, 404);
+  size = 32 * 1024 * 1024 + 1;
+  assert.equal((await post()).status, 413);
+});
+
+caseTest('history symlinks escaping the root are refused and SVG routes share sandbox headers', async (t: TestContext) => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-history-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const file = path.join(outside, 'secret.jsonl');
+  fs.writeFileSync(file, '{"type":"session","cwd":"/tmp"}\n');
+  const linked = path.join(SESSIONS_DIR, 'outside.jsonl');
+  fs.symlinkSync(file, linked);
+  t.after(() => fs.rmSync(linked, { force: true }));
+  const rejected = await fetch(`${base}/api/session-history?filePath=${encodeURIComponent(linked)}`);
+  assert.notEqual(rejected.status, 200);
+  assert.notEqual((await fetch(`${base}/api/sessions/./outside.jsonl`)).status, 200);
+  assert.equal((await rejected.text()).includes('"cwd":"/tmp"'), false);
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-svg-policy-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(cwd, 'active.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>window.svgExecuted=true</script></svg>');
+  const session = fakeSession('svg-policy');
+  session.cwd = cwd;
+  liveManager.sessions.set(session.id, session);
+  for (const route of ['preview', 'raw']) {
+    const response = await fetch(`${base}/api/file/${route}?sessionId=${session.id}&path=active.svg`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-security-policy') || '', /sandbox; default-src 'none'/);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  }
+});
+
+caseTest('RPC rejects invalid envelopes and shared fields before invoking effects', async () => {
+  for (const body of [null, [], { type: 7 }, { type: 'set_session_name', name: 7 }, { type: 'prompt', sessionId: 'missing', message: 'x', attachmentIds: [7] }, { type: 'set_auto_compaction', enabled: 'false' }]) {
+    const response = await fetch(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 400);
+    assert.match((await jsonBody(response)).error, /Invalid RPC field/);
+  }
+  const { parseRpcCommand } = require('../../bin/rpc-command-input.js');
+  const extension = { type: 'extension_ui_response', id: 'id', sessionId: 'session', value: { custom: true } };
+  assert.equal(parseRpcCommand(extension), extension);
 });

@@ -55,3 +55,62 @@ caseTest('model settings update and delete persist in models.json', async () => 
   config = JSON.parse(fs.readFileSync(modelsPath, 'utf8'));
   assert.deepEqual(config.providers, {});
 });
+
+caseTest('provider deletion cannot overwrite a model update across await', async (t: any) => {
+  const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-model-concurrent-'));
+  t.after(() => fs.rmSync(agentDir, { recursive: true, force: true }));
+  const file = path.join(agentDir, 'models.json');
+  fs.writeFileSync(file, JSON.stringify({ providers: { remove: { baseUrl: 'https://example.com', api: 'openai-completions', models: [{ id: 'a' }] }, keep: { baseUrl: 'https://example.com', api: 'openai-completions', models: [{ id: 'b', name: 'before' }] } } }));
+  await Promise.all([deletePiModelProvider('remove', agentDir), updatePiModel({ provider: 'keep', modelId: 'b', name: 'after', reasoning: true }, agentDir)]);
+  const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(config.providers.remove, undefined);
+  assert.equal(config.providers.keep.models[0].name, 'after');
+  assert.ok(fs.existsSync(`${file}.bak`));
+});
+
+caseTest('corrupt JSON refuses mutations, and atomic writes retain the previous valid copy', async (t: any) => {
+  const { readJsonObject, writeJsonAtomic, acquireWriteLease } = require('../../bin/util/json-storage.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-json-recovery-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'models.json');
+  fs.writeFileSync(file, '{broken');
+  assert.throws(() => readJsonObject(file), /corrupt/);
+  assert.throws(() => writeJsonAtomic(file, { providers: {} }), /corrupt/);
+  await assert.rejects(updatePiModel({ provider: 'keep', modelId: 'b' }, root), /corrupt/);
+  assert.equal(fs.readFileSync(file, 'utf8'), '{broken');
+  fs.writeFileSync(file, '{"providers":{}}');
+  writeJsonAtomic(file, { providers: { next: {} } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(`${file}.bak`, 'utf8')), { providers: {} });
+  assert.equal(fs.readdirSync(root).some((name: string) => name.endsWith('.tmp')), false);
+  const release = acquireWriteLease(file);
+  assert.throws(() => acquireWriteLease(file), /writer/);
+  release();
+  const again = acquireWriteLease(file);
+  again();
+});
+
+caseTest('another process cannot take a Host lease or mutate its Agent directory', async (t: any) => {
+  const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+  const { execFileSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-host-writer-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const release = acquireWriteLease(path.join(root, 'host'));
+  t.after(release);
+  const output = execFileSync(process.execPath, ['-e', `const {acquireWriteLease,assertHostWriter}=require('./bin/util/json-storage.js');for(const attempt of [()=>acquireWriteLease(require('path').join(process.argv[1],'host')),()=>assertHostWriter(process.argv[1])]){try{attempt();process.exitCode=1}catch(e){if(e.code!=='writer_busy')throw e;process.stdout.write(e.code+'\\n')}}`, root], { cwd: process.cwd(), encoding: 'utf8' });
+  assert.equal(output.trim().split('\n').length, 2);
+});
+
+caseTest('failed atomic replacement preserves the target, backup and removes temporary files', (t: any) => {
+  const { writeJsonAtomic } = require('../../bin/util/json-storage.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-json-interrupt-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'settings.json');
+  fs.writeFileSync(file, '{"tau":{"authEnabled":true}}');
+  const rename = fs.renameSync;
+  fs.renameSync = (source: string, destination: string) => { if (destination === file) throw new Error('interrupted replacement'); return rename(source, destination); };
+  try { assert.throws(() => writeJsonAtomic(file, { tau: { authEnabled: false } }), /interrupted/); }
+  finally { fs.renameSync = rename; }
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).tau.authEnabled, true);
+  assert.equal(JSON.parse(fs.readFileSync(`${file}.bak`, 'utf8')).tau.authEnabled, true);
+  assert.equal(fs.readdirSync(root).some((name: string) => name.endsWith('.tmp')), false);
+});

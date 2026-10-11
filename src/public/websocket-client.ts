@@ -1,3 +1,5 @@
+import { boundedDiagnostics } from '../contracts/diagnostics.js';
+
 /**
  * WebSocket Client - Handles connection to backend WebSocket server.
  *
@@ -17,6 +19,7 @@ export class WebSocketClient implements KernelTransport {
   isIntentionallyClosed: boolean;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   connectionState: 'idle' | 'connecting' | 'open' | 'closed';
+  private readonly diagnose = boundedDiagnostics();
   private readonly listeners = new Set<(signal: TransportSignal) => void>();
 
   constructor(url: string) {
@@ -42,7 +45,7 @@ export class WebSocketClient implements KernelTransport {
       try {
         listener(signal);
       } catch {
-        // A throwing consumer must not break transport fan-out.
+        this.diagnose('transport_listener_failed');
       }
     }
   }
@@ -75,16 +78,16 @@ export class WebSocketClient implements KernelTransport {
       try {
         this.emit({ kind: 'message', message: JSON.parse(event.data) });
       } catch (error) {
-        console.error('[WS] Failed to parse message:', error);
+        this.diagnose('transport_invalid_json');
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error('[WS] Error:', error);
+      this.diagnose('transport_socket_error');
     };
 
     this.ws.onclose = (event) => {
-      console.log(`[WS] Disconnected (code=${event.code}, reason=${event.reason || 'n/a'})`);
+      console.log(`[WS] Disconnected (code=${event.code}, )`);
       this.connectionState = 'closed';
       this.emit({ kind: 'disconnected', reason: event.reason || undefined });
 

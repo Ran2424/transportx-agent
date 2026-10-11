@@ -1,5 +1,4 @@
 import type { ModelIdentity, ParsedModelSpec } from './types.js';
-import { PI_AGENT_DIR } from './config.js';
 import { listAvailablePiModels } from './pi-model-access.js';
 
 export function modelLabel(model: ModelIdentity | string | null | undefined, fallback = '') {
@@ -60,7 +59,7 @@ export async function getAvailableModels() {
     return modelListCache.models;
   }
   try {
-    const models = await listAvailablePiModels(PI_AGENT_DIR);
+    const models = await listAvailablePiModels(require('./config.js').PI_AGENT_DIR);
     modelListCache = { at: now, models };
     return models;
   } catch (err) {

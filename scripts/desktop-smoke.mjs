@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { _electron as electron } from 'playwright';
+import { hostPlatformOperations } from '../desktop/scripts/platform-profile.mjs';
 
 const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-desktop-smoke-'));
 const dataRoot = process.env.TRANSPORTX_SMOKE_DATA_ROOT || path.join(temporaryHome, '.transportx', 'traffic-agent');
@@ -10,19 +11,11 @@ const packagedApp = process.env.TRANSPORTX_PACKAGED_APP;
 
 function packagedLayout(input) {
   const packagedPath = path.resolve(input);
-  if (process.platform === 'darwin') {
-    return {
-      executable: path.join(packagedPath, 'Contents', 'MacOS', 'TransportX Agent'),
-      resourcesDir: path.join(packagedPath, 'Contents', 'Resources'),
-    };
-  }
-  if (process.platform === 'win32') {
-    const executable = path.extname(packagedPath).toLowerCase() === '.exe'
-      ? packagedPath
-      : path.join(packagedPath, 'TransportX Agent.exe');
-    return { executable, resourcesDir: path.join(path.dirname(executable), 'resources') };
-  }
-  throw new Error(`Packaged desktop smoke is unsupported on ${process.platform}`);
+  const profile = hostPlatformOperations().packaged;
+  if (!profile) throw new Error(`Packaged desktop smoke is unsupported on ${process.platform}`);
+  const directExecutable = profile.executableExtension && path.extname(packagedPath).toLowerCase() === profile.executableExtension;
+  const root = directExecutable ? path.dirname(packagedPath) : packagedPath;
+  return { executable: directExecutable ? packagedPath : path.join(root, ...profile.executableParts), resourcesDir: path.join(root, ...profile.resourcesParts) };
 }
 
 const packaged = packagedApp ? packagedLayout(packagedApp) : null;
@@ -99,7 +92,7 @@ try {
     const { url } = await response.json();
     return await window.transportxDesktop.download(url);
   }, new URL(window.url()).origin);
-  if (!downloadedPdfPath.startsWith(`${downloadsDir}${path.sep}`) || !fs.existsSync(downloadedPdfPath) || fs.readFileSync(downloadedPdfPath).subarray(0, 4).toString() !== '%PDF') throw new Error('Desktop PDF download was not saved');
+  if (path.relative(downloadsDir, downloadedPdfPath).startsWith('..') || path.isAbsolute(path.relative(downloadsDir, downloadedPdfPath)) || !fs.existsSync(downloadedPdfPath) || fs.readFileSync(downloadedPdfPath).subarray(0, 4).toString() !== '%PDF') throw new Error('Desktop PDF download was not saved');
   // Exercise the same sandboxed native PDF embedding used by the Canvas reader.
   const previewUrl = await window.evaluate(async () => {
     const response = await fetch('/api/reports/pdf/download', {

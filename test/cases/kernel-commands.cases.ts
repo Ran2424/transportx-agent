@@ -47,7 +47,37 @@ caseTest('failed prompt does not create optimistic sent state', async () => {
   assert.deepEqual(fixture.actions, []);
   const firstId = fixture.commands[0].clientCommandId;
   await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: '不会假成功' }));
-  assert.equal(fixture.commands[1].clientCommandId, firstId);
+  assert.notEqual(fixture.commands[1].clientCommandId, firstId);
+});
+
+caseTest('unknown prompt delivery keeps the original identity without automatic resend', async () => {
+  const fixture = deps(() => ({ success: false, delivery: 'unknown', error: 'response lost' }));
+  const agent = createAgentCommands(fixture.value);
+  await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: 'unknown delivery' }), (error: any) => error.code === 'delivery_unknown');
+  assert.equal(fixture.commands.length, 1);
+  await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: 'unknown delivery' }));
+  assert.equal(fixture.commands[0].clientCommandId, fixture.commands[1].clientCommandId);
+});
+
+caseTest('failed queued prompts do not resend on unrelated actions', async () => {
+  let calls = 0;
+  const kernel = createAppKernel({ transport: { subscribe() { return () => {}; } }, http: async () => {
+    calls++;
+    return { ok: true, status: 200, async json() { return { success: false, delivery: 'unknown', error: 'response lost' }; } };
+  } });
+  try {
+    kernel.dispatch({ type: 'conversation/promptQueued', sessionId: 'one', message: 'queued', clientCommandId: 'original-id' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1);
+    kernel.dispatch({ type: 'session/activated', sessionId: 'other' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1);
+    assert.equal(kernel.stores.conversation.get().bySession.one.live.queued.length, 1);
+    kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId: 'one', index: 0 });
+    kernel.dispatch({ type: 'conversation/promptQueued', sessionId: 'one', message: 'next', clientCommandId: 'next-id' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 2);
+  } finally { kernel.dispose(); }
 });
 
 caseTest('streaming prompt keeps a stable command ID in the queue', async () => {
@@ -363,4 +393,130 @@ caseTest('kernel projects streamed tool arguments before execution without expos
     animationGlobal.requestAnimationFrame = originalRequestAnimationFrame;
     animationGlobal.cancelAnimationFrame = originalCancelAnimationFrame;
   }
+});
+
+caseTest('authoritative snapshots replace abandoned branches, overlays, tools and dialogs', () => {
+  const kernel = createAppKernel({ transport: { subscribe: () => () => {} }, http: async () => { throw new Error('unused'); } });
+  kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+  kernel.dispatch({ type: 'conversation/messageAppended', sessionId: 'a', entry: { id: 'abandoned', message: { role: 'assistant', content: 'old branch' } } });
+  kernel.dispatch({ type: 'conversation/streamDelta', sessionId: 'a', channel: 'text', delta: 'orphan partial' });
+  kernel.dispatch({ type: 'tool/started', sessionId: 'a', execution: { toolCallId: 'orphan', status: 'running' } });
+  kernel.dispatch({ type: 'extensionUi/requested', sessionId: 'a', request: { id: 'orphan-dialog' } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: { schemaVersion: 1, entries: [{ id: 'selected', message: { role: 'assistant', content: 'selected branch' } }], isStreaming: false, pendingExtensionUiRequests: [] } });
+  const state = kernel.stores.conversation.get().bySession.a;
+  assert.deepEqual(state.snapshotEntries.map((entry: any) => entry.id), ['selected']);
+  assert.equal(state.live.streamingText, '');
+  assert.equal(kernel.stores.toolExecution.get().bySession.a, undefined);
+  assert.equal(kernel.stores.extensionUi.get().current, null);
+  kernel.dispose();
+});
+
+caseTest('reconnect recovers missed completion and rejects late revision, request and Host generation', async () => {
+  let emit!: (signal: any) => void;
+  const pending: Array<(data: any) => void> = [];
+  const kernel = createAppKernel({
+    transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => {}; } },
+    http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => pending.push(resolve)), text: async () => '' }),
+  });
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+  const snapshot = (generation: string, revision: number, text: string) => ({ schemaVersion: 1, hostGeneration: generation, revision, entries: [{ message: { role: 'assistant', content: text } }], isStreaming: false, isCompacting: false });
+  emit({ kind: 'connected' });
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 1, liveSessions: [{ id: 'a', isStreaming: true }] } });
+  kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+  emit({ kind: 'disconnected' });
+  emit({ kind: 'connected' });
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 5, liveSessions: [{ id: 'a', isStreaming: false }] } });
+  await tick();
+  assert.equal(pending.length, 1);
+  pending.shift()!(snapshot('host-1', 5, 'finished while disconnected'));
+  await tick();
+  assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries[0].message.content, 'finished while disconnected');
+  const delayed = kernel.commands.session.loadSnapshot('a');
+  await tick();
+  emit({ kind: 'message', message: { type: 'event', sessionId: 'a', hostGeneration: 'host-1', revision: 6, event: { type: 'message_end', message: { role: 'assistant', content: 'new event' } } } });
+  pending.shift()!(snapshot('host-1', 5, 'stale response'));
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await delayed });
+  assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries.at(-1).message.content, 'new event');
+  const old = kernel.commands.session.loadSnapshot('a');
+  const latest = kernel.commands.session.loadSnapshot('a');
+  await tick();
+  const oldResponse = pending.shift()!;
+  pending.shift()!(snapshot('host-1', 6, 'latest request'));
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await latest });
+  oldResponse(snapshot('host-1', 6, 'old request'));
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await old });
+  assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries[0].message.content, 'latest request');
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-2', revision: 0, liveSessions: [] } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: snapshot('host-1', 99, 'old Host') });
+  assert.equal(kernel.stores.conversation.get().bySession.a, undefined);
+  kernel.dispose();
+});
+
+caseTest('in-flight snapshot restores partial output then replays newer stream deltas', async () => {
+  let emit!: (signal: any) => void;
+  let respond!: (data: any) => void;
+  const kernel = createAppKernel({
+    transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => {}; } },
+    http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = resolve; }), text: async () => '' }),
+  });
+  emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host', revision: 1, liveSessions: [{ id: 'a', isStreaming: true }] } });
+  kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+  const loading = kernel.commands.session.loadSnapshot('a');
+  await new Promise((resolve) => setImmediate(resolve));
+  emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 3, sessionId: 'a', event: { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' newer' } } } });
+  respond({ schemaVersion: 1, hostGeneration: 'host', revision: 2, entries: [], isStreaming: true, streamingMessage: { role: 'assistant', content: 'authoritative partial' } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await loading });
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.streamingText, 'authoritative partial newer');
+  emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 4, sessionId: 'a', event: { type: 'agent_settled' } } });
+  assert.equal(kernel.stores.session.isStreaming('a'), false);
+  kernel.dispose();
+});
+
+caseTest('retry feedback is session scoped, clears on success and distinguishes cancellation', () => {
+  let emit!: (signal: any) => void;
+  const kernel = createAppKernel({ transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => {}; } }, http: async () => { throw new Error('unused'); } });
+  const event = (sessionId: string, value: any) => emit({ kind: 'message', message: { type: 'event', sessionId, event: value } });
+  event('a', { type: 'agent_start' });
+  event('a', { type: 'message_end', message: { role: 'assistant', content: '', stopReason: 'error', errorMessage: '401 Bearer secret-token request-body-sensitive' } });
+  event('a', { type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: '401 Bearer secret-token' });
+  assert.deepEqual(kernel.stores.conversation.get().bySession.a.live.retry, { attempt: 1, maxAttempts: 3, delayMs: 2000, reason: 'authentication' });
+  assert.equal(kernel.stores.conversation.get().bySession.b, undefined);
+  event('a', { type: 'auto_retry_end', success: true });
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.retry, null);
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.outcome, null);
+  event('b', { type: 'auto_retry_end', success: false, finalError: 'Retry cancelled' });
+  assert.deepEqual(kernel.stores.conversation.get().bySession.b.live.outcome, { status: 'cancelled' });
+  event('a', { type: 'auto_retry_end', success: false, finalError: '429 secret-token' });
+  event('a', { type: 'agent_settled' });
+  assert.deepEqual(kernel.stores.conversation.get().bySession.a.live.outcome, { status: 'failed', reason: 'rate_limit' });
+  event('a', { type: 'agent_start' });
+  assert.equal(kernel.stores.conversation.get().bySession.a.live.outcome, null);
+  kernel.dispose();
+});
+
+caseTest('a background stream preserves active conversation and tool slice references', () => {
+  const conversation = new ConversationStore();
+  const tools = new ToolExecutionStore();
+  conversation.streamStarted('a', 'a-run');
+  tools.started('a', { toolCallId: 'a-call', status: 'running' });
+  const activeConversation = conversation.get().bySession.a;
+  const activeTools = tools.get().bySession.a;
+  conversation.streamDelta('b', 'text', 'background');
+  tools.started('b', { toolCallId: 'b-call', status: 'running' });
+  assert.equal(conversation.get().bySession.a, activeConversation);
+  assert.equal(tools.get().bySession.a, activeTools);
+});
+
+caseTest('closing a session prevents a late snapshot from resurrecting its stores', async () => {
+  let respond!: (data: any) => void;
+  const kernel = createAppKernel({ transport: { subscribe: () => () => {} }, http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = resolve; }), text: async () => '' }) });
+  kernel.dispatch({ type: 'session/created', session: { id: 'a' } });
+  const pending = kernel.commands.session.loadSnapshot('a');
+  await new Promise((resolve) => setImmediate(resolve));
+  kernel.dispatch({ type: 'session/closed', sessionId: 'a' });
+  respond({ schemaVersion: 1, entries: [{ message: { role: 'assistant', content: 'late' } }], session: { id: 'a' } });
+  kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await pending });
+  assert.equal(kernel.stores.conversation.get().bySession.a, undefined);
+  assert.equal(kernel.stores.session.get().sessions.length, 0);
+  kernel.dispose();
 });

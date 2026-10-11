@@ -255,7 +255,7 @@ export class VideoService {
   }
 
   /** Resolve any video reference (source by videoId, or already-published derived by resourceId). */
-  private async resolveResource(session: VideoSessionContext, opts: { videoId?: string; resourceId?: string }): Promise<{ manifest: VideoResourceManifestV1; videoPath: string; title: string; cameraId?: string }> {
+  private async resolveResource(session: VideoSessionContext, opts: { videoId?: string; resourceId?: string }, signal?: AbortSignal): Promise<{ manifest: VideoResourceManifestV1; videoPath: string; title: string; cameraId?: string }> {
     if (opts.resourceId) {
       const { manifest, videoPath } = this.loadManifest(session, opts.resourceId);
       let title = manifest.videoId;
@@ -271,11 +271,11 @@ export class VideoService {
     }
     if (!opts.videoId) throw new Error('videoId or resourceId is required');
     const record = this.findRecord(session, opts.videoId);
-    const ensured = await this.ensureResourceAsync(session, record);
+    const ensured = await this.ensureResourceAsync(session, record, signal);
     return { ...ensured, title: record.entry.title, ...(record.entry.cameraId ? { cameraId: record.entry.cameraId } : {}) };
   }
 
-  private ensureResourceAsync(session: VideoSessionContext, record: CatalogRecord): Promise<{ manifest: VideoResourceManifestV1; videoPath: string }> {
+  private ensureResourceAsync(session: VideoSessionContext, record: CatalogRecord, signal?: AbortSignal): Promise<{ manifest: VideoResourceManifestV1; videoPath: string }> {
     const runner = this.requireRunner(session);
     const resourceId = `video_${crypto.createHash('sha256').update(`${record.assetId}:${record.entry.videoId}`).digest('hex').slice(0, 16)}`;
     return (async () => {
@@ -286,7 +286,8 @@ export class VideoService {
       } catch { /* not materialized yet */ }
       const stat = fs.statSync(resolvedFile);
       if (stat.size > MAX_VIDEO_BYTES) throw new Error(`Video exceeds the ${MAX_VIDEO_BYTES / 1024 / 1024} MiB V1 size limit: ${record.entry.videoId}`);
-      const probedDuration = (await runner.probe(resolvedFile)).durationSeconds;
+      const probedDuration = (await runner.probe(resolvedFile, { signal })).durationSeconds;
+      if (signal?.aborted) throw new Error('Analysis cancelled');
       const start = parseVideoTimestamp(record.entry.startTime)!;
       const end = parseVideoTimestamp(record.entry.endTime)!;
       const metadataDuration = (end.epochMs - start.epochMs) / 1000;
@@ -336,11 +337,11 @@ export class VideoService {
     return target;
   }
 
-  async present(session: VideoSessionContext, body: Record<string, unknown>): Promise<{ item: VideoSceneItemV1 }> {
+  async present(session: VideoSessionContext, body: Record<string, unknown>, signal?: AbortSignal): Promise<{ item: VideoSceneItemV1 }> {
     const videoId = optionalString(body, 'videoId', 120);
     const resourceId = optionalString(body, 'resourceId', 120);
     const timestampRaw = optionalString(body, 'timestamp', 64);
-    const resolved = await this.resolveResource(session, { videoId, resourceId });
+    const resolved = await this.resolveResource(session, { videoId, resourceId }, signal);
     let initialSeekSeconds: number | undefined;
     if (timestampRaw) {
       const target = this.assertWithinRecording(resolved.manifest, timestampRaw, 'timestamp');
@@ -373,7 +374,7 @@ export class VideoService {
     const videoId = optionalString(body, 'videoId', 120);
     const resourceId = optionalString(body, 'resourceId', 120);
     const timestamp = requiredTimestamp(body, 'timestamp');
-    const resolved = await this.resolveResource(session, { videoId, resourceId });
+    const resolved = await this.resolveResource(session, { videoId, resourceId }, signal);
     const target = this.assertWithinRecording(resolved.manifest, timestamp.iso, 'timestamp');
     const offset = videoOffsetSeconds(resolved.manifest.recordingStartTime, target.iso);
     if (offset === null) throw new Error('timestamp could not be converted to a video offset');
@@ -398,7 +399,7 @@ export class VideoService {
     if (start.epochMs >= end.epochMs) throw new Error('startTime must be before endTime');
     const durationSeconds = (end.epochMs - start.epochMs) / 1000;
 
-    const resolved = await this.resolveResource(session, { videoId });
+    const resolved = await this.resolveResource(session, { videoId }, signal);
     this.assertWithinRecording(resolved.manifest, start.iso, 'startTime');
     this.assertWithinRecording(resolved.manifest, end.iso, 'endTime');
     if (durationSeconds > MAX_CLIP_SECONDS) throw new Error(`Clips are limited to ${MAX_CLIP_SECONDS / 60} minutes`);
@@ -469,7 +470,7 @@ export class VideoService {
     const frameCount = frameCountRaw === undefined ? DEFAULT_FRAME_COUNT : frameCountRaw;
     if (!Number.isInteger(frameCount) || (frameCount as number) < 1 || (frameCount as number) > MAX_FRAME_COUNT) throw new Error(`frameCount must be an integer between 1 and ${MAX_FRAME_COUNT}`);
 
-    const resolved = await this.resolveResource(session, { videoId, resourceId });
+    const resolved = await this.resolveResource(session, { videoId, resourceId }, signal);
     this.assertWithinRecording(resolved.manifest, start.iso, 'startTime');
     this.assertWithinRecording(resolved.manifest, end.iso, 'endTime');
     const startOffset = videoOffsetSeconds(resolved.manifest.recordingStartTime, start.iso);
@@ -516,8 +517,7 @@ export class VideoService {
     return { videoId: resolved.manifest.videoId, startTime: start.iso, endTime: end.iso, frames, totalBytes };
   }
 
-  terminateAll() {
-    this.fallbackRunner?.terminateAll();
-    for (const runner of this.moduleRunners.values()) runner.terminateAll();
+  async terminateAll() {
+    await Promise.all([this.fallbackRunner, ...this.moduleRunners.values()].filter((runner): runner is VideoRunner => !!runner).map((runner) => runner.terminateAll()));
   }
 }

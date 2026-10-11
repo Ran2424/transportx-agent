@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+import { readJsonObject, writeJsonAtomic, mutateJson } from './util/json-storage.js';
 import type { JsonRecord } from './types.js';
 import { connectPiModelProvider, ensurePiModelProviderConfigured, removePiModelProviderCredential } from './pi-model-access.js';
 
@@ -19,28 +20,18 @@ export type AddPiModelInput = {
 };
 type AddPiModelPayload = Omit<Partial<AddPiModelInput>, 'api'> & { api?: string };
 
-function readObject(filePath: string, fallback: JsonRecord) {
-  if (!fs.existsSync(filePath)) return fallback;
-  const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid JSON object: ${filePath}`);
-  return value as JsonRecord;
-}
-
 function readModelsConfig(agentDir: string) {
   const modelsPath = path.join(agentDir, 'models.json');
-  const config = readObject(modelsPath, { providers: {} });
-  const providers = config.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)
+  const config = readJsonObject(modelsPath, { providers: {} });
+  const providers = config.providers === undefined ? {} : config.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)
     ? config.providers as JsonRecord
-    : {};
+    : (() => { throw new Error('Invalid model providers'); })();
+  for (const provider of Object.values(providers)) {
+    if (!provider || typeof provider !== 'object' || Array.isArray(provider)) throw Object.assign(new Error('Corrupt model provider configuration'), { status: 409 });
+    const models = (provider as JsonRecord).models;
+    if (models !== undefined && (!Array.isArray(models) || models.some((model) => !model || typeof model !== 'object' || Array.isArray(model) || typeof model.id !== 'string' || !model.id))) throw Object.assign(new Error('Corrupt model definitions'), { status: 409 });
+  }
   return { path: modelsPath, config, providers };
-}
-
-function writeSecureJson(filePath: string, value: unknown) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temporary = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(temporary, filePath);
-  fs.chmodSync(filePath, 0o600);
 }
 
 function validated(input: AddPiModelPayload): AddPiModelInput {
@@ -74,7 +65,7 @@ function modelPatch(model: ModelPatchInput): JsonRecord {
   };
 }
 
-export async function addPiModel(input: AddPiModelPayload, agentDir: string) {
+async function addPiModelMutation(input: AddPiModelPayload, agentDir: string) {
   const model = validated(input);
   const { path: modelsPath, config, providers } = readModelsConfig(agentDir);
   const existingProvider = providerConfig(providers, model.provider);
@@ -91,7 +82,7 @@ export async function addPiModel(input: AddPiModelPayload, agentDir: string) {
       models: nextModels,
     },
   };
-  writeSecureJson(modelsPath, { ...config, providers: nextProviders });
+  writeJsonAtomic(modelsPath, { ...config, providers: nextProviders });
   if (model.apiKey) await connectPiModelProvider(model.provider, model.apiKey, agentDir);
   else await ensurePiModelProviderConfigured(model.provider, agentDir);
   return { provider: model.provider, modelId: model.modelId, reference: `${model.provider}/${model.modelId}` };
@@ -122,7 +113,7 @@ function providerConfig(providers: JsonRecord, provider: string) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
-export async function updatePiModel(input: UpdatePiModelInput, agentDir: string) {
+async function updatePiModelMutation(input: UpdatePiModelInput, agentDir: string) {
   const model = validatedUpdate(input);
   const { path: modelsPath, config, providers } = readModelsConfig(agentDir);
   const existingProvider = providerConfig(providers, model.provider);
@@ -135,11 +126,11 @@ export async function updatePiModel(input: UpdatePiModelInput, agentDir: string)
     existingProvider.modelOverrides = { ...overrides, [model.modelId]: { ...previous, ...modelPatch(model) } };
   }
   if (existingIndex >= 0) existingProvider.models = existingModels;
-  writeSecureJson(modelsPath, { ...config, providers: { ...providers, [model.provider]: existingProvider } });
+  writeJsonAtomic(modelsPath, { ...config, providers: { ...providers, [model.provider]: existingProvider } });
   return { provider: model.provider, modelId: model.modelId, reference: `${model.provider}/${model.modelId}` };
 }
 
-export async function deletePiModel(providerInput: string, modelIdInput: string, agentDir: string) {
+async function deletePiModelMutation(providerInput: string, modelIdInput: string, agentDir: string) {
   const provider = String(providerInput || '').trim().toLowerCase();
   const modelId = String(modelIdInput || '').trim();
   const { path: modelsPath, config, providers } = readModelsConfig(agentDir);
@@ -154,15 +145,20 @@ export async function deletePiModel(providerInput: string, modelIdInput: string,
   const nextProvider = { ...existingProvider };
   if (nextModels.length) nextProvider.models = nextModels; else delete nextProvider.models;
   if (Object.keys(nextOverrides).length) nextProvider.modelOverrides = nextOverrides; else delete nextProvider.modelOverrides;
-  writeSecureJson(modelsPath, { ...config, providers: { ...providers, [provider]: nextProvider } });
+  writeJsonAtomic(modelsPath, { ...config, providers: { ...providers, [provider]: nextProvider } });
 }
 
-export async function deletePiModelProvider(providerInput: string, agentDir: string) {
+async function deletePiModelProviderMutation(providerInput: string, agentDir: string) {
   const provider = String(providerInput || '').trim().toLowerCase();
   const { path: modelsPath, config, providers } = readModelsConfig(agentDir);
   if (!providers[provider]) throw new Error('自定义模型供应商不存在');
   await removePiModelProviderCredential(provider, agentDir);
   const nextProviders = { ...providers };
   delete nextProviders[provider];
-  writeSecureJson(modelsPath, { ...config, providers: nextProviders });
+  writeJsonAtomic(modelsPath, { ...config, providers: nextProviders });
 }
+
+export function addPiModel(input: AddPiModelPayload, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => addPiModelMutation(input, agentDir)); }
+export function updatePiModel(input: UpdatePiModelInput, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => updatePiModelMutation(input, agentDir)); }
+export function deletePiModel(provider: string, modelId: string, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => deletePiModelMutation(provider, modelId, agentDir)); }
+export function deletePiModelProvider(provider: string, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => deletePiModelProviderMutation(provider, agentDir)); }
