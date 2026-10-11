@@ -1,0 +1,15 @@
+{
+  "version": "3.23.0",
+  "profile": "darwin",
+  "sourceRevision": "<git SHA>",
+  "testedFromVersion": "<previous version containing updater>",
+  "testedAt": "<ISO 8601>",
+  "testedBy": "<name>",
+  "signingIdentity": "<Developer ID/Authenticode subject>",
+  "evidence": ["<signing output>", "<upgrade log>", "<data preservation record>"],
+  "signed": false,
+  "upgradePassed": false,
+  "dataPreserved": false,
+  "normalQuitDoesNotInstall": false,
+  "sha256": {}
+}

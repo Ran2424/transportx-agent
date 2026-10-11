@@ -6,7 +6,7 @@ type UtilityParentPort = {
   postMessage(message: unknown): void;
 };
 
-function desktopMessageChannel() {
+export function desktopMessageChannel() {
   const parentPort = (process as NodeJS.Process & { parentPort?: UtilityParentPort }).parentPort;
   if (parentPort) {
     return {

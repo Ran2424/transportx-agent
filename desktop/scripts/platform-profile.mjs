@@ -135,6 +135,13 @@ export const PLATFORM_PROFILES = Object.freeze({
     ffmpeg: FFMPEG_PROFILE.darwin,
     signing: SIGNING_PROFILE.darwin,
     release: RELEASE_PROFILE.darwin,
+    update: Object.freeze({
+      directory: 'updates/stable/mac-arm64/',
+      url: 'https://download.transkgllm.com/updates/stable/mac-arm64/',
+      manifest: 'latest-mac.yml',
+      artifactName: 'TransportX-Agent-${version}-mac-arm64.${ext}',
+      requiredExtensions: ['.dmg', '.zip'],
+    }),
   }),
   win: Object.freeze({
     key: 'win',
@@ -144,5 +151,12 @@ export const PLATFORM_PROFILES = Object.freeze({
     ffmpeg: FFMPEG_PROFILE.win,
     signing: SIGNING_PROFILE.win,
     release: RELEASE_PROFILE.win,
+    update: Object.freeze({
+      directory: 'updates/stable/win-x64/',
+      url: 'https://download.transkgllm.com/updates/stable/win-x64/',
+      manifest: 'latest.yml',
+      artifactName: 'TransportX-Agent-${version}-win-x64-setup.${ext}',
+      requiredExtensions: ['.exe'],
+    }),
   }),
 });

@@ -128,6 +128,13 @@ try {
   await window.getByRole('button', { name: '打开设置' }).click();
   const settings = window.getByTestId('settings-workspace');
   await settings.waitFor();
+  const updateState = await window.evaluate(() => window.transportxDesktop.update.getState());
+  const appVersion = await app.evaluate(({ app }) => app.getVersion());
+  if (updateState.currentVersion !== appVersion || (packaged ? updateState.phase === 'disabled' : updateState.phase !== 'disabled')) {
+    throw new Error(`Unexpected desktop update bridge state: ${JSON.stringify(updateState)}`);
+  }
+  await settings.getByTestId('software-update').getByText(`当前版本 ${appVersion}`, { exact: true }).waitFor();
+  console.log(`[desktop-smoke] update bridge OK (${updateState.phase}, ${appVersion})`);
   await settings.getByText(dataRoot, { exact: true }).waitFor();
   await settings.getByText(path.join(dataRoot, 'modules'), { exact: true }).waitFor();
   await settings.getByRole('button', { name: '模块', exact: true }).click();

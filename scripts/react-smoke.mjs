@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { documentSmoke } from './harness/document-smoke.mjs';
+import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -272,6 +273,7 @@ try {
 
 
 
+  await softwareUpdateSmoke(browser, baseUrl);
   if (pageErrors.length) throw new Error(`Web scenario raised page errors: ${pageErrors.join('\n')}`);
   console.log('Web scenario passed: baseline workflow plus Geo user Context, Agent request, audited result, and refresh recovery.');
 } catch (error) {

@@ -6,6 +6,7 @@ type WritableInput = {
 };
 
 export class PiRpcTransport {
+  get pendingCount() { return this.pending.size; }
   private readonly pending = new Map<string, PendingCommand>();
 
   send(input: WritableInput, command: RpcCommand, opts: { timeoutMs?: number } = {}) {

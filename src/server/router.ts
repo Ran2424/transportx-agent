@@ -21,7 +21,7 @@ type Route<Deps> = {
 export class ServerRouter<Deps> {
   private readonly routes: Route<Deps>[] = [];
 
-  constructor(private readonly deps: Deps) {}
+  constructor(private readonly deps: Deps, private readonly beginOperation?: (url: URL) => () => void) {}
 
   add(method: HttpMethod, path: string | RegExp, handler: RouteHandler<Deps>) {
     this.routes.push({ method, path, handler });
@@ -41,7 +41,12 @@ export class ServerRouter<Deps> {
         ? (route.path === url.pathname ? [] : null)
         : url.pathname.match(route.path)?.slice(1) || null;
       if (!match) continue;
-      void Promise.resolve(route.handler({ req, res, url, params: match, deps: this.deps }));
+      const complete = this.beginOperation?.(url) || (() => {});
+      try {
+        const result = route.handler({ req, res, url, params: match, deps: this.deps });
+        if (result) void result.finally(complete);
+        else complete();
+      } catch (error) { complete(); throw error; }
       return true;
     }
     return false;

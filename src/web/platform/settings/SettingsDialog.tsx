@@ -13,6 +13,7 @@ import i18n from '../../i18n';
 import { formatContextWindow } from '../../lib/formatting';
 import type { ModuleArchiveInspection } from '../../../contracts/module';
 import { ModelEditDialog } from '../model/ModelEditDialog';
+import { SoftwareUpdate } from './SoftwareUpdate';
 
 export const themes = [
   { id: 'light', label: 'Light' },
@@ -355,6 +356,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   switch (activeSection) {
     case 'general':
       content = <div className="settings-page-stack">
+        <SoftwareUpdate />
         <section className="settings-section">
           <h2>{t('settings.appearance')}</h2>
           <div className="theme-grid" role="radiogroup" aria-label={t('settings.appearance')}>

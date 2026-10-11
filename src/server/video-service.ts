@@ -143,6 +143,7 @@ function sceneItemFromManifest(manifest: VideoResourceManifestV1, title: string,
 }
 
 export class VideoService {
+  get activeCount() { return (this.fallbackRunner?.activeCount || 0) + [...this.moduleRunners.values()].reduce((sum, runner) => sum + runner.activeCount, 0); }
   private readonly fallbackRunner: VideoRunner | null;
   private readonly moduleRunners = new Map<string, VideoRunner>();
 

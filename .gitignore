@@ -57,6 +57,9 @@ test/baselines/screenshots/*.png
 /docs/*
 !/docs/ARCHITECTURE.md
 !/docs/CHANGELOG.md
+!/docs/RELEASE.md
+!/docs/releases/
+!/docs/软件更新功能开发 PLAN.md
 !/docs/guide/
 !/docs/images/
 /docs/images/*

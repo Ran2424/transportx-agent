@@ -68,10 +68,18 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const piPkg = JSON.parse(fs.readFileSync(path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent', 'package.json'), 'utf8'));
 const agentHostSource = path.join(root, 'bin', 'tau.js');
 const piSource = path.join(root, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js');
+const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
+const sourceStatus = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: root, encoding: 'utf8' });
+if (revision.status !== 0 || sourceStatus.status !== 0) throw new Error('Cannot determine runtime source revision');
 
 const manifest = {
   manifestVersion: 1,
   product: { name: 'TransportX Agent', version: pkg.version },
+  source: {
+    revision: revision.stdout.trim(),
+    dirty: Boolean(sourceStatus.stdout.trim()),
+    dependencyLockSha256: sha256(path.join(root, 'package-lock.json')),
+  },
   agentHost: {
     version: pkg.version,
     protocolVersion: 1,

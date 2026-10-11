@@ -1219,3 +1219,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: .01ms !important; }
 }
+.software-update-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; padding: 12px; background: var(--surface-raised); border: 1px solid var(--border-default); color: var(--text-primary); font: inherit; font-size: 12px; }
+.software-update-progress, .software-update-actions { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.software-update-progress progress { flex: 1; accent-color: var(--text-primary); }
+.software-update-notice { position: fixed; right: 20px; bottom: 64px; z-index: 80; display: flex; align-items: center; gap: 12px; padding: 12px 16px; max-width: calc(100vw - 40px); border: 1px solid var(--border-default); background: var(--surface-raised); color: var(--text-primary); font-size: 12px; }
+.software-update-notice button { color: var(--text-primary); background: transparent; border: 0; cursor: pointer; font-size: 12px; }

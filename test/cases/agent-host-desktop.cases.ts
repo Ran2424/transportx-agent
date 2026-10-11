@@ -19,7 +19,7 @@ caseTest('desktop Agent Host binds a random loopback port and publishes ready/he
       TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
       TAU_PYTHON_COMMAND: process.execPath,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
   t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
   let stderr = '';
@@ -61,9 +61,16 @@ caseTest('desktop Agent Host binds a random loopback port and publishes ready/he
   const removed = await rpc({ type: 'uninstall_module', moduleId: 'local.test-skill' });
   assert.equal(removed.success, true);
   assert.equal(removed.data.overview.modules.some((module: any) => module.id === 'local.test-skill'), false);
-  child.kill('SIGTERM');
-  await new Promise<void>((resolve, reject) => {
+  const stopped = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Agent Host did not exit after SIGTERM')), 5000);
-    child.once('exit', () => { clearTimeout(timer); resolve(); });
+    child.once('exit', (code: number) => { clearTimeout(timer); if (code === 0) resolve(); else reject(new Error(`Host exited ${code}`)); });
   });
+  const acknowledgement = new Promise<any>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Host did not acknowledge update preparation')), 5000);
+    child.on('message', (message: any) => { if (message.type === 'transportx-update-stopped') { clearTimeout(timer); resolve(message); } });
+  });
+  child.send({ type: 'transportx-update-stop', id: 'desktop-test-update' });
+  assert.deepEqual(await acknowledgement, { type: 'transportx-update-stopped', id: 'desktop-test-update', ok: true });
+  await stopped;
+  assert.equal(fs.existsSync(userData), true);
 });
