@@ -6,17 +6,20 @@ import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
 import { AttachmentCards } from './conversation-attachments';
 import { ComposerAttachmentList, useComposerAttachments } from './composer-attachments';
+import { composerDraftStore } from './composer-draft-store';
+import { SessionAttachmentLibrary } from './session-attachment-library';
 import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, useComposerCitationPicker } from './composer-citation-picker';
 import { geoContextStore } from '../../features/geo/geo-context-store';
 import { canvasContextStore } from '../canvas/canvas-context-store';
 
-export function ConversationComposer({ retryDraft, sessionId, session, streaming, compacting, queued, attachments, onCitationEnvelope, onOpenCitationManager }: { retryDraft?: { message: string }; sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; attachments: Record<string, SessionAttachment>; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
+export function ConversationComposer({ retryDraft, sessionId, session, streaming, compacting, queued, attachments, attachmentError, onReloadAttachments, onCitationEnvelope, onOpenCitationManager }: { retryDraft?: { message: string }; sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; attachments: Record<string, SessionAttachment>; attachmentError?: string; onReloadAttachments(): void; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
   const kernel = appKernel;
-  const [value, setValue] = useState('');
+  const value = useSyncExternalStore(composerDraftStore.subscribe, () => composerDraftStore.getMessage(sessionId));
+  const setValue = (update: string | ((current: string) => string)) => composerDraftStore.setMessage(sessionId, typeof update === 'function' ? update(composerDraftStore.getMessage(sessionId)) : update);
   const [error, setError] = useState('');
-  const { pending, setPending, addAttachments, removeAttachment } = useComposerAttachments(sessionId, setError);
+  const { pending, setPending, addAttachments, removeAttachment, reuseAttachment } = useComposerAttachments(sessionId, setError);
   const geoContexts = useSyncExternalStore(geoContextStore.subscribe, () => geoContextStore.get(sessionId));
   const canvasContexts = useSyncExternalStore(canvasContextStore.subscribe, () => canvasContextStore.get(sessionId));
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -31,10 +34,12 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
     const canvasContextIds = canvasContexts.map((item) => item.contextId);
     const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : canvasContextIds.length ? t('conversation.canvasContextOnly') : '');
     if (!message) return;
-    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); setValue(''); setPending([]); geoContextStore.clear(sessionId); canvasContextStore.clear(sessionId); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
+    setError('');
+    try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); if (composerDraftStore.getMessage(sessionId) === value) setValue(''); setPending((current) => current.filter((item) => !item.attachment || !attachmentIds.includes(item.attachment.id))); geoContextIds.forEach((id) => geoContextStore.remove(sessionId, id)); canvasContextIds.forEach((id) => canvasContextStore.remove(sessionId, id)); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
   }
   return <footer className="conversation-composer">
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
+    <SessionAttachmentLibrary sessionId={sessionId} attachments={attachments} selectedIds={pending.flatMap((item) => item.attachment ? [item.attachment.id] : [])} error={attachmentError} onReload={onReloadAttachments} onReuse={reuseAttachment} />
     <ComposerAttachmentList sessionId={sessionId} pending={pending} onRemove={(item) => void removeAttachment(item)} />
     {geoContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.geoContexts')}>{geoContexts.map((item) => <span key={item.contextId}><strong>{t(`geo.mode.${item.mode}`)}</strong>{item.summary}<button type="button" aria-label={t('conversation.removeGeoContext', { summary: item.summary })} onClick={() => geoContextStore.remove(sessionId, item.contextId)}>×</button></span>)}</div> : null}
     {canvasContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.canvasContexts')}>{canvasContexts.map((item) => <span key={item.contextId}><strong>{t('canvas.title')}</strong>{item.viewId}<button type="button" aria-label={t('conversation.removeCanvasContext')} onClick={() => canvasContextStore.remove(sessionId, item.contextId)}>×</button></span>)}</div> : null}

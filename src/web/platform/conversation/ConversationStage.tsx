@@ -23,5 +23,5 @@ export function ConversationStage({ session, loading, onNewSession, showThinking
     );
   }
 
-  return <ConversationWorkspace sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} />;
+  return <ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} />;
 }

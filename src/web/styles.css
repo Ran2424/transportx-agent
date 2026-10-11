@@ -673,6 +673,19 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .conversation-empty h1 { margin: 16px 0 8px; font: 400 30px/1.1 var(--tx-font-display); }
 .conversation-empty p { max-width: 350px; margin: auto; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
 .conversation-composer { width: calc(100% - 44px); max-width: var(--conversation-content-max-width); margin: 0 auto; padding: 14px 0 16px; }
+.session-attachment-library { margin-bottom: 8px; color: var(--text-secondary); font-size: 11px; }
+.session-attachment-library summary { width: fit-content; cursor: pointer; color: var(--text-primary); }
+.session-attachment-library p { margin: 8px 0; line-height: 1.5; }
+.session-attachment-library-list { max-height: 180px; overflow-y: auto; }
+.session-attachment-library article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 0; border-top: 1px solid var(--border-default); }
+.session-attachment-library button { border: 0; padding: 0; color: var(--text-primary); background: transparent; font-size: 11px; cursor: pointer; }
+.session-attachment-preview { min-width: 0; display: flex; gap: 6px; align-items: center; text-align: left; }
+.session-attachment-preview svg { width: 16px; height: 16px; flex-shrink: 0; }
+.session-attachment-preview strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-attachment-library small { font-size: 11px; }
+.session-attachment-library code { overflow-wrap: anywhere; }
+.session-attachment-library .session-attachment-reuse { color: var(--link-fg); }
+.session-attachment-library button:disabled { color: var(--text-tertiary); cursor: default; }
 .conversation-composer form { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 13px 13px 11px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-lg); background: var(--surface-elevated); box-shadow: var(--shadow-surface); transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease; }
 .conversation-composer form:focus-within { border-color: color-mix(in srgb, var(--selection-border) 48%, var(--border-default)); box-shadow: 0 0 0 3px var(--focus-ring), var(--shadow-surface); }
 .conversation-composer textarea { width: 100%; min-height: 34px; padding: 4px 5px; resize: none; border: 0; border-radius: 0; outline: 0; color: var(--text-primary); background: transparent; font-size: 14px; line-height: 1.55; }

@@ -59,3 +59,107 @@ export async function feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryC
   await composer.waitFor();
   console.log('Feedback smoke: empty/partial errors, safe feedback, retry success, history recovery and late navigation failure passed.');
 }
+
+export async function composerSmoke(page, baseUrl) {
+  const composer = page.getByLabel('消息输入');
+  const a = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
+  const created = await (await page.request.post(`${baseUrl}/api/live-sessions`, { data: { name: '草稿B', model: 'kimi-coding/k2p7' } })).json();
+  const b = created.session;
+  let releaseUpload;
+  const heldUpload = new Promise((resolve) => { releaseUpload = resolve; });
+  const uploadPattern = `**/api/live-sessions/${a}/attachments*`;
+  let uploadCount = 0;
+  const holdUpload = async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    uploadCount++;
+    await heldUpload;
+    await route.continue();
+  };
+  await page.route(uploadPattern, holdUpload);
+  await composer.fill('A 会话未发送的草稿');
+  await page.locator('.composer-attach input').setInputFiles({ name: 'draft-source.md', mimeType: 'text/markdown', buffer: Buffer.from('# 已上传草稿资料\n\n交通资料。') });
+  await page.locator('.pending-attachment.is-uploading').waitFor();
+  await page.locator('.live-tab-select', { hasText: '草稿B' }).click();
+  await composer.waitFor();
+  assert.equal(await composer.inputValue(), '', 'B does not inherit A text');
+  assert.equal(await page.locator('.pending-attachment').count(), 0, 'B does not inherit A uploads');
+  await composer.fill('B 会话独立草稿');
+  releaseUpload();
+  await page.locator('.live-tab-select').first().click();
+  await page.locator('.pending-attachment.is-ready', { hasText: 'draft-source.md' }).waitFor();
+  assert.equal(await composer.inputValue(), 'A 会话未发送的草稿');
+  const library = page.locator('.session-attachment-library');
+  await library.locator('summary').click();
+  await library.getByRole('button', { name: '查看已上传文件 draft-source.md', exact: true }).waitFor();
+  assert.match(await library.innerText(), /attachments\/att_.*draft-source\.md/);
+  await page.getByRole('button', { name: '移除附件 draft-source.md', exact: true }).click();
+  assert.equal(await library.getByRole('button', { name: '查看已上传文件 draft-source.md', exact: true }).count(), 1, 'deselecting an input does not delete an uploaded source');
+  await page.locator('.live-tab-select', { hasText: '草稿B' }).click();
+  await composer.waitFor();
+  assert.equal(await composer.inputValue(), 'B 会话独立草稿');
+  await page.locator('.session-attachment-library summary').click();
+  assert.equal(await page.getByRole('button', { name: '查看已上传文件 draft-source.md', exact: true }).count(), 0, 'uploaded sources remain session-scoped');
+  await page.locator('.live-tab-select').first().click();
+  await composer.waitFor();
+  await page.reload({ waitUntil: 'networkidle' });
+  await composer.waitFor();
+  assert.equal(await composer.inputValue(), 'A 会话未发送的草稿', 'refresh restores unsent text');
+  await library.locator('summary').click();
+  await library.getByRole('button', { name: '本轮使用 draft-source.md', exact: true }).click();
+  await page.locator('.pending-attachment.is-ready', { hasText: 'draft-source.md' }).waitFor();
+  assert.equal(uploadCount, 1, 'reusing a source does not upload it again');
+  await library.getByRole('button', { name: '查看已上传文件 draft-source.md', exact: true }).click();
+  await page.locator('.document-workspace h1', { hasText: '已上传草稿资料', exact: true }).waitFor();
+  await page.getByRole('button', { name: '关闭视图：draft-source.md', exact: true }).click();
+  const rejectPrompt = async (route) => {
+    const command = route.request().postDataJSON();
+    if (command.type !== 'prompt' || command.sessionId !== a) return route.continue();
+    await route.fulfill({ json: { success: false, error: 'smoke prompt rejected' } });
+  };
+  await page.route('**/api/rpc', rejectPrompt);
+  await composer.press('Enter');
+  await page.locator('.composer-error', { hasText: 'smoke prompt rejected' }).waitFor();
+  assert.equal(await composer.inputValue(), 'A 会话未发送的草稿', 'rejected commands preserve text');
+  assert.equal(await page.locator('.pending-attachment.is-ready').count(), 1, 'rejected commands preserve attachment selection');
+  await page.unroute('**/api/rpc', rejectPrompt);
+  // Audit the delivered attachment through the authoritative snapshot.
+  await composer.press('Enter');
+  await page.waitForFunction(() => document.querySelector('.conversation-composer textarea')?.value === '');
+  assert.equal(await page.evaluate((sessionId) => localStorage.getItem(`tau-composer-draft:${sessionId}`), a), null);
+  await page.waitForFunction(async (sessionId) => {
+    const response = await fetch(`/api/live-sessions/${sessionId}/snapshot`);
+    const snapshot = await response.json();
+    return snapshot.entries?.some((entry) => entry.message?.role === 'user' && entry.message?.attachmentIds?.length);
+  }, a);
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  let releaseAck, ackArrived, ackSent;
+  const heldAck = new Promise((resolve) => { releaseAck = resolve; });
+  const ackStarted = new Promise((resolve) => { ackArrived = resolve; });
+  const ackFinished = new Promise((resolve) => { ackSent = resolve; });
+  const delayPromptAck = async (route) => {
+    const command = route.request().postDataJSON();
+    if (command.type !== 'prompt' || command.sessionId !== a) return route.continue();
+    const response = await route.fetch();
+    ackArrived(); await heldAck;
+    await route.fulfill({ response }); ackSent();
+  };
+  await page.route('**/api/rpc', delayPromptAck);
+  await composer.fill('延迟确认A'); await composer.press('Enter');
+  await ackStarted;
+  await composer.fill('A 新草稿');
+  await page.locator('.live-tab-select', { hasText: '草稿B' }).click();
+  await composer.waitFor();
+  releaseAck(); await ackFinished;
+  await page.waitForTimeout(100);
+  assert.equal(await composer.inputValue(), 'B 会话独立草稿', 'late A acknowledgement does not clear B');
+  await page.unroute('**/api/rpc', delayPromptAck);
+  await page.locator('.live-tab-select').first().click(); await composer.waitFor();
+  assert.equal(await composer.inputValue(), 'A 新草稿', 'late acknowledgement preserves text edited after submission');
+  await composer.fill('');
+  await page.unroute(uploadPattern, holdUpload);
+  await page.request.delete(`${baseUrl}/api/live-sessions/${b.id}`);
+  await page.reload({ waitUntil: 'networkidle' });
+  await composer.waitFor();
+  assert.equal(await composer.inputValue(), '', 'successfully sent drafts stay cleared after refresh');
+  console.log('Composer smoke: isolated drafts/uploads, refresh recovery, source preview/reuse, rejected prompts and late acknowledgement isolation passed.');
+}
