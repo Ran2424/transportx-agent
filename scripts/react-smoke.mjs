@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { documentSmoke } from './harness/document-smoke.mjs';
-import { feedbackSmoke } from './harness/feedback-smoke.mjs';
+import { feedbackSmoke, composerSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
 
 function freePort() {
@@ -63,6 +63,7 @@ try {
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
   await feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryCwd);
+  await composerSmoke(page, baseUrl);
   await composer.fill('资源-svg-policy');
   await composer.press('Enter');
   await page.locator('.assistant-message', { hasText: 'SVG 策略测试文件已生成' }).waitFor();
@@ -106,6 +107,13 @@ try {
   await composer.press('Enter');
   await page.locator('.assistant-message', { hasText: '地图已发布，可在右侧地图面板查看。' }).waitFor({ timeout: 10_000 });
 
+  let releaseMapResource;
+  const heldMapResource = new Promise((resolve) => { releaseMapResource = resolve; });
+  let mapResourceStarted;
+  const mapResourceArrived = new Promise((resolve) => { mapResourceStarted = resolve; });
+  const resourcePattern = '**/geo-resources/geo_111111111111111111111111/data*';
+  const holdMapResource = async (route) => { mapResourceStarted(); await heldMapResource; await route.continue(); };
+  await page.route(resourcePattern, holdMapResource);
   const resourceLoaded = page.waitForResponse((response) => response.url().includes('/geo-resources/geo_111111111111111111111111/data'));
   await composer.fill('geo-main-start');
   await composer.press('Enter');
@@ -115,22 +123,43 @@ try {
   assert.equal(await page.locator('[data-testid=agent-canvas] [role=tab]').count(), 2);
   const geoMap = page.locator('.canvas-panel:not([hidden]) .geo-map');
   await geoMap.waitFor({ timeout: 10_000 });
-  assert.equal((await resourceLoaded).ok(), true);
-  await page.waitForTimeout(250);
+  await mapResourceArrived;
   const modeSwitch = page.locator('.canvas-panel:not([hidden])').getByLabel('切换模式');
   assert.equal(await modeSwitch.inputValue(), 'browse');
   const mapBox = await geoMap.boundingBox();
   if (!mapBox) throw new Error('Geo map has no browser layout box');
   const screenshotRequest = page.waitForRequest((request) => request.url().includes('/geo-screenshots'));
+  let screenshotPosted = false;
+  const observeScreenshot = (request) => { if (request.url().includes('/geo-screenshots')) screenshotPosted = true; };
+  page.on('request', observeScreenshot);
   await page.getByRole('button', { name: '保存截图', exact: true }).click();
+  await page.waitForTimeout(150);
+  assert.equal(screenshotPosted, false, 'a screenshot must not be saved while its GeoJSON source is still loading');
+  releaseMapResource();
+  assert.equal((await resourceLoaded).ok(), true);
   const screenshotDataUrl = (await screenshotRequest).postDataJSON().dataUrl;
+  page.off('request', observeScreenshot);
+  await page.unroute(resourcePattern, holdMapResource);
   const screenshotSize = await page.evaluate((dataUrl) => new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0);
+      // Inspect the map area itself so legend/description pixels cannot hide a blank map.
+      const pixels = context.getImageData(0, 0, canvas.width, Math.floor(canvas.height * 0.7)).data;
+      let nonBackground = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 3] && Math.max(pixels[index], pixels[index + 1], pixels[index + 2]) - Math.min(pixels[index], pixels[index + 1], pixels[index + 2]) > 30) nonBackground++;
+      }
+      resolve({ width: image.naturalWidth, height: image.naturalHeight, nonBackground });
+    };
     image.onerror = () => reject(new Error('Saved Geo screenshot is not a readable image'));
     image.src = dataUrl;
   }), screenshotDataUrl);
   assert.ok(screenshotSize.height > mapBox.height + 40, 'Geo screenshot should include the legend and description below the map');
+  assert.ok(screenshotSize.nonBackground > 100, 'Geo screenshot contains rendered colored road features, not just a PNG header or legend');
   const screenshotNotice = page.locator('.canvas-panel:not([hidden]) .geo-notice');
   await screenshotNotice.waitFor({ timeout: 10_000 });
   const screenshotFilename = (await screenshotNotice.textContent())?.match(/map-screenshot-[\d-]+\.png/)?.[0];
@@ -154,11 +183,14 @@ try {
   assert.equal(agentScreenshotSaved, true);
   console.log('Geo smoke: Agent-requested screenshot captured by the workbench and saved automatically.');
 
+  await page.getByRole('tab', { name: 'Geo 交互验收地图', exact: true }).click();
   await modeSwitch.selectOption('feature');
   const tray = page.locator('.canvas-panel:not([hidden]) .geo-context-tray');
   let selectedFeatures = 0;
   for (let fraction = 0.05; fraction <= 0.95 && selectedFeatures < 2; fraction += 0.01) {
-    await page.mouse.click(mapBox.x + mapBox.width * fraction, mapBox.y + mapBox.height * 0.5);
+    const selectionBox = await geoMap.boundingBox();
+    if (!selectionBox) throw new Error('Geo selection map has no browser layout box');
+    await page.mouse.click(selectionBox.x + selectionBox.width * fraction, selectionBox.y + selectionBox.height * 0.5);
     await page.waitForTimeout(20);
     const match = await tray.count() ? (await tray.textContent())?.match(/(\d+) features/) : null;
     const nextCount = Number(match?.[1] || 0);

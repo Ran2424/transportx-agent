@@ -18,7 +18,7 @@ type GeoRuntime = {
   setLayerVisibility(layerId: string, visible: boolean): void;
   setInteractionMode(mode: 'browse' | GeoContextMode, options?: { forRequest?: boolean; targetLayerIds?: string[]; maxFeatures?: number }): void;
   clearUserDraft(): void;
-  captureScreenshot(): Promise<string>;
+  captureScreenshot(expectedRevision: number): Promise<string>;
   getUserDraft(): GeoClientContextV1 | null;
   subscribe(listener: (event: GeoInteractionEvent) => void): () => void;
   fitToData(): void;
@@ -55,9 +55,7 @@ export function GeoWorkspace({ session, active, envelope: selected, onContextCha
           await appKernel.commands.geo.respondScreenshot(session.id, screenshotRequest.requestId, { status: 'failed', reason: 'scene_revision_changed' });
           return;
         }
-        runtime.resize();
-        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-        const dataUrl = await runtime.captureScreenshot();
+        const dataUrl = await runtime.captureScreenshot(selected.revision);
         const result = await appKernel.commands.geo.respondScreenshot(session.id, screenshotRequest.requestId, { status: 'captured', dataUrl }) as { filename?: string };
         if (result.filename) setScreenshotNotice(t('geo.screenshotSaved', { filename: result.filename }));
       } catch (cause) {
@@ -150,7 +148,7 @@ export function GeoWorkspace({ session, active, envelope: selected, onContextCha
       const result = await appKernel.commands.geo.saveScreenshot(session.id, {
         visualizationId: selected.visualizationId,
         sceneRevision: selected.revision,
-        dataUrl: await runtime.captureScreenshot(),
+        dataUrl: await runtime.captureScreenshot(selected.revision),
       });
       setScreenshotNotice(t('geo.screenshotSaved', { filename: result.filename }));
     } catch (cause) { setNotice(t('geo.screenshotFailed', { error: (cause as Error).message })); }

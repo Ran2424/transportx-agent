@@ -143,6 +143,25 @@ caseTest('session rename uses the RPC port and updates live session state', asyn
   assert.deepEqual(fixture.actions, [{ type: 'session/updated', session: { id: 'session-1', sessionName: '晚高峰分析' } }]);
 });
 
+caseTest('late attachment lists cannot overwrite uploads, deletions or a newer list', async () => {
+  const attachment = { id: 'att-1', name: 'demand.csv', relativePath: 'attachments/att-1/demand.csv', status: 'ready' };
+  for (const mutation of ['upload', 'delete', 'list']) {
+    let release: (payload: unknown) => void = () => {};
+    const held = new Promise((resolve) => { release = resolve; });
+    let calls = 0;
+    const fixture = deps(() => ++calls === 1 ? held : { attachments: [attachment] });
+    const session = createSessionCommands(fixture.value);
+    const stale = session.listAttachments('session-1');
+    if (mutation === 'upload') await session.uploadAttachment({ sessionId: 'session-1', file: new File(['x'], 'demand.csv'), source: 'picker' });
+    else if (mutation === 'delete') await session.deleteAttachment('session-1', attachment.id);
+    else await session.listAttachments('session-1');
+    release({ attachments: [] });
+    await stale;
+    assert.deepEqual(fixture.actions.map((action) => action.type), [mutation === 'upload' ? 'session/attachmentAdded' : mutation === 'delete' ? 'session/attachmentRemoved' : 'session/attachmentsReceived']);
+    if (mutation === 'list') assert.deepEqual(fixture.actions[0].attachments, [attachment]);
+  }
+});
+
 caseTest('citation commands validate envelopes behind the HTTP command port', async () => {
   const citations = { protocol: 'pi-citation', version: '2.0', citationSetId: 'set-1', generatedAt: '2026-08-21T00:00:00.000Z', works: [], resources: [], locators: [], occurrences: [], provenance: [] };
   const fixture = deps((command) => command?.locatorId ? { marker: '[1]', citations } : { citations });

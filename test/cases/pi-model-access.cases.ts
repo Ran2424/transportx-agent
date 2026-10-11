@@ -8,8 +8,9 @@ const path = require('node:path');
 const { connectPiModelProvider, disconnectPiModelProvider, listAvailablePiModels, listPiModelProviders } = require('../../bin/pi-model-access.js');
 const { updatePiModel, deletePiModel, deletePiModelProvider } = require('../../bin/pi-model-config.js');
 
-caseTest('Pi provider access reuses auth.json in the configured TransportX directory', async () => {
+caseTest('Pi provider access reuses auth.json in the configured TransportX directory', async (t: any) => {
   const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-model-access-'));
+  t.after(() => fs.rmSync(agentDir, { recursive: true, force: true }));
   const before = await listPiModelProviders(agentDir);
   const candidate = before.find((provider: { id: string }) => provider.id === 'xiaomi-token-plan-cn');
   assert.ok(candidate);
@@ -24,12 +25,14 @@ caseTest('Pi provider access reuses auth.json in the configured TransportX direc
   assert.equal(fs.statSync(path.join(agentDir, 'auth.json')).mode & 0o777, 0o600);
   const models = await listAvailablePiModels(agentDir);
   const providerModels = models.filter((model: { provider: string }) => model.provider === candidate.id);
-  assert.equal(providerModels.length, candidate.modelCount);
+  // Login can refresh the provider catalog; availability must not depend on its previous count.
+  assert.ok(providerModels.length > 0, 'connecting a provider exposes usable models');
   assert.ok(providerModels.every((model: { id?: string; contextWindow?: number; maxOutput?: number }) => model.id && model.contextWindow && model.maxOutput));
 
   await disconnectPiModelProvider(candidate.id, agentDir);
   const after = await listPiModelProviders(agentDir);
   assert.equal(after.find((provider: { id: string; credentialStored: boolean }) => provider.id === candidate.id)?.credentialStored, false);
+  assert.equal((await listAvailablePiModels(agentDir)).some((model: { provider: string }) => model.provider === candidate.id), false);
 });
 
 caseTest('model settings update and delete persist in models.json', async () => {

@@ -20,6 +20,7 @@ import {
 import { usesLocalBasemapName } from './geo-basemap-labels.js';
 import { GeoChartImageManager } from './geo-chart-images.js';
 import { GeoInteractionController } from './geo-interaction-controller.js';
+import { assertMapCanvasRendered, captureRenderedMap } from './geo-screenshot.js';
 import type { GeoInteractionControllerEvent, GeoUserDraft } from './geo-interaction-controller.js';
 import {
   planGeoSceneUpdate,
@@ -241,10 +242,18 @@ class MapLibreGeoRuntime {
 
   clearUserDraft() { this.interactions?.clearDraft(); }
 
-  async captureScreenshot() {
-    if (!this.map || !this.scene) throw new Error('Map is not ready');
+  async captureScreenshot(expectedRevision: number) {
+    await this.updateQueue;
     await document.fonts.ready;
-    return composeScreenshot(this.map.getCanvas(), this.container, this.scene, this.visibilityOverrides);
+    const map = this.map, scene = this.scene;
+    const revision = this.revision;
+    if (!map || !scene || this.destroyed) throw new Error('Map is not ready');
+    if (revision !== expectedRevision) throw new Error('Map scene changed; retry the screenshot');
+    return captureRenderedMap(map, () => {
+      if (this.map !== map || this.scene !== scene || this.revision !== revision) throw new Error('Map scene changed; retry the screenshot');
+      assertMapCanvasRendered(map.getCanvas());
+      return composeScreenshot(map.getCanvas(), this.container, scene, this.visibilityOverrides);
+    });
   }
 
   getUserDraft() {

@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 import type { TestContext } from 'node:test';
+const { testSymlink } = require('../support/symlink.ts');
 
 process.env.TAU_HOST = '127.0.0.1';
 process.env.PI_CODING_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-http-'));
@@ -278,15 +279,14 @@ caseTest('video resources are bound to their owning session and validated manife
   assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/${resourceId}/data`)).status, 409);
 
   // A symlinked resource dir never escapes the session root.
-  if (process.platform !== 'win32') {
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-outside-'));
-    t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
-    fs.writeFileSync(path.join(outside, 'video.mp4'), 'secret');
-    fs.writeFileSync(path.join(outside, 'manifest.json'), '{}');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-video-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(outside, 'video.mp4'), 'secret');
+  fs.writeFileSync(path.join(outside, 'manifest.json'), '{}');
+  await testSymlink(t, 'symlinked video resource cannot escape the session root', outside, path.join(firstRoot, '.tau', 'video-resources', `video_${'e'.repeat(16)}`), async () => {
     const linkId = `video_${'e'.repeat(16)}`;
-    fs.symlinkSync(outside, path.join(firstRoot, '.tau', 'video-resources', linkId), 'dir');
     assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/video-resources/${linkId}/data`)).status, 403);
-  }
+  }, 'dir');
 });
 
 caseTest('video metric API exposes only declared, session-scoped time-series data', async (t: TestContext) => {
@@ -886,12 +886,12 @@ caseTest('history symlinks escaping the root are refused and SVG routes share sa
   const file = path.join(outside, 'secret.jsonl');
   fs.writeFileSync(file, '{"type":"session","cwd":"/tmp"}\n');
   const linked = path.join(SESSIONS_DIR, 'outside.jsonl');
-  fs.symlinkSync(file, linked);
-  t.after(() => fs.rmSync(linked, { force: true }));
-  const rejected = await fetch(`${base}/api/session-history?filePath=${encodeURIComponent(linked)}`);
-  assert.notEqual(rejected.status, 200);
-  assert.notEqual((await fetch(`${base}/api/sessions/./outside.jsonl`)).status, 200);
-  assert.equal((await rejected.text()).includes('"cwd":"/tmp"'), false);
+  await testSymlink(t, 'history symlink cannot expose files outside the root', file, linked, async () => {
+    const rejected = await fetch(`${base}/api/session-history?filePath=${encodeURIComponent(linked)}`);
+    assert.notEqual(rejected.status, 200);
+    assert.notEqual((await fetch(`${base}/api/sessions/./outside.jsonl`)).status, 200);
+    assert.equal((await rejected.text()).includes('"cwd":"/tmp"'), false);
+  });
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-svg-policy-'));
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   fs.writeFileSync(path.join(cwd, 'active.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>window.svgExecuted=true</script></svg>');

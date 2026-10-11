@@ -390,6 +390,12 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
 
 export function createSessionCommands(deps: CommandDeps): SessionCommands {
   const context = { category: 'session' as AppErrorCategory };
+  const attachmentGenerations = new Map<string, number>();
+  const advanceAttachments = (sessionId: string) => {
+    const generation = (attachmentGenerations.get(sessionId) || 0) + 1;
+    attachmentGenerations.set(sessionId, generation);
+    return generation;
+  };
   return {
     async list() {
       const data = await httpJson(deps.http, '/api/live-sessions', undefined, context);
@@ -453,9 +459,10 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     },
 
     async listAttachments(sessionId) {
+      const generation = advanceAttachments(sessionId);
       const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments`, undefined, { ...context, sessionId });
       const attachments = (data as { attachments?: SessionAttachment[] }).attachments ?? [];
-      deps.dispatch({ type: 'session/attachmentsReceived', sessionId, attachments });
+      if (attachmentGenerations.get(sessionId) === generation) deps.dispatch({ type: 'session/attachmentsReceived', sessionId, attachments });
       return attachments;
     },
 
@@ -465,12 +472,14 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments?source=${encodeURIComponent(source)}`, { method: 'POST', body: form }, { ...context, sessionId });
       const attachment = (data as { attachments?: SessionAttachment[] }).attachments?.[0];
       if (!attachment) throw appError({ code: 'attachment_upload_invalid_response', category: 'transport', message: '附件上传响应无效', sessionId, retryable: false });
+      advanceAttachments(sessionId);
       deps.dispatch({ type: 'session/attachmentAdded', sessionId, attachment });
       return attachment;
     },
 
     async deleteAttachment(sessionId, attachmentId) {
       await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }, { ...context, sessionId });
+      advanceAttachments(sessionId);
       deps.dispatch({ type: 'session/attachmentRemoved', sessionId, attachmentId });
     },
 

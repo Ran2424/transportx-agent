@@ -9,6 +9,7 @@ const yazl = require('yazl');
 
 const { ModuleInstaller, validateModulePackage } = require('../../bin/module-installer.js');
 const { ModuleRegistry } = require('../../bin/module-registry.js');
+const { testSymlink } = require('../support/symlink.ts');
 
 function temp(t: any, prefix: string) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -106,7 +107,7 @@ caseTest('legacy v1 packages migrate once to the versioned v2 store', (t: any) =
   validateModulePackage(source.packageRoot!, manifest);
 });
 
-caseTest('installer rejects loose resources, unsafe paths, symlinks and duplicate versions', (t: any) => {
+caseTest('installer rejects loose resources, unsafe paths, symlinks and duplicate versions', async (t: any) => {
   const root = temp(t, 'transportx-module-safety-');
   const managed = path.join(root, 'managed');
   const installer = new ModuleInstaller(managed);
@@ -121,11 +122,26 @@ caseTest('installer rejects loose resources, unsafe paths, symlinks and duplicat
   fs.writeFileSync(path.join(source, 'manifest.json'), JSON.stringify({ manifestVersion: 2, id: 'local.escape', name: 'Escape', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['../outside/SKILL.md'] } }));
   assert.throws(() => installer.install(source), /escapes/);
   writeAggregatePackage(source, 'local.safe');
-  fs.symlinkSync(path.join(source, 'manifest.json'), path.join(source, 'link.json'));
-  assert.throws(() => installer.install(source), /symbolic links/);
-  fs.unlinkSync(path.join(source, 'link.json'));
+  await testSymlink(t, 'rejects symbolic links when the host permits creating them', path.join(source, 'manifest.json'), path.join(source, 'link.json'), () => {
+    assert.throws(() => installer.install(source), /symbolic links/);
+  });
   installer.install(source);
   assert.throws(() => installer.install(source), /already installed/);
+});
+
+caseTest('missing symlink privileges skip only the symlink scenario', async (t: any) => {
+  const root = temp(t, 'transportx-symlink-permission-');
+  let verified = false;
+  const original = fs.symlinkSync;
+  fs.symlinkSync = () => { throw Object.assign(new Error('missing symbolic link privilege'), { code: 'EPERM' }); };
+  try { await testSymlink(t, 'host has no symlink privilege', path.join(root, 'target'), path.join(root, 'link'), () => { verified = true; }); }
+  finally { fs.symlinkSync = original; }
+  assert.equal(verified, false);
+  const source = path.join(root, 'source');
+  writeAggregatePackage(source);
+  const installer = new ModuleInstaller(path.join(root, 'managed'));
+  installer.install(source);
+  assert.throws(() => installer.install(source), /already installed/, 'other installation checks still execute');
 });
 
 caseTest('catalog exposes every installed version and selections resolve exactly', (t: any) => {

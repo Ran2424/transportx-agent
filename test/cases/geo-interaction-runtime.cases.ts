@@ -100,3 +100,56 @@ caseTest('Geo layer compiler includes four independent interaction states', asyn
   const serialized = JSON.stringify(rendered.specs);
   for (const name of ['selectedForRequest', 'selectedByUser', 'selectedByAgent', 'hovered']) assert.match(serialized, new RegExp(name));
 });
+
+caseTest('Geo screenshots capture only after idle and release listeners on every terminal path', async (t: any) => {
+  // @ts-expect-error This test exercises the compiled browser artifact, which has no declaration file.
+  const { captureRenderedMap } = await import('../../public/visualization/geo/geo-screenshot.js');
+  const makeMap = () => {
+    const handlers = new Map<string, Set<() => void>>();
+    const canvas = new EventTarget();
+    let resized = false, repainted = false;
+    return {
+      handlers, canvas,
+      on(type: string, handler: () => void) { const bucket = handlers.get(type) || new Set(); bucket.add(handler); handlers.set(type, bucket); },
+      off(type: string, handler: () => void) { handlers.get(type)?.delete(handler); },
+      getCanvas: () => canvas,
+      resize() { resized = true; },
+      triggerRepaint() { repainted = true; },
+      fire(type: string) { for (const handler of handlers.get(type) || []) handler(); },
+      ready: () => resized && repainted,
+      listenerCount: () => [...handlers.values()].reduce((count, bucket) => count + bucket.size, 0),
+    };
+  };
+  await t.test('waits for resource rendering and repaints an already idle map', async () => {
+    const map = makeMap();
+    let captures = 0;
+    const capture = captureRenderedMap(map, () => { captures++; return 'rendered PNG'; });
+    assert.equal(map.ready(), true);
+    map.fire('render');
+    assert.equal(captures, 0, 'a render frame before tiles settle is insufficient');
+    map.fire('idle');
+    assert.equal(await capture, 'rendered PNG');
+    assert.equal(captures, 1);
+    assert.equal(map.listenerCount(), 0);
+  });
+  for (const event of ['remove', 'error', 'webglcontextlost']) await t.test(`refuses capture after ${event}`, async () => {
+    const map = makeMap();
+    const capture = captureRenderedMap(map, () => assert.fail('must not capture an unavailable map'));
+    const rejected = assert.rejects(capture, /closed|resources failed|context was lost/);
+    if (event === 'webglcontextlost') map.canvas.dispatchEvent(new Event(event));
+    else map.fire(event);
+    await rejected;
+    assert.equal(map.listenerCount(), 0);
+    map.fire('idle');
+  });
+  await t.test('rejects maps that never finish rendering and capture failures', async () => {
+    const map = makeMap();
+    await assert.rejects(captureRenderedMap(map, () => assert.fail('must not save before idle'), 10), /timed out/);
+    assert.equal(map.listenerCount(), 0);
+    const failed = captureRenderedMap(map, () => { throw new Error('blank canvas'); });
+    const rejected = assert.rejects(failed, /blank canvas/);
+    map.fire('idle');
+    await rejected;
+    assert.equal(map.listenerCount(), 0);
+  });
+});
