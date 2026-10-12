@@ -132,6 +132,29 @@ caseTest('a lease without a readable owner is reclaimed once the grace period pa
   release();
 });
 
+caseTest('a fresh lease without owner.json belongs to a starting writer and is refused', (t: any) => {
+  const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-starting-writer-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const lock = path.join(root, 'host.transportx-lock');
+  // Simulates a concurrent startup that has created the lock directory but has
+  // not published owner.json yet: the lease must NOT be reclaimed.
+  fs.mkdirSync(lock);
+  assert.throws(() => acquireWriteLease(path.join(root, 'host')), /writer/);
+  assert.ok(fs.existsSync(lock), 'the starting writer\'s lock is left intact');
+});
+
+caseTest('a fresh lease with a corrupt owner.json is refused within the grace period', (t: any) => {
+  const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-corrupt-owner-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const lock = path.join(root, 'host.transportx-lock');
+  fs.mkdirSync(lock);
+  fs.writeFileSync(path.join(lock, 'owner.json'), '{broken');
+  assert.throws(() => acquireWriteLease(path.join(root, 'host')), /writer/);
+  assert.ok(fs.existsSync(lock), 'a possibly-starting writer\'s lock is left intact');
+});
+
 caseTest('failed atomic replacement preserves the target, backup and removes temporary files', (t: any) => {
   const { writeJsonAtomic } = require('../../bin/util/json-storage.js');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-json-interrupt-'));

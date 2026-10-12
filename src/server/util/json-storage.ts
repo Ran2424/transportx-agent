@@ -45,31 +45,44 @@ function sleepSync(milliseconds: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+/** How long a lock without a readable owner.json is still attributed to a starting writer. */
+const LEASE_GRACE_MS = 5_000;
+
+function removeLockDir(lock: string): boolean {
+  try { fs.rmSync(lock, { recursive: true, force: true }); return true; }
+  catch { return false; }
+}
+
 /**
- * Returns true when the existing lock was abandoned by a dead process and has
- * been reclaimed. Returns false when a live writer still owns it (or the lock
- * is too fresh to judge), in which case the caller must refuse to proceed.
+ * Returns true only when the existing lock was provably abandoned and has been
+ * reclaimed. Returns false whenever a live writer may still own it, in which
+ * case the caller must refuse to proceed.
  */
 function reclaimStaleLease(lock: string): boolean {
   const ownerPath = path.join(lock, 'owner.json');
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    // Read owner.json directly: readJsonObject() returns {} for a missing file,
+    // which would masquerade as a legible owner with a dead (undefined) pid.
     let owner: Record<string, unknown> | null = null;
-    try { owner = readJsonObject(ownerPath); } catch { owner = null; }
-    if (owner) {
-      // A legible owner whose process is still running keeps the lease.
-      if (isProcessAlive(owner.pid)) return false;
-      break; // Owner process is gone: the lease is abandoned.
-    }
-    // owner.json missing/corrupt. The writer publishes it immediately after
-    // mkdir, so a fresh lock may belong to a concurrent startup; wait briefly
-    // and re-read before declaring it abandoned.
     try {
-      if (Date.now() - fs.statSync(lock).mtimeMs < 5_000) { sleepSync(200); continue; }
+      const parsed: unknown = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) owner = parsed as Record<string, unknown>;
+    } catch { owner = null; }
+    if (owner) {
+      // A legible owner whose process is still running keeps the lease;
+      // a legible owner whose process is gone has abandoned it, regardless of age.
+      return isProcessAlive(owner.pid) ? false : removeLockDir(lock);
+    }
+    // owner.json is missing or unreadable. A concurrent startup publishes it
+    // immediately after mkdir, so only reclaim once the lock predates the grace
+    // window; otherwise wait briefly and re-read.
+    try {
+      if (Date.now() - fs.statSync(lock).mtimeMs >= LEASE_GRACE_MS) return removeLockDir(lock);
     } catch { return false; }
-    break; // Lock is old and has no readable owner: abandoned.
+    sleepSync(200);
   }
-  try { fs.rmSync(lock, { recursive: true, force: true }); return true; }
-  catch { return false; }
+  // Still fresh and unpublished after retries: assume a live writer owns it.
+  return false;
 }
 
 /** A second live writer is refused; leases abandoned by dead processes are reclaimed. */
