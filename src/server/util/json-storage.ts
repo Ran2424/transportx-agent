@@ -35,57 +35,53 @@ export function writeJsonAtomic(file: string, value: unknown) {
   replace(file, Buffer.from(`${JSON.stringify(value, null, 2)}\n`));
 }
 
-function isProcessAlive(pid: unknown): boolean {
-  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (cause) { return (cause as NodeJS.ErrnoException).code === 'EPERM'; }
+const NONCE_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+type LeaseOwner = { pid: number; nonce: string };
+function readLease(lock: string): { file: string; owner: LeaseOwner } | null {
+  try {
+    const files = fs.readdirSync(lock);
+    if (files.length !== 1) return null;
+    const file = path.join(lock, files[0]);
+    const owner = JSON.parse(fs.readFileSync(file, 'utf8')) as LeaseOwner;
+    if (!owner || !Number.isInteger(owner.pid) || owner.pid <= 0 || typeof owner.nonce !== 'string' || !NONCE_PATTERN.test(owner.nonce)) return null;
+    if (files[0] !== 'owner.json' && files[0] !== `owner.${owner.nonce}.json`) return null;
+    return { file, owner };
+  } catch { return null; }
 }
 
-function sleepSync(milliseconds: number) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+function processExited(pid: number): boolean {
+  try { process.kill(pid, 0); return false; }
+  catch (cause) { return (cause as NodeJS.ErrnoException).code === 'ESRCH'; }
 }
 
-/** How long a lock without a readable owner.json is still attributed to a starting writer. */
-const LEASE_GRACE_MS = 5_000;
-
-function removeLockDir(lock: string): boolean {
-  try { fs.rmSync(lock, { recursive: true, force: true }); return true; }
-  catch { return false; }
+function removeLeaseOwner(lock: string, file: string): boolean {
+  // Only one contender can unlink this generation. A losing contender must not
+  // remove the directory: it may already contain a new writer's owner file.
+  try { fs.unlinkSync(file); } catch { return false; }
+  try { fs.rmdirSync(lock); return true; } catch { return false; }
 }
 
-/**
- * Returns true only when the existing lock was provably abandoned and has been
- * reclaimed. Returns false whenever a live writer may still own it, in which
- * case the caller must refuse to proceed.
- */
 function reclaimStaleLease(lock: string): boolean {
-  const ownerPath = path.join(lock, 'owner.json');
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    // Read owner.json directly: readJsonObject() returns {} for a missing file,
-    // which would masquerade as a legible owner with a dead (undefined) pid.
-    let owner: Record<string, unknown> | null = null;
-    try {
-      const parsed: unknown = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) owner = parsed as Record<string, unknown>;
-    } catch { owner = null; }
-    if (owner) {
-      // A legible owner whose process is still running keeps the lease;
-      // a legible owner whose process is gone has abandoned it, regardless of age.
-      return isProcessAlive(owner.pid) ? false : removeLockDir(lock);
+  const lease = readLease(lock);
+  if (!lease || !processExited(lease.owner.pid)) return false;
+  let file = lease.file;
+  if (path.basename(file) === 'owner.json') {
+    // Migrate the previous format before claiming it. New writers never reuse
+    // owner.json, so a delayed legacy contender cannot unlink their owner.
+    const migrated = path.join(lock, `owner.${lease.owner.nonce}.json`);
+    try { fs.renameSync(file, migrated); } catch { return false; }
+    const current = readLease(lock);
+    if (!current || current.owner.nonce !== lease.owner.nonce || current.owner.pid !== lease.owner.pid) {
+      try { fs.renameSync(migrated, file); } catch {}
+      return false;
     }
-    // owner.json is missing or unreadable. A concurrent startup publishes it
-    // immediately after mkdir, so only reclaim once the lock predates the grace
-    // window; otherwise wait briefly and re-read.
-    try {
-      if (Date.now() - fs.statSync(lock).mtimeMs >= LEASE_GRACE_MS) return removeLockDir(lock);
-    } catch { return false; }
-    sleepSync(200);
+    file = migrated;
   }
-  // Still fresh and unpublished after retries: assume a live writer owns it.
-  return false;
+  return removeLeaseOwner(lock, file);
 }
 
-/** A second live writer is refused; leases abandoned by dead processes are reclaimed. */
+/** Refuse unverified/live owners; reclaim only a confirmed dead generation. */
 export function acquireWriteLease(target: string) {
   const lock = `${target}.transportx-lock`;
   fs.mkdirSync(path.dirname(lock), { recursive: true, mode: 0o700 });
@@ -94,22 +90,23 @@ export function acquireWriteLease(target: string) {
     catch (cause) {
       if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
       if (attempt === 0 && reclaimStaleLease(lock)) continue;
-      throw Object.assign(new Error(`Another live writer owns ${lock}. Stop its processes before retrying.`), { code: 'writer_busy', status: 409 });
+      throw Object.assign(new Error(`Another writer owns ${lock}, or its owner cannot be verified. Stop its processes and inspect the lock before retrying.`), { code: 'writer_busy', status: 409 });
     }
   }
   const nonce = crypto.randomUUID();
-  try { fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, nonce, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' }); }
-  catch (error) { fs.rmSync(lock, { recursive: true, force: true }); throw error; }
+  const ownerFile = path.join(lock, `owner.${nonce}.json`);
+  try { fs.writeFileSync(ownerFile, JSON.stringify({ pid: process.pid, nonce, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' }); }
+  catch (error) { try { fs.rmdirSync(lock); } catch {} throw error; }
   return () => {
-    const owner = readJsonObject(path.join(lock, 'owner.json'));
-    if (owner.nonce === nonce) fs.rmSync(lock, { recursive: true });
+    const lease = readLease(lock);
+    if (lease?.owner.nonce === nonce) removeLeaseOwner(lock, ownerFile);
   };
 }
 
 export function assertHostWriter(agentDir: string) {
-  const ownerPath = path.join(agentDir, 'host.transportx-lock', 'owner.json');
-  if (!fs.existsSync(path.dirname(ownerPath))) return;
-  if (readJsonObject(ownerPath).pid !== process.pid) throw Object.assign(new Error('Another Host owns this Agent directory'), { code: 'writer_busy', status: 409 });
+  const lock = path.join(agentDir, 'host.transportx-lock');
+  if (!fs.existsSync(lock)) return;
+  if (readLease(lock)?.owner.pid !== process.pid) throw Object.assign(new Error('Another Host owns this Agent directory, or its owner cannot be verified'), { code: 'writer_busy', status: 409 });
 }
 
 const mutations = new Map<string, Promise<unknown>>();

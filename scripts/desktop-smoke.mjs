@@ -146,6 +146,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!stopped) throw new Error('Agent Host remained reachable after Electron exit');
+  if (fs.existsSync(path.join(dataRoot, 'host.transportx-lock'))) throw new Error('Host lease remained after normal desktop exit');
   console.log(`Desktop smoke passed: ${title} (${brand.replace(/\s+/g, ' ').trim()})`);
 } finally {
   try { await app.close(); } catch {}
