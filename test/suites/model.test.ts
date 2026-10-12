@@ -142,6 +142,22 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
         assert.deepEqual(fs.readdirSync(lock), before);
         fs.rmSync(lock, { recursive: true });
       }
+      const { testSymlink } = require('../support/symlink.ts');
+      const outside = path.join(root, 'outside');
+      fs.mkdirSync(outside);
+      const outsideOwner = path.join(outside, 'owner.json');
+      const outsideBytes = JSON.stringify({ pid: deadPid, nonce: crypto.randomUUID() });
+      fs.writeFileSync(outsideOwner, outsideBytes);
+      await testSymlink(t, 'a lock directory symlink cannot reclaim an external owner', outside, lock, () => {
+        assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy');
+        assert.equal(fs.readFileSync(outsideOwner, 'utf8'), outsideBytes);
+      }, 'dir');
+      fs.mkdirSync(lock);
+      await testSymlink(t, 'an owner symlink cannot be reclaimed', outsideOwner, path.join(lock, 'owner.json'), () => {
+        assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy');
+        assert.equal(fs.readFileSync(outsideOwner, 'utf8'), outsideBytes);
+      }, 'file');
+      fs.rmdirSync(lock);
       const kill = process.kill;
       for (const code of ['EPERM', 'EINVAL']) {
         const file = writeOwner(false);

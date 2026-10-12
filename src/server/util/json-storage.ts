@@ -40,9 +40,11 @@ const NONCE_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]
 type LeaseOwner = { pid: number; nonce: string };
 function readLease(lock: string): { file: string; owner: LeaseOwner } | null {
   try {
+    if (!fs.lstatSync(lock).isDirectory()) return null;
     const files = fs.readdirSync(lock);
     if (files.length !== 1) return null;
     const file = path.join(lock, files[0]);
+    if (!fs.lstatSync(file).isFile()) return null;
     const owner = JSON.parse(fs.readFileSync(file, 'utf8')) as LeaseOwner;
     if (!owner || !Number.isInteger(owner.pid) || owner.pid <= 0 || typeof owner.nonce !== 'string' || !NONCE_PATTERN.test(owner.nonce)) return null;
     if (files[0] !== 'owner.json' && files[0] !== `owner.${owner.nonce}.json`) return null;
