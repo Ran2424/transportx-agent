@@ -222,7 +222,7 @@ sequenceDiagram
 - 可靠命令的 pending/unknown 记录不会因 TTL 淘汰。完成记录保留 10 分钟或 200 条容量范围，Host 重启不保证去重；未知结果禁止自动重发，不提供无条件 exactly-once。
 - Snapshot 表示当前分支及 live overlay。每次 Host 启动生成 UUID，WS 事件递增 revision；客户端以请求代次和连接代次拒绝迟到结果，回放快照读取期间更新的事件。缓冲超限拒绝快照并安排后续校正。
 - close、resume、历史 delete 共用 Writer 门禁；删除必须等待 Writer 和受管作业停止，停止失败保留文件。Host 最多 32 会话、4 受管作业/分析进程，每会话最多 2 作业；这些限制不覆盖 Pi bash 自行启动的全部进程。
-- 同一 Agent 目录只允许一个 Host，租约在异常退出后保留，恢复前需停止旧 Writer；settings/models/附件索引损坏拒绝覆盖并保全证据。资源策略、恢复步骤与兼容范围见 [整改 ADR](ADR-架构整改边界.md)。
+- 同一 Agent 目录只允许一个 Host；正常退出通过 IPC 释放租约，异常退出后仅在确认 owner PID 已退出时自动回收。owner 文件按 nonce 分代，回收者只能删除已检查的那一代；兼容旧 owner.json，缺失、损坏或进程状态无法确认时拒绝接管；settings/models/附件索引损坏拒绝覆盖并保全证据。资源策略、恢复步骤与兼容范围见 [整改 ADR](ADR-架构整改边界.md)。
 
 ## 5. Module 与资产模型
 
@@ -384,12 +384,12 @@ Geo runtime ────────────────> contracts + MapLib
 
 ## 10. 场景验证
 
-测试使用原生 Node subtest 显示场景名、skip/todo 和失败。套件 after 钩子由 Node 在所有子测试结束后执行。测试入口按领域场景划分；`test/suites/` 是 Node 测试门禁，最多注册 40 个套件，`test/cases/` 只承载可合并的细粒度场景，不单独注册测试入口。
+测试在 `test/suites/*.test.ts` 中直接注册，实际节点总数不得超过 40（包含 skip、todo 和子测试）。关键场景内直接执行断言，不保留 case 回调列表或注册子测试。预算脚本通过 AST 禁止注册别名、循环及条件注册，运行时报告器再次检查实际节点总数。环境缺少权限时仅 diagnostic 说明受限断言。
 
 | 入口 | 场景 | 运行条件 |
 |---|---|---|
-| `npm test` | 构建、40 个以内的领域测试套件，以及 Agent Host、Module、协议与安全边界回归 | 任意开发主机 |
-| `npm run test:budget` | 校验测试套件不超过 40 个，并确保每个 case 文件只被注册一次 | 任意开发主机 |
+| `npm test` | 构建、40 个以内的实际测试节点，以及 Agent Host、Module、协议与安全边界回归 | 任意开发主机 |
+| `npm run test:budget` | 校验实际测试总数不超过 40，拒绝隐藏注册和子测试 | 任意开发主机 |
 | `npm run test:web` | 浏览器中创建交通任务、获得分析、发布地图 | 本机 Chrome + fake Pi |
 | `npm run test:platform:macos` | Electron、Agent Host、PDF、内置 Python、退出清理 | macOS；可用 `TRANSPORTX_PACKAGED_APP` 验证 DMG/.app |
 | `npm run test:platform:windows` | Windows 未安装应用启动，或 NSIS 安装/启动/卸载/数据保留 | Windows x64；设置 `TRANSPORTX_PACKAGED_APP` 或 `TRANSPORTX_WINDOWS_INSTALLER` |
