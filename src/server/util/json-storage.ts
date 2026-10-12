@@ -35,14 +35,54 @@ export function writeJsonAtomic(file: string, value: unknown) {
   replace(file, Buffer.from(`${JSON.stringify(value, null, 2)}\n`));
 }
 
-/** A second writer is refused; abandoned leases require explicit recovery. */
+function isProcessAlive(pid: unknown): boolean {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (cause) { return (cause as NodeJS.ErrnoException).code === 'EPERM'; }
+}
+
+function sleepSync(milliseconds: number) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+/**
+ * Returns true when the existing lock was abandoned by a dead process and has
+ * been reclaimed. Returns false when a live writer still owns it (or the lock
+ * is too fresh to judge), in which case the caller must refuse to proceed.
+ */
+function reclaimStaleLease(lock: string): boolean {
+  const ownerPath = path.join(lock, 'owner.json');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let owner: Record<string, unknown> | null = null;
+    try { owner = readJsonObject(ownerPath); } catch { owner = null; }
+    if (owner) {
+      // A legible owner whose process is still running keeps the lease.
+      if (isProcessAlive(owner.pid)) return false;
+      break; // Owner process is gone: the lease is abandoned.
+    }
+    // owner.json missing/corrupt. The writer publishes it immediately after
+    // mkdir, so a fresh lock may belong to a concurrent startup; wait briefly
+    // and re-read before declaring it abandoned.
+    try {
+      if (Date.now() - fs.statSync(lock).mtimeMs < 5_000) { sleepSync(200); continue; }
+    } catch { return false; }
+    break; // Lock is old and has no readable owner: abandoned.
+  }
+  try { fs.rmSync(lock, { recursive: true, force: true }); return true; }
+  catch { return false; }
+}
+
+/** A second live writer is refused; leases abandoned by dead processes are reclaimed. */
 export function acquireWriteLease(target: string) {
   const lock = `${target}.transportx-lock`;
   fs.mkdirSync(path.dirname(lock), { recursive: true, mode: 0o700 });
-  try { fs.mkdirSync(lock, { mode: 0o700 }); }
-  catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
-    throw Object.assign(new Error(`Another writer owns ${lock}. If it crashed, stop its processes and recover the lease before retrying.`), { code: 'writer_busy', status: 409 });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try { fs.mkdirSync(lock, { mode: 0o700 }); break; }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
+      if (attempt === 0 && reclaimStaleLease(lock)) continue;
+      throw Object.assign(new Error(`Another live writer owns ${lock}. Stop its processes before retrying.`), { code: 'writer_busy', status: 409 });
+    }
   }
   const nonce = crypto.randomUUID();
   try { fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, nonce, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' }); }

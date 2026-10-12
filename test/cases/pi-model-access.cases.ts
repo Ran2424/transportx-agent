@@ -103,6 +103,35 @@ caseTest('another process cannot take a Host lease or mutate its Agent directory
   assert.equal(output.trim().split('\n').length, 2);
 });
 
+caseTest('a lease abandoned by a dead process is reclaimed automatically', (t: any) => {
+  const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+  const { execFileSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-stale-lease-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // The child takes the lease and exits without releasing it, simulating a crash.
+  execFileSync(process.execPath, ['-e', `const {acquireWriteLease}=require('./bin/util/json-storage.js');acquireWriteLease(require('path').join(process.argv[1],'host'))`, root], { cwd: process.cwd(), encoding: 'utf8' });
+  assert.ok(fs.existsSync(path.join(root, 'host.transportx-lock', 'owner.json')));
+  // The owner is dead: acquisition must reclaim the lease instead of throwing writer_busy.
+  const release = acquireWriteLease(path.join(root, 'host'));
+  const owner = JSON.parse(fs.readFileSync(path.join(root, 'host.transportx-lock', 'owner.json'), 'utf8'));
+  assert.equal(owner.pid, process.pid);
+  release();
+  assert.equal(fs.existsSync(path.join(root, 'host.transportx-lock')), false);
+});
+
+caseTest('a lease without a readable owner is reclaimed once the grace period passed', (t: any) => {
+  const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-orphan-lease-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const lock = path.join(root, 'host.transportx-lock');
+  fs.mkdirSync(lock);
+  // No owner.json, and the lock predates the grace period: treat as abandoned.
+  const past = new Date(Date.now() - 60_000);
+  fs.utimesSync(lock, past, past);
+  const release = acquireWriteLease(path.join(root, 'host'));
+  release();
+});
+
 caseTest('failed atomic replacement preserves the target, backup and removes temporary files', (t: any) => {
   const { writeJsonAtomic } = require('../../bin/util/json-storage.js');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-json-interrupt-'));
