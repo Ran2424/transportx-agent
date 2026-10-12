@@ -88,8 +88,7 @@ test('Module install, migration and ZIP selection enforce paths, checksums and e
       }));
       const installed = new ModuleInstaller(managed).install(source);
       assert.equal(fs.existsSync(path.join(installed.path, 'runtime', 'ffmpeg')), true);
-      if (require('../../bin/host-platform.js').hostPlatform.posixPermissions) assert.notEqual(fs.statSync(path.join(installed.path, 'runtime', 'ffmpeg')).mode & 0o111, 0);
-      else t.diagnostic('Windows executable permissions cannot be verified through POSIX mode bits');
+      assert.notEqual(fs.statSync(path.join(installed.path, 'runtime', 'ffmpeg')).mode & 0o111, 0);
       fs.writeFileSync(path.join(source, 'runtime', 'ffmpeg'), 'tampered');
       assert.throws(() => validateModulePackage(source, JSON.parse(fs.readFileSync(path.join(source, 'manifest.json'), 'utf8'))), /checksum mismatch/);
     }
@@ -151,8 +150,8 @@ test('Module install, migration and ZIP selection enforce paths, checksums and e
     installer.install(second);
     assert.deepEqual(installer.catalog().map((entry: any) => entry.version), ['1.0.0', '2.0.0']);
     const selected = installer.sourcesForSelections([{ id: 'local.catalog', version: '1.0.0' }]);
-    assert.match(selected[0].manifestPath, /1\.0\.0\/manifest\.json$/);
-    assert.match(installer.sources()[0].manifestPath, /2\.0\.0\/manifest\.json$/);
+    assert.equal(selected[0].manifestPath, path.join(managed, 'local.catalog', '1.0.0', 'manifest.json'));
+    assert.equal(installer.sources()[0].manifestPath, path.join(managed, 'local.catalog', '2.0.0', 'manifest.json'));
     assert.throws(() => installer.sourcesForSelections([{ id: 'local.catalog', version: '3.0.0' }]), /not installed/);
   }
 
