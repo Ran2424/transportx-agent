@@ -39,3 +39,4 @@ jobs:
       - run: npm run test:budget
       - run: npm run typecheck
       - run: ${{ matrix.command }}
+      - run: node scripts/desktop-smoke.mjs
