@@ -6,7 +6,7 @@ export async function testSymlink(context: TestContext, name: string, target: st
   catch (cause) {
     const code = (cause as NodeJS.ErrnoException).code;
     if (!['EPERM', 'EACCES', 'ENOTSUP'].includes(code || '')) throw cause;
-    await context.test(name, { skip: `Host cannot create symbolic links: ${code}` }, () => {});
+    context.diagnostic(`${name}: not checked; host cannot create symbolic links (${code})`);
     return;
   }
   try { await verify(); }

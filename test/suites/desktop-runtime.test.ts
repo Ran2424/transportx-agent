@@ -1,3 +1,453 @@
-const { registerSuite } = require('../support/test-suite.ts');
-require('../cases/desktop-runtime.cases.ts');
-registerSuite('desktop-runtime');
+const { test } = require('node:test') as typeof import('node:test');
+
+test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and platform boundaries', async (t) => {
+  const assert = require('node:assert/strict');
+  const crypto = require('node:crypto');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { loadRuntimeManifest, validateRuntimeManifest } = require('../../bin/runtime-resolver.js');
+
+  function digest(filePath: string) {
+    return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  }
+
+  // desktop updates require explicit download and install, deduplicate actions and recover failures
+  {
+    const { EventEmitter } = require('node:events');
+    const { UpdateService } = require('../../dist-desktop/update-service.js');
+    let checks = 0, downloads = 0, installs = 0, preparations = 0, recoveries = 0;
+    let busy = false;
+    const updater = new EventEmitter();
+    updater.checkForUpdates = async () => { checks += 1; updater.emit('update-available', { version: '3.23.0', releaseNotes: '<script>plain text</script>' }); };
+    updater.downloadUpdate = async () => { downloads += 1; updater.emit('download-progress', { percent: 40 }); updater.emit('update-downloaded', { version: '3.23.0', releaseNotes: 'Notes' }); };
+    updater.quitAndInstall = () => { installs += 1; };
+    const service = new UpdateService(updater, '3.22.0', true, {
+      prepare: async () => { preparations += 1; if (busy) throw Object.assign(new Error('busy'), { code: 'host_busy' }); },
+      recover: async () => { recoveries += 1; },
+      onInstalling: () => { },
+    });
+    assert.equal(updater.autoDownload, false);
+    assert.equal(updater.autoInstallOnAppQuit, false);
+    assert.equal(updater.allowDowngrade, false);
+    await service.install();
+    assert.equal(preparations, 0);
+    const check = service.check();
+    assert.equal(service.check(), check);
+    await check;
+    assert.equal(checks, 1);
+    assert.equal(downloads, 0);
+    assert.equal(service.getState().phase, 'available');
+    const download = service.download();
+    assert.equal(service.download(), download);
+    await download;
+    assert.equal(downloads, 1);
+    assert.equal(service.getState().percent, 100);
+    busy = true;
+    await service.install();
+    assert.equal(service.getState().phase, 'downloaded');
+    assert.equal(service.getState().errorCode, 'host_busy');
+    assert.equal(installs, 0);
+    assert.equal(recoveries, 1);
+    busy = false;
+    const install = service.install();
+    assert.equal(service.install(), install);
+    await install;
+    assert.equal(installs, 1);
+    updater.emit('error', new Error('https://host/token=secret'));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(service.getState().errorCode, 'install_failed');
+    assert.equal(JSON.stringify(service.getState()).includes('secret'), false);
+    let notifications = 0;
+    const unsubscribe = service.subscribe(() => { notifications += 1; });
+    unsubscribe();
+    updater.emit('update-not-available', {});
+    assert.equal(notifications, 0);
+    service.dispose();
+    assert.equal(updater.listenerCount('error'), 0);
+  }
+
+  // update check/download failures keep the application running and support retries
+  {
+    const { EventEmitter } = require('node:events');
+    const { UpdateService } = require('../../dist-desktop/update-service.js');
+    const updater = new EventEmitter();
+    updater.checkForUpdates = async () => { throw new Error('403'); };
+    updater.downloadUpdate = async () => { throw new Error('checksum failed'); };
+    updater.quitAndInstall = () => { throw new Error('must not install'); };
+    const service = new UpdateService(updater, '3.22.0', true, { prepare: async () => { }, recover: async () => { }, onInstalling: () => { } });
+    await service.check();
+    assert.equal(service.getState().errorCode, 'check_failed');
+    updater.checkForUpdates = async () => updater.emit('update-available', { version: '3.23.0' });
+    await service.check();
+    await service.download();
+    assert.equal(service.getState().errorCode, 'download_failed');
+    await service.install();
+    updater.downloadUpdate = async () => updater.emit('update-downloaded', { version: '3.23.0' });
+    await service.download();
+    assert.equal(service.getState().phase, 'downloaded');
+    service.dispose();
+    const disabled = new UpdateService(updater, '3.22.0', false, { prepare: async () => { }, recover: async () => { }, onInstalling: () => { } });
+    await disabled.check();
+    assert.equal(disabled.getState().phase, 'disabled');
+    disabled.dispose();
+  }
+
+  // update IPC rejects unrelated windows, subframes and foreign origins
+  {
+    const { assertUpdateSender } = require('../../dist-desktop/update-service.js');
+    const frame = { url: 'http://127.0.0.1:3000/' };
+    const contents = { mainFrame: frame };
+    const window = { webContents: contents };
+    const event = { sender: contents, senderFrame: frame };
+    assert.doesNotThrow(() => assertUpdateSender(event, window, 'http://127.0.0.1:3000'));
+    assert.throws(() => assertUpdateSender(event, null, 'http://127.0.0.1:3000'));
+    assert.throws(() => assertUpdateSender({ ...event, sender: {} }, window, 'http://127.0.0.1:3000'));
+    assert.throws(() => assertUpdateSender({ ...event, senderFrame: { ...frame } }, window, 'http://127.0.0.1:3000'));
+    assert.throws(() => assertUpdateSender(event, window, 'https://example.org'));
+  }
+
+  // cache restoration uses the pinned updater verifier and never downloads on a miss
+  {
+    const { AppUpdater } = require('electron-updater/out/AppUpdater.js');
+    const { DownloadedUpdateHelper } = require('electron-updater/out/DownloadedUpdateHelper.js');
+    const { restoreCachedUpdate } = require('../../dist-desktop/update-cache.js');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-update-cache-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const body = Buffer.from('verified cached installer');
+    const sha512 = crypto.createHash('sha512').update(body).digest('base64');
+    const info = { version: '3.23.0', files: [{ url: 'installer.zip', size: body.length, sha512 }] };
+    let networkDownloads = 0;
+    class CacheTestUpdater extends AppUpdater {
+      constructor() {
+        super(null, { version: '3.22.0', name: 'TransportX', isPackaged: true });
+        this.logger = { info() { }, warn() { }, error() { } };
+        this.downloadedUpdateHelper = new DownloadedUpdateHelper(root);
+        this.updateInfoAndProvider = { info, provider: {} };
+      }
+      getOrCreateDownloadHelper() { return Promise.resolve(this.downloadedUpdateHelper); }
+      doDownloadUpdate(options: any) {
+        return this.executeDownload({
+          fileExtension: 'zip', fileInfo: { url: new URL('https://updates.test/installer.zip'), info: info.files[0] }, downloadUpdateOptions: options,
+          task: async (destination: string) => { networkDownloads += 1; fs.writeFileSync(destination, body); },
+          done: async (event: any) => this.dispatchUpdateDownloaded(event),
+        });
+      }
+    }
+    const pending = path.join(root, 'pending');
+    fs.mkdirSync(pending);
+    fs.writeFileSync(path.join(pending, 'installer.zip'), body);
+    fs.writeFileSync(path.join(pending, 'update-info.json'), JSON.stringify({ fileName: 'installer.zip', sha512 }));
+    const updater = new CacheTestUpdater();
+    let restored = 0;
+    updater.on('update-downloaded', () => { restored += 1; });
+    const execute = updater.executeDownload;
+    assert.equal(await restoreCachedUpdate(updater), true);
+    assert.equal(restored, 1);
+    assert.equal(networkDownloads, 0);
+    assert.equal(updater.executeDownload, execute);
+    // A new launch must rehash the file, even if the previous launch accepted it.
+    fs.writeFileSync(path.join(pending, 'installer.zip'), 'corrupt');
+    const restarted = new CacheTestUpdater();
+    assert.equal(await restoreCachedUpdate(restarted), false);
+    assert.equal(networkDownloads, 0);
+    assert.equal(await restoreCachedUpdate(new CacheTestUpdater()), false);
+    assert.equal(networkDownloads, 0);
+    // A subsequent explicit download still uses the original network task.
+    await restarted.downloadUpdate();
+    assert.equal(networkDownloads, 1);
+  }
+
+  // supervisor requires acknowledgement and exit, cancels timed-out preparation and can restart
+  {
+    const { EventEmitter } = require('node:events');
+    const { AgentHostSupervisor } = require('../../dist-desktop/agent-host-supervisor.js');
+    const make = (reply: (child: any, message: any) => void) => {
+      const sent: any[] = [];
+      const child = new EventEmitter();
+      child.postMessage = (message: any) => { sent.push(message); reply(child, message); };
+      child.kill = () => { throw new Error('Update must not force termination'); };
+      const supervisor = new AgentHostSupervisor({ paths: {}, updatePreparationTimeoutMs: 20 });
+      supervisor.child = child;
+      child.on('exit', () => { supervisor.child = null; });
+      return { child, supervisor, sent };
+    };
+    for (const exitFirst of [false, true]) {
+      const { supervisor } = make((child, message) => {
+        if (message.type !== 'transportx-update-stop') return;
+        setImmediate(() => {
+          if (exitFirst) child.emit('exit', 0);
+          child.emit('message', { type: 'transportx-update-stopped', id: message.id, ok: true });
+          if (!exitFirst) child.emit('exit', 0);
+        });
+      });
+      await supervisor.stopForUpdate();
+      let starts = 0;
+      supervisor.start = async () => { starts += 1; return 'http://127.0.0.1:1234'; };
+      assert.equal(await supervisor.recoverAfterUpdate(), 'http://127.0.0.1:1234');
+      assert.equal(starts, 1);
+    }
+    const busy = make((child, message) => {
+      if (message.type === 'transportx-update-stop') setImmediate(() => child.emit('message', { type: 'transportx-update-stopped', id: message.id, ok: false, code: 'host_busy' }));
+    });
+    await assert.rejects(busy.supervisor.stopForUpdate(), (error: any) => error.code === 'host_busy');
+    assert.equal(busy.supervisor.stopping, false);
+    assert.equal(await busy.supervisor.recoverAfterUpdate(), null);
+    const timedOut = make(() => { });
+    await assert.rejects(timedOut.supervisor.stopForUpdate(), /timed out/);
+    assert.equal(timedOut.sent.at(-1).type, 'transportx-update-cancel');
+    assert.equal(timedOut.supervisor.stopping, false);
+    assert.equal(timedOut.child.listenerCount('message'), 0);
+    const noConfirmation = make((child, message) => { if (message.type === 'transportx-update-stop') setImmediate(() => child.emit('exit', 0)); });
+    await assert.rejects(noConfirmation.supervisor.stopForUpdate(), /timed out/);
+    const normal = make((child, message) => {
+      assert.equal(message.type, 'transportx-agent-host-stop');
+      setImmediate(() => child.emit('exit', 0));
+    });
+    await normal.supervisor.stop();
+    assert.deepEqual(normal.sent, [{ type: 'transportx-agent-host-stop' }]);
+    assert.equal(normal.supervisor.child, null);
+    // ChildProcess (Windows) follows the same IPC path, even with immediate exit.
+    const windowsChild = make((child, message) => {
+      assert.equal(message.type, 'transportx-agent-host-stop');
+      child.emit('exit', 0);
+    });
+    windowsChild.child.send = windowsChild.child.postMessage;
+    delete windowsChild.child.postMessage;
+    windowsChild.child.exitCode = null;
+    windowsChild.child.signalCode = null;
+    await windowsChild.supervisor.stop();
+    assert.equal(windowsChild.supervisor.child, null);
+    assert.deepEqual(windowsChild.sent, [{ type: 'transportx-agent-host-stop' }]);
+  }
+
+  // Host update preparation locks new work, refuses active work and unlocks on failure/cancellation
+  {
+    const { UpdatePreparation } = require('../../bin/update-preparation.js');
+    const gate = new UpdatePreparation();
+    const complete = gate.beginOperation();
+    await assert.rejects(gate.prepare('one', async () => { }), (error: any) => error.code === 'host_busy');
+    complete(); complete();
+    await assert.rejects(gate.prepare('one', async () => { throw new Error('save failed'); }), /save failed/);
+    const finish = gate.beginOperation(); finish();
+    let save: () => void = () => { };
+    const preparing = gate.prepare('two', () => new Promise<void>((resolve) => { save = resolve; }));
+    assert.throws(() => gate.beginOperation(), (error: any) => error.status === 503);
+    gate.cancel('wrong-token');
+    assert.throws(() => gate.beginOperation());
+    gate.cancel('two'); save();
+    await assert.rejects(preparing, /cancelled/);
+    await gate.prepare('three', async () => { });
+    gate.assertPrepared('three');
+    gate.cancel('three');
+    gate.beginOperation()();
+  }
+
+  // OSS release validation checks architecture/hashes and publishes the manifest last
+  {
+    const { pathToFileURL } = require('node:url');
+    const yaml = require('js-yaml');
+    const { createReleasePlan, publishRelease, assertAcceptance, assertBuildProvenance } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/publish-oss.mjs')).href);
+    const { PLATFORM_PROFILES } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/platform-profile.mjs')).href);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-release-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const profile = PLATFORM_PROFILES.darwin;
+    const files = profile.update.requiredExtensions.map((extension: string) => {
+      const name = profile.update.artifactName.replace('${version}', '3.23.0').replace('${ext}', extension.slice(1));
+      const file = path.join(directory, name);
+      fs.writeFileSync(file, `signed-artifact-fixture${extension}`);
+      return { url: name, size: fs.statSync(file).size, sha512: crypto.createHash('sha512').update(fs.readFileSync(file)).digest('base64') };
+    });
+    const manifest = { version: '3.23.0', releaseNotes: 'Notes', files };
+    const manifestPath = path.join(directory, profile.update.manifest);
+    fs.writeFileSync(manifestPath, yaml.dump(manifest));
+    const plan = createReleasePlan(directory, '3.23.0', profile);
+    assert.equal(plan.files.length, 2);
+    assert.throws(() => createReleasePlan(directory, '3.24.0', profile), /mixed-version/);
+    files[0].sha512 = 'invalid'; fs.writeFileSync(manifestPath, yaml.dump(manifest));
+    assert.throws(() => createReleasePlan(directory, '3.23.0', profile), /SHA-512/);
+    files[0].sha512 = crypto.createHash('sha512').update(fs.readFileSync(path.join(directory, files[0].url))).digest('base64');
+    fs.writeFileSync(manifestPath, yaml.dump(manifest));
+    const sequence: string[] = [];
+    const io = {
+      readManifest: async () => 'version: 3.22.0\n',
+      record: async (record: any) => { sequence.push(record.stage); },
+      assertAbsent: async () => { },
+      upload: async (_file: any, mutable: boolean) => { sequence.push(mutable ? 'manifest' : 'package'); },
+      verify: async (_file: any, mutable: boolean) => { sequence.push(mutable ? 'verify-manifest' : 'verify-package'); },
+    };
+    await publishRelease(plan, io);
+    assert.deepEqual(sequence, ['prepared', ...Array.from({ length: 7 }, () => ['package', 'verify-package']).flat(), 'manifest', 'verify-manifest', 'published']);
+    const revision = 'a'.repeat(40);
+    const runtime = { product: { version: plan.version }, source: { revision, dirty: false, dependencyLockSha256: 'lock-hash' } };
+    assert.doesNotThrow(() => assertBuildProvenance(runtime, plan.version, revision, 'lock-hash'));
+    assert.throws(() => assertBuildProvenance({ ...runtime, source: { ...runtime.source, dirty: true } }, plan.version, revision, 'lock-hash'), /provenance/);
+    assert.throws(() => assertBuildProvenance(runtime, plan.version, 'b'.repeat(40), 'lock-hash'), /provenance/);
+    assert.throws(() => assertBuildProvenance(runtime, plan.version, revision, 'different-lock'), /provenance/);
+    const acceptance = { version: plan.version, profile: plan.profile, sourceRevision: revision, testedFromVersion: '3.22.1', testedAt: '2026-10-09T00:00:00Z', testedBy: 'tester', signingIdentity: 'Developer ID fixture', evidence: ['upgrade.log'], signed: true, upgradePassed: true, dataPreserved: true, normalQuitDoesNotInstall: true, sha256: Object.fromEntries(plan.files.map((file: any) => [file.name, file.sha256])) };
+    assert.doesNotThrow(() => assertAcceptance(plan, acceptance, revision));
+    assert.throws(() => assertAcceptance(plan, acceptance, 'b'.repeat(40)), /source commit/);
+    assert.throws(() => assertAcceptance(plan, { ...acceptance, sha256: {} }, revision), /artifacts/);
+    assert.throws(() => assertAcceptance(plan, { ...acceptance, evidence: [] }, revision), /evidence/);
+    assert.throws(() => assertAcceptance(plan, { ...acceptance, testedFromVersion: '3.24.0' }, revision), /previous version/);
+    sequence.length = 0;
+    await assert.rejects(publishRelease(plan, { ...io, upload: async () => { throw new Error('upload failed'); } }), /upload failed/);
+    assert.equal(sequence.includes('manifest'), false);
+    await assert.rejects(publishRelease(plan, { ...io, verify: async () => { throw new Error('verification failed'); } }), /verification failed/);
+    assert.equal(sequence.includes('manifest'), false);
+    await assert.rejects(publishRelease(plan, { ...io, readManifest: async () => 'version: 3.24.0\n' }), /newer/);
+  }
+
+  // platform-profile registry exposes frozen mac/win profiles with required contract
+  {
+    const url = require('node:url');
+    const profilePath = path.join(__dirname, '..', '..', 'desktop', 'scripts', 'platform-profile.mjs');
+    const profileModule = await import(url.pathToFileURL(profilePath).toString());
+    const { PLATFORM_PROFILES, PROCESS_PLATFORM_TO_BUILDER, getPlatformProfile, builderPlatformFor } = profileModule;
+
+    // mac/win mapping is stable; adding linux must be an explicit PR change here.
+    assert.deepEqual({ ...PROCESS_PLATFORM_TO_BUILDER }, { darwin: 'mac', win32: 'win', linux: 'linux' });
+    assert.equal(builderPlatformFor('darwin'), 'mac');
+    assert.equal(builderPlatformFor('win32'), 'win');
+    assert.equal(getPlatformProfile(builderPlatformFor('darwin')), PLATFORM_PROFILES.darwin);
+    assert.equal(getPlatformProfile(builderPlatformFor('win32')), PLATFORM_PROFILES.win);
+
+    const profileExpectations: Record<string, { key: string; builderPlatform: string; installerArtifact: string }> = {
+      darwin: { key: 'darwin', builderPlatform: 'mac', installerArtifact: 'dmg' },
+      win: { key: 'win', builderPlatform: 'win', installerArtifact: 'nsis' },
+    };
+
+    for (const [entry, expected] of Object.entries(profileExpectations)) {
+      const profile = PLATFORM_PROFILES[entry];
+      assert.ok(profile, `profile ${entry} missing`);
+      assert.equal(profile.key, expected.key);
+      assert.equal(profile.builderPlatform, expected.builderPlatform);
+      assert.equal(typeof profile.python.archCheck, 'function');
+      assert.match(profile.python.archErrorMessage, /./);
+      assert.ok(Array.isArray(profile.python.requiredModules) && profile.python.requiredModules.length >= 4);
+      assert.equal(typeof profile.ffmpeg.binName, 'function');
+      assert.equal(typeof profile.ffmpeg.chmodRequired, 'boolean');
+      assert.equal(typeof profile.ffmpeg.archCheck, 'function');
+      assert.match(profile.ffmpeg.arch, /arm64|x64/);
+      assert.match(profile.signing.hostArchRequired, /arm64|x64/);
+      assert.match(profile.signing.description, /./);
+      assert.ok(Array.isArray(profile.signing.requiredEnv) && profile.signing.requiredEnv.length >= 1);
+      assert.match(profile.signing.allowUnsignedEnv, /./);
+      assert.match(profile.signing.allowUnsignedPurpose, /./);
+      assert.equal(profile.release.installerArtifact, expected.installerArtifact);
+      assert.match(profile.release.productExeBasename, /./);
+      assert.match(profile.release.productExeSuffix, /\.exe|/);
+      assert.equal(typeof profile.release.requiresFfmpeg, 'boolean');
+      assert.equal(typeof profile.release.supportsInstallerSmoke, 'boolean');
+      assert.match(profile.release.notes, /./);
+    }
+
+    // OS-specific invariants baked into the contract:
+    const mac = PLATFORM_PROFILES.darwin;
+    assert.equal(mac.release.requiresFfmpeg, false, 'base macOS package excludes the optional video runtime');
+    assert.equal(mac.ffmpeg.binName('ffmpeg'), 'ffmpeg', 'mac ffmpeg binary must not have a suffix');
+    assert.equal(mac.ffmpeg.chmodRequired, true, 'mac ffmpeg needs +x');
+    assert.equal(mac.ffmpeg.arch, 'arm64');
+    assert.equal(mac.signing.hostArchRequired, 'arm64');
+    assert.equal(mac.python.entry, 'bin/python3');
+
+    const win = PLATFORM_PROFILES.win;
+    assert.equal(win.release.requiresFfmpeg, false, 'base Windows package excludes the optional video runtime');
+    assert.equal(win.ffmpeg.binName('ffmpeg'), 'ffmpeg.exe', 'win ffmpeg binary must end in .exe');
+    assert.equal(win.ffmpeg.chmodRequired, false, 'win ffmpeg inherits +x from NTFS');
+    assert.equal(win.ffmpeg.arch, 'x64');
+    assert.equal(win.signing.hostArchRequired, 'x64');
+    assert.equal(win.python.entry, 'python.exe');
+    assert.equal(win.release.installerArtifact, 'nsis');
+    assert.equal(typeof win.release.uninstallName, 'string');
+    assert.ok(Array.isArray(win.release.installerSilentArgs(path.join('C:', 'install'))));
+
+    // getPlatformProfile with a non-registered builderPlatform must throw clearly.
+    assert.throws(() => getPlatformProfile('plan9'), /Platform profile missing/);
+  }
+
+  // runtime manifest validates relative paths and checksums
+  {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-runtime-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    for (const relative of ['agent-host/tau.js', 'runtimes/pi/cli.js', 'runtimes/python/python']) {
+      const target = path.join(root, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, relative);
+    }
+    const entry = (relative: string, version: string) => ({ version, path: relative, sha256: digest(path.join(root, relative)) });
+    fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
+      manifestVersion: 1,
+      product: { name: 'TransportX Agent', version: '3.0.3' },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 1 },
+      pi: entry('runtimes/pi/cli.js', '0.80.10'),
+      python: entry('runtimes/python/python', '3.10.0'),
+    }));
+    assert.equal(loadRuntimeManifest(root).product.name, 'TransportX Agent');
+    assert.equal(validateRuntimeManifest(root).pi, path.join(root, 'runtimes/pi/cli.js'));
+    fs.writeFileSync(path.join(root, 'runtimes/pi/cli.js'), 'tampered');
+    assert.throws(() => validateRuntimeManifest(root), /checksum mismatch/);
+  }
+
+  // ffmpeg executables resolve from the packaged manifest, env overrides, or dev PATH
+  {
+    const { resolveFfmpegExecutables } = require('../../bin/runtime-resolver.js');
+
+    // Development desktop mode: no runtime manifest, explicit overrides injected by the supervisor.
+    const devRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-ffmpeg-dev-'));
+    t.after(() => fs.rmSync(devRoot, { recursive: true, force: true }));
+    const overridden = resolveFfmpegExecutables({ resourcesDir: devRoot, desktop: true, env: { TAU_FFMPEG_COMMAND: '/opt/homebrew/bin/ffmpeg', TAU_FFPROBE_COMMAND: '/opt/homebrew/bin/ffprobe' } });
+    assert.equal(overridden.ffmpeg.command, '/opt/homebrew/bin/ffmpeg');
+    assert.equal(overridden.ffprobe.command, '/opt/homebrew/bin/ffprobe');
+    assert.throws(() => resolveFfmpegExecutables({ resourcesDir: devRoot, desktop: true, env: {} }), /runtime manifest|ffmpeg/, 'packaged mode without a manifest or overrides must fail loudly');
+
+    // Packaged mode: both entries resolve with checksum validation.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-ffmpeg-packaged-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    for (const relative of ['agent-host/tau.js', 'runtimes/pi/cli.js', 'runtimes/python/python', 'runtimes/ffmpeg/ffmpeg', 'runtimes/ffmpeg/ffprobe']) {
+      const target = path.join(root, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, relative);
+    }
+    const entry = (relative: string, version: string) => ({ version, path: relative, sha256: digest(path.join(root, relative)) });
+    fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
+      manifestVersion: 1,
+      product: { name: 'TransportX Agent', version: '3.0.9' },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 1 },
+      pi: entry('runtimes/pi/cli.js', '0.80.10'),
+      python: entry('runtimes/python/python', '3.10.20'),
+      ffmpeg: { ...entry('runtimes/ffmpeg/ffmpeg', '8.0'), arch: 'arm64' },
+      ffprobe: { ...entry('runtimes/ffmpeg/ffprobe', '8.0'), arch: 'arm64' },
+    }));
+    const packaged = resolveFfmpegExecutables({ resourcesDir: root, desktop: true, env: {} });
+    assert.equal(packaged.ffmpeg.command, path.join(root, 'runtimes/ffmpeg/ffmpeg'));
+    assert.equal(packaged.ffmpeg.version, '8.0');
+    assert.equal(packaged.ffprobe.command, path.join(root, 'runtimes/ffmpeg/ffprobe'));
+
+    // Development non-desktop mode falls back to PATH.
+    const fallback = resolveFfmpegExecutables({ resourcesDir: devRoot, desktop: false, env: {} });
+    assert.equal(fallback.ffmpeg.command, 'ffmpeg');
+    assert.equal(fallback.ffprobe.command, 'ffprobe');
+
+    // The desktop supervisor must inject ffmpeg overrides alongside python in development mode.
+    const supervisor = fs.readFileSync(path.join(__dirname, '..', '..', 'desktop', 'agent-host-supervisor.ts'), 'utf8');
+    assert.match(supervisor, /TAU_FFMPEG_COMMAND/);
+    assert.match(supervisor, /TAU_FFPROBE_COMMAND/);
+    assert.match(supervisor, /Buffer\.byteLength\(request\.html, 'utf8'\) > 50 \* 1024 \* 1024/);
+  }
+
+  // generated Host operations match the single profile and include process-tree and opening facts
+  {
+    const { pathToFileURL } = require('node:url');
+    const { HOST_PLATFORM_OPERATIONS } = await import(pathToFileURL(path.resolve('desktop/scripts/platform-profile.mjs')).href);
+    const generated = JSON.parse(fs.readFileSync(path.resolve('bin/host-platform.json'), 'utf8'));
+    assert.deepEqual(generated, HOST_PLATFORM_OPERATIONS);
+    assert.equal(generated.win32.detached, false);
+    assert.equal(generated.win32.treeCommand, 'taskkill');
+    assert.deepEqual(generated.win32.treeArgs, ['/pid', '/T']);
+    assert.equal(generated.darwin.utilityHost, true);
+    assert.equal(generated.linux.packaged, null);
+    const source = ['src/server/sessions.ts', 'src/server/process-runner.ts', 'src/server/process-tree.ts', 'src/server/file-api-handler.ts', 'src/server/server-main.ts', 'desktop/main.ts', 'desktop/agent-host-supervisor.ts'].map(file => fs.readFileSync(path.resolve(file), 'utf8')).join('\n');
+    assert.doesNotMatch(source, /process\.platform\s*[!=]==\s*['"]/);
+  }
+});
