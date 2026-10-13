@@ -53,6 +53,7 @@ try {
   page.setDefaultTimeout(20_000);
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('request', (request) => requestedUrls.push(request.url()));
+  await page.addInitScript(() => { if (window === window.top) localStorage.setItem('tau-show-thinking', 'true'); });
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('[data-testid="agent-status"]:is([data-state="connected"], [data-state="streaming"])').waitFor();
@@ -64,6 +65,15 @@ try {
 
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
+  await page.getByRole('button', { name: '打开设置', exact: true }).click();
+  const executionDetails = page.getByRole('switch', { name: '显示执行详情', exact: true });
+  assert.equal(await executionDetails.getAttribute('aria-checked'), 'false', 'execution details default to Working even with the legacy auto-enabled preference');
+  assert.equal(await page.getByRole('switch', { name: '默认展开思考内容' }).getAttribute('aria-checked'), 'false');
+  await executionDetails.click();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await composer.waitFor();
+  assert.equal(await page.evaluate(() => localStorage.getItem('tau-show-execution-details')), 'true', 'explicit display choices survive reload');
   await feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryCwd);
   await composerSmoke(page, baseUrl);
   await composer.fill('资源-svg-policy');

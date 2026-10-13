@@ -59,7 +59,7 @@ export function App() {
   const conversation = useConversation(sessionState.activeSessionId);
   const tools = useToolExecutions(sessionState.activeSessionId);
   const [theme, setTheme] = useState<ThemeId>(initialTheme);
-  const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-thinking') !== 'false');
+  const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-execution-details') === 'true');
   const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -196,7 +196,7 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    window.localStorage.setItem('tau-show-thinking', String(showThinking));
+    window.localStorage.setItem('tau-show-execution-details', String(showThinking));
   }, [showThinking]);
 
   useEffect(() => {
