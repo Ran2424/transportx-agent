@@ -10,11 +10,16 @@ export function groupExecutionParts(parts: ExecutionPart[], pending = false, run
   const rows: ExecutionRow[] = [];
   let messages = 0;
   let startedAt: number | null = null;
+  let afterPrompt = true;
   for (const part of parts) {
     if (part.kind === 'message') {
       if (part.entry.message?.role === 'user') {
         const timestamp = part.entry.message.timestamp;
         startedAt = typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : null;
+        afterPrompt = true;
+      } else {
+        startedAt = null;
+        afterPrompt = false;
       }
       rows.push(part); messages++; continue;
     }
@@ -22,7 +27,7 @@ export function groupExecutionParts(parts: ExecutionPart[], pending = false, run
     if (previous?.kind === 'execution') previous.activities.push(part.activity);
     else rows.push({ kind: 'execution', id: `execution-${messages}`, activities: [part.activity], startedAt });
   }
-  if (pending && rows.at(-1)?.kind !== 'execution') rows.push({ kind: 'execution', id: `execution-${messages}`, activities: [], startedAt: startedAt ?? runStartedAt });
+  if (pending && rows.at(-1)?.kind !== 'execution') rows.push({ kind: 'execution', id: `execution-${messages}`, activities: [], startedAt: startedAt ?? (afterPrompt ? runStartedAt : null) });
   return rows;
 }
 

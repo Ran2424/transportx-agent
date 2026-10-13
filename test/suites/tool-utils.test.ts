@@ -53,6 +53,18 @@ test('Tool projection, file icons and localized truncation preserve conversation
       assert.equal(executionTiming([{ id: 'missing', tool: { status: 'preparing' } } as any], true, true, 500).startedAt, 500, 'live Working does not require tool timing metadata');
       assert.equal(groupExecutionParts([prompt], false).length, 1, 'an ended run leaves no empty Working row');
       assert.deepEqual(executionTiming([], false), { active: false, startedAt: null, durationMs: null });
+      const next = { id: 'next', tool: { ...first.tool, id: 'next', startedAt: 4000, durationMs: 700 } } as any;
+      const body = { kind: 'message', entry: { message: { role: 'assistant', content: '先确认数据' } }, index: 1 } as any;
+      const segments = groupExecutionParts([prompt, { kind: 'activity', activity: first }, body, { kind: 'activity', activity: next }], true, 500);
+      const segment = segments[3];
+      assert.equal(segment.kind, 'execution');
+      if (segment.kind === 'execution') {
+        assert.equal(segment.startedAt, null, 'a new segment does not inherit the prompt clock');
+        assert.equal(executionTiming(segment.activities, true, true, segment.startedAt).startedAt, 4000);
+        assert.equal(executionTiming(segment.activities, false, false, segment.startedAt).durationMs, 700, 'history reports only this segment, not earlier execution');
+      }
+      const nextWaiting = groupExecutionParts([prompt, body], true, 500).at(-1)!;
+      assert.equal(nextWaiting.kind === 'execution' && nextWaiting.startedAt, null, 'an empty later segment cannot fall back to the original prompt');
 
       const assistant = { id: 'assistant-1', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'tool-1', name: 'read', arguments: { path: 'traffic.json' } }] } } as any;
       const result = { id: 'result-1', message: { role: 'toolResult', toolCallId: 'tool-1', toolName: 'read', content: [{ type: 'text', text: 'done' }], durationMs: 120 } } as any;

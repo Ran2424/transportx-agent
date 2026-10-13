@@ -44,6 +44,7 @@ export async function workingDisplaySmoke(page) {
   await page.locator('.assistant-prose', { hasText: '我先确认轨道 GIS 资产里线路数据' }).waitFor();
   await page.waitForTimeout(250);
   const toggle = page.locator('.working-toggle').last();
+  assert.ok(await seconds(toggle) < await seconds(page.locator('.working-toggle').nth(await page.locator('.working-toggle').count() - 2)), 'the second Working segment starts its own clock instead of accumulating the first segment');
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
   assert.match(await toggle.innerText(), /Working · · ·/);
   const label = toggle.locator('.working-label');

@@ -1,8 +1,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 
 import { readJsonObject, writeJsonAtomic, mutateJson } from './util/json-storage.js';
 import type { JsonRecord } from './types.js';
+import type { AddLocalModelInput } from '../contracts/local-model.js';
+import { localModelConnection } from './local-model-service.js';
 import { connectPiModelProvider, ensurePiModelProviderConfigured, removePiModelProviderCredential } from './pi-model-access.js';
 
 export const PI_MODEL_APIS = ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'] as const;
@@ -65,7 +68,7 @@ function modelPatch(model: ModelPatchInput): JsonRecord {
   };
 }
 
-async function addPiModelMutation(input: AddPiModelPayload, agentDir: string) {
+async function addPiModelMutation(input: AddPiModelPayload, agentDir: string, local = false) {
   const model = validated(input);
   const { path: modelsPath, config, providers } = readModelsConfig(agentDir);
   const existingProvider = providerConfig(providers, model.provider);
@@ -79,10 +82,12 @@ async function addPiModelMutation(input: AddPiModelPayload, agentDir: string) {
       ...existingProvider,
       baseUrl: model.baseUrl,
       api: model.api,
+      ...(local ? { name: `Local · ${new URL(model.baseUrl).host}`, apiKey: model.apiKey ? undefined : 'transportx-local' } : {}),
       models: nextModels,
     },
   };
   writeJsonAtomic(modelsPath, { ...config, providers: nextProviders });
+  if (local && !model.apiKey) await removePiModelProviderCredential(model.provider, agentDir);
   if (model.apiKey) await connectPiModelProvider(model.provider, model.apiKey, agentDir);
   else await ensurePiModelProviderConfigured(model.provider, agentDir);
   return { provider: model.provider, modelId: model.modelId, reference: `${model.provider}/${model.modelId}` };
@@ -159,6 +164,11 @@ async function deletePiModelProviderMutation(providerInput: string, agentDir: st
 }
 
 export function addPiModel(input: AddPiModelPayload, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => addPiModelMutation(input, agentDir)); }
+export function addLocalPiModel(input: AddLocalModelInput, agentDir: string) {
+  const connection = localModelConnection(input);
+  const provider = `local-${createHash('sha256').update(connection.baseUrl).digest('hex').slice(0, 12)}`;
+  return mutateJson(path.join(agentDir, 'models.json'), () => addPiModelMutation({ ...input, ...connection, provider, api: 'openai-completions' }, agentDir, true));
+}
 export function updatePiModel(input: UpdatePiModelInput, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => updatePiModelMutation(input, agentDir)); }
 export function deletePiModel(provider: string, modelId: string, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => deletePiModelMutation(provider, modelId, agentDir)); }
 export function deletePiModelProvider(provider: string, agentDir: string) { return mutateJson(path.join(agentDir, 'models.json'), () => deletePiModelProviderMutation(provider, agentDir)); }

@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import { documentSmoke } from './harness/document-smoke.mjs';
 import { feedbackSmoke, composerSmoke, conversationStyleSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
+import { localModelSmoke } from './harness/local-model-smoke.mjs';
 import { conversationLayoutSmoke, toolStateSmoke, streamingScrollSmoke, workingDisplaySmoke } from './harness/conversation-layout-smoke.mjs';
 import { prepareComposerContextSmoke, composerSelectionSmoke } from './harness/composer-selection-smoke.mjs';
 
@@ -65,6 +66,7 @@ try {
 
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
+  await localModelSmoke(page, baseUrl);
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
   const executionDetails = page.getByRole('switch', { name: '显示执行详情', exact: true });
   assert.equal(await executionDetails.getAttribute('aria-checked'), 'false', 'execution details default to Working even with the legacy auto-enabled preference');

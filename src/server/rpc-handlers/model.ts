@@ -1,5 +1,7 @@
-import { addPiModel, deletePiModel, deletePiModelProvider, updatePiModel } from '../pi-model-config.js';
+import { addLocalPiModel, addPiModel, deletePiModel, deletePiModelProvider, updatePiModel } from '../pi-model-config.js';
 import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders } from '../pi-model-access.js';
+import { discoverLocalModels } from '../local-model-service.js';
+import type { AddLocalModelInput } from '../../contracts/local-model.js';
 import type { RpcHandlerRegistry } from '../rpc-handlers.js';
 import type { RpcCommand } from '../types.js';
 
@@ -45,6 +47,21 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
       handle: async (command, reply) => {
         try {
           const model = await addPiModel(command as Omit<Partial<import('../pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, deps.agentDir);
+          deps.invalidateModelListCache();
+          return reply.success({ model });
+        } catch (error) { return reply.failure(deps.errorMessage(error)); }
+      },
+    },
+    discover_local_models: {
+      handle: async (command, reply) => {
+        try { return reply.success(await discoverLocalModels({ baseUrl: String(command.baseUrl || ''), apiKey: String(command.apiKey || '') })); }
+        catch (error) { return reply.failure(deps.errorMessage(error)); }
+      },
+    },
+    add_local_model: {
+      handle: async (command, reply) => {
+        try {
+          const model = await addLocalPiModel(command as AddLocalModelInput, deps.agentDir);
           deps.invalidateModelListCache();
           return reply.success({ model });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }

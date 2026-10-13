@@ -314,11 +314,17 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .model-capability-row { display: flex; flex-wrap: wrap; gap: 10px 22px; padding: 2px 0; }
 .model-capability-row label { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
 .model-capability-row input { accent-color: var(--interactive-primary-bg); }
-.model-setup-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 18px; padding: 3px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-md); background: var(--surface-default); }
+.model-setup-mode { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; margin-bottom: 18px; padding: 3px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-md); background: var(--surface-default); }
 .model-setup-mode button { min-height: 34px; border: 1px solid transparent; border-radius: var(--tx-radius-sm); color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
 .model-setup-mode button:hover { color: var(--text-primary); background: var(--surface-hover); }
 .model-setup-mode button.is-active { border-color: var(--selection-border); color: var(--text-primary); background: var(--selection-bg); }
 .model-setup-mode button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.model-local-detect { display: flex; justify-content: flex-start; }
+.model-setup-dialog.is-local { overflow-y: auto; }
+.model-local-advanced { border-top: 1px solid var(--border-default); padding-top: 12px; }
+.model-local-advanced summary { color: var(--text-secondary); cursor: pointer; font-size: 12px; }
+.model-local-advanced summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.model-local-advanced[open] > .form-stack { margin-top: 12px; }
 .provider-access-summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border-left: 2px solid var(--selection-border); background: var(--selection-bg); }
 .provider-access-summary span { min-width: 0; display: grid; gap: 3px; }
 .provider-access-summary strong { overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
