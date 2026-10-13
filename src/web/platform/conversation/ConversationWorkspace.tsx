@@ -89,7 +89,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
     <div className="conversation-scroll" ref={viewportRef} onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; }}>
       <div className="conversation-thread">
         {rows.map((row, index) => {
-          if (row.kind === 'execution') return <ExecutionGroup key={row.id} activities={row.activities} sessionId={sessionId} running={!!data?.live.active} pending={!showThinking && pending && index === rows.length - 1} startedAt={row.startedAt ?? (index === rows.length - 1 ? data?.live.runStartedAt : null)} showThinking={showThinking} expandThinking={expandThinking} />;
+          if (row.kind === 'execution') return <ExecutionGroup key={row.id} activities={row.activities} sessionId={sessionId} running={!!data?.live.active} pending={!showThinking && pending && index === rows.length - 1} startedAt={row.startedAt} showThinking={showThinking} expandThinking={expandThinking} />;
           const message = row.entry.message as AppMessage;
           const projection = row.entry === entries[row.index] ? citationProjection.byEntry.get(row.entry) : message.role === 'user' ? optimisticCitationProjection : undefined;
           if (message.role === 'user') return <UserMessage key={row.entry.id || `user-${row.index}`} message={message} sessionId={sessionId} attachments={attachments} projection={projection} />;
