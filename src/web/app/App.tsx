@@ -9,6 +9,8 @@ import { SoftwareUpdateNotice } from '../platform/settings/SoftwareUpdate';
 import { ConfirmationDialog } from '../components/ui/confirmation-dialog';
 import { CommandPalette, type CommandItem } from '../platform/commands/CommandPalette';
 import { ConversationStage } from '../platform/conversation/ConversationStage';
+import { toolExpansionStore } from '../platform/conversation/tool-expansion-store';
+import { projectTools } from '../platform/conversation/tool-projection';
 import { ExtensionDialogLayer } from '../platform/extension-ui/ExtensionDialogLayer';
 import { ModelPickerDialog } from '../platform/model/ModelPickerDialog';
 import { ModelSetupDialog } from '../platform/model/ModelSetupDialog';
@@ -57,10 +59,20 @@ export function App() {
   const conversation = useConversation(sessionState.activeSessionId);
   const tools = useToolExecutions(sessionState.activeSessionId);
   const [theme, setTheme] = useState<ThemeId>(initialTheme);
-  const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-thinking') !== 'false');
+  const [showThinking, setShowThinking] = useState(() => window.localStorage.getItem('tau-show-execution-details') === 'true');
   const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
+  useEffect(() => {
+    const sessions = new Map<string, Set<string> | null>();
+    for (const session of sessionState.sessions) {
+      const data = kernel.stores.conversation.get().bySession[session.id];
+      if (!data || data.live.active) { sessions.set(session.id, null); continue; }
+      const tools = projectTools(data.snapshotEntries, kernel.stores.toolExecution.get().bySession[session.id] || {});
+      sessions.set(session.id, new Set([...tools.liveOnly, ...[...tools.byEntry.values()].flat()].map((tool) => tool.id)));
+    }
+    toolExpansionStore.reconcile(sessions);
+  }, [kernel, sessionState]);
   const documentPositions = useRef<Record<string, Map<string, DocumentPosition>>>({});
   const documentOpenSequence = useRef(0);
   const [canvases, setCanvases] = useState<Record<string, CanvasState>>({});
@@ -184,7 +196,7 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    window.localStorage.setItem('tau-show-thinking', String(showThinking));
+    window.localStorage.setItem('tau-show-execution-details', String(showThinking));
   }, [showThinking]);
 
   useEffect(() => {
@@ -412,7 +424,7 @@ export function App() {
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
-      canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input)); }} />}
+      canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; const view = canvasContent.views.find((view) => view.id === input.viewId && view.canvas?.revision === input.revision); canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input), view?.title); }} />}
       canvasOpen={canvas.open}
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}

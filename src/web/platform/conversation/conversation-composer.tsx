@@ -4,6 +4,7 @@ import type { LiveSession, SessionAttachment } from '../../../public/app-types.j
 import type { CitationEnvelope } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
+import { isComposingInput } from '../../lib/input-composition';
 import { AttachmentCards } from './conversation-attachments';
 import { ComposerAttachmentList, useComposerAttachments } from './composer-attachments';
 import { composerDraftStore } from './composer-draft-store';
@@ -23,13 +24,16 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
   const geoContexts = useSyncExternalStore(geoContextStore.subscribe, () => geoContextStore.get(sessionId));
   const canvasContexts = useSyncExternalStore(canvasContextStore.subscribe, () => canvasContextStore.get(sessionId));
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const uploading = pending.some((item) => item.status === 'uploading');
+  const canSubmit = !compacting && !uploading && (!!value.trim() || pending.some((item) => item.status === 'ready' && item.attachment) || geoContexts.length > 0 || canvasContexts.length > 0);
   const { citeOpen, citeLoading, citeCandidates, setCiteOpen, openCitePicker, insertCitation } = useComposerCitationPicker({ sessionId, onCitationEnvelope, onInsert: (marker) => setValue((current) => current.replace('/cite', marker)), onError: setError, onFocus: () => inputRef.current?.focus() });
   useEffect(() => { if (retryDraft) { setValue(retryDraft.message); inputRef.current?.focus(); } }, [retryDraft]);
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
   useEffect(resize, [value]);
   async function submit(mode: 'prompt' | 'steer' = streaming ? 'steer' : 'prompt') {
+    if (!canSubmit) return;
     const attachmentIds = pending.filter((item) => item.status === 'ready' && item.attachment).map((item) => item.attachment!.id);
-    if (pending.some((item) => item.status === 'uploading')) { setError(t('conversation.uploadingWait')); return; }
     const geoContextIds = geoContexts.map((item) => item.contextId);
     const canvasContextIds = canvasContexts.map((item) => item.contextId);
     const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : canvasContextIds.length ? t('conversation.canvasContextOnly') : '');
@@ -40,11 +44,16 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
   return <footer className="conversation-composer">
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
     <SessionAttachmentLibrary sessionId={sessionId} attachments={attachments} selectedIds={pending.flatMap((item) => item.attachment ? [item.attachment.id] : [])} error={attachmentError} onReload={onReloadAttachments} onReuse={reuseAttachment} />
-    <ComposerAttachmentList sessionId={sessionId} pending={pending} onRemove={(item) => void removeAttachment(item)} />
-    {geoContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.geoContexts')}>{geoContexts.map((item) => <span key={item.contextId}><strong>{t(`geo.mode.${item.mode}`)}</strong>{item.summary}<button type="button" aria-label={t('conversation.removeGeoContext', { summary: item.summary })} onClick={() => geoContextStore.remove(sessionId, item.contextId)}>×</button></span>)}</div> : null}
-    {canvasContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.canvasContexts')}>{canvasContexts.map((item) => <span key={item.contextId}><strong>{t('canvas.title')}</strong>{item.viewId}<button type="button" aria-label={t('conversation.removeCanvasContext')} onClick={() => canvasContextStore.remove(sessionId, item.contextId)}>×</button></span>)}</div> : null}
     <div className="composer-row">
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+        {pending.length || geoContexts.length || canvasContexts.length ? <section className="composer-selection" aria-label={t('conversation.selectedContent')}>
+          <header><strong>{t('conversation.selectedContent')}</strong><span>{t('common.itemCount', { count: pending.length + geoContexts.length + canvasContexts.length })}</span></header>
+          <div className="composer-selection-list">
+            <ComposerAttachmentList sessionId={sessionId} pending={pending} onRemove={(item) => void removeAttachment(item)} />
+            {geoContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.geoContexts')}>{geoContexts.map((item) => <div className="composer-context-card" key={item.contextId}><span className="pending-attachment-icon"><Icon name="map" /></span><span className="pending-attachment-copy"><strong title={item.summary}>{item.summary}</strong><small>{t('geo.map')} · {t(`geo.mode.${item.mode}`)} · {t('conversation.attachmentSelected')}</small></span><button className="composer-selection-remove" type="button" aria-label={t('conversation.removeGeoContext', { summary: item.summary })} onClick={() => geoContextStore.remove(sessionId, item.contextId)}>×</button></div>)}</div> : null}
+            {canvasContexts.length ? <div className="composer-geo-contexts" aria-label={t('conversation.canvasContexts')}>{canvasContexts.map((item) => <div className="composer-context-card" key={item.contextId}><span className="pending-attachment-icon"><Icon name="file" /></span><span className="pending-attachment-copy"><strong title={item.displayTitle || item.viewId}>{item.displayTitle || item.viewId}</strong><small>{t('canvas.title')} · {t('conversation.contextRevision', { revision: item.revision })} · {t('conversation.attachmentSelected')}</small></span><button className="composer-selection-remove" type="button" aria-label={t('conversation.removeCanvasContext')} onClick={() => canvasContextStore.remove(sessionId, item.contextId)}>×</button></div>)}</div> : null}
+          </div>
+        </section> : null}
         <textarea
           ref={inputRef}
           value={value}
@@ -57,7 +66,7 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
           }}
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files, 'drop'); } }}
           onDragOver={(event) => event.preventDefault()}
-          onKeyDown={(event) => { if (event.key === 'Escape' && citeOpen) { event.preventDefault(); setCiteOpen(false); return; } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }}
+          onKeyDown={(event) => { if (isComposingInput(event.nativeEvent)) return; if (event.key === 'Escape' && citeOpen) { event.preventDefault(); setCiteOpen(false); return; } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }}
           placeholder={streaming ? t('conversation.steerPlaceholder') : t('conversation.promptPlaceholder')}
           aria-label={t('conversation.messageInput')}
           disabled={compacting}
@@ -65,20 +74,20 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
         {citeOpen ? <ComposerCitationPicker loading={citeLoading} candidates={citeCandidates} onClose={() => setCiteOpen(false)} onSelect={(locatorId) => void insertCitation(locatorId)} /> : null}
         <div className="composer-toolbar">
           <div className="composer-action-rail">
-            <label className="composer-attach">
+            <button className="composer-attach" type="button" onClick={() => attachmentInputRef.current?.click()}>
               <Icon name="plus" />
               <span className="composer-action-hint" aria-hidden="true">{t('conversation.addAttachment')}</span>
               <span className="sr-only">{t('conversation.addAttachment')}</span>
-              <input type="file" accept="*/*" multiple onChange={(event) => { if (event.currentTarget.files) void addAttachments(event.currentTarget.files, 'picker'); event.currentTarget.value = ''; }} />
-            </label>
+            </button>
+            <input ref={attachmentInputRef} className="composer-file-input" type="file" accept="*/*" multiple onChange={(event) => { if (event.currentTarget.files) void addAttachments(event.currentTarget.files, 'picker'); event.currentTarget.value = ''; }} />
             <button className="composer-tool-toggle" type="button" aria-label={t('conversation.openCitationManager')} onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">{t('conversation.citationManager')}</span></button>
             <ComposerContextUsage session={session} />
           </div>
           {compacting
             ? <span className="composer-compacting" role="status">{t('conversation.compacting')}</span>
             : streaming
-            ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId).catch((cause) => setError((cause as Error).message || t('conversation.sendFailed')))}>{t('conversation.abortShort')}</button></div>
-            : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!value.trim() && pending.length === 0 && geoContexts.length === 0 && canvasContexts.length === 0}>↑</button>}
+            ? <div className="composer-stream-actions"><button className="composer-send" type="button" aria-label={t('conversation.sendSteer')} disabled={!canSubmit} onClick={() => void submit('steer')}>{t('conversation.sendSteer')}</button><button className="composer-abort" type="button" aria-label={t('conversation.abort')} onClick={() => void kernel.commands.agent.abort(sessionId).catch((cause) => setError((cause as Error).message || t('conversation.sendFailed')))}>{t('conversation.abortShort')}</button></div>
+            : <button className="composer-send" type="submit" aria-label={t('conversation.send')} disabled={!canSubmit}>↑</button>}
         </div>
       </form>
     </div>

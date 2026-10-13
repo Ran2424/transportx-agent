@@ -83,7 +83,7 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         stores.toolExecution.dropSession(action.sessionId);
         stores.extensionUi.dropSession(action.sessionId);
         for (const entry of action.snapshot.entries) {
-          if (entry.message?.toolCallId) stores.toolExecution.ended(action.sessionId, entry.message.toolCallId, { toolName: entry.message.toolName, result: { content: entry.message.content, details: entry.message.details }, isError: entry.message.isError, durationMs: entry.message.durationMs });
+          if (entry.message?.toolCallId) stores.toolExecution.ended(action.sessionId, entry.message.toolCallId, { toolName: entry.message.toolName, result: { content: entry.message.content, details: entry.message.details }, isError: entry.message.isError, startedAt: entry.message.startedAt, durationMs: entry.message.durationMs });
         }
         for (const event of action.snapshot.activeToolEvents || []) {
           for (const toolAction of normalizer.normalizeMessage({ type: 'event', sessionId: action.sessionId, event })) dispatch(toolAction);

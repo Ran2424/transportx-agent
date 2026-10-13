@@ -5,6 +5,7 @@ import type { ExtensionUiPending } from '../../../public/kernel/stores/extension
 import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog } from '../../components/ui/dialog';
+import { isComposingInput } from '../../lib/input-composition';
 
 type Request = AppEvent & {
   title?: string;
@@ -113,13 +114,13 @@ function ExtensionDialog({ pending }: { pending: ExtensionUiPending }) {
           <form className="extension-custom-answer" onSubmit={(event) => { event.preventDefault(); const answer = value.trim(); if (answer) void respond({ value: answer }); }}>
             <label htmlFor={`extension-custom-answer-${request.id}`}>{t('extension.customAnswer')}</label>
             <div>
-              <input id={`extension-custom-answer-${request.id}`} className="extension-input" value={value} placeholder={t('extension.customAnswerPlaceholder')} onChange={(event) => setValue(event.target.value)} />
+              <input id={`extension-custom-answer-${request.id}`} className="extension-input" value={value} placeholder={t('extension.customAnswerPlaceholder')} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && isComposingInput(event.nativeEvent)) event.preventDefault(); }} />
               <Button type="submit" disabled={!value.trim()}>{t('common.submit')}</Button>
             </div>
           </form>
         </>
       ) : null}
-      {method === 'input' ? <input className="extension-input" autoFocus value={value} placeholder={request.placeholder} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void respond(value ? { value } : { cancelled: true }); }} /> : null}
+      {method === 'input' ? <input className="extension-input" autoFocus value={value} placeholder={request.placeholder} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !isComposingInput(event.nativeEvent)) void respond(value ? { value } : { cancelled: true }); }} /> : null}
       {method === 'editor' ? <textarea className="extension-input extension-editor" autoFocus value={value} onChange={(event) => setValue(event.target.value)} /> : null}
       {!['select', 'confirm', 'input', 'editor'].includes(method) ? <div className="inline-error">{t('extension.unsupported', { method: method || 'unknown' })}</div> : null}
     </Dialog>

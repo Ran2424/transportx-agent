@@ -23,6 +23,7 @@ export type LiveOverlay = {
   retry: import('../../../contracts/run-feedback.ts').RetryState | null;
   outcome: import('../../../contracts/run-feedback.ts').RunOutcome | null;
   runId: string | null;
+  runStartedAt: number | null;
   optimisticPrompt: OptimisticPrompt | null;
   streamingText: string;
   streamingThinking: string;
@@ -45,6 +46,7 @@ const emptyOverlay = (): LiveOverlay => ({
   retry: null,
   outcome: null,
   runId: null,
+  runStartedAt: null,
   optimisticPrompt: null,
   streamingText: '',
   streamingThinking: '',
@@ -58,9 +60,9 @@ const emptyConversation = (): ConversationState => ({ snapshotEntries: [], live:
 
 export function messageText(message: AppMessage | undefined): string {
   if (!message) return '';
-  if (typeof message.content === 'string') return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content)));
+  if (typeof message.content === 'string') return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content)));
   if (Array.isArray(message.content)) {
-    return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n'))));
+    return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n'))));
   }
   return '';
 }
@@ -168,14 +170,14 @@ export class ConversationStore {
   }
 
   streamStarted(sessionId: string, runId: string) {
-    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, active: true, retry: null, outcome: null } }));
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, runStartedAt: conv.live.active ? conv.live.runStartedAt ?? Date.now() : Date.now(), active: true, retry: null, outcome: null } }));
   }
 
   messageStarted(sessionId: string, message: AppMessage) {
     this.update(sessionId, (conv) => {
       if (message?.role === 'assistant') {
         // A new assistant message within the same run resets the buffers.
-        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: Date.now(), thinkingDurationMs: null } };
+        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: message.startedAt ?? Date.now(), thinkingDurationMs: null } };
       }
       if (message?.role === 'user') {
         const text = messageText(message);
@@ -304,6 +306,7 @@ export class ConversationStore {
       live: {
         ...emptyOverlay(),
         active: !!snapshot.isStreaming,
+        runStartedAt: snapshot.isStreaming ? conv.live.runStartedAt : null,
         retry: snapshot.retry ?? null,
         outcome: snapshot.outcome ?? null,
         streamingText: messageText(snapshot.streamingMessage ?? undefined),

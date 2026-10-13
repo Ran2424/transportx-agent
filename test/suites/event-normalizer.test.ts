@@ -13,6 +13,8 @@ test('Compaction and Geo events normalize only validated payloads', async () => 
     assert.deepEqual(message({ type: 'compaction_start', reason: 'threshold' }), [{ type: 'session/compactionStarted', sessionId: 'session-1' }]);
     assert.deepEqual(message({ type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false }), [{ type: 'session/compactionEnded', sessionId: 'session-1' }]);
     assert.deepEqual(message({ type: 'agent_settled' }).map((action: { type: string }) => action.type), ['conversation/streamEnded']);
+    const toolEnd = message({ type: 'message_end', message: { role: 'toolResult', toolCallId: 'timed-call', startedAt: 1000, durationMs: 250, content: 'done' } }).find((action: { type: string }) => action.type === 'tool/ended');
+    assert.equal(toolEnd.startedAt, 1000, 'message result timing survives event normalization');
   }
 
   // Geo interaction websocket updates are validated before reaching stores
