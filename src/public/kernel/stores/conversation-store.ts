@@ -23,6 +23,7 @@ export type LiveOverlay = {
   retry: import('../../../contracts/run-feedback.ts').RetryState | null;
   outcome: import('../../../contracts/run-feedback.ts').RunOutcome | null;
   runId: string | null;
+  runStartedAt: number | null;
   optimisticPrompt: OptimisticPrompt | null;
   streamingText: string;
   streamingThinking: string;
@@ -45,6 +46,7 @@ const emptyOverlay = (): LiveOverlay => ({
   retry: null,
   outcome: null,
   runId: null,
+  runStartedAt: null,
   optimisticPrompt: null,
   streamingText: '',
   streamingThinking: '',
@@ -168,7 +170,7 @@ export class ConversationStore {
   }
 
   streamStarted(sessionId: string, runId: string) {
-    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, active: true, retry: null, outcome: null } }));
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, runStartedAt: conv.live.active ? conv.live.runStartedAt ?? Date.now() : Date.now(), active: true, retry: null, outcome: null } }));
   }
 
   messageStarted(sessionId: string, message: AppMessage) {
@@ -304,6 +306,7 @@ export class ConversationStore {
       live: {
         ...emptyOverlay(),
         active: !!snapshot.isStreaming,
+        runStartedAt: snapshot.isStreaming ? conv.live.runStartedAt : null,
         retry: snapshot.retry ?? null,
         outcome: snapshot.outcome ?? null,
         streamingText: messageText(snapshot.streamingMessage ?? undefined),

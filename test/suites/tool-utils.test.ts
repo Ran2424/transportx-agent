@@ -42,6 +42,17 @@ test('Tool projection, file icons and localized truncation preserve conversation
       assert.deepEqual(grouped.map((row) => row.kind), ['execution', 'message', 'execution'], 'body messages separate consecutive execution segments');
       assert.equal(grouped[0].kind === 'execution' && grouped[0].activities.length, 2);
       assert.equal(grouped[2].kind === 'execution' && grouped[2].id, 'execution-1');
+      const prompt = { kind: 'message', entry: { message: { role: 'user', content: '开始分析', timestamp: 500 } }, index: 0 } as any;
+      const waiting = groupExecutionParts([prompt], true, 600);
+      assert.equal(waiting[1].kind === 'execution' && waiting[1].startedAt, 500, 'Working starts at the acknowledged user message, before any model activity');
+      const afterTool = groupExecutionParts([prompt, { kind: 'activity', activity: first }], true, 600);
+      assert.equal(afterTool.length, 2, 'model waiting reuses the tool segment instead of adding another status');
+      assert.deepEqual(executionTiming([], true, true, 500), { active: true, startedAt: 500, durationMs: null });
+      assert.equal(executionTiming([first], true, true, 500).startedAt, 500, 'completed tools do not pause or restart the independent Working clock');
+      assert.equal(executionTiming([first, parallel], false, false, 500).durationMs, 3000, 'finished segment includes waiting since the prompt');
+      assert.equal(executionTiming([{ id: 'missing', tool: { status: 'preparing' } } as any], true, true, 500).startedAt, 500, 'live Working does not require tool timing metadata');
+      assert.equal(groupExecutionParts([prompt], false).length, 1, 'an ended run leaves no empty Working row');
+      assert.deepEqual(executionTiming([], false), { active: false, startedAt: null, durationMs: null });
 
       const assistant = { id: 'assistant-1', message: { role: 'assistant', content: [{ type: 'toolCall', id: 'tool-1', name: 'read', arguments: { path: 'traffic.json' } }] } } as any;
       const result = { id: 'result-1', message: { role: 'toolResult', toolCallId: 'tool-1', toolName: 'read', content: [{ type: 'text', text: 'done' }], durationMs: 120 } } as any;

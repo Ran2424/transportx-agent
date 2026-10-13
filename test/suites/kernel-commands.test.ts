@@ -7,6 +7,20 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
   const { ConversationStore } = require('../../public/kernel/stores/conversation-store.js');
   const { SessionStore } = require('../../public/kernel/stores/session-store.js');
   const { ToolExecutionStore } = require('../../public/kernel/stores/tool-execution-store.js');
+  const clock = new ConversationStore();
+  clock.streamStarted('clock', 'first');
+  const startedAt = clock.get().bySession.clock.live.runStartedAt;
+  assert.equal(typeof startedAt, 'number');
+  clock.messageStarted('clock', { role: 'assistant', content: '' });
+  clock.streamCompleted('clock', { role: 'assistant', content: '继续分析' });
+  clock.streamStarted('clock', 'retry');
+  assert.equal(clock.get().bySession.clock.live.runStartedAt, startedAt, 'message transitions and retries preserve the independent run clock');
+  clock.hydrate('clock', { entries: [], isStreaming: true });
+  assert.equal(clock.get().bySession.clock.live.runStartedAt, startedAt, 'active snapshot reconciliation preserves the clock');
+  clock.streamEnded('clock');
+  assert.equal(clock.get().bySession.clock.live.runStartedAt, null, 'the clock clears when the run ends');
+  clock.streamStarted('other-clock', 'second');
+  assert.equal(clock.get().bySession.clock.live.runStartedAt, null, 'another session cannot restart the previous clock');
 
   function deps(handler: (command: Record<string, unknown>) => unknown, streaming = false) {
     const commands: Record<string, unknown>[] = [];

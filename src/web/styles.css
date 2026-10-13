@@ -584,11 +584,15 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .conversation-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; scroll-behavior: auto; }
 .conversation-thread { width: 100%; min-width: 0; max-width: var(--conversation-content-max-width); margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
 .execution-group { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.working-toggle { width: fit-content; max-width: 100%; }
-.working-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--tx-radius-sm); }
-.working-toggle.is-active .working-label { color: transparent; background: linear-gradient(100deg, var(--text-secondary) 25%, var(--selection-fg) 50%, var(--text-secondary) 75%); background-size: 240% 100%; background-clip: text; -webkit-background-clip: text; animation: working-shimmer 1.8s linear infinite; }
+.thinking-toggle.working-toggle { width: fit-content; max-width: 100%; }
+.working-toggle .working-label { color: var(--text-working); font-size: 14px; font-weight: 600; }
+.working-toggle .working-duration { color: var(--text-secondary); }
+.working-toggle:disabled { cursor: default; opacity: 1; }
+.working-toggle:disabled svg { visibility: hidden; }
+.thinking-toggle.working-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--tx-radius-sm); }
+.working-toggle.is-active .working-label { color: transparent; background: linear-gradient(110deg, var(--text-working) 35%, color-mix(in srgb, var(--text-working) 12%, transparent) 50%, var(--text-working) 65%); background-size: 240% 100%; background-clip: text; -webkit-background-clip: text; animation: working-shimmer 2s linear infinite; }
 @keyframes working-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
-@media (prefers-reduced-motion: reduce) { .working-toggle.is-active .working-label { animation: none; background: none; color: var(--text-secondary); } }
+@media (prefers-reduced-motion: reduce) { .working-toggle.is-active .working-label { animation: none; background: none; color: var(--text-working); } }
 @container (max-width: 600px) { .conversation-thread { padding-inline: var(--space-4); } }
 .compaction-status { width: fit-content; display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; color: var(--text-secondary); background: var(--selection-bg); border-left: 2px solid var(--status-info); font-size: 11px; }
 .conversation-message { min-width: 0; max-width: min(860px, 88%); margin: 0; flex: 0 0 auto; color: var(--text-primary); position: relative; }

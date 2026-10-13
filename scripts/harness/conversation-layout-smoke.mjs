@@ -15,6 +15,32 @@ export async function workingDisplaySmoke(page) {
   assert.equal(await page.locator('.thinking-block').count(), 0, 'compact mode hides reasoning labels');
   const composer = page.getByLabel('消息输入');
   await composer.fill('Working-验收'); await composer.press('Enter');
+  const initial = page.locator('.working-toggle.is-active').last();
+  await initial.waitFor();
+  await page.waitForTimeout(50);
+  assert.ok(await page.locator('.conversation-scroll').evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight <= 1), 'the delayed Working row remains visible to a reader following the bottom');
+  assert.equal(await initial.isDisabled(), true, 'waiting before model activity has no empty detail action');
+  assert.match(await initial.innerText(), /Working · · ·\s*· \d+\.\d+ 秒/, 'independent timing starts before the first model response');
+  const seconds = async (toggle) => Number((await toggle.innerText()).match(/(\d+\.\d+) 秒/)[1]);
+  const initialSeconds = await seconds(initial);
+  const originalTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  for (const theme of ['light', 'dark', 'sand']) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    const style = await initial.locator('.working-label').evaluate((node) => {
+      const css = getComputedStyle(node);
+      return { gradient: css.backgroundImage, position: css.backgroundPosition, size: css.fontSize, weight: css.fontWeight, opacity: getComputedStyle(node.closest('button')).opacity };
+    });
+    assert.ok(style.gradient.includes(theme === 'dark' ? '255, 255, 255' : '0, 0, 0'), 'Working uses neutral black/white according to the theme');
+    assert.ok(style.gradient.includes('0.12'), 'the moving sweep includes transparency');
+    assert.equal(style.size, '14px'); assert.equal(style.weight, '600'); assert.equal(style.opacity, '1');
+    await page.waitForTimeout(120);
+    assert.notEqual(await initial.locator('.working-label').evaluate((node) => getComputedStyle(node).backgroundPosition), style.position, 'the sweep actually moves');
+    await initial.screenshot({ path: `${directory}/active-${theme}.png` });
+  }
+  await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, originalTheme);
+  assert.ok(await seconds(initial) > initialSeconds, 'waiting for the first response continues counting');
+  assert.equal(await page.locator('.compaction-status', { hasText: '等待模型响应' }).count(), 0);
+  assert.doesNotMatch(await initial.innerText(), /—/);
   await page.locator('.assistant-prose', { hasText: '我先确认轨道 GIS 资产里线路数据' }).waitFor();
   await page.waitForTimeout(250);
   const toggle = page.locator('.working-toggle').last();
@@ -32,6 +58,13 @@ export async function workingDisplaySmoke(page) {
   const read = group.locator('[data-tool-call-id="working-read"]');
   await read.waitFor();
   await read.click();
+  await group.locator('.tool-state-label', { hasText: '已完成' }).first().waitFor();
+  assert.equal(await toggle.locator('.working-label').evaluate((node) => getComputedStyle(node).animationName), 'working-shimmer', 'Working remains active after the tool ends, while the model is waiting');
+  const waitingSeconds = await seconds(toggle);
+  await page.waitForTimeout(250);
+  assert.ok(await seconds(toggle) > waitingSeconds, 'the independent clock continues between tools and model messages');
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'model waiting does not replace the expanded group');
+  assert.equal(await page.locator('.compaction-status', { hasText: '等待模型响应' }).count(), 0);
   await page.locator('.assistant-prose', { hasText: 'Working 验收完成' }).waitFor();
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'group stays expanded while later tools and thinking join it');
@@ -63,13 +96,17 @@ export async function workingDisplaySmoke(page) {
   assert.equal(await page.locator('.working-toggle').last().innerText(), completed, 'history reload preserves exact segment timing');
   assert.equal(await page.locator('.assistant-prose', { hasText: '我先确认轨道 GIS 资产里线路数据' }).count(), 1);
   fs.writeFileSync(`${directory}/result.json`, JSON.stringify({ completed, restored: await page.locator('.working-toggle').last().innerText() }, null, 2));
+  await composer.fill('Working-旧计时'); await composer.press('Enter');
+  await page.locator('.assistant-prose', { hasText: '旧计时记录验收完成。' }).waitFor();
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  assert.equal((await page.locator('.working-toggle').last().innerText()).trim(), 'Working', 'missing historical timing omits the separator and placeholder');
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
   await page.getByRole('switch', { name: '显示执行详情', exact: true }).click();
   await page.keyboard.press('Escape');
   await page.locator('.settings-workspace').waitFor({ state: 'hidden' });
   assert.equal(await page.locator('.working-toggle').count(), 0, 'detailed mode restores the original tool/thinking presentation');
   assert.ok(await page.locator('.tool-card').count() >= 3);
-  console.log('Working display smoke: body retained, default collapse, animated activity/reduced motion, keyboard expansion, live/history timing, error details, tool choices, themes and settings passed.');
+  console.log('Working display smoke: independent prompt clock, model-wait continuity, no missing-time placeholder, moving monochrome/transparent themes, body retained, collapse/reduced motion, keyboard expansion, live/history timing, error details, choices and settings passed.');
 }
 
 export async function streamingScrollSmoke(page) {
