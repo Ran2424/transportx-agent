@@ -13,6 +13,8 @@ import type { ModuleArchiveInspection } from '../../contracts/module.ts';
 import { parseCitationEnvelope, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 import type { CanvasContextV1 } from '../../contracts/canvas.ts';
+import type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
+export type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 
 export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
 
@@ -196,6 +198,8 @@ export type PlatformCommands = {
   disconnectModelProvider(provider: string): Promise<void>;
   getSessionOptions(): Promise<SessionOptions>;
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
+  discoverLocalModels(input: LocalModelConnectionInput): Promise<LocalModelConnection>;
+  addLocalModel(input: AddLocalModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
   updateModel(input: UpdateModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
   deleteModel(provider: string, modelId: string): Promise<void>;
   deleteModelProvider(provider: string): Promise<void>;
@@ -601,6 +605,16 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
 
     async addModel(input) {
       const data = await rpcCommand(deps.http, { type: 'add_model', ...input });
+      return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
+    },
+
+    async discoverLocalModels(input) {
+      const data = await rpcCommand(deps.http, { type: 'discover_local_models', ...input });
+      return (data as { data: LocalModelConnection }).data;
+    },
+
+    async addLocalModel(input) {
+      const data = await rpcCommand(deps.http, { type: 'add_local_model', ...input });
       return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
     },
 
