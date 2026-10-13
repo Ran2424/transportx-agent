@@ -200,6 +200,25 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.equal(timedOut.child.listenerCount('message'), 0);
     const noConfirmation = make((child, message) => { if (message.type === 'transportx-update-stop') setImmediate(() => child.emit('exit', 0)); });
     await assert.rejects(noConfirmation.supervisor.stopForUpdate(), /timed out/);
+    const normal = make((child, message) => {
+      assert.equal(message.type, 'transportx-agent-host-stop');
+      setImmediate(() => child.emit('exit', 0));
+    });
+    await normal.supervisor.stop();
+    assert.deepEqual(normal.sent, [{ type: 'transportx-agent-host-stop' }]);
+    assert.equal(normal.supervisor.child, null);
+    // ChildProcess (Windows) follows the same IPC path, even with immediate exit.
+    const windowsChild = make((child, message) => {
+      assert.equal(message.type, 'transportx-agent-host-stop');
+      child.emit('exit', 0);
+    });
+    windowsChild.child.send = windowsChild.child.postMessage;
+    delete windowsChild.child.postMessage;
+    windowsChild.child.exitCode = null;
+    windowsChild.child.signalCode = null;
+    await windowsChild.supervisor.stop();
+    assert.equal(windowsChild.supervisor.child, null);
+    assert.deepEqual(windowsChild.sent, [{ type: 'transportx-agent-host-stop' }]);
   }
 
   // Host update preparation locks new work, refuses active work and unlocks on failure/cancellation

@@ -445,6 +445,7 @@ function attachDesktopUpdateChannel() {
   if (!channel) return;
   channel.onMessage((value) => {
     const message = value as { type?: string; id?: string };
+    if (message?.type === 'transportx-agent-host-stop') { void shutdown('desktop_stop'); return; }
     if (!message || typeof message.id !== 'string') return;
     const id = message.id;
     if (message.type === 'transportx-update-cancel') { updatePreparation.cancel(id); return; }
@@ -487,8 +488,8 @@ async function shutdown(signal: string) {
   socketHandler.close(); try { wss.close(); } catch {}
   try {
     await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), liveManager.shutdown()]);
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 2500).unref();
+    server.close(() => process.exit(process.exitCode || 0));
+    setTimeout(() => process.exit(process.exitCode || 0), 2500).unref();
   } catch (error) {
     console.error('[Tau] Shutdown could not confirm process exit:', error);
     process.exitCode = 1;
@@ -501,7 +502,7 @@ function startCli() {
   console.log(`[Tau] Modules: ${MODULE_REGISTRY.enabled().length} enabled, ${MODULE_REGISTRY.errors.length} error(s)`);
   process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('exit', () => { for (const session of liveManager.sessions.values()) try { session.child?.kill('SIGTERM'); } catch {} });
-  process.on('uncaughtException', (error) => { console.error(error); shutdown('uncaughtException'); }); process.on('unhandledRejection', (error) => console.error(error));
+  process.on('uncaughtException', (error) => { console.error(error); process.exitCode = 1; shutdown('uncaughtException'); }); process.on('unhandledRejection', (error) => console.error(error));
   const parentPid = Number(ARGS['parent-pid'] || process.env.TAU_PARENT_PID || 0);
   if (parentPid > 0) {
     const watcher = setInterval(() => { try { process.kill(parentPid, 0); } catch { clearInterval(watcher); shutdown('parent_exit'); } }, 1000);

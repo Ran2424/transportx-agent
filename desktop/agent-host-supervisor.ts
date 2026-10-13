@@ -211,7 +211,7 @@ export class AgentHostSupervisor {
       onceExit(child, (code, signal) => {
         this.child = null;
         const message = `Agent Host exited (${signal || code})`;
-        if (!settled) finish(new Error(message));
+        if (!settled) finish(new Error(`${message}\nLog: ${logFile}`));
         else if (!this.stopping) this.options.onUnexpectedExit?.(message);
       });
     });
@@ -268,13 +268,11 @@ export class AgentHostSupervisor {
     const child = this.child;
     if (!child) return;
     this.stopping = true;
-    try {
-      if (isUtilityProcess(child)) child.kill();
-      else child.kill('SIGTERM');
-    } catch {}
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => { terminateProcessTree(child); resolve(); }, this.options.shutdownTimeoutMs ?? 5000);
-      onceExit(child, () => { clearTimeout(timeout); resolve(); });
+      const removeExit = onceExit(child, () => { clearTimeout(timeout); resolve(); });
+      try { sendMessage(child, { type: 'transportx-agent-host-stop' }); } catch { terminateProcessTree(child); }
+      if (!isUtilityProcess(child) && (child.exitCode !== null || child.signalCode !== null)) { clearTimeout(timeout); removeExit(); resolve(); }
     });
     this.child = null;
   }

@@ -76,8 +76,92 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.deepEqual(await acknowledgement, { type: 'transportx-update-stopped', id: 'desktop-test-update', ok: true });
       await stopped;
       assert.equal(fs.existsSync(userData), true);
+      assert.equal(fs.existsSync(path.join(userData, 'host.transportx-lock')), false);
     }
 
+    // Force-kill leaves a dead lease; the next Host recovers it and normal IPC stop removes it.
+    {
+      const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-host-restart-'));
+      t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
+      const lock = path.join(userData, 'host.transportx-lock');
+      const start = async () => {
+        const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
+          cwd: process.cwd(),
+          env: { ...process.env, TAU_APP_ROOT: process.cwd(), TAU_RESOURCES_DIR: process.cwd(), TAU_USER_DATA_DIR: userData, TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'), TAU_PYTHON_COMMAND: process.execPath },
+          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+        });
+        t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+        let stderr = '';
+        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk; });
+        const ready = await new Promise<any>((resolve, reject) => {
+          let buffer = '';
+          const timer = setTimeout(() => reject(new Error(`restart ready timeout: ${stderr}`)), 10_000);
+          child.stdout.on('data', (chunk: Buffer) => {
+            buffer += chunk.toString();
+            const lines = buffer.split(/\r?\n/); buffer = lines.pop() || '';
+            for (const line of lines) {
+              try { const value = JSON.parse(line); if (value.type === 'transportx-agent-host-ready') { clearTimeout(timer); resolve(value); } } catch {}
+            }
+          });
+          child.once('error', (error: Error) => { clearTimeout(timer); reject(error); });
+          child.once('exit', (code: number) => { clearTimeout(timer); reject(new Error(`Restart exited ${code}: ${stderr}`)); });
+        });
+        assert.equal((await (await fetch(`http://127.0.0.1:${ready.port}/api/health`)).json()).status, 'ok');
+        return child;
+      };
+      const first = await start();
+      const crashed = new Promise<void>((resolve) => first.once('exit', resolve));
+      first.kill('SIGKILL'); await crashed;
+      assert.equal(fs.existsSync(lock), true);
+      const second = await start();
+      const ownerFile = path.join(lock, fs.readdirSync(lock)[0]);
+      assert.equal(JSON.parse(fs.readFileSync(ownerFile, 'utf8')).pid, second.pid);
+      const stopped = new Promise<number>((resolve) => second.once('exit', resolve));
+      second.send({ type: 'transportx-agent-host-stop' });
+      assert.equal(await stopped, 0);
+      assert.equal(fs.existsSync(lock), false);
+      const third = await start();
+      const stoppedAgain = new Promise<number>((resolve) => third.once('exit', resolve));
+      third.send({ type: 'transportx-agent-host-stop' });
+      assert.equal(await stoppedAgain, 0);
+      assert.equal(fs.existsSync(lock), false);
+    }
+
+    // desktop startup refuses an occupied Host lease with a failure exit code
+    {
+      const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+      const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-host-busy-'));
+      t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
+      const release = acquireWriteLease(path.join(userData, 'host'));
+      t.after(release);
+      const lock = path.join(userData, 'host.transportx-lock');
+      const ownerPath = path.join(lock, fs.readdirSync(lock)[0]);
+      const owner = fs.readFileSync(ownerPath, 'utf8');
+      const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          TAU_APP_ROOT: process.cwd(),
+          TAU_RESOURCES_DIR: process.cwd(),
+          TAU_USER_DATA_DIR: userData,
+          TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
+          TAU_PYTHON_COMMAND: process.execPath,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+      let stderr = '';
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+      const code = await new Promise<number | null>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Occupied Host startup did not exit')), 10_000);
+        child.once('error', (error: Error) => { clearTimeout(timer); reject(error); });
+        child.once('close', (code: number | null) => { clearTimeout(timer); resolve(code); });
+      });
+      assert.equal(code, 1);
+      assert.match(stderr, /Another writer owns/);
+      assert.equal(fs.readFileSync(ownerPath, 'utf8'), owner);
+    }
   }
 
   {

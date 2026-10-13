@@ -106,6 +106,91 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
       again();
     }
 
+    // Dead owners are recovered, while incomplete/unknown owners and competing generations stay protected.
+    {
+      const crypto = require('node:crypto');
+      const { spawnSync } = require('node:child_process');
+      const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+      const deadPid = spawnSync(process.execPath, ['-e', '']).pid;
+      assert.ok(deadPid > 0);
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-stale-lease-'));
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const target = path.join(root, 'host');
+      const lock = `${target}.transportx-lock`;
+      const writeOwner = (legacy: boolean, pid = deadPid) => {
+        fs.mkdirSync(lock);
+        const nonce = crypto.randomUUID();
+        const file = path.join(lock, legacy ? 'owner.json' : `owner.${nonce}.json`);
+        fs.writeFileSync(file, JSON.stringify({ pid, nonce, createdAt: new Date().toISOString() }));
+        return file;
+      };
+      for (const legacy of [false, true]) {
+        writeOwner(legacy);
+        const release = acquireWriteLease(target);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(lock, fs.readdirSync(lock)[0]), 'utf8')).pid, process.pid);
+        assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy');
+        release(); release();
+        assert.equal(fs.existsSync(lock), false);
+      }
+      for (const content of [null, '{broken', '{}', JSON.stringify({ pid: -1, nonce: crypto.randomUUID() })]) {
+        fs.mkdirSync(lock);
+        if (content !== null) fs.writeFileSync(path.join(lock, 'owner.json'), content);
+        const before = fs.readdirSync(lock);
+        // Even an old malformed directory does not prove its owner is dead.
+        fs.utimesSync(lock, new Date(0), new Date(0));
+        assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy');
+        assert.deepEqual(fs.readdirSync(lock), before);
+        fs.rmSync(lock, { recursive: true });
+      }
+      const { testSymlink } = require('../support/symlink.ts');
+      const outside = path.join(root, 'outside');
+      fs.mkdirSync(outside);
+      const outsideOwner = path.join(outside, 'owner.json');
+      const outsideBytes = JSON.stringify({ pid: deadPid, nonce: crypto.randomUUID() });
+      fs.writeFileSync(outsideOwner, outsideBytes);
+      await testSymlink(t, 'a lock directory symlink cannot reclaim an external owner', outside, lock, () => {
+        assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy');
+        assert.equal(fs.readFileSync(outsideOwner, 'utf8'), outsideBytes);
+      }, 'dir');
+      fs.mkdirSync(lock);
+      await testSymlink(t, 'an owner symlink cannot be reclaimed', outsideOwner, path.join(lock, 'owner.json'), () => {
+        assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy');
+        assert.equal(fs.readFileSync(outsideOwner, 'utf8'), outsideBytes);
+      }, 'file');
+      fs.rmdirSync(lock);
+      const kill = process.kill;
+      for (const code of ['EPERM', 'EINVAL']) {
+        const file = writeOwner(false);
+        const before = fs.readFileSync(file, 'utf8');
+        process.kill = ((pid: number, signal: any) => { if (pid === deadPid) throw Object.assign(new Error('unknown process status'), { code }); return kill(pid, signal); }) as typeof process.kill;
+        try { assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy'); }
+        finally { process.kill = kill; }
+        assert.equal(fs.readFileSync(file, 'utf8'), before);
+        fs.rmSync(lock, { recursive: true });
+      }
+      // Pause contender A after its read, let B acquire, then resume A. A must not delete B's lock.
+      for (const legacy of [false, true]) {
+        writeOwner(legacy);
+        let releaseWinner: (() => void) | undefined;
+        let winnerFile = '';
+        let winnerBytes = '';
+        process.kill = ((pid: number, signal: any) => {
+          if (pid === deadPid) {
+            process.kill = kill;
+            releaseWinner = acquireWriteLease(target);
+            winnerFile = path.join(lock, fs.readdirSync(lock)[0]);
+            winnerBytes = fs.readFileSync(winnerFile, 'utf8');
+          }
+          return kill(pid, signal);
+        }) as typeof process.kill;
+        try { assert.throws(() => acquireWriteLease(target), (error: any) => error.code === 'writer_busy'); }
+        finally { process.kill = kill; }
+        assert.equal(fs.readFileSync(winnerFile, 'utf8'), winnerBytes);
+        releaseWinner!();
+        assert.equal(fs.existsSync(lock), false);
+      }
+    }
+
     // another process cannot take a Host lease or mutate its Agent directory
     {
       const { acquireWriteLease } = require('../../bin/util/json-storage.js');
