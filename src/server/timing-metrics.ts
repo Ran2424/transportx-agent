@@ -66,19 +66,19 @@ function writeIndex(cwd: string, index: TimingIndex) {
   fs.renameSync(temp, target);
 }
 
-function attachThinking(message: TimingMessage, durationMs: number): TimingMessage {
+function attachThinking(message: TimingMessage, startedAt: number, durationMs: number): TimingMessage {
   if (!Array.isArray(message.content)) return message;
   let attached = false;
   const content = message.content.map((block) => {
     if (attached || block.type !== 'thinking') return block;
     attached = true;
-    return { ...block, durationMs };
+    return { ...block, startedAt, durationMs };
   });
   return attached ? { ...message, content } : message;
 }
 
-function attachTool(message: TimingMessage, durationMs: number): TimingMessage {
-  return { ...message, durationMs };
+function attachTool(message: TimingMessage, startedAt: number, durationMs: number): TimingMessage {
+  return { ...message, startedAt, durationMs };
 }
 
 export class TimingMetricsStore {
@@ -89,7 +89,7 @@ export class TimingMetricsStore {
   }
 
   recordThinking<T extends TimingMessage>(message: T, startedAt: number, endedAt: number, durationMs: number): T {
-    const enriched = attachThinking(message, durationMs) as T;
+    const enriched = attachThinking(message, startedAt, durationMs) as T;
     if (enriched === message) return message;
     const key = messageKey(message);
     this.index.records[key] = { kind: 'thinking', sourceId: key, startedAt, endedAt, durationMs };
@@ -106,7 +106,7 @@ export class TimingMetricsStore {
   enrichToolResult<T extends TimingMessage>(message: T): T {
     if (!message.toolCallId) return message;
     const record = this.index.records[toolKey(message.toolCallId)];
-    return record?.kind === 'tool' ? attachTool(message, record.durationMs) as T : message;
+    return record?.kind === 'tool' ? attachTool(message, record.startedAt, record.durationMs) as T : message;
   }
 
   enrichEntries(entries: JsonRecord[]): JsonRecord[] {
@@ -118,10 +118,10 @@ export class TimingMetricsStore {
       if (message.role === 'assistant' && Array.isArray(message.content) && message.content.some((block) => block.type === 'thinking')) {
         const existing = message.content.find((block) => block.type === 'thinking' && typeof block.durationMs === 'number');
         const exact = this.index.records[messageKey(message)];
-        if (!existing && exact?.kind === 'thinking') enriched = attachThinking(enriched, exact.durationMs);
-      } else if (message.role === 'toolResult' && message.toolCallId && typeof message.durationMs !== 'number') {
+        if (exact?.kind === 'thinking') enriched = attachThinking(enriched, exact.startedAt, typeof existing?.durationMs === 'number' ? existing.durationMs : exact.durationMs);
+      } else if (message.role === 'toolResult' && message.toolCallId) {
         const exact = this.index.records[toolKey(message.toolCallId)];
-        if (exact?.kind === 'tool') enriched = attachTool(enriched, exact.durationMs);
+        if (exact?.kind === 'tool') enriched = attachTool(enriched, exact.startedAt, message.durationMs ?? exact.durationMs);
       }
 
       return enriched === message ? entry : { ...entry, message: enriched as JsonRecord };

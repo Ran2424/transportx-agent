@@ -21,7 +21,7 @@ export function projectTools(entries: SessionEntry[], liveTools: Record<string, 
       known.add(id);
       const live = liveTools[id];
       const result = results.get(id);
-      const tool = { id, name: live?.toolName || block.name || '', args: live?.args || block.arguments || {}, result: live?.result ?? live?.partialResult ?? (result ? { content: result.content, details: result.details } : undefined), isError: live?.isError ?? result?.isError, startedAt: live?.startedAt, durationMs: live?.durationMs ?? result?.durationMs, argumentChars: live?.argumentChars, status: live?.status || (result?.isError ? 'error' : result ? 'completed' : 'running') } satisfies ToolData;
+      const tool = { id, name: live?.toolName || block.name || '', args: live?.args || block.arguments || {}, result: live?.result ?? live?.partialResult ?? (result ? { content: result.content, details: result.details } : undefined), isError: live?.isError ?? result?.isError, startedAt: live?.startedAt ?? result?.startedAt, durationMs: live?.durationMs ?? result?.durationMs, argumentChars: live?.argumentChars, status: live?.status || (result?.isError ? 'error' : result ? 'completed' : 'running') } satisfies ToolData;
       byEntry.set(entry, [...(byEntry.get(entry) || []), tool]);
     });
   });
@@ -37,7 +37,7 @@ export function projectTools(entries: SessionEntry[], liveTools: Record<string, 
     if (known.has(id)) return;
     const resultEntry = resultEntries.get(id);
     if (!resultEntry) return;
-    byEntry.set(resultEntry, [{ id, name: result.toolName || '', args: {}, result: { content: result.content, details: result.details }, isError: result.isError, durationMs: result.durationMs, status: result.isError ? 'error' : 'completed' }]);
+    byEntry.set(resultEntry, [{ id, name: result.toolName || '', args: {}, result: { content: result.content, details: result.details }, isError: result.isError, startedAt: result.startedAt, durationMs: result.durationMs, status: result.isError ? 'error' : 'completed' }]);
   });
   return { byEntry, liveOnly };
 }

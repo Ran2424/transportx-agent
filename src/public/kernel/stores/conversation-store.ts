@@ -58,9 +58,9 @@ const emptyConversation = (): ConversationState => ({ snapshotEntries: [], live:
 
 export function messageText(message: AppMessage | undefined): string {
   if (!message) return '';
-  if (typeof message.content === 'string') return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content)));
+  if (typeof message.content === 'string') return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content)));
   if (Array.isArray(message.content)) {
-    return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n'))));
+    return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n'))));
   }
   return '';
 }
@@ -175,7 +175,7 @@ export class ConversationStore {
     this.update(sessionId, (conv) => {
       if (message?.role === 'assistant') {
         // A new assistant message within the same run resets the buffers.
-        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: Date.now(), thinkingDurationMs: null } };
+        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: message.startedAt ?? Date.now(), thinkingDurationMs: null } };
       }
       if (message?.role === 'user') {
         const text = messageText(message);

@@ -66,8 +66,8 @@ export function MessageArtifacts({ projection, sessionId }: { projection?: Messa
       const presentation = filePresentation({ name, path: item.resource.relativePath, isDirectory: false });
       return <button key={item.occurrence.occurrenceId} type="button" data-citation-card={item.occurrence.occurrenceId} onClick={() => openResource(item)}>
         <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
-        <span><strong>[{item.number}] {item.work.title}</strong><small>{presentation.label}</small></span>
-        <Icon name="chevron" />
+        <span><strong title={item.work.title}>[{item.number}] {item.work.title}</strong><small title={name}>{presentation.label} · {name}</small></span>
+        <span className="message-artifact-action">{t('conversation.openArtifact')}<Icon name="chevron" /></span>
       </button>;
     })}</div>
     {preview ? <FilePreview
@@ -99,7 +99,7 @@ export function CitationFooter({ projection, sessionId }: { projection?: Message
     const first = items[0];
     return <li key={first.resource.resourceId}>
       <header className="citation-source-heading">
-        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => openResource(first)} title={t('conversation.viewSource')}><Icon name="file" />{first.work.title}</button></div>
+        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => openResource(first)} title={`${first.work.title} · ${t('conversation.viewSource')}`}><Icon name="file" />{first.work.title}</button></div>
         <span>{t('common.referenceCount', { count: items.length })}</span>
       </header>
       <div className="citation-locator-list">{items.map((item) => <button
@@ -117,6 +117,18 @@ export function CitationFooter({ projection, sessionId }: { projection?: Message
         <span className="citation-locator-copy"><strong>{citationPosition(item)}</strong>{item.locator.quote ? <span>{item.locator.quote}</span> : null}</span>
         <span className="citation-locator-hint">{t('conversation.hover')}</span>
       </button>)}</div>
+      <details className="citation-source-details" onToggle={() => setPeek(null)}>
+        <summary>{t('conversation.sourceDetails')}</summary>
+        <div>
+          {items.map((item) => <blockquote key={item.occurrence.occurrenceId}><strong>[{item.number}] {citationPosition(item)}</strong><p>{item.locator.quote || t('conversation.noQuote')}</p></blockquote>)}
+          <dl>
+            {first.work.issuedAt ? <><dt>{t('conversation.issuedAt')}</dt><dd>{first.work.issuedAt}</dd></> : null}
+            {first.work.edition ? <><dt>{t('conversation.edition')}</dt><dd>{first.work.edition}</dd></> : null}
+            {first.work.standardNumber ? <><dt>{t('conversation.standardNumber')}</dt><dd>{first.work.standardNumber}</dd></> : null}
+            <dt>{t('conversation.resourcePath')}</dt><dd><code>{first.resource.relativePath}</code></dd>
+          </dl>
+        </div>
+      </details>
     </li>;
   })}</ol>
     {projection.unavailableIds.length ? <p className="citation-warning">{t('conversation.unavailable', { ids: projection.unavailableIds.join(', ') })}</p> : null}

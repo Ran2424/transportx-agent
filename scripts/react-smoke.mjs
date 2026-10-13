@@ -5,8 +5,10 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { documentSmoke } from './harness/document-smoke.mjs';
-import { feedbackSmoke, composerSmoke } from './harness/feedback-smoke.mjs';
+import { feedbackSmoke, composerSmoke, conversationStyleSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
+import { conversationLayoutSmoke, toolStateSmoke, streamingScrollSmoke, workingDisplaySmoke } from './harness/conversation-layout-smoke.mjs';
+import { prepareComposerContextSmoke, composerSelectionSmoke } from './harness/composer-selection-smoke.mjs';
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -80,11 +82,38 @@ try {
   }
   console.log('Resource smoke: direct SVG preview/raw navigation cannot execute scripts.');
   await documentSmoke(page, browser);
+  await conversationStyleSmoke(page);
+  await toolStateSmoke(page, baseUrl);
+  if (process.env.TAU_STYLE_STAGE !== 'tools') await conversationLayoutSmoke(page);
+  await streamingScrollSmoke(page);
+  await workingDisplaySmoke(page);
   assert.equal(requestedUrls.some((url) => /(?:docx|xlsx|pptx)_parser_bg|render-worker/.test(url)), false, 'non-Office workflows do not load OOXML WASM or workers');
   await composer.fill('实时-markdown');
   await composer.press('Enter');
   const liveMarkdown = page.locator('.assistant-message.is-streaming');
   await liveMarkdown.locator('h2', { hasText: '实时报告' }).waitFor({ timeout: 5_000 });
+  const steer = page.getByRole('button', { name: '发送引导', exact: true });
+  assert.equal(await steer.isDisabled(), true, 'empty guidance cannot be sent');
+  assert.equal(await page.getByRole('button', { name: '终止当前任务', exact: true }).isEnabled(), true, 'stopping remains available');
+  const steeringCommands = [];
+  const rejectSteer = async (route) => {
+    const command = route.request().postDataJSON();
+    if (command.type !== 'steer') return route.continue();
+    steeringCommands.push(command);
+    await route.fulfill({ json: { success: false, error: 'steer boundary smoke' } });
+  };
+  await page.route('**/api/rpc', rejectSteer);
+  await composer.fill('补充中文条件');
+  await composer.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true });
+  await composer.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229 });
+  await page.waitForTimeout(50);
+  assert.equal(steeringCommands.length, 0, 'composition does not send guidance');
+  await steer.click();
+  await page.locator('.composer-error', { hasText: 'steer boundary smoke' }).waitFor();
+  assert.equal(steeringCommands.length, 1, 'valid guidance can be sent');
+  assert.equal(await composer.inputValue(), '补充中文条件', 'rejected guidance preserves the draft');
+  await composer.fill('');
+  await page.unroute('**/api/rpc', rejectSteer);
   await liveMarkdown.locator('li', { hasText: '已完成第一项' }).waitFor({ timeout: 5_000 });
   await page.locator('.assistant-message:not(.is-streaming)', { hasText: 'Markdown 应在回复结束前完成渲染。' }).waitFor({ timeout: 10_000 });
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
@@ -98,11 +127,29 @@ try {
   await composer.press('Enter');
   const askUserDialog = page.getByRole('dialog', { name: '选择分析范围' });
   await askUserDialog.getByRole('button', { name: '只看工作日' }).waitFor({ timeout: 10_000 });
-  await askUserDialog.getByLabel('输入其他答案').fill('仅分析节假日');
-  await askUserDialog.getByRole('button', { name: '提交回答' }).click();
+  const customAnswer = askUserDialog.getByLabel('输入其他答案');
+  await customAnswer.fill('仅分析节假日');
+  await customAnswer.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true });
+  await customAnswer.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229 });
+  assert.equal(await askUserDialog.isVisible(), true, 'composition does not submit a custom answer');
+  await customAnswer.press('Enter');
   await page.locator('.assistant-message', { hasText: '任务面板已更新，继续执行查询步骤。' }).waitFor({ timeout: 10_000 });
   assert.match(output, /ui ui_scope responded: .*"value":"仅分析节假日"/);
 
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  await composer.fill('React-dialog-input'); await composer.press('Enter');
+  const inputDialog = page.getByRole('dialog', { name: '输入路段名称', exact: true });
+  const roadInput = inputDialog.getByRole('textbox');
+  await roadInput.fill('漕溪北路');
+  await roadInput.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', isComposing: true });
+  await roadInput.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229 });
+  await page.waitForTimeout(100);
+  assert.equal(await inputDialog.isVisible(), true, 'composition does not resolve an input dialog');
+  await roadInput.press('Enter');
+  await page.locator('.assistant-message', { hasText: '已收到路段名称。' }).waitFor();
+  assert.match(output, /ui ui_react_input responded: .*"value":"漕溪北路"/);
+
+  await prepareComposerContextSmoke(page);
   await composer.fill('基线-geo');
   await composer.press('Enter');
   await page.locator('.assistant-message', { hasText: '地图已发布，可在右侧地图面板查看。' }).waitFor({ timeout: 10_000 });
@@ -199,6 +246,9 @@ try {
   await tray.getByText('2 features').waitFor({ timeout: 10_000 });
   await tray.getByRole('button', { name: '附到对话' }).click();
   await page.locator('.composer-geo-contexts').waitFor();
+  await composer.fill('');
+  assert.equal(await page.getByRole('button', { name: '发送消息', exact: true }).isEnabled(), true, 'map context alone is deliverable');
+  await composerSelectionSmoke(page);
   const activeMapNode = await geoMap.elementHandle();
   await page.getByRole('tab', { name: '下车热点热力图', exact: true }).click();
   await page.getByRole('tab', { name: 'Geo 交互验收地图', exact: true }).click();
@@ -236,12 +286,35 @@ try {
     return { contextIds: user?.geoContextIds, inspectText: JSON.stringify(inspect), contextOk: contextResponse?.ok, context: contextResponse?.ok ? await contextResponse.json() : null };
   });
   assert.equal(audit.contextIds?.length, 1);
+  const delivered = await page.evaluate(async () => {
+    const sessions = await (await fetch('/api/live-sessions')).json();
+    const snapshot = await (await fetch(`/api/live-sessions/${sessions.sessions[0].id}/snapshot`)).json();
+    return snapshot.entries.map((entry) => entry.message).find((message) => message?.role === 'user' && JSON.stringify(message.content).includes('geo-main-context'));
+  });
+  assert.equal(delivered.attachmentIds.length, 5);
+  assert.equal(delivered.canvasContextIds.length, 1);
+  assert.equal(await page.locator('.composer-selection').count(), 0, 'successful delivery clears only the submitted selections');
   const inspected = JSON.parse(JSON.parse(audit.inspectText).content[0].text);
   assert.equal(inspected.contexts[0].features.length, 2);
   assert.doesNotMatch(audit.inspectText, /not-exposed/);
   assert.equal(audit.contextOk, true);
   assert.equal(audit.context.context.sceneRevision, 1);
   console.log('Geo smoke: stored Context and inspect output audited.');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  const restoredInput = page.locator('.user-message', { hasText: 'geo-main-context' });
+  assert.equal(await restoredInput.count(), 1, 'mixed input has one restored user message');
+  assert.doesNotMatch(await restoredInput.innerText(), /transportx-attachment-context|本轮用户消息包含/);
+  const restoredDelivery = await page.evaluate(async () => {
+    const sessionId = localStorage.getItem('tau-active-live-session-id');
+    const snapshot = await (await fetch(`/api/live-sessions/${sessionId}/snapshot`)).json();
+    return snapshot.entries.map((entry) => entry.message).find((message) => message?.role === 'user' && JSON.stringify(message.content).includes('geo-main-context'));
+  });
+  assert.deepEqual(restoredDelivery.attachmentIds, delivered.attachmentIds);
+  assert.deepEqual(restoredDelivery.geoContextIds, delivered.geoContextIds);
+  assert.deepEqual(restoredDelivery.canvasContextIds, delivered.canvasContextIds);
+  fs.writeFileSync('.plans/style-upgrade-phase-three/validation/delivery.json', JSON.stringify({ attachments: delivered.attachmentIds.length, geoContexts: delivered.geoContextIds.length, canvasContexts: delivered.canvasContextIds.length, restored: true }, null, 2));
+  console.log('Mixed delivery smoke: attachment, Geo and Canvas references survive reload without internal prompt text or duplicate user messages.');
 
   // Generate a small local video in the browser so the UI test needs no external video assets.
   console.log('Canvas smoke: generating test video.');

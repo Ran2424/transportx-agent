@@ -64,18 +64,19 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 - **用户数据根目录按平台解析**：macOS 为 `~/.transportx/traffic-agent/`，Windows 与 Linux 见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；任务工作区 `scenario/`、模型 `models.json`、认证 `auth.json`、会话/日志/缓存、受管模块 `modules/` 均位于对应根目录。API Key 不返回前端。
 - **Module 是统一安装单元**：可组合贡献 Skill / Extension / Native Runtime / Data / Knowledge。内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用能力；`modules/installable/` 是用户本地可安装模块暂存目录，默认不入 Git，不是平台启动依赖。大体积交通知识库/数据库资产不写入仓库与安装包。
 - **模块版本纪律**：每次改动某个 Module（manifest、Skill、Extension、脚本、数据目录内容）后，必须同步提升该模块 `manifest.json` 的 `version`（新能力升 minor、修复升 patch），并在 CHANGELOG 中说明；Resolved Session Plan 按精确版本冻结，版本号是会话可复现性的依据。
-- **测试预算纪律**：`test/suites/*.test.ts` 注册的测试套件总数不得超过 40 个；新增场景必须合并到现有套件或现有 case 文件，先运行 `npm run test:budget`，不得通过新增入口绕过上限。
+- **测试预算纪律**：全项目 Node 测试的实际注册总数不得超过 40 个，顶层测试、子测试、skip、todo 均计入，不能只限制套件或文件数量。测试在 `test/suites/*.test.ts` 中直接注册；新增检查应合并到已有关键场景，删除重复或低价值检查，不保留旧 case 回调列表作为隐藏测试层。先运行 `npm run test:budget`；预检禁止注册别名、循环、条件注册及子测试，`npm test` 的运行时报告器再次按实际测试节点计数，超限即失败。环境不支持某个断言时用 diagnostic 说明，不能额外注册跳过子测试。
 - **主题纪律（UI 改造后）**：`src/web/styles/tokens.css` 是 Light / Dark / Sand 三主题的**唯一 token 声明源**（primitive + semantic）。组件只消费 semantic token，禁止 `[data-theme] .component` 式覆盖，禁止在组件中写主题专属色值。功能文字不得低于 11px。新的样式修改应直接落在 `src/web/styles.css` 或遵循其分层结构，不要重复定义 token。
 - **会话侧栏**：固定工具栏下方为能力扩展区 30% / 会话列表 70%（能力区可收起，移动端默认收起）。能力数据来自 `platform.getOverview()` 投影（`src/web/platform/capabilities/capability-projection.ts`），不要自行推测或复制服务端状态。
 - **版本同步**：发布前同步 `package.json` 与 `src/server/config.ts` 的 `PLATFORM_VERSION`；`desktop/build/runtime-manifest.json` 由构建脚本自动生成，不要手改。
+- **CHANGELOG 归集**：当前平台版本的安装包尚未正式发布时，所有后续变更（含文档与开发工具）追加到 `docs/CHANGELOG.md` 的当前版本段，标为 `## <version> - 未发布`；不另建 `Unreleased`，不因每次改动提升平台版本。正式发布时填写实际发布日期并冻结该段；发布后的新变更开启下一版本段。内部测试打包、源码提交或 PR 合并不算正式发布；任一平台正式发布后，该版本即冻结。Module 仍遵守独立版本纪律。
 - **提交策略**：小型修复与小幅功能改动可直接提交 `main`；涉及新能力、架构调整或多环节联动的较大改动走「分支 → PR → 合并」流程（参考 PR #12 的 Video Capability）。
 - **安全边界**：模块安装拒绝符号链接与路径逃逸；文件/Geo/Citation 资源按会话目录与 SHA-256 校验；Markdown 安全渲染；鉴权 Cookie 与 WebSocket 断连处理均有测试覆盖。
 - **跨平台维护纪律**：所有 OS 相关的事实（python 入口与架构校验、ffmpeg 文件名 / chmod / 架构探测、签名环境变量、安装器 / 卸载器形为、安装器静默参数、release metadata）都集中于 [`desktop/scripts/platform-profile.mjs`](desktop/scripts/platform-profile.mjs)。`desktop/electron-builder.yml` 仅负责用 `extends:` 组合 [`electron-builder.common.yml`](desktop/electron-builder.common.yml) + [`electron-builder.mac.yml`](desktop/electron-builder.mac.yml) + [`electron-builder.win.yml`](desktop/electron-builder.win.yml)。增减新 OS 仅意味着：（1）在 `platform-profile.mjs` 增一条 profile；（2）新增一份 `electron-builder.<os>.yml` fragment 并在主文件 `extends` 中加入；（3）如果 profile.signing.hostArchRequired 不是 `x64/arm64`、或 ffmpeg/python 入口不一致，更新 [`test/desktop-runtime.test.ts`](test/desktop-runtime.test.ts) 的 snapshot 子例。**不允许在任何业务文件（`src/server/**`、`desktop/main.ts`、`desktop/agent-host-supervisor.ts`、`scripts/**`）重新引入 `process.platform === '...'` 分支、`path.sep` 拼接的边界判定、或 `.exe` 字符串拼接**；一律走现成 helper：`isWithin`（来自 `src/server/util/path.ts`）、`toPosixPath` / `relativePosixPath`（同上）。磁盘序列化一律 POSIX；内存判定一律 `path.relative`；混合写法在 review 阶段会被打回。同一 `npm run desktop:pack` 命令会根据 `process.platform` 自动走对应 profile，无需为 Windows 维护独立脚本。
 
 ## 发布流程
 
-1. 提升版本：`package.json` + `src/server/config.ts`（两处一致）。
-2. 更新 `docs/CHANGELOG.md`：遵循 Keep a Changelog，在 `Unreleased` 归集待发布的用户可见变更；发布时移入带 ISO 日期的版本段，并按 Added / Changed / Fixed / Security / Removed 分类。
+1. 确认版本：当前版本尚未正式发布时沿用该版本；已发布后开启下一版本时，同步提升 `package.json`、锁文件根版本与 `src/server/config.ts`（各处一致）。
+2. 更新 `docs/CHANGELOG.md`：待发布改动归入当前版本段，按 Added / Changed / Fixed / Security / Removed 分类；正式发布时将 `未发布` 替换为实际 ISO 日期，不拆分或另建同版本段。
 3. 打包步骤全部由 `desktop/scripts/platform-profile.mjs` 驱动，不再为不同 OS 维护不同的命令/脚本：
 
    - macOS（已在 `platform-profile.darwin`）：

@@ -182,14 +182,14 @@
   --selection-fg: #8F4A2E;
 
   --text-primary: #262320;
-  --text-secondary: #6F6963;
+  --text-secondary: #66615B;
   --text-tertiary: #928A82;
 
   --border-default: rgba(38, 35, 32, 0.075);
   --border-strong: rgba(38, 35, 32, 0.12);
 
-  --interactive-primary-bg: #B96D4C;
-  --interactive-primary-bg-hover: #A85A3A;
+  --interactive-primary-bg: #A85A3A;
+  --interactive-primary-bg-hover: #8F4A2E;
   --interactive-primary-fg: #FFFFFF;
 
   --focus-ring: rgba(185, 109, 76, 0.32);

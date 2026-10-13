@@ -243,9 +243,10 @@ export function buildCanvasContextPrompt(contextIds: string[]) {
 export function restoreCanvasContextMessage(entry: Record<string, unknown>) {
   const message = entry.message && typeof entry.message === 'object' ? entry.message as Record<string, unknown> : null;
   if (!message || message.role !== 'user' || message.canvasContextIds) return entry;
-  const content = typeof message.content === 'string' ? message.content : null;
+  const content = typeof message.content === 'string' ? message.content : Array.isArray(message.content)
+    ? message.content.filter((block) => block?.type === 'text').map((block) => block.text || '').join('\n') : null;
   if (!content) return entry;
   const match = content.match(/\[Canvas context\]\nThe user explicitly attached Canvas context IDs: ([^\n.]+)/);
   const canvasContextIds = match?.[1].split(',').map((id) => id.trim()).filter(Boolean);
-  return canvasContextIds?.length ? { ...entry, message: { ...message, canvasContextIds, content: stripCanvasContextPrompt(content) } } : entry;
+  return canvasContextIds?.length ? { ...entry, message: { ...message, canvasContextIds, content: typeof message.content === 'string' ? stripCanvasContextPrompt(content) : (message.content as Record<string, unknown>[]).map((block) => block?.type === 'text' && typeof block.text === 'string' ? { ...block, text: stripCanvasContextPrompt(block.text) } : block) } } : entry;
 }
