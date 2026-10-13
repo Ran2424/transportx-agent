@@ -54,6 +54,7 @@ export function loadTauSettings(): TauSettings {
     port: DESKTOP_MODE ? 0 : parseInt(String(ARGS.port || process.env.TAU_PORT || settings.port || '3001'), 10),
     host: DESKTOP_MODE ? '127.0.0.1' : ARGS.host || process.env.TAU_HOST || settings.host || '127.0.0.1',
     remoteAccess: ARGS.remote === true || process.env.TAU_REMOTE === '1' || settings.remoteAccess === true,
+    webUsersFile: process.env.TAU_WEB_USERS_FILE,
     user: process.env.TAU_USER || settings.user || '',
     pass: process.env.TAU_PASS || settings.pass || '',
     authEnabled: settings.authEnabled,
@@ -64,7 +65,7 @@ export function loadTauSettings(): TauSettings {
 }
 
 export const TAU_SETTINGS = loadTauSettings();
-export const AUTH_CONFIGURED = !!(TAU_SETTINGS.user && TAU_SETTINGS.pass);
+export const AUTH_CONFIGURED = !!(TAU_SETTINGS.webUsersFile || (TAU_SETTINGS.user && TAU_SETTINGS.pass));
 export const PORT = TAU_SETTINGS.port;
 export const HOST = TAU_SETTINGS.host;
 export const REACT_STATIC_DIR = process.env.TAU_REACT_STATIC_DIR || findReactWebDir();

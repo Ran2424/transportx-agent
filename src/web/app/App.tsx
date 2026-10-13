@@ -50,7 +50,7 @@ function mostRecentSessionId(sessions: ReturnType<typeof useSessionState>['sessi
   return [...sessions].sort((a, b) => new Date(b.lastConversationAt || b.createdAt || 0).getTime() - new Date(a.lastConversationAt || a.createdAt || 0).getTime())[0]?.id || null;
 }
 
-export function App() {
+export function App({ webUsername, onLogout }: { webUsername?: string; onLogout?: () => void } = {}) {
   const { t } = useTranslation();
   const kernel = appKernel; const reconnect = reconnectBrowserApplication;
   const runtime = useRuntimeState();
@@ -419,7 +419,7 @@ export function App() {
 
   return (
     <OpenDocumentContext.Provider value={openDocument}><AppShell
-      header={<Header connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
+      header={<Header webUsername={webUsername} onLogout={onLogout} connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} onRenameLive={renameLiveSession} onRenameHistory={renameHistorySession} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => setNewSessionOpen(true)} showThinking={showThinking} expandThinking={expandThinking} />}

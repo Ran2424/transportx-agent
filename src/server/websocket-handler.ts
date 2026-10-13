@@ -12,11 +12,13 @@ type WebSocketHandlerOptions = {
   sessions: LiveSessionManager;
   isAllowedOrigin(request: import('node:http').IncomingMessage): boolean;
   authEnabled(): boolean;
+  recheckAuthentication?: boolean;
   isAuthenticated(request: import('node:http').IncomingMessage): boolean;
 };
 
 export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+  const authenticatedRequests = new Map<TauWs, import('node:http').IncomingMessage>();
 
   options.server.on('upgrade', (request, socket: Socket, head) => {
     if (!options.isAllowedOrigin(request)) {
@@ -33,7 +35,8 @@ export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
     else socket.destroy();
   });
 
-  wss.on('connection', (ws: TauWs) => {
+  wss.on('connection', (ws: TauWs, request: import('node:http').IncomingMessage) => {
+    if (options.recheckAuthentication) authenticatedRequests.set(ws, request);
     options.sessions.addClient(ws);
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
@@ -41,12 +44,14 @@ export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
     ws.on('message', () => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', code: 'websocket_event_only', message: 'Use HTTP /api/rpc for commands.' }));
     });
-    ws.on('close', () => options.sessions.removeClient(ws));
+    ws.on('close', () => { authenticatedRequests.delete(ws); options.sessions.removeClient(ws); });
     ws.on('error', () => options.sessions.removeClient(ws));
   });
 
   const heartbeat = setInterval(() => {
     for (const client of options.sessions.clients as Set<TauWs>) {
+      const request = authenticatedRequests.get(client);
+      if (request && !options.isAuthenticated(request)) { client.close(4001, 'Login expired'); options.sessions.removeClient(client); continue; }
       if (client.readyState !== WebSocket.OPEN) { options.sessions.removeClient(client); continue; }
       if (!client.isAlive) { try { client.terminate(); } catch {} options.sessions.removeClient(client); continue; }
       client.isAlive = false;

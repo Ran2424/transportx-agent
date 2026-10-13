@@ -6,7 +6,7 @@ export function isLoopbackHost(host: string) {
 
 export function validateHostAccess(settings: TauSettings) {
   if (isLoopbackHost(settings.host)) return;
-  if (!settings.remoteAccess || !settings.user || !settings.pass || settings.authEnabled === false) {
+  if (!settings.remoteAccess || (!settings.webUsersFile && (!settings.user || !settings.pass)) || (!settings.webUsersFile && settings.authEnabled === false)) {
     throw new Error('Non-loopback listening requires --remote (or TAU_REMOTE=1), user/password and enabled authentication');
   }
 }

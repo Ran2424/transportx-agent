@@ -18,6 +18,21 @@ button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; opacity: .42; }
 
+.web-login { height: 100%; display: grid; place-items: safe center; padding: 24px; overflow: auto; }
+.web-login-card { width: min(100%, 400px); padding: 36px; border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--surface-raised); box-shadow: var(--shadow-surface); }
+.web-login-brand { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 650; }
+.web-login-brand img { width: 36px; height: 36px; }
+.web-login-brand small { display: block; color: var(--text-secondary); font-size: 11px; letter-spacing: .16em; }
+.web-login-card h1 { font-size: 22px; margin: 32px 0 8px; }
+.web-login-card p { color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.web-login-card form { display: grid; gap: 12px; margin-top: 24px; }
+.web-login-card label { font-size: 13px; }
+.web-login-card input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-default); color: var(--text-primary); }
+.web-login-card form .ui-button { margin-top: 8px; height: 40px; }
+.web-login-card form small { text-align: center; color: var(--text-secondary); font-size: 12px; }
+.web-login-error { color: var(--status-danger); font-size: 13px; }
+.web-logout { background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-sm); color: var(--text-secondary); padding: 6px 8px; font-size: 12px; cursor: pointer; }
+
 /* ============================================================
    Shell — Header
    ============================================================ */

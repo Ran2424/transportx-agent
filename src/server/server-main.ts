@@ -17,6 +17,7 @@ import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SES
 import { buildSessionPiLaunch } from './session-pi-launch.js';
 import { createSessionWorkingDirectory } from './session-workspace.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
+import { WebAuth } from './web-auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession } from './sessions.js';
 import { makeSessionId as makeId } from './session-workspace.js';
@@ -71,7 +72,8 @@ const liveManager = new LiveSessionManager({
 
 function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
 
-let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
+const webAuth = TAU_SETTINGS.webUsersFile ? new WebAuth(TAU_SETTINGS.webUsersFile, path.join(APP_PATHS.userDataDir, 'web-sessions.json')) : null;
+let authEnabled = !!webAuth || (AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false);
 let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
@@ -85,7 +87,7 @@ const rpcHandlers: RpcHandlerRegistry = {
   ...createPlatformRpcHandlers(currentPlatformOverview),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
-    required: !isLoopbackHost(HOST),
+    required: !!webAuth || !isLoopbackHost(HOST),
     getEnabled: () => authEnabled,
     setEnabled: (enabled) => { authEnabled = enabled; saveTauSetting('authEnabled', enabled); },
     notifyChanged: (enabled) => liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled } }),
@@ -130,7 +132,7 @@ const rpcHandlers: RpcHandlerRegistry = {
 };
 const reliableCommandTypes = new Set(Object.entries(rpcHandlers).flatMap(([type, handler]) => handler.reliable ? [type] : []));
 
-type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
+type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'web-cookie' | 'none'; expiresAt?: number };
 
 function checkBasicAuth(req: IncomingMessage) {
   if (!authEnabled) return true;
@@ -141,6 +143,10 @@ function checkBasicAuth(req: IncomingMessage) {
 }
 
 function checkAuth(req: IncomingMessage): AuthResult {
+  if (webAuth) {
+    try { return { ok: !!webAuth.authenticate(req.headers), via: 'web-cookie' }; }
+    catch { return { ok: false, via: 'none' }; }
+  }
   if (!authEnabled) return { ok: true, via: 'disabled' };
   if (checkBasicAuth(req)) return { ok: true, via: 'basic' };
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME];
@@ -156,6 +162,7 @@ function isForwardedHttps(req: IncomingMessage) {
 }
 
 function maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: AuthResult) {
+  if (webAuth) return;
   if (!authEnabled || !auth.ok || auth.via === 'disabled') return;
   let expiresAt = auth.expiresAt;
   if (expiresAt === undefined) {
@@ -173,7 +180,7 @@ function errorMessage(error: unknown) { return error instanceof Error ? error.me
 function errorStatus(error: unknown) { return error && typeof error === 'object' && 'status' in error && typeof (error as StatusError).status === 'number' ? (error as StatusError).status! : 400; }
 function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
   if (parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME]) res.setHeader('Set-Cookie', buildSessionCookie('', { secure: isForwardedHttps(req), clear: true }));
-  res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Tau"', 'Content-Type': 'application/json' });
+  res.writeHead(401, { ...(webAuth ? {} : { 'WWW-Authenticate': 'Basic realm="Tau"' }), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ error: 'Unauthorized' }));
 }
 
@@ -374,9 +381,16 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
 
-const staticHandler = createStaticHandler({ reactStaticDir: REACT_STATIC_DIR, mimeTypes: MIME_TYPES as Record<string, string>, authEnabled: () => authEnabled, checkAuth, sendAuthRequired, maybeSetSessionCookie, handleApi: handleApiRoute });
-const server = http.createServer(staticHandler.serveStaticFile);
-const socketHandler = attachWebSocketHandler({ server, sessions: liveManager, isAllowedOrigin: isAllowedApiOrigin, authEnabled: () => authEnabled, isAuthenticated: (request) => checkAuth(request).ok });
+const staticHandler = createStaticHandler({ reactStaticDir: REACT_STATIC_DIR, mimeTypes: MIME_TYPES as Record<string, string>, authEnabled: () => authEnabled, publicStatic: !!webAuth, checkAuth, sendAuthRequired, maybeSetSessionCookie, handleApi: handleApiRoute });
+const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+  const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+  if (pathname.startsWith('/api/auth/')) {
+    if (!webAuth && pathname === '/api/auth/session' && req.method === 'GET') return json(res, 200, { enabled: false, username: null });
+    if (webAuth) { void webAuth.handle(req, res, isAllowedApiOrigin(req)).catch(() => json(res, 503, { error: 'Login service unavailable' })); return; }
+  }
+  staticHandler.serveStaticFile(req, res);
+});
+const socketHandler = attachWebSocketHandler({ server, sessions: liveManager, isAllowedOrigin: isAllowedApiOrigin, authEnabled: () => authEnabled, recheckAuthentication: !!webAuth, isAuthenticated: (request) => checkAuth(request).ok });
 const { wss } = socketHandler;
 
 function computeUrls(port: number) {

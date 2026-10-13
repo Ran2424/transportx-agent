@@ -79,4 +79,67 @@ test('Signed cookies, remote access and authentication changes enforce credentia
       });
     }
   }
+
+  {
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const os = require('node:os');
+    const http = require('node:http');
+    const { WebAuth, WEB_COOKIE_NAME, hashWebPassword } = require('../../bin/web-auth.js');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-web-auth-'));
+    const usersFile = path.join(directory, 'users.json');
+    const sessionsFile = path.join(directory, 'sessions.json');
+    const salt = 'abcdef0123456789abcdef0123456789';
+    const passwordHash = (await hashWebPassword('test-login-password', salt)).toString('hex');
+    fs.writeFileSync(usersFile, JSON.stringify({ schemaVersion: 1, users: { admin: { salt, passwordHash }, 'xiaqiang@tongji.edu.cn': { salt, passwordHash: (await hashWebPassword('ACDEFH3479', salt)).toString('hex') } } }));
+    const auth = new WebAuth(usersFile, sessionsFile);
+    let server: import('node:http').Server | undefined;
+    try {
+      const emailToken = await auth.login('xiaqiang@tongji.edu.cn', 'ACDEFH3479');
+      assert.equal(auth.authenticate({ cookie: `${WEB_COOKIE_NAME}=${emailToken}` }).username, 'xiaqiang@tongji.edu.cn');
+      assert.equal(await auth.login('admin', 'wrong-password'), null);
+      assert.equal(await auth.login('unknown', 'test-login-password'), null);
+      assert.equal(await auth.login('__proto__', 'test-login-password'), null);
+      const token = await auth.login('admin', 'test-login-password');
+      const headers = { cookie: `${WEB_COOKIE_NAME}=${token}` };
+      assert.equal(auth.authenticate(headers).username, 'admin');
+      assert.equal(new WebAuth(usersFile, sessionsFile).authenticate(headers).username, 'admin');
+      assert.equal(fs.readFileSync(sessionsFile, 'utf8').includes(token), false);
+      auth.logout(headers);
+      assert.equal(auth.authenticate(headers), null);
+      assert.equal(new WebAuth(usersFile, sessionsFile).authenticate(headers), null);
+      const changed = await auth.login('admin', 'test-login-password');
+      fs.writeFileSync(usersFile, JSON.stringify({ schemaVersion: 1, users: {} }));
+      assert.equal(auth.authenticate({ cookie: `${WEB_COOKIE_NAME}=${changed}` }), null);
+      const resetHash = (await hashWebPassword('changed-login-password', salt)).toString('hex');
+      fs.writeFileSync(usersFile, JSON.stringify({ schemaVersion: 1, users: { admin: { salt, passwordHash: resetHash } } }));
+      assert.equal(auth.authenticate({ cookie: `${WEB_COOKIE_NAME}=${changed}` }), null);
+      fs.writeFileSync(usersFile, JSON.stringify({ schemaVersion: 1, users: { admin: { salt, passwordHash } } }));
+      const expired = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
+      for (const session of Object.values(expired.sessions) as Array<{ expiresAt: number }>) session.expiresAt = 1;
+      fs.writeFileSync(sessionsFile, JSON.stringify(expired));
+      assert.equal(new WebAuth(usersFile, sessionsFile).authenticate({ cookie: `${WEB_COOKIE_NAME}=${changed}` }), null);
+
+      server = http.createServer((req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+        void auth.handle(req, res, !req.headers.origin || req.headers.origin === `http://${req.headers.host}`).catch(() => { res.writeHead(503); res.end(); });
+      });
+      await new Promise<void>(resolve => server!.listen(0, '127.0.0.1', resolve));
+      const address = server!.address() as import('node:net').AddressInfo;
+      const url = `http://127.0.0.1:${address.port}`;
+      const login = await fetch(`${url}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' }, body: JSON.stringify({ username: 'admin', password: 'test-login-password' }) });
+      assert.equal(login.status, 200);
+      const cookie = login.headers.get('set-cookie')!;
+      assert.match(cookie, /HttpOnly; SameSite=Lax; Max-Age=604800; Secure/);
+      const denied = await fetch(`${url}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://untrusted.example' }, body: '{}' });
+      assert.equal(denied.status, 403);
+      const cookieHeader = cookie.split(';')[0];
+      assert.equal((await fetch(`${url}/api/auth/session`, { headers: { Cookie: cookieHeader } }).then(r => r.json()) as { username: string }).username, 'admin');
+      assert.equal((await fetch(`${url}/api/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader }, body: '{}' })).status, 200);
+      assert.equal(auth.authenticate({ cookie: cookieHeader }), null);
+    } finally {
+      if (server) await new Promise<void>(resolve => server!.close(() => resolve()));
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  }
 });

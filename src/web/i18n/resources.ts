@@ -1,4 +1,8 @@
 export const zhCN = {
+  'login.title': '登录团队工作台', 'login.description': '使用已授权的账号，访问共享的交通分析任务与成果。',
+  'login.username': '账号', 'login.password': '密码', 'login.signIn': '登录', 'login.signingIn': '登录中…', 'login.signOut': '退出',
+  'login.persistence': '登录有效期为 7 天', 'login.checking': '正在检查登录状态…', 'login.retry': '重试',
+  'login.invalid': '账号或密码不正确', 'login.tooMany': '尝试次数过多，请稍后重试', 'login.unavailable': '暂时无法连接登录服务，请重试',
   'conversation.failed': '模型请求失败',
   'conversation.cancelled': '已取消',
   'conversation.waiting': '等待模型响应…',
@@ -708,6 +712,10 @@ export const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 export const enUS: Record<TranslationKey, string> = {
+  'login.title': 'Sign in to your team workspace', 'login.description': 'Use an approved account to access shared traffic analysis tasks and outputs.',
+  'login.username': 'Account', 'login.password': 'Password', 'login.signIn': 'Sign in', 'login.signingIn': 'Signing in…', 'login.signOut': 'Sign out',
+  'login.persistence': 'Your login lasts 7 days', 'login.checking': 'Checking your login…', 'login.retry': 'Retry',
+  'login.invalid': 'Incorrect account or password', 'login.tooMany': 'Too many attempts. Try again later.', 'login.unavailable': 'Cannot connect to the login service. Please retry.',
   'conversation.failed': 'Model request failed',
   'conversation.cancelled': 'Cancelled',
   'conversation.waiting': 'Waiting for the model…',

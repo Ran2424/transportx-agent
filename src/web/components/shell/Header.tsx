@@ -7,6 +7,8 @@ import { modelReference, sessionTitle } from '../../lib/formatting';
 import { WindowControls } from './WindowControls';
 
 type HeaderProps = {
+  webUsername?: string;
+  onLogout?: () => void;
   connection: ConnectionState;
   activeSession: LiveSession | null;
   streaming: boolean;
@@ -24,6 +26,8 @@ type HeaderProps = {
 };
 
 export function Header({
+  webUsername,
+  onLogout,
   connection,
   activeSession,
   streaming,
@@ -80,6 +84,7 @@ export function Header({
       </div>
 
       <div className="workspace-header-right">
+        {webUsername ? <button className="web-logout" type="button" onClick={onLogout} title={webUsername}>{webUsername} · {t('login.signOut')}</button> : null}
         <div className="agent-status" data-testid="agent-status" data-state={status} title={`Agent ${statusLabel}`}>
           <span className="agent-status-dot" />
           <span>{statusLabel}</span>

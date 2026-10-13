@@ -10,7 +10,7 @@ export const appKernel = createAppKernel({
     method: init?.method,
     headers: init?.body instanceof FormData ? init?.headers : { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     body: init?.body === undefined ? undefined : init.body instanceof FormData ? init.body : JSON.stringify(init.body),
-  }),
+  }).then(response => { if (response.status === 401) window.location.reload(); return response; }),
 });
 
 let started = false;
