@@ -1,4 +1,5 @@
 const { hostPlatform } = require('../bin/host-platform.js');
+const { createDiagnosticLogger } = require('../bin/diagnostic-log.js');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -75,17 +76,6 @@ function checkHealth(url: string, timeoutMs = 3000): Promise<void> {
   });
 }
 
-function appendBounded(filePath: string, text: string, maxBytes = 5 * 1024 * 1024) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  try {
-    if (fs.statSync(filePath).size > maxBytes) {
-      const current = fs.readFileSync(filePath);
-      fs.writeFileSync(filePath, current.subarray(Math.max(0, current.length - Math.floor(maxBytes / 2))));
-    }
-  } catch {}
-  fs.appendFileSync(filePath, text);
-}
-
 type AgentHostProcess = ChildProcessWithoutNullStreams | UtilityProcess;
 
 function isUtilityProcess(child: AgentHostProcess): child is UtilityProcess {
@@ -135,6 +125,8 @@ export class AgentHostSupervisor {
     const { paths } = this.options;
     if (!fs.existsSync(paths.agentHostEntrypoint)) throw new Error(`Agent Host entrypoint is missing: ${paths.agentHostEntrypoint}`);
     const logFile = path.join(paths.logsDir, 'agent-host.log');
+    const log = createDiagnosticLogger(logFile);
+    log('info', 'host_starting');
     const runtimeManifest = path.join(paths.resourcesDir, 'runtime-manifest.json');
     if (fs.existsSync(runtimeManifest)) validatePackagedRuntime(paths.resourcesDir);
     const developmentRuntime = fs.existsSync(runtimeManifest) ? {} : {
@@ -180,13 +172,14 @@ export class AgentHostSupervisor {
 
     return new Promise((resolve, reject) => {
       let stdout = '';
+      let stderr = '';
       let settled = false;
       const timeout = setTimeout(() => finish(new Error('Agent Host startup timed out')), this.options.startupTimeoutMs ?? 15_000);
       const finish = (error?: Error, url?: string) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        if (error) { this.stop().finally(() => reject(error)); } else resolve(url!);
+        if (error) { log('error', 'host_start_failed', { message: error.message, stack: error.stack }); this.stop().finally(() => reject(error)); } else resolve(url!);
       };
       const childStdout = child.stdout as Readable | null;
       const childStderr = child.stderr as Readable | null;
@@ -194,21 +187,30 @@ export class AgentHostSupervisor {
       childStdout.setEncoding('utf8');
       childStderr.setEncoding('utf8');
       childStdout.on('data', (chunk: string) => {
-        appendBounded(logFile, chunk);
         stdout += chunk;
+        if (Buffer.byteLength(stdout) > 32 * 1024) { log('warn', 'host_stdout_truncated', { bytes: Buffer.byteLength(stdout) }); stdout = ''; return; }
         const lines = stdout.split(/\r?\n/);
         stdout = lines.pop() || '';
         for (const line of lines) {
+          log('info', 'host_stdout', { message: line });
           const ready = parseReadyLine(line.trim());
           if (!ready) continue;
           const url = `http://127.0.0.1:${ready.port}`;
           checkHealth(url).then(() => finish(undefined, url), (error) => finish(new Error(`Agent Host health check failed: ${error instanceof Error ? error.message : String(error)}`)));
         }
       });
-      childStderr.on('data', (chunk: string) => appendBounded(logFile, chunk));
+      childStderr.on('data', (chunk: string) => {
+        stderr += chunk;
+        if (Buffer.byteLength(stderr) > 32 * 1024) { log('warn', 'host_stderr_truncated', { bytes: Buffer.byteLength(stderr) }); stderr = ''; return; }
+        const lines = stderr.split(/\r?\n/); stderr = lines.pop() || '';
+        for (const message of lines) if (message.trim()) log('warn', 'host_stderr', { message });
+      });
       if (isUtilityProcess(child)) child.once('error', (type, location) => finish(new Error(`Agent Host ${type} at ${location}`)));
       else child.once('error', (error: Error) => finish(error));
       onceExit(child, (code, signal) => {
+        if (stdout.trim()) log('info', 'host_stdout', { message: stdout });
+        if (stderr.trim()) log('warn', 'host_stderr', { message: stderr });
+        log(this.stopping ? 'info' : 'error', 'host_exited', { exitCode: code, signal });
         this.child = null;
         const message = `Agent Host exited (${signal || code})`;
         if (!settled) finish(new Error(`${message}\nLog: ${logFile}`));

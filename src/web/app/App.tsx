@@ -86,6 +86,7 @@ export function App() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'live'; session: typeof sessionState.sessions[number] } | { kind: 'history'; session: HistorySession } | null>(null);
+  const [deleteWorkspace, setDeleteWorkspace] = useState(true);
   const [sessionHistoryRevision, setSessionHistoryRevision] = useState(0);
   const [dismissedRuntimeError, setDismissedRuntimeError] = useState('');
   const restoredRef = useRef(false);
@@ -318,10 +319,12 @@ export function App() {
   }
 
   async function deleteLiveSession(session: typeof sessionState.sessions[number]) {
+    setDeleteWorkspace(true);
     setDeleteTarget({ kind: 'live', session });
   }
 
   async function deleteHistorySession(session: HistorySession) {
+    setDeleteWorkspace(true);
     if (session.filePath) setDeleteTarget({ kind: 'history', session });
   }
 
@@ -343,20 +346,20 @@ export function App() {
     const request = navigationSequence.current;
     try {
       if (target.kind === 'live') {
-        await kernel.commands.session.close(target.session.id);
+        await kernel.commands.session.deleteLive(target.session.id, deleteWorkspace);
         kernel.dispatch({ type: 'session/closed', sessionId: target.session.id });
-        if (target.session.sessionFile) await kernel.commands.session.deleteHistory(target.session.sessionFile);
         if (request === navigationSequence.current && kernel.stores.session.get().activeSessionId === null) {
           window.localStorage.removeItem('tau-active-live-session-id');
           const next = mostRecentSessionId(kernel.stores.session.get().sessions);
           if (next) await selectSession(next);
         }
       } else if (target.session.filePath) {
-        await kernel.commands.session.deleteHistory(target.session.filePath);
+        await kernel.commands.session.deleteHistory(target.session.filePath, deleteWorkspace);
       }
       setSessionHistoryRevision((value) => value + 1);
     } catch (cause) {
       if (request === navigationSequence.current) setNotice((cause as { message?: string })?.message || t('app.error.deleteSession'));
+      setSessionHistoryRevision((value) => value + 1);
     }
   }
 
@@ -435,7 +438,10 @@ export function App() {
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
-        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={t('sessions.deleteConversation')} description={t('app.confirm.deleteSession', { name: deleteTargetName })} confirmLabel={t('sessions.deleteConversation')} onConfirm={() => void confirmDeleteSession()} />
+        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={t('sessions.deleteConversation')} description={t('app.confirm.deleteSession', { name: deleteTargetName })} confirmLabel={t('sessions.deleteConversation')} onConfirm={() => void confirmDeleteSession()}>
+          <label className="confirmation-dialog-workspace"><input type="checkbox" checked={deleteWorkspace} onChange={(event) => setDeleteWorkspace(event.target.checked)} />{t('app.confirm.deleteWorkspace')}</label>
+          {deleteWorkspace && deleteTarget?.session.cwd && <p className="confirmation-dialog-copy">{t('app.confirm.deleteWorkspacePath', { path: deleteTarget.session.cwd })}</p>}
+        </ConfirmationDialog>
         {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label={t('app.notice.close')} onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
       </>}
     /></OpenDocumentContext.Provider>

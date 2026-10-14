@@ -68,6 +68,7 @@ export function platformOverview(
       models: path.join(storage.root, 'models.json'),
       settings: path.join(storage.root, 'settings.json'),
       modules: paths.modulesDir,
+      logs: paths.logsDir,
     },
     modules,
     errors: [

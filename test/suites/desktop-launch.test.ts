@@ -77,6 +77,8 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       await stopped;
       assert.equal(fs.existsSync(userData), true);
       assert.equal(fs.existsSync(path.join(userData, 'host.transportx-lock')), false);
+      const records = fs.readFileSync(path.join(userData, 'logs', 'runtime.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+      assert.ok(records.some((entry: any) => entry.event === 'host_ready'), 'Host startup logs remain in user data after exit');
     }
 
     // Force-kill leaves a dead lease; the next Host recovers it and normal IPC stop removes it.
@@ -212,6 +214,9 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
         '--session', '/tmp/history.jsonl',
         '--model', 'openai/gpt-5',
       ]);
+      const { hostPlatform } = require('../../bin/host-platform.js');
+      const promptRoot = path.join(process.cwd(), 'src/server/prompts');
+      assert.equal(launch.args[launch.args.indexOf('--system-prompt') + 1], ['PI_SYSTEM.md', hostPlatform.systemPrompt].map((file) => fs.readFileSync(path.join(promptRoot, file), 'utf8').trim()).join('\n\n'));
       assert.equal(launch.env.TAU_VIDEO_TOKEN, 'video-token');
       assert.equal(launch.env.TAU_CANVAS_TOKEN, 'canvas-token');
       assert.deepEqual(JSON.parse(launch.env.TRANSPORTX_DATA_ASSETS_JSON), { 'data:roads': '/assets/roads' });

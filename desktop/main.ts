@@ -1,4 +1,5 @@
 const { hostPlatform } = require('../bin/host-platform.js');
+const { createDiagnosticLogger } = require('../bin/diagnostic-log.js');
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -18,6 +19,9 @@ let updateService: UpdateService | null = null;
 let installingUpdate = false;
 
 app.setPath('userData', resolveDesktopUserDataDir(app.getPath('home'), app.getPath('userData')));
+const logDesktop = createDiagnosticLogger(path.join(app.getPath('userData'), 'logs', 'desktop.log'));
+process.on('uncaughtExceptionMonitor', (error) => logDesktop('error', 'desktop_uncaught_exception', { message: error.message, stack: error.stack }));
+app.on('render-process-gone', (_event: Electron.Event, contents: Electron.WebContents, details: Electron.RenderProcessGoneDetails) => logDesktop(details.reason === 'clean-exit' ? 'info' : 'error', 'renderer_exited', { webContentsId: contents.id, reason: details.reason, exitCode: details.exitCode }));
 
 function isHttpUrl(value: string) {
   try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; }
@@ -144,6 +148,7 @@ function createWindow(url: string) {
   });
   window.on('closed', () => { if (mainWindow === window) mainWindow = null; });
   window.loadURL(windowUrl.toString()).catch((error: Error) => {
+    logDesktop('error', 'workbench_load_failed', { message: error.message, stack: error.stack });
     dialog.showErrorBox('TransportX Agent', `${nativeText('无法加载本地工作台', 'Could not load the local workbench')}: ${error.message}`);
     app.quit();
   });
@@ -160,6 +165,9 @@ else {
   });
 
   app.whenReady().then(async () => {
+    logDesktop('info', 'desktop_started', { version: app.getVersion() });
+    const paths = resolveDesktopPaths(app.getAppPath(), process.resourcesPath, app.getPath('userData'));
+    const logUpdate = createDiagnosticLogger(path.join(paths.logsDir, 'updates.log'));
     const { autoUpdater } = require('electron-updater');
     // Updater diagnostics can include complete URLs. Log only our state codes.
     autoUpdater.logger = { info() {}, warn() {}, error() {}, debug() {} };
@@ -186,7 +194,7 @@ else {
       const key = `${state.phase}:${state.errorCode || ''}`;
       if (key !== loggedState) {
         loggedState = key;
-        fs.appendFile(path.join(paths.logsDir, 'updates.log'), `${JSON.stringify({ at: new Date().toISOString(), currentVersion: state.currentVersion, targetVersion: state.targetVersion, phase: state.phase, errorCode: state.errorCode })}\n`, () => {});
+        logUpdate('info', 'update_state', { currentVersion: state.currentVersion, targetVersion: state.targetVersion, phase: state.phase, errorCode: state.errorCode });
       }
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('transportx:update:state', state);
     });
@@ -217,10 +225,10 @@ else {
       if (target.origin !== workbenchOrigin || (!reportPdf && !sessionFile && !citationFile)) throw new Error('Invalid download URL');
       return await downloadToFile(event.sender, target.toString());
     });
-    const paths = resolveDesktopPaths(app.getAppPath(), process.resourcesPath, app.getPath('userData'));
     supervisor = new AgentHostSupervisor({
       paths,
       onUnexpectedExit: (message) => {
+        logDesktop('error', 'host_unexpected_exit', { message });
         dialog.showErrorBox('TransportX Agent', `${message}\n${nativeText(`请查看 ${paths.logsDir} 中的日志。`, `See the logs in ${paths.logsDir}.`)}`);
         app.quit();
       },
@@ -228,6 +236,7 @@ else {
     });
     try { createWindow(await supervisor.start()); }
     catch (error) {
+      logDesktop('error', 'desktop_start_failed', { message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
       dialog.showErrorBox(nativeText('TransportX Agent 启动失败', 'TransportX Agent failed to start'), error instanceof Error ? error.message : String(error));
       app.quit();
     }

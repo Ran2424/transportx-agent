@@ -112,11 +112,15 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
 
     // Platform RPC registry serves the current overview
     {
-      const handlers = createPlatformRpcHandlers(() => ({ modules: 3 }));
+      let opened = 0;
+      const handlers = createPlatformRpcHandlers(() => ({ modules: 3 }), async () => { opened++; });
       assert.deepEqual(handlers.get_platform_overview.handle({ type: 'get_platform_overview' }, {
         success(data: unknown) { return { success: true, data }; },
         failure(error: string) { return { success: false, error }; },
       }), { success: true, data: { modules: 3 } });
+      const openedReply = await handlers.open_logs_directory.handle({ type: 'open_logs_directory', path: '/unrelated' }, { success: () => ({ success: true }), failure: () => ({ success: false }) });
+      assert.equal(openedReply.success, true);
+      assert.equal(opened, 1);
     }
   }
 });

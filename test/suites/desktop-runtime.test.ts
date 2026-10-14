@@ -8,6 +8,38 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
   const path = require('node:path');
   const { loadRuntimeManifest, validateRuntimeManifest } = require('../../bin/runtime-resolver.js');
 
+  // Persistent logs redact credentials, retain bounded archives and tolerate unavailable storage.
+  {
+    const { createDiagnosticLogger } = require('../../bin/diagnostic-log.js');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-log-test-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const file = path.join(root, 'runtime.jsonl');
+    const log = createDiagnosticLogger(file, 512);
+    for (let index = 0; index < 12; index++) log('warn', 'test_event', { index, message: '日志'.repeat(20) });
+    assert.deepEqual(fs.readdirSync(root).sort(), ['runtime.jsonl', 'runtime.jsonl.1', 'runtime.jsonl.2', 'runtime.jsonl.3']);
+    for (const name of fs.readdirSync(root)) {
+      assert.ok(fs.statSync(path.join(root, name)).size <= 512);
+      for (const line of fs.readFileSync(path.join(root, name), 'utf8').trim().split('\n')) assert.ok(JSON.parse(line).at);
+    }
+    const safe = path.join(root, 'safe.jsonl');
+    createDiagnosticLogger(safe)('error', 'provider_failed', { sessionId: 'session-1', apiKey: 'field-secret', nested: { token: 'nested-secret' }, message: 'Authorization: Bearer bearer-secret api_key=query-secret password="password-secret" {"apiKey":"json-secret"} OPENAI_API_KEY=env-secret API key=space-secret', path: '\\\\server\\share\\report.csv' });
+    createDiagnosticLogger(safe)('info', 'next_start');
+    const contents = fs.readFileSync(safe, 'utf8');
+    assert.doesNotMatch(contents, /field-secret|nested-secret|bearer-secret|query-secret|password-secret|json-secret|env-secret|space-secret/);
+    const records = contents.trim().split('\n').map(JSON.parse);
+    assert.equal(records.length, 2);
+    assert.equal(records[0].sessionId, 'session-1');
+    assert.equal(records[0].path, '//server/share/report.csv');
+    const blocked = path.join(root, 'blocked');
+    fs.writeFileSync(blocked, 'file');
+    const warnings: string[] = [];
+    const originalWrite = process.stderr.write;
+    process.stderr.write = ((chunk: unknown) => { warnings.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { const unavailable = createDiagnosticLogger(path.join(blocked, 'error.log')); unavailable('error', 'one'); unavailable('error', 'two'); }
+    finally { process.stderr.write = originalWrite; }
+    assert.equal(warnings.length, 1);
+  }
+
   function digest(filePath: string) {
     return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
   }
@@ -447,6 +479,23 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.deepEqual(generated.win32.treeArgs, ['/pid', '/T']);
     assert.equal(generated.darwin.utilityHost, true);
     assert.equal(generated.linux.packaged, null);
+    assert.equal(generated.darwin.systemPrompt, 'PI_SYSTEM_POSIX.md');
+    assert.equal(generated.linux.systemPrompt, 'PI_SYSTEM_POSIX.md');
+    assert.equal(generated.win32.systemPrompt, 'PI_SYSTEM_WINDOWS.md');
+    const { toPosixPath } = require('../../bin/util/path.js');
+    assert.equal(toPosixPath('C:\\tasks\\report'), 'C:/tasks/report');
+    assert.equal(toPosixPath('\\\\server\\share\\tasks\\report'), '//server/share/tasks/report');
+    const { loadSystemPrompt } = require('../../bin/session-prompt.js');
+    const promptRoot = path.resolve('src/server/prompts');
+    const basePrompt = fs.readFileSync(path.join(promptRoot, 'PI_SYSTEM.md'), 'utf8').trim();
+    const posixPrompt = fs.readFileSync(path.join(promptRoot, 'PI_SYSTEM_POSIX.md'), 'utf8').trim();
+    const windowsPrompt = fs.readFileSync(path.join(promptRoot, 'PI_SYSTEM_WINDOWS.md'), 'utf8').trim();
+    assert.equal(loadSystemPrompt('darwin'), `${basePrompt}\n\n${posixPrompt}`);
+    assert.equal(loadSystemPrompt('linux'), `${basePrompt}\n\n${posixPrompt}`);
+    assert.equal(loadSystemPrompt('win32'), `${basePrompt}\n\n${windowsPrompt}`);
+    assert.match(loadSystemPrompt('win32'), /2>nul/);
+    assert.match(loadSystemPrompt('win32'), /2>\/dev\/null/);
+    assert.throws(() => loadSystemPrompt('freebsd'), /Host operations missing/);
     const source = ['src/server/sessions.ts', 'src/server/process-runner.ts', 'src/server/process-tree.ts', 'src/server/file-api-handler.ts', 'src/server/server-main.ts', 'desktop/main.ts', 'desktop/agent-host-supervisor.ts'].map(file => fs.readFileSync(path.resolve(file), 'utf8')).join('\n');
     assert.doesNotMatch(source, /process\.platform\s*[!=]==\s*['"]/);
   }

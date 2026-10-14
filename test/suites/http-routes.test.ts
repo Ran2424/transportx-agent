@@ -13,6 +13,8 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
   process.env.TAU_HOST = '127.0.0.1';
 
   process.env.PI_CODING_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-http-'));
+  process.env.TAU_USER_DATA_DIR = process.env.PI_CODING_AGENT_DIR;
+  require('../../bin/diagnostic-log.js').initializeHostLogging(path.join(process.env.TAU_USER_DATA_DIR, 'logs'));
 
   process.env.PI_CODING_AGENT_SESSION_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'sessions');
 
@@ -131,6 +133,11 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const response = await fetch(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'prompt', message: 'x'.repeat(1024 * 1024) }) });
     assert.equal(response.status, 413);
     assert.match((await jsonBody(response)).error, /too large/);
+    await fetch(`${base}/api/session-history?filePath=invalid&api_key=private-query-secret`);
+    const log = fs.readFileSync(path.join(process.env.TAU_USER_DATA_DIR, 'logs', 'runtime.jsonl'), 'utf8');
+    assert.ok(log.includes('http_failed'));
+    assert.ok(log.includes('host_logging_started'));
+    assert.doesNotMatch(log, /private-query-secret/);
   }
 
   // multipart limits return a readable error over HTTP
@@ -571,12 +578,36 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.equal(liveManager.sessions.has(session.id), false);
 
     const filePath = writeSessionFileAt(PROJ_DIR, 'delete-idempotent.jsonl', [{ type: 'session', id: 'delete-idempotent', cwd: '/tmp' }]);
-    const request = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }) });
+    const request = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath, deleteWorkspace: false }) });
     assert.equal((await request()).status, 200);
     const repeated = await request();
     assert.equal(repeated.status, 200);
     assert.equal((await jsonBody(repeated)).alreadyDeleted, true);
     t.after(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); });
+
+    fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+    const { createSessionWorkingDirectory } = require('../../bin/session-workspace.js');
+    const cwd = createSessionWorkingDirectory(PROJECTS_DIR, 'HTTP cleanup');
+    fs.writeFileSync(path.toNamespacedPath(path.join(cwd, 'nul')), 'bash error');
+    const cleanupFile = writeSessionFileAt(PROJ_DIR, 'cleanup.jsonl', [{ type: 'session', id: 'cleanup', cwd }]);
+    const deleting = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: cleanupFile }) });
+    assert.equal((await deleting()).status, 200);
+    assert.equal(fs.existsSync(cwd), false);
+    assert.equal((await jsonBody(await deleting())).alreadyDeleted, true);
+
+    const unverified = writeSessionFileAt(PROJ_DIR, 'unverified.jsonl', [{ type: 'session', cwd: PROJECTS_DIR }]);
+    const blocked = await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: unverified }) });
+    assert.equal(blocked.status, 409);
+    assert.ok(fs.existsSync(unverified) && fs.existsSync(PROJECTS_DIR));
+    assert.equal((await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: unverified, deleteWorkspace: 'false' }) })).status, 400);
+    assert.equal((await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: unverified, deleteWorkspace: false }) })).status, 200);
+
+    const empty = fakeSession('tau_delete_empty');
+    empty.cwd = createSessionWorkingDirectory(PROJECTS_DIR, 'empty');
+    empty.sessionFile = '';
+    liveManager.sessions.set(empty.id, empty);
+    assert.equal((await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: empty.id }) })).status, 200);
+    assert.equal(fs.existsSync(empty.cwd), false);
   }
 
   // reads files within the live-session directory but blocks static traversal
@@ -700,13 +731,24 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
       body: JSON.stringify({ filePath, useCurrentConfiguration: true }),
     }));
     assert.ok(resumed.session, JSON.stringify(resumed));
+    child.stderr.write('provider error api_key=');
+    child.stderr.write('private-pi-secret\n');
+    const log = fs.readFileSync(path.join(process.env.TAU_USER_DATA_DIR, 'logs', 'runtime.jsonl'), 'utf8');
+    assert.ok(log.includes('pi_stderr'));
+    assert.doesNotMatch(log, /private-pi-secret/);
     const snapshot = await jsonBody(await fetch(`${base}/api/live-sessions/${encodeURIComponent(resumed.session.id)}/snapshot`));
     assert.equal(snapshot.session.sessionName, 'Snapshot Chat');
     assert.equal(snapshot.session.sessionFile, path.resolve(filePath));
     assert.deepEqual(snapshot.entries, entries.slice(1));
     const systemPromptIndex = piArgs.indexOf('--system-prompt');
     assert.ok(systemPromptIndex >= 0);
-    assert.equal(piArgs[systemPromptIndex + 1], fs.readFileSync(path.join(process.cwd(), 'src/server/prompts/PI_SYSTEM.md'), 'utf8').trim());
+    const { hostPlatform } = require('../../bin/host-platform.js');
+    const promptRoot = path.join(process.cwd(), 'src/server/prompts');
+    assert.equal(piArgs[systemPromptIndex + 1], ['PI_SYSTEM.md', hostPlatform.systemPrompt].map((file) => fs.readFileSync(path.join(promptRoot, file), 'utf8').trim()).join('\n\n'));
+    child.stdout.write(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'API key=private-run-secret', content: [] } })}\n`);
+    const failureLog = fs.readFileSync(path.join(process.env.TAU_USER_DATA_DIR, 'logs', 'runtime.jsonl'), 'utf8');
+    assert.ok(failureLog.includes('pi_run_failed'));
+    assert.doesNotMatch(failureLog, /private-run-secret/);
     child.stdin.end();
   }
 

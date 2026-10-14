@@ -84,6 +84,7 @@ export type ExtensionUiResponseInput = {
 
 export type HistorySession = {
   filePath?: string;
+  cwd?: string | null;
   name?: string | null;
   firstMessage?: string | null;
   timestamp?: string;
@@ -140,7 +141,7 @@ export type PlatformModule = {
 };
 
 export type PlatformOverview = {
-  storage: { root: string; scenario: string; models: string; settings: string; modules: string };
+  storage: { root: string; scenario: string; models: string; settings: string; modules: string; logs: string };
   modules: PlatformModule[];
   errors: Array<{ moduleId?: string; message: string }>;
 };
@@ -188,7 +189,8 @@ export type SessionCommands = {
   uploadAttachment(input: UploadAttachmentInput): Promise<SessionAttachment>;
   deleteAttachment(sessionId: string, attachmentId: string): Promise<void>;
   close(sessionId: string): Promise<void>;
-  deleteHistory(filePath: string): Promise<void>;
+  deleteHistory(filePath: string, deleteWorkspace?: boolean): Promise<void>;
+  deleteLive(sessionId: string, deleteWorkspace?: boolean): Promise<void>;
 };
 
 export type PlatformCommands = {
@@ -204,6 +206,7 @@ export type PlatformCommands = {
   deleteModel(provider: string, modelId: string): Promise<void>;
   deleteModelProvider(provider: string): Promise<void>;
   getOverview(): Promise<PlatformOverview>;
+  openLogsDirectory(): Promise<void>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
   inspectModuleArchive(sourcePath: string): Promise<ModuleArchiveInspection>;
   installModuleArchive(importId: string, selections: Array<{ id: string; version: string }>): Promise<PlatformOverview>;
@@ -491,8 +494,11 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, { ...context, sessionId });
     },
 
-    async deleteHistory(filePath) {
-      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { filePath } }, context);
+    async deleteHistory(filePath, deleteWorkspace = true) {
+      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { filePath, deleteWorkspace } }, context);
+    },
+    async deleteLive(sessionId, deleteWorkspace = true) {
+      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { sessionId, deleteWorkspace } }, context);
     },
   };
 }
@@ -633,7 +639,10 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
 
     async getOverview() {
       const data = await rpcCommand(deps.http, { type: 'get_platform_overview' });
-      return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '' }, modules: [], errors: [] });
+      return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '', logs: '' }, modules: [], errors: [] });
+    },
+    async openLogsDirectory() {
+      await rpcCommand(deps.http, { type: 'open_logs_directory' });
     },
 
     async installModule(sourcePath) {

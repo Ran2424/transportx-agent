@@ -124,11 +124,13 @@ flowchart LR
 
 [session-assembly.ts](../src/server/session-assembly.ts) 冻结模块和资产；[session-pi-launch.ts](../src/server/session-pi-launch.ts) 构造进程参数；[sessions.ts](../src/server/sessions.ts) 负责实际启动、停止与恢复。
 
-Prompt 分三层：`src/server/prompts/PI_SYSTEM.md` 定义基础行为；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
+Prompt 按顺序装配：`src/server/prompts/PI_SYSTEM.md` 定义通用基础行为；Host 根据 `desktop/scripts/platform-profile.mjs` 的 `systemPrompt` 映射附加 `PI_SYSTEM_POSIX.md`（macOS / Linux）或 `PI_SYSTEM_WINDOWS.md`（Windows），两份环境规则独立维护，并与基础行为一起传入 Pi 的 `--system-prompt`；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Windows 附加规则明确 `bash` 工具仍使用 Bash 语法，禁止 `nul` 重定向及创建 Windows 保留名。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
 
 新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module、入口、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务时以该计划校验，而不是悄然替换为当前最新 Module。内置 Module 有受控漂移容忍规则；用户安装 Module 的缺失或不一致必须明确处理。唯一的升级迁移例外是 3.2.0 以前的内置 Video：仅当新版 Video Capability 已安装并启用时，恢复流程才会将旧条目映射到当前插件。
 
 Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更新前端状态。WebSocket 只用于实时 Pi 事件和 Snapshot；断线或刷新后由 Agent Host Snapshot 重新校正。
+
+删除对话默认同时清理工作目录，确认框显示目标路径并可取消目录清理。Node Host 校验任务目录归属，等待 Writer 和分析作业停止，再通过 `fs.promises.rm` 清理目录，成功后才删除历史与注销会话；失败保留删除入口和历史供重试。新建目录在 `.tau/workspace-owner.json` 记录真实目录与父目录；旧目录必须位于当前项目根目录或 scenario 下，并有指向同一目录的 Resolved Session Plan。根目录符号链接、未确认归属的目录及被其他会话引用的目录拒绝清理；目录内的符号链接只删除链接。清理期间拒绝对该目录恢复会话或创建子任务。文件 API 边界使用 `path.toNamespacedPath`，在 Windows 支持命名空间路径，在 macOS / Linux 保持普通路径；目录占用错误使用有限重试。
 
 ### 3.2 一轮分析的执行闭环
 
@@ -328,6 +330,8 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 ```
 
 以上为桌面布局；CLI 默认共用根目录。Web 开发的 Pi 配置与历史默认在 `~/.pi/agent/` 下，任务工作区默认使用当前平台的 `<user-data>/scenario/`，可分别由 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` 与 `TAU_PROJECTS_DIR` 覆盖。`TAU_USER_DATA_DIR` 只用于开发或受控部署覆盖。安装包资源始终只读；升级和卸载不应删除用户数据。任务工作区中的附件、计划和派生资源均属于该任务，不可被其他任务直接读取。
+
+运行诊断统一保存在 `<user-data>/logs/`，独立于任务工作目录，删除任务后仍可查看。`runtime.jsonl` 记录 Host 生命周期、HTTP/RPC 失败、Pi 启停及 stderr，包含时间、级别、进程与会话标识；不记录请求正文或完整工具输出。`agent-host.log` 保存启动与控制台信息，`desktop.log` 记录桌面启动及渲染进程异常，`updates.log` 保存更新状态。每份日志以 5 MiB 为轮转阈值，保留当前文件及 `.1`–`.3` 三份历史；写入前遮盖常见 API Key、Bearer、Cookie、密码和 token，写入失败只向 stderr 提示一次，不阻断任务。Web/CLI 与桌面版使用同一用户日志目录规则，桌面 Host 控制台由 supervisor 采集，避免重复写入。设置页“常规 → 本地目录”显示日志目录并可打开；打开操作只使用服务端解析的目录，不接受客户端指定路径。
 
 ## 7. 安全边界
 
