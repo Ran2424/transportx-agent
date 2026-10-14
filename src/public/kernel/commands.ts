@@ -141,7 +141,7 @@ export type PlatformModule = {
 };
 
 export type PlatformOverview = {
-  storage: { root: string; scenario: string; models: string; settings: string; modules: string };
+  storage: { root: string; scenario: string; models: string; settings: string; modules: string; logs: string };
   modules: PlatformModule[];
   errors: Array<{ moduleId?: string; message: string }>;
 };
@@ -206,6 +206,7 @@ export type PlatformCommands = {
   deleteModel(provider: string, modelId: string): Promise<void>;
   deleteModelProvider(provider: string): Promise<void>;
   getOverview(): Promise<PlatformOverview>;
+  openLogsDirectory(): Promise<void>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
   inspectModuleArchive(sourcePath: string): Promise<ModuleArchiveInspection>;
   installModuleArchive(importId: string, selections: Array<{ id: string; version: string }>): Promise<PlatformOverview>;
@@ -638,7 +639,10 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
 
     async getOverview() {
       const data = await rpcCommand(deps.http, { type: 'get_platform_overview' });
-      return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '' }, modules: [], errors: [] });
+      return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '', logs: '' }, modules: [], errors: [] });
+    },
+    async openLogsDirectory() {
+      await rpcCommand(deps.http, { type: 'open_logs_directory' });
     },
 
     async installModule(sourcePath) {

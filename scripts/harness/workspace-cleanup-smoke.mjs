@@ -36,4 +36,27 @@ export async function workspaceCleanupSmoke(page) {
     assert.equal(fs.existsSync(historyFile), false);
   }
   console.log('Workspace cleanup smoke: default deletion, reserved-name files, explicit retention and history cleanup passed.');
+  const logs = await page.evaluate(async () => {
+    const result = await (await fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'get_platform_overview' }) })).json();
+    return result.data.storage.logs;
+  });
+  assert.ok(fs.existsSync(path.join(logs, 'runtime.jsonl')), 'runtime diagnostics survive workspace cleanup');
+  await page.getByRole('button', { name: '打开设置', exact: true }).click();
+  await page.getByRole('button', { name: '常规', exact: true }).click();
+  await page.getByText(logs, { exact: true }).waitFor();
+  let opened = 0;
+  const openLogRoute = async (route) => {
+    if (route.request().postDataJSON()?.type !== 'open_logs_directory') return route.continue();
+    opened++;
+    await route.fulfill({ json: { success: true } });
+  };
+  await page.route('**/api/rpc', openLogRoute);
+  const openResponse = page.waitForResponse((response) => response.url().endsWith('/api/rpc') && response.request().postDataJSON()?.type === 'open_logs_directory');
+  await page.getByRole('button', { name: '打开日志目录', exact: true }).click();
+  assert.equal((await openResponse).status(), 200);
+  await page.waitForFunction(() => !document.querySelector('.storage-list button')?.disabled);
+  await page.unroute('**/api/rpc', openLogRoute);
+  assert.equal(opened, 1);
+  await page.keyboard.press('Escape');
+  console.log('Log directory smoke: persistent diagnostics, settings location and open action passed.');
 }

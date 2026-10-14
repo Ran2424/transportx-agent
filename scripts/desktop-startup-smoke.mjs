@@ -24,6 +24,10 @@ async function stop(healthUrl) {
   app = null;
   assert.equal(fs.existsSync(lock), false, 'normal desktop exit must release its lease');
   await assert.rejects(fetch(healthUrl), 'normal desktop exit must stop its Host');
+  for (const file of ['runtime.jsonl', 'agent-host.log', 'desktop.log']) {
+    const records = fs.readFileSync(path.join(dataRoot, 'logs', file), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.ok(records.length > 0 && records.every((record) => record.at && record.event), `${file} retains timestamped diagnostics after exit`);
+  }
 }
 
 try {
@@ -43,6 +47,8 @@ try {
   await exited;
   app = null;
   assert.equal(fs.existsSync(lock), true, 'force-killed Host should leave the crash fixture');
+  const crashLog = fs.readFileSync(path.join(dataRoot, 'logs', 'desktop.log'), 'utf8');
+  assert.ok(crashLog.includes('host_unexpected_exit'), 'the Host crash is persisted before the desktop exits');
   const recovered = await start();
   assert.notEqual(recovered.owner.nonce, crashing.owner.nonce);
   await stop(recovered.healthUrl);

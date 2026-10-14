@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { openNativeTarget } from './host-platform.js';
+import { initializeHostLogging, logHostEvent, logHostError } from './diagnostic-log.js';
 
 const http = require('node:http');
 const fs = require('node:fs');
@@ -82,7 +83,7 @@ const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (re
 const updatePreparation = new UpdatePreparation();
 const rpcHandlers: RpcHandlerRegistry = {
   ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
-  ...createPlatformRpcHandlers(currentPlatformOverview),
+  ...createPlatformRpcHandlers(currentPlatformOverview, async () => { fs.mkdirSync(APP_PATHS.logsDir, { recursive: true }); await openNativeTarget(APP_PATHS.logsDir); }),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
     required: !isLoopbackHost(HOST),
@@ -169,7 +170,7 @@ function maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: 
   res.setHeader('Set-Cookie', buildSessionCookie(issueSessionToken(), { secure: isForwardedHttps(req) }));
 }
 
-function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
+function errorMessage(error: unknown) { logHostError('operation_failed', error); return error instanceof Error ? error.message : String(error); }
 function errorStatus(error: unknown) { return error && typeof error === 'object' && 'status' in error && typeof (error as StatusError).status === 'number' ? (error as StatusError).status! : 400; }
 function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
   if (parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME]) res.setHeader('Set-Cookie', buildSessionCookie('', { secure: isForwardedHttps(req), clear: true }));
@@ -301,7 +302,10 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
 
 async function dispatchRpcCommand(command: RpcCommand): Promise<RpcResponse> {
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
-  const failure = (message: string): RpcResponse => ({ type: 'response', command: command.type, success: false, error: message, id: command.id });
+  const failure = (message: string): RpcResponse => {
+    logHostEvent('warn', 'rpc_failed', { command: command.type, sessionId: command.sessionId, message });
+    return { type: 'response', command: command.type, success: false, error: message, id: command.id };
+  };
   const registered = typeof command.type === 'string' && Object.prototype.hasOwnProperty.call(rpcHandlers, command.type) ? rpcHandlers[command.type] : null;
   if (registered) return registered.handle(command, { success, failure });
   return failure(`Unknown command: ${command.type}`);
@@ -400,6 +404,7 @@ function computeUrls(port: number) {
 
 let releaseHostWriter: (() => void) | null = null;
 function listen(port: number, attemptsLeft = 10) {
+  initializeHostLogging(APP_PATHS.logsDir);
   validateHostAccess(TAU_SETTINGS);
   if (!releaseHostWriter) {
     releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host'));
@@ -414,6 +419,7 @@ function listen(port: number, attemptsLeft = 10) {
   server.listen(port, HOST, () => {
     const address = server.address();
     const actualPort = typeof address === 'object' && address ? address.port : port;
+    logHostEvent('info', 'host_ready', { port: actualPort, platform: process.platform });
     computeUrls(actualPort);
     console.log(`[Tau] Server running on ${lanUrl}${tailscaleUrl ? `  •  Tailscale: ${tailscaleUrl}` : ''}`);
     console.log(`[Tau] React application: ${REACT_STATIC_DIR} (/)`);
@@ -485,6 +491,7 @@ function attachDesktopUpdateChannel() {
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true; console.log(`\n[Tau] Shutting down (${signal}); terminating ${liveManager.sessions.size} Pi session(s)...`);
+  logHostEvent('info', 'host_shutdown', { signal, sessions: liveManager.sessions.size });
   socketHandler.close(); try { wss.close(); } catch {}
   try {
     await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), liveManager.shutdown()]);
@@ -502,7 +509,7 @@ function startCli() {
   console.log(`[Tau] Modules: ${MODULE_REGISTRY.enabled().length} enabled, ${MODULE_REGISTRY.errors.length} error(s)`);
   process.on('SIGINT', () => shutdown('SIGINT')); process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('exit', () => { for (const session of liveManager.sessions.values()) try { session.child?.kill('SIGTERM'); } catch {} });
-  process.on('uncaughtException', (error) => { console.error(error); process.exitCode = 1; shutdown('uncaughtException'); }); process.on('unhandledRejection', (error) => console.error(error));
+  process.on('uncaughtException', (error) => { console.error(error); process.exitCode = 1; shutdown('uncaughtException'); }); process.on('unhandledRejection', (error) => { logHostError('unhandled_rejection', error); console.error(error); });
   const parentPid = Number(ARGS['parent-pid'] || process.env.TAU_PARENT_PID || 0);
   if (parentPid > 0) {
     const watcher = setInterval(() => { try { process.kill(parentPid, 0); } catch { clearInterval(watcher); shutdown('parent_exit'); } }, 1000);
