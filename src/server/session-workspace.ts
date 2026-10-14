@@ -74,7 +74,8 @@ export function resolveSessionWorkspaceForDeletion(cwd: string, sessionFile?: st
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
   const refused = () => Object.assign(new Error(`Cannot verify task directory ownership: ${resolved}. Disable workspace deletion to keep this directory.`), { status: 409 });
   if (!stat.isDirectory() || stat.isSymbolicLink() || !/^\d{8}-\d{6}(?:-.+)?$/.test(path.basename(resolved))) throw refused();
-  const real = fs.realpathSync(target);
+  // Keep canonical comparisons in ordinary paths; namespace prefixes are for filesystem calls.
+  const real = fs.realpathSync(resolved);
   const historyRoot = fs.existsSync(SESSIONS_DIR) ? fs.realpathSync(SESSIONS_DIR) : path.resolve(SESSIONS_DIR);
   if (isWithin(real, historyRoot) || (sessionFile && isWithin(real, fs.realpathSync(sessionFile)))) throw refused();
   const ownerFile = path.join(resolved, '.tau', WORKSPACE_OWNER_FILE);
@@ -96,8 +97,9 @@ export function resolveSessionWorkspaceForDeletion(cwd: string, sessionFile?: st
 }
 
 export async function removeSessionWorkingDirectory(cwd: string) {
-  const target = path.toNamespacedPath(path.resolve(cwd));
-  const real = fs.realpathSync(target);
+  const resolved = path.resolve(cwd);
+  const target = path.toNamespacedPath(resolved);
+  const real = fs.realpathSync(resolved);
   const owner = { version: 1, workspace: toPosixPath(real), parent: toPosixPath(fs.realpathSync(path.dirname(real))) };
   try {
     await fs.promises.rm(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
@@ -107,8 +109,8 @@ export async function removeSessionWorkingDirectory(cwd: string) {
     let recoveryError = '';
     // A partial recursive removal may have deleted .tau before hitting a locked file.
     try {
-      if (fs.existsSync(target) && !fs.lstatSync(target).isSymbolicLink() && path.relative(real, fs.realpathSync(target)) === '') {
-        const metadata = path.join(target, '.tau');
+      if (fs.existsSync(target) && !fs.lstatSync(target).isSymbolicLink() && path.relative(real, fs.realpathSync(resolved)) === '') {
+        const metadata = path.join(resolved, '.tau');
         fs.mkdirSync(metadata, { recursive: true });
         if (!isWithin(real, fs.realpathSync(metadata))) throw new Error('Workspace metadata escapes its root');
         const marker = path.join(metadata, WORKSPACE_OWNER_FILE);
