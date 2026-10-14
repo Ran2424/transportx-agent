@@ -21,6 +21,7 @@ test('Thinking and tool durations remain frozen across live events and history r
       const messageEnd = { type: 'message_end', message: assistant };
       timing.apply(messageEnd, 1_500);
       assert.equal((messageEnd.message.content as Array<{ durationMs?: number }>)[0].durationMs, 180);
+      assert.equal((messageEnd.message.content as Array<{ startedAt?: number }>)[0].startedAt, 1_000);
 
       const toolStart = { type: 'tool_execution_start', toolCallId: 'tool-1' };
       const toolEnd = { type: 'tool_execution_end', toolCallId: 'tool-1' };
@@ -31,6 +32,7 @@ test('Thinking and tool durations remain frozen across live events and history r
       const toolResult = { type: 'message_end', message: { role: 'toolResult', toolCallId: 'tool-1', content: '完成' } };
       timing.apply(toolResult, 2_500);
       assert.equal((toolResult.message as { durationMs?: number }).durationMs, 320);
+      assert.equal((toolResult.message as { startedAt?: number }).startedAt, 2_000);
     }
   }
 
@@ -59,9 +61,14 @@ test('Thinking and tool durations remain frozen across live events and history r
       const rawEntries: any[] = [{ type: 'message', message: thinkingMessage }, { type: 'message', message: toolResult }];
       const enriched = new TimingMetricsStore(cwd).enrichEntries(rawEntries);
       assert.equal(enriched[0].message.content[0].durationMs, 3_200);
+      assert.equal(enriched[0].message.content[0].startedAt, 1_000);
       assert.equal(enriched[1].message.durationMs, 1_250);
+      assert.equal(enriched[1].message.startedAt, 5_000);
+      const existingDuration = new TimingMetricsStore(cwd).enrichEntries([{ type: 'message', message: { ...toolResult, durationMs: 1_250 } }]);
+      assert.equal(existingDuration[0].message.startedAt, 5_000, 'reload restores exact start even when duration was already present');
       assert.equal(rawEntries[0].message.content[0].durationMs, undefined);
       assert.equal(rawEntries[1].message.durationMs, undefined);
+      assert.equal(rawEntries[1].message.startedAt, undefined);
       assert.ok(fs.existsSync(path.join(cwd, '.tau', 'timing-metrics.v1.json')));
     }
 

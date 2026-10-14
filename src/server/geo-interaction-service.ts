@@ -25,6 +25,7 @@ import {
   type VisualizationEnvelope,
 } from '../contracts/geo.js';
 import { stripAttachmentContext } from '../contracts/attachments.js';
+import { stripCanvasContextPrompt } from '../contracts/canvas.js';
 import type { JsonRecord } from './types.js';
 import { readVerifiedGeoResource } from './geo-resource-storage.js';
 import { isWithin } from './util/path.js';
@@ -542,7 +543,7 @@ export function applyGeoMessageRefs(entries: JsonRecord[], refs: GeoMessageRef[]
     if (!message || message.role !== 'user' || message.geoContextIds) return entry;
     const candidates = message.timestamp !== undefined ? byTimestamp.get(String(message.timestamp)) || [] : [];
     const text = typeof message.content === 'string' ? message.content : Array.isArray(message.content) ? message.content.filter((block) => block?.type === 'text').map((block) => block.text || '').join('\n') : '';
-    const normalizedText = stripGeoContextPrompt(stripAttachmentContext(text));
+    const normalizedText = stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(text)));
     const contextIds = candidates.find((ref) => normalizedText === ref.text)?.contextIds;
     return contextIds?.length ? { ...entry, message: { ...message, geoContextIds: contextIds } } : entry;
   });

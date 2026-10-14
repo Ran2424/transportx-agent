@@ -488,8 +488,8 @@ export class PiRpcSession {
   }
 
   messageText(message: PiMessage) {
-    if (typeof message.content === 'string') return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content)));
-    if (Array.isArray(message.content)) return stripCanvasContextPrompt(stripGeoContextPrompt(stripAttachmentContext(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n'))));
+    if (typeof message.content === 'string') return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content)));
+    if (Array.isArray(message.content)) return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n'))));
     return '';
   }
 

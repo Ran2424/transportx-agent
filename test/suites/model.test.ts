@@ -18,11 +18,13 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
         errorMessage(error: unknown) { return String(error); },
       });
       assert.deepEqual(Object.keys(handlers).sort(), [
+        'add_local_model',
         'add_model',
         'connect_model_provider',
         'delete_model',
         'delete_model_provider',
         'disconnect_model_provider',
+        'discover_local_models',
         'get_available_models',
         'get_model_providers',
         'update_model',
@@ -40,7 +42,92 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
     const os = require('node:os');
     const path = require('node:path');
     const { connectPiModelProvider, disconnectPiModelProvider, listAvailablePiModels, listPiModelProviders } = require('../../bin/pi-model-access.js');
-    const { updatePiModel, deletePiModelProvider } = require('../../bin/pi-model-config.js');
+    const { addLocalPiModel, addPiModel, updatePiModel, deletePiModelProvider } = require('../../bin/pi-model-config.js');
+
+    // Local discovery, credentials and persisted configuration work with the real Pi runtime.
+    {
+      const { discoverLocalModels, localModelConnection } = require('../../bin/local-model-service.js');
+      const http = require('node:http') as typeof import('node:http');
+      const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-local-model-'));
+      t.after(() => fs.rmSync(agentDir, { recursive: true, force: true }));
+      let catalog = 'models';
+      let requestAuth: string | undefined;
+      const server = http.createServer(async (request, response) => {
+        requestAuth = request.headers.authorization;
+        if (request.url === '/v1/models') {
+          if (catalog === 'auth' && requestAuth !== 'Bearer local-secret') { response.writeHead(401).end(); return; }
+          if (catalog === 'failure') { response.writeHead(404).end(); return; }
+          if (catalog === 'redirect') { response.writeHead(302, { Location: '/v1/models' }).end(); return; }
+          response.setHeader('Content-Type', 'application/json');
+          response.end(JSON.stringify(catalog === 'invalid' ? {} : { data: catalog === 'empty' ? [] : [{ id: 'traffic-local', name: 'Local Traffic' }, { id: 'traffic-local' }, { id: '' }, {}] }));
+          return;
+        }
+        let body = '';
+        for await (const chunk of request) body += chunk;
+        const prompt = JSON.parse(body);
+        assert.equal(request.url, '/v1/chat/completions');
+        assert.equal(prompt.model, 'traffic-local');
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        const chunk = { id: 'local-reply', object: 'chat.completion.chunk', created: 1, model: prompt.model, choices: [{ index: 0, delta: { role: 'assistant', content: 'local reply' }, finish_reason: null }] };
+        response.end(`data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      t.after(() => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }));
+      const baseUrl = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
+      const discovered = await discoverLocalModels({ baseUrl });
+      assert.equal(discovered.baseUrl, `${baseUrl}/v1`);
+      assert.deepEqual(discovered.models, [{ id: 'traffic-local', name: 'Local Traffic' }]);
+      assert.equal(requestAuth, undefined, 'keyless discovery sends no credential');
+      assert.throws(() => localModelConnection({ baseUrl: 'file:///tmp/models' }), /HTTP/);
+      assert.throws(() => localModelConnection({ baseUrl: 'http://secret:password@localhost' }), /凭据/);
+      catalog = 'empty';
+      assert.deepEqual((await discoverLocalModels({ baseUrl })).models, []);
+      catalog = 'invalid';
+      await assert.rejects(discoverLocalModels({ baseUrl }), /兼容的模型列表/);
+      catalog = 'failure';
+      await assert.rejects(discoverLocalModels({ baseUrl }), /HTTP 404/);
+      catalog = 'redirect';
+      await assert.rejects(discoverLocalModels({ baseUrl, apiKey: 'local-secret' }), /无法连接/);
+      catalog = 'auth';
+      await assert.rejects(discoverLocalModels({ baseUrl }), /鉴权/);
+      assert.equal((await discoverLocalModels({ baseUrl, apiKey: 'local-secret' })).models.length, 1);
+      catalog = 'models';
+
+      const added = await addLocalPiModel({ baseUrl, modelId: 'traffic-local', contextWindow: 8192 }, agentDir);
+      assert.match(added.provider, /^local-[a-f0-9]{12}$/);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(agentDir, 'auth.json'), 'utf8')), {}, 'keyless access stores no user credential');
+      assert.equal((await listAvailablePiModels(agentDir)).find((model: any) => model.provider === added.provider)?.id, 'traffic-local');
+      const { ModelRuntime } = await import('@earendil-works/pi-coding-agent');
+      const send = async () => {
+        const runtime = await ModelRuntime.create({ authPath: path.join(agentDir, 'auth.json'), modelsPath: path.join(agentDir, 'models.json'), allowModelNetwork: false });
+        const model = runtime.getModel(added.provider, 'traffic-local');
+        assert.ok(model);
+        const reply = await runtime.completeSimple(model!, { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] });
+        assert.equal(reply.stopReason, 'stop');
+        assert.deepEqual(reply.content, [{ type: 'text', text: 'local reply' }]);
+      };
+      await send();
+      assert.equal(requestAuth, 'Bearer transportx-local');
+      const sameService = await addLocalPiModel({ baseUrl: `${baseUrl}/v1/`, modelId: 'second-model' }, agentDir);
+      assert.equal(sameService.provider, added.provider, 'normalized addresses share a provider');
+      const anotherService = await addLocalPiModel({ baseUrl: `${baseUrl}/other/v1`, modelId: 'traffic-local' }, agentDir);
+      assert.notEqual(anotherService.provider, added.provider, 'different services stay separate');
+      await addLocalPiModel({ baseUrl, modelId: 'traffic-local', apiKey: 'local-secret' }, agentDir);
+      assert.equal(fs.readFileSync(path.join(agentDir, 'models.json'), 'utf8').includes('local-secret'), false);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(agentDir, 'auth.json'), 'utf8'))[added.provider].key, 'local-secret');
+      await send();
+      assert.equal(requestAuth, 'Bearer local-secret');
+      await addLocalPiModel({ baseUrl, modelId: 'traffic-local' }, agentDir);
+      await send();
+      assert.equal(requestAuth, 'Bearer transportx-local', 'clearing authentication removes the previous secret');
+      const summary = (await listPiModelProviders(agentDir)).find((provider: any) => provider.id === added.provider);
+      assert.equal(summary.connected, true);
+      assert.equal(summary.credentialStored, false);
+      assert.equal(JSON.stringify(summary).includes('transportx-local'), false);
+      await assert.rejects(addPiModel({ provider: 'cloud-no-key', modelId: 'cloud', baseUrl: 'https://example.com/v1', api: 'openai-completions' }, agentDir), /API Key/);
+      await deletePiModelProvider(added.provider, agentDir);
+      assert.equal((await listAvailablePiModels(agentDir)).some((model: any) => model.provider === added.provider), false);
+    }
 
     // Pi provider access reuses auth.json in the configured TransportX directory
     {

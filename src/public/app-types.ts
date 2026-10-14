@@ -106,6 +106,7 @@ export type MessageContentBlock = {
   id?: string;
   name?: string;
   arguments?: Record<string, unknown>;
+  startedAt?: number;
   durationMs?: number;
 };
 
@@ -124,6 +125,7 @@ export type AppMessage = {
   details?: unknown;
   isError?: boolean;
   timestamp?: number;
+  startedAt?: number;
   durationMs?: number;
 };
 

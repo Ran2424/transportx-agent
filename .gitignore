@@ -58,6 +58,7 @@ test/baselines/screenshots/*.png
 !/docs/ARCHITECTURE.md
 !/docs/CHANGELOG.md
 !/docs/RELEASE.md
+!/docs/STYLE_UPGRADE_REVIEW_2026-10-12.md
 !/docs/releases/
 !/docs/软件更新功能开发 PLAN.md
 !/docs/guide/

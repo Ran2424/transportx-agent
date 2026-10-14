@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ModelProviderAccess, PiModelApi } from '../../../public/kernel/commands.js';
+import type { LocalModelConnection, ModelProviderAccess, PiModelApi } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
 
-type SetupMode = 'provider' | 'custom';
+type SetupMode = 'provider' | 'local' | 'custom';
+const localServices = { ollama: 'http://127.0.0.1:11434/v1', lmstudio: 'http://127.0.0.1:1234/v1', other: '' };
 
 export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
   open: boolean;
@@ -29,8 +30,15 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [localService, setLocalService] = useState<keyof typeof localServices>('other');
+  const [localConnection, setLocalConnection] = useState<LocalModelConnection | null>(null);
+  const [probing, setProbing] = useState(false);
+  const probeGeneration = useRef(0);
 
   useEffect(() => {
+    probeGeneration.current++;
+    setProbing(false);
+    setLocalConnection(null);
     if (!open) return;
     let current = true;
     setMode('provider');
@@ -67,7 +75,10 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
         setApiKey('');
         onConfigured(result.name || result.id);
       } else {
-        const result = await kernel.commands.platform.addModel({ provider, modelId, name, api, baseUrl, ...(apiKey.trim() ? { apiKey } : {}), ...(contextWindow.trim() ? { contextWindow: Number(contextWindow) } : {}), reasoning, images });
+        const details = { modelId, name, baseUrl, ...(apiKey.trim() ? { apiKey } : {}), ...(contextWindow.trim() ? { contextWindow: Number(contextWindow) } : {}), reasoning, images };
+        const result = mode === 'local'
+          ? await kernel.commands.platform.addLocalModel(details)
+          : await kernel.commands.platform.addModel({ ...details, provider, api });
         setProvider('');
         setModelId('');
         setName('');
@@ -93,8 +104,49 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
   ];
   const existingCustomProvider = mode === 'custom' ? providers.find((item) => item.id === provider.trim().toLowerCase() && item.custom) : undefined;
   const canReuseCredential = !!existingCustomProvider?.connected;
-  const disabled = saving || loading || !provider.trim() || (mode === 'provider' && !apiKey.trim())
+  const disabled = saving || loading || probing || (mode !== 'local' && !provider.trim()) || (mode === 'provider' && !apiKey.trim())
+    || (mode === 'local' && (!localConnection || !modelId || !localConnection.models.some((model) => model.id === modelId)))
     || (mode === 'custom' && (!modelId.trim() || !baseUrl.trim() || (!apiKey.trim() && !canReuseCredential)));
+
+  function resetLocalConnection() {
+    probeGeneration.current++;
+    setLocalConnection(null);
+    setProbing(false);
+    setModelId('');
+    setError('');
+  }
+
+  function changeMode(next: SetupMode) {
+    resetLocalConnection();
+    setMode(next);
+    setProvider(next === 'provider' ? providers[0]?.id || '' : '');
+    if (next === 'local' || mode === 'local') {
+      setBaseUrl('');
+      setApiKey('');
+      setName('');
+      setContextWindow('');
+      setReasoning(false);
+      setImages(false);
+      setLocalService('other');
+    }
+  }
+
+  async function detectLocalModels() {
+    resetLocalConnection();
+    const generation = probeGeneration.current;
+    setProbing(true);
+    try {
+      const result = await kernel.commands.platform.discoverLocalModels({ baseUrl, ...(apiKey.trim() ? { apiKey } : {}) });
+      if (probeGeneration.current !== generation) return;
+      setBaseUrl(result.baseUrl);
+      setLocalConnection(result);
+      setModelId(result.models[0]?.id || '');
+    } catch (cause) {
+      if (probeGeneration.current === generation) setError((cause as { message?: string })?.message || t('model.local.error'));
+    } finally {
+      if (probeGeneration.current === generation) setProbing(false);
+    }
+  }
 
   function changeCustomProvider(value: string) {
     setProvider(value);
@@ -104,10 +156,11 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={t('model.setup.title')} className="model-setup-dialog">
+    <Dialog open={open} onOpenChange={onOpenChange} title={t('model.setup.title')} className={`model-setup-dialog${mode === 'local' ? ' is-local' : ''}`}>
       <div className="model-setup-mode" role="tablist" aria-label={t('model.setup.mode')}>
-        <button type="button" role="tab" aria-selected={mode === 'provider'} className={mode === 'provider' ? 'is-active' : ''} onClick={() => { setMode('provider'); setProvider(providers[0]?.id || ''); setError(''); }}>{t('model.setup.builtin')}</button>
-        <button type="button" role="tab" aria-selected={mode === 'custom'} className={mode === 'custom' ? 'is-active' : ''} onClick={() => { setMode('custom'); setProvider(''); setError(''); }}>{t('model.setup.custom')}</button>
+        <button type="button" role="tab" disabled={saving} aria-selected={mode === 'provider'} className={mode === 'provider' ? 'is-active' : ''} onClick={() => changeMode('provider')}>{t('model.setup.builtin')}</button>
+        <button type="button" role="tab" disabled={saving} aria-selected={mode === 'local'} className={mode === 'local' ? 'is-active' : ''} onClick={() => changeMode('local')}>{t('model.setup.local')}</button>
+        <button type="button" role="tab" disabled={saving} aria-selected={mode === 'custom'} className={mode === 'custom' ? 'is-active' : ''} onClick={() => changeMode('custom')}>{t('model.setup.custom')}</button>
       </div>
       <form className="form-stack" onSubmit={save}>
         {mode === 'provider' ? <>
@@ -115,6 +168,32 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
           {selectedProvider ? <div className="provider-access-summary"><span><strong>{selectedProvider.name}</strong><code>{selectedProvider.id}</code></span><small>{selectedProvider.connected ? t('model.setup.replaceKey') : t('model.setup.providerReady', { count: selectedProvider.modelCount })}</small></div> : null}
           <label className="field-label"><span>API Key</span><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={t('model.setup.apiKeyPlaceholder')} autoComplete="new-password" autoFocus required /></label>
           <p className="field-help">{t('model.setup.providerHelp')}</p>
+        </> : mode === 'local' ? <>
+          <MenuSelect label={t('model.local.service')} value={localService} placeholder={t('model.local.service')} disabled={saving} options={[
+            { value: 'other', label: t('model.local.other') },
+            { value: 'ollama', label: 'Ollama' },
+            { value: 'lmstudio', label: 'LM Studio' },
+          ]} onChange={(value) => { resetLocalConnection(); setLocalService(value as keyof typeof localServices); setBaseUrl(localServices[value as keyof typeof localServices]); }} />
+          <label className="field-label"><span>{t('model.local.address')}</span><input type="url" value={baseUrl} disabled={saving} onChange={(event) => { resetLocalConnection(); setLocalService('other'); setBaseUrl(event.target.value); }} placeholder="http://127.0.0.1:8000/v1" autoFocus required /></label>
+          <p className="field-help">{t('model.local.addressHelp')}</p>
+          <label className="field-label"><span>{t('model.local.apiKey')}</span><input type="password" value={apiKey} disabled={saving} onChange={(event) => { resetLocalConnection(); setApiKey(event.target.value); }} placeholder={t('model.local.apiKeyPlaceholder')} autoComplete="new-password" /></label>
+          <div className="model-local-detect"><Button type="button" variant="quiet" disabled={saving || probing || !baseUrl.trim()} onClick={() => { void detectLocalModels(); }}>{t(probing ? 'model.local.detecting' : 'model.local.detect')}</Button></div>
+          {localConnection ? <>
+            <p className="field-help" role="status">{t(localConnection.models.length ? 'model.local.connected' : 'model.local.empty', { count: localConnection.models.length })}</p>
+            {localConnection.models.length ? <MenuSelect label={t('model.local.model')} placeholder={t('model.local.model')} disabled={saving} value={modelId} options={localConnection.models.map((model) => ({ value: model.id, label: model.name, metadata: model.name !== model.id ? model.id : undefined }))} onChange={setModelId} /> : null}
+          </> : null}
+          <details className="model-local-advanced">
+            <summary>{t('model.local.advanced')}</summary>
+            <div className="form-stack">
+              <label className="field-label"><span>{t('model.setup.displayName')}</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('model.setup.displayNamePlaceholder')} /></label>
+              <label className="field-label"><span>{t('model.setup.contextWindow')}</span><input type="number" min="1" step="1" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder="128000" /></label>
+              <div className="model-capability-row">
+                <label><input type="checkbox" checked={reasoning} onChange={(event) => setReasoning(event.target.checked)} />{t('model.setup.reasoning')}</label>
+                <label><input type="checkbox" checked={images} onChange={(event) => setImages(event.target.checked)} />{t('model.setup.images')}</label>
+              </div>
+              <p className="field-help">{t('model.local.advancedHelp')}</p>
+            </div>
+          </details>
         </> : <>
           <div className="form-grid-two">
             <label className="field-label"><span>Provider ID</span><input value={provider} onChange={(event) => changeCustomProvider(event.target.value)} placeholder={t('model.setup.providerExample')} autoFocus required /></label>

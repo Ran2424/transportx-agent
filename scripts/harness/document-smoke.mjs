@@ -28,12 +28,13 @@ export async function documentSmoke(page, browser) {
   const locators = [
     { locatorId: 'canvas:report', resourceId: 'canvas:report' },
     { locatorId: 'canvas:chart', resourceId: 'canvas:chart' },
-    { locatorId: 'canvas:source:target', resourceId: 'canvas:source', section: '目标标题' },
+    { locatorId: 'canvas:source:target', resourceId: 'canvas:source', section: '目标标题', quote: '定位到此处。\n' + '保留来源摘录以便核对。'.repeat(80) },
     { locatorId: 'canvas:source:missing', resourceId: 'canvas:source', section: '没有此标题' },
     { locatorId: 'canvas:pdf:2', resourceId: 'canvas:pdf', page: 2 },
     { locatorId: 'canvas:pdf:3', resourceId: 'canvas:pdf', page: 3 },
   ];
   const registry = { protocol: 'pi-citation', version: '2.0', schemaVersion: 1, sessionId: session.citationRegistryId || session.id, citationSetId: 'canvas:smoke', generatedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), resources, works: resources.map((item) => ({ workId: item.workId, type: 'REPORT', title: item.relativePath })), locators, occurrences: locators.map((item) => ({ occurrenceId: item.locatorId, locatorId: item.locatorId, containerType: 'message', containerId: 'canvas:smoke' })), provenance: [] };
+  Object.assign(registry.works.find((work) => work.workId === 'canvas:source'), { issuedAt: '2026-10-01', edition: '2026 版', standardNumber: 'TX-01' });
   fs.mkdirSync(path.join(cwd, '.tau'), { recursive: true });
   fs.writeFileSync(path.join(cwd, '.tau', 'citations.json'), JSON.stringify(registry));
 
@@ -101,6 +102,44 @@ export async function documentSmoke(page, browser) {
   await composer.press('Enter');
   await page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).waitFor();
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  const citedMessage = page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).last();
+  const citationSource = citedMessage.locator('.citation-footer li', { hasText: 'canvas-source.md' });
+  const evidence = citationSource.locator('.citation-source-details');
+  assert.equal(await evidence.getAttribute('open'), null, 'excerpts are folded while source titles and positions remain visible');
+  await evidence.locator('summary').focus(); await page.keyboard.press('Enter');
+  assert.equal(await evidence.evaluate((node) => node.open), true);
+  assert.match(await evidence.innerText(), /定位到此处/);
+  assert.match(await evidence.innerText(), /2026-10-01/);
+  assert.match(await evidence.innerText(), /2026 版/);
+  assert.match(await evidence.innerText(), /TX-01/);
+  assert.ok(await evidence.locator(':scope > div').evaluate((node) => node.scrollHeight > node.clientHeight), 'long excerpts scroll within details');
+  const stageThreeDirectory = '.plans/style-upgrade-phase-three/validation';
+  fs.mkdirSync(stageThreeDirectory, { recursive: true });
+  const sourceTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  for (const value of ['light', 'dark', 'sand']) {
+    await page.evaluate((value) => document.documentElement.dataset.theme = value, value);
+    await citedMessage.screenshot({ path: `${stageThreeDirectory}/citations-${value}.png`, animations: 'disabled' });
+  }
+  await page.evaluate((value) => document.documentElement.dataset.theme = value, sourceTheme);
+  await evidence.locator(':scope > div').evaluate((node) => node.scrollTop = node.scrollHeight);
+  await evidence.screenshot({ path: `${stageThreeDirectory}/source-metadata.png`, animations: 'disabled' });
+  await evidence.locator('summary').click();
+  const artifact = citedMessage.locator('.message-artifacts [data-citation-card="canvas:report"]');
+  assert.match(await artifact.innerText(), /canvas-report.md/);
+  assert.match(await artifact.innerText(), /打开/);
+  await artifact.focus(); await page.keyboard.press('Enter');
+  await reader.locator('h1', { hasText: 'Canvas 报告', exact: true }).waitFor();
+  const touchContext = await browser.newContext({ hasTouch: true, storageState: await page.context().storageState(), viewport: { width: 390, height: 844 } });
+  try {
+    const touchPage = await touchContext.newPage();
+    await touchPage.goto(page.url(), { waitUntil: 'networkidle' });
+    const touchSource = touchPage.locator('.assistant-message', { hasText: '引用导航就绪。' }).last().locator('.citation-footer li', { hasText: 'canvas-source.md' });
+    await touchSource.locator('.citation-source-details summary').tap();
+    assert.equal(await touchSource.locator('details').evaluate((node) => node.open), true, 'touch can read evidence without hover');
+    await touchSource.locator('[data-citation-card="canvas:source:target"]').tap();
+    await touchPage.locator('.canvas-panel:not([hidden]) h1', { hasText: '规范', exact: true }).waitFor();
+  } finally { await touchContext.close(); }
+  console.log('Citation presentation smoke: visible titles/positions, bounded excerpts, source metadata, keyboard output opening and touch evidence/source opening passed.');
   for (const message of [page.locator('.user-message', { hasText: 'canvas-citations' }).last(), page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).last()]) {
     assert.equal(await message.locator('.citation-unavailable').count(), 0);
     await page.getByRole('tab', { name: 'canvas-source.md', exact: true }).click();

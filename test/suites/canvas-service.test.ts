@@ -54,6 +54,12 @@ test('Canvas documents round-trip with stable identity and reject unavailable ad
     const restored = restoreCanvasContextMessage({ message: { role: 'user', content: prompt } });
     assert.deepEqual(restored.message.canvasContextIds, [shared.contextId]);
     assert.equal(restored.message.content, '请解释这一页');
+    const image = { type: 'image', data: 'fixture', mimeType: 'image/png' };
+    const original = { message: { role: 'user', content: [{ type: 'text', text: prompt }, image] } };
+    const restoredBlocks = restoreCanvasContextMessage(original);
+    assert.deepEqual(restoredBlocks.message.canvasContextIds, [shared.contextId]);
+    assert.deepEqual(restoredBlocks.message.content, [{ type: 'text', text: '请解释这一页' }, image]);
+    assert.deepEqual(original.message.content, [{ type: 'text', text: prompt }, image], 'restoration does not mutate Pi history');
   }
 
   // Canvas Host rejects unavailable adapters and invalid document targets

@@ -29,6 +29,7 @@ export class SessionEventTiming {
     if (type === 'message_start' && event.message?.role === 'assistant') {
       this.assistantThinkingStartedAt = now;
       this.assistantThinkingDurationMs = null;
+      event.message = { ...event.message, startedAt: now };
     }
     if (type === 'message_update' && event.assistantMessageEvent?.type === 'text_delta' && this.assistantThinkingStartedAt !== null && this.assistantThinkingDurationMs === null) {
       this.assistantThinkingDurationMs = Math.max(0, now - this.assistantThinkingStartedAt);

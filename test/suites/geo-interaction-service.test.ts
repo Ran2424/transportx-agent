@@ -114,6 +114,14 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     const contextIds = [`geoctx_${'f'.repeat(16)}`];
     const entries = [{ message: { role: 'user', content: '相同文字', timestamp: 2 } }];
     assert.deepEqual(applyGeoMessageRefs(entries, [{ text: '相同文字', timestamp: 1, contextIds }]), entries);
+    const { buildAttachmentContext } = await import('../../src/contracts/attachments.ts');
+    const { buildGeoContextPrompt } = await import('../../src/contracts/geo.ts');
+    const { buildCanvasContextPrompt } = require('../../bin/canvas-service.js');
+    const mixed = '混合消息' + buildAttachmentContext([{ id: 'a', name: 'source.txt', relativePath: 'attachments/source.txt', mimeType: 'text/plain', size: 1, sha256: 'a'.repeat(64), kind: 'other', source: 'picker', status: 'ready' }]) + buildGeoContextPrompt(contextIds) + buildCanvasContextPrompt(['canvas_context_one']);
+    const mixedEntries = [{ message: { role: 'user', content: [{ type: 'text', text: mixed }], timestamp: 3 } }];
+    assert.deepEqual(applyGeoMessageRefs(mixedEntries, [{ text: '混合消息', timestamp: 3, contextIds }])[0].message.geoContextIds, contextIds);
+    const { messageText } = require('../../public/kernel/stores/conversation-store.js');
+    assert.equal(messageText(mixedEntries[0].message), '混合消息', 'mixed hints do not leak into visible prose');
   }
 
   // Geo screenshots are validated and saved directly in the session directory
