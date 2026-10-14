@@ -48,6 +48,8 @@ test('Signed cookies, remote access and authentication changes enforce credentia
         { host: 'localhost', user: '', pass: '' },
       ]) assert.throws(() => validateHostAccess(value), /Non-loopback/);
       validateHostAccess({ host: '0.0.0.0', user: 'u', pass: 'p', remoteAccess: true });
+      validateHostAccess({ host: '0.0.0.0', user: '', pass: '', remoteAccess: true, authEnabled: false }, true);
+      assert.throws(() => validateHostAccess({ host: '0.0.0.0', user: '', pass: '' }, true), /Non-loopback/);
     }
 
     // Auth RPC handler persists the new state and disconnects only when enabling

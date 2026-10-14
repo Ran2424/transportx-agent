@@ -6,6 +6,7 @@ import { piProcessEnv } from './pi-runtime.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import type { SessionService } from './session-service.js';
+import { projectAdapter } from './project-adapter.js';
 
 export type SessionPiLaunchInput = {
   cwd: string;
@@ -26,6 +27,10 @@ function assetDirectoryEnvironment(plan: ResolvedSessionPlan, kind: 'data' | 'kn
 export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
   const { resolvedSessionPlan: plan } = input;
   const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
+  for (const extensionPath of projectAdapter.piExtensions(APP_PATHS.appRoot)) {
+    if (!fs.existsSync(extensionPath)) throw new Error(`Project extension not found: ${extensionPath}`);
+    args.push('--extension', extensionPath);
+  }
   for (const extensionPath of planExtensions(plan)) {
     if (!fs.existsSync(extensionPath)) throw new Error(`Built-in extension not found: ${extensionPath}`);
     args.push('--extension', extensionPath);

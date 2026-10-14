@@ -4,9 +4,11 @@ import type { ConnectionState } from '../../../public/kernel/stores/runtime-stor
 import { BrandMark } from '../BrandMark';
 import { Icon } from '../icons';
 import { modelReference, sessionTitle } from '../../lib/formatting';
-import { WindowControls } from './WindowControls';
+import type { ReactNode } from 'react';
+import { projectUi } from '../../app/project-ui';
 
 type HeaderProps = {
+  account?: ReactNode;
   connection: ConnectionState;
   activeSession: LiveSession | null;
   streaming: boolean;
@@ -24,6 +26,7 @@ type HeaderProps = {
 };
 
 export function Header({
+  account,
   connection,
   activeSession,
   streaming,
@@ -48,7 +51,7 @@ export function Header({
   return (
     <header className={`workspace-header${activeSession ? ' has-task' : ''}`}>
       <div className="workspace-header-left">
-        <WindowControls />
+        {projectUi.windowControls}
         <button className="icon-button" type="button" aria-label={t('header.toggleSidebar')} aria-pressed={sidebarOpen} onClick={onToggleSidebar}>
           <Icon name="menu" />
         </button>
@@ -80,6 +83,7 @@ export function Header({
       </div>
 
       <div className="workspace-header-right">
+        {account}
         <div className="agent-status" data-testid="agent-status" data-state={status} title={`Agent ${statusLabel}`}>
           <span className="agent-status-dot" />
           <span>{statusLabel}</span>

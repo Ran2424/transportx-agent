@@ -101,6 +101,20 @@ export async function workingDisplaySmoke(page) {
   await page.locator('.assistant-prose', { hasText: '旧计时记录验收完成。' }).waitFor();
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
   assert.equal((await page.locator('.working-toggle').last().innerText()).trim(), 'Working', 'missing historical timing omits the separator and placeholder');
+  await composer.fill('Working-正文流式'); await composer.press('Enter');
+  const streamedBody = page.locator('.assistant-prose', { hasText: '流式正文验收：' }).last();
+  await streamedBody.waitFor();
+  const partialBody = await streamedBody.innerText();
+  assert.ok(!partialBody.includes('最后一部分确认完成。'), 'body appears before the final text/message_end');
+  assert.equal(await page.locator('.working-toggle').last().getAttribute('aria-expanded'), 'false', 'body is visible with Working collapsed');
+  await page.waitForFunction((length) => {
+    const body = [...document.querySelectorAll('.assistant-prose')].find((node) => node.textContent.includes('流式正文验收：'));
+    return body && body.textContent.length > length;
+  }, partialBody.length);
+  assert.equal(await page.locator('.working-toggle').last().getAttribute('aria-expanded'), 'false');
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  assert.match(await streamedBody.innerText(), /最后一部分确认完成。/);
+  console.log('Streaming body smoke: visible before message_end, grows across deltas and needs no Working expansion.');
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
   await page.getByRole('switch', { name: '显示执行详情', exact: true }).click();
   await page.keyboard.press('Escape');

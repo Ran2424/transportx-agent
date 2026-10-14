@@ -1,5 +1,6 @@
 import { createAppKernel } from '../../public/kernel/app-kernel.js';
 import { WebSocketClient } from '../../public/websocket-client.js';
+import { projectUi } from './project-ui';
 
 const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 const transport = new WebSocketClient(wsUrl);
@@ -10,7 +11,7 @@ export const appKernel = createAppKernel({
     method: init?.method,
     headers: init?.body instanceof FormData ? init?.headers : { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     body: init?.body === undefined ? undefined : init.body instanceof FormData ? init.body : JSON.stringify(init.body),
-  }),
+  }).then(response => { if (response.status === 401) projectUi.onUnauthorized?.(); return response; }),
 });
 
 let started = false;

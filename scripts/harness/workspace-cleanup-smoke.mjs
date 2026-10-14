@@ -44,6 +44,12 @@ export async function workspaceCleanupSmoke(page) {
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
   await page.getByRole('button', { name: '常规', exact: true }).click();
   await page.getByText(logs, { exact: true }).waitFor();
+  if (process.argv.includes('--web')) {
+    assert.equal(await page.getByRole('button', { name: '打开日志目录', exact: true }).count(), 0, 'Web does not offer server-side native folder actions');
+    await page.keyboard.press('Escape');
+    console.log('Web log directory smoke: persistent diagnostics and location retained; native action excluded.');
+    return;
+  }
   let opened = 0;
   const openLogRoute = async (route) => {
     if (route.request().postDataJSON()?.type !== 'open_logs_directory') return route.continue();

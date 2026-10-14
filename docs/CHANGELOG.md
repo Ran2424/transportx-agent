@@ -10,6 +10,7 @@
 
 ### Added
 
+- 增加构建时选择的项目接入点，供 Web 发行注入认证、模型目录与 Pi Extension，以及账户区域、窗口控制、更新 UI 和模块折叠默认值；桌面入口继续使用原默认实现。浏览器场景固定中文语言并验证临时模块的选择与版本提交，WebSocket 支持登录撤销后的认证复核。
 - 用户数据目录的 `logs/` 增加持久运行诊断，记录 Host / Pi 生命周期、HTTP/RPC 报错与 Pi stderr，桌面启动、渲染进程异常和更新日志共用轮转与凭据遮盖规则；每份日志保留当前文件及三份历史，任务删除后仍可查看。设置页增加日志目录及打开入口，兼容 macOS、Windows 和 Linux。
 - 系统提示词拆分为通用基础行为与按宿主系统选择的附加规则：macOS / Linux 共用 `PI_SYSTEM_POSIX.md`，Windows 使用 `PI_SYSTEM_WINDOWS.md`，由统一平台配置映射，覆盖桌面、Web 与 CLI 会话。Windows 规则明确 Bash 语法、`/dev/null` 重定向与保留文件名限制，减少误生成 `nul` 文件导致目录无法清理的问题（#60）。
 - 模型接入增加“本地模型”入口，支持本机或局域网的 Chat Completions 兼容服务；Ollama / LM Studio 提供地址预设。检测连接后获取并选择模型，API Key 可选，能力参数放入高级设置；保存后可用于新任务，真实密钥仍存入本机 auth.json。

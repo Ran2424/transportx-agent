@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 export async function softwareUpdateSmoke(browser, baseUrl) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const page = await browser.newPage({ locale: 'zh-CN', viewport: { width: 1280, height: 900 } });
   try {
     await page.addInitScript(() => {
       const listeners = new Set();
@@ -18,7 +18,7 @@ export async function softwareUpdateSmoke(browser, baseUrl) {
       window.updateSmokeEmit = emit;
       window.updateSmokeListeners = () => listeners.size;
     });
-    await page.goto(baseUrl, { waitUntil: 'networkidle' });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: '查看更新', exact: true }).click();
     const panel = page.getByTestId('software-update');
     await panel.getByText('当前版本 3.22.0', { exact: true }).waitFor();

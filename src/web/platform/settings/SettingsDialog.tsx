@@ -13,7 +13,7 @@ import i18n from '../../i18n';
 import { formatContextWindow } from '../../lib/formatting';
 import type { ModuleArchiveInspection } from '../../../contracts/module';
 import { ModelEditDialog } from '../model/ModelEditDialog';
-import { SoftwareUpdate } from './SoftwareUpdate';
+import { projectUi } from '../../app/project-ui';
 
 export const themes = [
   { id: 'light', label: 'Light' },
@@ -364,7 +364,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   switch (activeSection) {
     case 'general':
       content = <div className="settings-page-stack">
-        <SoftwareUpdate />
+        {projectUi.softwareUpdate}
         <section className="settings-section">
           <h2>{t('settings.appearance')}</h2>
           <div className="theme-grid" role="radiogroup" aria-label={t('settings.appearance')}>
@@ -405,7 +405,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
               <span><strong>{t('settings.modelConfig')}</strong><code>{overview.storage.models}</code></span>
               <span><strong>{t('settings.installedModules')}</strong><code>{overview.storage.modules}</code></span>
               <span><strong>{t('settings.logs')}</strong><code>{overview.storage.logs}</code></span>
-              <Button type="button" variant="outline" disabled={busy === 'logs' || !overview.storage.logs} onClick={() => void openLogsDirectory()}>{t('settings.openLogs')}</Button>
+              {projectUi.nativeActions ? <Button type="button" variant="outline" disabled={busy === 'logs' || !overview.storage.logs} onClick={() => void openLogsDirectory()}>{t('settings.openLogs')}</Button> : null}
             </div>
           ) : <p className="settings-empty">{t('settings.directoriesUnavailable')}</p>}
         </section>
