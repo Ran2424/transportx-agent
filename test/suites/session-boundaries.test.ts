@@ -7,6 +7,14 @@ test('Session close, history deletion and process cancellation preserve writer o
     const fs = require('node:fs');
     const os = require('node:os');
     const path = require('node:path');
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-cleanup-test-'));
+    process.env.TAU_USER_DATA_DIR = userData;
+    process.env.PI_CODING_AGENT_DIR = userData;
+    process.env.PI_CODING_AGENT_SESSION_DIR = path.join(userData, 'sessions');
+    process.env.TAU_PROJECTS_DIR = path.join(userData, 'scenario');
+    fs.mkdirSync(process.env.PI_CODING_AGENT_SESSION_DIR, { recursive: true });
+    fs.mkdirSync(process.env.TAU_PROJECTS_DIR, { recursive: true });
+    t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
     const { createSessionWorkingDirectory, makeSessionId } = require('../../bin/session-workspace.js');
 
     // history delete holds a file gate while waiting for an existing resume and Writer
@@ -20,7 +28,7 @@ test('Session close, history deletion and process cancellation preserve writer o
       let resume!: (session: unknown) => void;
       let stop!: () => void;
       manager.pendingResumes.set(file, new Promise((resolve) => { resume = resolve; }));
-      const deletion = manager.deleteHistory(file);
+      const deletion = manager.deleteHistory(file, false);
       deletion.catch(() => { });
       await assert.rejects(manager.resume({ sessionFile: file, cwd: root }), /delet/i);
       assert.ok(fs.existsSync(file));
@@ -86,13 +94,143 @@ test('Session close, history deletion and process cancellation preserve writer o
       await new Promise((resolve) => child.stdout.once('data', resolve));
       const manager = new LiveSessionManager();
       manager.sessions.set('writer', { id: 'writer', sessionFile: file, terminate: () => terminateProcessTree(child) });
-      await manager.deleteHistory(file);
+      await manager.deleteHistory(file, false);
       assert.notEqual(child.exitCode, null);
       assert.equal(fs.existsSync(file), false);
       fs.writeFileSync(file, 'keep');
       manager.sessions.set('failed', { id: 'failed', sessionFile: file, terminate: async () => { throw new Error('stop failed'); } });
-      await assert.rejects(manager.deleteHistory(file), /stop failed/);
+      await assert.rejects(manager.deleteHistory(file, false), /stop failed/);
       assert.equal(fs.readFileSync(file, 'utf8'), 'keep');
+    }
+
+    // Node cleanup handles reserved names, shared directories, failures and retry without a shell.
+    {
+      const { LiveSessionManager } = require('../../bin/sessions.js');
+      const { testSymlink } = require('../support/symlink.ts');
+      const root = process.env.TAU_PROJECTS_DIR;
+      const file = path.join(process.env.PI_CODING_AGENT_SESSION_DIR, 'cleanup.jsonl');
+      const history = (cwd: string, target = file) => fs.writeFileSync(target, JSON.stringify({ type: 'session', cwd }) + '\n');
+      const manager = new LiveSessionManager();
+      let cwd = createSessionWorkingDirectory(root, '保留名 cleanup');
+      fs.mkdirSync(path.join(cwd, 'nested'));
+      for (const name of ['nul', 'NUL.txt', 'con', 'aux', 'prn', 'COM1', 'LPT9']) fs.writeFileSync(path.toNamespacedPath(path.join(cwd, 'nested', name)), 'error output');
+      history(cwd);
+      await manager.deleteHistory(file);
+      assert.equal(fs.existsSync(cwd), false);
+      assert.equal(fs.existsSync(file), false);
+
+      cwd = createSessionWorkingDirectory(root, 'shared');
+      history(cwd);
+      const other = path.join(process.env.PI_CODING_AGENT_SESSION_DIR, 'other.jsonl');
+      history(cwd, other);
+      await assert.rejects(manager.deleteHistory(file), /another session/);
+      assert.ok(fs.existsSync(file) && fs.existsSync(cwd));
+      await manager.deleteHistory(file, false);
+      assert.ok(fs.existsSync(cwd));
+      await manager.deleteHistory(other);
+      assert.equal(fs.existsSync(cwd), false);
+
+      cwd = createSessionWorkingDirectory(root, 'retry');
+      history(cwd);
+      const originalRm = fs.promises.rm;
+      fs.promises.rm = async (target: string, options: unknown) => {
+        if (target === path.toNamespacedPath(cwd)) {
+          await originalRm(path.join(cwd, '.tau'), { recursive: true, force: true });
+          throw Object.assign(new Error('access denied'), { code: 'EACCES', path: path.join(cwd, 'locked.csv') });
+        }
+        return originalRm(target, options);
+      };
+      try { await assert.rejects(manager.deleteHistory(file), (error: any) => error.code === 'EACCES' && /locked.csv/.test(error.message)); }
+      finally { fs.promises.rm = originalRm; }
+      assert.ok(fs.existsSync(file) && fs.existsSync(cwd));
+      assert.ok(fs.existsSync(path.join(cwd, '.tau', 'workspace-owner.json')), 'partial cleanup preserves ownership for a later retry');
+      await manager.deleteHistory(file);
+      assert.equal(fs.existsSync(cwd), false);
+
+      cwd = createSessionWorkingDirectory(root, 'gate');
+      history(cwd);
+      let release!: () => void;
+      let started!: () => void;
+      const entered = new Promise<void>((resolve) => { started = resolve; });
+      fs.promises.rm = async (target: string, options: unknown) => {
+        if (target === path.toNamespacedPath(cwd)) { started(); await new Promise<void>((resolve) => { release = resolve; }); }
+        return originalRm(target, options);
+      };
+      const deleting = manager.deleteHistory(file);
+      try {
+        await entered;
+        await assert.rejects(manager.resume({ sessionFile: other, cwd }), /directory is being deleted/);
+        release();
+        await deleting;
+      } finally { fs.promises.rm = originalRm; release?.(); await deleting; }
+
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-cleanup-outside-'));
+      t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+      const keep = path.join(outside, 'keep.txt');
+      fs.writeFileSync(keep, 'keep');
+      history(outside);
+      await assert.rejects(manager.deleteHistory(file), /ownership/);
+      await manager.deleteHistory(file, false);
+      assert.equal(fs.readFileSync(keep, 'utf8'), 'keep');
+
+      cwd = createSessionWorkingDirectory(root, 'links');
+      history(cwd);
+      const link = path.join(root, '20261014-120000-link');
+      await testSymlink(t, 'cleanup root symlink', outside, link, async () => {
+        history(link);
+        await assert.rejects(manager.deleteHistory(file), /ownership/);
+        assert.ok(fs.existsSync(file));
+      }, 'dir');
+      history(cwd);
+      await testSymlink(t, 'cleanup child symlink', outside, path.join(cwd, 'external'), async () => {
+        await manager.deleteHistory(file);
+        assert.equal(fs.readFileSync(keep, 'utf8'), 'keep');
+      }, 'dir');
+
+      cwd = createSessionWorkingDirectory(root, 'legacy');
+      fs.unlinkSync(path.join(cwd, '.tau', 'workspace-owner.json'));
+      fs.writeFileSync(path.join(cwd, '.tau', 'resolved-session-plan.json'), JSON.stringify({ schemaVersion: 3, platform: { name: 'TransportX Agent' }, workspace: cwd }));
+      history(cwd);
+      await manager.deleteHistory(file);
+      assert.equal(fs.existsSync(cwd), false);
+
+      cwd = createSessionWorkingDirectory(root, 'missing');
+      history(cwd);
+      await originalRm(cwd, { recursive: true, force: true });
+      await manager.deleteHistory(file);
+      assert.equal(fs.existsSync(file), false);
+
+      cwd = createSessionWorkingDirectory(root, 'no-history');
+      manager.sessions.set('no-history', { id: 'no-history', cwd, sessionFile: null, terminate: async () => {} });
+      await manager.deleteConversation({ sessionId: 'no-history' });
+      assert.equal(fs.existsSync(cwd), false);
+
+      cwd = createSessionWorkingDirectory(root, 'live-retry');
+      history(cwd);
+      const live = { id: 'live-retry', cwd, sessionFile: file, isStreaming: true, terminate: async () => {} };
+      manager.sessions.set(live.id, live);
+      const unrelated = createSessionWorkingDirectory(root, 'different-task');
+      history(unrelated);
+      await assert.rejects(manager.deleteConversation({ sessionId: live.id }), /does not match/);
+      assert.ok(fs.existsSync(cwd) && fs.existsSync(unrelated) && fs.existsSync(file));
+      history(cwd);
+      fs.promises.rm = async (target: string, options: unknown) => {
+        if (target === path.toNamespacedPath(cwd)) throw Object.assign(new Error('locked'), { code: 'EPERM' });
+        return originalRm(target, options);
+      };
+      try { await assert.rejects(manager.deleteConversation({ sessionId: live.id }), /EPERM/); }
+      finally { fs.promises.rm = originalRm; }
+      assert.equal(manager.get(live.id), live, 'a failed cleanup retains the live deletion target');
+      assert.equal(live.isStreaming, false);
+      assert.ok(fs.existsSync(file));
+      await manager.deleteConversation({ sessionId: live.id });
+      assert.equal(manager.get(live.id), undefined);
+
+      cwd = createSessionWorkingDirectory(root, 'late-flush');
+      const flushing = { id: 'late-flush', cwd, sessionFile: null as string | null, terminate: async () => { history(cwd); flushing.sessionFile = file; } };
+      manager.sessions.set(flushing.id, flushing);
+      await manager.deleteConversation({ sessionId: flushing.id });
+      assert.equal(fs.existsSync(file), false, 'a history file first flushed during termination is also deleted');
     }
 
     // session jobs enforce owner and Host limits and close waits for cancellation

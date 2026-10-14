@@ -84,6 +84,7 @@ export type ExtensionUiResponseInput = {
 
 export type HistorySession = {
   filePath?: string;
+  cwd?: string | null;
   name?: string | null;
   firstMessage?: string | null;
   timestamp?: string;
@@ -188,7 +189,8 @@ export type SessionCommands = {
   uploadAttachment(input: UploadAttachmentInput): Promise<SessionAttachment>;
   deleteAttachment(sessionId: string, attachmentId: string): Promise<void>;
   close(sessionId: string): Promise<void>;
-  deleteHistory(filePath: string): Promise<void>;
+  deleteHistory(filePath: string, deleteWorkspace?: boolean): Promise<void>;
+  deleteLive(sessionId: string, deleteWorkspace?: boolean): Promise<void>;
 };
 
 export type PlatformCommands = {
@@ -491,8 +493,11 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, { ...context, sessionId });
     },
 
-    async deleteHistory(filePath) {
-      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { filePath } }, context);
+    async deleteHistory(filePath, deleteWorkspace = true) {
+      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { filePath, deleteWorkspace } }, context);
+    },
+    async deleteLive(sessionId, deleteWorkspace = true) {
+      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { sessionId, deleteWorkspace } }, context);
     },
   };
 }

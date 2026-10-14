@@ -436,6 +436,15 @@ export function createApiRouter(services: ApiRouteServices) {
     .post('/api/sessions/delete', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
+        if (body.deleteWorkspace !== undefined && typeof body.deleteWorkspace !== 'boolean') return deps.json(res, 400, { error: 'deleteWorkspace must be a boolean' });
+        if (body.sessionId !== undefined) {
+          if (typeof body.sessionId !== 'string' || !body.sessionId) return deps.json(res, 400, { error: 'sessionId required' });
+          const session = deps.sessions.get(body.sessionId);
+          if (!session) return deps.json(res, 200, { success: true, alreadyDeleted: true });
+          if (session.sessionFile) deps.resolveSessionFile(session.sessionFile);
+          await deps.sessions.deleteConversation({ sessionId: body.sessionId, deleteWorkspace: body.deleteWorkspace !== false });
+          return deps.json(res, 200, { success: true });
+        }
         if (!body.filePath || typeof body.filePath !== 'string') return deps.json(res, 400, { error: 'filePath required' });
         let sessionFile: string;
         try { sessionFile = deps.resolveSessionFile(body.filePath); }
@@ -443,9 +452,9 @@ export function createApiRouter(services: ApiRouteServices) {
           if (deps.errorMessage(error) === 'Session not found') return deps.json(res, 200, { success: true, alreadyDeleted: true });
           throw error;
         }
-        await deps.sessions.deleteHistory(sessionFile);
+        await deps.sessions.deleteHistory(sessionFile, body.deleteWorkspace !== false);
         deps.json(res, 200, { success: true });
-      } catch (error) { deps.json(res, 400, { error: deps.errorMessage(error) }); }
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as NodeJS.ErrnoException).code, path: (error as NodeJS.ErrnoException).path }); }
     })
     .get('/api/session-history', ({ res, url, deps }) => {
       try {

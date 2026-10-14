@@ -447,6 +447,23 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.deepEqual(generated.win32.treeArgs, ['/pid', '/T']);
     assert.equal(generated.darwin.utilityHost, true);
     assert.equal(generated.linux.packaged, null);
+    assert.equal(generated.darwin.systemPrompt, 'PI_SYSTEM_POSIX.md');
+    assert.equal(generated.linux.systemPrompt, 'PI_SYSTEM_POSIX.md');
+    assert.equal(generated.win32.systemPrompt, 'PI_SYSTEM_WINDOWS.md');
+    const { toPosixPath } = require('../../bin/util/path.js');
+    assert.equal(toPosixPath('C:\\tasks\\report'), 'C:/tasks/report');
+    assert.equal(toPosixPath('\\\\server\\share\\tasks\\report'), '//server/share/tasks/report');
+    const { loadSystemPrompt } = require('../../bin/session-prompt.js');
+    const promptRoot = path.resolve('src/server/prompts');
+    const basePrompt = fs.readFileSync(path.join(promptRoot, 'PI_SYSTEM.md'), 'utf8').trim();
+    const posixPrompt = fs.readFileSync(path.join(promptRoot, 'PI_SYSTEM_POSIX.md'), 'utf8').trim();
+    const windowsPrompt = fs.readFileSync(path.join(promptRoot, 'PI_SYSTEM_WINDOWS.md'), 'utf8').trim();
+    assert.equal(loadSystemPrompt('darwin'), `${basePrompt}\n\n${posixPrompt}`);
+    assert.equal(loadSystemPrompt('linux'), `${basePrompt}\n\n${posixPrompt}`);
+    assert.equal(loadSystemPrompt('win32'), `${basePrompt}\n\n${windowsPrompt}`);
+    assert.match(loadSystemPrompt('win32'), /2>nul/);
+    assert.match(loadSystemPrompt('win32'), /2>\/dev\/null/);
+    assert.throws(() => loadSystemPrompt('freebsd'), /Host operations missing/);
     const source = ['src/server/sessions.ts', 'src/server/process-runner.ts', 'src/server/process-tree.ts', 'src/server/file-api-handler.ts', 'src/server/server-main.ts', 'desktop/main.ts', 'desktop/agent-host-supervisor.ts'].map(file => fs.readFileSync(path.resolve(file), 'utf8')).join('\n');
     assert.doesNotMatch(source, /process\.platform\s*[!=]==\s*['"]/);
   }

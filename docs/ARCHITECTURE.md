@@ -124,11 +124,13 @@ flowchart LR
 
 [session-assembly.ts](../src/server/session-assembly.ts) 冻结模块和资产；[session-pi-launch.ts](../src/server/session-pi-launch.ts) 构造进程参数；[sessions.ts](../src/server/sessions.ts) 负责实际启动、停止与恢复。
 
-Prompt 分三层：`src/server/prompts/PI_SYSTEM.md` 定义基础行为；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
+Prompt 按顺序装配：`src/server/prompts/PI_SYSTEM.md` 定义通用基础行为；Host 根据 `desktop/scripts/platform-profile.mjs` 的 `systemPrompt` 映射附加 `PI_SYSTEM_POSIX.md`（macOS / Linux）或 `PI_SYSTEM_WINDOWS.md`（Windows），两份环境规则独立维护，并与基础行为一起传入 Pi 的 `--system-prompt`；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Windows 附加规则明确 `bash` 工具仍使用 Bash 语法，禁止 `nul` 重定向及创建 Windows 保留名。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
 
 新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module、入口、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务时以该计划校验，而不是悄然替换为当前最新 Module。内置 Module 有受控漂移容忍规则；用户安装 Module 的缺失或不一致必须明确处理。唯一的升级迁移例外是 3.2.0 以前的内置 Video：仅当新版 Video Capability 已安装并启用时，恢复流程才会将旧条目映射到当前插件。
 
 Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更新前端状态。WebSocket 只用于实时 Pi 事件和 Snapshot；断线或刷新后由 Agent Host Snapshot 重新校正。
+
+删除对话默认同时清理工作目录，确认框显示目标路径并可取消目录清理。Node Host 校验任务目录归属，等待 Writer 和分析作业停止，再通过 `fs.promises.rm` 清理目录，成功后才删除历史与注销会话；失败保留删除入口和历史供重试。新建目录在 `.tau/workspace-owner.json` 记录真实目录与父目录；旧目录必须位于当前项目根目录或 scenario 下，并有指向同一目录的 Resolved Session Plan。根目录符号链接、未确认归属的目录及被其他会话引用的目录拒绝清理；目录内的符号链接只删除链接。清理期间拒绝对该目录恢复会话或创建子任务。文件 API 边界使用 `path.toNamespacedPath`，在 Windows 支持命名空间路径，在 macOS / Linux 保持普通路径；目录占用错误使用有限重试。
 
 ### 3.2 一轮分析的执行闭环
 

@@ -10,5 +10,8 @@ export async function testSymlink(context: TestContext, name: string, target: st
     return;
   }
   try { await verify(); }
-  finally { fs.unlinkSync(link); }
+  finally {
+    try { fs.unlinkSync(link); }
+    catch (cause) { if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause; }
+  }
 }

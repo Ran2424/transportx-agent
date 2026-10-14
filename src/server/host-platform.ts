@@ -3,6 +3,7 @@ const { spawn, execFile } = require('node:child_process');
 
 // Built from the authoritative release profile, never hand-maintained here.
 type HostOperations = {
+  systemPrompt: string;
   posixPermissions: boolean;
   desktopDataRoot?: 'electron';
   detached: boolean; tree: string; treeCommand?: string; treeArgs?: string[]; treeForceArg?: string;

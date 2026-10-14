@@ -27,11 +27,11 @@ export function isWithin(root: string, target: string) {
  * attachment indexes, or any other platform-independent payload. Collapses
  * runs of backslashes (a Windows-only artifact) into single forward slashes,
  * but preserves other slash repetition so that URL-shaped strings are not
- * rewritten.
+ * rewritten. Preserves the leading double slash of Windows UNC paths.
  */
 export function toPosixPath(value: string): string {
   if (!value) return value;
-  return value.replace(/\\+/g, '/');
+  return value.replace(/^\\\\(?=[^\\])/, '//').replace(/\\+/g, '/');
 }
 
 /**

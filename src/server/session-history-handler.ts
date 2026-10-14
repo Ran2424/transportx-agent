@@ -9,6 +9,7 @@ import { TimingMetricsStore } from './timing-metrics.js';
 import { isWithin } from './util/path.js';
 import { containedFile } from './util/resource-path.js';
 import { deriveSessionName, readSessionHeaderCwd as readHistoryHeaderCwd, readSessionSummary, searchSessionFile } from './session-history-reader.js';
+import { listSessionHistoryFiles } from './session-history-files.js';
 
 type HistoryHandlersOptions = {
   sessionsDir: string;
@@ -23,22 +24,7 @@ type HistoryHandlersOptions = {
 };
 
 export function createSessionHistoryHandlers(options: HistoryHandlersOptions) {
-  const listSessionFiles = () => {
-    if (!fs.existsSync(options.sessionsDir)) return [];
-    const files: Array<{ dirName: string; file: string; filePath: string }> = [];
-    for (const entry of fs.readdirSync(options.sessionsDir, { withFileTypes: true })) {
-      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-        files.push({ dirName: '', file: entry.name, filePath: path.join(options.sessionsDir, entry.name) });
-        continue;
-      }
-      if (!entry.isDirectory()) continue;
-      const projectDir = path.join(options.sessionsDir, entry.name);
-      for (const file of fs.readdirSync(projectDir).filter((name: string) => name.endsWith('.jsonl'))) {
-        files.push({ dirName: entry.name, file, filePath: path.join(projectDir, file) });
-      }
-    }
-    return files.filter(({ filePath }) => { try { containedFile(options.sessionsDir, filePath); return true; } catch { return false; } });
-  };
+  const listSessionFiles = () => listSessionHistoryFiles(options.sessionsDir);
   const isWithinPath = isWithin;
   const normalizeSessionCwd = (cwd: unknown) => typeof cwd === 'string' && cwd.trim() ? path.resolve(options.expandHome(cwd)) : null;
   const readSessionEntries = (filePath: string) => {
