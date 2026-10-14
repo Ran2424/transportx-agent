@@ -385,7 +385,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
 
 const staticHandler = createStaticHandler({ reactStaticDir: REACT_STATIC_DIR, mimeTypes: MIME_TYPES as Record<string, string>, authEnabled: () => authEnabled, publicStatic: !!PROJECT_AUTH, checkAuth, sendAuthRequired, maybeSetSessionCookie, handleApi: handleApiRoute });
 const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
-  const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+  const pathname = (req.url || '/').split('?')[0];
   if (pathname.startsWith('/api/auth/')) {
     if (!PROJECT_AUTH && pathname === '/api/auth/session' && req.method === 'GET') return json(res, 200, { enabled: false, username: null });
     if (PROJECT_AUTH) { void PROJECT_AUTH.handle(req, res, isAllowedApiOrigin(req)).catch((error) => { logHostError('project_auth_failed', error); json(res, 503, { error: 'Login service unavailable' }); }); return; }
