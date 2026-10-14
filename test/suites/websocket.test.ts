@@ -105,6 +105,36 @@ test('WebSocket rejects unsafe origins and commands, bounds buffering and preser
     assert.equal(manager.clients.has(slow), false);
   }
 
+  // Project authentication revocation closes an existing connection.
+  {
+    const http = require('node:http');
+    const { LiveSessionManager } = require('../../bin/sessions.js');
+    const { attachWebSocketHandler } = require('../../bin/websocket-handler.js');
+    const authServer = http.createServer();
+    let valid = true;
+    const handler = attachWebSocketHandler({
+      server: authServer, sessions: new LiveSessionManager(),
+      authEnabled: () => true, isAllowedOrigin: () => true,
+      isAuthenticated: () => valid, recheckAuthentication: true, suppressChallenge: true,
+    });
+    await new Promise<void>((resolve) => authServer.listen(0, '127.0.0.1', resolve));
+    const client = new WebSocket(`ws://127.0.0.1:${authServer.address().port}/ws`);
+    try {
+      await nextMessage(client);
+      const closed = new Promise<number>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('revoked login remained connected')), 23000);
+        client.once('close', (code: number) => { clearTimeout(timer); resolve(code); });
+      });
+      valid = false;
+      assert.equal(await closed, 4001, 'authentication is rechecked after the upgrade');
+    } finally {
+      client.terminate();
+      handler.close();
+      handler.wss.close();
+      await new Promise<void>((resolve) => authServer.close(resolve));
+    }
+  }
+
   // cross-origin WebSocket upgrade is rejected
   {
     liveManager.sessions.clear();

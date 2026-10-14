@@ -13,7 +13,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
 import { containedFile } from './util/resource-path.js';
 import { acquireWriteLease } from './util/json-storage.js';
-import { APP_PATHS, ARGS, AUTH_CONFIGURED, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
+import { APP_PATHS, ARGS, AUTH_CONFIGURED, PROJECT_AUTH, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
 import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SESSION_ASSEMBLER, reloadModules, setModuleEnabled, sessionAssemblerForProfile } from './platform-composition.js';
 import { buildSessionPiLaunch } from './session-pi-launch.js';
 import { createSessionWorkingDirectory } from './session-workspace.js';
@@ -72,7 +72,7 @@ const liveManager = new LiveSessionManager({
 
 function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
 
-let authEnabled = AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false;
+let authEnabled = !!PROJECT_AUTH || (AUTH_CONFIGURED && TAU_SETTINGS.authEnabled !== false);
 let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
@@ -86,7 +86,7 @@ const rpcHandlers: RpcHandlerRegistry = {
   ...createPlatformRpcHandlers(currentPlatformOverview, async () => { fs.mkdirSync(APP_PATHS.logsDir, { recursive: true }); await openNativeTarget(APP_PATHS.logsDir); }),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
-    required: !isLoopbackHost(HOST),
+    required: !!PROJECT_AUTH || !isLoopbackHost(HOST),
     getEnabled: () => authEnabled,
     setEnabled: (enabled) => { authEnabled = enabled; saveTauSetting('authEnabled', enabled); },
     notifyChanged: (enabled) => liveManager.broadcast({ type: 'event', event: { type: 'auth_changed', enabled } }),
@@ -131,7 +131,7 @@ const rpcHandlers: RpcHandlerRegistry = {
 };
 const reliableCommandTypes = new Set(Object.entries(rpcHandlers).flatMap(([type, handler]) => handler.reliable ? [type] : []));
 
-type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'none'; expiresAt?: number };
+type AuthResult = { ok: boolean; via: 'disabled' | 'basic' | 'cookie' | 'project' | 'none'; expiresAt?: number };
 
 function checkBasicAuth(req: IncomingMessage) {
   if (!authEnabled) return true;
@@ -142,6 +142,10 @@ function checkBasicAuth(req: IncomingMessage) {
 }
 
 function checkAuth(req: IncomingMessage): AuthResult {
+  if (PROJECT_AUTH) {
+    try { return { ok: !!PROJECT_AUTH.authenticate(req.headers), via: 'project' }; }
+    catch { return { ok: false, via: 'none' }; }
+  }
   if (!authEnabled) return { ok: true, via: 'disabled' };
   if (checkBasicAuth(req)) return { ok: true, via: 'basic' };
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME];
@@ -157,6 +161,7 @@ function isForwardedHttps(req: IncomingMessage) {
 }
 
 function maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: AuthResult) {
+  if (PROJECT_AUTH) return;
   if (!authEnabled || !auth.ok || auth.via === 'disabled') return;
   let expiresAt = auth.expiresAt;
   if (expiresAt === undefined) {
@@ -174,7 +179,7 @@ function errorMessage(error: unknown) { logHostError('operation_failed', error);
 function errorStatus(error: unknown) { return error && typeof error === 'object' && 'status' in error && typeof (error as StatusError).status === 'number' ? (error as StatusError).status! : 400; }
 function sendAuthRequired(res: ServerResponse, req: IncomingMessage) {
   if (parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME]) res.setHeader('Set-Cookie', buildSessionCookie('', { secure: isForwardedHttps(req), clear: true }));
-  res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Tau"', 'Content-Type': 'application/json' });
+  res.writeHead(401, { ...(PROJECT_AUTH ? {} : { 'WWW-Authenticate': 'Basic realm="Tau"' }), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ error: 'Unauthorized' }));
 }
 
@@ -378,9 +383,16 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
 
-const staticHandler = createStaticHandler({ reactStaticDir: REACT_STATIC_DIR, mimeTypes: MIME_TYPES as Record<string, string>, authEnabled: () => authEnabled, checkAuth, sendAuthRequired, maybeSetSessionCookie, handleApi: handleApiRoute });
-const server = http.createServer(staticHandler.serveStaticFile);
-const socketHandler = attachWebSocketHandler({ server, sessions: liveManager, isAllowedOrigin: isAllowedApiOrigin, authEnabled: () => authEnabled, isAuthenticated: (request) => checkAuth(request).ok });
+const staticHandler = createStaticHandler({ reactStaticDir: REACT_STATIC_DIR, mimeTypes: MIME_TYPES as Record<string, string>, authEnabled: () => authEnabled, publicStatic: !!PROJECT_AUTH, checkAuth, sendAuthRequired, maybeSetSessionCookie, handleApi: handleApiRoute });
+const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+  const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+  if (pathname.startsWith('/api/auth/')) {
+    if (!PROJECT_AUTH && pathname === '/api/auth/session' && req.method === 'GET') return json(res, 200, { enabled: false, username: null });
+    if (PROJECT_AUTH) { void PROJECT_AUTH.handle(req, res, isAllowedApiOrigin(req)).catch((error) => { logHostError('project_auth_failed', error); json(res, 503, { error: 'Login service unavailable' }); }); return; }
+  }
+  staticHandler.serveStaticFile(req, res);
+});
+const socketHandler = attachWebSocketHandler({ server, sessions: liveManager, isAllowedOrigin: isAllowedApiOrigin, authEnabled: () => authEnabled, recheckAuthentication: !!PROJECT_AUTH, suppressChallenge: !!PROJECT_AUTH, isAuthenticated: (request) => checkAuth(request).ok });
 const { wss } = socketHandler;
 
 function computeUrls(port: number) {
@@ -405,7 +417,7 @@ function computeUrls(port: number) {
 let releaseHostWriter: (() => void) | null = null;
 function listen(port: number, attemptsLeft = 10) {
   initializeHostLogging(APP_PATHS.logsDir);
-  validateHostAccess(TAU_SETTINGS);
+  validateHostAccess(TAU_SETTINGS, !!PROJECT_AUTH);
   if (!releaseHostWriter) {
     releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host'));
     const release = () => { if (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount) return; releaseHostWriter?.(); releaseHostWriter = null; };
@@ -503,7 +515,7 @@ async function shutdown(signal: string) {
   }
 }
 function startCli() {
-  validateHostAccess(TAU_SETTINGS);
+  validateHostAccess(TAU_SETTINGS, !!PROJECT_AUTH);
   if (DESKTOP_MODE) attachDesktopUpdateChannel();
   const runtime = inspectPiRuntime(PI_COMMAND, PI_COMMAND_ARGS); liveManager.setPiVersion(runtime.version); console.log(`[Tau] Pi runtime: ${runtime.command} ${runtime.version}`);
   console.log(`[Tau] Modules: ${MODULE_REGISTRY.enabled().length} enabled, ${MODULE_REGISTRY.errors.length} error(s)`);

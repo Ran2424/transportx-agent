@@ -5,6 +5,7 @@ const os = require('node:os');
 import { readJsonObject, writeJsonAtomic, assertHostWriter } from './util/json-storage.js';
 import type { TauArgs, TauSettings, TauSettingsFile } from './types.js';
 import { ensureWritableAppPaths, resolveAppPaths } from './app-paths.js';
+import { projectAdapter } from './project-adapter.js';
 import { resolveFfmpegExecutables, resolvePiExecutable, resolvePythonExecutable, type VideoExecutables } from './runtime-resolver.js';
 
 export function parseArgs(argv: string[]): TauArgs {
@@ -64,7 +65,8 @@ export function loadTauSettings(): TauSettings {
 }
 
 export const TAU_SETTINGS = loadTauSettings();
-export const AUTH_CONFIGURED = !!(TAU_SETTINGS.user && TAU_SETTINGS.pass);
+export const PROJECT_AUTH = projectAdapter.createAuth(APP_PATHS, process.env);
+export const AUTH_CONFIGURED = !!PROJECT_AUTH || !!(TAU_SETTINGS.user && TAU_SETTINGS.pass);
 export const PORT = TAU_SETTINGS.port;
 export const HOST = TAU_SETTINGS.host;
 export const REACT_STATIC_DIR = process.env.TAU_REACT_STATIC_DIR || findReactWebDir();

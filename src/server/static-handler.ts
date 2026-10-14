@@ -12,6 +12,7 @@ type StaticHandlerOptions = {
   reactStaticDir: string;
   mimeTypes: Record<string, string>;
   authEnabled(): boolean;
+  publicStatic?: boolean;
   checkAuth(req: IncomingMessage): AuthResult;
   sendAuthRequired(res: ServerResponse, req: IncomingMessage): void;
   maybeSetSessionCookie(req: IncomingMessage, res: ServerResponse, auth: AuthResult): void;
@@ -70,7 +71,7 @@ export function createStaticHandler(options: StaticHandlerOptions) {
     const pathname = urlPath.split('?')[0];
     if (req.method === 'POST' && INTERNAL_SERVICE_PATHS.has(pathname)) return options.handleApi(req, res, urlPath);
     const auth = options.checkAuth(req);
-    if (options.authEnabled() && pathname !== '/api/health' && !auth.ok) return options.sendAuthRequired(res, req);
+    if (options.authEnabled() && pathname !== '/api/health' && !auth.ok && (!options.publicStatic || pathname.startsWith('/api/'))) return options.sendAuthRequired(res, req);
     options.maybeSetSessionCookie(req, res, auth);
     if (urlPath.startsWith('/api/')) return options.handleApi(req, res, urlPath);
     if (pathname === '/legacy' || pathname.startsWith('/legacy/')) { res.writeHead(404); res.end('Not Found'); return; }

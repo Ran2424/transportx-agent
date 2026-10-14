@@ -129,7 +129,7 @@ export async function documentSmoke(page, browser) {
   assert.match(await artifact.innerText(), /打开/);
   await artifact.focus(); await page.keyboard.press('Enter');
   await reader.locator('h1', { hasText: 'Canvas 报告', exact: true }).waitFor();
-  const touchContext = await browser.newContext({ hasTouch: true, storageState: await page.context().storageState(), viewport: { width: 390, height: 844 } });
+  const touchContext = await browser.newContext({ locale: 'zh-CN', hasTouch: true, storageState: await page.context().storageState(), viewport: { width: 390, height: 844 } });
   try {
     const touchPage = await touchContext.newPage();
     await touchPage.goto(page.url(), { waitUntil: 'networkidle' });

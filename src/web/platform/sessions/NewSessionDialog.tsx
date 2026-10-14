@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
 import { formatModelOption } from '../../lib/formatting';
+import { projectUi } from '../../app/project-ui';
 
 type NewSessionDialogProps = {
   open: boolean;
@@ -95,19 +96,9 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
   const selectedModuleOptions = Object.entries(selectedModules).map(([id, version]) => moduleOptions.find((item) => item.id === id && item.version === version)).filter((item): item is SessionModuleOption => !!item);
   const moduleBlockers = selectedModuleOptions.flatMap((item) => item.assets.flatMap((asset) => !asset.configured ? [`${item.name}: ${asset.id} ${t('sessions.assetMissing')}`] : asset.integrity === 'missing' ? [`${item.name}: ${asset.id} ${t('sessions.integrityMissing')}`] : []));
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={t('sessions.newTask')}
-      className="new-session-dialog"
-      footer={null}
-    >
-      <form className="form-stack" onSubmit={submit}>
-        <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} maxLength={120} autoFocus placeholder={t('sessions.taskNamePlaceholder')} onChange={(event) => setName(event.target.value)} /></label>
-        {moduleGroups.length ? (
-          <fieldset className="session-module-fieldset">
-            <legend>{t('sessions.modules')}</legend>
+  const moduleFields = (
+          <fieldset className="session-module-fieldset" aria-label={t('sessions.modules')}>
+            {!projectUi.moduleOptionsCollapsed ? <legend>{t('sessions.modules')}</legend> : null}
             {moduleGroups.map(([id, versions]) => (
               <div className="session-module-row" key={id}>
                 <label>
@@ -135,6 +126,20 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
               </div>
             ))}
           </fieldset>
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('sessions.newTask')}
+      className="new-session-dialog"
+      footer={null}
+    >
+      <form className="form-stack" onSubmit={submit}>
+        <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} maxLength={120} autoFocus placeholder={t('sessions.taskNamePlaceholder')} onChange={(event) => setName(event.target.value)} /></label>
+        {moduleGroups.length ? (
+          projectUi.moduleOptionsCollapsed ? <details className="session-profile-details"><summary>{t('sessions.modules')}</summary>{moduleFields}</details> : moduleFields
         ) : null}
         {moduleBlockers.length ? <div className="inline-error" role="alert">{moduleBlockers.join('；')}</div> : null}
         <details className="session-profile-details">
