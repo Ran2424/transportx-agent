@@ -10,6 +10,7 @@ import { AgentHostSupervisor } from './agent-host-supervisor.js';
 import { resolveDesktopPaths, resolveDesktopUserDataDir } from './app-paths.js';
 import { UpdateService, assertUpdateSender } from './update-service.js';
 import { restoreCachedUpdate } from './update-cache.js';
+import { readWebsiteRelease } from './website-release.js';
 
 let mainWindow: BrowserWindowType | null = null;
 let supervisor: AgentHostSupervisor | null = null;
@@ -188,7 +189,7 @@ else {
         }
       },
       onInstalling: () => { installingUpdate = true; },
-    }, () => restoreCachedUpdate(autoUpdater));
+    }, () => restoreCachedUpdate(autoUpdater), () => readWebsiteRelease(hostPlatform.updateInstallerPattern));
     let loggedState = '';
     updateService.subscribe((state) => {
       const key = `${state.phase}:${state.errorCode || ''}`;

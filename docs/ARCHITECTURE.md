@@ -83,7 +83,11 @@ pi-tau-traffic/
 - 以禁用 JavaScript 且阻断网络的隐藏窗口生成 PDF；
 - macOS 保留原生 traffic lights；Windows/Linux 使用无边框窗口和 React 渲染的最小化、最大化、关闭按钮，控件位于左侧并沿用 macOS 顺序。
 
-Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true` 和 `webviewTag: false`。Preload 不提供通用 Node/Electron 能力，只暴露：受同源校验的 PDF 下载、上传文件真实路径，以及非 macOS 的窗口控制。
+桌面更新由 `desktop/update-service.ts` 维护，打包应用启动后检查一次，用户也可在设置页检查。发布版本以 `https://transportxlab.com/application/transportx-agent/` 中当前平台、官方 HTTPS 下载域名下的安装包链接为准；版本目录与文件名必须一致，平台命名规则集中在 `platform-profile.mjs`，仅比较正式 SemVer。界面分别显示本机版本和官网最新版本，不把未发布的源码版本当作最新发布版本。
+
+应用内下载安装继续使用包内 `app-update.yml` 指定的 OSS `latest*.yml` 与 electron-updater 的文件校验、平台签名验证和缓存恢复。仅官网版本与可用清单版本一致时提供应用内下载；清单缺失、未公开或版本不同而官网有新版时提示手动下载，无更高版本则显示普通状态。官网连接、清单解析、下载或校验故障仍显示错误。下载与安装须由用户分别触发，安装前由 Host 确认任务空闲、保存与停止；普通退出不安装。正式签名跨版本升级验收与线上清单开放状态见 [3.23.0 发布记录](releases/3.23.0.md)。
+
+Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true` 和 `webviewTag: false`。Preload 不提供通用 Node/Electron 能力，只暴露：受同源校验的 PDF 下载、上传文件真实路径、固定的更新状态与操作接口，以及非 macOS 的窗口控制。
 
 ### 2.5 Agent Host
 

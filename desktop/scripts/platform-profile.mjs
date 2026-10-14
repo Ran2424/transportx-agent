@@ -140,6 +140,7 @@ export const PLATFORM_PROFILES = Object.freeze({
       directory: 'updates/stable/mac-arm64/',
       url: 'https://download.transkgllm.com/updates/stable/mac-arm64/',
       manifest: 'latest-mac.yml',
+      websiteInstallerPattern: '^TransportX[.-]Agent-((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))-(?:mac-)?arm64\\.dmg$',
       artifactName: 'TransportX-Agent-${version}-mac-arm64.${ext}',
       requiredExtensions: ['.dmg', '.zip'],
     }),
@@ -156,6 +157,7 @@ export const PLATFORM_PROFILES = Object.freeze({
       directory: 'updates/stable/win-x64/',
       url: 'https://download.transkgllm.com/updates/stable/win-x64/',
       manifest: 'latest.yml',
+      websiteInstallerPattern: '^TransportX[.-]Agent-((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))-win-x64-setup\\.exe$',
       artifactName: 'TransportX-Agent-${version}-win-x64-setup.${ext}',
       requiredExtensions: ['.exe'],
     }),
@@ -165,8 +167,8 @@ export const PLATFORM_PROFILES = Object.freeze({
 // Runtime operations are also generated into bin/host-platform.json. Linux
 // keeps its existing Web development behavior; it is not a desktop release.
 export const HOST_PLATFORM_OPERATIONS = Object.freeze({
-  darwin: { systemPrompt: 'PI_SYSTEM_POSIX.md', posixPermissions: true, detached: true, tree: 'process-group', openCommand: 'open', detachedOpen: false, utilityHost: true, insetTitleBar: true, dataRoot: { env: null, fallback: [], parts: ['.transportx', 'traffic-agent'] }, packaged: { executableParts: ['Contents', 'MacOS', RELEASE_PROFILE.darwin.productExeBasename], resourcesParts: ['Contents', 'Resources'], executableExtension: '' } },
-  win32: { systemPrompt: 'PI_SYSTEM_WINDOWS.md', posixPermissions: false, detached: false, tree: 'taskkill', treeCommand: 'taskkill', treeArgs: ['/pid', '/T'], treeForceArg: '/F', openCommand: 'explorer.exe', detachedOpen: true, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'APPDATA', fallback: ['AppData', 'Roaming'], parts: ['TransportX', 'traffic-agent'] }, packaged: { executableParts: [RELEASE_PROFILE.win.productExeName], resourcesParts: ['resources'], executableExtension: RELEASE_PROFILE.win.productExeSuffix } },
+  darwin: { systemPrompt: 'PI_SYSTEM_POSIX.md', updateInstallerPattern: PLATFORM_PROFILES.darwin.update.websiteInstallerPattern, posixPermissions: true, detached: true, tree: 'process-group', openCommand: 'open', detachedOpen: false, utilityHost: true, insetTitleBar: true, dataRoot: { env: null, fallback: [], parts: ['.transportx', 'traffic-agent'] }, packaged: { executableParts: ['Contents', 'MacOS', RELEASE_PROFILE.darwin.productExeBasename], resourcesParts: ['Contents', 'Resources'], executableExtension: '' } },
+  win32: { systemPrompt: 'PI_SYSTEM_WINDOWS.md', updateInstallerPattern: PLATFORM_PROFILES.win.update.websiteInstallerPattern, posixPermissions: false, detached: false, tree: 'taskkill', treeCommand: 'taskkill', treeArgs: ['/pid', '/T'], treeForceArg: '/F', openCommand: 'explorer.exe', detachedOpen: true, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'APPDATA', fallback: ['AppData', 'Roaming'], parts: ['TransportX', 'traffic-agent'] }, packaged: { executableParts: [RELEASE_PROFILE.win.productExeName], resourcesParts: ['resources'], executableExtension: RELEASE_PROFILE.win.productExeSuffix } },
   linux: { systemPrompt: 'PI_SYSTEM_POSIX.md', posixPermissions: true, desktopDataRoot: 'electron', detached: true, tree: 'process-group', openCommand: 'xdg-open', detachedOpen: false, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'XDG_CONFIG_HOME', fallback: ['.config'], parts: ['transportx-traffic-agent'] }, packaged: null },
 });
 
