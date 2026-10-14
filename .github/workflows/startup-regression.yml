@@ -3,7 +3,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,7 +18,9 @@ jobs:
           - os: macos-latest
             command: npm test
           - os: windows-latest
-            command: npm run build && node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/desktop-launch.test.ts test/suites/desktop-runtime.test.ts test/suites/model.test.ts test/suites/module-installer.test.ts
+            command: npm run build && node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/desktop-launch.test.ts test/suites/desktop-runtime.test.ts test/suites/model.test.ts test/suites/module-installer.test.ts test/suites/session-boundaries.test.ts test/suites/http-routes.test.ts
+          - os: ubuntu-latest
+            command: npm run build && node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/session-boundaries.test.ts test/suites/http-routes.test.ts
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
@@ -40,3 +41,4 @@ jobs:
       - run: npm run typecheck
       - run: ${{ matrix.command }}
       - run: node scripts/desktop-startup-smoke.mjs
+        if: runner.os != 'Linux'

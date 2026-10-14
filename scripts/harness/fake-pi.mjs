@@ -46,7 +46,7 @@ function argValue(flag) {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1] : null;
 }
-const sessionFile = argValue('--session') || path.join(process.cwd(), 'fake-session.jsonl');
+const sessionFile = argValue('--session') || path.join(process.env.PI_CODING_AGENT_SESSION_DIR || process.cwd(), `fake-${process.env.TAU_CITATION_SESSION_ID || process.pid}.jsonl`);
 const modelSpec = argValue('--model') || 'kimi-coding/k2p7:high';
 const [modelProvider, modelRest] = modelSpec.split('/', 2);
 const modelId = (modelRest || modelProvider || 'k2p7').split(':')[0];

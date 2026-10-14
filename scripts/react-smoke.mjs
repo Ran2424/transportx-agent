@@ -8,6 +8,7 @@ import { documentSmoke } from './harness/document-smoke.mjs';
 import { feedbackSmoke, composerSmoke, conversationStyleSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
 import { localModelSmoke } from './harness/local-model-smoke.mjs';
+import { workspaceCleanupSmoke } from './harness/workspace-cleanup-smoke.mjs';
 import { conversationLayoutSmoke, toolStateSmoke, streamingScrollSmoke, workingDisplaySmoke } from './harness/conversation-layout-smoke.mjs';
 import { prepareComposerContextSmoke, composerSelectionSmoke } from './harness/composer-selection-smoke.mjs';
 
@@ -408,6 +409,7 @@ try {
 
 
   await softwareUpdateSmoke(browser, baseUrl);
+  await workspaceCleanupSmoke(page);
   if (pageErrors.length) throw new Error(`Web scenario raised page errors: ${pageErrors.join('\n')}`);
   console.log('Web scenario passed: baseline workflow plus Geo user Context, Agent request, audited result, and refresh recovery.');
 } catch (error) {

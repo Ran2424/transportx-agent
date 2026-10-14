@@ -2,6 +2,7 @@ import fs = require('node:fs');
 import path = require('node:path');
 
 import { APP_PATHS, PROJECT_SYSTEM_PROMPT_PATH, PYTHON_COMMAND } from './config.js';
+import { hostOperations } from './host-platform.js';
 import { planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 
 function moduleResourceGuide(plan: ResolvedSessionPlan | null) {
@@ -48,9 +49,12 @@ export function loadProjectPrompt(cwd: string, promptPath: string | undefined, p
   return renderProjectPrompt(fs.readFileSync(promptPath, 'utf8'), cwd, plan);
 }
 
-export function loadSystemPrompt() {
-  if (!fs.existsSync(PROJECT_SYSTEM_PROMPT_PATH)) throw new Error(`System prompt not found: ${PROJECT_SYSTEM_PROMPT_PATH}`);
-  const prompt = fs.readFileSync(PROJECT_SYSTEM_PROMPT_PATH, 'utf8').trim();
-  if (!prompt) throw new Error(`System prompt is empty: ${PROJECT_SYSTEM_PROMPT_PATH}`);
-  return prompt;
+export function loadSystemPrompt(platform: NodeJS.Platform = process.platform) {
+  const platformPromptPath = path.join(path.dirname(PROJECT_SYSTEM_PROMPT_PATH), hostOperations(platform).systemPrompt);
+  return [PROJECT_SYSTEM_PROMPT_PATH, platformPromptPath].map((promptPath) => {
+    if (!fs.existsSync(promptPath)) throw new Error(`System prompt not found: ${promptPath}`);
+    const prompt = fs.readFileSync(promptPath, 'utf8').trim();
+    if (!prompt) throw new Error(`System prompt is empty: ${promptPath}`);
+    return prompt;
+  }).join('\n\n');
 }

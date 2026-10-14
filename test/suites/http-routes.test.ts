@@ -571,12 +571,36 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.equal(liveManager.sessions.has(session.id), false);
 
     const filePath = writeSessionFileAt(PROJ_DIR, 'delete-idempotent.jsonl', [{ type: 'session', id: 'delete-idempotent', cwd: '/tmp' }]);
-    const request = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }) });
+    const request = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath, deleteWorkspace: false }) });
     assert.equal((await request()).status, 200);
     const repeated = await request();
     assert.equal(repeated.status, 200);
     assert.equal((await jsonBody(repeated)).alreadyDeleted, true);
     t.after(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); });
+
+    fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+    const { createSessionWorkingDirectory } = require('../../bin/session-workspace.js');
+    const cwd = createSessionWorkingDirectory(PROJECTS_DIR, 'HTTP cleanup');
+    fs.writeFileSync(path.toNamespacedPath(path.join(cwd, 'nul')), 'bash error');
+    const cleanupFile = writeSessionFileAt(PROJ_DIR, 'cleanup.jsonl', [{ type: 'session', id: 'cleanup', cwd }]);
+    const deleting = () => fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: cleanupFile }) });
+    assert.equal((await deleting()).status, 200);
+    assert.equal(fs.existsSync(cwd), false);
+    assert.equal((await jsonBody(await deleting())).alreadyDeleted, true);
+
+    const unverified = writeSessionFileAt(PROJ_DIR, 'unverified.jsonl', [{ type: 'session', cwd: PROJECTS_DIR }]);
+    const blocked = await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: unverified }) });
+    assert.equal(blocked.status, 409);
+    assert.ok(fs.existsSync(unverified) && fs.existsSync(PROJECTS_DIR));
+    assert.equal((await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: unverified, deleteWorkspace: 'false' }) })).status, 400);
+    assert.equal((await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: unverified, deleteWorkspace: false }) })).status, 200);
+
+    const empty = fakeSession('tau_delete_empty');
+    empty.cwd = createSessionWorkingDirectory(PROJECTS_DIR, 'empty');
+    empty.sessionFile = '';
+    liveManager.sessions.set(empty.id, empty);
+    assert.equal((await fetch(`${base}/api/sessions/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: empty.id }) })).status, 200);
+    assert.equal(fs.existsSync(empty.cwd), false);
   }
 
   // reads files within the live-session directory but blocks static traversal
@@ -706,7 +730,9 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.deepEqual(snapshot.entries, entries.slice(1));
     const systemPromptIndex = piArgs.indexOf('--system-prompt');
     assert.ok(systemPromptIndex >= 0);
-    assert.equal(piArgs[systemPromptIndex + 1], fs.readFileSync(path.join(process.cwd(), 'src/server/prompts/PI_SYSTEM.md'), 'utf8').trim());
+    const { hostPlatform } = require('../../bin/host-platform.js');
+    const promptRoot = path.join(process.cwd(), 'src/server/prompts');
+    assert.equal(piArgs[systemPromptIndex + 1], ['PI_SYSTEM.md', hostPlatform.systemPrompt].map((file) => fs.readFileSync(path.join(promptRoot, file), 'utf8').trim()).join('\n\n'));
     child.stdin.end();
   }
 

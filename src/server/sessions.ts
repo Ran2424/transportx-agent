@@ -17,7 +17,11 @@ import { retryState, classifyFailure, messageOutcome, type RunOutcome, type Retr
 import { signalProcessTree, terminateProcessTree } from './process-tree.js';
 import type { ResolvedSessionPlan, SessionAssembler } from './session-assembly.js';
 import type { SessionPiLaunchInput } from './session-pi-launch.js';
-import { makeSessionId } from './session-workspace.js';
+import { makeSessionId, removeSessionWorkingDirectory, resolveSessionWorkspaceForDeletion } from './session-workspace.js';
+import { readSessionHeaderCwd } from './session-history-reader.js';
+import { listSessionHistoryFiles } from './session-history-files.js';
+import { containedFile } from './util/resource-path.js';
+import { isWithin } from './util/path.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
@@ -597,6 +601,8 @@ export class LiveSessionManager {
   liveMetadataSignatures: Map<string, string>;
   private closingSessions = new Map<string, Promise<boolean>>();
   private historyDeletes = new Map<string, Promise<void>>();
+  private deletingWorkspaces = new Set<string>();
+  private startingWorkspaces = new Set<string>();
   private jobs = new Map<string, Set<{ id: string; controller: AbortController; completion: Promise<unknown> }>>();
   private readonly diagnose = boundedDiagnostics();
   private startingSessions = 0;
@@ -722,8 +728,13 @@ export class LiveSessionManager {
     if (!model?.trim()) throw new Error('请先添加并选择模型');
     if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
     this.startingSessions++;
+    let workspace: string | undefined;
     try {
+    if (cwd) this.assertWorkspaceAvailable(cwd);
     const resolved = this.runtime.createWorkspace(cwd, sessionName);
+    this.assertWorkspaceAvailable(resolved);
+    workspace = resolved;
+    this.startingWorkspaces.add(resolved);
     const assembler = profile ? this.runtime.assemblerForProfile(profile) : this.runtime.assembler;
     const resolvedSessionPlan = assembler.assemble(domainId, resolved, profile);
     assembler.save(resolvedSessionPlan);
@@ -732,10 +743,11 @@ export class LiveSessionManager {
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
     return session;
-    } finally { this.startingSessions--; }
+    } finally { this.startingSessions--; if (workspace) this.startingWorkspaces.delete(workspace); }
   }
   async resume({ sessionFile, cwd, model, entries, sessionName, useCurrentConfiguration = false }: { sessionFile: string; cwd: string; model?: string; entries?: JsonRecord[]; sessionName?: string | null; useCurrentConfiguration?: boolean }) {
     const resolved = path.resolve(sessionFile);
+    this.assertWorkspaceAvailable(cwd);
     if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
     const closing = this.terminatingResumes.get(resolved);
     if (closing) await closing;
@@ -751,6 +763,7 @@ export class LiveSessionManager {
       try {
         await Promise.resolve();
         if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
+        this.assertWorkspaceAvailable(cwd);
         const terminating = this.terminatingResumes.get(resolved);
         if (terminating) await terminating;
         if (!fs.existsSync(resolved)) throw new Error('Session not found');
@@ -778,7 +791,7 @@ export class LiveSessionManager {
     this.pendingResumes.set(resolved, resumePromise);
     return resumePromise;
   }
-  async delete(id: string, reason = 'closed_by_user') {
+  async delete(id: string, reason = 'closed_by_user', cleanup?: () => Promise<void>) {
     const closing = this.closingSessions.get(id);
     if (closing) return closing;
     const session = this.sessions.get(id);
@@ -789,6 +802,9 @@ export class LiveSessionManager {
       await Promise.resolve();
       await this.cancelJobs(id);
       await session.terminate(reason);
+      session.isStreaming = false;
+      session.isCompacting = false;
+      if (cleanup) await cleanup();
       const registered = this.sessions.delete(id);
       this.liveMetadataSignatures.delete(id);
       if (registered) this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
@@ -806,20 +822,68 @@ export class LiveSessionManager {
       if (resolvedFile && this.terminatingResumes.get(resolvedFile) === writer) this.terminatingResumes.delete(resolvedFile);
     }
   }
-  deleteHistory(sessionFile: string) {
-    const resolved = path.resolve(sessionFile);
-    const existing = this.historyDeletes.get(resolved);
+  private assertWorkspaceAvailable(cwd: string) {
+    const resolved = fs.existsSync(cwd) ? fs.realpathSync(cwd) : path.resolve(cwd);
+    if ([...this.deletingWorkspaces].some((workspace) => isWithin(workspace, resolved) || isWithin(resolved, workspace))) throw Object.assign(new Error('Task directory is being deleted'), { status: 409 });
+  }
+  deleteHistory(sessionFile: string, deleteWorkspace = true) {
+    return this.deleteConversation({ sessionFile, deleteWorkspace });
+  }
+  deleteConversation({ sessionFile, sessionId, deleteWorkspace = true }: { sessionFile?: string; sessionId?: string; deleteWorkspace?: boolean }) {
+    const requestedSession = sessionId ? this.get(sessionId) : undefined;
+    const file = sessionFile || requestedSession?.sessionFile;
+    let resolved = file ? path.resolve(file) : null;
+    const key = resolved || `live:${sessionId}`;
+    const existing = this.historyDeletes.get(key);
     if (existing) return existing;
     const deletion = (async () => {
       await Promise.resolve();
-      await this.pendingResumes.get(resolved)?.catch(() => {});
-      const session = this.findBySessionFile(resolved);
-      if (session) await this.delete(session.id, 'history_deleted');
-      await this.terminatingResumes.get(resolved);
-      fs.rmSync(resolved, { force: true });
+      if (resolved) await this.pendingResumes.get(resolved)?.catch(() => {});
+      const session = requestedSession || (resolved ? this.findBySessionFile(resolved) : undefined);
+      const { SESSIONS_DIR, expandHome } = require('./config.js');
+      const normalize = (value: unknown) => typeof value === 'string' && value.trim() ? path.resolve(expandHome(value)) : null;
+      const cwd = resolved ? readSessionHeaderCwd(resolved, normalize) : normalize(session?.cwd);
+      let workspace: string | null = null;
+      if (deleteWorkspace) {
+        if (!cwd) throw Object.assign(new Error('Task directory is missing from session metadata. Disable workspace deletion to delete only the history.'), { status: 409 });
+        if (session?.cwd) {
+          const paths = [cwd, session.cwd].map((value) => fs.existsSync(value) ? fs.realpathSync(value) : path.resolve(value));
+          if (path.relative(paths[0], paths[1]) !== '') throw Object.assign(new Error('History task directory does not match the live session. Workspace deletion refused.'), { status: 409 });
+        }
+        workspace = resolveSessionWorkspaceForDeletion(cwd, resolved || undefined);
+      }
+      const cleanup = async () => {
+        if (!resolved && session?.sessionFile) {
+          resolved = containedFile(SESSIONS_DIR, session.sessionFile);
+          this.historyDeletes.set(resolved, operation);
+        }
+        if (workspace) {
+          const real = fs.realpathSync(workspace);
+          this.assertWorkspaceAvailable(real);
+          this.deletingWorkspaces.add(real);
+          try {
+            const overlaps = (other: string) => {
+              const canonical = fs.existsSync(other) ? fs.realpathSync(other) : path.resolve(other);
+              return isWithin(real, canonical) || isWithin(canonical, real);
+            };
+            const historyCwds = listSessionHistoryFiles(SESSIONS_DIR)
+              .filter(({ filePath }) => !resolved || path.relative(resolved, filePath) !== '')
+              .map(({ filePath }) => readSessionHeaderCwd(filePath, normalize));
+            const shared = [...this.sessions.values()].some((other) => other !== session && other.cwd && overlaps(other.cwd)) || [...this.startingWorkspaces].some(overlaps) || historyCwds.some((other) => other && overlaps(other));
+            if (shared) throw Object.assign(new Error(`Task directory is used by another session: ${workspace}. Disable workspace deletion to keep it.`), { status: 409 });
+            // Revalidate after stopping the Writer, before any filesystem mutation.
+            resolveSessionWorkspaceForDeletion(workspace, resolved || undefined);
+            await removeSessionWorkingDirectory(workspace);
+          } finally { this.deletingWorkspaces.delete(real); }
+        }
+        if (resolved) await fs.promises.rm(path.toNamespacedPath(resolved), { force: true });
+      };
+      if (session) await this.closingSessions.get(session.id);
+      if (session && this.sessions.has(session.id)) await this.delete(session.id, 'history_deleted', cleanup);
+      else { if (resolved) await this.terminatingResumes.get(resolved); await cleanup(); }
     });
-    const operation = deletion().finally(() => this.historyDeletes.delete(resolved));
-    this.historyDeletes.set(resolved, operation);
+    const operation = deletion().finally(() => { this.historyDeletes.delete(key); if (resolved) this.historyDeletes.delete(resolved); });
+    this.historyDeletes.set(key, operation);
     return operation;
   }
   removeExited(id: string, reason: string) {
