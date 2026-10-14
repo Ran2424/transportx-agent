@@ -13,6 +13,8 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
   process.env.TAU_HOST = '127.0.0.1';
 
   process.env.PI_CODING_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-http-'));
+  process.env.TAU_USER_DATA_DIR = process.env.PI_CODING_AGENT_DIR;
+  require('../../bin/diagnostic-log.js').initializeHostLogging(path.join(process.env.TAU_USER_DATA_DIR, 'logs'));
 
   process.env.PI_CODING_AGENT_SESSION_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'sessions');
 
@@ -131,6 +133,11 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const response = await fetch(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'prompt', message: 'x'.repeat(1024 * 1024) }) });
     assert.equal(response.status, 413);
     assert.match((await jsonBody(response)).error, /too large/);
+    await fetch(`${base}/api/session-history?filePath=invalid&api_key=private-query-secret`);
+    const log = fs.readFileSync(path.join(process.env.TAU_USER_DATA_DIR, 'logs', 'runtime.jsonl'), 'utf8');
+    assert.ok(log.includes('http_failed'));
+    assert.ok(log.includes('host_logging_started'));
+    assert.doesNotMatch(log, /private-query-secret/);
   }
 
   // multipart limits return a readable error over HTTP
@@ -724,6 +731,11 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
       body: JSON.stringify({ filePath, useCurrentConfiguration: true }),
     }));
     assert.ok(resumed.session, JSON.stringify(resumed));
+    child.stderr.write('provider error api_key=');
+    child.stderr.write('private-pi-secret\n');
+    const log = fs.readFileSync(path.join(process.env.TAU_USER_DATA_DIR, 'logs', 'runtime.jsonl'), 'utf8');
+    assert.ok(log.includes('pi_stderr'));
+    assert.doesNotMatch(log, /private-pi-secret/);
     const snapshot = await jsonBody(await fetch(`${base}/api/live-sessions/${encodeURIComponent(resumed.session.id)}/snapshot`));
     assert.equal(snapshot.session.sessionName, 'Snapshot Chat');
     assert.equal(snapshot.session.sessionFile, path.resolve(filePath));
@@ -733,6 +745,10 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const { hostPlatform } = require('../../bin/host-platform.js');
     const promptRoot = path.join(process.cwd(), 'src/server/prompts');
     assert.equal(piArgs[systemPromptIndex + 1], ['PI_SYSTEM.md', hostPlatform.systemPrompt].map((file) => fs.readFileSync(path.join(promptRoot, file), 'utf8').trim()).join('\n\n'));
+    child.stdout.write(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'API key=private-run-secret', content: [] } })}\n`);
+    const failureLog = fs.readFileSync(path.join(process.env.TAU_USER_DATA_DIR, 'logs', 'runtime.jsonl'), 'utf8');
+    assert.ok(failureLog.includes('pi_run_failed'));
+    assert.doesNotMatch(failureLog, /private-run-secret/);
     child.stdin.end();
   }
 

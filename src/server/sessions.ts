@@ -21,6 +21,7 @@ import { makeSessionId, removeSessionWorkingDirectory, resolveSessionWorkspaceFo
 import { readSessionHeaderCwd } from './session-history-reader.js';
 import { listSessionHistoryFiles } from './session-history-files.js';
 import { containedFile } from './util/resource-path.js';
+import { logHostEvent } from './diagnostic-log.js';
 import { isWithin } from './util/path.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
@@ -113,6 +114,7 @@ export class PiRpcSession {
   contextUsage: JsonRecord | null;
   transport: PiRpcTransport;
   stdoutBuffer: string;
+  private stderrBuffer = '';
   terminating: boolean;
   exitCode: number | null;
   titleSet: boolean;
@@ -221,12 +223,22 @@ export class PiRpcSession {
     });
     this.child = child;
     this.pid = child.pid || null;
+    logHostEvent('info', 'pi_started', { sessionId: this.id, childPid: this.pid, cwd: this.cwd });
 
     child.stdout!.setEncoding('utf8');
     child.stdout!.on('data', (chunk: string) => this.handleStdout(chunk));
     child.stderr!.setEncoding('utf8');
     child.stderr!.on('data', (chunk: string) => {
       this.diagnose('pi_stderr', { sessionId: this.id, bytes: Buffer.byteLength(chunk) });
+      this.stderrBuffer += chunk;
+      if (Buffer.byteLength(this.stderrBuffer) > 32 * 1024) {
+        logHostEvent('warn', 'pi_stderr_truncated', { sessionId: this.id, bytes: Buffer.byteLength(this.stderrBuffer) });
+        this.stderrBuffer = '';
+        return;
+      }
+      const lines = this.stderrBuffer.split(/\r?\n/);
+      this.stderrBuffer = lines.pop() || '';
+      for (const message of lines) if (message.trim()) logHostEvent('warn', 'pi_stderr', { sessionId: this.id, message });
     });
     child.on('error', (err: Error) => this.handleExit(null, null, err));
     child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => this.handleExit(code, signal));
@@ -349,6 +361,10 @@ export class PiRpcSession {
     if (type === 'message_end' && event.message?.role === 'assistant') this.runOutcome = messageOutcome(event.message);
     if (type === 'auto_retry_start') this.retry = retryState(event);
     if (type === 'auto_retry_end') this.runOutcome = event.success ? null : /cancelled/i.test(String(event.finalError)) ? { status: 'cancelled' } : { status: 'failed', reason: classifyFailure(event.finalError) };
+    if (((type === 'message_end' && event.message?.role === 'assistant') || type === 'auto_retry_end') && this.runOutcome?.status === 'failed') {
+      const message = type === 'auto_retry_end' ? event.finalError : event.message?.errorMessage;
+      logHostEvent('error', 'pi_run_failed', { sessionId: this.id, reason: this.runOutcome.reason, message: typeof message === 'string' ? message : undefined });
+    }
     if (type === 'auto_retry_end' || type === 'agent_settled') this.retry = null;
     if (type === 'message_start' && event.message?.role === 'assistant') this.streamingMessage = event.message;
     if (type === 'message_update') {
@@ -569,6 +585,9 @@ export class PiRpcSession {
 
   handleExit(code: number | null, signal: string | null, err?: { message?: string }) {
     if (this.exitCode !== null) return;
+    if (this.stderrBuffer.trim()) logHostEvent('warn', 'pi_stderr', { sessionId: this.id, message: this.stderrBuffer });
+    this.stderrBuffer = '';
+    logHostEvent(err || (!this.terminating && code !== 0) ? 'error' : 'info', 'pi_exited', { sessionId: this.id, exitCode: code, signal, message: err?.message });
     this.exitCode = code;
     geoInteractionService.abortSession(this, 'agent_aborted');
     this.transport.rejectAll(err || new Error(`Pi process exited (${signal || code})`));

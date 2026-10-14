@@ -145,6 +145,14 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     }
   }
 
+  async function openLogsDirectory() {
+    setBusy('logs');
+    setError('');
+    try { await kernel.commands.platform.openLogsDirectory(); }
+    catch (cause) { setError((cause as { message?: string })?.message || t('settings.error.openLogs')); }
+    finally { setBusy(''); }
+  }
+
   async function toggleAuth() {
     const next = !auth.enabled;
     setBusy('auth');
@@ -396,6 +404,8 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
               <span><strong>{t('settings.taskWorkspace')}</strong><code>{overview.storage.scenario}</code></span>
               <span><strong>{t('settings.modelConfig')}</strong><code>{overview.storage.models}</code></span>
               <span><strong>{t('settings.installedModules')}</strong><code>{overview.storage.modules}</code></span>
+              <span><strong>{t('settings.logs')}</strong><code>{overview.storage.logs}</code></span>
+              <Button type="button" variant="outline" disabled={busy === 'logs' || !overview.storage.logs} onClick={() => void openLogsDirectory()}>{t('settings.openLogs')}</Button>
             </div>
           ) : <p className="settings-empty">{t('settings.directoriesUnavailable')}</p>}
         </section>

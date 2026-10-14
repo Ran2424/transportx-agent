@@ -77,6 +77,8 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       await stopped;
       assert.equal(fs.existsSync(userData), true);
       assert.equal(fs.existsSync(path.join(userData, 'host.transportx-lock')), false);
+      const records = fs.readFileSync(path.join(userData, 'logs', 'runtime.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+      assert.ok(records.some((entry: any) => entry.event === 'host_ready'), 'Host startup logs remain in user data after exit');
     }
 
     // Force-kill leaves a dead lease; the next Host recovers it and normal IPC stop removes it.
