@@ -83,6 +83,7 @@ const SIGNING_PROFILE = {
     ],
     notes: 'Both Developer ID variables or notarization credentials must be configured for notarization to succeed.',
     allowUnsignedEnv: 'TRANSPORTX_ALLOW_UNSIGNED_BUILD',
+    internalUpdateRequirement: (appId) => `=designated => identifier "${appId}"`,
     allowUnsignedPurpose: 'internal ad-hoc signing for unsigned macOS test DMGs only',
   },
   win: {

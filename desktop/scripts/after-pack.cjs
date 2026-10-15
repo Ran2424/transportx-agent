@@ -13,6 +13,7 @@ module.exports = async function afterPack(context) {
     || process.env.npm_lifecycle_event === 'desktop:dir:allow-unsigned';
   if (context.electronPlatformName !== 'darwin' || !allowUnsigned) return;
 
+  const { getPlatformProfile } = await import('./platform-profile.mjs');
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   run('codesign', [
     '--force',
@@ -20,6 +21,8 @@ module.exports = async function afterPack(context) {
     '--strict',
     '--sign', '-',
     '--timestamp=none',
+    // A cdhash requirement changes on every build and prevents Squirrel updates.
+    '--requirements', getPlatformProfile('mac').signing.internalUpdateRequirement(context.packager.appInfo.id),
     appPath,
   ]);
   run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath]);

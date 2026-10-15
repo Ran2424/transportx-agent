@@ -422,6 +422,28 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.equal(builderPlatformFor('win32'), 'win');
     assert.equal(getPlatformProfile(builderPlatformFor('darwin')), PLATFORM_PROFILES.darwin);
     assert.equal(getPlatformProfile(builderPlatformFor('win32')), PLATFORM_PROFILES.win);
+    if (builderPlatformFor() === 'mac') {
+      const { spawnSync } = require('node:child_process');
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-internal-signature-'));
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const appId = 'com.transportx.traffic-agent';
+      for (const version of [1, 2]) {
+        const source = path.join(root, `${version}.c`), binary = path.join(root, `${version}.bin`);
+        fs.writeFileSync(source, `int main(){return ${version};}\n`);
+        const compiled = spawnSync('clang', [source, '-o', binary], { encoding: 'utf8' });
+        assert.equal(compiled.status, 0, compiled.stderr);
+        const signed = spawnSync('codesign', ['--force', '--sign', '-', '--identifier', appId, '--requirements', PLATFORM_PROFILES.darwin.signing.internalUpdateRequirement(appId), binary], { encoding: 'utf8' });
+        assert.equal(signed.status, 0, signed.stderr);
+      }
+      const signature = spawnSync('codesign', ['-d', '-r-', path.join(root, '1.bin')], { encoding: 'utf8' });
+      const requirement = (signature.stdout + signature.stderr).split('\n').find((line: string) => line.startsWith('designated => '));
+      assert.ok(requirement);
+      assert.doesNotMatch(requirement, /cdhash/);
+      const verified = spawnSync('codesign', ['--verify', '--strict', '-R', '=' + requirement.slice('designated => '.length), path.join(root, '2.bin')], { encoding: 'utf8' });
+      assert.equal(verified.status, 0, verified.stderr);
+      const rejected = spawnSync('codesign', ['--verify', '--strict', '-R', '=identifier "com.transportx.foreign-app"', path.join(root, '2.bin')], { encoding: 'utf8' });
+      assert.notEqual(rejected.status, 0);
+    } else t.diagnostic('Native ad-hoc requirement checks run on the macOS CI host.');
 
     const profileExpectations: Record<string, { key: string; builderPlatform: string; installerArtifact: string }> = {
       darwin: { key: 'darwin', builderPlatform: 'mac', installerArtifact: 'dmg' },
