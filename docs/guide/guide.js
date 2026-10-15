@@ -38,34 +38,6 @@ const pages = [
     <div class="start-links"><a href="#install"><span><strong>安装与首次启动</strong><small>选择与你的电脑匹配的安装包</small></span><span class="arrow">→</span></a><a href="#start"><span><strong>快速上手</strong><small>接入模型，创建任务，完成第一次数据分析</small></span><span class="arrow">→</span></a><a href="#faq"><span><strong>常见问题</strong><small>检查 API、模块、附件与成果导出问题</small></span><span class="arrow">→</span></a></div>`
   },
   {
-    id: 'whats-new-3-23', group: '开始', title: '3.23 更新说明', description: '本次版本的功能优化与问题修复。',
-    body: `<p class="lead">3.23 重点改善对话阅读、附件使用和运行稳定性，新增本地模型接入与应用内更新。本次发布 <strong>3.23.0 正式版</strong>，提供 Windows x64 与 macOS Apple Silicon 下载。</p>
-    ${note('3.23.0 已发布', 'Windows x64 与 macOS Apple Silicon 安装包均已提供。Windows 安装器未签名；Mac 采用 ad-hoc 签名，未经过 Apple 公证。安装与升级步骤见 <a href="#install">安装与首次启动</a>。', true)}
-    <p>下面只列出对一般用户可见的改动与修复；完整开发记录、变更说明与签名状态请查阅 <a href="https://github.com/Ran2424/transportx-agent/releases/tag/v3.23.0" target="_blank" rel="noreferrer">GitHub Release ↗</a>。</p>
-    <h2 id="features-3-23">功能优化</h2>
-    <ul class="feature-list">
-      <li><strong>软件更新更清楚</strong><p>同时显示当前版本与官网最新版本。没有可用更新，或自动更新清单尚未公开时，使用普通状态提示；官网已有新版但暂不能在应用内更新时，提供官网下载入口。</p></li>
-      <li><strong>支持应用内下载与安装更新</strong><p>显示下载进度，校验并恢复已下载的更新；由你确认后重启安装。任务运行中暂不安装，普通退出不会触发安装。</p></li>
-      <li><strong>新增本地模型接入</strong><p>支持本机和局域网的 Chat Completions 兼容服务，提供 Ollama、LM Studio 地址预设；检测连接后可获取并选择模型，API Key 按服务需要填写。</p></li>
-      <li><strong>对话更便于阅读</strong><p>思考和工具调用默认折叠为可展开的 Working，按执行片段显示耗时；调整正文、表格和代码的宽度、间距与字号，改善浅色、深色和 Sand 主题下的辅助文字可读性。</p></li>
-      <li><strong>附件可以持续复用</strong><p>在已上传文件清单中查看、预览并选用已有文件，无需重复上传。移出待发送列表不会删除文件；附件、地图和 Canvas 上下文的待发送、上传中与失败状态更清楚。</p></li>
-      <li><strong>成果和引用更易核查</strong><p>成果卡片增加文件名和打开入口，Canvas 显示当前视图的标题与版本，引用可展开查看摘录、日期及来源信息。</p></li>
-      <li><strong>问题更容易定位</strong><p>设置页增加运行日志目录入口；模型失败时显示原因、重试状态和诊断标识，并可将原问题放回输入框修改后重发。</p></li>
-    </ul>
-    <h2 id="fixes-3-23">问题修复</h2>
-    <ul>
-      <li>修复切换会话时未发送文本和附件串会话或丢失的问题；草稿按会话保存，刷新后可恢复，上传中切换会话后仍可返回继续使用附件。</li>
-      <li>修复中文输入法按 Enter 确认候选字时误发送消息；上传中或仅有失败附件时不会误提交。</li>
-      <li>修复地图尚未渲染完成便截图，导致画面空白或内容未更新的问题；渲染失败时明确提示，不保存无效截图。</li>
-      <li>修复流式回复结束后底部内容未完整显示、工具展开选择在切换会话后丢失，以及执行耗时分段不准确的问题。</li>
-      <li>修复附件、地图与 Canvas 混合发送时的上下文关联及历史恢复问题，避免内部附件提示混入用户正文。</li>
-      <li>改善大文件上传报错，明确提示大小限制与文件信息；修复并发上传索引和失败上传的临时文件清理问题。</li>
-      <li>修复断线重连、切换会话时旧响应覆盖当前状态的问题；改进消息确认与取消处理，减少状态错乱和重复操作。</li>
-      <li>加强配置与附件索引的写入、备份及异常退出恢复；改进应用退出和任务删除时的等待与清理，清理失败时保留记录供重试。</li>
-    </ul>
-    <div class="start-links"><a href="#install"><span><strong>查看安装与升级</strong><small>Windows 与 macOS 3.23 安装指引</small></span><span class="arrow">→</span></a><a href="#start"><span><strong>返回快速上手</strong><small>接入模型，创建任务，完成第一次数据分析</small></span><span class="arrow">→</span></a></div>`
-  },
-  {
     id: 'install', group: '开始', title: '安装与首次启动', description: 'macOS 和 Windows 的安装方式与准备事项。',
     body: `<p class="lead">安装桌面应用后，准备一个模型 API 和一份分析材料，就可以开始使用。</p>
     <h2 id="prepare">安装前准备</h2>${table(['准备项', '你需要知道'], [['系统与架构', 'macOS 12 或更高版本，Apple Silicon arm64；Windows 10 22H2 或 Windows 11，x64。Intel Mac 不属于当前桌面发行目标。'], ['安装包', '从项目发布渠道或维护者获取对应平台安装包。正式签名包与内部测试包的首次启动提示可能不同。'], ['模型服务', '准备 API Key；自定义接口还需提供 Model ID、API 类型和 Base URL。'], ['分析材料', '准备一份 Excel、CSV 或图片。需要专用能力时，另准备 Module 安装包。']])}
@@ -207,6 +179,36 @@ const pages = [
     <details class="faq-item"><summary>报告无法导出 PDF 怎么办？</summary><p>先检查 Markdown 报告和图片是否正常预览，再重试“生成并下载 PDF”。仍失败时可先下载原文件，并保留错误信息排查。</p></details>
     <details class="faq-item"><summary>本地应用可以完全离线使用吗？</summary><p>取决于所用模型和资源。远程 API、在线底图或其他外部服务需要联网；本机保存记录不代表所有分析都不访问网络。</p></details>
     <h2 id="feedback">反馈问题时提供什么</h2><p>说明应用版本、操作系统、操作步骤和错误提示。截图中隐藏 API Key 与敏感材料；不要上传 auth.json。可通过 <a href="https://github.com/Ran2424/transportx-agent/issues" target="_blank" rel="noreferrer">项目 Issues ↗</a> 反馈可复现的问题。</p>`
+  },
+  {
+    id: 'releases', group: '帮助', title: '版本更新', description: '按版本查看功能优化、问题修复与安装说明。',
+    body: `<p class="lead">按版本查看 TransportX Agent 的功能优化、问题修复与安装说明。</p>
+    <h2 id="v3-23">3.23.0 · 2026-10-15</h2>
+    <p>3.23 重点改善对话阅读、附件使用和运行稳定性，新增本地模型接入与应用内更新。本次发布 <strong>3.23.0 正式版</strong>，提供 Windows x64 与 macOS Apple Silicon 下载。</p>
+    ${note('3.23.0 已发布', 'Windows x64 与 macOS Apple Silicon 安装包均已提供。Windows 安装器未签名；Mac 采用 ad-hoc 签名，未经过 Apple 公证。安装与升级步骤见 <a href="#install">安装与首次启动</a>。', true)}
+    <p>下面只列出对一般用户可见的改动与修复；完整开发记录、变更说明与签名状态请查阅 <a href="https://github.com/Ran2424/transportx-agent/releases/tag/v3.23.0" target="_blank" rel="noreferrer">GitHub Release ↗</a>。</p>
+    <h3 id="features-3-23">功能优化</h3>
+    <ul class="feature-list">
+      <li><strong>软件更新更清楚</strong><p>同时显示当前版本与官网最新版本。没有可用更新，或自动更新清单尚未公开时，使用普通状态提示；官网已有新版但暂不能在应用内更新时，提供官网下载入口。</p></li>
+      <li><strong>支持应用内下载与安装更新</strong><p>显示下载进度，校验并恢复已下载的更新；由你确认后重启安装。任务运行中暂不安装，普通退出不会触发安装。</p></li>
+      <li><strong>新增本地模型接入</strong><p>支持本机和局域网的 Chat Completions 兼容服务，提供 Ollama、LM Studio 地址预设；检测连接后可获取并选择模型，API Key 按服务需要填写。</p></li>
+      <li><strong>对话更便于阅读</strong><p>思考和工具调用默认折叠为可展开的 Working，按执行片段显示耗时；调整正文、表格和代码的宽度、间距与字号，改善浅色、深色和 Sand 主题下的辅助文字可读性。</p></li>
+      <li><strong>附件可以持续复用</strong><p>在已上传文件清单中查看、预览并选用已有文件，无需重复上传。移出待发送列表不会删除文件；附件、地图和 Canvas 上下文的待发送、上传中与失败状态更清楚。</p></li>
+      <li><strong>成果和引用更易核查</strong><p>成果卡片增加文件名和打开入口，Canvas 显示当前视图的标题与版本，引用可展开查看摘录、日期及来源信息。</p></li>
+      <li><strong>问题更容易定位</strong><p>设置页增加运行日志目录入口；模型失败时显示原因、重试状态和诊断标识，并可将原问题放回输入框修改后重发。</p></li>
+    </ul>
+    <h3 id="fixes-3-23">问题修复</h3>
+    <ul>
+      <li>修复切换会话时未发送文本和附件串会话或丢失的问题；草稿按会话保存，刷新后可恢复，上传中切换会话后仍可返回继续使用附件。</li>
+      <li>修复中文输入法按 Enter 确认候选字时误发送消息；上传中或仅有失败附件时不会误提交。</li>
+      <li>修复地图尚未渲染完成便截图，导致画面空白或内容未更新的问题；渲染失败时明确提示，不保存无效截图。</li>
+      <li>修复流式回复结束后底部内容未完整显示、工具展开选择在切换会话后丢失，以及执行耗时分段不准确的问题。</li>
+      <li>修复附件、地图与 Canvas 混合发送时的上下文关联及历史恢复问题，避免内部附件提示混入用户正文。</li>
+      <li>改善大文件上传报错，明确提示大小限制与文件信息；修复并发上传索引和失败上传的临时文件清理问题。</li>
+      <li>修复断线重连、切换会话时旧响应覆盖当前状态的问题；改进消息确认与取消处理，减少状态错乱和重复操作。</li>
+      <li>加强配置与附件索引的写入、备份及异常退出恢复；改进应用退出和任务删除时的等待与清理，清理失败时保留记录供重试。</li>
+    </ul>
+    <div class="start-links"><a href="#install"><span><strong>查看安装与升级</strong><small>Windows 与 macOS 3.23 安装指引</small></span><span class="arrow">→</span></a><a href="#start"><span><strong>返回快速上手</strong><small>接入模型，创建任务，完成第一次数据分析</small></span><span class="arrow">→</span></a></div>`
   }
 ];
 
@@ -233,6 +235,10 @@ function setMenu(open) {
 
 function render() {
   const [id, sectionId] = location.hash.slice(1).split('/');
+  if (id === 'whats-new-3-23') {
+    location.replace(`#releases/${sectionId || 'v3-23'}`);
+    return;
+  }
   const page = pages.find(item => item.id === id) || pages[0];
   const changed = activePage !== page.id;
   if (changed) {

@@ -40,7 +40,7 @@ export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
     return null; // Video processing reports a clear error when ffmpeg is unavailable.
   }
 })();
-export const PLATFORM_VERSION = '3.23.0';
+export const PLATFORM_VERSION = '3.23.1';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;

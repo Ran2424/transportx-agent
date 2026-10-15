@@ -4,6 +4,12 @@
 
 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/)，项目版本遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。日期采用 ISO 8601（`YYYY-MM-DD`）。
 
+## 3.23.1 - 未发布
+
+### Changed
+
+- 官网中英文产品首页移除新版说明与版本专属入口；使用文档统一设立“版本更新”页，3.23.0 作为页内版本条目，原 3.23 更新说明链接跳转到对应条目。
+
 ## 3.23.0 - 2026-10-15
 
 3.23.0 为最新正式版本，提供 Windows x64 与 macOS arm64 安装包、SHA-256 校验文件及线上更新清单。Windows 安装器未使用 Authenticode 签名；Mac 安装包采用 ad-hoc 签名，未经过 Apple 公证。
