@@ -443,6 +443,23 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
       assert.equal(verified.status, 0, verified.stderr);
       const rejected = spawnSync('codesign', ['--verify', '--strict', '-R', '=identifier "com.transportx.foreign-app"', path.join(root, '2.bin')], { encoding: 'utf8' });
       assert.notEqual(rejected.status, 0);
+      const fixture = path.join(root, 'Fixture.app');
+      const helper = path.join(fixture, 'Contents/Frameworks/Helper.app');
+      for (const [bundle, identifier, binary] of [[fixture, appId, '1.bin'], [helper, 'com.transportx.helper', '2.bin']]) {
+        fs.mkdirSync(path.join(bundle, 'Contents/MacOS'), { recursive: true });
+        fs.copyFileSync(path.join(root, binary), path.join(bundle, 'Contents/MacOS/run'));
+        fs.writeFileSync(path.join(bundle, 'Contents/Info.plist'), `<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>${identifier}</string><key>CFBundleExecutable</key><string>run</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`);
+      }
+      const previousUnsigned = process.env.TRANSPORTX_ALLOW_UNSIGNED_BUILD;
+      try {
+        process.env.TRANSPORTX_ALLOW_UNSIGNED_BUILD = '1';
+        await require('../../desktop/scripts/after-pack.cjs')({ electronPlatformName: 'darwin', appOutDir: root, packager: { appInfo: { productFilename: 'Fixture', id: appId } } });
+      } finally {
+        if (previousUnsigned === undefined) delete process.env.TRANSPORTX_ALLOW_UNSIGNED_BUILD;
+        else process.env.TRANSPORTX_ALLOW_UNSIGNED_BUILD = previousUnsigned;
+      }
+      const helperVerified = spawnSync('codesign', ['--verify', '--strict', helper], { encoding: 'utf8' });
+      assert.equal(helperVerified.status, 0, helperVerified.stderr);
     } else t.diagnostic('Native ad-hoc requirement checks run on the macOS CI host.');
 
     const profileExpectations: Record<string, { key: string; builderPlatform: string; installerArtifact: string }> = {

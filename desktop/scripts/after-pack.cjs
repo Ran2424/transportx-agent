@@ -21,7 +21,12 @@ module.exports = async function afterPack(context) {
     '--strict',
     '--sign', '-',
     '--timestamp=none',
-    // A cdhash requirement changes on every build and prevents Squirrel updates.
+    appPath,
+  ]);
+  // --deep propagates requirements to helpers and invalidates their own identities.
+  // Keep the stable update requirement on the outer app after signing nested code.
+  run('codesign', [
+    '--force', '--strict', '--sign', '-', '--timestamp=none',
     '--requirements', getPlatformProfile('mac').signing.internalUpdateRequirement(context.packager.appInfo.id),
     appPath,
   ]);
