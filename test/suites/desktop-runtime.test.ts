@@ -44,6 +44,23 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
   }
 
+  // Website discovery reads only stable installers for the current platform on the official download host.
+  {
+    const { pathToFileURL } = require('node:url');
+    const { PLATFORM_PROFILES } = await import(pathToFileURL(path.join(process.cwd(), 'desktop/scripts/platform-profile.mjs')).href);
+    const { websiteReleaseVersion } = require('../../dist-desktop/website-release.js');
+    const html = `<a href=https://download.transkgllm.com/releases/v3.9.0/TransportX-Agent-3.9.0-arm64.dmg>Old Mac</a>
+      <a href="https://download.transkgllm.com/releases/v3.22.0/TransportX-Agent-3.22.0-mac-arm64.dmg">Mac</a>
+      <a href='https://download.transkgllm.com/releases/v3.24.0/TransportX.Agent-3.24.0-win-x64-setup.exe'>Windows</a>
+      <a href="https://other.test/releases/v9.0.0/TransportX-Agent-9.0.0-arm64.dmg">Foreign host</a>
+      <a href="https://download.transkgllm.com/releases/v9.0.0/TransportX-Agent-8.0.0-arm64.dmg">Mixed versions</a>
+      <a href="https://download.transkgllm.com/releases/v9.0.0/TransportX-Agent-9.0.0-arm64.dmg.sha256">Checksum</a>
+      <a href="https://download.transkgllm.com/releases/v9.0.0-beta/TransportX-Agent-9.0.0-beta-arm64.dmg">Prerelease</a>`;
+    assert.equal(websiteReleaseVersion(html, PLATFORM_PROFILES.darwin.update.websiteInstallerPattern), '3.22.0');
+    assert.equal(websiteReleaseVersion(html, PLATFORM_PROFILES.win.update.websiteInstallerPattern), '3.24.0');
+    assert.equal(websiteReleaseVersion('<a href=/guide/>Guide</a>', PLATFORM_PROFILES.darwin.update.websiteInstallerPattern), undefined);
+  }
+
   // desktop updates require explicit download and install, deduplicate actions and recover failures
   {
     const { EventEmitter } = require('node:events');
@@ -110,6 +127,31 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     const service = new UpdateService(updater, '3.22.0', true, { prepare: async () => { }, recover: async () => { }, onInstalling: () => { } });
     await service.check();
     assert.equal(service.getState().errorCode, 'check_failed');
+    const missingManifest = Object.assign(new Error('Cannot find channel update info: https://host/token=secret'), { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' });
+    const checkStates: Array<{ phase: string; errorCode?: string }> = [];
+    const unsubscribe = service.subscribe((state: { phase: string; errorCode?: string }) => checkStates.push(state));
+    for (const emitError of [false, true]) {
+      updater.emit('update-available', { version: '3.23.0', releaseNotes: 'Old notes' });
+      checkStates.length = 0;
+      updater.checkForUpdates = async () => { if (emitError) updater.emit('error', missingManifest); throw missingManifest; };
+      const state = await service.check();
+      assert.equal(state.phase, 'unavailable');
+      assert.equal(state.errorCode, undefined);
+      assert.equal(state.targetVersion, undefined);
+      assert.equal(state.releaseNotes, undefined);
+      assert.ok(checkStates.every((value) => value.phase !== 'error' && !value.errorCode));
+      assert.equal(JSON.stringify(state).includes('secret'), false);
+    }
+    unsubscribe();
+    updater.checkForUpdates = async () => updater.emit('update-not-available', { version: '3.22.0' });
+    assert.equal((await service.check()).phase, 'up-to-date');
+    assert.equal(service.getState().latestVersion, '3.22.0');
+    for (const error of [Object.assign(new Error('network failed'), { code: 'ECONNRESET' }), Object.assign(new Error('404'), { statusCode: 404 })]) {
+      updater.checkForUpdates = async () => { updater.emit('error', error); throw error; };
+      const state = await service.check();
+      assert.equal(state.phase, 'error');
+      assert.equal(state.errorCode, 'check_failed');
+    }
     updater.checkForUpdates = async () => updater.emit('update-available', { version: '3.23.0' });
     await service.check();
     await service.download();
@@ -123,6 +165,43 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     await disabled.check();
     assert.equal(disabled.getState().phase, 'disabled');
     disabled.dispose();
+  }
+
+  // Website releases remain discoverable before the signed automatic-update feed is public.
+  {
+    const { EventEmitter } = require('node:events');
+    const { UpdateService } = require('../../dist-desktop/update-service.js');
+    const updater = new EventEmitter();
+    const forbidden = Object.assign(new Error('403'), { statusCode: 403 });
+    updater.checkForUpdates = async () => { updater.emit('error', forbidden); throw forbidden; };
+    let downloads = 0, installs = 0, websiteVersion: string | undefined = '3.22.0';
+    updater.downloadUpdate = async () => { downloads += 1; updater.emit('update-downloaded', { version: websiteVersion }); };
+    updater.quitAndInstall = () => { installs += 1; };
+    const service = new UpdateService(updater, '3.23.0', true, { prepare: async () => { }, recover: async () => { }, onInstalling: () => { } }, undefined, async () => websiteVersion);
+    const checkStates: Array<{ phase: string }> = [];
+    service.subscribe((state: { phase: string }) => checkStates.push(state));
+    assert.equal((await service.check()).phase, 'up-to-date');
+    assert.equal(service.getState().latestVersion, '3.22.0');
+    assert.ok(checkStates.every((value) => value.phase !== 'error'));
+    websiteVersion = '3.24.0';
+    assert.equal((await service.check()).phase, 'manual-available');
+    assert.equal(service.getState().errorCode, undefined);
+    assert.equal(service.getState().latestVersion, '3.24.0');
+    await service.download();
+    await service.install();
+    assert.equal(downloads, 0);
+    assert.equal(installs, 0);
+    updater.checkForUpdates = async () => updater.emit('update-available', { version: '3.23.1' });
+    assert.equal((await service.check()).phase, 'manual-available', 'a stale manifest cannot install a different version from the website');
+    updater.checkForUpdates = async () => updater.emit('update-available', { version: '3.24.0' });
+    assert.equal((await service.check()).phase, 'available');
+    await service.download();
+    assert.equal(service.getState().phase, 'downloaded');
+    assert.equal(downloads, 1);
+    service.dispose();
+    const unavailable = new UpdateService(updater, '3.23.0', true, { prepare: async () => { }, recover: async () => { }, onInstalling: () => { } }, undefined, async () => { throw new Error('Website unavailable'); });
+    assert.equal((await unavailable.check()).errorCode, 'check_failed', 'a website network failure is not reported as no update');
+    unavailable.dispose();
   }
 
   // update IPC rejects unrelated windows, subframes and foreign origins

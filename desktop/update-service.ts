@@ -1,6 +1,7 @@
 import type { AppUpdater } from 'electron-updater';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import type { DesktopUpdateState, UpdateErrorCode } from '../src/contracts/desktop-update.js';
+import { compareReleaseVersions } from './website-release.js';
 
 type UpdateInfo = { version: string; releaseNotes?: string | Array<{ version: string; note: string | null }> | null };
 type UpdateEvent = 'update-available' | 'update-not-available' | 'download-progress' | 'update-downloaded' | 'error';
@@ -25,22 +26,25 @@ export class UpdateService {
   private installTimeout: ReturnType<typeof setTimeout> | null = null;
   private recovery: Promise<void> | null = null;
 
-  constructor(private updater: Updater, currentVersion: string, enabled: boolean, private installation: Installation, private restoreCache?: () => Promise<boolean>) {
+  constructor(private updater: Updater, currentVersion: string, enabled: boolean, private installation: Installation, private restoreCache?: () => Promise<boolean>, private readLatestRelease?: () => Promise<string | undefined>) {
     this.state = { currentVersion, phase: enabled ? 'idle' : 'disabled' };
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
     updater.allowDowngrade = false;
     updater.allowPrerelease = false;
-    this.listen('update-available', (info: UpdateInfo) => this.publish({ ...this.info(info), phase: 'available' }));
-    this.listen('update-not-available', () => this.publish({ phase: 'up-to-date', targetVersion: undefined, releaseNotes: undefined }));
+    this.listen('update-available', (info: UpdateInfo) => {
+      if (this.readLatestRelease && this.state.latestVersion !== info.version) this.publishWebsiteState();
+      else this.publish({ ...this.info(info), phase: 'available', errorCode: undefined });
+    });
+    this.listen('update-not-available', (info: UpdateInfo) => this.publishWebsiteState(this.readLatestRelease ? this.state.latestVersion : info.version));
     this.listen('download-progress', (progress: { percent: number }) => {
       if (this.state.phase === 'downloading' && Number.isFinite(progress.percent)) this.publish({ percent: Math.min(100, Math.max(0, progress.percent)) });
     });
     this.listen('update-downloaded', (info: UpdateInfo) => this.publish({ ...this.info(info), phase: 'downloaded', percent: 100, errorCode: undefined }));
     this.listen('error', () => {
       // Raw updater errors can contain signed URLs. Expose fixed error codes.
-      if (this.state.phase === 'checking') this.fail('check_failed');
-      else if (this.state.phase === 'downloading') this.fail('download_failed');
+      // check() handles rejected checks after website discovery, without an error flash.
+      if (this.state.phase === 'downloading') this.fail('download_failed');
       else if (this.state.phase === 'installing') void this.recoverInstallation();
     });
   }
@@ -61,14 +65,19 @@ export class UpdateService {
 
   check(): Promise<DesktopUpdateState> {
     if (this.operation) return this.operation;
-    if (!['idle', 'up-to-date', 'available', 'error'].includes(this.state.phase)) return Promise.resolve(this.getState());
+    if (!['idle', 'up-to-date', 'unavailable', 'manual-available', 'available', 'error'].includes(this.state.phase)) return Promise.resolve(this.getState());
     return this.run(async () => {
-      this.publish({ phase: 'checking', errorCode: undefined, percent: undefined });
+      this.publish({ phase: 'checking', latestVersion: undefined, targetVersion: undefined, releaseNotes: undefined, errorCode: undefined, percent: undefined });
       try {
+        if (this.readLatestRelease) this.publish({ latestVersion: await this.readLatestRelease() });
         await this.updater.checkForUpdates();
         if (this.state.phase === 'available') await this.restoreCache?.();
       }
-      catch { this.fail('check_failed'); }
+      catch (error) {
+        const failure = error as { code?: string; statusCode?: number };
+        if (failure?.code === 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' || (this.readLatestRelease && failure?.statusCode === 403)) this.publishWebsiteState();
+        else this.fail('check_failed');
+      }
     });
   }
 
@@ -119,7 +128,12 @@ export class UpdateService {
 
   private info(info: UpdateInfo) {
     const releaseNotes = typeof info.releaseNotes === 'string' ? info.releaseNotes : info.releaseNotes?.map((entry) => `${entry.version}\n${entry.note || ''}`).join('\n\n') || '';
-    return { targetVersion: info.version, releaseNotes: releaseNotes.slice(0, 64 * 1024) };
+    return { latestVersion: info.version, targetVersion: info.version, releaseNotes: releaseNotes.slice(0, 64 * 1024) };
+  }
+
+  private publishWebsiteState(latestVersion = this.state.latestVersion) {
+    const phase = !latestVersion ? 'unavailable' : compareReleaseVersions(latestVersion, this.state.currentVersion) > 0 ? 'manual-available' : 'up-to-date';
+    this.publish({ phase, latestVersion, targetVersion: undefined, releaseNotes: undefined, errorCode: undefined, percent: undefined });
   }
 
   private fail(errorCode: UpdateErrorCode) { this.publish({ phase: 'error', errorCode }); }

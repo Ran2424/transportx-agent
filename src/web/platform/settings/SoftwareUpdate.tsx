@@ -33,17 +33,16 @@ export function SoftwareUpdate() {
   const busy = ['checking', 'downloading', 'preparing', 'installing'].includes(state.phase);
   return <section className="settings-section software-update" data-testid="software-update">
     <h2>{t('update.title')}</h2>
-    <div className="settings-row"><span><strong>{t('update.currentVersion', { version: state.currentVersion })}</strong><small role="status">{t(`update.phase.${state.phase}`, { version: state.targetVersion })}</small></span>
+    <div className="settings-row"><span><strong>{t('update.currentVersion', { version: state.currentVersion })}</strong><small>{t('update.latestVersion', { version: state.latestVersion || t('update.versionUnknown') })}</small><small role="status">{t(`update.phase.${state.phase}`, { version: state.targetVersion })}</small></span>
       <Button type="button" variant="outline" disabled={busy || ['disabled', 'downloaded'].includes(state.phase)} onClick={() => void act('check')}>{t('update.check')}</Button>
     </div>
-    {state.targetVersion ? <p>{t('update.targetVersion', { version: state.targetVersion })}</p> : null}
     {state.releaseNotes ? <pre className="software-update-notes">{state.releaseNotes}</pre> : null}
     {state.phase === 'downloading' ? <div className="software-update-progress"><progress aria-label={t('update.progress')} value={state.percent || 0} max={100} /><span>{Math.floor(state.percent || 0)}%</span></div> : null}
     {state.errorCode || requestFailed ? <p className="inline-error" role="alert">{t(`update.error.${requestFailed ? 'request_failed' : state.errorCode}`)}</p> : null}
     <div className="software-update-actions">
       {state.phase === 'available' || state.errorCode === 'download_failed' ? <Button type="button" variant="primary" disabled={busy} onClick={() => void act('download')}>{t('update.download')}</Button> : null}
       {state.phase === 'downloaded' ? <Button type="button" variant="primary" onClick={() => void act('install')}>{t('update.install')}</Button> : null}
-      <a href="https://transkgllm.com" target="_blank" rel="noopener noreferrer">{t('update.manualDownload')}</a>
+      <a href="https://transportxlab.com/application/transportx-agent/" target="_blank" rel="noopener noreferrer">{t('update.manualDownload')}</a>
     </div>
     <p className="settings-empty">{t('update.consent')}</p>
   </section>;
@@ -53,8 +52,9 @@ export function SoftwareUpdateNotice({ onOpen }: { onOpen(): void }) {
   const { t } = useTranslation();
   const state = useDesktopUpdate();
   const [dismissed, setDismissed] = useState('');
-  if (!state?.targetVersion || !['available', 'downloaded'].includes(state.phase)) return null;
-  const key = `${state.targetVersion}:${state.phase}`;
+  const version = state?.latestVersion;
+  if (!version || !state || !['available', 'manual-available', 'downloaded'].includes(state.phase)) return null;
+  const key = `${version}:${state.phase}`;
   if (dismissed === key) return null;
-  return <div className="software-update-notice" role="status"><span>{t(state.phase === 'available' ? 'update.noticeAvailable' : 'update.noticeReady', { version: state.targetVersion })}</span><button type="button" onClick={onOpen}>{t('update.view')}</button><button type="button" aria-label={t('update.later')} onClick={() => setDismissed(key)}>×</button></div>;
+  return <div className="software-update-notice" role="status"><span>{t(state.phase === 'downloaded' ? 'update.noticeReady' : 'update.noticeAvailable', { version })}</span><button type="button" onClick={onOpen}>{t('update.view')}</button><button type="button" aria-label={t('update.later')} onClick={() => setDismissed(key)}>×</button></div>;
 }
