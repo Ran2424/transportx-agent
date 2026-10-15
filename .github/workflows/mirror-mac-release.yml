@@ -13,6 +13,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_VERSION: 3.23.0
+      RELEASE_ID: '413412063'
       RELEASE_SOURCE: 50dfba75215edc1b69914a13b55ce3086e7f90dc
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +23,7 @@ jobs:
       - name: Confirm draft target and derive official download URLs
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$RELEASE_VERSION" > release.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > release.json
           jq -e --arg source "$RELEASE_SOURCE" '.draft == true and .target_commitish == $source' release.json
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
