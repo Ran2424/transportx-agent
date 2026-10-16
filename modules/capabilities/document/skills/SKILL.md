@@ -18,3 +18,5 @@ Supported targets:
 - Search: `{ "kind": "search", "query": "排队长度" }`
 
 When the user asks for the last page or slide, inspect the file to determine its count, then pass the concrete one-based number. Do not convert supported documents to images just to display them.
+
+Pinned Citation sources use `{ "scope": "capability", "moduleId": "com.transportx.citation", "resourceId": "<sourceVersionId>" }`. Do not pass Evidence IDs as resource IDs. Host verifies the fixed source version. Inline evidence stays in Citation details. CSV data rows (excluding the header) use `{ "kind": "rows", "start": 2, "end": 5, "columns": ["flow"] }`. Markdown sections use `{ "kind": "locator", "section": "结论" }`. A missing precise target means opening the original only, not verified exact navigation.

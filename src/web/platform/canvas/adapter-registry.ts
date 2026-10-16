@@ -33,36 +33,21 @@ const documentAdapter: CanvasAdapter = {
     const relativePath = primary?.scope === 'session-file' ? primary.path : payload.path;
     if (!relativePath) return null;
     const path = primary?.scope === 'session-file' ? documentPath(relativePath, context.cwd) : relativePath;
-    const resource = primary?.scope === 'citation' ? {
-      resourceId: primary.resourceId,
-      workId: `canvas:${primary.resourceId}`,
-      kind: payload.format === 'pdf' ? 'pdf' as const : 'document' as const,
-      scope: 'artifact' as const,
-      relativePath,
-      mimeType: payload.mimeType || 'application/octet-stream',
-      sha256: primary.sha256,
-    } : undefined;
+    const source = payload.source;
+    if (primary?.scope === 'capability' && (primary.moduleId !== 'com.transportx.citation' || !source || source.sourceVersionId !== primary.resourceId)) return null;
     const navigationId = (previous?.kind === 'document' ? previous.navigationId : 0) + (target ? 1 : 0);
-    const locatorResourceId = primary?.scope === 'citation' ? primary.resourceId : presentation.viewId;
     const locator = target?.kind === 'page'
-      ? { locatorId: presentation.presentationId, resourceId: locatorResourceId, page: target.number }
+      ? { kind: 'document' as const, page: target.number }
       : target?.kind === 'locator'
-        ? {
-            locatorId: presentation.presentationId,
-            resourceId: locatorResourceId,
-            ...(target.page ? { page: target.page } : {}),
-            ...(target.section ? { section: target.section } : {}),
-            ...(target.nodeId ? { nodeId: target.nodeId } : {}),
-            ...(target.quote ? { quote: target.quote } : {}),
-          }
-        : undefined;
+        ? { kind: 'document' as const, ...(target.page ? { page: target.page } : {}), ...(target.section ? { section: target.section } : {}), ...(target.nodeId ? { nodeId: target.nodeId } : {}) }
+        : target?.kind === 'rows' ? { kind: 'table' as const, rowStart: target.start, rowEnd: target.end, columns: target.columns } : undefined;
     return {
       id: presentation.viewId,
       kind: 'document',
       sessionId: context.sessionId,
       title: presentation.title,
       path,
-      ...(resource ? { resource } : {}),
+      ...(source ? { source } : {}),
       format: payload.format,
       navigationId,
       revision: presentation.revision,

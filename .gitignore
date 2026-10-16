@@ -61,6 +61,7 @@ test/baselines/screenshots/*.png
 !/docs/STYLE_UPGRADE_REVIEW_2026-10-12.md
 !/docs/releases/
 !/docs/软件更新功能开发 PLAN.md
+!/docs/引用依据模块升级 PLAN.md
 !/docs/guide/
 !/docs/images/
 /docs/images/*

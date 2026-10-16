@@ -1,8 +1,8 @@
-import type { CitationEnvelope, CitationLocator, CitationResource } from '../../../contracts/citation.ts';
+import type { CitationLocator, CitationSourceVersion } from '../../../contracts/citation.ts';
 import type { CanvasPresentationV1, CanvasResourceRef } from '../../../contracts/canvas.ts';
 import type { DocumentCanvasTarget } from '../../../contracts/canvas-document.ts';
 
-export type DocumentRequest = { sessionId: string; title: string; path: string; resource?: CitationResource; locator?: CitationLocator };
+export type DocumentRequest = { sessionId: string; title: string; path: string; source?: CitationSourceVersion; locator?: CitationLocator; canvasTarget?: DocumentCanvasTarget };
 export type DocumentFormat = 'markdown' | 'pdf' | 'csv' | 'docx' | 'xlsx' | 'pptx';
 export type DocumentView = DocumentRequest & {
   id: string;
@@ -51,16 +51,18 @@ export function documentPath(path: string, cwd: string): string {
   return prefix + parts.join('/');
 }
 
-export function resolveDocument(request: DocumentRequest, cwd: string, registry?: CitationEnvelope | null, canonicalCwd = cwd): DocumentView | null {
+export function resolveDocument(request: DocumentRequest, cwd: string, canonicalCwd = cwd): DocumentView | null {
   const requestedPath = documentPath(request.path, cwd);
   const root = documentPath(cwd, '');
   const path = documentPath(requestedPath.startsWith(`${root}/`) ? requestedPath.slice(root.length + 1) : requestedPath, canonicalCwd);
-  const matches = registry?.resources.filter((resource) => resource.scope !== 'knowledge' && documentPath(resource.relativePath, canonicalCwd) === path) ?? [];
-  const resource = request.resource ?? (matches.length === 1 ? matches[0] : undefined);
-  const format = documentFormat(resource?.relativePath ?? path, resource?.mimeType);
+  const source = request.source;
+  if (source && source.content.kind !== 'file') return null;
+  const content = source?.content;
+  const sourcePath = content?.kind === 'file' ? content.path : path;
+  const format = documentFormat(sourcePath, content?.kind === 'file' ? content.mimeType : undefined);
   if (!format) return null;
-  const identity = resource ? ['citation', resource.resourceId, resource.sha256] : ['file', path];
-  return { ...request, resource, path: resource?.relativePath ?? path, id: `document:${encodeURIComponent(JSON.stringify([request.sessionId, ...identity]))}`, kind: 'document', format, navigationId: 0 };
+  const identity = source ? ['citation', source.sourceVersionId] : ['file', path];
+  return { ...request, source, path: sourcePath, id: source ? `document:citation:${source.sourceVersionId}` : `document:${encodeURIComponent(JSON.stringify([request.sessionId, ...identity]))}`, kind: 'document', format, navigationId: 0 };
 }
 
 export type DocumentHeading = { id: string; text: string; level: number };
@@ -77,6 +79,7 @@ export function documentHeadings(headings: Array<{ text: string; level: number }
 }
 
 export function documentTarget(headings: DocumentHeading[], locator: CitationLocator): string | null {
+  if (locator.kind !== 'document') return null;
   const nodeId = locator.nodeId?.replace(/^#/, '');
   if (nodeId && headings.some((heading) => heading.id === nodeId)) return nodeId;
   const matches = locator.section ? headings.filter((heading) => heading.text.trim() === locator.section?.trim()) : [];

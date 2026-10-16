@@ -1,3 +1,5 @@
+import type { CitationSourceVersion } from '../contracts/citation.js';
+import { verifyCitationFile } from './citation-resources.js';
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -70,11 +72,10 @@ function requestedOperation(value: unknown, fallback: CanvasPresentationOperatio
 }
 
 function stableViewId(adapterId: string, resource: CanvasResourceRef) {
+  if (resource.scope === 'capability' && resource.moduleId === 'com.transportx.citation') return `document:citation:${resource.resourceId}`;
   const identity = resource.scope === 'session-file'
     ? resource.path
-    : resource.scope === 'citation'
-      ? `${resource.resourceId}:${resource.sha256}`
-      : `${resource.moduleId}:${resource.resourceId}`;
+    : `${resource.moduleId}:${resource.resourceId}`;
   return `${adapterId}:${crypto.createHash('sha256').update(identity).digest('hex').slice(0, 24)}`;
 }
 
@@ -97,6 +98,12 @@ export class CanvasService {
       if (!previous) throw serviceError('Canvas view was not found in this session.', 404);
       const declaration = session.resolvedSessionPlan?.modules.flatMap((module) => module.canvasViews).find((view) => view.adapterId === previous.adapterId);
       if (!declaration || declaration.protocolVersion !== CANVAS_PRESENTATION_VERSION) throw serviceError('Canvas adapter is not enabled for this session.', 403);
+      const sourceRef = previous.resources.find((resource) => resource.scope === 'capability' && resource.moduleId === 'com.transportx.citation');
+      if (sourceRef?.scope === 'capability' && input.operation !== 'clear') {
+        const source = this.citation.registry(session).source(sourceRef.resourceId);
+        if (!source) throw serviceError('Citation source version is unavailable.', 404);
+        verifyCitationFile(session, source);
+      }
       const operation = requestedOperation(input.operation, 'focus');
       const rawTarget = input.target === undefined ? previous.target : input.target;
       const target = validateTarget(previous.adapterId, rawTarget);
@@ -114,6 +121,7 @@ export class CanvasService {
     let reference: CanvasResourceRef;
     let resourcePath: string;
     let mimeType: string | undefined;
+    let citationSource: CitationSourceVersion | undefined;
     let revision = 0;
     if (resource.scope === 'session-file' && typeof resource.path === 'string') {
       const resolved = this.resolveSessionPath(session, resource.path);
@@ -123,12 +131,15 @@ export class CanvasService {
       if (!resourcePath || resourcePath.startsWith('../')) throw serviceError('Canvas resource is outside the active session directory.', 403);
       reference = { scope: 'session-file', path: resourcePath };
       revision = Math.floor(stat.mtimeMs);
-    } else if (resource.scope === 'citation' && typeof resource.resourceId === 'string' && typeof resource.sha256 === 'string') {
-      const registered = this.citation.registry(session).load().resources.find((candidate) => candidate.resourceId === resource.resourceId && candidate.sha256 === resource.sha256);
-      if (!registered) throw serviceError('Citation resource or pinned version was not found.', 404);
-      reference = { scope: 'citation', resourceId: registered.resourceId, sha256: registered.sha256 };
-      resourcePath = registered.relativePath;
-      mimeType = registered.mimeType;
+    } else if (resource.scope === 'capability' && resource.moduleId === 'com.transportx.citation' && typeof resource.resourceId === 'string') {
+      const source = this.citation.registry(session).source(resource.resourceId);
+      if (!source || source.content.kind !== 'file') throw serviceError('Citation SourceVersion has no supported original file.', 404);
+      verifyCitationFile(session, source);
+      const { metadata: _metadata, executionRef: _executionRef, ...viewSource } = source;
+      citationSource = viewSource;
+      reference = { scope: 'capability', moduleId: 'com.transportx.citation', resourceId: source.sourceVersionId };
+      resourcePath = source.content.path;
+      mimeType = source.content.mimeType;
     } else throw serviceError('Unsupported Canvas resource reference.');
 
     const format = documentCanvasFormat(resourcePath, mimeType);
@@ -151,7 +162,7 @@ export class CanvasService {
       operation,
       title,
       resources: [reference],
-      payload: { format, path: resourcePath, ...(mimeType ? { mimeType } : {}) },
+      payload: { format, path: resourcePath, ...(mimeType ? { mimeType } : {}), ...(citationSource ? { source: citationSource } : {}) },
       ...(target ? { target } : {}),
       generatedAt: new Date().toISOString(),
     };

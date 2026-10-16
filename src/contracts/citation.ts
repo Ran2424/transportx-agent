@@ -1,217 +1,118 @@
-import { asPositiveInteger, asRecord, asString, type JsonRecord } from './common.ts';
+import { asRecord, asString } from './common.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 import { CITATION_ENVELOPE_PROTOCOL, CITATION_ENVELOPE_VERSION } from './version.ts';
 
-export type CitationResourceKind = 'pdf' | 'document' | 'image' | 'web' | 'dataset';
-export type CitationResourceScope = 'knowledge' | 'attachment' | 'artifact' | 'web' | 'dataset';
-export type CitationContainerType = 'message' | 'document' | 'artifact';
-export type CitationRole = 'support' | 'background' | 'data-source' | 'method' | 'counterexample' | 'artifact-source';
-export type CitationProvenanceRelation = 'derived-from' | 'queried-from' | 'sourced-from';
-
-export type CitationWork = {
-  workId: string;
-  citekey?: string;
-  type: string;
-  title: string;
-  author?: string[];
-  issuer?: string;
-  issuedAt?: string;
-  standardNumber?: string;
-  edition?: string;
-  url?: string;
+export const CITATION_INLINE_LIMIT = 256 * 1024;
+export const CITATION_REGISTRY_LIMIT = 8 * 1024 * 1024;
+export const CITATION_PREVIEW_LIMIT = 2 * 1024 * 1024;
+export const CITATION_PREVIEW_ROWS = 200;
+export type CitationTable = { columns: string[]; rows: (string | number | boolean | null)[][] };
+export type CitationInline = string | CitationTable;
+export type CitationFile = { kind: 'file'; scope: 'session' | 'asset'; assetId?: string; path: string; mimeType: string; sha256: string; size: number };
+export type CitationContent = CitationFile | { kind: 'inline'; sha256: string; value?: CitationInline };
+export type CitationMetadata = { author?: string[]; issuer?: string; issuedAt?: string; standardNumber?: string; edition?: string; url?: string; version?: string; timeRange?: string; querySummary?: string; bibliographicType?: 'S' | 'R' | 'M' | 'J' | 'EB/OL' | 'DS' | 'Z' };
+export type CitationSourceVersion = {
+  sourceVersionId: string; sourceKey: string; title: string; content: CitationContent; acquiredAt: string;
+  metadata?: CitationMetadata;
+  executionRef?: { path: string; sha256: string; operation: string; inputHashes: string[] };
 };
-
-export type CitationResource = {
-  resourceId: string;
-  workId: string;
-  kind: CitationResourceKind;
-  scope: CitationResourceScope;
-  relativePath: string;
-  mimeType: string;
-  sha256: string;
-  acquiredAt?: string;
-  sourceUrl?: string;
-};
-
-export type CitationLocator = {
-  locatorId: string;
-  resourceId: string;
-  quote?: string;
-  nodeId?: string;
-  clause?: string;
-  section?: string;
-  page?: number;
-  printedPage?: string;
-  sourceUnit?: string;
-  lineStart?: number;
-  lineEnd?: number;
-  table?: string;
-  figure?: string;
-};
-
-export type CitationOccurrence = {
-  occurrenceId: string;
-  locatorId: string;
-  containerType: CitationContainerType;
-  containerId: string;
-  anchorId?: string;
-  role?: CitationRole;
-};
-
-export type CitationProvenanceEdge = {
-  provenanceId: string;
-  fromResourceId: string;
-  toResourceId: string;
-  relation: CitationProvenanceRelation;
-  generatedAt?: string;
-};
-
-export type CitationEnvelope = {
-  protocol: typeof CITATION_ENVELOPE_PROTOCOL;
-  version: typeof CITATION_ENVELOPE_VERSION;
-  citationSetId: string;
-  generatedAt: string;
-  works: CitationWork[];
-  resources: CitationResource[];
-  locators: CitationLocator[];
-  occurrences: CitationOccurrence[];
-  provenance: CitationProvenanceEdge[];
-};
-
-export type CitationRegistry = CitationEnvelope & {
-  schemaVersion: 1;
-  sessionId: string;
-  updatedAt: string;
-};
-
-export type CitationParseResult<T = CitationEnvelope> =
-  | { ok: true; value: T; diagnostics: [] }
-  | { ok: false; value: null; diagnostics: ContractDiagnostic[] };
-
-const RESOURCE_KINDS = new Set<CitationResourceKind>(['pdf', 'document', 'image', 'web', 'dataset']);
-const RESOURCE_SCOPES = new Set<CitationResourceScope>(['knowledge', 'attachment', 'artifact', 'web', 'dataset']);
-const CONTAINER_TYPES = new Set<CitationContainerType>(['message', 'document', 'artifact']);
-const ROLES = new Set<CitationRole>(['support', 'background', 'data-source', 'method', 'counterexample', 'artifact-source']);
-const PROVENANCE_RELATIONS = new Set<CitationProvenanceRelation>(['derived-from', 'queried-from', 'sourced-from']);
-const SHA256_RE = /^[a-f0-9]{64}$/;
-
-function optionalText(record: JsonRecord, key: string, max = 4000) {
-  const value = record[key];
-  return value === undefined ? undefined : asString(value, max) ?? undefined;
+export type CitationLocator =
+  | { kind: 'document'; page?: number; printedPage?: string; section?: string; nodeId?: string; lineStart?: number; lineEnd?: number }
+  | { kind: 'table'; rowStart?: number; rowEnd?: number; columns?: string[]; sheet?: string; cell?: string }
+  | { kind: 'result'; field: string }
+  | { kind: 'source' };
+export const CITATION_CONTENT_LABELS = { excerpt: '原文摘录', summary: '知识归纳', result: '数据结果', 'source-only': '出处' } as const;
+export type CitationEvidence = { evidenceId: string; sourceVersionId: string; locator: CitationLocator; contentKind: 'excerpt' | 'summary' | 'result' | 'source-only'; text?: string };
+export type CitationEnvelope = { protocol: typeof CITATION_ENVELOPE_PROTOCOL; version: typeof CITATION_ENVELOPE_VERSION; sources: CitationSourceVersion[]; evidence: CitationEvidence[]; nextOffset?: number };
+export type CitationRegistry = CitationEnvelope & { schemaVersion: 2; sessionId: string };
+export type CitationPreview = { kind: 'text'; text: string; truncated: boolean } | { kind: 'table'; table: CitationTable; rowStart?: number; truncated: boolean } | { kind: 'none'; reason: string };
+export type CitationDetail = { source: CitationSourceVersion; evidence: CitationEvidence; preview: CitationPreview };
+export type CitationParseResult<T = CitationEnvelope> = { ok: true; value: T; diagnostics: [] } | { ok: false; value: null; diagnostics: ContractDiagnostic[] };
+const SHA = /^[a-f0-9]{64}$/;
+const ID = /^[A-Za-z0-9_.:-]{1,180}$/;
+export function citationRelativePath(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 1000 && !/^[\\/]|^[A-Za-z]:|\\|\x00/.test(value) && value.split('/').every((part) => part !== '..' && part !== '' && part !== '.');
 }
-
-function textList(value: unknown, maxItems = 80, maxLength = 300) {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.length > maxItems) return null;
-  const items = value.map((item) => asString(item, maxLength));
-  return items.every(Boolean) ? items as string[] : null;
+function exactKeys(value: Record<string, unknown>, keys: string[]) { return Object.keys(value).every((key) => keys.includes(key)); }
+function strings(value: unknown): value is string[] { return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length <= 4000); }
+export function isCitationInline(value: unknown): value is CitationInline {
+  if (new TextEncoder().encode(JSON.stringify(value) ?? '').length > CITATION_INLINE_LIMIT) return false;
+  if (typeof value === 'string') return true;
+  const table = asRecord(value);
+  return !!table && strings(table.columns) && table.columns.length > 0 && Array.isArray(table.rows) && table.rows.length <= CITATION_PREVIEW_ROWS && table.rows.every((row) => Array.isArray(row) && row.length === (table.columns as string[]).length && row.every((cell) => cell === null || typeof cell === 'string' || typeof cell === 'boolean' || (typeof cell === 'number' && Number.isFinite(cell))));
 }
-
-function invalid<T = CitationEnvelope>(path: string, message: string): CitationParseResult<T> {
-  return { ok: false, value: null, diagnostics: [diagnostic({ code: 'invalid_type', path, message })] };
+export function parseCitationLocator(value: unknown): CitationLocator | null {
+  const item = asRecord(value);
+  if (!item) return null;
+  const fields: Record<string, string[]> = { source: [], result: ['field'], document: ['page', 'printedPage', 'section', 'nodeId', 'lineStart', 'lineEnd'], table: ['rowStart', 'rowEnd', 'columns', 'sheet', 'cell'] };
+  if (typeof item.kind !== 'string' || !Object.hasOwn(fields, item.kind) || Object.keys(item).some((key) => key !== 'kind' && !fields[item.kind as string].includes(key))) return null;
+  for (const key of fields[item.kind]) {
+    if (item[key] === undefined) continue;
+    if (['page', 'lineStart', 'lineEnd', 'rowStart', 'rowEnd'].includes(key)) { if (!Number.isSafeInteger(item[key]) || Number(item[key]) < 1) return null; }
+    else if (key === 'columns') { if (!strings(item[key])) return null; }
+    else if (!asString(item[key], 4000)) return null;
+  }
+  if (item.kind === 'result' && !asString(item.field, 4000)) return null;
+  if (item.kind === 'document' && !fields.document.some((key) => item[key] !== undefined)) return null;
+  if (item.kind === 'table' && !item.rowStart && !item.sheet && !item.cell && !(Array.isArray(item.columns) && item.columns.length)) return null;
+  if (item.lineEnd !== undefined && (item.lineStart === undefined || Number(item.lineEnd) < Number(item.lineStart))) return null;
+  if (item.rowEnd !== undefined && (item.rowStart === undefined || Number(item.rowEnd) < Number(item.rowStart))) return null;
+  if (item.cell !== undefined && !/^\$?[A-Z]+\$?[1-9]\d*(?::\$?[A-Z]+\$?[1-9]\d*)?$/.test(String(item.cell))) return null;
+  return Object.fromEntries([['kind', item.kind], ...fields[item.kind].flatMap((key) => item[key] === undefined ? [] : [[key, item[key]]])]) as CitationLocator;
 }
-
-function uniqueId(record: JsonRecord | null, key: string, ids: Set<string>, path: string) {
-  const id = asString(record?.[key], 180);
-  if (!id || ids.has(id)) return null;
-  ids.add(id);
-  return id;
-}
-
+function invalid<T>(message: string): CitationParseResult<T> { return { ok: false, value: null, diagnostics: [diagnostic({ code: 'invalid_type', path: 'citations', message })] }; }
 export function parseCitationEnvelopeStructured(value: unknown): CitationParseResult {
   const root = asRecord(value);
-  if (!root) return invalid('citations', 'Citation envelope must be an object.');
-  if (root.protocol !== CITATION_ENVELOPE_PROTOCOL || root.version !== CITATION_ENVELOPE_VERSION) {
-    return invalid('citations.version', `Unsupported citation envelope ${String(root.protocol)} ${String(root.version)}.`);
+  if (!root || root.protocol !== CITATION_ENVELOPE_PROTOCOL || root.version !== CITATION_ENVELOPE_VERSION) return invalid('Unsupported citation format; only pi-citation 3.0 is supported. Existing files have not been modified.');
+  if (!Array.isArray(root.sources) || !Array.isArray(root.evidence)) return invalid('sources and evidence must be arrays.');
+  const sources: CitationSourceVersion[] = [], evidence: CitationEvidence[] = [], ids = new Set<string>(), evidenceIds = new Set<string>();
+  for (const raw of root.sources) {
+    const item = asRecord(raw), content = asRecord(item?.content);
+    if (!item || !content || !exactKeys(item, ['sourceVersionId', 'sourceKey', 'title', 'content', 'acquiredAt', 'metadata', 'executionRef']) || !exactKeys(content, content.kind === 'file' ? ['kind', 'scope', 'assetId', 'path', 'mimeType', 'sha256', 'size'] : ['kind', 'sha256', 'value']) || typeof item.sourceVersionId !== 'string' || !ID.test(item.sourceVersionId) || ids.has(item.sourceVersionId) || !asString(item.sourceKey, 1500) || !asString(item.title, 500) || !asString(item.acquiredAt, 80) || typeof content.sha256 !== 'string' || !SHA.test(content.sha256)) return invalid('Invalid or duplicate SourceVersion.');
+    if (content.kind === 'file') {
+      if (!citationRelativePath(content.path) || !asString(content.mimeType, 180) || !Number.isSafeInteger(content.size) || Number(content.size) < 0 || !['session', 'asset'].includes(String(content.scope)) || (content.scope === 'asset' ? typeof content.assetId !== 'string' || !ID.test(content.assetId) : content.assetId !== undefined)) return invalid('Invalid controlled file reference.');
+    } else if (content.kind !== 'inline' || (content.value !== undefined && !isCitationInline(content.value))) return invalid('Invalid or oversized inline result.');
+    if (item.metadata !== undefined) {
+      const meta = asRecord(item.metadata);
+      if (!meta || Object.entries(meta).some(([key, val]) => key === 'author' ? !strings(val) : !['issuer', 'issuedAt', 'standardNumber', 'edition', 'url', 'version', 'timeRange', 'querySummary', 'bibliographicType'].includes(key) || !asString(val, 4000))) return invalid('Invalid source metadata.');
+      if (meta.bibliographicType !== undefined && !['S', 'R', 'M', 'J', 'EB/OL', 'DS', 'Z'].includes(String(meta.bibliographicType))) return invalid('Invalid bibliography type.');
+      if (meta.url !== undefined && !/^https?:\/\//i.test(String(meta.url))) return invalid('Source URL must be an HTTP(S) URL, not a local path.');
+    }
+    if (item.executionRef !== undefined) {
+      const ref = asRecord(item.executionRef);
+      if (!ref || !citationRelativePath(ref.path) || typeof ref.sha256 !== 'string' || !SHA.test(ref.sha256) || !asString(ref.operation, 180) || !strings(ref.inputHashes) || ref.inputHashes.some((hash) => !SHA.test(hash))) return invalid('Invalid execution reference.');
+    }
+    ids.add(item.sourceVersionId); sources.push(item as CitationSourceVersion);
   }
-  const citationSetId = asString(root.citationSetId, 180);
-  const generatedAt = asString(root.generatedAt, 80);
-  if (!citationSetId || !generatedAt) return invalid('citations', 'citationSetId and generatedAt are required.');
-  if (!Array.isArray(root.works) || !Array.isArray(root.resources) || !Array.isArray(root.locators) || !Array.isArray(root.occurrences) || !Array.isArray(root.provenance)) {
-    return invalid('citations', 'works, resources, locators, occurrences and provenance must be arrays.');
+  for (const raw of root.evidence) {
+    const item = asRecord(raw), locator = parseCitationLocator(item?.locator);
+    if (!item || !exactKeys(item, ['evidenceId', 'sourceVersionId', 'locator', 'contentKind', 'text']) || typeof item.evidenceId !== 'string' || !ID.test(item.evidenceId) || evidenceIds.has(item.evidenceId) || typeof item.sourceVersionId !== 'string' || !ids.has(item.sourceVersionId) || !locator || !['excerpt', 'summary', 'result', 'source-only'].includes(String(item.contentKind)) || (item.text !== undefined && !asString(item.text, 16000))) return invalid('Invalid, duplicate or dangling Evidence.');
+    evidenceIds.add(item.evidenceId); evidence.push({ evidenceId: item.evidenceId, sourceVersionId: item.sourceVersionId, locator, contentKind: item.contentKind as CitationEvidence['contentKind'], ...(item.text !== undefined ? { text: String(item.text) } : {}) });
   }
-  if (root.works.length > 100 || root.resources.length > 100 || root.locators.length > 200 || root.occurrences.length > 300 || root.provenance.length > 300) {
-    return invalid('citations', 'Citation envelope exceeds its item limit.');
-  }
-
-  const works: CitationWork[] = [];
-  const workIds = new Set<string>();
-  for (const [index, candidate] of root.works.entries()) {
-    const item = asRecord(candidate);
-    const workId = uniqueId(item, 'workId', workIds, `citations.works[${index}]`);
-    const type = asString(item?.type, 120);
-    const title = asString(item?.title, 500);
-    const author = textList(item?.author);
-    if (!item || !workId || !type || !title || author === null) return invalid(`citations.works[${index}]`, 'Invalid or duplicate citation work.');
-    works.push({ workId, type, title, ...(optionalText(item, 'citekey', 180) ? { citekey: optionalText(item, 'citekey', 180) } : {}), ...(author?.length ? { author } : {}), ...(optionalText(item, 'issuer', 300) ? { issuer: optionalText(item, 'issuer', 300) } : {}), ...(optionalText(item, 'issuedAt', 80) ? { issuedAt: optionalText(item, 'issuedAt', 80) } : {}), ...(optionalText(item, 'standardNumber', 180) ? { standardNumber: optionalText(item, 'standardNumber', 180) } : {}), ...(optionalText(item, 'edition', 180) ? { edition: optionalText(item, 'edition', 180) } : {}), ...(optionalText(item, 'url', 2000) ? { url: optionalText(item, 'url', 2000) } : {}) });
-  }
-
-  const resources: CitationResource[] = [];
-  const resourceIds = new Set<string>();
-  for (const [index, candidate] of root.resources.entries()) {
-    const item = asRecord(candidate);
-    const resourceId = uniqueId(item, 'resourceId', resourceIds, `citations.resources[${index}]`);
-    const workId = asString(item?.workId, 180);
-    const relativePath = asString(item?.relativePath, 1000);
-    const mimeType = asString(item?.mimeType, 120);
-    const sha256 = asString(item?.sha256, 64);
-    if (!item || !resourceId || !workId || !workIds.has(workId) || !relativePath || !mimeType || !sha256 || !SHA256_RE.test(sha256) || !RESOURCE_KINDS.has(item.kind as CitationResourceKind) || !RESOURCE_SCOPES.has(item.scope as CitationResourceScope)) return invalid(`citations.resources[${index}]`, 'Invalid or duplicate citation resource.');
-    resources.push({ resourceId, workId, relativePath, mimeType, sha256, kind: item.kind as CitationResourceKind, scope: item.scope as CitationResourceScope, ...(optionalText(item, 'acquiredAt', 80) ? { acquiredAt: optionalText(item, 'acquiredAt', 80) } : {}), ...(optionalText(item, 'sourceUrl', 2000) ? { sourceUrl: optionalText(item, 'sourceUrl', 2000) } : {}) });
-  }
-
-  const locators: CitationLocator[] = [];
-  const locatorIds = new Set<string>();
-  for (const [index, candidate] of root.locators.entries()) {
-    const item = asRecord(candidate);
-    const locatorId = uniqueId(item, 'locatorId', locatorIds, `citations.locators[${index}]`);
-    const resourceId = asString(item?.resourceId, 180);
-    const page = item?.page === undefined ? undefined : asPositiveInteger(item.page) ?? undefined;
-    const lineStart = item?.lineStart === undefined ? undefined : asPositiveInteger(item.lineStart) ?? undefined;
-    const lineEnd = item?.lineEnd === undefined ? undefined : asPositiveInteger(item.lineEnd) ?? undefined;
-    if (!item || !locatorId || !resourceId || !resourceIds.has(resourceId) || (item.page !== undefined && page === undefined) || (item.lineStart !== undefined && lineStart === undefined) || (item.lineEnd !== undefined && lineEnd === undefined) || (lineStart !== undefined && lineEnd !== undefined && lineEnd < lineStart)) return invalid(`citations.locators[${index}]`, 'Invalid or duplicate citation locator.');
-    locators.push({ locatorId, resourceId, ...(optionalText(item, 'quote') ? { quote: optionalText(item, 'quote') } : {}), ...(optionalText(item, 'nodeId', 300) ? { nodeId: optionalText(item, 'nodeId', 300) } : {}), ...(optionalText(item, 'clause', 300) ? { clause: optionalText(item, 'clause', 300) } : {}), ...(optionalText(item, 'section', 500) ? { section: optionalText(item, 'section', 500) } : {}), ...(page ? { page } : {}), ...(optionalText(item, 'printedPage', 80) ? { printedPage: optionalText(item, 'printedPage', 80) } : {}), ...(optionalText(item, 'sourceUnit', 300) ? { sourceUnit: optionalText(item, 'sourceUnit', 300) } : {}), ...(lineStart ? { lineStart } : {}), ...(lineEnd ? { lineEnd } : {}), ...(optionalText(item, 'table', 300) ? { table: optionalText(item, 'table', 300) } : {}), ...(optionalText(item, 'figure', 300) ? { figure: optionalText(item, 'figure', 300) } : {}) });
-  }
-
-  const occurrences: CitationOccurrence[] = [];
-  const occurrenceIds = new Set<string>();
-  for (const [index, candidate] of root.occurrences.entries()) {
-    const item = asRecord(candidate);
-    const occurrenceId = uniqueId(item, 'occurrenceId', occurrenceIds, `citations.occurrences[${index}]`);
-    const locatorId = asString(item?.locatorId, 180);
-    const containerId = asString(item?.containerId, 300);
-    if (!item || !occurrenceId || !locatorId || !locatorIds.has(locatorId) || !containerId || !CONTAINER_TYPES.has(item.containerType as CitationContainerType) || (item.role !== undefined && !ROLES.has(item.role as CitationRole))) return invalid(`citations.occurrences[${index}]`, 'Invalid or duplicate citation occurrence.');
-    occurrences.push({ occurrenceId, locatorId, containerId, containerType: item.containerType as CitationContainerType, ...(optionalText(item, 'anchorId', 300) ? { anchorId: optionalText(item, 'anchorId', 300) } : {}), ...(item.role ? { role: item.role as CitationRole } : {}) });
-  }
-
-  const provenance: CitationProvenanceEdge[] = [];
-  const provenanceIds = new Set<string>();
-  for (const [index, candidate] of root.provenance.entries()) {
-    const item = asRecord(candidate);
-    const provenanceId = uniqueId(item, 'provenanceId', provenanceIds, `citations.provenance[${index}]`);
-    const fromResourceId = asString(item?.fromResourceId, 180);
-    const toResourceId = asString(item?.toResourceId, 180);
-    if (!item || !provenanceId || !fromResourceId || !toResourceId || !resourceIds.has(fromResourceId) || !resourceIds.has(toResourceId) || fromResourceId === toResourceId || !PROVENANCE_RELATIONS.has(item.relation as CitationProvenanceRelation)) return invalid(`citations.provenance[${index}]`, 'Invalid or duplicate citation provenance edge.');
-    provenance.push({ provenanceId, fromResourceId, toResourceId, relation: item.relation as CitationProvenanceRelation, ...(optionalText(item, 'generatedAt', 80) ? { generatedAt: optionalText(item, 'generatedAt', 80) } : {}) });
-  }
-  return { ok: true, value: { protocol: CITATION_ENVELOPE_PROTOCOL, version: CITATION_ENVELOPE_VERSION, citationSetId, generatedAt, works, resources, locators, occurrences, provenance }, diagnostics: [] };
+  if (root.nextOffset !== undefined && (!Number.isSafeInteger(root.nextOffset) || Number(root.nextOffset) < 0)) return invalid('Invalid pagination offset.');
+  return { ok: true, value: { protocol: CITATION_ENVELOPE_PROTOCOL, version: CITATION_ENVELOPE_VERSION, sources, evidence, ...(root.nextOffset !== undefined ? { nextOffset: Number(root.nextOffset) } : {}) }, diagnostics: [] };
 }
-
-export function parseCitationEnvelope(value: unknown): CitationEnvelope | null {
-  const result = parseCitationEnvelopeStructured(value);
-  return result.ok ? result.value : null;
-}
-
+export function parseCitationEnvelope(value: unknown) { const result = parseCitationEnvelopeStructured(value); return result.ok ? result.value : null; }
 export function parseCitationRegistryStructured(value: unknown): CitationParseResult<CitationRegistry> {
-  const root = asRecord(value);
-  const parsed = parseCitationEnvelopeStructured(value);
-  const sessionId = asString(root?.sessionId, 180);
-  const updatedAt = asString(root?.updatedAt, 80);
+  const root = asRecord(value), parsed = parseCitationEnvelopeStructured(value);
   if (!parsed.ok) return parsed;
-  if (!root || root.schemaVersion !== 1 || !sessionId || !updatedAt) return invalid('citationRegistry', 'schemaVersion, sessionId and updatedAt are required.');
-  return { ok: true, value: { ...parsed.value, schemaVersion: 1, sessionId, updatedAt }, diagnostics: [] };
+  if (!root || root.schemaVersion !== 2 || typeof root.sessionId !== 'string' || !ID.test(root.sessionId) || parsed.value.sources.some((source) => source.content.kind === 'inline' && source.content.value === undefined)) return invalid('Unsupported or incomplete Citation registry. Existing files have not been modified.');
+  return { ok: true, value: { ...parsed.value, schemaVersion: 2, sessionId: root.sessionId }, diagnostics: [] };
 }
-
-export function parseCitationRegistry(value: unknown): CitationRegistry | null {
-  const result = parseCitationRegistryStructured(value);
-  return result.ok ? result.value : null;
+export function parseCitationRegistry(value: unknown) { const result = parseCitationRegistryStructured(value); return result.ok ? result.value : null; }
+export function publicCitationSource(source: CitationSourceVersion): CitationSourceVersion {
+  return source.content.kind === 'inline' ? { ...source, content: { kind: 'inline', sha256: source.content.sha256 } } : source;
+}
+export function parseCitationDetail(value: unknown): CitationDetail | null {
+  const root = asRecord(value);
+  if (!root) return null;
+  const envelope = parseCitationEnvelope({ protocol: 'pi-citation', version: '3.0', sources: [root.source], evidence: [root.evidence] });
+  const preview = asRecord(root.preview);
+  if (!envelope || !preview) return null;
+  if (preview.kind === 'none' && typeof preview.reason === 'string') return { source: envelope.sources[0], evidence: envelope.evidence[0], preview: { kind: 'none', reason: preview.reason } };
+  if (typeof preview.truncated !== 'boolean') return null;
+  if (preview.kind === 'text' && typeof preview.text === 'string' && new TextEncoder().encode(preview.text).length <= CITATION_PREVIEW_LIMIT) return { source: envelope.sources[0], evidence: envelope.evidence[0], preview: { kind: 'text', text: preview.text, truncated: preview.truncated } };
+  const table = asRecord(preview.table);
+  if (preview.kind === 'table' && table && strings(table.columns) && Array.isArray(table.rows) && table.rows.length <= CITATION_PREVIEW_ROWS && table.rows.every((row) => Array.isArray(row) && row.length === (table.columns as string[]).length && row.every((cell) => cell === null || ['string', 'number', 'boolean'].includes(typeof cell))) && new TextEncoder().encode(JSON.stringify(table)).length <= CITATION_PREVIEW_LIMIT) return { source: envelope.sources[0], evidence: envelope.evidence[0], preview: { kind: 'table', table: table as CitationTable, ...(Number.isSafeInteger(preview.rowStart) && Number(preview.rowStart) > 0 ? { rowStart: Number(preview.rowStart) } : {}), truncated: preview.truncated } };
+  return null;
 }

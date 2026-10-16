@@ -119,43 +119,17 @@ test('Session, task, Geo, Citation and Bridge contracts validate versions and pr
     assert.equal(regression.diagnostic?.code, 'revision_regression');
   }
 
-  // Citation v2 envelope separates work, resource, locator and occurrence identity
+  // Citation v3 stores two record types and rejects old or dangling references.
   {
     const { parseCitationEnvelopeStructured } = await import('../../src/contracts/citation.ts');
-    const valid = {
-      protocol: 'pi-citation',
-      version: '2.0',
-      citationSetId: 'citations:test',
-      generatedAt: '2026-07-26T00:00:00.000Z',
-      works: [{
-        workId: 'work:traffic-report',
-        type: 'report',
-        title: '交通分析报告',
-        author: ['TransportX'],
-      }],
-      resources: [{
-        resourceId: 'resource:report',
-        workId: 'work:traffic-report',
-        kind: 'document',
-        scope: 'artifact',
-        relativePath: 'reports/traffic.md',
-        mimeType: 'text/markdown',
-        sha256: 'a'.repeat(64),
-      }],
-      locators: [{ locatorId: 'locator:report-conclusion', resourceId: 'resource:report', section: '结论', quote: '拥堵集中在入口。' }],
-      occurrences: [{ occurrenceId: 'occ:report-conclusion', locatorId: 'locator:report-conclusion', containerType: 'document', containerId: 'reports/traffic.md', role: 'support' }],
-      provenance: [],
-    };
+    const valid = { protocol: 'pi-citation', version: '3.0', sources: [{ sourceVersionId: 'sv_test', sourceKey: 'session:file.md', title: '交通报告', acquiredAt: '2026-10-16', content: { kind: 'file', scope: 'session', path: 'report.md', mimeType: 'text/markdown', sha256: 'a'.repeat(64), size: 100 } }], evidence: [{ evidenceId: 'e_test', sourceVersionId: 'sv_test', locator: { kind: 'document', section: '结论' }, contentKind: 'summary' }] };
     const parsed = parseCitationEnvelopeStructured(valid);
     assert.equal(parsed.ok, true);
-    if (!parsed.ok) throw new Error('valid Citation v2 envelope was rejected');
-    assert.equal(parsed.value.occurrences[0].occurrenceId, 'occ:report-conclusion');
-    const broken = parseCitationEnvelopeStructured({
-      ...valid,
-      occurrences: [{ occurrenceId: 'occ:report-conclusion', locatorId: 'locator:missing', containerType: 'document', containerId: 'reports/traffic.md' }],
-    });
-    assert.equal(broken.ok, false);
-    assert.ok(diagnosticCodes(broken).includes('invalid_type'));
+    if (!parsed.ok) throw new Error('Citation v3 rejected');
+    assert.equal(parsed.value.evidence[0].evidenceId, 'e_test');
+    assert.equal(parseCitationEnvelopeStructured({ ...valid, version: '2.0' }).ok, false);
+    const broken = parseCitationEnvelopeStructured({ ...valid, evidence: [{ ...valid.evidence[0], sourceVersionId: 'missing' }] });
+    assert.equal(broken.ok, false); assert.ok(diagnosticCodes(broken).includes('invalid_type'));
   }
 
   // Bridge compat parser and structured parser share fixtures, capabilities, and diagnostics

@@ -22,7 +22,6 @@ export const CANVAS_MAX_JSON_NODES = 4096;
 
 export type CanvasResourceRef =
   | { scope: 'session-file'; path: string }
-  | { scope: 'citation'; resourceId: string; sha256: string }
   | { scope: 'capability'; moduleId: string; resourceId: string; revision?: number };
 
 export type CanvasPresentationOperation = 'present' | 'focus' | 'update' | 'clear';
@@ -106,14 +105,6 @@ function parseResource(value: unknown, path: string, diagnostics: ContractDiagno
       return null;
     }
     return { scope: 'session-file', path: resourcePath };
-  }
-  if (record.scope === 'citation') {
-    if (Object.keys(record).some((key) => !['scope', 'resourceId', 'sha256'].includes(key))) diagnostics.push(diagnostic({ code: 'unsupported_value', path, message: 'Citation resource contains unknown fields.' }));
-    const resourceId = asString(record.resourceId, 160);
-    const sha256 = asString(record.sha256, 64);
-    if (!resourceId) diagnostics.push(diagnostic({ code: 'missing_text_field', path: `${path}.resourceId`, message: 'Citation resourceId is required.' }));
-    if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256)) diagnostics.push(diagnostic({ code: 'invalid_type', path: `${path}.sha256`, message: 'Citation sha256 must be a lowercase hexadecimal digest.' }));
-    return resourceId && sha256 && /^[a-f0-9]{64}$/.test(sha256) ? { scope: 'citation', resourceId, sha256 } : null;
   }
   if (record.scope === 'capability') {
     if (Object.keys(record).some((key) => !['scope', 'moduleId', 'resourceId', 'revision'].includes(key))) diagnostics.push(diagnostic({ code: 'unsupported_value', path, message: 'Capability resource contains unknown fields.' }));

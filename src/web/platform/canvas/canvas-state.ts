@@ -23,7 +23,9 @@ export function openCanvasDocument(state: CanvasState, document: DocumentView): 
 }
 
 export function withCanvasDocuments(content: CanvasContent, state: CanvasState): CanvasContent {
-  return { ...content, views: [...content.views, ...state.documents] };
+  const views = new Map(content.views.map((view) => [view.id, view]));
+  for (const view of state.documents) views.set(view.id, view);
+  return { ...content, views: [...views.values()] };
 }
 
 // Presentation order follows tool results, never unrelated Geo/Video revision counters.
@@ -103,6 +105,8 @@ export function syncCanvas(state: CanvasState, content: CanvasContent): CanvasSt
   const target = content.presentation;
   if (target && target.key !== state.presentationKey) {
     next.presentationKey = target.key;
+    // A new Agent navigation takes over this version's manually opened view.
+    next.documents = state.documents.filter((view) => view.id !== target.id);
     // Restore existing results on first load; later publications open their own tab.
     if (state.presentationKey === null) next.tabIds = [...new Set([...next.tabIds, ...content.views.filter((view) => view.kind !== 'document').map((view) => view.id)])];
     if (available.has(target.id)) next = activateCanvas(next, target.id);

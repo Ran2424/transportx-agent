@@ -11,3 +11,5 @@ description: 使用 tau_spatial_analyze 完成可复核的缓冲、最近邻和�
 - 只有确需修复无效几何时才传 `repairInvalid: true`，并在结论中报告 manifest 的 invalidGeometry、emptyGeometry 与 warnings。
 - 工具输出的是 WGS84 GeoJSON。需要地图时，将返回的相对路径交给 `publish_geodata`，再调用地图展示工具。
 - 最终回答应说明：输入范围和数量、CRS、距离/阈值或空间谓词、输出数量、未匹配与异常数量，并引用生成的 manifest 或结果文件。
+
+- 成功后 Host 自动复用 manifest 登记计数依据；最终回答直接使用返回的 `[[cite:evidenceId]]`，不另写专门的证据 JSON。若返回依据登记警告，说明分析文件已成功保留，不能把警告当作计算失败并盲目重跑。

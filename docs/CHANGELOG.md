@@ -6,7 +6,16 @@
 
 ## 3.23.1 - 未发布
 
+### Added
+
+- 引用依据支持 SourceVersion + Evidence 最小闭环：固定授权原件/已有结果版本、类型化定位、多原件知识归纳、Host 内联小结果，以及分页元数据和按 ID 核对详情。空间分析成功后复用现有 manifest 登记计数依据；登记失败保留分析输出并返回警告。
+- 引用详情提供有界文本/表格与原件下载，Canvas 使用 Citation capability 固定版本定位 PDF 页、Markdown 章节、XLSX Sheet/单元格及 CSV 数据行；Markdown 导出、PDF 和书目出口保留全部依据位置。
+
 ### Changed
+
+- 引用依据整体默认折叠，展开后突出标题、位置和内容性质；正文、输入候选与管理器共用详情，移除大型悬停浮层。知识和数据 Module 保留各自的有界目录发现与渐进披露职责。
+- Citation 协议升级到 3.0 / Registry schemaVersion 2，正文直接复用 Evidence ID，不再调用独立 tau_cite。旧格式明确不支持，不自动覆盖引用记录或删除任务资料。Citation Module 2.0.0、Canvas/Document 1.2.0、Spatial Analysis 1.1.0、Workbench 1.3.0、Module Authoring 1.1.0 随本轮同步版本。
+
 
 - 官网快速上手更新交流群二维码，有效期延长至 2026 年 10 月 23 日，并更新图片与脚本缓存版本。
 - 官网中英文产品首页移除新版说明与版本专属入口；使用文档统一设立“版本更新”页，3.23.0 作为页内版本条目，原 3.23 更新说明链接跳转到对应条目。

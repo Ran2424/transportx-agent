@@ -40,6 +40,17 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     assert.ok(result.output.geometryTypes.includes('Polygon'));
     assert.ok(fs.existsSync(path.join(cwd, result.output.relativePath)));
     assert.ok(fs.existsSync(path.join(cwd, '.tau/spatial-results', result.analysisId, 'manifest.json')));
+    const { CitationService } = require('../../bin/citation-service.js');
+    const citation = new CitationService(), owner = { id: 'spatial_owner', cwd };
+    const registered = citation.registerSpatialResult(owner, result);
+    assert.equal(registered.sources[0].executionRef.inputHashes[0], result.inputs[0].sha256);
+    assert.equal(citation.detail(owner, registered.evidence[0].evidenceId).preview.kind, 'table');
+    citation.registerSpatialResult(owner, result);
+    assert.equal(citation.registry(owner).load().sources.length, 1, 'registration retry is idempotent');
+    fs.writeFileSync(citation.registry(owner).filePath, '{"version":"2.0"}');
+    assert.throws(() => citation.registerSpatialResult(owner, result), /Unsupported/);
+    assert.ok(fs.existsSync(path.join(cwd, result.output.relativePath)), 'citation failure preserves successful analysis output');
+
   }
 
   // controlled nearest preserves unmatched left features and reports metric distance
@@ -78,5 +89,8 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     writeGeo(cwd, 'input.geojson', collection([point('p', [121, 31])]));
     await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: 'input.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:4326', distanceMeters: 10 }), /metricCrs cannot be EPSG:4326/);
     await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: '../outside.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10 }), /relative \.geojson|Unsafe/);
+    const controller = new AbortController(); controller.abort();
+    await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: 'input.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10 }, controller.signal), /abort|cancel/i);
+    assert.equal(fs.existsSync(path.join(cwd, '.tau/citations.json')), false, 'failed and cancelled analyses never create evidence');
   }
 });

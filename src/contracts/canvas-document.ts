@@ -1,3 +1,4 @@
+import { parseCitationEnvelope, type CitationSourceVersion, type CitationLocator } from './citation.ts';
 import { asRecord, asString } from './common.ts';
 
 export const DOCUMENT_CANVAS_ADAPTER_ID = 'com.transportx.canvas.document';
@@ -10,9 +11,11 @@ export type DocumentCanvasPayloadV1 = {
   format: DocumentCanvasFormat;
   path?: string;
   mimeType?: string;
+  source?: CitationSourceVersion;
 };
 
 export type DocumentCanvasTarget =
+  | { kind: 'rows'; start: number; end?: number; columns?: string[] }
   | { kind: 'page'; number: number }
   | { kind: 'slide'; number: number }
   | { kind: 'sheet'; name: string }
@@ -47,17 +50,25 @@ function positiveInteger(value: unknown): number | null {
 
 export function parseDocumentCanvasPayload(value: unknown): DocumentCanvasPayloadV1 | null {
   const record = asRecord(value);
-  if (!record || !exactKeys(record, ['format', 'path', 'mimeType'])) return null;
+  if (!record || !exactKeys(record, ['format', 'path', 'mimeType', 'source'])) return null;
   const format = record.format === 'markdown' || record.format === 'pdf' || record.format === 'csv' || record.format === 'docx' || record.format === 'xlsx' || record.format === 'pptx' ? record.format : null;
   const path = record.path === undefined ? undefined : asString(record.path, 1000) ?? undefined;
   const mimeType = record.mimeType === undefined ? undefined : asString(record.mimeType, 200) ?? undefined;
   if (!format || record.path !== undefined && !path || record.mimeType !== undefined && !mimeType) return null;
-  return { format, ...(path ? { path } : {}), ...(mimeType ? { mimeType } : {}) };
+  const source = record.source === undefined ? undefined : parseCitationEnvelope({ protocol: 'pi-citation', version: '3.0', sources: [record.source], evidence: [] })?.sources[0];
+  if (record.source !== undefined && (!source || source.content.kind !== 'file')) return null;
+  return { format, ...(path ? { path } : {}), ...(mimeType ? { mimeType } : {}), ...(source ? { source } : {}) };
 }
 
 export function parseDocumentCanvasTarget(value: unknown): DocumentCanvasTarget | null {
   const record = asRecord(value);
   if (!record) return null;
+  if (record.kind === 'rows') {
+    const start = positiveInteger(record.start), end = record.end === undefined ? undefined : positiveInteger(record.end);
+    const columns = record.columns;
+    if (!start || end === null || end !== undefined && end < start || columns !== undefined && (!Array.isArray(columns) || columns.some((item) => typeof item !== 'string')) || !exactKeys(record, ['kind', 'start', 'end', 'columns'])) return null;
+    return { kind: 'rows', start, ...(end !== undefined ? { end } : {}), ...(columns ? { columns: columns as string[] } : {}) };
+  }
   if (record.kind === 'page' || record.kind === 'slide') {
     const number = positiveInteger(record.number);
     return number !== null && exactKeys(record, ['kind', 'number']) ? { kind: record.kind, number } : null;
@@ -88,4 +99,17 @@ export function parseDocumentCanvasTarget(value: unknown): DocumentCanvasTarget 
     return { kind: 'locator', ...(page !== undefined ? { page } : {}), ...(section ? { section } : {}), ...(nodeId ? { nodeId } : {}), ...(quote ? { quote } : {}) };
   }
   return null;
+}
+
+export function citationCanvasTarget(locator: CitationLocator): DocumentCanvasTarget | undefined {
+  if (locator.kind === 'document') {
+    if (locator.page) return { kind: 'page', number: locator.page };
+    if (locator.section || locator.nodeId) return { kind: 'locator', ...(locator.section ? { section: locator.section } : {}), ...(locator.nodeId ? { nodeId: locator.nodeId } : {}) };
+  }
+  if (locator.kind === 'table') {
+    if (locator.sheet && locator.cell) return { kind: 'sheet-cell', sheet: locator.sheet, cell: locator.cell.replace(/\$/g, '').split(':')[0] };
+    if (locator.sheet) return { kind: 'sheet', name: locator.sheet };
+    if (locator.rowStart) return { kind: 'rows', start: locator.rowStart, ...(locator.rowEnd ? { end: locator.rowEnd } : {}), ...(locator.columns ? { columns: locator.columns } : {}) };
+  }
+  return undefined;
 }

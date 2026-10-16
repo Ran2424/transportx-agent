@@ -10,13 +10,13 @@ import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
 import type { ModuleArchiveInspection } from '../../contracts/module.ts';
-import { parseCitationEnvelope, type CitationEnvelope } from '../../contracts/citation.ts';
+import { parseCitationEnvelope, parseCitationDetail, type CitationDetail, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 import type { CanvasContextV1 } from '../../contracts/canvas.ts';
 import type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 export type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 
-export type HttpInit = { method?: string; body?: unknown; headers?: Record<string, string> };
+export type HttpInit = { signal?: AbortSignal; method?: string; body?: unknown; headers?: Record<string, string> };
 
 /** Minimal structural subset of fetch()'s Response used by the kernel. */
 export type HttpResponse = {
@@ -223,8 +223,8 @@ export type ExtensionUiCommands = {
 };
 
 export type CitationCommands = {
-  list(sessionId: string): Promise<CitationEnvelope>;
-  createOccurrence(sessionId: string, locatorId: string, role: 'support'): Promise<{ marker: string; citations: CitationEnvelope }>;
+  list(sessionId: string, options?: { offset?: number; ids?: string[]; signal?: AbortSignal }): Promise<CitationEnvelope>;
+  detail(sessionId: string, evidenceId: string, signal?: AbortSignal): Promise<CitationDetail>;
 };
 
 export type VideoCommands = {
@@ -510,16 +510,17 @@ export function createCitationCommands(deps: CommandDeps): CitationCommands {
     throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用响应无效', sessionId, retryable: false });
   };
   return {
-    async list(sessionId) {
-      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations`, undefined, { category: 'session', sessionId });
+    async list(sessionId, options = {}) {
+      const query = new URLSearchParams({ offset: String(options.offset || 0) });
+      if (options.ids) query.set('ids', options.ids.join(','));
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations?${query}`, { signal: options.signal }, { category: 'session', sessionId });
       return readEnvelope(data, sessionId);
     },
-
-    async createOccurrence(sessionId, locatorId, role) {
-      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations/occurrences`, { method: 'POST', body: { locatorId, role } }, { category: 'session', sessionId });
-      const marker = typeof (data as { marker?: unknown })?.marker === 'string' ? (data as { marker: string }).marker : '';
-      if (!marker) throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用创建响应无效', sessionId, retryable: false });
-      return { marker, citations: readEnvelope(data, sessionId) };
+    async detail(sessionId, evidenceId, signal) {
+      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations/evidence/${encodeURIComponent(evidenceId)}`, { signal }, { category: 'session', sessionId });
+      const detail = parseCitationDetail(data);
+      if (!detail) throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用详情响应无效', sessionId, retryable: false });
+      return detail;
     },
   };
 }

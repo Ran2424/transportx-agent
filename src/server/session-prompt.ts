@@ -18,7 +18,10 @@ function moduleResourceGuide(plan: ResolvedSessionPlan | null) {
         : asset.kind === 'data'
           ? '；运行时目录映射：`TRANSPORTX_DATA_ASSETS_JSON`'
           : '';
-      return `- ${asset.kind} 资产 \`${asset.id}\`：\`${asset.path}\`${environment}`;
+      const entries = plan.modules.find((module) => module.id === asset.moduleId)?.entrypoints.filter((entry) => entry.kind === 'skill').map((entry) => `\`${entry.path}\``) || [];
+      const purpose = asset.kind === 'knowledge' ? '原件与知识出处，按需检索' : asset.kind === 'data' ? '数据集与表结构，按需读取/查询' : '输出模板，按需使用';
+      const browse = entries.length ? entries.join('、') : '该 Module 未声明浏览/检索 Skill；请先确认其目录入口，不自动扫描全库';
+      return `- ${asset.kind} 资产 \`${asset.id}\`：\`${asset.path}\`${environment}；用途：${purpose}；所属 Module 入口：${browse}`;
     }).join('\n')
     : '- 本会话没有选中的 Data、Knowledge 或 Template 资产。';
   return `### 已加载 Skill\n${skills}\n\n### 已选资产\n${assets}`;

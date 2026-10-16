@@ -12,3 +12,5 @@ Use `canvas_present` when the user asks to open, show, focus, or navigate an exi
 - Use `viewId` without a resource only to refocus or navigate a view returned by an earlier `canvas_present` result.
 - Do not claim that rendering completed. Tool success means the Host accepted the presentation request.
 - Do not use screenshots as a replacement when the requested file type is supported by Canvas.
+
+- Pinned Citation originals use capability references with `moduleId: "com.transportx.citation"` and the registered `sourceVersionId`. Host resolves authorization and bytes. Citation evidence remains independent of Canvas; do not turn Canvas Context into new evidence.
