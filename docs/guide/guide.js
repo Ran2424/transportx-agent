@@ -74,7 +74,7 @@ const pages = [
     <h2 id="result">第五步 核查并导出成果</h2><ol class="steps"><li>打开文件栏或回复中的文件链接，查看生成的图表和报告。</li><li>核对单位、时间范围、计算口径与数据来源。有引用时点击标记查看证据。</li><li>在文档画布中下载原文件，或点击“生成并下载 PDF”。</li></ol>
     ${note('第一次使用的完成标志', '模型能回复，材料已读入，分析口径已核对，成果文件能打开。接下来可以继续 <a href="#map">地图分析</a> 或了解 <a href="#reports">报告与引用</a>。', true)}
     <h2 id="community">内测交流</h2><p>扫描二维码加入 TransportX 内测交流群，交流使用问题、反馈建议。</p>
-    <figure class="figure community"><button type="button" class="image-open" aria-label="放大图片 TransportX 内测交流群二维码"><img src="assets/community-wechat.jpg" width="966" height="1482" alt="TransportX 内测交流群微信二维码，有效期至 2026 年 10 月 14 日" loading="lazy" decoding="async"></button><figcaption>二维码有效期至 2026 年 10 月 14 日 · 点击图片放大</figcaption></figure>
+    <figure class="figure community"><button type="button" class="image-open" aria-label="放大图片 TransportX 内测交流群二维码"><img src="assets/community-wechat.jpg?v=20261016" width="966" height="1518" alt="TransportX 内测交流群微信二维码，有效期至 2026 年 10 月 23 日" loading="lazy" decoding="async"></button><figcaption>二维码有效期至 2026 年 10 月 23 日 · 点击图片放大</figcaption></figure>
     <p>二维码过期后，请通过项目 Issues 联系维护者获取新入口。</p>`
   },
   {
