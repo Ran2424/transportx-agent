@@ -193,8 +193,13 @@ sequenceDiagram
 - 用户只有执行“附加当前 Canvas”时才生成 `CanvasContextV1`。Host 固定 View revision 与资源版本，并把 Context ID 附到下一轮用户消息；Agent 必须调用 `canvas_inspect_context` 读取本轮 ID，不能回退读取历史选区。连续滚动、播放和鼠标事件不进入会话。
 - Markdown 文档复用共享渲染器，由 `report-renderer.ts` 补充公式、Mermaid、图片和标题目录；文档定位在自己的容器内完成，不改变聊天 Markdown。PDF 通过受控 URL 在原生 iframe 阅读器中显示，引用传入物理页码；同会话标签切换保留 iframe，跨会话重建只恢复最后一次明确请求的页码，不读取原生阅读器内部滚动或缩放状态。
 - DOCX、XLSX 和 PPTX 由 `@silurus/ooxml` 在浏览器内通过 Rust/WASM 解析、Canvas 2D 只读渲染。`features/office/office-resource.ts` 在 GET 前用 HEAD 校验状态和 32 MiB 压缩文件上限；`office-viewer.ts` 按格式动态导入 Viewer，禁用在线字体与超链接并限制解压和图片内存。普通启动、Markdown 和 PDF 路径不加载 OOXML chunk、Worker 或 WASM。
-- 普通文件以会话与规范路径识别；引用文档以会话、resourceId 与 SHA-256 识别。引用 URL 携带预期哈希，Host 同时检查注册版本与磁盘内容，失效时返回 409，不能回退到普通文件接口。手动刷新重新读取内容；关闭标签和切换会话后的迟到结果不会替换当前阅读内容。
+- 普通文件以会话与规范路径识别；引用文档以会话与固定 sourceVersionId 识别，并通过 Citation capability 句柄供用户和 Agent 复用同一标签。引用 URL 携带预期哈希，Host 同时检查注册版本与磁盘内容，失效时返回 409，不能回退到普通文件接口。手动刷新重新读取内容；关闭标签和切换会话后的迟到结果不会替换当前阅读内容。
 - 附件先上传到任务工作区，再以 `attachmentIds` 关联后续消息；服务端再次校验归属、状态、真实路径和文件存在性后才向 Pi 提供上下文。
+- Citation 3.0 只在会话的 `.tau/citations.json`（schemaVersion 2）保存 SourceVersion 与 Evidence。来源为已选 Knowledge/Data 资产原件或会话文件，Host 计算内容哈希；小型内联结果只由受控 Host 生产者登记。正文 `[[cite:evidenceId1,evidenceId2]]` 是使用位置的权威，不持久化 Occurrence、来源图或独立书目实体。旧 Citation 格式明确报错，不自动迁移或清理任务。
+- 单步 `tau_resolve_citation` 返回本次登记的元数据与 Evidence ID；Kernel 通过分页列表/按 ID 详情读取，普通文件浏览继续读取当前文件。引用区默认折叠，正文、候选和管理器共用详情；CSV/规则 JSON 有界表格支持定位行，Markdown/PDF 与书目导出保留同一版本的全部具体位置。
+- Knowledge/Data Module 自行提供目录概览、有限候选与原件/结果读取入口，启动不载入全量正文或记录；目录命中不能直接登记为证据。Citation 不扫描固定知识布局，不建立 Catalog/Provider 框架。Canvas 只接受正向查看与定位，Context 不转成 Evidence。
+- Citation 容量限制：内联内容 256 KiB，Registry 8 MiB，文本/表格预览原始读取 2 MiB，最多显示 200 行；文件哈希分块读取。固定内容改变或授权取消后拒绝读取；不退回当前文件。SpatialAnalysisService 成功后的 Host 接线复用其 manifest 与输入/输出校验，登记计数依据；登记失败单独返回警告并保留成功输出，重试登记幂等。
+
 - File、Preview、Geo 和 Spatial Analysis 以活动 Session cwd 为边界。Citation/Video 还可读取会话计划中明确解析的 Knowledge/Data 资产根目录，并将派生资源发布到当前任务。模块资产不必复制进 cwd；边界校验不能简化成“只允许读取 cwd”。
 - 用户可从地图提交要素、点位、矩形或当前视野四类 Geo Context，并显式附到下一轮消息。Agent 通过 `inspect_map_context` 读取本轮上下文，也可用 `request_geo_input` 等待用户在指定地图 revision 上补充输入；提交、取消、超时、中止和地图失效都有明确终态。
 - 地图截图由工作台按当前画面、图例和说明生成 PNG，再写入当前任务目录。截图不扩大资源访问范围。

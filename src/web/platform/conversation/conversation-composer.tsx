@@ -71,7 +71,7 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
           aria-label={t('conversation.messageInput')}
           disabled={compacting}
         />
-        {citeOpen ? <ComposerCitationPicker loading={citeLoading} candidates={citeCandidates} onClose={() => setCiteOpen(false)} onSelect={(locatorId) => void insertCitation(locatorId)} /> : null}
+        {citeOpen ? <ComposerCitationPicker sessionId={sessionId} loading={citeLoading} candidates={citeCandidates} onClose={() => setCiteOpen(false)} onSelect={(locatorId) => void insertCitation(locatorId)} /> : null}
         <div className="composer-toolbar">
           <div className="composer-action-rail">
             <button className="composer-attach" type="button" onClick={() => attachmentInputRef.current?.click()}>

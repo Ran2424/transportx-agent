@@ -7,6 +7,7 @@ type DialogProps = ComponentProps<typeof DialogPrimitive.Root> & {
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  onCloseAutoFocus?: ComponentProps<typeof DialogPrimitive.Content>['onCloseAutoFocus'];
 };
 
 export function Dialog({
@@ -14,6 +15,7 @@ export function Dialog({
   children,
   footer,
   className = '',
+  onCloseAutoFocus,
   ...rootProps
 }: DialogProps) {
   const { t } = useTranslation();
@@ -32,6 +34,8 @@ export function Dialog({
         <DialogPrimitive.Content
           className={`dialog-surface ${className}`.trim()}
           onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (event.defaultPrevented) return;
             if (!previousFocus.current) return;
             event.preventDefault();
             previousFocus.current.focus();

@@ -9,6 +9,7 @@ export const appKernel = createAppKernel({
   transport,
   http: (path, init) => fetch(path, {
     method: init?.method,
+    signal: init?.signal,
     headers: init?.body instanceof FormData ? init?.headers : { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     body: init?.body === undefined ? undefined : init.body instanceof FormData ? init.body : JSON.stringify(init.body),
   }).then(response => { if (response.status === 401) projectUi.onUnauthorized?.(); return response; }),

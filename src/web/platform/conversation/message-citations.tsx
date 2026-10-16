@@ -1,150 +1,33 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useTranslation } from 'react-i18next';
-import { Icon } from '../../components/icons';
-import i18n from '../../i18n';
 import { useOpenDocument } from '../canvas/document-context';
 import { documentFormat } from '../canvas/document-state';
-import { FilePreview, filePresentation } from '../workspace/FilePreview';
-import { citationLocatorPosition, citationResourceUrl } from './citation-resource';
-import type { MessageCitationProjection, ResolvedCitation } from '../../features/citation/citation-projection';
-
-function citationPosition(item: ResolvedCitation) { return citationLocatorPosition(item.locator); }
-
-const CITATION_CATEGORY_LABELS: Record<string, string> = {
-  LEGAL_GOVERNANCE: 'conversation.category.legal',
-  STANDARD_SPEC: 'conversation.category.standard',
-  PLAN_PROCEDURE: 'conversation.category.plan',
-  CASE_PRACTICE: 'conversation.category.case',
-  METHOD_RESEARCH: 'conversation.category.research',
-  PROJECT_DATA: 'conversation.category.project',
-};
-
-function citationCategory(item: ResolvedCitation) {
-  if (item.resource.scope === 'artifact') return i18n.t('conversation.category.artifact');
-  return i18n.t(CITATION_CATEGORY_LABELS[item.work.type] || 'conversation.category.reference');
-}
-
-type CitationPeek = { item: ResolvedCitation; anchor: DOMRect };
-
-function CitationEvidencePeek({ peek, sessionId }: { peek: CitationPeek; sessionId: string }) {
-  const { t } = useTranslation();
-  const { item, anchor } = peek;
-  const width = Math.min(720, window.innerWidth - 24);
-  const height = item.resource.kind === 'pdf' || item.resource.kind === 'image' ? Math.min(680, window.innerHeight - 24) : 260;
-  const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.left + Math.min(22, anchor.width / 4)));
-  const top = anchor.top > height + 24 ? anchor.top - height - 10 : Math.min(window.innerHeight - height - 12, anchor.bottom + 10);
-  const visualUrl = item.resource.kind === 'pdf' && item.locator.page
-    ? `${citationResourceUrl(sessionId, item.resource.resourceId, 'preview')}?page=${item.locator.page}`
-    : item.resource.kind === 'image'
-      ? citationResourceUrl(sessionId, item.resource.resourceId, 'preview')
-      : '';
-  return createPortal(
-    <aside className="citation-evidence-peek" role="tooltip" style={{ width, height, left, top }}>
-      <header><strong>{item.work.title}</strong><span>{citationPosition(item)}</span></header>
-      {visualUrl
-        ? <img src={visualUrl} alt={`${item.work.title}，${citationPosition(item)}`} />
-        : <div className="citation-evidence-text"><span>{t('conversation.originalLocation')}</span><p>{item.locator.quote || t('conversation.noQuote')}</p></div>}
-    </aside>,
-    document.body,
-  );
-}
-
+import { FilePreview } from '../workspace/FilePreview';
+import { citationResourceUrl } from './citation-resource';
+import type { CitationSourceVersion } from '../../../contracts/citation';
+import { useCitationDetail, citationContentLabels } from './citation-detail';
+import { citationLocatorText } from '../../../contracts/citation-compiler';
+import type { MessageCitationProjection } from '../../features/citation/citation-projection';
 export function MessageArtifacts({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
-  const { t } = useTranslation();
-  const [preview, setPreview] = useState<ResolvedCitation | null>(null);
   const openDocument = useOpenDocument();
-  function openResource(item: ResolvedCitation) {
-    if (documentFormat(item.resource.relativePath, item.resource.mimeType)) openDocument({ sessionId, title: item.work.title, path: item.resource.relativePath, resource: item.resource, locator: item.resource.scope === 'artifact' ? undefined : item.locator });
-    else setPreview(item);
-  }
+  const [preview, setPreview] = useState<CitationSourceVersion | null>(null);
   if (!projection?.artifacts.length) return null;
-  return <section className="message-artifacts">
-    <header><strong>{t('conversation.artifacts')}</strong><span>{t('common.itemCount', { count: projection.artifacts.length })}</span></header>
-    <div>{projection.artifacts.map((item) => {
-      const name = item.resource.relativePath.replaceAll('\\', '/').split('/').pop() || item.work.title;
-      const presentation = filePresentation({ name, path: item.resource.relativePath, isDirectory: false });
-      return <button key={item.occurrence.occurrenceId} type="button" data-citation-card={item.occurrence.occurrenceId} onClick={() => openResource(item)}>
-        <span className="message-artifact-icon"><Icon name={presentation.icon} /></span>
-        <span><strong title={item.work.title}>[{item.number}] {item.work.title}</strong><small title={name}>{presentation.label} · {name}</small></span>
-        <span className="message-artifact-action">{t('conversation.openArtifact')}<Icon name="chevron" /></span>
-      </button>;
-    })}</div>
-    {preview ? <FilePreview
-      item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }}
-      sessionId={sessionId}
-      stackIndex={0}
-      initialOffset={0}
-      onActivate={() => {}}
-      onClose={() => setPreview(null)}
-    /> : null}
+  const sources = new Set<string>();
+  function open(source: CitationSourceVersion) {
+    if (source.content.kind !== 'file') return;
+    if (documentFormat(source.content.path, source.content.mimeType)) openDocument({ sessionId, title: source.title, path: source.content.path, source });
+    else setPreview(source);
+  }
+  return <section className="message-artifacts"><header><strong>交付成果</strong></header><div>{projection.artifacts.filter((item) => !sources.has(item.source.sourceVersionId) && !!sources.add(item.source.sourceVersionId)).map((item) => <button type="button" key={item.evidence.evidenceId} onClick={() => open(item.source)}><span><strong>{item.source.title}</strong><small>打开固定版本原件</small></span></button>)}</div>
+    {preview?.content.kind === 'file' ? <FilePreview item={{ name: preview.title, path: preview.content.path, isDirectory: false }} sessionId={sessionId} stackIndex={0} initialOffset={0} externalSource={{ url: `${citationResourceUrl(sessionId, preview.sourceVersionId)}?sha256=${preview.content.sha256}`, kind: preview.content.mimeType.startsWith('image/') ? 'image' : 'document', mimeType: preview.content.mimeType }} onActivate={() => {}} onClose={() => setPreview(null)} /> : null}
   </section>;
 }
-
 export function CitationFooter({ projection, sessionId }: { projection?: MessageCitationProjection; sessionId: string }) {
-  const { t } = useTranslation();
-  const [preview, setPreview] = useState<ResolvedCitation | null>(null);
-  const openDocument = useOpenDocument();
-  function openResource(item: ResolvedCitation) {
-    if (documentFormat(item.resource.relativePath, item.resource.mimeType)) openDocument({ sessionId, title: item.work.title, path: item.resource.relativePath, resource: item.resource, locator: item.resource.scope === 'artifact' ? undefined : item.locator });
-    else setPreview(item);
-  }
-  const [peek, setPeek] = useState<CitationPeek | null>(null);
+  const openDetail = useCitationDetail();
   if (!projection || (!projection.citations.length && !projection.unavailableIds.length)) return null;
-  const groups = [...projection.citations.reduce((map, item) => {
-    map.set(item.resource.resourceId, [...(map.get(item.resource.resourceId) || []), item]);
-    return map;
-  }, new Map<string, ResolvedCitation[]>()).values()];
-  return <section className="citation-footer"><header><strong>{t('conversation.citations')}</strong><span>{t('common.referenceCount', { count: projection.citations.length })}</span></header><ol>{groups.map((items) => {
-    const first = items[0];
-    return <li key={first.resource.resourceId}>
-      <header className="citation-source-heading">
-        <div><strong>{citationCategory(first)}</strong><button type="button" onClick={() => openResource(first)} title={`${first.work.title} · ${t('conversation.viewSource')}`}><Icon name="file" />{first.work.title}</button></div>
-        <span>{t('common.referenceCount', { count: items.length })}</span>
-      </header>
-      <div className="citation-locator-list">{items.map((item) => <button
-        className="citation-locator"
-        type="button"
-        key={item.occurrence.occurrenceId}
-        data-citation-card={item.occurrence.occurrenceId}
-        onClick={() => { setPeek(null); openResource(item); }}
-        onMouseEnter={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
-        onMouseLeave={() => setPeek(null)}
-        onFocus={(event) => setPeek({ item, anchor: event.currentTarget.getBoundingClientRect() })}
-        onBlur={() => setPeek(null)}
-      >
-        <span className="citation-number">{item.number}</span>
-        <span className="citation-locator-copy"><strong>{citationPosition(item)}</strong>{item.locator.quote ? <span>{item.locator.quote}</span> : null}</span>
-        <span className="citation-locator-hint">{t('conversation.hover')}</span>
-      </button>)}</div>
-      <details className="citation-source-details" onToggle={() => setPeek(null)}>
-        <summary>{t('conversation.sourceDetails')}</summary>
-        <div>
-          {items.map((item) => <blockquote key={item.occurrence.occurrenceId}><strong>[{item.number}] {citationPosition(item)}</strong><p>{item.locator.quote || t('conversation.noQuote')}</p></blockquote>)}
-          <dl>
-            {first.work.issuedAt ? <><dt>{t('conversation.issuedAt')}</dt><dd>{first.work.issuedAt}</dd></> : null}
-            {first.work.edition ? <><dt>{t('conversation.edition')}</dt><dd>{first.work.edition}</dd></> : null}
-            {first.work.standardNumber ? <><dt>{t('conversation.standardNumber')}</dt><dd>{first.work.standardNumber}</dd></> : null}
-            <dt>{t('conversation.resourcePath')}</dt><dd><code>{first.resource.relativePath}</code></dd>
-          </dl>
-        </div>
-      </details>
-    </li>;
-  })}</ol>
-    {projection.unavailableIds.length ? <p className="citation-warning">{t('conversation.unavailable', { ids: projection.unavailableIds.join(', ') })}</p> : null}
-    {peek ? <CitationEvidencePeek peek={peek} sessionId={sessionId} /> : null}
-    {preview ? <FilePreview
-      item={{ name: preview.work.title, path: preview.resource.relativePath, isDirectory: false }}
-      sessionId={sessionId}
-      stackIndex={0}
-      initialOffset={0}
-      externalSource={{
-        url: citationResourceUrl(sessionId, preview.resource.resourceId),
-        kind: preview.resource.kind === 'image' ? 'image' : 'document',
-        mimeType: preview.resource.mimeType,
-      }}
-      onActivate={() => {}}
-      onClose={() => setPreview(null)}
-    /> : null}
+  return <section className="citation-footer">
+    <details className="citation-disclosure"><summary>引用依据 <span>{projection.citations.length} 项</span>{projection.unavailableIds.length ? <span className="citation-warning"> · {projection.unavailableIds.length} 项不可用</span> : null}</summary>
+      <ol>{projection.citations.map(({ source, evidence, number }) => <li key={evidence.evidenceId}><button className="citation-evidence-row" type="button" data-citation-card={evidence.evidenceId} title={`${source.title} · ${citationLocatorText(evidence.locator)}`} onClick={() => openDetail(sessionId, [evidence.evidenceId])}><span className="citation-number">{number}</span><span><strong>{source.title}</strong><small>{citationContentLabels[evidence.contentKind]} · {citationLocatorText(evidence.locator)}</small></span></button></li>)}</ol>
+    </details>
+    {projection.unavailableIds.length ? <p className="citation-warning" role="status">部分依据不可用或使用旧格式：{projection.unavailableIds.join('、')}</p> : null}
   </section>;
 }

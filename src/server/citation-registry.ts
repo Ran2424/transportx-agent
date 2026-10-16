@@ -1,128 +1,73 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-
-import {
-  CITATION_ENVELOPE_PROTOCOL,
-  CITATION_ENVELOPE_VERSION,
-  parseCitationRegistryStructured,
-  type CitationEnvelope,
-  type CitationOccurrence,
-  type CitationRegistry,
-  type CitationResource,
-} from '../contracts/index.js';
-
-const REGISTRY_DIRECTORY = '.tau';
-const REGISTRY_FILE = 'citations.json';
-
-function registryPath(cwd: string) {
-  return path.join(cwd, REGISTRY_DIRECTORY, REGISTRY_FILE);
-}
-
-function now() { return new Date().toISOString(); }
-
-export function newCitationId(prefix: 'work' | 'resource' | 'locator' | 'occurrence' | 'provenance' | 'set') {
-  return `${prefix}_${crypto.randomUUID()}`;
-}
+import { CITATION_REGISTRY_LIMIT, parseCitationEnvelopeStructured, parseCitationRegistryStructured, publicCitationSource, type CitationEnvelope, type CitationRegistry } from '../contracts/index.js';
 
 export function emptyCitationRegistry(sessionId: string): CitationRegistry {
-  const timestamp = now();
-  return {
-    schemaVersion: 1,
-    sessionId,
-    protocol: CITATION_ENVELOPE_PROTOCOL,
-    version: CITATION_ENVELOPE_VERSION,
-    citationSetId: newCitationId('set'),
-    generatedAt: timestamp,
-    updatedAt: timestamp,
-    works: [],
-    resources: [],
-    locators: [],
-    occurrences: [],
-    provenance: [],
-  };
+  return { schemaVersion: 2, sessionId, protocol: 'pi-citation', version: '3.0', sources: [], evidence: [] };
 }
-
-function sameEntity<T extends { [key: string]: unknown }>(left: T, right: T) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function mergeById<T extends { [key: string]: unknown }>(current: T[], incoming: T[], id: keyof T, label: string) {
-  const byId = new Map(current.map((item) => [String(item[id]), item]));
-  for (const item of incoming) {
-    const itemId = String(item[id]);
-    const previous = byId.get(itemId);
-    if (previous && !sameEntity(previous, item)) throw new Error(`Citation ${label} ${itemId} conflicts with the existing registry.`);
-    if (!previous) { current.push(item); byId.set(itemId, item); }
+function verifyInlineDigests(registry: CitationRegistry) {
+  for (const source of registry.sources) {
+    if (source.content.kind !== 'inline') continue;
+    const value = source.content.value!;
+    const canonical = typeof value === 'string' ? value : { columns: value.columns, rows: value.rows };
+    if (crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex') !== source.content.sha256) throw new Error('Inline citation content has changed since registration.');
   }
 }
-
-function sameLocator(left: CitationEnvelope['locators'][number], right: CitationEnvelope['locators'][number]) {
-  const { locatorId: _leftId, ...leftValue } = left;
-  const { locatorId: _rightId, ...rightValue } = right;
-  return sameEntity(leftValue, rightValue);
-}
-
-function mergeLocators(current: CitationEnvelope['locators'], incoming: CitationEnvelope['locators'], referencedIds: Set<string>) {
-  const byId = new Map(current.map((item) => [item.locatorId, item]));
-  for (const item of incoming) {
-    const previous = byId.get(item.locatorId);
-    if (previous) {
-      if (!sameEntity(previous, item)) throw new Error(`Citation locator ${item.locatorId} conflicts with the existing registry.`);
-      continue;
-    }
-    if (!referencedIds.has(item.locatorId) && current.some((candidate) => sameLocator(candidate, item))) continue;
-    current.push(item);
-    byId.set(item.locatorId, item);
-  }
-}
-
 export class CitationRegistryStore {
-  readonly cwd: string;
-  readonly sessionId: string;
-
-  constructor(cwd: string, sessionId: string) {
-    this.cwd = cwd;
-    this.sessionId = sessionId;
-  }
-
-  get filePath() { return registryPath(this.cwd); }
-
-  load() {
-    if (!fs.existsSync(this.filePath)) return emptyCitationRegistry(this.sessionId);
-    const parsed = parseCitationRegistryStructured(JSON.parse(fs.readFileSync(this.filePath, 'utf8')));
-    if (!parsed.ok) throw new Error(`Citation registry is invalid: ${parsed.diagnostics[0]?.message || 'unknown error'}`);
-    return parsed.value;
-  }
-
-  save(registry: CitationRegistry) {
-    const parsed = parseCitationRegistryStructured(registry);
-    if (!parsed.ok) throw new Error(`Citation registry cannot be written: ${parsed.diagnostics[0]?.message || 'unknown error'}`);
+  constructor(readonly cwd: string, readonly sessionId: string) {}
+  get filePath() { return path.join(this.cwd, '.tau', 'citations.json'); }
+  private checkDirectory() {
     const directory = path.dirname(this.filePath);
-    fs.mkdirSync(directory, { recursive: true });
-    const temporary = path.join(directory, `${REGISTRY_FILE}.${process.pid}.${crypto.randomUUID()}.tmp`);
-    fs.writeFileSync(temporary, `${JSON.stringify(parsed.value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-    fs.renameSync(temporary, this.filePath);
+    if (fs.existsSync(directory) && fs.lstatSync(directory).isSymbolicLink()) throw new Error('Citation registry directory cannot be a symlink.');
+  }
+  load(): CitationRegistry {
+    this.checkDirectory();
+    if (!fs.existsSync(this.filePath)) return emptyCitationRegistry(this.sessionId);
+    const stat = fs.lstatSync(this.filePath);
+    if (stat.isSymbolicLink() || !stat.isFile() || stat.size > CITATION_REGISTRY_LIMIT) throw new Error('Citation registry is unsafe or exceeds 8 MiB.');
+    const parsed = parseCitationRegistryStructured(JSON.parse(fs.readFileSync(this.filePath, 'utf8')));
+    if (!parsed.ok) throw new Error(parsed.diagnostics[0].message);
+    if (parsed.value.sessionId !== this.sessionId) throw new Error('Citation registry belongs to another session.');
+    verifyInlineDigests(parsed.value);
     return parsed.value;
   }
-
-  register(envelope: CitationEnvelope) {
+  save(registry: CitationRegistry) {
+    this.checkDirectory();
+    const parsed = parseCitationRegistryStructured(registry);
+    if (!parsed.ok || parsed.value.sessionId !== this.sessionId) throw new Error('Citation registry cannot be written: invalid records or session.');
+    verifyInlineDigests(parsed.value);
+    const serialized = JSON.stringify(parsed.value);
+    if (Buffer.byteLength(serialized) > CITATION_REGISTRY_LIMIT) throw new Error('Citation registry exceeds 8 MiB.');
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+    const temporary = `${this.filePath}.${crypto.randomUUID()}.tmp`;
+    try { fs.writeFileSync(temporary, serialized, { encoding: 'utf8', flag: 'wx', mode: 0o600 }); fs.renameSync(temporary, this.filePath); }
+    finally { fs.rmSync(temporary, { force: true }); }
+    return parsed.value;
+  }
+  register(input: CitationEnvelope): CitationEnvelope {
+    const parsed = parseCitationEnvelopeStructured(input);
+    if (!parsed.ok) throw new Error(parsed.diagnostics[0].message);
+    const delta = parsed.value;
     const registry = this.load();
-    if (envelope.protocol !== registry.protocol || envelope.version !== registry.version) throw new Error('Citation envelope version is not supported.');
-    mergeById(registry.works, envelope.works, 'workId', 'work');
-    mergeById(registry.resources, envelope.resources, 'resourceId', 'resource');
-    mergeLocators(registry.locators, envelope.locators, new Set(envelope.occurrences.map((item) => item.locatorId)));
-    mergeById(registry.occurrences, envelope.occurrences, 'occurrenceId', 'occurrence');
-    mergeById(registry.provenance, envelope.provenance, 'provenanceId', 'provenance edge');
-    registry.updatedAt = now();
-    return this.save(registry);
+    for (const source of delta.sources) {
+      const existing = registry.sources.find((item) => item.sourceVersionId === source.sourceVersionId);
+      if (existing && (existing.sourceKey !== source.sourceKey || JSON.stringify(existing.content) !== JSON.stringify(source.content))) throw new Error('SourceVersion ID conflicts with existing content.');
+      if (!existing) registry.sources.push(source);
+    }
+    for (const evidence of delta.evidence) {
+      const existing = registry.evidence.find((item) => item.evidenceId === evidence.evidenceId);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(evidence)) throw new Error('Evidence ID conflicts with existing content.');
+      if (!existing) registry.evidence.push(evidence);
+    }
+    this.save(registry);
+    return { protocol: 'pi-citation', version: '3.0', sources: delta.sources.map((source) => publicCitationSource(registry.sources.find((item) => item.sourceVersionId === source.sourceVersionId)!)), evidence: delta.evidence };
   }
-
-  resource(resourceId: string): CitationResource | null {
-    return this.load().resources.find((item) => item.resourceId === resourceId) || null;
+  list(offset = 0, limit = 200, ids?: string[]): CitationEnvelope {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('Invalid citation pagination.');
+    const registry = this.load(), all = ids ? registry.evidence.filter((item) => ids.includes(item.evidenceId)) : registry.evidence;
+    const evidence = all.slice(offset, offset + limit), sourceIds = new Set(evidence.map((item) => item.sourceVersionId));
+    return { protocol: 'pi-citation', version: '3.0', sources: registry.sources.filter((item) => sourceIds.has(item.sourceVersionId)).map(publicCitationSource), evidence, ...(offset + limit < all.length ? { nextOffset: offset + limit } : {}) };
   }
-
-  occurrence(occurrenceId: string): CitationOccurrence | null {
-    return this.load().occurrences.find((item) => item.occurrenceId === occurrenceId) || null;
-  }
+  source(sourceVersionId: string) { return this.load().sources.find((item) => item.sourceVersionId === sourceVersionId) || null; }
 }

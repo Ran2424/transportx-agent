@@ -31,8 +31,8 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
   const [downloading, setDownloading] = useState(false);
   const controller = useRef<OfficeViewerController | null>(null);
   const root = useRef<HTMLElement>(null);
-  const resourceUrl = view.resource
-    ? `${citationResourceUrl(view.sessionId, view.resource.resourceId)}?sha256=${view.resource.sha256}`
+  const resourceUrl = view.source
+    ? `${citationResourceUrl(view.sessionId, view.source.sourceVersionId)}?sha256=${view.source.content.sha256}`
     : sessionFileUrl(view.sessionId, view.path);
 
   useEffect(() => {
@@ -144,8 +144,8 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
 
   return <section ref={root} className="office-workspace" tabIndex={-1} aria-label={t('office.reader', { title: view.title })} data-testid="office-workspace" data-format={view.format}>
     <header className="office-toolbar">
-      <span className="office-source" title={view.resource ? `${view.path} · ${view.resource.sha256}` : view.path}>
-        <b>{view.title}</b><span>{view.resource ? t('document.citationVersion') : t('office.readOnly')}</span><span>{positionText}</span>
+      <span className="office-source" title={view.source ? `${view.path} · ${view.source.content.sha256}` : view.path}>
+        <b>{view.title}</b><span>{view.source ? t('document.citationVersion') : t('office.readOnly')}</span><span>{positionText}</span>
       </span>
       <form className="office-search" role="search" onSubmit={runSearch}>
         <input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) { controller.current?.clearFind(); setMatchCount(null); } }} placeholder={t('office.searchPlaceholder')} aria-label={t('office.search')} />
@@ -163,7 +163,7 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
         {view.format === 'pptx' ? <button type="button" aria-expanded={notesOpen} disabled={!ready} onClick={() => setNotesOpen((value) => !value)}>{t('office.notes')}</button> : null}
         <button type="button" onClick={() => setRefresh((value) => value + 1)}>{t('document.refresh')}</button>
         <button type="button" disabled={downloading} onClick={() => void download()}>{downloading ? t('workspace.downloading') : t('workspace.downloadOriginal')}</button>
-        {!view.resource ? <button type="button" onClick={() => void appKernel.commands.session.openInSystem(view.sessionId, view.path).catch((cause) => setNotice((cause as Error).message || t('workspace.loadFailed')))}>{t('office.openSystem')}</button> : null}
+        {!view.source ? <button type="button" onClick={() => void appKernel.commands.session.openInSystem(view.sessionId, view.path).catch((cause) => setNotice((cause as Error).message || t('workspace.loadFailed')))}>{t('office.openSystem')}</button> : null}
       </div>
     </header>
     {notice ? <p className="office-status" role="status">{notice}</p> : null}

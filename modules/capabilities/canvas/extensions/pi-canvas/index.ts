@@ -3,7 +3,6 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 const ResourceSchema = Type.Union([
   Type.Object({ scope: Type.Literal('session-file'), path: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false }),
-  Type.Object({ scope: Type.Literal('citation'), resourceId: Type.String({ minLength: 1, maxLength: 160 }), sha256: Type.String({ pattern: '^[a-f0-9]{64}$' }) }, { additionalProperties: false }),
   Type.Object({ scope: Type.Literal('capability'), moduleId: Type.String({ minLength: 1, maxLength: 200 }), resourceId: Type.String({ minLength: 1, maxLength: 160 }), revision: Type.Optional(Type.Integer({ minimum: 0 })) }, { additionalProperties: false }),
 ]);
 

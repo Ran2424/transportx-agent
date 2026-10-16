@@ -231,11 +231,15 @@ function renderInline(text: string, citationNumbers?: Record<string, number>, im
   });
 
   if (citationNumbers) {
+    const numberFor = (id: string) => Object.hasOwn(citationNumbers, id) ? citationNumbers[id] : undefined;
     text = text.replace(/\[\[cite:([A-Za-z0-9_.:-]+(?:\s*,\s*[A-Za-z0-9_.:-]+)*)\]\]/g, (_marker, raw: string) => {
       const ids = [...new Set(raw.split(',').map((id) => id.trim()))];
-      return `<span class="citation-group">${ids.map((id) => citationNumbers[id]
-        ? `<button type="button" class="citation-marker" data-citation-id="${id}" aria-label="${locale === 'en-US' ? 'View citation' : '查看引用'} ${citationNumbers[id]}">${citationNumbers[id]}</button>`
+      const visible = ids.filter((id, index) => !numberFor(id) || ids.findIndex((candidate) => numberFor(candidate) === numberFor(id)) === index);
+      const html = `<span class="citation-group">${visible.map((id) => numberFor(id)
+        ? `<button type="button" class="citation-marker" data-citation-id="${id}" data-citation-ids="${ids.join(',')}" aria-label="${locale === 'en-US' ? 'View citation' : '查看引用'} ${numberFor(id)}">${numberFor(id)}</button>`
         : `<span class="citation-unavailable">${locale === 'en-US' ? 'Citation unavailable' : '引用不可用'}</span>`).join('')}</span>`;
+      const index = codeSpans.push(html) - 1;
+      return `%%ICODE${index}%%`;
     });
   }
 

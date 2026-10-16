@@ -266,13 +266,13 @@ export async function conversationStyleSmoke(page) {
         return over(color, [1, 1, 1, 1]);
       };
       const luminance = (color) => color.slice(0, 3).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
-      return ['.session-row-main small', '.session-row-meta', '.message-attachment-card small', '.tool-duration', '.tool-argument-size', '.tool-output-actions', '.tool-pending', '.tool-read-unavailable', '.citation-marker', '.message-artifacts > header span', '.citation-footer > header span', '.citation-source-heading > span', '.citation-number', '.composer-send:not(:disabled)'].flatMap((selector) => [...document.querySelectorAll(selector)].filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden').map((node) => {
+      return ['.session-row-main small', '.session-row-meta', '.message-attachment-card small', '.tool-duration', '.tool-argument-size', '.tool-output-actions', '.tool-pending', '.tool-read-unavailable', '.citation-marker', '.message-artifacts > header span', '.citation-disclosure > summary > span:first-child', '.citation-source-heading > span', '.citation-number', '.composer-send:not(:disabled)'].flatMap((selector) => [...document.querySelectorAll(selector)].filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden').map((node) => {
         const a = luminance(pixel(node, true)), b = luminance(pixel(node, false));
         return { selector, size: parseFloat(getComputedStyle(node).fontSize), contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
       }));
     });
     assert.ok(samples.some((sample) => sample.selector === '.composer-send:not(:disabled)'));
-    assert.ok(samples.some((sample) => sample.selector === '.citation-footer > header span'), 'real citation counts are checked');
+    assert.ok(samples.some((sample) => sample.selector === '.citation-disclosure > summary > span:first-child'), 'real citation counts are checked');
     for (const sample of samples) {
       if (sample.size < 11 || sample.contrast < 4.5) failures.push(`${theme} ${sample.selector}: ${sample.size}px, ${sample.contrast.toFixed(2)}:1`);
     }

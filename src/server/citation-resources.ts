@@ -1,153 +1,58 @@
-const crypto = require('node:crypto');
-const { execFileSync } = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
-
-import { resourceSecurityHeaders } from './resource-policy.js';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { CitationResource } from '../contracts/index.js';
+import { citationRelativePath, type CitationSourceVersion } from '../contracts/index.js';
+import { resourceSecurityHeaders } from './resource-policy.js';
 import { CitationRegistryStore } from './citation-registry.js';
 import { isWithin } from './util/path.js';
 import { writeJson as json } from './http/response.js';
 
-type CitationResourceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: { assets?: Array<{ id?: string; kind?: string; path?: string }> } | null };
-type CitationResourceDeps = {
-  knowledgeRoots: Array<{ id: string; path: string }> | ((session: CitationResourceSession) => Array<{ id: string; path: string }>);
-  getSession(sessionId: string): CitationResourceSession | null | undefined;
-};
-
-const ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/citation-resources\/([^/]+)\/(content|preview)$/;
-const PDF_PAGE_CACHE = new Map<string, Buffer>();
-const PDF_PAGE_CACHE_LIMIT = 24;
-
-export function handleCitationResourceRoute(
-  req: IncomingMessage,
-  res: ServerResponse,
-  cleanPath: string,
-  deps: CitationResourceDeps,
-) {
-  const match = cleanPath.match(ROUTE_RE);
-  if (!match || (req.method !== 'GET' && !(req.method === 'HEAD' && match[3] === 'content'))) return false;
-  let sessionId: string;
-  let resourceId: string;
-  try {
-    sessionId = decodeURIComponent(match[1]);
-    resourceId = decodeURIComponent(match[2]);
-  } catch {
-    json(res, 400, { error: 'Malformed citation resource URL' });
-    return true;
-  }
-  const session = deps.getSession(sessionId);
-  if (!session) {
-    json(res, 404, { error: 'Live session not found' });
-    return true;
-  }
-  let resource: CitationResource | null = null;
-  try {
-    const registry = new CitationRegistryStore(session.cwd, session.citationRegistryId || session.id).load();
-    if (registry.sessionId !== (session.citationRegistryId || session.id)) { json(res, 404, { error: 'Citation resource not found in this session' }); return true; }
-    resource = registry.resources.find((item) => item.resourceId === resourceId) || null;
-  }
-  catch { json(res, 409, { error: 'Citation registry is invalid' }); return true; }
-  if (!resource) {
-    json(res, 404, { error: 'Citation resource not found in this session' });
-    return true;
-  }
-  const expectedHash = new URL(req.url || '/', 'http://localhost').searchParams.get('sha256');
-  if (expectedHash && expectedHash !== resource.sha256) {
-    json(res, 409, { error: 'Citation resource version no longer matches this view' });
-    return true;
-  }
-  const knowledgeRoots = typeof deps.knowledgeRoots === 'function' ? deps.knowledgeRoots(session) : deps.knowledgeRoots;
-  if (match[3] === 'preview') serveCitationPreview(req, res, session, resource, knowledgeRoots);
-  else serveCitationResource(req, res, session, resource, knowledgeRoots);
-  return true;
+export type CitationResourceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: { assets?: Array<{ id?: string; kind?: string; path?: string }> } | null };
+export function hashCitationFile(file: string) {
+  const hash = crypto.createHash('sha256'), fd = fs.openSync(file, 'r'), buffer = Buffer.allocUnsafe(64 * 1024);
+  try { let bytes: number; while ((bytes = fs.readSync(fd, buffer, 0, buffer.length, null))) hash.update(buffer.subarray(0, bytes)); }
+  finally { fs.closeSync(fd); }
+  return hash.digest('hex');
 }
-
-function resourceRoot(session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
-  if (resource.scope !== 'knowledge') return { root: session.cwd, relativePath: resource.relativePath };
-  const [assetId, ...segments] = resource.relativePath.split('/');
-  const root = knowledgeRoots.find((item) => item.id === assetId)?.path;
-  if (!root || !segments.length) throw Object.assign(new Error('Knowledge citation asset is unavailable'), { code: 'EACCES' });
-  return { root, relativePath: segments.join('/') };
-}
-
-function locateCitationResource(session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
-  const location = resourceRoot(session, resource, knowledgeRoots);
-  const root = fs.realpathSync(location.root);
-  const candidate = path.resolve(root, location.relativePath);
-  const resolved = fs.realpathSync(candidate);
-  const stat = fs.statSync(resolved);
-  if (!isWithin(root, resolved) || !stat.isFile()) throw Object.assign(new Error('Citation resource path is not allowed'), { code: 'EACCES' });
+export function locateCitationFile(session: CitationResourceSession, content: { scope: 'session' | 'asset'; assetId?: string; path: string }) {
+  if (!citationRelativePath(content.path)) throw Object.assign(new Error('Citation path is invalid.'), { code: 'EACCES' });
+  const asset = content.scope === 'asset' ? session.resolvedSessionPlan?.assets?.find((item) => item.id === content.assetId && (item.kind === 'knowledge' || item.kind === 'data')) : undefined;
+  const rootPath = content.scope === 'session' ? session.cwd : asset?.path;
+  if (!rootPath) throw Object.assign(new Error('Citation asset is not authorized in this session.'), { code: 'EACCES' });
+  const root = fs.realpathSync(rootPath), candidate = path.resolve(root, content.path);
+  if (!isWithin(root, candidate) || fs.lstatSync(candidate).isSymbolicLink()) throw Object.assign(new Error('Citation path is outside its authorized root.'), { code: 'EACCES' });
+  const resolved = fs.realpathSync(candidate), stat = fs.statSync(resolved);
+  if (!isWithin(root, resolved) || !stat.isFile()) throw Object.assign(new Error('Citation source is not an authorized file.'), { code: 'EACCES' });
   return { resolved, stat };
 }
-
-function readCitationResource(session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
-  const { resolved } = locateCitationResource(session, resource, knowledgeRoots);
-  const buffer = fs.readFileSync(resolved);
-  const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
-  const changed = sha256 !== resource.sha256;
-  if (changed && !allowsChangedContent(resource)) throw Object.assign(new Error('Citation resource has changed since it was registered'), { code: 'ECHANGED' });
-  return { resolved, buffer, sha256, changed };
+export function verifyCitationFile(session: CitationResourceSession, source: CitationSourceVersion) {
+  if (source.content.kind !== 'file') throw Object.assign(new Error('Inline evidence has no original file.'), { code: 'ENOTSUP' });
+  const location = locateCitationFile(session, source.content);
+  if (location.stat.size !== source.content.size || hashCitationFile(location.resolved) !== source.content.sha256) throw Object.assign(new Error('The cited version is unavailable: source content has changed.'), { code: 'ECHANGED' });
+  return location;
 }
-
-function allowsChangedContent(resource: CitationResource) {
-  return resource.scope === 'artifact' && resource.kind === 'document' && resource.mimeType === 'text/markdown';
-}
-
-function resourceError(res: ServerResponse, error: unknown) {
+export function citationResourceError(res: ServerResponse, error: unknown) {
   const code = (error as NodeJS.ErrnoException).code;
-  if (code === 'ENOENT') return json(res, 404, { error: 'Citation resource not found' });
-  if (code === 'EACCES') return json(res, 403, { error: 'Citation resource path is not allowed' });
-  if (code === 'ECHANGED') return json(res, 409, { error: 'Citation resource has changed since it was registered' });
-  return json(res, 500, { error: 'Failed to read citation resource' });
+  json(res, code === 'ENOENT' ? 404 : code === 'EACCES' ? 403 : code === 'ECHANGED' ? 409 : code === 'ENOTSUP' ? 415 : 409, { error: error instanceof Error ? error.message : 'Citation resource cannot be read.' });
 }
-
-function serveCitationResource(req: IncomingMessage, res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
+export function handleCitationResourceRoute(req: IncomingMessage, res: ServerResponse, cleanPath: string, deps: { getSession(id: string): CitationResourceSession | null | undefined }) {
+  const match = cleanPath.match(/^\/api\/live-sessions\/([^/]+)\/citation-resources\/([^/]+)\/(content|preview)$/);
+  if (!match || !['GET', 'HEAD'].includes(req.method || '')) return false;
   try {
-    const loaded = readCitationResource(session, resource, knowledgeRoots);
+    const session = deps.getSession(decodeURIComponent(match[1]));
+    if (!session) { json(res, 404, { error: 'Live session not found.' }); return true; }
+    const source = new CitationRegistryStore(session.cwd, session.citationRegistryId || session.id).source(decodeURIComponent(match[2]));
+    if (!source) { json(res, 404, { error: 'SourceVersion not found in this session.' }); return true; }
+    const expected = new URL(req.url || '/', 'http://localhost').searchParams.get('sha256');
+    if (expected && expected !== source.content.sha256) throw Object.assign(new Error('Citation source version does not match this view.'), { code: 'ECHANGED' });
+    const { resolved, stat } = verifyCitationFile(session, source);
+    const mimeType = source.content.kind === 'file' ? source.content.mimeType : 'text/plain';
+    if (match[3] === 'preview' && !mimeType.startsWith('image/')) { json(res, 415, { error: 'Use evidence details or the original viewer for this source.' }); return true; }
     const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
-    const headers: Record<string, string | number> = {
-      'Content-Type': resource.kind === 'web' && resource.mimeType === 'text/html' ? 'text/plain; charset=utf-8' : resource.mimeType,
-      'Content-Length': loaded.buffer.length,
-      'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(loaded.resolved))}`,
-      'Cache-Control': 'private, max-age=0, must-revalidate',
-      'ETag': `"${loaded.sha256}"`,
-      ...resourceSecurityHeaders(resource.mimeType),
-      'X-Citation-Resource-Stale': loaded.changed ? '1' : '0',
-    };
-    res.writeHead(200, headers);
-    if (req.method === 'HEAD') { res.end(); return; }
-    res.end(loaded.buffer);
-  } catch (error) { resourceError(res, error); }
-}
-
-function serveCitationPreview(req: IncomingMessage, res: ServerResponse, session: CitationResourceSession, resource: CitationResource, knowledgeRoots: Array<{ id: string; path: string }>) {
-  try {
-    const { resolved, buffer, sha256 } = readCitationResource(session, resource, knowledgeRoots);
-    if (resource.kind === 'image') {
-      res.writeHead(200, {
-        'Content-Type': resource.mimeType,
-        'Content-Length': buffer.length,
-        'Cache-Control': 'private, max-age=3600',
-        'ETag': `"${sha256}"`,
-        ...resourceSecurityHeaders(resource.mimeType),
-      });
-      res.end(buffer);
-      return;
-    }
-    if (resource.kind !== 'pdf') return json(res, 415, { error: 'This citation resource has no image preview' });
-    const page = Number(new URL(req.url || '/', 'http://localhost').searchParams.get('page'));
-    if (!Number.isInteger(page) || page < 1 || page > 10000) return json(res, 400, { error: 'A valid PDF page is required' });
-    const cacheKey = `${sha256}:${page}`;
-    let image = PDF_PAGE_CACHE.get(cacheKey);
-    if (!image) {
-      const rendered = Buffer.from(execFileSync('pdftocairo', ['-f', String(page), '-l', String(page), '-singlefile', '-png', '-scale-to-x', '1800', '-scale-to-y', '-1', resolved, '-'], { maxBuffer: 32 * 1024 * 1024 }));
-      PDF_PAGE_CACHE.set(cacheKey, rendered);
-      image = rendered;
-      if (PDF_PAGE_CACHE.size > PDF_PAGE_CACHE_LIMIT) PDF_PAGE_CACHE.delete(PDF_PAGE_CACHE.keys().next().value!);
-    }
-    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': image.length, 'Cache-Control': 'private, max-age=3600', 'ETag': `"${cacheKey}"`, 'X-Content-Type-Options': 'nosniff' });
-    res.end(image);
-  } catch (error) { resourceError(res, error); }
+    res.writeHead(200, { 'Content-Type': mimeType === 'text/html' ? 'text/plain; charset=utf-8' : mimeType, 'Content-Length': stat.size, 'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(resolved))}`, 'Cache-Control': 'private, no-cache', ETag: `"${source.content.sha256}"`, ...resourceSecurityHeaders(mimeType) });
+    if (req.method === 'HEAD') res.end();
+    else { const stream = fs.createReadStream(resolved); stream.on('error', () => res.destroy()); stream.pipe(res); }
+  } catch (error) { citationResourceError(res, error); }
+  return true;
 }
