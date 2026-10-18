@@ -13,6 +13,8 @@
 
 ### Changed
 
+- 新建任务的 Module 与版本选项在桌面端默认折叠，展开后仍可选择模块与版本；关闭并重新打开后恢复折叠。Web 冒烟强制检查折叠入口、默认隐藏及重新打开行为。
+- 可安装 Traffic Assurance Knowledge 升级到 2.0.0：移除独立知识卡 ID，按来源节点回读并直接接入 Citation 3.0；目录统计不加载正文，检索按文档筛选、分页且允许空命中，修正附件 PDF 来源及 HTML 提取行号混用，取消知识包内重复的哈希核对及额外清单。原件和 1.0.0 冻结任务保留，知识资产不随平台打包。
 - 引用依据整体默认折叠，展开后突出标题、位置和内容性质；正文、输入候选与管理器共用详情，移除大型悬停浮层。知识和数据 Module 保留各自的有界目录发现与渐进披露职责。
 - Citation 协议升级到 3.0 / Registry schemaVersion 2，正文直接复用 Evidence ID，不再调用独立 tau_cite。旧格式明确不支持，不自动覆盖引用记录或删除任务资料。Citation Module 2.0.0、Canvas/Document 1.2.0、Spatial Analysis 1.1.0、Workbench 1.3.0、Module Authoring 1.1.0 随本轮同步版本。
 
