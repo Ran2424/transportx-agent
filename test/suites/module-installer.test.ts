@@ -33,8 +33,9 @@ test('Module install, migration and ZIP selection enforce paths, checksums and e
   }
 
   function archivePackageEntries(id: string, version: string, name = 'Archive test') {
+    const presentation = { defaultLocale: 'zh-CN', locales: { 'zh-CN': { name: '归档模块', description: '归档模块说明。', features: ['预览与安装'] }, 'en-US': { name: 'Archive Module', description: 'Archive module description.', features: ['Preview and install'] } } };
     return [
-      { path: `${id}/${version}/manifest.json`, content: JSON.stringify({ manifestVersion: 2, id, name, version, type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['skill/SKILL.md'] } }) },
+      { path: `${id}/${version}/manifest.json`, content: JSON.stringify({ manifestVersion: 2, id, name, version, type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], presentation, entrypoints: { skills: ['skill/SKILL.md'] } }) },
       { path: `${id}/${version}/skill/SKILL.md`, content: `# ${name}` },
     ];
   }
@@ -213,11 +214,14 @@ test('Module install, migration and ZIP selection enforce paths, checksums and e
     const installer = new ModuleInstaller(managed);
     const preview = await installer.inspectArchive(archive, new Set(['local.archive.conflict']));
     assert.equal(preview.modules.length, 3);
+    assert.equal(preview.modules[0].presentation.locales['zh-CN'].name, '归档模块');
+    assert.equal(preview.modules[0].presentation.locales['en-US'].description, 'Archive module description.');
     assert.equal(preview.modules.find((module: any) => module.id === 'local.archive.first').status, 'ready');
     assert.equal(preview.modules.find((module: any) => module.id === 'local.archive.conflict').status, 'conflict');
     const installed = await installer.installArchive(preview.importId, [{ id: 'local.archive.second', version: '2.0.0' }]);
     assert.deepEqual(installed.map((module: any) => module.id), ['local.archive.second']);
     assert.equal(fs.existsSync(path.join(managed, 'local.archive.second', '2.0.0', 'skill', 'SKILL.md')), true);
+    assert.equal(new ModuleRegistry('3.0.0').load(installer.sources()).get('local.archive.second').manifest.presentation.locales['en-US'].name, 'Archive Module');
     assert.equal(fs.existsSync(path.join(managed, 'local.archive.first')), false);
     assert.equal(fs.readdirSync(path.join(managed, '.imports')).length, 0);
 

@@ -49,7 +49,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     const profile = {
       schemaVersion: 1,
       task: { kind: 'data-query', expectedOutputs: ['answer'] },
-      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: '2.0.0' }] },
+      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: modules.get('com.transportx.citation').manifest.version }] },
     };
     const plan = assembler.assemble('com.transportx.cli', process.cwd(), profile);
     assert.deepEqual(plan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.citation']);
@@ -57,7 +57,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.equal(plan.modules.some((module: any) => module.id === 'com.transportx.video'), false);
     const spatialPlan = assembler.assemble('com.transportx.cli', process.cwd(), {
       ...profile,
-      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.spatial-analysis', version: '1.1.0' }] },
+      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.spatial-analysis', version: modules.get('com.transportx.spatial-analysis').manifest.version }] },
     });
     assert.deepEqual(spatialPlan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.canvas', 'com.transportx.geo', 'com.transportx.citation', 'com.transportx.spatial-analysis']);
     assert.throws(() => assembler.assemble('com.transportx.cli', process.cwd(), {
@@ -74,10 +74,23 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     t.after(() => fs.rmSync(installed, { recursive: true, force: true }));
     fs.mkdirSync(path.join(installed, 'skill'));
     fs.mkdirSync(path.join(installed, 'data'));
-    fs.writeFileSync(path.join(installed, 'skill', 'SKILL.md'), '# Installed Skill');
+    fs.writeFileSync(path.join(installed, 'skill', 'SKILL.md'), '---\nname: installed-test\ndescription: >-\n  Analyze station access\n  with connected data.\n---\n\n# Installed Skill');
     fs.writeFileSync(path.join(installed, 'data', 'catalog.sqlite'), 'fixture');
     fs.writeFileSync(path.join(installed, 'manifest.json'), JSON.stringify({ manifestVersion: 2, id: 'local.installed.test', name: 'Installed test', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['skill/SKILL.md'] }, contributes: { assets: [{ id: 'data:installed-test', kind: 'data', path: 'data' }] } }));
     const modules = registry([{ manifestPath: path.join(installed, 'manifest.json'), packageRoot: installed, origin: 'installed' }]);
+    const { platformOverview, resolveModuleDirectory } = require('../../bin/platform-overview.js');
+    const { resolveAppPaths } = require('../../bin/app-paths.js');
+    const overview = platformOverview(resolveAppPaths({ TAU_USER_DATA_DIR: workspace }), modules, new AssetResolver(modules));
+    const skill = overview.modules.find((module: any) => module.id === 'local.installed.test').skillFiles[0];
+    assert.equal(skill.name, 'Installed Skill');
+    assert.equal(skill.description, 'Analyze station access with connected data.');
+    assert.match(skill.content, /name: installed-test/);
+    assert.equal(resolveModuleDirectory(installed), fs.realpathSync(installed));
+    const archivedModule = path.join(workspace, 'app.asar', 'modules', 'example');
+    const unpackedModule = path.join(workspace, 'app.asar.unpacked', 'modules', 'example');
+    fs.mkdirSync(unpackedModule, { recursive: true });
+    assert.equal(resolveModuleDirectory(archivedModule), fs.realpathSync(unpackedModule));
+    assert.throws(() => resolveModuleDirectory(path.join(workspace, 'missing')));
     const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [], version: '0.80.10' }, { command: 'python', args: [], version: '3.10' });
     const plan = assembler.assemble('com.transportx.workbench', workspace);
     assert.equal(planExtensions(plan).length, 6);
@@ -90,7 +103,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.equal(persisted.schemaVersion, 3);
     assert.equal(persisted.domain.id, 'com.transportx.workbench');
     assert.equal(persisted.profile.modules.selectionMode, 'compat-default');
-    assert.ok(persisted.modules.every((module: any) => /^[a-f0-9]{64}$/.test(module.manifestSha256)));
+    assert.ok(persisted.modules.every((module: any) => !('manifestSha256' in module) && module.entrypoints.every((entry: any) => !('sha256' in entry))));
     assert.ok(persisted.modules.find((module: any) => module.id === 'com.transportx.document').canvasViews.some((view: any) => view.adapterId === 'com.transportx.canvas.document'));
     assert.deepEqual(assembler.load(workspace), plan);
 
@@ -98,11 +111,30 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     fs.writeFileSync(saved, JSON.stringify(persisted));
     assert.equal(assembler.load(workspace).platform.name, 'TransportX Agent');
 
-    fs.writeFileSync(path.join(installed, 'skill', 'SKILL.md'), '# Tampered Skill');
-    assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_content_mismatch');
+    // Old plans retain their schema version and may contain now-ignored content hashes.
+    for (const module of persisted.modules) {
+      module.manifestSha256 = '0'.repeat(64);
+      for (const entry of module.entrypoints) entry.sha256 = '0'.repeat(64);
+    }
+    fs.writeFileSync(saved, JSON.stringify(persisted));
+    fs.writeFileSync(path.join(installed, 'skill', 'SKILL.md'), '# User-edited Skill');
+    const editedManifest = JSON.parse(fs.readFileSync(path.join(installed, 'manifest.json'), 'utf8'));
+    editedManifest.name = 'User-edited module';
+    fs.writeFileSync(path.join(installed, 'manifest.json'), JSON.stringify(editedManifest));
+    assert.deepEqual(assembler.load(workspace), plan);
+    const editableExtension = path.join(installed, 'extension.ts');
+    const editablePrompt = path.join(installed, 'prompt.md');
+    fs.writeFileSync(editableExtension, 'export default () => {};');
+    fs.writeFileSync(editablePrompt, 'User-edited prompt');
+    const legacyModule = persisted.modules.find((module: any) => module.id === 'local.installed.test');
+    legacyModule.entrypoints.push({ kind: 'extension', path: editableExtension, sha256: '0'.repeat(64) }, { kind: 'prompt', path: editablePrompt, sha256: '0'.repeat(64) });
+    fs.writeFileSync(saved, JSON.stringify(persisted));
+    assert.doesNotThrow(() => assembler.load(workspace));
+    fs.rmSync(path.join(installed, 'skill', 'SKILL.md'));
+    assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_entrypoint_missing');
   }
 
-  // Session Resume tolerates builtin module drift but still enforces installed modules
+  // Session Resume permits builtin edits while retaining missing-package checks
   {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-plan-builtin-'));
     t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));

@@ -9,7 +9,7 @@ import type { LiveSession, ModelRecord, SessionAttachment, SessionAttachmentSour
 import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
-import type { ModuleArchiveInspection } from '../../contracts/module.ts';
+import type { ModuleArchiveInspection, ModulePresentation } from '../../contracts/module.ts';
 import { parseCitationEnvelope, parseCitationDetail, type CitationDetail, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 import type { CanvasContextV1 } from '../../contracts/canvas.ts';
@@ -128,6 +128,7 @@ export type AgentState = {
 export type PlatformModule = {
   id: string;
   name: string;
+  presentation?: ModulePresentation;
   version: string;
   type: 'module' | 'capability' | 'domain';
   origin: 'builtin' | 'installed' | 'external';
@@ -136,7 +137,7 @@ export type PlatformModule = {
   extensions: number;
   skills: number;
   nativeRuntimes?: number;
-  skillFiles: Array<{ entryPath: string; name: string; content?: string; truncated?: boolean; error?: string }>;
+  skillFiles: Array<{ entryPath: string; name: string; description?: string; content?: string; truncated?: boolean; error?: string }>;
   assets: Array<{ id: string; kind: 'knowledge' | 'data' | 'template'; configured: boolean; active: boolean; error?: string }>;
 };
 
@@ -149,6 +150,7 @@ export type PlatformOverview = {
 export type SessionModuleOption = {
   id: string;
   name: string;
+  presentation?: ModulePresentation;
   version: string;
   type: 'module' | 'capability' | 'domain';
   origin: 'installed';
@@ -206,6 +208,7 @@ export type PlatformCommands = {
   deleteModel(provider: string, modelId: string): Promise<void>;
   deleteModelProvider(provider: string): Promise<void>;
   getOverview(): Promise<PlatformOverview>;
+  openModuleDirectory(moduleId: string): Promise<void>;
   openLogsDirectory(): Promise<void>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
   inspectModuleArchive(sourcePath: string): Promise<ModuleArchiveInspection>;
@@ -644,6 +647,9 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     },
     async openLogsDirectory() {
       await rpcCommand(deps.http, { type: 'open_logs_directory' });
+    },
+    async openModuleDirectory(moduleId) {
+      await rpcCommand(deps.http, { type: 'open_module_directory', moduleId });
     },
 
     async installModule(sourcePath) {

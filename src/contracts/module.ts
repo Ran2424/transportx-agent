@@ -6,6 +6,17 @@ export const MODULE_MANIFEST_VERSION = 2 as const;
 export const MODULE_TYPES = ['module', 'capability', 'domain'] as const;
 export type ModuleType = typeof MODULE_TYPES[number];
 
+export type ModulePresentationLocale = 'zh-CN' | 'en-US';
+export type ModulePresentationText = { name: string; description: string; features?: string[] };
+export type ModuleLocalizedPresentation = {
+  defaultLocale: ModulePresentationLocale;
+  locales: Partial<Record<ModulePresentationLocale, ModulePresentationText>>;
+};
+export type ModulePresentation = ModuleLocalizedPresentation & {
+  skills?: Record<string, ModuleLocalizedPresentation>;
+  assets?: Record<string, ModuleLocalizedPresentation>;
+};
+
 export type ModuleAsset = {
   id: string;
   kind: 'knowledge' | 'data' | 'template';
@@ -39,6 +50,7 @@ export type ModuleManifest = {
   name: string;
   version: string;
   type: ModuleType;
+  presentation?: ModulePresentation;
   platformVersion: string;
   dependencies: string[];
   entrypoints?: {
@@ -58,6 +70,7 @@ export type ModuleManifest = {
 export type ModuleArchiveCandidate = {
   id: string;
   name: string;
+  presentation?: ModulePresentation;
   version: string;
   type: ModuleType;
   dependencies: string[];
@@ -95,6 +108,47 @@ function requiredText(record: JsonRecord, key: string, diagnostics: ContractDiag
   const value = asString(record[key], max);
   if (!value) diagnostics.push(diagnostic({ code: 'missing_text_field', path: `$.${key}`, message: `${key} is required.` }));
   return value;
+}
+
+function localizedPresentation(value: unknown, field: string, diagnostics: ContractDiagnostic[]): ModuleLocalizedPresentation | undefined {
+  const record = asRecord(value);
+  const locales = asRecord(record?.locales);
+  const defaultLocale = record?.defaultLocale;
+  const invalid = (path: string) => diagnostics.push(diagnostic({ code: 'invalid_type', path, message: 'Expected localized names, descriptions and optional feature lists for zh-CN/en-US.' }));
+  if (!record || !locales || (defaultLocale !== 'zh-CN' && defaultLocale !== 'en-US') || !locales[defaultLocale]) { invalid(field); return undefined; }
+  const parsed: ModuleLocalizedPresentation['locales'] = {};
+  for (const [locale, candidate] of Object.entries(locales)) {
+    if (locale !== 'zh-CN' && locale !== 'en-US') { invalid(`${field}.locales.${locale}`); continue; }
+    const text = asRecord(candidate);
+    const name = asString(text?.name, 200);
+    const description = asString(text?.description, 2000);
+    const features = text?.features === undefined ? undefined : stringList(text.features, `${field}.locales.${locale}.features`, diagnostics);
+    if (!name || !description || (features && features.length > 12)) { invalid(`${field}.locales.${locale}`); continue; }
+    parsed[locale] = { name, description, ...(features ? { features } : {}) };
+  }
+  return { defaultLocale, locales: parsed };
+}
+
+function modulePresentation(value: unknown, skills: string[], assets: ModuleAsset[], diagnostics: ContractDiagnostic[]): ModulePresentation | undefined {
+  if (value === undefined) return undefined;
+  const base = localizedPresentation(value, '$.presentation', diagnostics);
+  if (!base) return undefined;
+  const record = asRecord(value)!;
+  const result: ModulePresentation = { ...base };
+  for (const kind of ['skills', 'assets'] as const) {
+    if (record[kind] === undefined) continue;
+    const overrides = asRecord(record[kind]);
+    if (!overrides) { diagnostics.push(diagnostic({ code: 'invalid_type', path: `$.presentation.${kind}`, message: 'Expected a map of declared Skill paths or asset IDs.' })); continue; }
+    const allowed = new Set(kind === 'skills' ? skills : assets.map((asset) => asset.id));
+    const entries: Array<[string, ModuleLocalizedPresentation]> = [];
+    for (const [id, candidate] of Object.entries(overrides)) {
+      if (!allowed.has(id)) { diagnostics.push(diagnostic({ code: 'unsupported_value', path: `$.presentation.${kind}.${id}`, message: 'Presentation entry must refer to a declared Skill or asset.' })); continue; }
+      const parsed = localizedPresentation(candidate, `$.presentation.${kind}.${id}`, diagnostics);
+      if (parsed) entries.push([id, parsed]);
+    }
+    result[kind] = Object.fromEntries(entries);
+  }
+  return result;
 }
 
 export function parseModuleManifestStructured(input: unknown): ModuleManifestParseResult {
@@ -186,6 +240,7 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
     });
   }
 
+  const presentation = modulePresentation(record.presentation, skills || [], assets, diagnostics);
   if (diagnostics.length || !id || !name || !version || !platformVersion || !type || !dependencies) return { ok: false, value: null, diagnostics };
   return {
     ok: true,
@@ -198,6 +253,7 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
       type,
       platformVersion,
       dependencies,
+      ...(presentation ? { presentation } : {}),
       ...(entrypointsRecord ? { entrypoints: {
         ...(piExtensions ? { piExtensions } : {}),
         ...(skills ? { skills } : {}),

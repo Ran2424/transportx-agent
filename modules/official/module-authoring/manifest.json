@@ -2,11 +2,36 @@
   "manifestVersion": 2,
   "id": "com.transportx.module-authoring",
   "name": "Module Authoring",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "skills": ["skill/SKILL.md"]
+    "skills": [
+      "skill/SKILL.md"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "模块制作",
+        "description": "将可复用的技能、工具、数据或知识整理为可安装的 TransportX 模块包。",
+        "features": [
+          "编写模块清单，声明入口、依赖与资源",
+          "组合 Skill、工具扩展、数据、知识和模板",
+          "检查路径、资料来源和包结构，并准备安装包"
+        ]
+      },
+      "en-US": {
+        "name": "Module Authoring",
+        "description": "Packages reusable skills, tools, data and knowledge as installable TransportX modules.",
+        "features": [
+          "Writes manifests declaring entry points, dependencies and resources",
+          "Combines skills, tool extensions, data, knowledge and templates",
+          "Checks paths, sources and package layout before installation"
+        ]
+      }
+    }
   }
 }

@@ -13,6 +13,58 @@ test('Session, task, Geo, Citation and Bridge contracts validate versions and pr
     return result.diagnostics?.map((item) => item.code) || [];
   }
 
+  // Presentation is optional and never changes runtime identity or Skill instructions.
+  {
+    const { parseModuleManifestStructured } = await import('../../src/contracts/module.ts');
+    const { modulePresentation, moduleSearchText } = await import('../../src/web/lib/module-presentation.ts');
+    const manifest = { manifestVersion: 2, id: 'local.bilingual', name: 'Machine-facing name', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['skill/SKILL.md'] }, contributes: { assets: [{ id: 'data:example', kind: 'data', path: 'assets/example' }] } };
+    assert.equal(parseModuleManifestStructured(manifest).ok, true);
+    assert.equal(modulePresentation(manifest, 'zh-CN').name, manifest.name);
+    const presentation = { defaultLocale: 'zh-CN' as const, locales: { 'zh-CN': { name: '站点分析', description: '研究站点覆盖范围。', features: ['计算覆盖范围'] }, 'en-US': { name: 'Station Analysis', description: 'Analyze station coverage.', features: ['Calculate coverage'] } } };
+    const asset = { defaultLocale: 'en-US', locales: { 'en-US': { name: 'Station Data', description: 'Station records.' } } };
+    const parsed = parseModuleManifestStructured({ ...manifest, presentation: { ...presentation, skills: { 'skill/SKILL.md': presentation }, assets: { 'data:example': asset } } });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) throw new Error('Valid bilingual presentation was rejected');
+    assert.equal(parsed.value.name, manifest.name);
+    assert.deepEqual(parsed.value.entrypoints, manifest.entrypoints);
+    assert.equal(modulePresentation(parsed.value, 'zh-Hans').name, '站点分析');
+    assert.equal(modulePresentation(parsed.value, 'en-GB').name, 'Station Analysis');
+    assert.equal(modulePresentation(parsed.value, 'fr-FR').name, '站点分析');
+    assert.equal(modulePresentation(parsed.value, 'zh-CN', { assetId: 'data:example' }).name, 'Station Data');
+    assert.match(moduleSearchText(parsed.value), /Station Analysis/);
+    assert.match(moduleSearchText(parsed.value), /站点分析/);
+    assert.equal(parseModuleManifestStructured({ ...manifest, presentation: { ...presentation, defaultLocale: 'en-US', locales: { 'zh-CN': presentation.locales['zh-CN'] } } }).ok, false);
+    assert.equal(parseModuleManifestStructured({ ...manifest, presentation: { ...presentation, assets: { 'data:undeclared': asset } } }).ok, false);
+    assert.equal(parseModuleManifestStructured({ ...manifest, presentation: { ...presentation, skills: { '../undeclared.md': presentation } } }).ok, false);
+    assert.equal(parseModuleManifestStructured({ ...manifest, presentation: { ...presentation, locales: { 'zh-CN': { name: '站点分析', description: '说明', features: 'invalid' } } } }).ok, false);
+
+    // Previously installed official data packages have no presentation field.
+    const { LEGACY_MODULE_PRESENTATIONS } = await import('../../src/web/lib/legacy-module-presentation.ts');
+    for (const [id, metadata] of Object.entries(LEGACY_MODULE_PRESENTATIONS)) {
+      const legacy = { id, name: 'Original package name' };
+      for (const language of ['zh-CN', 'en-US'] as const) {
+        assert.deepEqual(modulePresentation(legacy, language), metadata.locales[language]);
+        for (const assetId of Object.keys(metadata.assets ?? {})) assert.equal(modulePresentation(legacy, language, { assetId }).name, metadata.locales[language]?.name);
+      }
+      assert.equal(modulePresentation({ ...legacy, presentation }, 'zh-CN').name, '站点分析', 'package-provided display text overrides legacy defaults');
+      assert.match(moduleSearchText(legacy), new RegExp(metadata.locales['zh-CN']!.name));
+      assert.equal('presentation' in legacy, false, 'compatibility does not modify the package');
+    }
+
+    for (const parent of ['modules/capabilities', 'modules/official']) {
+      if (!fs.existsSync(parent)) continue;
+      for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+        const manifestPath = path.join(parent, entry.name, 'manifest.json');
+        if (!entry.isDirectory() || !fs.existsSync(manifestPath)) continue;
+        const current = parseModuleManifestStructured(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+        assert.equal(current.ok, true, manifestPath);
+        if (!current.ok) continue;
+        assert.ok(current.value.presentation?.locales['zh-CN'], manifestPath);
+        assert.ok(current.value.presentation?.locales['en-US'], manifestPath);
+      }
+    }
+  }
+
   // SessionProfile v1 validates task range, outputs and exact Module versions
   {
     const { parseSessionProfileStructured } = await import('../../src/contracts/session-profile.ts');

@@ -2,11 +2,36 @@
   "manifestVersion": 2,
   "id": "com.transportx.interaction",
   "name": "User Interaction",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-user-interaction/index.ts"]
+    "piExtensions": [
+      "extensions/pi-user-interaction/index.ts"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "用户交互",
+        "description": "在任务需要补充信息时，向用户发起确认、选项或文字输入，并将回答交回 Agent。",
+        "features": [
+          "支持确认与单项选择",
+          "支持短文本和长文本输入",
+          "等待回答，并区分已回答与已取消"
+        ]
+      },
+      "en-US": {
+        "name": "User Interaction",
+        "description": "Collects confirmations, choices and text input when a task needs user input.",
+        "features": [
+          "Supports confirmations and single-choice questions",
+          "Accepts short and long text input",
+          "Waits for a response and distinguishes answers from cancellations"
+        ]
+      }
+    }
   }
 }

@@ -130,7 +130,11 @@ flowchart LR
 
 Prompt 按顺序装配：`src/server/prompts/PI_SYSTEM.md` 定义通用基础行为；Host 根据 `desktop/scripts/platform-profile.mjs` 的 `systemPrompt` 映射附加 `PI_SYSTEM_POSIX.md`（macOS / Linux）或 `PI_SYSTEM_WINDOWS.md`（Windows），两份环境规则独立维护，并与基础行为一起传入 Pi 的 `--system-prompt`；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Windows 附加规则明确 `bash` 工具仍使用 Bash 语法，禁止 `nul` 重定向及创建 Windows 保留名。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
 
-新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module、入口、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务时以该计划校验，而不是悄然替换为当前最新 Module。内置 Module 有受控漂移容忍规则；用户安装 Module 的缺失或不一致必须明确处理。唯一的升级迁移例外是 3.2.0 以前的内置 Video：仅当新版 Video Capability 已安装并启用时，恢复流程才会将旧条目映射到当前插件。
+新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module 版本、入口路径、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务沿用该计划中的模块目录与入口，允许用户修改模块清单、Skill、Extension 和 Prompt 内容，不进行这些文件的哈希比对。新计划不再记录这些内容哈希，旧 v3 计划中的对应字段兼容忽略；模块目录、清单和入口文件缺失仍报错。Native Runtime 与声明了完整性清单的资产继续执行各自的校验。唯一的升级迁移例外是 3.2.0 以前的内置 Video：仅当新版 Video Capability 已安装并启用时，恢复流程才会将旧条目映射到当前插件。
+
+模块的用户展示信息由 `manifest.json` 的可选 `presentation` 提供，不改变 `manifestVersion: 2`。`defaultLocale` 指定默认语言，`locales.zh-CN` / `locales.en-US` 分别包含 `name`、`description` 与可选 `features`。`presentation.skills` 按已声明的 Skill 入口路径覆盖，`presentation.assets` 按已声明的资源 ID 覆盖；各覆盖项沿用相同的 `defaultLocale + locales` 结构，不能引用未声明的入口或资源。
+
+Host 将完整展示元数据投影到能力概览、任务模块选项和 ZIP 安装预览，React 统一按界面语言选择文案；缺少当前语言时回退模块默认语言。模块自身的 `presentation` 优先；对尚无该字段的已知旧包，前端按 Module ID 使用 `src/web/lib/legacy-module-presentation.ts` 中的兼容展示文案，覆盖现有六类数据包及知识、绘图、视频模块，用户无需重新安装大体积资产。其他旧模块继续使用原始名称与 Skill 说明。搜索同时匹配两种语言。平台翻译文件只维护分类、状态和操作等界面文字；新模块文案随模块包维护并遵守模块版本纪律，兼容文案不写回旧包或更改模块版本。原始 Module ID/name、Skill frontmatter name/description、工具标识和 Agent 正文不随界面语言改变，也不注入展示翻译作为运行指令。
 
 Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更新前端状态。WebSocket 只用于实时 Pi 事件和 Snapshot；断线或刷新后由 Agent Host Snapshot 重新校正。
 

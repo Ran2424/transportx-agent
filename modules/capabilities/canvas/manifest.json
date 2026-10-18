@@ -2,12 +2,39 @@
   "manifestVersion": 2,
   "id": "com.transportx.canvas",
   "name": "Shared Canvas",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-canvas/index.ts"],
-    "skills": ["skills/SKILL.md"]
+    "piExtensions": [
+      "extensions/pi-canvas/index.ts"
+    ],
+    "skills": [
+      "skills/SKILL.md"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "共享画布",
+        "description": "把已有文档和地图成果放入共享画布，支持在分析过程中切换、更新和定位内容。",
+        "features": [
+          "展示已授权的任务文件与引用原件",
+          "重新聚焦、定位或更新已有视图",
+          "清除不再需要展示的视图"
+        ]
+      },
+      "en-US": {
+        "name": "Shared Canvas",
+        "description": "Presents existing documents and maps in the shared Canvas for navigation and updates during analysis.",
+        "features": [
+          "Presents authorized task files and citation originals",
+          "Refocuses, navigates or updates existing views",
+          "Clears views that are no longer needed"
+        ]
+      }
+    }
   }
 }

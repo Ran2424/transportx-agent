@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.traffic.report-template",
   "name": "Traffic Analysis Report Template",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
@@ -14,5 +14,49 @@
         "path": "templates/traffic-analysis-report.md"
       }
     ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "交通分析报告模板",
+        "description": "为交通态势分析报告提供章节结构，组织任务口径、态势结论、风险建议与数据依据。",
+        "features": [
+          "说明研究对象、时间、空间范围和数据版本",
+          "按实际可用的道路与公共交通数据组织分析",
+          "区分事实、推断和建议，保留数据与引用来源"
+        ]
+      },
+      "en-US": {
+        "name": "Traffic Analysis Report Template",
+        "description": "Provides a traffic analysis report structure covering scope, findings, risks, recommendations and supporting data.",
+        "features": [
+          "Documents the study object, time, area and data versions",
+          "Organizes findings around available road and public-transport data",
+          "Separates facts, inferences and recommendations while retaining sources"
+        ]
+      }
+    },
+    "assets": {
+      "template:traffic-analysis-report": {
+        "defaultLocale": "zh-CN",
+        "locales": {
+          "zh-CN": {
+            "name": "交通态势分析报告模板",
+            "description": "按任务口径、态势分析、风险建议和数据引用组织交通报告。",
+            "features": [
+              "组织研究范围、分析结论和证据来源"
+            ]
+          },
+          "en-US": {
+            "name": "Traffic Situation Report Template",
+            "description": "Structures traffic reports around scope, findings, risks, recommendations and supporting data.",
+            "features": [
+              "Organizes study scope, findings and source evidence"
+            ]
+          }
+        }
+      }
+    }
   }
 }

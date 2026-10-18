@@ -11,6 +11,8 @@ import { localModelSmoke } from './harness/local-model-smoke.mjs';
 import { workspaceCleanupSmoke } from './harness/workspace-cleanup-smoke.mjs';
 import { conversationLayoutSmoke, toolStateSmoke, streamingScrollSmoke, workingDisplaySmoke } from './harness/conversation-layout-smoke.mjs';
 import { prepareComposerContextSmoke, composerSelectionSmoke } from './harness/composer-selection-smoke.mjs';
+import { capabilitySmoke } from './harness/capability-smoke.mjs';
+import { moduleLanguageSmoke } from './harness/module-language-smoke.mjs';
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -90,6 +92,8 @@ try {
 
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
+  await capabilitySmoke(page);
+  await moduleLanguageSmoke(page);
   await localModelSmoke(page, baseUrl);
   await page.getByRole('button', { name: '打开设置', exact: true }).click();
   const executionDetails = page.getByRole('switch', { name: '显示执行详情', exact: true });

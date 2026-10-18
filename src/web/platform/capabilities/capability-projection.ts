@@ -1,19 +1,22 @@
 import type { PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
 import type { TFunction } from 'i18next';
+import { moduleDisplayMetadata, modulePresentation, moduleSearchText } from '../../lib/module-presentation';
 
 /**
  * 能力扩展区投影：将 PlatformOverview 中的模块元数据投影为
- * 技能 / 数据 / 知识三类能力条目。
+ * 技能、工具与资源条目。
  * 视觉层不得自行推测服务端状态，这里只消费 PlatformOverview 已有字段。
  */
 
-export type CapabilityCategory = 'skill' | 'data' | 'knowledge';
+export type CapabilityCategory = 'skill' | 'data' | 'knowledge' | 'tool' | 'template';
 
 export type CapabilityItem = {
   id: string;
   name: string;
+  description: string;
+  features: string[];
+  searchText: string;
   category: CapabilityCategory;
-  source: string;
   status: 'ready' | 'attention' | 'disabled';
   statusLabel: string;
   moduleId: string;
@@ -22,9 +25,7 @@ export type CapabilityItem = {
   moduleType: PlatformModule['type'];
   moduleRemovable: boolean;
   moduleOrigin: PlatformModule['origin'];
-  moduleExtensions: number;
-  moduleSkills: number;
-  moduleAssets: PlatformModule['assets'];
+  moduleAssets: Array<PlatformModule['assets'][number] & { name: string }>;
   skillFiles: PlatformModule['skillFiles'];
   assetId?: string;
 };
@@ -33,88 +34,94 @@ export const CAPABILITY_CATEGORIES: Array<{ id: CapabilityCategory; labelKey: st
   { id: 'skill', labelKey: 'capability.category.skill' },
   { id: 'data', labelKey: 'capability.category.data' },
   { id: 'knowledge', labelKey: 'capability.category.knowledge' },
+  { id: 'tool', labelKey: 'capability.category.tool' },
+  { id: 'template', labelKey: 'capability.category.template' },
 ];
 
 function readableName(value: string) {
   return value
+    .replace(/^(data|knowledge|template):/, '')
     .replace(/[-_]+/g, ' ')
     .replace(/\.(json|ya?ml|md)$/i, '')
     .trim();
 }
 
-function moduleOriginLabel(module: PlatformModule, t: TFunction) {
-  return module.origin === 'installed' ? t('settings.module.origin.installed') : module.origin === 'external' ? t('settings.module.origin.external') : t('settings.module.origin.builtin');
-}
-
-export function projectCapabilities(overview: PlatformOverview, t: TFunction): CapabilityItem[] {
+export function projectCapabilities(overview: PlatformOverview, t: TFunction, language: string): CapabilityItem[] {
   const items: CapabilityItem[] = [];
-  const activeKinds = new Set(
-    overview.modules.flatMap((item) => item.assets.filter((asset) => asset.active).map((asset) => asset.kind)),
-  );
-
-  for (const module of overview.modules) {
-    const missingAssets = module.assets.filter((asset) => !asset.configured && !activeKinds.has(asset.kind));
+  for (const entry of overview.modules) {
+    const module = { ...entry, presentation: moduleDisplayMetadata(entry) };
+    const moduleText = modulePresentation(module, language);
+    const skillPath = module.skillFiles?.length === 1 ? module.skillFiles[0].entryPath : undefined;
+    const text = modulePresentation(module, language, { skillPath });
+    const description = text.description || module.skillFiles?.map((file) => file.description).filter(Boolean).join('\n') || t('capability.noDescription');
+    const features = text.features;
+    const searchText = moduleSearchText(module);
+    const moduleAssets = module.assets.map((asset) => ({ ...asset, name: module.presentation ? modulePresentation(module, language, { assetId: asset.id }).name : readableName(asset.id) || module.name }));
+    const skillFiles = (module.skillFiles || []).map((file) => ({ ...file, name: module.presentation ? modulePresentation(module, language, { skillPath: file.entryPath }).name : file.name }));
+    const missingAssets = module.assets.filter((asset) => !asset.configured || asset.error);
+    const hasError = overview.errors.some((error) => error.moduleId === module.id) || module.skillFiles?.some((file) => file.error);
     const disabled = !module.enabled;
 
     const itemStatus = (): CapabilityItem['status'] => {
       if (disabled) return 'disabled';
-      if (missingAssets.length) return 'attention';
+      if (missingAssets.length || hasError) return 'attention';
       return 'ready';
     };
     const itemStatusLabel = () => {
       if (disabled) return t('settings.module.status.disabled');
+      if (hasError) return t('capability.moduleError');
+      if (module.assets.some((asset) => asset.error)) return t('capability.resourceError');
       if (missingAssets.length) return t('capability.pendingConfig');
       return t('settings.module.status.enabled');
     };
-    const source = `${module.version} · ${moduleOriginLabel(module, t)}`;
-
-    // 技能：模块声明的 Skill 数量
-    if (module.skills > 0) {
+    // 有 Skill 的模块展示用途；纯扩展模块作为工具展示。
+    if (module.skills > 0 || module.extensions > 0) {
+      const category = module.skills > 0 ? 'skill' : 'tool';
       items.push({
-        id: `skill:${module.id}`,
-        name: `${module.name} Skill`,
-        category: 'skill',
-        source: `${t('common.skillCount', { count: module.skills })} · ${source}`,
+        id: `${category}:${module.id}`,
+        name: module.presentation ? text.name : module.skillFiles?.length === 1 && module.skillFiles[0].name !== 'SKILL.md' ? module.skillFiles[0].name : module.name,
+        description,
+        features,
+        searchText,
+        category,
         status: itemStatus(),
         statusLabel: itemStatusLabel(),
         moduleId: module.id,
-        moduleName: module.name,
+        moduleName: moduleText.name,
         moduleVersion: module.version,
         moduleType: module.type,
         moduleRemovable: module.removable,
         moduleOrigin: module.origin,
-        moduleExtensions: module.extensions,
-        moduleSkills: module.skills,
-        moduleAssets: module.assets,
-        skillFiles: module.skillFiles || [],
+        moduleAssets,
+        skillFiles,
       });
     }
 
-    // 数据与知识：逐个资产展开
+    // 资源：逐个资产展开，配置状态只对应具体资产。
     for (const asset of module.assets) {
-      if (asset.kind !== 'data' && asset.kind !== 'knowledge') continue;
-      const category = asset.kind === 'data' ? 'data' : 'knowledge';
+      const category = asset.kind;
       items.push({
         id: `${category}:${module.id}:${asset.id}`,
-        name: readableName(asset.id) || module.name,
+        name: module.presentation ? modulePresentation(module, language, { assetId: asset.id }).name : readableName(asset.id) || module.name,
+        description: module.presentation ? modulePresentation(module, language, { assetId: asset.id }).description : description,
+        features: module.presentation ? modulePresentation(module, language, { assetId: asset.id }).features : features,
+        searchText,
         category,
-        source: `${module.name} · ${source}`,
-        status: disabled ? 'disabled' : !asset.configured && !activeKinds.has(asset.kind) ? 'attention' : 'ready',
-        statusLabel: disabled ? t('settings.module.status.disabled') : !asset.configured && !activeKinds.has(asset.kind) ? t('capability.pendingConfig') : t('settings.module.status.enabled'),
+        status: disabled ? 'disabled' : !asset.configured || asset.error ? 'attention' : 'ready',
+        statusLabel: disabled ? t('settings.module.status.disabled') : asset.error ? t('capability.resourceError') : !asset.configured ? t('capability.pendingConfig') : t('capability.configured'),
         moduleId: module.id,
-        moduleName: module.name,
+        moduleName: moduleText.name,
         moduleVersion: module.version,
         moduleType: module.type,
         moduleRemovable: module.removable,
         moduleOrigin: module.origin,
-        moduleExtensions: module.extensions,
-        moduleSkills: module.skills,
-        moduleAssets: module.assets,
-        skillFiles: module.skillFiles || [],
+        moduleAssets,
+        skillFiles,
         assetId: asset.id,
       });
     }
   }
 
-  return items;
+  return items.sort((a, b) => CAPABILITY_CATEGORIES.findIndex((category) => category.id === a.category)
+    - CAPABILITY_CATEGORIES.findIndex((category) => category.id === b.category));
 }

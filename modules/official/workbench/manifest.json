@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.workbench",
   "name": "TransportX Workbench",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "type": "domain",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [
@@ -17,6 +17,31 @@
     "com.transportx.module-authoring"
   ],
   "entrypoints": {
-    "prompts": ["prompts/PI_SESSION_CONTEXT.md"]
+    "prompts": [
+      "prompts/PI_SESSION_CONTEXT.md"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "TransportX 交通分析工作台",
+        "description": "组合交通任务所需的通用交互、地图、文档、空间分析与引用能力。",
+        "features": [
+          "提供交通分析会话的工作上下文",
+          "连接地图、文档和共享画布",
+          "组合引用、空间分析和报告模板"
+        ]
+      },
+      "en-US": {
+        "name": "TransportX Traffic Workbench",
+        "description": "Combines interaction, maps, documents, spatial analysis and evidence for traffic tasks.",
+        "features": [
+          "Provides the working context for traffic analysis sessions",
+          "Connects maps, documents and the shared Canvas",
+          "Combines evidence, spatial analysis and report templates"
+        ]
+      }
+    }
   }
 }

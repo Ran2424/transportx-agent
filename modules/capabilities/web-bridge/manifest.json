@@ -2,11 +2,36 @@
   "manifestVersion": 2,
   "id": "com.transportx.web-bridge",
   "name": "Pi Web Bridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-web-bridge/index.ts"]
+    "piExtensions": [
+      "extensions/pi-web-bridge/index.ts"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "Agent 状态同步",
+        "description": "同步 Agent 的模型、思考级别和工具状态，供工作台展示当前运行环境。",
+        "features": [
+          "跟踪模型与思考级别的切换",
+          "展示可用工具及其启用状态",
+          "保存带版本号的桥接状态，供会话恢复"
+        ]
+      },
+      "en-US": {
+        "name": "Agent State Bridge",
+        "description": "Synchronizes the Agent’s model, reasoning level and tools with the workbench.",
+        "features": [
+          "Tracks model and reasoning-level changes",
+          "Reports available tools and their active state",
+          "Persists revisioned bridge state for session recovery"
+        ]
+      }
+    }
   }
 }

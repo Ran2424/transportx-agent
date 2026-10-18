@@ -2,15 +2,47 @@
   "manifestVersion": 2,
   "id": "com.transportx.spatial-analysis",
   "name": "Controlled Spatial Analysis",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
-  "dependencies": ["com.transportx.geo", "com.transportx.citation"],
+  "dependencies": [
+    "com.transportx.geo",
+    "com.transportx.citation"
+  ],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-spatial-analysis/index.ts"],
-    "skills": ["skills/SKILL.md"]
+    "piExtensions": [
+      "extensions/pi-spatial-analysis/index.ts"
+    ],
+    "skills": [
+      "skills/SKILL.md"
+    ]
   },
   "contributes": {
-    "artifactTypes": ["spatial.analysis-result"]
+    "artifactTypes": [
+      "spatial.analysis-result"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "空间分析",
+        "description": "对道路、站点与区域数据进行缓冲、最近邻和空间连接分析，输出可复核的结果。",
+        "features": [
+          "按米制距离划定缓冲区，确定设施覆盖范围",
+          "查找最近设施，计算距离并识别未匹配对象",
+          "关联点与区域，输出地图数据、数量统计及异常记录"
+        ]
+      },
+      "en-US": {
+        "name": "Spatial Analysis",
+        "description": "Runs buffer, nearest-neighbor and spatial-join analysis on roads, stations and regions, producing auditable results.",
+        "features": [
+          "Builds metric-distance buffers for facility coverage",
+          "Finds nearest facilities, measures distances and identifies unmatched features",
+          "Associates points with regions and outputs map data, counts and exceptions"
+        ]
+      }
+    }
   }
 }

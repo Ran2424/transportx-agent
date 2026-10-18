@@ -4,7 +4,7 @@ import { parseSessionProfileStructured, type SessionProfileV1 } from './session-
 import type { ModuleCanvasView } from './module.ts';
 
 export const RESOLVED_SESSION_PLAN_SCHEMA_VERSION = 3 as const;
-export type ResolvedPlanEntrypoint = { kind: 'prompt' | 'skill' | 'extension'; path: string; sha256: string };
+export type ResolvedPlanEntrypoint = { kind: 'prompt' | 'skill' | 'extension'; path: string };
 export type ResolvedPlanNativeRuntime = {
   id: string;
   kind: 'ffmpeg';
@@ -20,7 +20,6 @@ export type ResolvedPlanModule = {
   type: 'module' | 'capability' | 'domain';
   origin: 'builtin' | 'installed' | 'external';
   packageRoot: string;
-  manifestSha256: string;
   entrypoints: ResolvedPlanEntrypoint[];
   nativeRuntimes: ResolvedPlanNativeRuntime[];
   canvasViews: ModuleCanvasView[];
@@ -73,12 +72,12 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
   if (!Array.isArray(root.modules)) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'plan.modules', message: 'modules must be an array.' }));
   else root.modules.forEach((candidate, index) => {
     const item = asRecord(candidate);
-    const id = asString(item?.id, 200); const version = asString(item?.version, 100); const packageRoot = asString(item?.packageRoot, 2000); const manifestSha256 = asString(item?.manifestSha256, 64);
+    const id = asString(item?.id, 200); const version = asString(item?.version, 100); const packageRoot = asString(item?.packageRoot, 2000);
     const type = item?.type; const origin = item?.origin;
     const entrypoints: ResolvedPlanEntrypoint[] = [];
     if (Array.isArray(item?.entrypoints)) item.entrypoints.forEach((entry) => {
-      const parsed = asRecord(entry); const kind = parsed?.kind; const entryPath = asString(parsed?.path, 2000); const sha256 = asString(parsed?.sha256, 64);
-      if ((kind === 'prompt' || kind === 'skill' || kind === 'extension') && entryPath && sha256 && SHA256_RE.test(sha256)) entrypoints.push({ kind, path: entryPath, sha256 });
+      const parsed = asRecord(entry); const kind = parsed?.kind; const entryPath = asString(parsed?.path, 2000);
+      if ((kind === 'prompt' || kind === 'skill' || kind === 'extension') && entryPath) entrypoints.push({ kind, path: entryPath });
     });
     const nativeRuntimes: ResolvedPlanNativeRuntime[] = [];
     const rawRuntimes = item?.nativeRuntimes === undefined ? [] : item.nativeRuntimes;
@@ -99,8 +98,8 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
       const adapterId = asString(view?.adapterId, 200); const kind = asString(view?.kind, 80); const protocolVersion = asString(view?.protocolVersion, 40);
       if (adapterId && kind && protocolVersion && !canvasViews.some((candidate) => candidate.adapterId === adapterId)) canvasViews.push({ adapterId, kind, protocolVersion });
     });
-    if (!id || !version || !packageRoot || !manifestSha256 || !SHA256_RE.test(manifestSha256) || moduleIds.has(id) || !['module', 'capability', 'domain'].includes(String(type)) || !['builtin', 'installed', 'external'].includes(String(origin)) || !Array.isArray(item?.entrypoints) || entrypoints.length !== item.entrypoints.length || !Array.isArray(rawRuntimes) || nativeRuntimes.length !== rawRuntimes.length || !Array.isArray(rawCanvasViews) || canvasViews.length !== rawCanvasViews.length) diagnostics.push(diagnostic({ code: 'invalid_type', path: `plan.modules[${index}]`, message: 'Invalid or duplicate resolved Module.' }));
-    else { moduleIds.add(id); modules.push({ id, version, packageRoot, manifestSha256, type: type as ResolvedPlanModule['type'], origin: origin as ResolvedPlanModule['origin'], entrypoints, nativeRuntimes, canvasViews }); }
+    if (!id || !version || !packageRoot || moduleIds.has(id) || !['module', 'capability', 'domain'].includes(String(type)) || !['builtin', 'installed', 'external'].includes(String(origin)) || !Array.isArray(item?.entrypoints) || entrypoints.length !== item.entrypoints.length || !Array.isArray(rawRuntimes) || nativeRuntimes.length !== rawRuntimes.length || !Array.isArray(rawCanvasViews) || canvasViews.length !== rawCanvasViews.length) diagnostics.push(diagnostic({ code: 'invalid_type', path: `plan.modules[${index}]`, message: 'Invalid or duplicate resolved Module.' }));
+    else { moduleIds.add(id); modules.push({ id, version, packageRoot, type: type as ResolvedPlanModule['type'], origin: origin as ResolvedPlanModule['origin'], entrypoints, nativeRuntimes, canvasViews }); }
   });
   const assets: ResolvedPlanAsset[] = [];
   const assetIds = new Set<string>();
