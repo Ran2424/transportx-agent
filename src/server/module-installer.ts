@@ -229,6 +229,7 @@ export class ModuleInstaller {
             candidate = {
               id: manifest.id,
               name: manifest.name,
+              ...(manifest.presentation ? { presentation: manifest.presentation } : {}),
               version: manifest.version,
               type: manifest.type,
               dependencies: manifest.dependencies,

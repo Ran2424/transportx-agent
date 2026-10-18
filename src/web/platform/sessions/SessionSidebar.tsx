@@ -19,6 +19,7 @@ type SessionSidebarProps = {
   onClose(): void;
   onGoHome(): void;
   onNewSession(): void;
+  onManageModules(): void;
   onSelectLive(sessionId: string): void;
   onSelectHistory(session: HistorySession, project: HistoryProject): void;
   onDeleteLive(session: LiveSession): Promise<void>;
@@ -68,6 +69,7 @@ export function SessionSidebar({
   onClose,
   onGoHome,
   onNewSession,
+  onManageModules,
   onSelectLive,
   onSelectHistory,
   onDeleteLive,
@@ -211,7 +213,7 @@ export function SessionSidebar({
         </div>
 
         <div className="sidebar-split">
-          <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} />
+          <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} onManageModules={onManageModules} />
           <section className={`conversation-section${conversationCollapsed ? ' is-collapsed' : ''}`} aria-label={t('sessions.conversationList')}>
             <header className="sidebar-section-heading"><strong><Icon name="workspace" />{t('sessions.conversations')}</strong>{scenarioSessions.length ? <small>{scenarioSessions.length}</small> : null}<button className="sidebar-section-toggle" type="button" aria-expanded={!conversationCollapsed} aria-label={conversationCollapsed ? t('sessions.expandConversations') : t('sessions.collapseConversations')} onClick={toggleConversation}><Icon name="chevron" /></button></header>
             {!conversationCollapsed ? <div className="session-scroll">

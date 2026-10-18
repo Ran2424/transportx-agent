@@ -45,7 +45,7 @@ import { createNativeRpcHandlers } from './rpc-handlers/native.js';
 import { buildGeoPromptContext, geoInteractionService } from './geo-interaction-service.js';
 import { createPlatformRpcHandlers } from './rpc-handlers/platform.js';
 import { createSessionReadRpcHandlers, createSessionRpcHandlers } from './rpc-handlers/session.js';
-import { platformOverview } from './platform-overview.js';
+import { platformOverview, resolveModuleDirectory } from './platform-overview.js';
 import { buildAttachmentContext } from '../contracts/attachments.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 import { CitationService } from './citation-service.js';
@@ -83,7 +83,12 @@ const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (re
 const updatePreparation = new UpdatePreparation();
 const rpcHandlers: RpcHandlerRegistry = {
   ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
-  ...createPlatformRpcHandlers(currentPlatformOverview, async () => { fs.mkdirSync(APP_PATHS.logsDir, { recursive: true }); await openNativeTarget(APP_PATHS.logsDir); }),
+  ...createPlatformRpcHandlers(currentPlatformOverview, async () => { fs.mkdirSync(APP_PATHS.logsDir, { recursive: true }); await openNativeTarget(APP_PATHS.logsDir); }, async (moduleId) => {
+    if (PROJECT_AUTH || !isLoopbackHost(HOST)) throw new Error('Module folders can only be opened on the local workstation');
+    const module = MODULE_REGISTRY.get(moduleId);
+    if (!module) throw new Error('Module is unavailable');
+    await openNativeTarget(resolveModuleDirectory(module.packageRoot));
+  }),
   ...createAuthRpcHandlers({
     configured: AUTH_CONFIGURED,
     required: !!PROJECT_AUTH || !isLoopbackHost(HOST),
@@ -279,6 +284,7 @@ function currentSessionOptions() {
       return {
         id: entry.id,
         name: entry.manifest.name,
+        ...(entry.manifest.presentation ? { presentation: entry.manifest.presentation } : {}),
         version: entry.version,
         type: entry.manifest.type,
         origin: 'installed',

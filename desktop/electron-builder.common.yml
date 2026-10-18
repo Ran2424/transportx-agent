@@ -7,7 +7,8 @@ appId: com.transportx.traffic-agent
 productName: TransportX Agent
 asar: true
 asarUnpack:
-  - modules/**/skills/**
+  - modules/**
+  - src/contracts/**
 afterPack: desktop/scripts/after-pack.cjs
 directories:
   output: release

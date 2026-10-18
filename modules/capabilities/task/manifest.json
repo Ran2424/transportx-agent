@@ -2,14 +2,41 @@
   "manifestVersion": 2,
   "id": "com.transportx.task",
   "name": "Task Mode",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-task-mode/index.ts"]
+    "piExtensions": [
+      "extensions/pi-task-mode/index.ts"
+    ]
   },
   "contributes": {
-    "artifactTypes": ["task.snapshot"]
+    "artifactTypes": [
+      "task.snapshot"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "任务进度管理",
+        "description": "将复杂分析拆分为步骤，记录任务进度、等待状态和执行结果。",
+        "features": [
+          "创建和更新任务步骤",
+          "标记执行、等待、完成与异常状态",
+          "保留任务进度供工作台展示"
+        ]
+      },
+      "en-US": {
+        "name": "Task Progress",
+        "description": "Break complex analysis into steps and track progress, waiting states and outcomes.",
+        "features": [
+          "Creates and updates task steps",
+          "Tracks running, waiting, completed and failed states",
+          "Preserves progress for the workbench"
+        ]
+      }
+    }
   }
 }

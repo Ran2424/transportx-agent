@@ -2,16 +2,24 @@
   "manifestVersion": 2,
   "id": "com.transportx.geo",
   "name": "Geo Visualization",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
-  "dependencies": ["com.transportx.canvas"],
+  "dependencies": [
+    "com.transportx.canvas"
+  ],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-geo-visualization/index.ts"],
-    "skills": ["skills/SKILL.md"]
+    "piExtensions": [
+      "extensions/pi-geo-visualization/index.ts"
+    ],
+    "skills": [
+      "skills/SKILL.md"
+    ]
   },
   "contributes": {
-    "artifactTypes": ["geo.scene"],
+    "artifactTypes": [
+      "geo.scene"
+    ],
     "canvasViews": [
       {
         "adapterId": "com.transportx.canvas.geo",
@@ -19,5 +27,28 @@
         "protocolVersion": "1.0"
       }
     ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "地图可视化",
+        "description": "将 GeoJSON 数据展示为交互地图，用于查看空间分布、专题样式与分析范围。",
+        "features": [
+          "绘制点、线、面图层，控制样式与显隐",
+          "添加 POI 参考图层，并通过地图选择空间范围",
+          "保存带图例和说明的地图截图"
+        ]
+      },
+      "en-US": {
+        "name": "Map Visualization",
+        "description": "Displays GeoJSON on interactive maps to explore spatial patterns, thematic styles and study areas.",
+        "features": [
+          "Draws point, line and polygon layers with style and visibility controls",
+          "Adds POI reference layers and collects spatial selections",
+          "Saves map screenshots with legends and descriptions"
+        ]
+      }
+    }
   }
 }

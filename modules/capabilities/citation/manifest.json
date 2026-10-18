@@ -2,14 +2,41 @@
   "manifestVersion": 2,
   "id": "com.transportx.citation",
   "name": "Citation Evidence",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "piExtensions": ["extensions/pi-citation/index.ts"]
+    "piExtensions": [
+      "extensions/pi-citation/index.ts"
+    ]
   },
   "contributes": {
-    "artifactTypes": ["citation.set"]
+    "artifactTypes": [
+      "citation.set"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "引用与依据",
+        "description": "为原始资料和分析结果登记引用依据，保留来源版本与具体位置。",
+        "features": [
+          "定位文档页码、章节、表格行列与结果字段",
+          "区分原文摘录、归纳结论与计算结果",
+          "在回答和报告中复用依据编号，并回查来源"
+        ]
+      },
+      "en-US": {
+        "name": "Citations & Evidence",
+        "description": "Registers evidence from source material and analysis results, preserving source versions and locations.",
+        "features": [
+          "Locates pages, sections, table rows and columns, and result fields",
+          "Distinguishes excerpts, summaries and computed results",
+          "Reuses evidence IDs in answers and reports with source lookup"
+        ]
+      }
+    }
   }
 }

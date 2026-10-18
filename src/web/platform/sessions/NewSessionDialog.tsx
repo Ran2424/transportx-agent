@@ -8,6 +8,7 @@ import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
 import { formatModelOption } from '../../lib/formatting';
 import { projectUi } from '../../app/project-ui';
+import { moduleDisplayMetadata, modulePresentation } from '../../lib/module-presentation';
 
 type NewSessionDialogProps = {
   open: boolean;
@@ -17,7 +18,8 @@ type NewSessionDialogProps = {
 };
 
 export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: NewSessionDialogProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage || i18n.language;
   const kernel = appKernel;
   const [model, setModel] = useState('');
   const [name, setName] = useState('');
@@ -94,12 +96,19 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
     return [...groups.entries()];
   }, [moduleOptions]);
   const selectedModuleOptions = Object.entries(selectedModules).map(([id, version]) => moduleOptions.find((item) => item.id === id && item.version === version)).filter((item): item is SessionModuleOption => !!item);
-  const moduleBlockers = selectedModuleOptions.flatMap((item) => item.assets.flatMap((asset) => !asset.configured ? [`${item.name}: ${asset.id} ${t('sessions.assetMissing')}`] : asset.integrity === 'missing' ? [`${item.name}: ${asset.id} ${t('sessions.integrityMissing')}`] : []));
+  const moduleBlockers = selectedModuleOptions.flatMap((item) => item.assets.flatMap((asset) => {
+    const name = modulePresentation(item, language).name;
+    const assetName = moduleDisplayMetadata(item)?.assets?.[asset.id] ? modulePresentation(item, language, { assetId: asset.id }).name : asset.id;
+    return !asset.configured ? [`${name}: ${assetName} ${t('sessions.assetMissing')}`] : asset.integrity === 'missing' ? [`${name}: ${assetName} ${t('sessions.integrityMissing')}`] : [];
+  }));
 
   const moduleFields = (
           <fieldset className="session-module-fieldset" aria-label={t('sessions.modules')}>
             {!projectUi.moduleOptionsCollapsed ? <legend>{t('sessions.modules')}</legend> : null}
-            {moduleGroups.map(([id, versions]) => (
+            {moduleGroups.map(([id, versions]) => {
+              const selected = versions.find((item) => item.version === selectedModules[id]) || versions.find((item) => item.selectedByDefault) || versions.at(-1)!;
+              const display = modulePresentation(selected, language);
+              return (
               <div className="session-module-row" key={id}>
                 <label>
                   <input
@@ -112,11 +121,11 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
                       return next;
                     })}
                   />
-                  <span>{versions[0].name}</span>
-                  <small className="session-module-status">{versions.flatMap((item) => item.assets).length ? versions.find((item) => item.version === selectedModules[id])?.assets.map((asset) => `${asset.kind}: ${asset.configured ? t(`sessions.integrity.${asset.integrity}`) : t('sessions.assetMissing')}`).join(' · ') : t('sessions.noAssets')}</small>
+                  <span title={id}>{display.name}</span>{display.description ? <small className="session-module-description">{display.description}</small> : null}{display.features.length ? <small className="session-module-description">{display.features.join(' · ')}</small> : null}
+                  <small className="session-module-status">{versions.flatMap((item) => item.assets).length ? versions.find((item) => item.version === selectedModules[id])?.assets.map((asset) => `${t(`capability.category.${asset.kind}`)}: ${asset.configured ? t(`sessions.integrity.${asset.integrity}`) : t('sessions.assetMissing')}`).join(' · ') : t('sessions.noAssets')}</small>
                 </label>
                 <select
-                  aria-label={t('sessions.moduleVersion', { name: versions[0].name })}
+                  aria-label={t('sessions.moduleVersion', { name: display.name })}
                   value={selectedModules[id] || versions.find((item) => item.selectedByDefault)?.version || versions.at(-1)!.version}
                   disabled={!(id in selectedModules)}
                   onChange={(event) => setSelectedModules((current) => ({ ...current, [id]: event.target.value }))}
@@ -124,7 +133,8 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, onAddModel }: 
                   {versions.map((item) => <option value={item.version} key={item.version}>{item.version}</option>)}
                 </select>
               </div>
-            ))}
+              );
+            })}
           </fieldset>
   );
 

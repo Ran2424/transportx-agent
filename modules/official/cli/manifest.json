@@ -2,11 +2,36 @@
   "manifestVersion": 2,
   "id": "com.transportx.cli",
   "name": "TransportX Command Line",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "domain",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
-    "prompts": ["prompts/PI_SESSION_CONTEXT.md"]
+    "prompts": [
+      "prompts/PI_SESSION_CONTEXT.md"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "TransportX 命令行",
+        "description": "在命令行中运行交通分析任务，并按任务配置装载模块。",
+        "features": [
+          "提供命令行任务上下文",
+          "支持显式选择模块及版本",
+          "复用本地任务目录与运行环境"
+        ]
+      },
+      "en-US": {
+        "name": "TransportX Command Line",
+        "description": "Runs traffic analysis tasks from the command line with task-selected modules.",
+        "features": [
+          "Provides command-line task context",
+          "Supports explicit module and version selection",
+          "Uses local task directories and runtimes"
+        ]
+      }
+    }
   }
 }

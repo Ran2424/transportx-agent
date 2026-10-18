@@ -60,7 +60,10 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.equal(installed.data.installed.id, 'local.test-skill');
       assert.equal(installed.data.overview.modules.some((module: any) => module.id === 'local.test-skill' && module.removable && module.enabled), true);
       const skillModule = installed.data.overview.modules.find((module: any) => module.id === 'local.test-skill');
-      assert.deepEqual(skillModule.skillFiles, [{ entryPath: 'skill/SKILL.md', name: 'SKILL.md', content: '# Local test skill', truncated: false }]);
+      assert.deepEqual(skillModule.skillFiles, [{ entryPath: 'skill/SKILL.md', name: 'Local test skill', content: '# Local test skill', truncated: false }]);
+      const invalidFolder = await rpc({ type: 'open_module_directory', moduleId: '../unregistered', path: userData });
+      assert.equal(invalidFolder.success, false);
+      assert.match(invalidFolder.error, /Module is unavailable/);
       const removed = await rpc({ type: 'uninstall_module', moduleId: 'local.test-skill' });
       assert.equal(removed.success, true);
       assert.equal(removed.data.overview.modules.some((module: any) => module.id === 'local.test-skill'), false);

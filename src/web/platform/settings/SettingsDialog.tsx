@@ -11,6 +11,7 @@ import { useLocale } from '../../i18n/LocaleProvider';
 import type { LocalePreference } from '../../i18n';
 import i18n from '../../i18n';
 import { formatContextWindow } from '../../lib/formatting';
+import { modulePresentation } from '../../lib/module-presentation';
 import type { ModuleArchiveInspection } from '../../../contracts/module';
 import { ModelEditDialog } from '../model/ModelEditDialog';
 import { projectUi } from '../../app/project-ui';
@@ -85,7 +86,7 @@ function providerInitial(name: string, id: string) {
 
 export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, expandThinking, onExpandThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
   const { t } = useTranslation();
-  const { preference, setPreference } = useLocale();
+  const { locale, preference, setPreference } = useLocale();
   const kernel = appKernel;
   const [autoCompact, setAutoCompact] = useState(true);
   const [auth, setAuth] = useState({ configured: false, enabled: false });
@@ -232,7 +233,7 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
   }
 
   async function uninstallModule(module: PlatformModule) {
-    if (!module.removable || !window.confirm(t('settings.confirm.uninstall', { name: module.name }))) return;
+    if (!module.removable || !window.confirm(t('settings.confirm.uninstall', { name: modulePresentation(module, locale).name }))) return;
     setBusy(`module-uninstall:${module.id}`);
     setError('');
     try {
@@ -464,11 +465,11 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
         <section className="settings-section">
           <h2>{t('settings.capabilityOverview')}</h2>
           {overviewLoading && !overview ? <div className="settings-loading" aria-label={t('settings.loadingModules')}><span /><span /><span /></div> : overview ? <div className="module-summary-grid">{[
-            ['Modules', overview.modules.length],
-            ['Extensions', overview.modules.reduce((total, module) => total + module.extensions, 0)],
-            ['Skills', overview.modules.reduce((total, module) => total + module.skills, 0)],
-            ['Data', overview.modules.flatMap((module) => module.assets).filter((asset) => asset.kind === 'data').length],
-            ['Knowledge', overview.modules.flatMap((module) => module.assets).filter((asset) => asset.kind === 'knowledge').length],
+            [t('settings.module.metrics.modules'), overview.modules.length],
+            [t('settings.module.metrics.extensions'), overview.modules.reduce((total, module) => total + module.extensions, 0)],
+            [t('settings.module.metrics.skills'), overview.modules.reduce((total, module) => total + module.skills, 0)],
+            [t('settings.module.metrics.data'), overview.modules.flatMap((module) => module.assets).filter((asset) => asset.kind === 'data').length],
+            [t('settings.module.metrics.knowledge'), overview.modules.flatMap((module) => module.assets).filter((asset) => asset.kind === 'knowledge').length],
           ].map(([label, total]) => <div key={label}><strong>{total}</strong><span>{label}</span></div>)}</div> : <p className="settings-empty">{t('settings.modulesUnavailable')}</p>}
         </section>
         <section className="settings-section">
@@ -490,14 +491,15 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
           {overviewLoading && !overview ? <div className="settings-loading" aria-label={t('settings.loadingModules')}><span /><span /><span /></div> : overview?.modules.length ? (
             <div className="module-list module-list-root">
               {overview.modules.map((module) => {
+                const display = modulePresentation(module, locale);
                 const activeKinds = new Set(overview.modules.flatMap((item) => item.assets.filter((asset) => asset.active).map((asset) => asset.kind)));
                 const missingAssets = module.assets.filter((asset) => !asset.configured && !activeKinds.has(asset.kind));
                 const hasActiveAsset = module.assets.some((asset) => asset.active);
                 const substituted = module.assets.length > 0 && module.assets.every((asset) => asset.configured || activeKinds.has(asset.kind));
                 const status = !module.enabled ? t('settings.module.status.disabled') : hasActiveAsset ? t('settings.module.status.active') : missingAssets.length ? t('settings.module.status.missing') : substituted && module.assets.some((asset) => !asset.configured) ? t('settings.module.status.substituted') : t('settings.module.status.enabled');
-                const contributions = [module.skills ? `${module.skills} Skill` : '', module.extensions ? `${module.extensions} Extension` : '', module.nativeRuntimes ? `${module.nativeRuntimes} Runtime` : '', ...module.assets.map((asset) => asset.kind === 'data' ? 'Data' : asset.kind === 'knowledge' ? 'Knowledge' : 'Template')].filter(Boolean);
+                const contributions = [module.skills ? `${module.skills} ${t('settings.module.metrics.skills')}` : '', module.extensions ? `${module.extensions} ${t('settings.module.metrics.extensions')}` : '', module.nativeRuntimes ? `${module.nativeRuntimes} ${t('settings.module.metrics.runtime')}` : '', ...module.assets.map((asset) => t(`capability.category.${asset.kind}`))].filter(Boolean);
                 const origin = module.origin === 'installed' ? t('settings.module.origin.installed') : module.origin === 'external' ? t('settings.module.origin.external') : t('settings.module.origin.builtin');
-                return <div className="module-row" key={module.id}><span><strong>{module.name}</strong><small>{module.version} · {moduleLabels[module.type]} · {origin} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-enable:${module.id}`} onClick={() => setModuleEnabled(module, !module.enabled)}>{module.enabled ? t('common.disable') : t('common.enable')}</Button> : null}{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>{t('settings.module.uninstall')}</Button> : null}</span></div>;
+                return <div className="module-row" key={module.id}><span><strong>{display.name}</strong>{display.description ? <p className="module-description">{display.description}</p> : null}{display.features.length ? <small className="module-feature-summary">{display.features.join(' · ')}</small> : null}<small>{module.version} · {moduleLabels[module.type]} · {origin} · {module.id}</small>{contributions.length ? <span className="module-contributions">{contributions.map((item) => <i key={item}>{item}</i>)}</span> : null}</span><span className="module-actions"><em data-state={module.enabled && !missingAssets.length ? 'ready' : 'attention'}>{status}</em>{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-enable:${module.id}`} onClick={() => setModuleEnabled(module, !module.enabled)}>{module.enabled ? t('common.disable') : t('common.enable')}</Button> : null}{module.removable ? <Button type="button" variant="outline" disabled={busy === `module-uninstall:${module.id}`} onClick={() => uninstallModule(module)}>{t('settings.module.uninstall')}</Button> : null}</span></div>;
               })}
             </div>
           ) : <p className="settings-empty">{t('settings.noModules')}</p>}
@@ -531,12 +533,13 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
           <p className="module-archive-summary">{t('settings.moduleArchive.previewSummary', { name: archiveInspection.sourceName, count: archiveInspection.modules.length, size: `${Math.ceil(archiveInspection.uncompressedBytes / 1024 / 1024)} MB` })}</p>
           <div className="module-archive-list">
             {archiveInspection.modules.map((module) => {
+              const display = modulePresentation(module, locale);
               const key = `${module.id}@${module.version}`;
               const selectable = module.status === 'ready';
-              const contributionSummary = [`${module.skills || ''}${module.skills ? ' Skill' : ''}`, `${module.extensions || ''}${module.extensions ? ' Extension' : ''}`, `${module.nativeRuntimes || ''}${module.nativeRuntimes ? ' Runtime' : ''}`, `${module.assets || ''}${module.assets ? ' Asset' : ''}`].filter(Boolean).join(' · ');
+              const contributionSummary = ([['skills', module.skills], ['extensions', module.extensions], ['runtime', module.nativeRuntimes], ['assets', module.assets]] as const).filter(([, count]) => count).map(([kind, count]) => `${count} ${t(`settings.module.metrics.${kind}`)}`).join(' · ');
               return <label key={key} className="module-archive-row" data-state={module.status}>
                 <input type="checkbox" checked={selectedArchiveModules.includes(key)} disabled={!selectable || busy === 'module-archive-install'} onChange={() => toggleArchiveModule(key)} />
-                <span><strong>{module.name}</strong><small>{module.version} · {module.id}</small>{module.message ? <small>{module.message}</small> : <small>{contributionSummary}</small>}</span>
+                <span><strong>{display.name}</strong>{display.description ? <p className="module-description">{display.description}</p> : null}{display.features.length ? <small className="module-feature-summary">{display.features.join(' · ')}</small> : null}<small>{module.version} · {module.id}</small>{module.message ? <small>{module.message}</small> : <small>{contributionSummary}</small>}</span>
                 <em>{t(`settings.moduleArchive.status.${module.status}`)}</em>
               </label>;
             })}

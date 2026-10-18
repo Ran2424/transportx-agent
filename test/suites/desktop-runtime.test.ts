@@ -7,6 +7,28 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
   const os = require('node:os');
   const path = require('node:path');
   const { loadRuntimeManifest, validateRuntimeManifest } = require('../../bin/runtime-resolver.js');
+  const builder = require('js-yaml').load(fs.readFileSync(path.join(process.cwd(), 'desktop/electron-builder.common.yml'), 'utf8'));
+  assert.ok(builder.asarUnpack.includes('modules/**'), 'native module browsing needs complete physical module folders');
+  assert.ok(builder.asarUnpack.includes('src/contracts/**'), 'unpacked extensions retain their relative contract imports');
+
+  // Physical module folders must still load through Pi's extension loader.
+  {
+    const unpacked = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-unpacked-modules-'));
+    t.after(() => fs.rmSync(unpacked, { recursive: true, force: true }));
+    const capabilities = path.join(unpacked, 'modules', 'capabilities');
+    fs.cpSync(path.join(process.cwd(), 'modules', 'capabilities'), capabilities, { recursive: true });
+    fs.cpSync(path.join(process.cwd(), 'src', 'contracts'), path.join(unpacked, 'src', 'contracts'), { recursive: true });
+    const entries = fs.readdirSync(capabilities, { withFileTypes: true }).filter((entry: any) => entry.isDirectory()).flatMap((entry: any) => {
+      const root = path.join(capabilities, entry.name);
+      const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+      return (manifest.entrypoints?.piExtensions || []).map((entry: string) => path.join(root, entry));
+    });
+    const { pathToFileURL } = require('node:url');
+    const { loadExtensions } = await import(pathToFileURL(path.join(process.cwd(), 'node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js')).href);
+    const loaded = await loadExtensions(entries, unpacked);
+    assert.deepEqual(loaded.errors, []);
+    assert.equal(loaded.extensions.length, entries.length);
+  }
 
   // Persistent logs redact credentials, retain bounded archives and tolerate unavailable storage.
   {

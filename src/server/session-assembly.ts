@@ -38,15 +38,15 @@ function resolvedEntrypoints(module: RegisteredModule, domainId: string): Resolv
   const entries: ResolvedPlanEntrypoint[] = [];
   for (const entry of module.manifest.entrypoints?.piExtensions || []) {
     const entryPath = resolvePackagePath(module.packageRoot, entry, 'Pi extension');
-    entries.push({ kind: 'extension', path: entryPath, sha256: sha256File(entryPath) });
+    entries.push({ kind: 'extension', path: entryPath });
   }
   for (const entry of module.manifest.entrypoints?.skills || []) {
     const entryPath = resolvePackagePath(module.packageRoot, entry, 'Skill');
-    entries.push({ kind: 'skill', path: entryPath, sha256: sha256File(entryPath) });
+    entries.push({ kind: 'skill', path: entryPath });
   }
   if (module.manifest.id === domainId) for (const entry of module.manifest.entrypoints?.prompts || []) {
     const entryPath = resolvePackagePath(module.packageRoot, entry, 'Prompt');
-    entries.push({ kind: 'prompt', path: entryPath, sha256: sha256File(entryPath) });
+    entries.push({ kind: 'prompt', path: entryPath });
   }
   return entries;
 }
@@ -81,7 +81,6 @@ function resolvedPlanModule(module: RegisteredModule, domainId: string): Resolve
     type: module.manifest.type,
     origin: module.origin,
     packageRoot: module.packageRoot,
-    manifestSha256: sha256File(module.manifestPath),
     entrypoints: resolvedEntrypoints(module, domainId),
     nativeRuntimes: resolvedNativeRuntimes(module),
     canvasViews: module.manifest.contributes?.canvasViews || [],
@@ -211,21 +210,9 @@ export class SessionAssembler {
         }
       }
       const currentManifestPath = path.join(module.packageRoot, 'manifest.json');
-      // Builtin modules ship with the platform and are replaced in place on upgrade;
-      // their old versions no longer exist, so content drift is tolerated (and logged)
-      // instead of making every older session unloadable. Installed/external modules
-      // keep exact-version enforcement because multiple versions coexist.
-      const builtin = module.origin === 'builtin';
-      if (sha256File(currentManifestPath) !== module.manifestSha256) {
-        const message = `Module manifest changed: ${module.id}@${module.version}`;
-        if (!builtin) throw new SessionPlanError('module_content_mismatch', message, [{ moduleId: module.id, expected: module.manifestSha256, actual: sha256File(currentManifestPath) }]);
-        console.warn(`[Tau] Tolerating builtin module drift while resuming a session: ${message}`);
-      }
       for (const entry of module.entrypoints) {
-        if (!fs.existsSync(entry.path) || sha256File(entry.path) !== entry.sha256) {
-          const message = `Module entrypoint changed: ${module.id}@${module.version}`;
-          if (!builtin) throw new SessionPlanError('module_content_mismatch', message, [{ moduleId: module.id, path: entry.path, expected: entry.sha256, actual: fs.existsSync(entry.path) ? sha256File(entry.path) : 'missing' }]);
-          console.warn(`[Tau] Tolerating builtin module drift while resuming a session: ${message} (${entry.path})`);
+        if (!fs.existsSync(entry.path)) {
+          throw new SessionPlanError('module_entrypoint_missing', `Module entrypoint is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, path: entry.path }]);
         }
       }
       for (const runtime of module.nativeRuntimes) {

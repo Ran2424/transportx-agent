@@ -2,15 +2,24 @@
   "manifestVersion": 2,
   "id": "com.transportx.document",
   "name": "Document Canvas",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
-  "dependencies": ["com.transportx.canvas"],
+  "dependencies": [
+    "com.transportx.canvas"
+  ],
   "entrypoints": {
-    "skills": ["skills/SKILL.md"]
+    "skills": [
+      "skills/SKILL.md"
+    ]
   },
   "contributes": {
-    "artifactTypes": ["document.markdown", "document.pdf", "document.ooxml", "dataset.csv"],
+    "artifactTypes": [
+      "document.markdown",
+      "document.pdf",
+      "document.ooxml",
+      "dataset.csv"
+    ],
     "canvasViews": [
       {
         "adapterId": "com.transportx.canvas.document",
@@ -18,5 +27,28 @@
         "protocolVersion": "1.0"
       }
     ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "文档查看",
+        "description": "在画布中阅读 Markdown、PDF、CSV、Word、Excel 和 PowerPoint 文件。",
+        "features": [
+          "跳转到指定页码、幻灯片、工作表或单元格",
+          "搜索文档内容，定位 Markdown 章节与 CSV 数据行",
+          "按固定的引用来源版本打开原件"
+        ]
+      },
+      "en-US": {
+        "name": "Document Viewer",
+        "description": "Reads Markdown, PDF, CSV, Word, Excel and PowerPoint files in Canvas.",
+        "features": [
+          "Navigates to pages, slides, sheets and cells",
+          "Searches content and locates Markdown sections and CSV rows",
+          "Opens originals pinned to a citation source version"
+        ]
+      }
+    }
   }
 }

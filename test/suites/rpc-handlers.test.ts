@@ -113,7 +113,8 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
     // Platform RPC registry serves the current overview
     {
       let opened = 0;
-      const handlers = createPlatformRpcHandlers(() => ({ modules: 3 }), async () => { opened++; });
+      const moduleIds: string[] = [];
+      const handlers = createPlatformRpcHandlers(() => ({ modules: 3 }), async () => { opened++; }, async (id: string) => { moduleIds.push(id); });
       assert.deepEqual(handlers.get_platform_overview.handle({ type: 'get_platform_overview' }, {
         success(data: unknown) { return { success: true, data }; },
         failure(error: string) { return { success: false, error }; },
@@ -121,6 +122,10 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
       const openedReply = await handlers.open_logs_directory.handle({ type: 'open_logs_directory', path: '/unrelated' }, { success: () => ({ success: true }), failure: () => ({ success: false }) });
       assert.equal(openedReply.success, true);
       assert.equal(opened, 1);
+      const moduleReply = { success: () => ({ success: true }), failure: (error: string) => ({ success: false, error }) };
+      assert.deepEqual(await handlers.open_module_directory.handle({ type: 'open_module_directory' }, moduleReply), { success: false, error: 'moduleId is required' });
+      assert.equal((await handlers.open_module_directory.handle({ type: 'open_module_directory', moduleId: 'com.transportx.geo', path: '/unrelated' }, moduleReply)).success, true);
+      assert.deepEqual(moduleIds, ['com.transportx.geo']);
     }
   }
 });
