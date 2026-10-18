@@ -19,6 +19,8 @@
 - Module 清单新增可选中英双语展示信息（名称、简介、功能项及 Skill/资源覆盖）；能力中心、模块管理、任务模块选择和 ZIP 安装预览共用语言选择与回退，搜索匹配两种语言。Agent 使用的原始名称、Skill 触发说明和正文保持不变。
 - 展示文案随模块发布并提升 patch 版本：内置 canvas 1.2.1、citation 2.0.1、document 1.2.1、geo 1.4.2、interaction 1.0.1、spatial-analysis 1.1.1、task 1.0.3、web-bridge 1.0.1、cli 1.0.2、module-authoring 1.1.1、traffic.report-template 1.0.1、workbench 1.3.1。本地可安装源包 demo-video 1.0.1、hongqiao-metro-demo 1.1.2、plot-style 1.0.1、shanghai-hub-traffic 1.0.1、shanghai-multimodal-data 1.0.2、shanghaidata 2.0.3、shmaas-catalog 1.0.1、traffic-assurance-knowledge 1.0.1、train-impact-report 1.0.1、video 1.4.1；旧版本归档包保留，可安装资产仍不随平台打包。
 - 能力展示升级为可搜索、按技能/数据/知识/工具/模板筛选的能力中心；侧栏保留分类入口与待处理提示，内置模块按实际功能提供概述与功能项，外部模块读取 Skill 自带说明，技术信息和原文折叠展示。移除当前任务区域与通用使用提示，模块管理入口统一放在顶部；支持直接在系统文件管理器打开模块文件夹，内置模块及其共享契约随桌面包解包为可浏览文件。不增加自动推荐、另行装配或内置文件浏览器。资源状态按具体资产判断，不再用其他同类资产代替就绪条件。
+- 新建任务的 Module 与版本选项在桌面端默认折叠，展开后仍可选择模块与版本；关闭并重新打开后恢复折叠。Web 冒烟强制检查折叠入口、默认隐藏及重新打开行为。
+- 可安装 Traffic Assurance Knowledge 升级到 2.0.0：移除独立知识卡 ID，按来源节点回读并直接接入 Citation 3.0；目录统计不加载正文，检索按文档筛选、分页且允许空命中，修正附件 PDF 来源及 HTML 提取行号混用，取消知识包内重复的哈希核对及额外清单。原件和 1.0.0 冻结任务保留，知识资产不随平台打包。
 - 引用依据整体默认折叠，展开后突出标题、位置和内容性质；正文、输入候选与管理器共用详情，移除大型悬停浮层。知识和数据 Module 保留各自的有界目录发现与渐进披露职责。
 - Citation 协议升级到 3.0 / Registry schemaVersion 2，正文直接复用 Evidence ID，不再调用独立 tau_cite。旧格式明确不支持，不自动覆盖引用记录或删除任务资料。Citation Module 2.0.0、Canvas/Document 1.2.0、Spatial Analysis 1.1.0、Workbench 1.3.0、Module Authoring 1.1.0 随本轮同步版本。
 

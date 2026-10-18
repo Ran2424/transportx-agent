@@ -66,14 +66,12 @@ try {
   const dialog = page.getByRole('dialog', { name: '新建交通任务' });
   await dialog.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
   const moduleDetails = dialog.locator('details', { has: page.locator('summary', { hasText: '任务 Module 与版本' }) });
-  const collapsed = await moduleDetails.count() > 0;
+  assert.equal(await moduleDetails.count(), 1, 'module options use a disclosure');
   const alphaModule = dialog.getByRole('checkbox', { name: /^smoke\.alpha\b/ });
   const betaModule = dialog.getByRole('checkbox', { name: /^smoke\.beta\b/ });
-  if (collapsed) {
-    assert.equal(await moduleDetails.getAttribute('open'), null, 'module options start collapsed');
-    assert.equal(await alphaModule.isVisible(), false);
-    await moduleDetails.locator('summary').click();
-  }
+  assert.equal(await moduleDetails.getAttribute('open'), null, 'module options start collapsed');
+  assert.equal(await alphaModule.isVisible(), false);
+  await moduleDetails.locator('summary').click();
   for (const checkbox of [alphaModule, betaModule]) assert.equal(await checkbox.isChecked(), true, 'enabled modules are selected');
   const alphaVersion = dialog.getByLabel('smoke.alpha 版本');
   assert.equal(await alphaVersion.inputValue(), '2.0.0');
@@ -83,7 +81,8 @@ try {
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: '新建交通任务' }).first().click();
   await dialog.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
-  if (collapsed) assert.equal(await moduleDetails.getAttribute('open'), null, 'reopening resets the disclosure');
+  assert.equal(await moduleDetails.getAttribute('open'), null, 'reopening resets the disclosure');
+  assert.equal(await alphaModule.isVisible(), false);
   const createRequest = page.waitForRequest((request) => request.url().endsWith('/api/live-sessions') && request.method() === 'POST');
   await dialog.getByRole('button', { name: '创建任务' }).click();
   assert.deepEqual((await createRequest).postDataJSON().profile.modules, {
