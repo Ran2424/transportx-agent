@@ -49,7 +49,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     const profile = {
       schemaVersion: 1,
       task: { kind: 'data-query', expectedOutputs: ['answer'] },
-      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: '1.0.2' }] },
+      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: '2.0.0' }] },
     };
     const plan = assembler.assemble('com.transportx.cli', process.cwd(), profile);
     assert.deepEqual(plan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.citation']);
@@ -57,9 +57,9 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.equal(plan.modules.some((module: any) => module.id === 'com.transportx.video'), false);
     const spatialPlan = assembler.assemble('com.transportx.cli', process.cwd(), {
       ...profile,
-      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.spatial-analysis', version: '1.0.1' }] },
+      modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.spatial-analysis', version: '1.1.0' }] },
     });
-    assert.deepEqual(spatialPlan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.canvas', 'com.transportx.geo', 'com.transportx.spatial-analysis']);
+    assert.deepEqual(spatialPlan.modules.map((module: any) => module.id), ['com.transportx.cli', 'com.transportx.canvas', 'com.transportx.geo', 'com.transportx.citation', 'com.transportx.spatial-analysis']);
     assert.throws(() => assembler.assemble('com.transportx.cli', process.cwd(), {
       ...profile,
       modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.citation', version: '9.9.9' }] },

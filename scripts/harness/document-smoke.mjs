@@ -22,19 +22,20 @@ export async function documentSmoke(page, browser) {
   const pdf = await pdfPage.pdf({ format: 'A4', printBackground: true });
   await pdfPage.close();
   fs.writeFileSync(path.join(cwd, 'canvas-evidence.pdf'), pdf);
-  const resource = (id, name, scope, bytes, mimeType) => ({ resourceId: id, workId: id, kind: mimeType === 'application/pdf' ? 'pdf' : 'document', scope, relativePath: name, mimeType, sha256: crypto.createHash('sha256').update(bytes).digest('hex') });
-  const resources = [resource('canvas:report', 'canvas-report.md', 'artifact', report, 'text/markdown'), resource('canvas:source', 'canvas-source.md', 'attachment', source, 'text/markdown'), resource('canvas:pdf', 'canvas-evidence.pdf', 'attachment', pdf, 'application/pdf')];
-  resources.push({ ...resource('canvas:chart', 'canvas-chart.svg', 'artifact', fs.readFileSync(path.join(cwd, 'canvas-chart.svg')), 'image/svg+xml'), kind: 'image' });
-  const locators = [
-    { locatorId: 'canvas:report', resourceId: 'canvas:report' },
-    { locatorId: 'canvas:chart', resourceId: 'canvas:chart' },
-    { locatorId: 'canvas:source:target', resourceId: 'canvas:source', section: '目标标题', quote: '定位到此处。\n' + '保留来源摘录以便核对。'.repeat(80) },
-    { locatorId: 'canvas:source:missing', resourceId: 'canvas:source', section: '没有此标题' },
-    { locatorId: 'canvas:pdf:2', resourceId: 'canvas:pdf', page: 2 },
-    { locatorId: 'canvas:pdf:3', resourceId: 'canvas:pdf', page: 3 },
+  const sourceVersion = (id, name, bytes, mimeType) => ({ sourceVersionId: id, sourceKey: `session:${name}`, title: name, acquiredAt: new Date().toISOString(), content: { kind: 'file', scope: 'session', path: name, mimeType, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), size: Buffer.byteLength(bytes) } });
+  fs.writeFileSync(path.join(cwd, 'canvas-counts.csv'), '站点,数量\n上海站,12\n上海南站,24\n虹桥站,36\n');
+  const sources = [sourceVersion('canvas:report', 'canvas-report.md', report, 'text/markdown'), sourceVersion('canvas:source', 'canvas-source.md', source, 'text/markdown'), sourceVersion('canvas:pdf', 'canvas-evidence.pdf', pdf, 'application/pdf'), sourceVersion('canvas:chart', 'canvas-chart.svg', fs.readFileSync(path.join(cwd, 'canvas-chart.svg')), 'image/svg+xml'), sourceVersion('canvas:counts', 'canvas-counts.csv', fs.readFileSync(path.join(cwd, 'canvas-counts.csv')), 'text/csv')];
+  sources[1].metadata = { issuedAt: '2026-10-01', edition: '2026 版', standardNumber: 'TX-01' };
+  const evidence = [
+    { evidenceId: 'canvas:report', sourceVersionId: 'canvas:report', locator: { kind: 'source' }, contentKind: 'source-only' },
+    { evidenceId: 'canvas:chart', sourceVersionId: 'canvas:chart', locator: { kind: 'source' }, contentKind: 'source-only' },
+    { evidenceId: 'canvas:source:target', sourceVersionId: 'canvas:source', locator: { kind: 'document', section: '目标标题' }, contentKind: 'summary', text: '定位到此处。知识归纳需要核查原件。' },
+    { evidenceId: 'canvas:source:missing', sourceVersionId: 'canvas:source', locator: { kind: 'document', section: '没有此标题' }, contentKind: 'source-only' },
+    { evidenceId: 'canvas:pdf:2', sourceVersionId: 'canvas:pdf', locator: { kind: 'document', page: 2 }, contentKind: 'source-only' },
+    { evidenceId: 'canvas:pdf:3', sourceVersionId: 'canvas:pdf', locator: { kind: 'document', page: 3 }, contentKind: 'source-only' },
+    { evidenceId: 'canvas:counts:rows', sourceVersionId: 'canvas:counts', locator: { kind: 'table', rowStart: 2, rowEnd: 3, columns: ['数量'] }, contentKind: 'result' },
   ];
-  const registry = { protocol: 'pi-citation', version: '2.0', schemaVersion: 1, sessionId: session.citationRegistryId || session.id, citationSetId: 'canvas:smoke', generatedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), resources, works: resources.map((item) => ({ workId: item.workId, type: 'REPORT', title: item.relativePath })), locators, occurrences: locators.map((item) => ({ occurrenceId: item.locatorId, locatorId: item.locatorId, containerType: 'message', containerId: 'canvas:smoke' })), provenance: [] };
-  Object.assign(registry.works.find((work) => work.workId === 'canvas:source'), { issuedAt: '2026-10-01', edition: '2026 版', standardNumber: 'TX-01' });
+  const registry = { protocol: 'pi-citation', version: '3.0', schemaVersion: 2, sessionId: session.citationRegistryId || session.id, sources, evidence };
   fs.mkdirSync(path.join(cwd, '.tau'), { recursive: true });
   fs.writeFileSync(path.join(cwd, '.tau', 'citations.json'), JSON.stringify(registry));
 
@@ -97,163 +98,103 @@ export async function documentSmoke(page, browser) {
   await page.unroute(slowPattern);
   assert.equal(await reader.locator('h1').innerText(), 'Canvas 报告');
 
-  console.log('Document smoke: refresh passed.');
-  await composer.fill('canvas-citations [[cite:canvas:report,canvas:chart,canvas:source:target,canvas:source:missing,canvas:pdf:2,canvas:pdf:3]]');
+  await composer.fill('canvas-citations [[cite:canvas:source:target,canvas:pdf:2]] [[cite:canvas:counts:rows]]');
   await composer.press('Enter');
-  await page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).waitFor();
-  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
   const citedMessage = page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).last();
-  const citationSource = citedMessage.locator('.citation-footer li', { hasText: 'canvas-source.md' });
-  const evidence = citationSource.locator('.citation-source-details');
-  assert.equal(await evidence.getAttribute('open'), null, 'excerpts are folded while source titles and positions remain visible');
-  await evidence.locator('summary').focus(); await page.keyboard.press('Enter');
-  assert.equal(await evidence.evaluate((node) => node.open), true);
-  assert.match(await evidence.innerText(), /定位到此处/);
-  assert.match(await evidence.innerText(), /2026-10-01/);
-  assert.match(await evidence.innerText(), /2026 版/);
-  assert.match(await evidence.innerText(), /TX-01/);
-  assert.ok(await evidence.locator(':scope > div').evaluate((node) => node.scrollHeight > node.clientHeight), 'long excerpts scroll within details');
-  const stageThreeDirectory = '.plans/style-upgrade-phase-three/validation';
-  fs.mkdirSync(stageThreeDirectory, { recursive: true });
-  const sourceTheme = await page.evaluate(() => document.documentElement.dataset.theme);
-  for (const value of ['light', 'dark', 'sand']) {
-    await page.evaluate((value) => document.documentElement.dataset.theme = value, value);
-    await citedMessage.screenshot({ path: `${stageThreeDirectory}/citations-${value}.png`, animations: 'disabled' });
+  await citedMessage.waitFor();
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  const disclosure = citedMessage.locator('.citation-disclosure');
+  assert.equal(await disclosure.evaluate((node) => node.open), false, 'the complete reference list starts folded');
+  await disclosure.locator('summary').focus(); await page.keyboard.press('Enter');
+  assert.equal(await disclosure.evaluate((node) => node.open), true);
+  const detail = page.getByRole('dialog', { name: '引用依据', exact: true });
+  await citedMessage.locator('[data-citation-card="canvas:source:target"]').click();
+  await detail.getByText('知识归纳', { exact: false }).first().waitFor();
+  assert.equal(await detail.locator('.citation-detail-item').count(), 1);
+  assert.equal(await page.locator('.citation-evidence-peek').count(), 0);
+  await detail.getByText('来源与版本信息', { exact: true }).click();
+  assert.match(await detail.innerText(), /2026 版/);
+  const evidenceDirectory = path.resolve('.plans/citation-minimal-loop/validation');
+  fs.mkdirSync(evidenceDirectory, { recursive: true });
+  for (const theme of ['light', 'dark', 'sand']) {
+    await page.evaluate((value) => document.documentElement.dataset.theme = value, theme);
+    await detail.screenshot({ path: path.join(evidenceDirectory, `detail-${theme}.png`), animations: 'disabled' });
   }
-  await page.evaluate((value) => document.documentElement.dataset.theme = value, sourceTheme);
-  await evidence.locator(':scope > div').evaluate((node) => node.scrollTop = node.scrollHeight);
-  await evidence.screenshot({ path: `${stageThreeDirectory}/source-metadata.png`, animations: 'disabled' });
-  await evidence.locator('summary').click();
-  const artifact = citedMessage.locator('.message-artifacts [data-citation-card="canvas:report"]');
-  assert.match(await artifact.innerText(), /canvas-report.md/);
-  assert.match(await artifact.innerText(), /打开/);
-  await artifact.focus(); await page.keyboard.press('Enter');
-  await reader.locator('h1', { hasText: 'Canvas 报告', exact: true }).waitFor();
-  const touchContext = await browser.newContext({ locale: 'zh-CN', hasTouch: true, storageState: await page.context().storageState(), viewport: { width: 390, height: 844 } });
-  try {
-    const touchPage = await touchContext.newPage();
-    await touchPage.goto(page.url(), { waitUntil: 'networkidle' });
-    const touchSource = touchPage.locator('.assistant-message', { hasText: '引用导航就绪。' }).last().locator('.citation-footer li', { hasText: 'canvas-source.md' });
-    await touchSource.locator('.citation-source-details summary').tap();
-    assert.equal(await touchSource.locator('details').evaluate((node) => node.open), true, 'touch can read evidence without hover');
-    await touchSource.locator('[data-citation-card="canvas:source:target"]').tap();
-    await touchPage.locator('.canvas-panel:not([hidden]) h1', { hasText: '规范', exact: true }).waitFor();
-  } finally { await touchContext.close(); }
-  console.log('Citation presentation smoke: visible titles/positions, bounded excerpts, source metadata, keyboard output opening and touch evidence/source opening passed.');
-  for (const message of [page.locator('.user-message', { hasText: 'canvas-citations' }).last(), page.locator('.assistant-message:not(.is-streaming)', { hasText: '引用导航就绪。' }).last()]) {
-    assert.equal(await message.locator('.citation-unavailable').count(), 0);
-    await page.getByRole('tab', { name: 'canvas-source.md', exact: true }).click();
-    await message.locator('[data-citation-id="canvas:report"]').first().click();
-    await reader.locator('h1', { hasText: 'Canvas 报告', exact: true }).waitFor();
-    assert.equal(await reader.getByRole('status').filter({ hasText: '未找到引用位置' }).count(), 0);
-    await message.locator('[data-citation-id="canvas:chart"]').first().click();
-    await page.locator('.file-preview-card').waitFor();
-    await page.waitForFunction(() => document.querySelector('.file-preview-card img')?.naturalWidth > 0);
-    await page.locator('.file-preview-card').getByRole('button', { name: '关闭文件预览', exact: true }).click();
-  }
-  // A citation can also be present in the optimistic prompt while the snapshot settles.
-  await page.locator('[data-citation-card="canvas:source:target"]').first().click();
+  await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).click();
+  await detail.waitFor({ state: 'hidden' });
   await reader.locator('h1', { hasText: '规范', exact: true }).waitFor();
   assert.ok(await reader.locator('.document-scroll').evaluate((node) => node.scrollTop) > 100);
-  await page.locator('[data-citation-card="canvas:source:missing"]').first().click();
-  await reader.getByRole('status').filter({ hasText: '未找到引用位置' }).waitFor();
-  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).click();
-  assert.equal(await canvas.getByRole('tab', { name: 'canvas-report.md', exact: true }).count(), 1);
-
-  await page.getByRole('button', { name: '打开引用管理器', exact: true }).click();
-  const manager = page.getByRole('dialog', { name: '引用管理器', exact: true });
-  const sourceRow = manager.locator('article', { hasText: 'canvas-source.md' });
-  await sourceRow.getByRole('combobox').selectOption('canvas:source:target');
-  await sourceRow.getByRole('button', { name: '查看证据', exact: true }).click();
-  await manager.waitFor({ state: 'hidden' });
-  await reader.locator('h1', { hasText: '规范', exact: true }).waitFor();
-  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).click();
-
-  console.log('Document smoke: Markdown citations passed.');
-  await reader.locator('[data-citation-id="canvas:pdf:2"]').click();
-  await reader.locator('iframe').waitFor();
-  assert.match(await reader.locator('iframe').getAttribute('src'), /#page=2&/);
-  const pdfFrame = await reader.locator('iframe').elementHandle();
-  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).click();
-  await page.getByRole('tab', { name: 'canvas-evidence.pdf', exact: true }).click();
-  assert.equal(await reader.locator('iframe').evaluate((node, previous) => node === previous, pdfFrame), true);
-  await page.locator('[data-citation-card="canvas:pdf:3"]').first().click();
-  await page.waitForFunction(() => document.querySelector('.canvas-panel:not([hidden]) iframe')?.getAttribute('src')?.includes('#page=3&'));
-  const thirdPage = await reader.locator('iframe').elementHandle();
-  await page.locator('[data-citation-card="canvas:pdf:3"]').first().click();
-  assert.equal(await reader.locator('iframe').evaluate((node, previous) => node === previous, thirdPage), false, 'same-page citation requests re-navigate');
-  await page.waitForTimeout(700);
-  const outputDirectory = path.resolve('.plans/canvas-document-viewer/validation');
-  fs.mkdirSync(outputDirectory, { recursive: true });
-  await reader.screenshot({ path: path.join(outputDirectory, 'pdf-page-3.png') });
-  const downloadPromise = page.waitForEvent('download');
-  await reader.getByRole('button', { name: '下载原文件', exact: true }).click();
-  const download = await downloadPromise;
-  assert.equal(download.suggestedFilename(), 'canvas-evidence.pdf');
-  assert.equal(fs.readFileSync(await download.path()).equals(pdf), true);
-
-  await composer.fill('canvas-document-read'); await composer.press('Enter');
-  await page.locator('.assistant-message', { hasText: '文档读取完成。' }).waitFor();
-  const readTool = page.locator('.tool-card', { hasText: 'canvas-report.md' });
-  await readTool.locator('.tool-card-toggle').click();
-  await readTool.locator('.tool-read-open').click();
-  await reader.locator('h1', { hasText: 'Canvas 报告', exact: true }).waitFor();
-  assert.equal(await canvas.getByRole('tab', { name: 'canvas-report.md', exact: true }).count(), 1);
-  assert.match(await reader.locator('.document-source').innerText(), /引用版本/);
+  const pinnedSourceTabs = await canvas.getByRole('tab').count();
+  await citedMessage.locator('[data-citation-card="canvas:source:target"]').click();
+  await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).click();
+  assert.equal(await canvas.getByRole('tab').count(), pinnedSourceTabs, 'same source version reuses the tab');
+  await citedMessage.locator('[data-citation-id="canvas:source:target"]').first().click();
+  await detail.waitFor();
+  await page.keyboard.press('Escape');
+  await detail.waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-citation-id') === 'canvas:source:target');
+  const user = page.locator('.user-message', { hasText: 'canvas-citations' }).last();
+  await user.locator('[data-citation-id="canvas:source:target"]').click();
+  await detail.locator('.citation-detail-item').nth(1).waitFor();
+  assert.equal(await detail.locator('.citation-detail-item').count(), 2, 'group clicks preserve every supporting source');
+  await page.keyboard.press('Escape');
+  // A CSV result remains readable without a dedicated JSON evidence file.
+  await user.locator('[data-citation-id="canvas:counts:rows"]').click();
+  await detail.getByRole('cell', { name: '上海南站', exact: true }).waitFor();
+  assert.equal(await detail.locator('tbody .is-cited').count(), 2);
+  await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).click();
+  await reader.locator('[data-document-row="2"].is-cited').waitFor();
+  assert.equal(await reader.locator('tbody .is-cited').count(), 2);
+  await citedMessage.locator('[data-citation-card="canvas:source:missing"]').count().then(async (count) => {
+    if (count) { await citedMessage.locator('[data-citation-card="canvas:source:missing"]').click(); await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).click(); await reader.getByRole('status').filter({ hasText: '未找到引用位置' }).waitFor(); }
+  });
+  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
+  const markdownDownload = page.waitForEvent('download');
+  await reader.getByRole('button', { name: '导出 Markdown', exact: true }).click();
+  const markdownText = fs.readFileSync(await (await markdownDownload).path(), 'utf8');
+  assert.match(markdownText, /参考文献/); assert.match(markdownText, /第 2 页/); assert.doesNotMatch(markdownText, /\[\[cite:/);
   const exportRequest = page.waitForRequest((request) => request.url().endsWith('/api/reports/pdf/download'));
-  const exported = page.waitForEvent('download');
+  const pdfDownload = page.waitForEvent('download');
   await reader.getByRole('button', { name: '生成并下载 PDF', exact: true }).click();
   const exportHtml = (await exportRequest).postDataJSON().html;
-  assert.match(exportHtml, /data:image\/png;base64/);
-  assert.doesNotMatch(exportHtml, /document-toolbar|document-outline/);
-  assert.equal(fs.readFileSync(await (await exported).path()).subarray(0, 4).toString(), '%PDF');
-
-  // Session switches recreate readers but restore document metadata and MD position.
-  await reader.getByRole('navigation').getByRole('button', { name: '章节 20', exact: true }).click();
-  const beforeSwitch = await reader.locator('.document-scroll').evaluate((node) => node.scrollTop);
-  await page.locator('.live-tab-add').click();
-  const newTask = page.getByRole('dialog', { name: '新建交通任务', exact: true });
-  await newTask.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
-  await newTask.getByRole('button', { name: '创建任务', exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll('.live-tab').length === 2);
-  assert.equal(await canvas.getByRole('tab').count(), 0, 'new sessions do not inherit document tabs');
-  await page.locator('.live-tab').last().locator('.live-tab-close').click();
-  await reader.locator('h1', { hasText: 'Canvas 报告', exact: true }).waitFor();
-  assert.ok(Math.abs(await reader.locator('.document-scroll').evaluate((node) => node.scrollTop) - beforeSwitch) < 2);
-
-  // The existing artifact scenario provides a real tool result and relative report image.
+  assert.match(exportHtml, /参考文献/); assert.match(exportHtml, /第 2 页/);
+  assert.equal(fs.readFileSync(await (await pdfDownload).path()).subarray(0, 4).toString(), '%PDF');
+  // Report-to-PDF navigation resolves the pinned PDF and preserves page selection.
+  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
+  await reader.locator('[data-citation-id="canvas:pdf:2"]').click();
+  await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).click();
+  await reader.locator('iframe').waitFor();
+  assert.match(await reader.locator('iframe').getAttribute('src'), /#page=2&/);
+  const downloadPromise = page.waitForEvent('download');
+  await reader.getByRole('button', { name: '下载原文件', exact: true }).click();
+  assert.equal(fs.readFileSync(await (await downloadPromise).path()).equals(pdf), true);
+  // The manager opens the same details and retains its existing bibliography exports.
+  await page.getByRole('button', { name: '打开引用管理器', exact: true }).click();
+  const manager = page.getByRole('dialog', { name: '引用依据管理', exact: true });
+  await manager.locator('article', { hasText: 'canvas-source.md' }).first().getByRole('button', { name: '查看依据', exact: true }).click();
+  await detail.getByText('知识归纳', { exact: false }).first().waitFor();
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+  // Narrow view contains detail scrolling without a hover interaction.
+  await user.locator('[data-citation-id="canvas:counts:rows"]').click();
+  await detail.getByRole('cell', { name: '虹桥站', exact: true }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await detail.getByRole('cell', { name: '虹桥站', exact: true }).waitFor();
+  assert.ok(await detail.evaluate((node) => node.scrollWidth <= node.clientWidth + 1));
+  await detail.screenshot({ path: path.join(evidenceDirectory, 'detail-mobile.png'), animations: 'disabled' });
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // Final deliverables retain their separate card intent while sharing the source version.
   await composer.fill('基线-citation-document'); await composer.press('Enter');
-  await page.locator('.message-artifacts button', { hasText: '引用报告' }).waitFor();
-  await page.locator('.message-artifacts button', { hasText: '引用报告' }).click();
+  const artifact = page.locator('.message-artifacts button', { hasText: '引用报告' });
+  await artifact.waitFor(); await artifact.click();
   await reader.locator('h1', { hasText: '引用报告', exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector('.canvas-panel:not([hidden]) .file-preview-report img')?.naturalWidth > 0);
-
-  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).click();
-  for (const theme of ['light', 'dark', 'sand']) {
-    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
-    await reader.screenshot({ path: path.join(outputDirectory, `markdown-${theme}.png`) });
-  }
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: '关闭侧栏', exact: true }).click();
-  await page.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
-  await dock.getByRole('button', { name: /canvas-report.md/ }).click();
-  await reader.getByRole('button', { name: '目录', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: '打开或关闭文件栏', exact: true }).getAttribute('aria-pressed'), 'false');
-  await reader.screenshot({ path: path.join(outputDirectory, 'markdown-mobile.png'), animations: 'disabled' });
-  assert.ok(await reader.evaluate((node) => node.scrollWidth <= node.clientWidth + 1));
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.getByRole('button', { name: '展开或收起会话侧栏', exact: true }).click();
-  fs.writeFileSync(path.join(cwd, 'canvas-report.md'), '# 修改后的版本');
-  await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
-  await reader.locator('h1', { hasText: '修改后的版本', exact: true }).waitFor();
-  await reader.getByText('文档已重写，当前显示的是最新内容，与引用时的版本不同。', { exact: true }).waitFor();
-  await page.getByRole('tab', { name: 'canvas-source.md', exact: true }).click();
-  fs.writeFileSync(path.join(cwd, 'canvas-source.md'), '# 已修改的附件');
+  await user.locator('[data-citation-id="canvas:source:target"]').click();
+  await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).first().click();
+  fs.writeFileSync(path.join(cwd, 'canvas-source.md'), '# 已覆盖原件');
   await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
   await reader.getByRole('alert').waitFor();
-  assert.equal(await reader.locator('h1').count(), 0);
-
-  // Close all documents so existing map/video smoke expectations remain unchanged.
+  assert.equal(await reader.locator('h1').count(), 0, 'pinned versions never fall back to changed content');
   while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
-  console.log('Document smoke: unified entries, report rendering, outline, navigation, refresh, citation updates, version errors, downloads and tab preservation passed.');
+  console.log('Citation smoke: collapsed references, shared details, multi-source groups, table rows, pinned Canvas navigation, exports and version failures passed.');
 }

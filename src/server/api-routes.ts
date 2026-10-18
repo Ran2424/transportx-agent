@@ -1,3 +1,4 @@
+import { citationResourceError } from './citation-resources.js';
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 
@@ -143,13 +144,14 @@ export function createApiRouter(services: ApiRouteServices) {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (session) deps.json(res, 200, { attachments: deps.listAttachments(session.cwd) });
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/citations$/, ({ res, params, deps }) => {
+    .get(/^\/api\/live-sessions\/([^/]+)\/citations$/, ({ res, url, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try {
-        const registry = deps.citation.registry(session).load();
-        if (registry.sessionId !== (session.citationRegistryId || session.id)) return deps.json(res, 404, { error: 'Citation registry not found in this session' });
-        deps.json(res, 200, { citations: registry });
+        const offset = Number(url.searchParams.get('offset') || 0);
+        const limit = Number(url.searchParams.get('limit') || 200);
+        const ids = url.searchParams.get('ids')?.split(',');
+        deps.json(res, 200, { citations: deps.citation.registry(session).list(offset, limit, ids) });
       } catch (error) { deps.json(res, 409, { error: deps.errorMessage(error) }); }
     })
     .get(/^\/api\/live-sessions\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
@@ -158,20 +160,11 @@ export function createApiRouter(services: ApiRouteServices) {
       try { deps.json(res, 200, deps.video.metrics(session, decodeURIComponent(params[1]))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .post(/^\/api\/live-sessions\/([^/]+)\/citations\/occurrences$/, async ({ req, res, params, deps }) => {
+    .get(/^\/api\/live-sessions\/([^/]+)\/citations\/evidence\/([^/]+)$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
-      try {
-        const body = await deps.readBody(req);
-        if (typeof body.locatorId !== 'string') return deps.json(res, 400, { error: 'locatorId required' });
-        const result = deps.citation.cite(session, {
-          locatorId: body.locatorId,
-          containerType: 'message',
-          containerId: `composer:${session.id}`,
-          ...(typeof body.role === 'string' ? { role: body.role as import('../contracts/citation.js').CitationRole } : {}),
-        });
-        deps.json(res, 200, { marker: `[[cite:${result.occurrence.occurrenceId}]]`, occurrence: result.occurrence, citations: result.envelope });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+      try { deps.json(res, 200, deps.citation.detail(session, decodeURIComponent(params[1]))); }
+      catch (error) { citationResourceError(res, error); }
     })
     .post(/^\/api\/live-sessions\/([^/]+)\/attachments$/, async ({ req, res, url, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
@@ -321,24 +314,15 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'citation');
         if (!session) return;
-        const results = [];
-        if (Array.isArray(body.knowledgeIds) && body.knowledgeIds.length) results.push(deps.citation.resolveKnowledge(session, body.knowledgeIds as string[]));
-        if (Array.isArray(body.attachmentIds) && body.attachmentIds.length) results.push(deps.citation.resolveAttachments(session, body.attachmentIds as string[]));
-        if (Array.isArray(body.artifacts) && body.artifacts.length) results.push(deps.citation.resolveArtifacts(session, body.artifacts as import('./citation-service.js').CitationArtifactInput[]));
-        if (Array.isArray(body.datasets) && body.datasets.length) results.push(deps.citation.resolveDatasets(session, body.datasets as import('./citation-service.js').CitationDatasetInput[]));
-        if (Array.isArray(body.webUrls) && body.webUrls.length) results.push(await deps.citation.resolveWeb(session, body.webUrls as string[]));
-        if (!results.length) return deps.json(res, 400, { error: 'A citation source is required' });
-        deps.json(res, 200, { citations: results.at(-1) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .post('/api/internal/citations/cite', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        const session = resolveServiceSession(res, body, deps, 'citation');
-        if (!session) return;
-        if (typeof body.locatorId !== 'string' || typeof body.containerType !== 'string' || typeof body.containerId !== 'string') return deps.json(res, 400, { error: 'locatorId, containerType and containerId are required' });
-        const result = deps.citation.cite(session, { locatorId: body.locatorId, containerType: body.containerType as import('../contracts/citation.js').CitationContainerType, containerId: body.containerId, ...(typeof body.anchorId === 'string' ? { anchorId: body.anchorId } : {}), ...(typeof body.role === 'string' ? { role: body.role as import('../contracts/citation.js').CitationRole } : {}) });
-        deps.json(res, 200, { occurrence: result.occurrence, citations: result.envelope });
+        if (['knowledgeIds', 'attachmentIds', 'artifacts', 'datasets', 'value', 'executionRef'].some((key) => key in body)) return deps.json(res, 400, { error: 'Unsupported citation input. Use concrete sources with typed locators.' });
+        if (Array.isArray(body.sources) && body.sources.length && !body.webUrls) {
+          const inputs = body.sources as import('./citation-service.js').CitationInput[];
+          const citations = deps.citation.resolve(session, inputs);
+          const deliverableEvidenceIds = inputs.flatMap((input) => input.deliverable ? citations.evidence.filter((item) => citations.sources.some((source) => source.sourceVersionId === item.sourceVersionId && source.content.kind === 'file' && source.content.path === input.path && source.content.assetId === input.assetId)).map((item) => item.evidenceId) : []);
+          return deps.json(res, 200, { citations, deliverableEvidenceIds });
+        }
+        if (Array.isArray(body.webUrls) && !body.sources) return deps.json(res, 200, { citations: await deps.citation.resolveWeb(session, body.webUrls as string[]) });
+        deps.json(res, 400, { error: 'Provide sources or webUrls.' });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
@@ -346,7 +330,10 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
-        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.spatial.analyze(session, body, signal)) });
+        const result = await runJob(req, res, session, (signal) => deps.spatial.analyze(session, body, signal));
+        // Citation failure must never re-enter SpatialAnalysisService's output cleanup.
+        try { deps.json(res, 200, { result, citations: deps.citation.registerSpatialResult(session, result) }); }
+        catch (error) { deps.json(res, 200, { result, citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/geo/inspect', async ({ req, res, deps }) => {

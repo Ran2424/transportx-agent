@@ -114,15 +114,13 @@ function registerFakeCitations(envelope) {
   const sessionId = process.env.TAU_CITATION_SESSION_ID;
   if (!sessionId || !envelope) return;
   const registryPath = path.join(process.cwd(), '.tau', 'citations.json');
-  const timestamp = new Date().toISOString();
   const registry = fs.existsSync(registryPath)
     ? JSON.parse(fs.readFileSync(registryPath, 'utf8'))
-    : { schemaVersion: 1, sessionId, protocol: envelope.protocol, version: envelope.version, citationSetId: envelope.citationSetId, generatedAt: envelope.generatedAt || timestamp, updatedAt: timestamp, works: [], resources: [], locators: [], occurrences: [], provenance: [] };
-  for (const [collection, id] of [['works', 'workId'], ['resources', 'resourceId'], ['locators', 'locatorId'], ['occurrences', 'occurrenceId'], ['provenance', 'provenanceId']]) {
+    : { schemaVersion: 2, sessionId, protocol: 'pi-citation', version: '3.0', sources: [], evidence: [] };
+  for (const [collection, id] of [['sources', 'sourceVersionId'], ['evidence', 'evidenceId']]) {
     const known = new Set(registry[collection].map((item) => item[id]));
     for (const item of envelope[collection] || []) if (!known.has(item[id])) registry[collection].push(item);
   }
-  registry.updatedAt = timestamp;
   fs.mkdirSync(path.dirname(registryPath), { recursive: true });
   fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
 }

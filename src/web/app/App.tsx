@@ -1,3 +1,4 @@
+import { CitationDetailProvider } from '../platform/conversation/citation-detail';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -151,13 +152,10 @@ export function App({ account }: { account?: ReactNode } = {}) {
     if (!session?.cwd) return;
     const cwd = session.cwd;
     const sequence = ++documentOpenSequence.current;
-    void (request.resource ? Promise.resolve([null, null] as const) : Promise.all([
-      kernel.commands.citation.list(session.id).catch(() => null),
-      kernel.commands.session.listFiles(session.id).catch(() => null),
-    ])).then(([registry, files]) => {
+    void (request.source ? Promise.resolve(null) : kernel.commands.session.listFiles(session.id).catch(() => null)).then((files) => {
       const current = kernel.stores.session.get();
       if (sequence !== documentOpenSequence.current || current.activeSessionId !== session.id || !current.sessions.some((item) => item.id === session.id)) return;
-      const document = resolveDocument(request, cwd, registry, files?.path ?? cwd);
+      const document = resolveDocument(request, cwd, files?.path ?? cwd);
       if (!document) return;
       setCanvases((states) => ({ ...states, [session.id]: openCanvasDocument(states[session.id] ?? EMPTY_CANVAS, document) }));
       if (window.matchMedia('(max-width: 860px)').matches) { setFilesOpen(false); setSidebarOpen(false); }
@@ -422,7 +420,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
   const runtimeNotice = notice || (runtimeErrorMessage !== dismissedRuntimeError ? runtimeErrorMessage : '');
 
   return (
-    <OpenDocumentContext.Provider value={openDocument}><AppShell
+    <OpenDocumentContext.Provider value={openDocument}><CitationDetailProvider sessionId={activeSession?.id}><AppShell
       header={<Header account={account} connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar open={sidebarOpen} sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={() => setNewSessionOpen(true)} onSelectLive={(id) => void selectSession(id)} onSelectHistory={(session, project) => void selectHistory(session, project)} onDeleteLive={deleteLiveSession} onDeleteHistory={deleteHistorySession} onRenameLive={renameLiveSession} onRenameHistory={renameHistorySession} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => setNewSessionOpen(true)} />}
@@ -445,6 +443,6 @@ export function App({ account }: { account?: ReactNode } = {}) {
         </ConfirmationDialog>
         {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label={t('app.notice.close')} onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
       </>}
-    /></OpenDocumentContext.Provider>
+    /></CitationDetailProvider></OpenDocumentContext.Provider>
   );
 }

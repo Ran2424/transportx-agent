@@ -5,7 +5,7 @@
  */
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 
-export const CONTRACT_VERSION = '1.28.0';
+export const CONTRACT_VERSION = '1.29.0';
 
 /**
  * Stable `schemaVersion` literals for the project-owned contract surfaces.
@@ -20,7 +20,7 @@ export const TASK_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 export const GEO_ENVELOPE_PROTOCOL = 'pi-visualization' as const;
 export const GEO_ENVELOPE_VERSION = '1.0' as const;
 export const CITATION_ENVELOPE_PROTOCOL = 'pi-citation' as const;
-export const CITATION_ENVELOPE_VERSION = '2.0' as const;
+export const CITATION_ENVELOPE_VERSION = '3.0' as const;
 export const BRIDGE_ENVELOPE_SCHEMA_VERSION = 1 as const;
 export const CANVAS_PRESENTATION_PROTOCOL = 'pi-canvas' as const;
 export const CANVAS_PRESENTATION_VERSION = '1.0' as const;

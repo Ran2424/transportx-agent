@@ -1,107 +1,33 @@
 import { Type } from 'typebox';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-
-const ArtifactSchema = Type.Object({
-  path: Type.String({ minLength: 1, maxLength: 1000, description: 'Path relative to the active session directory; absolute paths and knowledge-module paths are rejected.' }),
-  title: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
-  quote: Type.Optional(Type.String({ maxLength: 4000 })),
-  section: Type.Optional(Type.String({ maxLength: 500 })),
-  page: Type.Optional(Type.Number({ minimum: 1 })),
-  lineStart: Type.Optional(Type.Number({ minimum: 1 })),
-  lineEnd: Type.Optional(Type.Number({ minimum: 1 })),
-  derivedFromResourceIds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 180 }), { maxItems: 80 })),
+const Positive = Type.Integer({ minimum: 1 });
+const Text = Type.String({ minLength: 1, maxLength: 4000 });
+const Locator = Type.Union([
+  Type.Object({ kind: Type.Literal('source') }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal('document'), page: Type.Optional(Positive), printedPage: Type.Optional(Text), section: Type.Optional(Text), nodeId: Type.Optional(Text), lineStart: Type.Optional(Positive), lineEnd: Type.Optional(Positive) }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal('table'), rowStart: Type.Optional(Positive), rowEnd: Type.Optional(Positive), columns: Type.Optional(Type.Array(Text)), sheet: Type.Optional(Text), cell: Type.Optional(Text) }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal('result'), field: Text }, { additionalProperties: false }),
+]);
+const Source = Type.Object({
+  path: Type.String({ minLength: 1, maxLength: 1000, description: 'Concrete original/result file relative to this session, or to the selected asset when assetId is supplied. Never a directory or catalog candidate.' }),
+  assetId: Type.Optional(Type.String({ minLength: 1, maxLength: 180 })), title: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+  locator: Locator, contentKind: Type.Union([Type.Literal('excerpt'), Type.Literal('summary'), Type.Literal('result'), Type.Literal('source-only')]),
+  text: Type.Optional(Type.String({ minLength: 1, maxLength: 16000 })),
+  metadata: Type.Optional(Type.Object({ bibliographicType: Type.Optional(Type.Union([Type.Literal('S'), Type.Literal('R'), Type.Literal('M'), Type.Literal('J'), Type.Literal('EB/OL'), Type.Literal('DS'), Type.Literal('Z')])), author: Type.Optional(Type.Array(Text)), issuer: Type.Optional(Text), issuedAt: Type.Optional(Text), standardNumber: Type.Optional(Text), edition: Type.Optional(Text), url: Type.Optional(Text), version: Type.Optional(Text), timeRange: Type.Optional(Text), querySummary: Type.Optional(Text) }, { additionalProperties: false })),
+  deliverable: Type.Optional(Type.Boolean({ description: 'True only for an intended final deliverable; delivery does not change source identity.' })),
 }, { additionalProperties: false });
-const DatasetSchema = Type.Object({
-  path: Type.String({ minLength: 1, maxLength: 1000, description: 'Path relative to the active session directory. Use this for generated CSV, JSONL, JSON, or spreadsheet results.' }), assetId: Type.String({ minLength: 1, maxLength: 180 }),
-  version: Type.Optional(Type.String({ maxLength: 180 })), querySummary: Type.Optional(Type.String({ maxLength: 1000 })), timeRange: Type.Optional(Type.String({ maxLength: 300 })), title: Type.Optional(Type.String({ maxLength: 500 })),
-}, { additionalProperties: false });
-
-const ResolveCitationSchema = Type.Object({
-  knowledgeIds: Type.Optional(Type.Array(Type.String({ pattern: '^K-[A-Za-z0-9_.-]+-\\d{6}$' }), { minItems: 1, maxItems: 80 })),
-  attachmentIds: Type.Optional(Type.Array(Type.String({ pattern: '^att_[a-z0-9]{12,32}$' }), { minItems: 1, maxItems: 80 })),
-  artifacts: Type.Optional(Type.Array(ArtifactSchema, { minItems: 1, maxItems: 20 })),
-  datasets: Type.Optional(Type.Array(DatasetSchema, { minItems: 1, maxItems: 20 })),
-  webUrls: Type.Optional(Type.Array(Type.String({ format: 'uri', maxLength: 2000 }), { minItems: 1, maxItems: 10 })),
-}, { additionalProperties: false });
-
-const CiteSchema = Type.Object({
-  locatorId: Type.String({ minLength: 1, maxLength: 180 }),
-  role: Type.Optional(Type.Union([
-    Type.Literal('support'), Type.Literal('background'), Type.Literal('data-source'), Type.Literal('method'), Type.Literal('counterexample'), Type.Literal('artifact-source'),
-  ])),
-  containerType: Type.Optional(Type.Union([Type.Literal('message'), Type.Literal('document'), Type.Literal('artifact')])),
-  containerId: Type.Optional(Type.String({ minLength: 1, maxLength: 300 })),
-  anchorId: Type.Optional(Type.String({ minLength: 1, maxLength: 300 })),
-}, { additionalProperties: false });
-
-function citationHost() {
-  const endpoint = process.env.TAU_CITATION_ENDPOINT;
-  const sessionId = process.env.TAU_CITATION_SESSION_ID;
-  const token = process.env.TAU_CITATION_TOKEN;
-  if (!endpoint || !sessionId || !token) throw new Error('Citation Agent Host bridge is unavailable for this session.');
-  return { endpoint, sessionId, token };
-}
-
-async function hostRequest(path: string, body: Record<string, unknown>) {
-  const host = citationHost();
-  const response = await fetch(`${host.endpoint}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, sessionId: host.sessionId, token: host.token }),
-  });
-  const payload = await response.json() as { error?: string; citations?: unknown; occurrence?: { occurrenceId?: string } };
-  if (!response.ok || !payload.citations) throw new Error(payload.error || 'Citation Agent Host request failed.');
-  return payload;
-}
-
-function locatorSummary(citations: any) {
-  const resources = new Map<string, { relativePath?: string }>((citations.resources || []).map((item: any) => [item.resourceId, item]));
-  return (citations.locators || []).map((item: any) => {
-    const resource = resources.get(item.resourceId);
-    const position = item.page ? `PDF 第${item.page}页` : item.clause || item.section || item.sourceUnit || item.nodeId || '原始资料';
-    return `${item.locatorId}: ${resource?.relativePath || '来源'}，${position}`;
-  }).join('\n');
-}
-
 export default function citationExtension(pi: ExtensionAPI) {
-  pi.on('before_agent_start', async (event) => ({
-    systemPrompt: `${event.systemPrompt}
-
-When a final answer relies on knowledge, attachments, task artifacts, or queried datasets, call tau_resolve_citation first. For a queried dataset, persist the supporting result as a session-relative CSV, JSON, JSONL, or spreadsheet, resolve it through the datasets parameter with its assetId, then call tau_cite. Use knowledgeIds for knowledge cards so the Host can retain the original PDF or HTML source; do not cite copied knowledge JSONL or Markdown files as artifacts. Artifact and dataset paths must be relative to the active session directory, never absolute local paths. Only cite user-facing final deliverables (such as reports, maps, figures, or data exports) when you intend to hand them to the user; never enumerate or cite scripts, inputs, temporary files, or intermediate outputs unless the user asks for them. Select the precise locator that supports the claim or deliverable, then call tau_cite and place its returned [[cite:occurrenceId]] marker after the relevant text. Never use local paths as citations or write reference lists into Markdown reports.`,
-  }));
-
+  pi.on('before_agent_start', async (event) => ({ systemPrompt: `${event.systemPrompt}\n\nCitations use a single registration step: tau_resolve_citation returns evidence IDs. Put [[cite:evidenceId]] after the supported claim; use [[cite:id1,id2]] for multiple original sources. Reuse IDs directly; there is no tau_cite step. Knowledge/data modules own discovery: start with selected asset overview, browse bounded directories, retrieve a few candidates, then read specific originals/results. Never load all asset bodies at startup or cite a catalog hit as evidence. Knowledge summaries must cite every supporting original location with contentKind summary; only checkable verbatim text is an excerpt. Existing result files can be cited directly without exporting special evidence JSON. Metadata/querySummary is descriptive, not proof of execution. Inline results are registered only by Host producers. Paths are relative to the active session or selected asset. Set deliverable only for requested final files, never intermediate scripts or inputs. Report bodies use the same markers; do not handwrite reference lists or expose local paths as citations.` }));
   pi.registerTool({
-    name: 'tau_resolve_citation',
-    label: '解析引用来源',
-    description: 'Resolve verified knowledge, session attachments, task artifacts, or generated datasets into Host-controlled citation locator candidates. Use knowledgeIds for knowledge cards; artifact and dataset paths must be relative to the active session.',
-    parameters: ResolveCitationSchema,
+    name: 'tau_resolve_citation', label: '登记引用依据', description: 'Pin concrete authorized originals/results and register typed evidence in one step. Returns only this registration, never the accumulated registry.',
+    parameters: Type.Object({ sources: Type.Optional(Type.Array(Source, { minItems: 1, maxItems: 20 })), webUrls: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }), { minItems: 1, maxItems: 10 })) }, { additionalProperties: false }),
     async execute(_toolCallId, params) {
-      if (!params.knowledgeIds?.length && !params.attachmentIds?.length && !params.artifacts?.length && !params.datasets?.length && !params.webUrls?.length) throw new Error('A citation source is required.');
-      const result = await hostRequest('/api/internal/citations/resolve', params as Record<string, unknown>);
-      return {
-        content: [{ type: 'text' as const, text: `Resolved citation locators:\n${locatorSummary(result.citations)}` }],
-        details: { kind: 'tau-citations' as const, citations: result.citations },
-      };
-    },
-  });
-
-  pi.registerTool({
-    name: 'tau_cite',
-    label: '创建精确引用',
-    description: 'Create one Host-registered citation occurrence from a previously resolved locator.',
-    parameters: CiteSchema,
-    async execute(toolCallId, params) {
-      const result = await hostRequest('/api/internal/citations/cite', {
-        ...params,
-        containerType: params.containerType || 'message',
-        containerId: params.containerId || `tool:${toolCallId}`,
-      });
-      const occurrenceId = result.occurrence?.occurrenceId;
-      if (!occurrenceId) throw new Error('Citation Agent Host did not return an occurrence ID.');
-      return {
-        content: [{ type: 'text' as const, text: `Citation registered. Use: [[cite:${occurrenceId}]]` }],
-        details: { kind: 'tau-citations' as const, citations: result.citations },
-      };
+      const endpoint = process.env.TAU_CITATION_ENDPOINT, sessionId = process.env.TAU_CITATION_SESSION_ID, token = process.env.TAU_CITATION_TOKEN;
+      if (!endpoint || !sessionId || !token) throw new Error('Citation Host bridge is unavailable.');
+      const response = await fetch(`${endpoint}/api/internal/citations/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...params, sessionId, token }) });
+      const payload = await response.json() as { error?: string; citations?: { sources: { sourceVersionId: string; title: string }[]; evidence: { evidenceId: string; sourceVersionId: string; text?: string }[] }; deliverableEvidenceIds?: string[] };
+      if (!response.ok || !payload.citations) throw new Error(payload.error || 'Citation registration failed.');
+      return { content: [{ type: 'text' as const, text: payload.citations.evidence.map((item) => `[[cite:${item.evidenceId}]] · sourceVersionId=${item.sourceVersionId} · ${payload.citations?.sources.find((source) => source.sourceVersionId === item.sourceVersionId)?.title || '来源'}${item.text ? ` ${item.text.slice(0, 240)}` : ''}`).join('\n') }], details: { kind: 'tau-citations', citations: payload.citations, deliverableEvidenceIds: payload.deliverableEvidenceIds || [] } };
     },
   });
 }

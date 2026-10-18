@@ -1,72 +1,69 @@
 const { test } = require('node:test') as typeof import('node:test');
-
 test('Citation evidence resolves controlled data and originals while refusing unsafe web targets', async (t) => {
-  const assert = require('node:assert/strict');
-  const fs = require('node:fs');
-  const os = require('node:os');
-  const path = require('node:path');
-  const crypto = require('node:crypto');
-
-  // Citation Service registers controlled dataset results without exposing data rows
-  {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-service-'));
-    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-    fs.writeFileSync(path.join(cwd, 'peak-hour.csv'), 'road_id,flow\nA001,1830\n');
-    const { CitationService } = require('../../bin/citation-service.js');
-    const service = new CitationService();
-    const citations = service.resolveDatasets({ id: 'session_1', cwd }, [{
-      path: 'peak-hour.csv', assetId: 'shanghai.flow.2026', version: '2026.08', timeRange: '07:00-09:00', querySummary: '工作日早高峰流量',
-    }]);
-
-    assert.equal(citations.resources[0].scope, 'dataset');
-    assert.equal(citations.resources[0].kind, 'dataset');
-    assert.match(citations.resources[0].sha256, /^[a-f0-9]{64}$/);
-    assert.equal(citations.locators[0].sourceUnit, 'shanghai.flow.2026 · 2026.08 · 07:00-09:00 · 工作日早高峰流量');
-    assert.equal(JSON.stringify(citations).includes('A001,1830'), false);
-  }
-
-  // Citation Service resolves knowledge cards to verified original PDF resources
-  {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-knowledge-session-'));
-    const knowledgeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-knowledge-asset-'));
-    t.after(() => { fs.rmSync(cwd, { recursive: true, force: true }); fs.rmSync(knowledgeRoot, { recursive: true, force: true }); });
-    const documentRoot = path.join(knowledgeRoot, 'standards', 'sample');
-    const original = Buffer.from('%PDF-1.7 sample');
-    fs.mkdirSync(path.join(documentRoot, 'source'), { recursive: true });
-    fs.mkdirSync(path.join(documentRoot, 'data'), { recursive: true });
-    fs.mkdirSync(path.join(knowledgeRoot, '_catalog'), { recursive: true });
-    fs.writeFileSync(path.join(documentRoot, 'source', 'original.pdf'), original);
-    fs.writeFileSync(path.join(documentRoot, 'document.yaml'), `source_file: source/original.pdf\nsource_sha256: ${crypto.createHash('sha256').update(original).digest('hex')}\nissuer: 测试机构\n`);
-    fs.writeFileSync(path.join(knowledgeRoot, '_catalog', 'documents.jsonl'), `${JSON.stringify({ doc_id: 'SAMPLE', path: 'standards/sample', title: '测试规范', document_class: 'STANDARD_SPEC', validation_status: 'accepted' })}\n`);
-    fs.writeFileSync(path.join(documentRoot, 'data', 'knowledge.jsonl'), `${JSON.stringify({ knowledge_id: 'K-SAMPLE-000001', statement: '必须分流。', normative_force: 'must', verification_status: 'manual_verified', source_refs: [{ node_id: 'SAMPLE@8.2', pdf_page: 12, printed_page: '10' }] })}\n`);
-    const { CitationService } = require('../../bin/citation-service.js');
-    const citations = new CitationService().resolveKnowledge({ id: 'session_knowledge', cwd, resolvedSessionPlan: { assets: [{ id: 'knowledge:test', kind: 'knowledge', path: knowledgeRoot }] } as any }, ['K-SAMPLE-000001']);
-
-    assert.deepEqual(citations.resources.map((item: any) => ({ scope: item.scope, kind: item.kind, relativePath: item.relativePath })), [{ scope: 'knowledge', kind: 'pdf', relativePath: 'knowledge:test/standards/sample/source/original.pdf' }]);
-    assert.deepEqual(citations.locators.map((item: any) => ({ page: item.page, printedPage: item.printedPage, nodeId: item.nodeId })), [{ page: 12, printedPage: '10', nodeId: 'SAMPLE@8.2' }]);
-  }
-
-  // Citation Service registers JSONL evidence once with multiple line locators
-  {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-citation-jsonl-'));
-    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-    fs.writeFileSync(path.join(cwd, 'evidence.jsonl'), '{"road":"A001","flow":1830}\n{"road":"A002","flow":920}\n');
-    const { CitationService } = require('../../bin/citation-service.js');
-    const citations = new CitationService().resolveArtifacts({ id: 'session_jsonl', cwd }, [
-      { path: 'evidence.jsonl', quote: 'A001 流量 1830', lineStart: 1, lineEnd: 1 },
-      { path: 'evidence.jsonl', quote: 'A002 流量 920', lineStart: 2, lineEnd: 2 },
-    ]);
-
-    assert.deepEqual(citations.resources.map((item: any) => ({ kind: item.kind, mimeType: item.mimeType })), [{ kind: 'dataset', mimeType: 'application/x-ndjson' }]);
-    assert.equal(citations.works.length, 1);
-    assert.deepEqual(citations.locators.map((item: any) => [item.lineStart, item.lineEnd]), [[1, 1], [2, 2]]);
-  }
-
-  // Citation Service rejects private and non-HTTPS web targets before fetch
-  {
-    const { publicCitationUrl } = require('../../bin/citation-service.js');
-    await assert.rejects(publicCitationUrl('http://example.com/report'), /public HTTPS/i);
-    await assert.rejects(publicCitationUrl('https://127.0.0.1/report'), /public HTTPS/i);
-    await assert.rejects(publicCitationUrl('https://[::1]/report'), /public HTTPS/i);
-  }
+  const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { CitationService, publicCitationUrl } = require('../../bin/citation-service.js');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'citation-session-')), asset = fs.mkdtempSync(path.join(os.tmpdir(), 'citation-asset-'));
+  t.after(() => { fs.rmSync(cwd, { recursive: true, force: true }); fs.rmSync(asset, { recursive: true, force: true }); });
+  fs.writeFileSync(path.join(cwd, 'flow.csv'), 'road_id,flow\nA001,1830\nA002,920\n');
+  fs.writeFileSync(path.join(asset, 'one.md'), '# 分流\n必须分流。\n'); fs.writeFileSync(path.join(asset, 'two.md'), '# 接驳\n增加接驳。\n');
+  const session = { id: 'session_one', cwd, resolvedSessionPlan: { assets: [{ id: 'knowledge:one', kind: 'knowledge', path: asset }] } };
+  const service = new CitationService();
+  const result = service.resolve(session, [{ path: 'flow.csv', title: '早高峰流量', locator: { kind: 'table', rowStart: 1, rowEnd: 2, columns: ['flow'] }, contentKind: 'result', metadata: { querySummary: '早高峰聚合；未提供受控执行记录' } }]);
+  assert.equal(result.sources.length, 1); assert.equal(result.sources[0].executionRef, undefined);
+  assert.equal(JSON.stringify(result).includes('A001'), false);
+  const detail = service.detail(session, result.evidence[0].evidenceId);
+  assert.equal(detail.preview.kind, 'table'); assert.deepEqual(detail.preview.table.rows, [['A001', '1830'], ['A002', '920']]);
+  const originals = service.resolve(session, [{ assetId: 'knowledge:one', path: 'one.md', locator: { kind: 'document', section: '分流' }, contentKind: 'summary', text: '分流并增加接驳。' }, { assetId: 'knowledge:one', path: 'two.md', locator: { kind: 'document', section: '接驳' }, contentKind: 'summary', text: '分流并增加接驳。' }]);
+  assert.equal(originals.sources.length, 2); assert.equal(originals.evidence.length, 2);
+  const again = service.resolve(session, [{ assetId: 'knowledge:one', path: 'one.md', locator: { kind: 'document', lineStart: 2, lineEnd: 2 }, contentKind: 'excerpt', text: '必须分流。' }]);
+  const reordered = service.resolve(session, [{ path: 'one.md', assetId: 'knowledge:one', contentKind: 'excerpt', text: '必须分流。', locator: { lineEnd: 2, lineStart: 2, kind: 'document' } }]);
+  assert.equal(reordered.evidence[0].evidenceId, again.evidence[0].evidenceId);
+  assert.throws(() => service.resolve(session, [{ path: 'one.md', assetId: 'knowledge:one', contentKind: 'excerpt', text: '必须分流。', locator: { kind: 'document', lineStart: 1, lineEnd: 1 } }]), /verbatim/);
+  assert.equal(again.sources.length, 1); assert.equal(service.registry(session).load().sources.length, 3);
+  assert.throws(() => service.resolve(session, [{ assetId: 'other', path: 'one.md', locator: { kind: 'source' }, contentKind: 'source-only' }]), /authorized/);
+  assert.throws(() => service.resolve(session, [{ path: '../outside.md', locator: { kind: 'source' }, contentKind: 'source-only' }]), /invalid/);
+  assert.throws(() => service.resolve(session, [{ assetId: 'knowledge:one', path: 'one.md', locator: { kind: 'source' }, contentKind: 'excerpt', text: '伪造的摘录' }]), /verbatim/);
+  assert.throws(() => service.resolve(session, [{ path: 'flow.csv', locator: { kind: 'table', rowStart: 3, rowEnd: 1 }, contentKind: 'result' }]), /locator/);
+  fs.writeFileSync(path.join(cwd, 'flow.csv'), 'new data');
+  assert.throws(() => service.detail(session, result.evidence[0].evidenceId), /changed/);
+  const next = service.resolve(session, [{ path: 'flow.csv', locator: { kind: 'source' }, contentKind: 'source-only' }]);
+  assert.notEqual(next.sources[0].sourceVersionId, result.sources[0].sourceVersionId);
+  fs.writeFileSync(path.join(cwd, 'manifest.json'), '{}');
+  const { hashCitationFile } = require('../../bin/citation-resources.js');
+  const input = { sourceKey: 'execution:one', title: '受控计数', value: { columns: ['count'], rows: [[3]] }, locator: { kind: 'result', field: 'count' }, executionRef: { path: 'manifest.json', sha256: hashCitationFile(path.join(cwd, 'manifest.json')), operation: 'count', inputHashes: [] } };
+  const inline = service.registerInline(session, input); service.registerInline(session, input);
+  assert.equal(inline.sources[0].content.value, undefined); assert.deepEqual(service.detail(session, inline.evidence[0].evidenceId).preview.table.rows, [[3]]);
+  assert.throws(() => service.registerInline(session, { ...input, value: 'x'.repeat(256 * 1024 + 1) }), /256 KiB/);
+  const registryFile = service.registry(session).filePath, originalRegistry = fs.readFileSync(registryFile, 'utf8');
+  const tampered = JSON.parse(originalRegistry);
+  tampered.sources.find((source: any) => source.content.kind === 'inline').content.value.rows[0][0] = 999;
+  fs.writeFileSync(registryFile, JSON.stringify(tampered));
+  assert.throws(() => service.detail(session, inline.evidence[0].evidenceId), /changed/);
+  fs.writeFileSync(registryFile, originalRegistry);
+  fs.writeFileSync(path.join(cwd, 'large.txt'), 'x'.repeat(2 * 1024 * 1024 + 1));
+  const large = service.resolve(session, [{ path: 'large.txt', locator: { kind: 'source' }, contentKind: 'source-only' }]);
+  assert.equal(service.detail(session, large.evidence[0].evidenceId).preview.kind, 'none');
+  // Public snapshots preserve URL identity even when two originals have the same bytes.
+  const dns = require('node:dns/promises'), https = require('node:https'), { Readable } = require('node:stream'), { EventEmitter } = require('node:events');
+  let webBody = '<html>same original bytes</html>';
+  const lookup = t.mock.method(dns, 'lookup', async () => [{ address: '1.1.1.1', family: 4 }]);
+  const request = t.mock.method(https, 'request', (_options: unknown, respond: (value: any) => void) => {
+    const response = Readable.from([Buffer.from(webBody)]);
+    response.headers = { 'content-type': 'text/html' }; response.statusCode = 200;
+    const outgoing = new EventEmitter(); outgoing.setTimeout = () => {}; outgoing.end = () => respond(response);
+    return outgoing;
+  });
+  try {
+    const web = await service.resolveWeb(session, ['https://one.example/report', 'https://two.example/report']);
+    assert.equal(web.sources.length, 2);
+    assert.notEqual(web.sources[0].sourceVersionId, web.sources[1].sourceVersionId);
+    assert.equal(web.sources[0].content.sha256, web.sources[1].content.sha256);
+    webBody = '<html>updated bytes</html>';
+    const updated = await service.resolveWeb(session, ['https://one.example/report']);
+    assert.equal(updated.sources.length, 1, 'registration returns only its own delta');
+    assert.equal(updated.sources[0].sourceKey, web.sources[0].sourceKey);
+    assert.notEqual(updated.sources[0].sourceVersionId, web.sources[0].sourceVersionId);
+  } finally { lookup.mock.restore(); request.mock.restore(); }
+  await assert.rejects(publicCitationUrl('https://[::ffff:127.0.0.1]'), /public HTTPS/);
+  await assert.rejects(publicCitationUrl('http://example.com'), /public HTTPS/); await assert.rejects(publicCitationUrl('https://127.0.0.1'), /public HTTPS/); await assert.rejects(publicCitationUrl('https://[::1]'), /public HTTPS/);
 });

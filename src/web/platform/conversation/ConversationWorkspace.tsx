@@ -1,3 +1,4 @@
+import { citationIdsInText } from '../../../contracts/citation-compiler';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppMessage, MessageContentBlock } from '../../../public/app-types.js';
@@ -39,10 +40,19 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   useEffect(reloadAttachments, [kernel, sessionId]);
   useEffect(() => {
     let active = true;
-    void kernel.commands.citation.list(sessionId).then((citations) => {
+    const controller = new AbortController();
+    const ids = [...new Set(entries.flatMap((entry) => citationIdsInText(entry.message ? messageText(entry.message) : '')))];
+    async function read() {
+      const citations: CitationEnvelope = { protocol: 'pi-citation', version: '3.0', sources: [], evidence: [] };
+      for (let offset = 0; offset < ids.length; offset += 200) {
+        const page = await kernel.commands.citation.list(sessionId, { ids: ids.slice(offset, offset + 200), signal: controller.signal });
+        for (const source of page.sources) if (!citations.sources.some((item) => item.sourceVersionId === source.sourceVersionId)) citations.sources.push(source);
+        citations.evidence.push(...page.evidence);
+      }
       if (active) setCitationEnvelope(citations);
-    }).catch(() => {});
-    return () => { active = false; };
+    }
+    void read().catch(() => {});
+    return () => { active = false; controller.abort(); };
   }, [data?.live.active, entries.length, kernel, sessionId]);
   const toolProjection = useMemo(() => projectTools(entries, liveTools || {}), [entries, liveTools]);
   const citationProjection = useMemo(() => projectMessageCitations(entries, citationEnvelope), [citationEnvelope, entries]);

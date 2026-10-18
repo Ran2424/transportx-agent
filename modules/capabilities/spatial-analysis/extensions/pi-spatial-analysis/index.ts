@@ -35,9 +35,9 @@ async function analyze(body: Record<string, unknown>) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, sessionId: host.sessionId, token: host.token }),
   });
-  const payload = await response.json() as { error?: string; result?: { analysisId?: string; operation?: string; output?: { relativePath?: string; featureCount?: number }; counts?: { unmatched?: number } } };
+  const payload = await response.json() as { citations?: { evidence: { evidenceId: string }[] }; citationWarning?: string; error?: string; result?: { analysisId?: string; operation?: string; output?: { relativePath?: string; featureCount?: number }; counts?: { unmatched?: number } } };
   if (!response.ok || !payload.result) throw new Error(payload.error || 'Spatial Analysis Agent Host request failed.');
-  return payload.result;
+  return payload;
 }
 
 export default function spatialAnalysisExtension(pi: ExtensionAPI) {
@@ -47,10 +47,11 @@ export default function spatialAnalysisExtension(pi: ExtensionAPI) {
     description: 'Run a Host-controlled buffer, nearest-neighbor, or spatial join over session-relative GeoJSON. Distance operations require an explicit metric CRS. The output is WGS84 GeoJSON that can be passed to publish_geodata.',
     parameters: SpatialAnalyzeSchema,
     async execute(_toolCallId, params) {
-      const result = await analyze(params as Record<string, unknown>);
+      const payload = await analyze(params as Record<string, unknown>);
+      const result = payload.result!;
       return {
-        content: [{ type: 'text' as const, text: `Spatial analysis ${result.analysisId} completed. Output: ${result.output?.relativePath}; features: ${result.output?.featureCount}; unmatched: ${result.counts?.unmatched || 0}. Use publish_geodata to display it.` }],
-        details: { kind: 'tau-spatial-analysis' as const, result },
+        content: [{ type: 'text' as const, text: `Spatial analysis ${result.analysisId} completed. Output: ${result.output?.relativePath}; features: ${result.output?.featureCount}; unmatched: ${result.counts?.unmatched || 0}. Use publish_geodata to display it. ${payload.citations?.evidence.map((item) => `[[cite:${item.evidenceId}]]`).join(' ') || payload.citationWarning || ''}` }],
+        details: { kind: 'tau-spatial-analysis' as const, result, citations: payload.citations, citationWarning: payload.citationWarning },
       };
     },
   });

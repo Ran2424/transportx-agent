@@ -9,7 +9,7 @@ export const serviceModuleIds: Record<SessionService, string> = {
 
 // Only these POST routes authenticate with a session service token in the router.
 export const INTERNAL_SERVICE_PATHS = new Set([
-  '/api/internal/citations/resolve', '/api/internal/citations/cite',
+  '/api/internal/citations/resolve',
   '/api/internal/spatial/analyze', '/api/internal/geo/inspect', '/api/internal/geo/request', '/api/internal/geo/screenshot',
   '/api/internal/canvas/present', '/api/internal/canvas/inspect',
   '/api/internal/video/search', '/api/internal/video/present', '/api/internal/video/snapshot', '/api/internal/video/clip', '/api/internal/video/sample-frames',

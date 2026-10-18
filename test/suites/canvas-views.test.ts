@@ -69,7 +69,7 @@ test('Canvas focus, document identity and content survive updates and navigation
     state = openCanvasDocument(state, document);
     assert.equal(state.documents.length, 1);
     assert.equal(state.tabIds.length, 1);
-    const locator = { locatorId: 'section', resourceId: 'report', section: '结论' };
+    const locator = { kind: 'document' as const, section: '结论' };
     state = openCanvasDocument(state, { ...document, locator });
     state = openCanvasDocument(state, { ...document, locator });
     assert.equal(state.documents[0].navigationId, 2, 'repeated navigation is an explicit request');
@@ -93,17 +93,12 @@ test('Canvas focus, document identity and content survive updates and navigation
     assert.notEqual(first.id, resolveDocument({ ...request, path: 'other/report.md' }, '/task')!.id);
     assert.notEqual(first.id, resolveDocument({ ...request, sessionId: 'two' }, '/task')!.id);
     assert.equal(documentPath('output\\..\\report.md', 'C:\\task'), 'C:/task/report.md');
-    const resource = { resourceId: 'report', workId: 'work', kind: 'document', scope: 'artifact', relativePath: 'report.md', mimeType: 'text/markdown', sha256: 'a'.repeat(64) } as const;
-    const registry = { resources: [resource] } as any;
-    const pinned = resolveDocument(request, '/task', registry)!;
-    assert.equal(pinned.resource, resource);
-    const canonical = resolveDocument({ ...request, path: '/private/task/report.md' }, '/task', registry, '/private/task')!;
-    assert.equal(canonical.id, pinned.id, 'the server canonical root joins directory aliases to registered resources');
-    assert.equal(resolveDocument({ ...request, path: '/task/report.md' }, '/task', registry, '/private/task')!.id, pinned.id);
-    assert.equal(pinned.id, resolveDocument({ ...request, resource }, '/task')!.id);
-    assert.notEqual(pinned.id, resolveDocument({ ...request, resource: { ...resource, sha256: 'b'.repeat(64) } }, '/task')!.id);
-    assert.equal(resolveDocument(request, '/task', { resources: [{ ...resource, scope: 'knowledge' }] } as any)!.resource, undefined);
-    assert.equal(resolveDocument(request, '/task', { resources: [resource, { ...resource, resourceId: 'second' }] } as any)!.resource, undefined, 'ambiguous registrations are not merged');
+    const source = { sourceVersionId: 'sv_report', sourceKey: 'session:report.md', title: '报告', acquiredAt: '2026-10-16', content: { kind: 'file', scope: 'session', path: 'report.md', mimeType: 'text/markdown', sha256: 'a'.repeat(64), size: 100 } } as const;
+    const pinned = resolveDocument({ ...request, source }, '/task')!;
+    assert.equal(pinned.source, source);
+    assert.equal(resolveDocument(request, '/task')!.source, undefined, 'ordinary browsing always reads the current file');
+    assert.equal(pinned.id, resolveDocument({ ...request, path: '/task/report.md', source }, '/task')!.id);
+    assert.notEqual(pinned.id, resolveDocument({ ...request, source: { ...source, sourceVersionId: 'sv_new', content: { ...source.content, sha256: 'b'.repeat(64) } } }, '/task')!.id);
     assert.equal(resolveDocument({ ...request, path: 'image.png' }, '/task'), null);
     assert.equal(documentFormat('report.docx'), 'docx');
     assert.equal(documentFormat('sheet.bin', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), 'xlsx');
@@ -131,10 +126,10 @@ test('Canvas focus, document identity and content survive updates and navigation
     const { documentHeadings, documentTarget } = await import('../../src/web/platform/canvas/document-state.ts');
     const headings = documentHeadings(['结论', '结论', '结论-2', 'Methods & data'].map((text) => ({ text, level: 2 })));
     assert.equal(new Set(headings.map((item) => item.id)).size, headings.length);
-    const locator = { locatorId: 'one', resourceId: 'report' };
+    const locator = { kind: 'document' as const };
     assert.equal(documentTarget(headings, { ...locator, section: '结论' }), null);
     assert.equal(documentTarget(headings, { ...locator, nodeId: '#结论-2', section: '结论' }), '结论-2');
     assert.equal(documentTarget(headings, { ...locator, section: 'Methods & data' }), 'methods-data');
-    assert.equal(documentTarget(headings, { ...locator, section: '不存在', quote: '结论' }), null);
+    assert.equal(documentTarget(headings, { ...locator, section: '不存在' }), null);
   }
 });

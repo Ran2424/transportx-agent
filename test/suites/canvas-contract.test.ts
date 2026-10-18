@@ -41,7 +41,7 @@ test('Canvas resources and adapter contracts accept valid presentations and reje
   // Canvas resource scopes and explicit context share the same guarded references
   {
     const { parseCanvasContextStructured, parseCanvasPresentationStructured } = await canvasContract();
-    const citation = { scope: 'citation', resourceId: 'report', sha256: 'a'.repeat(64) };
+    const citation = { scope: 'capability', moduleId: 'com.transportx.citation', resourceId: 'sv_report' };
     const capability = { scope: 'capability', moduleId: 'com.transportx.video', resourceId: 'video-1', revision: 2 };
     assert.equal(parseCanvasPresentationStructured({ ...base, resources: [citation, capability] }).ok, true);
     const context = parseCanvasContextStructured({
@@ -57,7 +57,7 @@ test('Canvas resources and adapter contracts accept valid presentations and reje
       createdAt: base.generatedAt,
     });
     assert.equal(context.ok, true);
-    assert.equal(parseCanvasPresentationStructured({ ...base, resources: [{ ...citation, sha256: 'not-a-digest' }] }).ok, false);
+    assert.equal(parseCanvasPresentationStructured({ ...base, resources: [{ scope: 'citation', resourceId: 'legacy', sha256: 'a'.repeat(64) }] }).ok, false);
   }
 
   // Geo and Video Canvas targets are validated by their domain contracts

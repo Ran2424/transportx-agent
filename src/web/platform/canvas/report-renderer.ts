@@ -11,10 +11,9 @@ function reportImageUrl(url: string, view: DocumentView, citations: CitationEnve
   const separator = view.path.replaceAll('\\', '/').lastIndexOf('/');
   const directory = separator >= 0 ? view.path.slice(0, separator) : '.';
   const path = documentPath(value, directory);
-  const resource = citations?.resources.find((item) => item.kind === 'image' && item.scope === view.resource?.scope && documentPath(item.relativePath, '') === documentPath(path, ''));
-  if (resource) return `${window.location.origin}${citationResourceUrl(view.sessionId, resource.resourceId)}?sha256=${resource.sha256}`;
-  // Knowledge assets are outside the session root; never reinterpret them as session files.
-  if (view.resource?.scope === 'knowledge') return '';
+  const source = citations?.sources.find((item) => item.content.kind === 'file' && item.content.mimeType.startsWith('image/') && item.content.scope === (view.source?.content.kind === 'file' ? view.source.content.scope : 'session') && item.content.assetId === (view.source?.content.kind === 'file' ? view.source.content.assetId : undefined) && documentPath(item.content.path, '') === documentPath(path, ''));
+  if (source) return `${window.location.origin}${citationResourceUrl(view.sessionId, source.sourceVersionId)}?sha256=${source.content.sha256}`;
+  if (view.source?.content.kind === 'file' && view.source.content.scope === 'asset') return '';
   return `${window.location.origin}/api/file/preview?${new URLSearchParams({ sessionId: view.sessionId, path })}`;
 }
 

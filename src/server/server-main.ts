@@ -379,7 +379,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   const parsed = new URL(`http://localhost${req.url || urlPath}`);
   if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
   if (handleVideoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
-  if (handleCitationResourceRoute(req, res, parsed.pathname, { knowledgeRoots: (session) => (session.resolvedSessionPlan?.assets || []).filter((asset): asset is { id: string; kind: 'knowledge'; path: string } => asset.kind === 'knowledge' && typeof asset.id === 'string' && typeof asset.path === 'string').map((asset) => ({ id: asset.id, path: asset.path })), getSession: (id) => liveManager.get(id) })) return;
+  if (handleCitationResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
 
