@@ -24,7 +24,7 @@ if (packaged) {
   const resourcesDir = packaged.resourcesDir;
   const manifest = JSON.parse(fs.readFileSync(path.join(resourcesDir, 'runtime-manifest.json'), 'utf8'));
   const packagedPython = path.join(resourcesDir, manifest.python?.path || '');
-  const python = spawnSync(packagedPython, ['-B', '-I', '-c', 'import matplotlib,numpy,platform,sqlite3,ssl,yaml; print(platform.python_version())'], {
+  const python = spawnSync(packagedPython, ['-B', '-I', '-c', 'import matplotlib,numpy,pandas,platform,pyproj,shapely,sqlite3,ssl,yaml; print(platform.python_version())'], {
     encoding: 'utf8',
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
   });
@@ -42,7 +42,7 @@ const app = await electron.launch({
     ...process.env,
     HOME: temporaryHome,
     TAU_USER_DATA_DIR: dataRoot,
-    TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
+    ...(packaged ? {} : { TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3' }),
   },
 });
 
