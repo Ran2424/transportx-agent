@@ -50,12 +50,18 @@ jobs:
             echo 'CI host (does not certify UOS compatibility):'
             cat /etc/os-release
             dpkg-deb --info release/*-linux-x64.deb
-            echo 'Runtime versions referenced by bundled ELF binaries (target UOS: glibc 2.28):'
-            find release/linux-unpacked -type f \( -name '*.so*' -o -name '*.node' -o -perm /111 \) -exec sh -c 'for file do objdump -T "$file" 2>/dev/null | grep "\*UND\*" | grep -oE "(GLIBC|GLIBCXX|CXXABI)_[0-9.]+" || true; done' sh {} + | sort -Vu
+            echo 'Runtime versions referenced by bundled x64 ELF binaries (target UOS: glibc 2.28):'
+            find release/linux-unpacked -type f \( -name '*.so*' -o -name '*.node' -o -perm /111 \) -exec sh -c 'for file do if file -b "$file" | grep -q "^ELF 64-bit.*x86-64"; then objdump -T "$file" 2>/dev/null | grep "\*UND\*" | grep -oE "(GLIBC|GLIBCXX|CXXABI)_[0-9.]+" || true; fi; done' sh {} + | sort -Vu
           } > release/linux-x64-validation.txt
           cat release/linux-x64-validation.txt
           cd release
           sha256sum *-linux-x64.deb > SHA256SUMS-linux-x64.txt
+      - name: Check UOS glibc 2.28 symbol baseline
+        run: |
+          required=$(sed -n 's/^GLIBC_//p' release/linux-x64-validation.txt | sort -V | tail -1)
+          test -n "$required"
+          echo "Highest x64 GLIBC symbol version: $required"
+          dpkg --compare-versions "$required" le 2.28
       - name: Install and launch the actual DEB
         run: |
           sudo apt-get install -y ./release/*-linux-x64.deb
