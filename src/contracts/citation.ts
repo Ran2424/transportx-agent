@@ -25,7 +25,10 @@ export const CITATION_CONTENT_LABELS = { excerpt: '原文摘录', summary: '知�
 export type CitationEvidence = { evidenceId: string; sourceVersionId: string; locator: CitationLocator; contentKind: 'excerpt' | 'summary' | 'result' | 'source-only'; text?: string };
 export type CitationEnvelope = { protocol: typeof CITATION_ENVELOPE_PROTOCOL; version: typeof CITATION_ENVELOPE_VERSION; sources: CitationSourceVersion[]; evidence: CitationEvidence[]; nextOffset?: number };
 export type CitationRegistry = CitationEnvelope & { schemaVersion: 2; sessionId: string };
-export type CitationPreview = { kind: 'text'; text: string; truncated: boolean } | { kind: 'table'; table: CitationTable; rowStart?: number; truncated: boolean } | { kind: 'none'; reason: string };
+export const CITATION_RESOURCE_ERROR_CODES = ['content-changed', 'view-mismatch', 'missing', 'forbidden', 'unsupported', 'read-failed'] as const;
+export type CitationResourceErrorCode = typeof CITATION_RESOURCE_ERROR_CODES[number];
+export function isCitationResourceErrorCode(value: unknown): value is CitationResourceErrorCode { return CITATION_RESOURCE_ERROR_CODES.some((code) => code === value); }
+export type CitationPreview = { kind: 'text'; text: string; truncated: boolean } | { kind: 'table'; table: CitationTable; rowStart?: number; truncated: boolean } | { kind: 'none'; reason: string; code?: CitationResourceErrorCode };
 export type CitationDetail = { source: CitationSourceVersion; evidence: CitationEvidence; preview: CitationPreview };
 export type CitationParseResult<T = CitationEnvelope> = { ok: true; value: T; diagnostics: [] } | { ok: false; value: null; diagnostics: ContractDiagnostic[] };
 const SHA = /^[a-f0-9]{64}$/;
@@ -109,7 +112,10 @@ export function parseCitationDetail(value: unknown): CitationDetail | null {
   const envelope = parseCitationEnvelope({ protocol: 'pi-citation', version: '3.0', sources: [root.source], evidence: [root.evidence] });
   const preview = asRecord(root.preview);
   if (!envelope || !preview) return null;
-  if (preview.kind === 'none' && typeof preview.reason === 'string') return { source: envelope.sources[0], evidence: envelope.evidence[0], preview: { kind: 'none', reason: preview.reason } };
+  if (preview.kind === 'none' && typeof preview.reason === 'string') {
+    if (preview.code !== undefined && !isCitationResourceErrorCode(preview.code)) return null;
+    return { source: envelope.sources[0], evidence: envelope.evidence[0], preview: { kind: 'none', reason: preview.reason, ...(preview.code ? { code: preview.code } : {}) } };
+  }
   if (typeof preview.truncated !== 'boolean') return null;
   if (preview.kind === 'text' && typeof preview.text === 'string' && new TextEncoder().encode(preview.text).length <= CITATION_PREVIEW_LIMIT) return { source: envelope.sources[0], evidence: envelope.evidence[0], preview: { kind: 'text', text: preview.text, truncated: preview.truncated } };
   const table = asRecord(preview.table);

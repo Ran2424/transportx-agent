@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { isCitationResourceErrorCode, type CitationResourceErrorCode } from '../../../contracts/citation';
+import { CitationCurrentFile } from '../../platform/conversation/CitationCurrentFile';
 import { appKernel } from '../../app/composition-root';
 import { downloadDocument } from '../../platform/canvas/report-export';
 import type { DocumentView } from '../../platform/canvas/document-state';
@@ -22,6 +24,7 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
   const [refresh, setRefresh] = useState(0);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const [resourceError, setResourceError] = useState<CitationResourceErrorCode | null>(null);
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [matchCount, setMatchCount] = useState<number | null>(null);
@@ -52,10 +55,12 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
     controller.current?.destroy();
     controller.current = null;
     mount.replaceChildren();
-    setReady(false); setError(''); setNotice(''); setMatchCount(null); setPosition({ current: 0, total: 0 }); setNotes('');
+    setReady(false); setError(''); setResourceError(null); setNotice(''); setMatchCount(null); setPosition({ current: 0, total: 0 }); setNotes('');
     const fail = (cause: unknown) => {
       if (!current || request.signal.aborted) return;
-      if (cause instanceof OfficeResourceError) setError(t(`office.error.${cause.code}`, { status: cause.status, size: 32 }));
+      if (cause instanceof OfficeResourceError && isCitationResourceErrorCode(cause.code)) {
+        setResourceError(cause.code); setError(t(`citation.error.${cause.code}`));
+      } else if (cause instanceof OfficeResourceError) setError(t(`office.error.${cause.code}`, { status: cause.status, size: 32 }));
       else setError(t(parserErrorKey(cause) || 'office.error.load', { message: (cause as Error).message || '' }));
     };
     void loadOfficeResource(resourceUrl, request.signal).then((bytes) => {
@@ -76,7 +81,7 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
       if (controller.current === created) controller.current = null;
       created?.destroy();
     };
-  }, [mount, sized, view.id, view.format, refresh, resourceUrl, i18n.language, t]);
+  }, [mount, sized, view.id, view.format, view.revision, refresh, resourceUrl, i18n.language, t]);
 
   useEffect(() => {
     if (active && document.activeElement?.getAttribute('role') !== 'tab') root.current?.focus({ preventScroll: true });
@@ -145,7 +150,7 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
   return <section ref={root} className="office-workspace" tabIndex={-1} aria-label={t('office.reader', { title: view.title })} data-testid="office-workspace" data-format={view.format}>
     <header className="office-toolbar">
       <span className="office-source" title={view.source ? `${view.path} · ${view.source.content.sha256}` : view.path}>
-        <b>{view.title}</b><span>{view.source ? t('document.citationVersion') : t('office.readOnly')}</span><span>{positionText}</span>
+        <b>{view.title}</b><span>{t(view.source ? 'document.citationVersion' : 'document.currentFile')}</span><span>{positionText}</span>
       </span>
       <form className="office-search" role="search" onSubmit={runSearch}>
         <input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) { controller.current?.clearFind(); setMatchCount(null); } }} placeholder={t('office.searchPlaceholder')} aria-label={t('office.search')} />
@@ -161,13 +166,13 @@ export function OfficeWorkspace({ view, active, onContextChange }: { view: Docum
         <button type="button" disabled={!ready} onClick={() => runViewerAction((item) => item.fitPage())}>{t('office.fitPage')}</button>
         {view.format === 'xlsx' ? <button type="button" disabled={!ready} onClick={() => void copySelection()}>{t('office.copySelection')}</button> : null}
         {view.format === 'pptx' ? <button type="button" aria-expanded={notesOpen} disabled={!ready} onClick={() => setNotesOpen((value) => !value)}>{t('office.notes')}</button> : null}
-        <button type="button" onClick={() => setRefresh((value) => value + 1)}>{t('document.refresh')}</button>
-        <button type="button" disabled={downloading} onClick={() => void download()}>{downloading ? t('workspace.downloading') : t('workspace.downloadOriginal')}</button>
+        <button type="button" disabled={resourceError === 'content-changed'} onClick={() => setRefresh((value) => value + 1)}>{t('document.refresh')}</button>
+        <button type="button" disabled={downloading || !!resourceError} onClick={() => void download()}>{downloading ? t('workspace.downloading') : t('workspace.downloadOriginal')}</button>
         {!view.source ? <button type="button" onClick={() => void appKernel.commands.session.openInSystem(view.sessionId, view.path).catch((cause) => setNotice((cause as Error).message || t('workspace.loadFailed')))}>{t('office.openSystem')}</button> : null}
       </div>
     </header>
     {notice ? <p className="office-status" role="status">{notice}</p> : null}
-    {error ? <div className="office-empty" role="alert"><strong>{t('office.loadFailed')}</strong><span>{error}</span><div><button type="button" onClick={() => setRefresh((value) => value + 1)}>{t('common.retry')}</button><button type="button" onClick={() => void download()}>{t('workspace.downloadOriginal')}</button></div></div> : null}
+    {error ? <div className="office-empty" role="alert"><strong>{t('office.loadFailed')}</strong><span>{error}</span><div>{resourceError !== 'content-changed' ? <button type="button" onClick={() => setRefresh((value) => value + 1)}>{t('common.retry')}</button> : null}{!resourceError ? <button type="button" onClick={() => void download()}>{t('workspace.downloadOriginal')}</button> : null}{resourceError === 'content-changed' && view.source ? <CitationCurrentFile sessionId={view.sessionId} source={view.source} /> : null}</div></div> : null}
     {!ready && !error ? <p className="office-loading" role="status">{t('office.loading')}</p> : null}
     <div className="office-reading-layout" hidden={!!error}>
       <div ref={setMount} className="office-viewer" />

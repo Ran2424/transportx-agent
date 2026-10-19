@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { documentSmoke } from './harness/document-smoke.mjs';
+import { documentSmoke, officeRefreshSmoke } from './harness/document-smoke.mjs';
 import { feedbackSmoke, composerSmoke, conversationStyleSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
 import { localModelSmoke } from './harness/local-model-smoke.mjs';
@@ -127,6 +127,7 @@ try {
   await streamingScrollSmoke(page);
   await workingDisplaySmoke(page);
   assert.equal(requestedUrls.some((url) => /(?:docx|xlsx|pptx)_parser_bg|render-worker/.test(url)), false, 'non-Office workflows do not load OOXML WASM or workers');
+  await officeRefreshSmoke(page);
   await composer.fill('实时-markdown');
   await composer.press('Enter');
   const liveMarkdown = page.locator('.assistant-message.is-streaming');

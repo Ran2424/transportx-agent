@@ -12,6 +12,11 @@ export async function documentSmoke(page, browser) {
   const dock = page.locator('[data-testid=workspace-dock]');
   const report = '# Canvas 报告\n\n![图表](canvas-chart.svg)\n\n$$q=kv$$\n\n```mermaid\ngraph LR\n A-->B\n```\n\n```text\n$literal$\n```\n\n| 路段 | 流量 |\n| --- | --- |\n| A | 12 |\n\n[[cite:canvas:pdf:2]]\n\n' + Array.from({ length: 40 }, (_, i) => `## 章节 ${i + 1}\n\n交通分析内容 ${i + 1}。\n`).join('\n') + '\n## 结论\n\n报告结论。\n\n```mermaid\n<img src=x onerror="window.documentAttack=true">\n```';
   const source = '# 规范\n\n' + Array.from({ length: 30 }, (_, i) => `段落 ${i + 1}。\n\n`).join('') + '## 目标标题\n\n定位到此处。\n\n## 重复\n\n一。\n\n## 重复\n\n二。';
+  async function present(format, operation) {
+    const prompt = `canvas-refresh-${format}-${operation}`;
+    await composer.fill(prompt); await composer.press('Enter');
+    await page.getByText(`${prompt} 完成`, { exact: true }).waitFor();
+  }
   fs.writeFileSync(path.join(cwd, 'canvas-report.md'), report);
   fs.writeFileSync(path.join(cwd, 'canvas-source.md'), source);
   fs.writeFileSync(path.join(cwd, 'canvas-chart.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50"><rect width="200" height="50" fill="teal"/></svg>');
@@ -195,6 +200,98 @@ export async function documentSmoke(page, browser) {
   await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
   await reader.getByRole('alert').waitFor();
   assert.equal(await reader.locator('h1').count(), 0, 'pinned versions never fall back to changed content');
+  await reader.getByRole('button', { name: '打开当前文件（非引用版本）', exact: true }).click();
+  await reader.getByRole('heading', { name: '已覆盖原件', exact: true }).waitFor();
+  assert.match(await reader.locator('.document-source').innerText(), /当前文件/);
+  await citedMessage.locator('[data-citation-card="canvas:source:target"]').click();
+  await detail.getByRole('alert').waitFor();
+  await detail.getByRole('heading', { name: 'canvas-source.md', exact: true }).waitFor();
+  assert.equal(await detail.getByRole('link', { name: '下载原件', exact: true }).count(), 0);
+  await detail.getByText('来源与版本信息', { exact: true }).click();
+  assert.ok((await detail.innerText()).includes(sources[1].content.sha256));
+  await detail.getByRole('button', { name: '打开当前文件（非引用版本）', exact: true }).click();
+  await reader.getByRole('heading', { name: '已覆盖原件', exact: true }).waitFor();
+  // Re-check authorization: an escaped replacement must never expose a recovery action.
+  const sourceFile = path.join(cwd, 'canvas-source.md');
+  const savedSource = fs.readFileSync(sourceFile);
+  fs.rmSync(sourceFile);
+  let linked = false;
+  try { fs.symlinkSync(path.resolve('package.json'), sourceFile); linked = true; }
+  catch (error) { if (!['EPERM', 'EACCES'].includes(error.code)) throw error; }
+  if (linked) {
+    await citedMessage.locator('[data-citation-card="canvas:source:target"]').click();
+    await detail.getByRole('alert').waitFor();
+    assert.equal(await detail.getByRole('button', { name: '打开当前文件（非引用版本）', exact: true }).count(), 0);
+    await detail.getByRole('button', { name: '关闭', exact: true }).click();
+    fs.rmSync(sourceFile);
+  }
+  fs.writeFileSync(sourceFile, savedSource);
+  while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
+  fs.writeFileSync(path.join(cwd, 'canvas-auto.md'), '# 自动刷新 A');
+  await present('markdown', 'present');
+  await reader.getByRole('heading', { name: '自动刷新 A', exact: true }).waitFor();
+  fs.writeFileSync(path.join(cwd, 'canvas-auto.md'), '# 自动刷新 B');
+  await present('markdown', 'update');
+  await reader.getByRole('heading', { name: '自动刷新 B', exact: true }).waitFor();
+  let reads = 0;
+  const countRead = (request) => { if (request.url().includes('/api/file/content?') && request.url().includes('canvas-auto.md')) reads++; };
+  page.on('request', countRead);
+  await present('markdown', 'focus');
+  assert.equal(reads, 0, 'focus does not reload the current Markdown');
+  page.off('request', countRead);
+  fs.writeFileSync(path.join(cwd, 'canvas-auto.pdf'), pdf);
+  await present('pdf', 'present');
+  await reader.locator('iframe').waitFor();
+  await reader.locator('iframe').evaluate((node) => { node.dataset.beforeUpdate = 'true'; });
+  await present('pdf', 'update');
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('.canvas-panel:not([hidden]) .document-pdf');
+    return frame && !frame.dataset.beforeUpdate;
+  });
+  await present('markdown', 'clear');
+  await present('pdf', 'clear');
   while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
   console.log('Citation smoke: collapsed references, shared details, multi-source groups, table rows, pinned Canvas navigation, exports and version failures passed.');
+}
+
+export async function officeRefreshSmoke(page) {
+  const { ZipFile } = await import('yazl');
+  const session = await page.evaluate(async () => (await (await fetch('/api/live-sessions')).json()).sessions[0]);
+  const makeDocx = (text) => new Promise((resolve, reject) => {
+    const zip = new ZipFile(), chunks = [];
+    zip.addBuffer(Buffer.from('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'), '[Content_Types].xml');
+    zip.addBuffer(Buffer.from('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'), '_rels/.rels');
+    zip.addBuffer(Buffer.from(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`), 'word/document.xml');
+    zip.outputStream.on('data', (chunk) => chunks.push(chunk));
+    zip.outputStream.on('error', reject);
+    zip.outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+    zip.end();
+  });
+  const file = path.join(session.cwd, 'canvas-auto.docx');
+  const composer = page.getByLabel('消息输入');
+  const office = page.locator('.canvas-panel:not([hidden]) [data-testid=office-workspace]');
+  async function present(operation) {
+    const prompt = `canvas-refresh-docx-${operation}`;
+    await composer.fill(prompt); await composer.press('Enter');
+    await page.getByText(`${prompt} 完成`, { exact: true }).waitFor();
+  }
+  fs.writeFileSync(file, await makeDocx('Office revision A'));
+  await present('present');
+  await office.getByRole('button', { name: '放大', exact: true }).waitFor();
+  await page.waitForFunction(() => !document.querySelector('.canvas-panel:not([hidden]) .office-actions button')?.disabled);
+  const revised = await makeDocx('Office revision B');
+  fs.writeFileSync(file, revised);
+  const loaded = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/file/raw?') && response.url().includes('canvas-auto.docx'));
+  await present('update');
+  assert.deepEqual(await (await loaded).body(), revised);
+  await page.waitForFunction(() => !document.querySelector('.canvas-panel:not([hidden]) .office-actions button')?.disabled);
+  assert.equal(await office.getByRole('alert').count(), 0);
+  let reads = 0;
+  const countRead = (request) => { if (request.url().includes('canvas-auto.docx') && request.url().includes('/api/file/raw?')) reads++; };
+  page.on('request', countRead);
+  await present('focus');
+  assert.equal(reads, 0, 'focus does not reload Office bytes');
+  page.off('request', countRead);
+  await present('clear');
+  console.log('Office smoke: DOCX loads revised bytes automatically and focus preserves the viewer.');
 }

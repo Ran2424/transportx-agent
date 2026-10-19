@@ -312,7 +312,7 @@ async function httpText(http: HttpClient, path: string, context: { category: App
     throw toAppError(cause, { code: 'http_network_error', category: 'transport', sessionId: context.sessionId, retryable: true, diagnostics: { path } });
   }
   if (!response.ok) {
-    throw appError({ code: 'http_error', category: context.category, message: `HTTP ${response.status}`, sessionId: context.sessionId, retryable: response.status >= 500, diagnostics: { status: response.status, path } });
+    throw appError({ code: response.headers?.get('X-Citation-Error') || 'http_error', category: context.category, message: `HTTP ${response.status}`, sessionId: context.sessionId, retryable: response.status >= 500, diagnostics: { status: response.status, path } });
   }
   return { content: await response.text(), stale: response.headers?.get('X-Citation-Resource-Stale') === '1' };
 }

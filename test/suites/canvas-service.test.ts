@@ -41,6 +41,24 @@ test('Canvas documents round-trip with stable identity and reject unavailable ad
     assert.equal(focused.revision, presented.revision);
     assert.notEqual(focused.presentationId, presented.presentationId);
     assert.equal(focused.operation, 'focus');
+    const slidesPath = path.join(root, 'reports', 'slides.pptx');
+    const originalTime = fs.statSync(slidesPath).mtime;
+    fs.writeFileSync(slidesPath, 'updated with the same timestamp');
+    fs.utimesSync(slidesPath, originalTime, originalTime);
+    const updated = service.present(current, { adapterId: presented.adapterId, resource: presented.resources[0] });
+    assert.equal(updated.operation, 'update');
+    assert.ok(updated.revision > presented.revision);
+    (current.entries as any[]).push({ message: { details: { canvas: updated } } });
+    fs.writeFileSync(slidesPath, 'updated with an earlier timestamp');
+    fs.utimesSync(slidesPath, new Date(0), new Date(0));
+    const earlier = service.present(current, { adapterId: presented.adapterId, resource: presented.resources[0], operation: 'update' });
+    assert.ok(earlier.revision > updated.revision);
+    (current.entries as any[]).push({ message: { details: { canvas: earlier } } });
+    const viewUpdate = service.present(current, { viewId: presented.viewId, operation: 'update' });
+    assert.equal(viewUpdate.revision, earlier.revision + 1);
+    fs.utimesSync(slidesPath, new Date(), new Date());
+    const resourceFocus = service.present(current, { adapterId: presented.adapterId, resource: presented.resources[0], operation: 'focus' });
+    assert.equal(resourceFocus.revision, earlier.revision, 'focus never publishes a content revision');
     const csv = service.present(current, {
       adapterId: 'com.transportx.canvas.document',
       resource: { scope: 'session-file', path: 'reports/counts.csv' },
@@ -66,7 +84,7 @@ test('Canvas documents round-trip with stable identity and reject unavailable ad
     assert.equal((withCanvasDocuments(agentViews, state).views[0] as any).locator.rowStart, 1, 'later user navigation remains effective');
     fs.writeFileSync(path.join(root, 'reports/counts.csv'), 'changed');
     assert.throws(() => service.present(current, { adapterId: 'com.transportx.canvas.document', resource: pinned.resources[0] }), /changed/);
-    const shared = service.createContext(current, { viewId: presented.viewId, revision: presented.revision, target: { kind: 'slide', number: 8 } });
+    const shared = service.createContext(current, { viewId: presented.viewId, revision: earlier.revision, target: { kind: 'slide', number: 8 } });
     assert.throws(() => service.inspectContexts(current, [shared.contextId]), /current user turn/);
     current.activeCanvasContextIds = [shared.contextId];
     assert.deepEqual(service.inspectContexts(current, [shared.contextId]), [shared]);

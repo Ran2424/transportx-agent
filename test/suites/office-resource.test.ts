@@ -16,7 +16,11 @@ test('Office resources require bounded metadata and expose version failures', as
     await assert.rejects(() => loadOfficeResource('/too-large', new AbortController().signal), (error: unknown) => error instanceof OfficeResourceError && error.code === 'too-large');
 
     globalThis.fetch = async () => new Response(null, { status: 409 });
-    await assert.rejects(() => loadOfficeResource('/changed', new AbortController().signal), (error: unknown) => error instanceof OfficeResourceError && error.code === 'version-changed');
+    await assert.rejects(() => loadOfficeResource('/changed', new AbortController().signal), (error: unknown) => error instanceof OfficeResourceError && error.code === 'read-failed');
+    globalThis.fetch = async () => new Response(null, { status: 409, headers: { 'X-Citation-Error': 'content-changed' } });
+    await assert.rejects(() => loadOfficeResource('/changed', new AbortController().signal), (error: unknown) => error instanceof OfficeResourceError && error.code === 'content-changed');
+    globalThis.fetch = async () => new Response(null, { status: 409, headers: { 'X-Citation-Error': 'view-mismatch' } });
+    await assert.rejects(() => loadOfficeResource('/mismatch', new AbortController().signal), (error: unknown) => error instanceof OfficeResourceError && error.code === 'view-mismatch');
 
     let request = 0;
     globalThis.fetch = async (_input, init) => {

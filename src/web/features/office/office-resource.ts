@@ -1,6 +1,9 @@
+import type { CitationResourceErrorCode } from '../../../contracts/citation';
+import { citationResponseError } from '../../platform/conversation/citation-resource.ts';
+
 export const OFFICE_PREVIEW_MAX_BYTES = 32 * 1024 * 1024;
 
-export type OfficeResourceErrorCode = 'forbidden' | 'missing' | 'version-changed' | 'too-large' | 'length-required' | 'http';
+export type OfficeResourceErrorCode = CitationResourceErrorCode | 'too-large' | 'length-required' | 'http';
 
 export class OfficeResourceError extends Error {
   readonly code: OfficeResourceErrorCode;
@@ -16,8 +19,8 @@ export class OfficeResourceError extends Error {
 function responseError(response: Response) {
   if (response.status === 403) return new OfficeResourceError('forbidden', response.status);
   if (response.status === 404) return new OfficeResourceError('missing', response.status);
-  if (response.status === 409) return new OfficeResourceError('version-changed', response.status);
   if (response.status === 413) return new OfficeResourceError('too-large', response.status);
+  if (response.headers.has('X-Citation-Error') || response.status === 409) return new OfficeResourceError(citationResponseError(response), response.status);
   return new OfficeResourceError('http', response.status);
 }
 
