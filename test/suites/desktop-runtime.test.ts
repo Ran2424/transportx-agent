@@ -431,19 +431,20 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     await assert.rejects(publishRelease(plan, { ...io, readManifest: async () => 'version: 3.24.0\n' }), /newer/);
   }
 
-  // platform-profile registry exposes frozen mac/win profiles with required contract
+  // platform-profile registry exposes frozen desktop profiles with required contract
   {
     const url = require('node:url');
     const profilePath = path.join(__dirname, '..', '..', 'desktop', 'scripts', 'platform-profile.mjs');
     const profileModule = await import(url.pathToFileURL(profilePath).toString());
     const { PLATFORM_PROFILES, PROCESS_PLATFORM_TO_BUILDER, getPlatformProfile, builderPlatformFor } = profileModule;
 
-    // mac/win mapping is stable; adding linux must be an explicit PR change here.
+    // Every desktop platform resolves through the registry.
     assert.deepEqual({ ...PROCESS_PLATFORM_TO_BUILDER }, { darwin: 'mac', win32: 'win', linux: 'linux' });
     assert.equal(builderPlatformFor('darwin'), 'mac');
     assert.equal(builderPlatformFor('win32'), 'win');
     assert.equal(getPlatformProfile(builderPlatformFor('darwin')), PLATFORM_PROFILES.darwin);
     assert.equal(getPlatformProfile(builderPlatformFor('win32')), PLATFORM_PROFILES.win);
+    assert.equal(getPlatformProfile(builderPlatformFor('linux')), PLATFORM_PROFILES.linux);
     if (builderPlatformFor() === 'mac') {
       const { spawnSync } = require('node:child_process');
       const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-internal-signature-'));
@@ -487,6 +488,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     const profileExpectations: Record<string, { key: string; builderPlatform: string; installerArtifact: string }> = {
       darwin: { key: 'darwin', builderPlatform: 'mac', installerArtifact: 'dmg' },
       win: { key: 'win', builderPlatform: 'win', installerArtifact: 'nsis' },
+      linux: { key: 'linux', builderPlatform: 'linux', installerArtifact: 'deb' },
     };
 
     for (const [entry, expected] of Object.entries(profileExpectations)) {
@@ -503,7 +505,8 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
       assert.match(profile.ffmpeg.arch, /arm64|x64/);
       assert.match(profile.signing.hostArchRequired, /arm64|x64/);
       assert.match(profile.signing.description, /./);
-      assert.ok(Array.isArray(profile.signing.requiredEnv) && profile.signing.requiredEnv.length >= 1);
+      assert.ok(Array.isArray(profile.signing.requiredEnv));
+      assert.equal(profile.signing.requiredEnv.length === 0, entry === 'linux');
       assert.match(profile.signing.allowUnsignedEnv, /./);
       assert.match(profile.signing.allowUnsignedPurpose, /./);
       assert.equal(profile.release.installerArtifact, expected.installerArtifact);
@@ -533,6 +536,21 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.equal(win.release.installerArtifact, 'nsis');
     assert.equal(typeof win.release.uninstallName, 'string');
     assert.ok(Array.isArray(win.release.installerSilentArgs(path.join('C:', 'install'))));
+
+    const linux = PLATFORM_PROFILES.linux;
+    assert.equal(linux.python.archCheck('x86_64'), true);
+    assert.equal(linux.python.archCheck('aarch64'), false);
+    assert.equal(linux.python.entry, 'bin/python3');
+    assert.equal(linux.ffmpeg.binName('ffmpeg'), 'ffmpeg');
+    assert.equal(linux.ffmpeg.chmodRequired, true);
+    assert.equal(linux.signing.hostArchRequired, 'x64');
+    const linuxBuilder = require('js-yaml').load(fs.readFileSync(path.resolve('desktop/electron-builder.linux.yml'), 'utf8'));
+    assert.deepEqual(linuxBuilder.linux.target, [{ target: 'deb', arch: 'x64' }]);
+    assert.equal(linuxBuilder.linux.executableName, linux.release.productExeBasename);
+    const config = require('js-yaml').load(fs.readFileSync(path.resolve('desktop/electron-builder.yml'), 'utf8'));
+    assert.ok(config.extends.includes('./desktop/electron-builder.linux.yml'));
+    const { websiteReleaseVersion } = require('../../dist-desktop/website-release.js');
+    assert.equal(websiteReleaseVersion('<a href="https://download.transkgllm.com/releases/v3.23.1/TransportX-Agent-3.23.1-linux-x64.deb">Linux</a>', linux.update.websiteInstallerPattern), '3.23.1');
 
     // getPlatformProfile with a non-registered builderPlatform must throw clearly.
     assert.throws(() => getPlatformProfile('plan9'), /Platform profile missing/);
@@ -618,7 +636,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.equal(generated.win32.treeCommand, 'taskkill');
     assert.deepEqual(generated.win32.treeArgs, ['/pid', '/T']);
     assert.equal(generated.darwin.utilityHost, true);
-    assert.equal(generated.linux.packaged, null);
+    assert.deepEqual(generated.linux.packaged, { executableParts: ['transportx-agent'], resourcesParts: ['resources'], executableExtension: '' });
     assert.equal(generated.darwin.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.linux.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.win32.systemPrompt, 'PI_SYSTEM_WINDOWS.md');

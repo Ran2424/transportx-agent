@@ -23,6 +23,8 @@ function run() {
     throw new Error(`${profile.label} release must run on a ${profile.signing.hostArchRequired} Node runtime, got ${process.arch}`);
   }
 
+  if (profile.signing.requiredEnv.length === 0) return;
+
   const hasAny = (...names) => names.some((name) => Boolean(process.env[name]));
 
   if (allowUnsigned) {

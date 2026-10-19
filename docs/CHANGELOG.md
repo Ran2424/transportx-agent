@@ -13,6 +13,7 @@
 
 ### Added
 
+- 增加 Linux x64 DEB 测试包：沿用平台 profile 配置及 `desktop:pack`，内置可重定位 Python 3.10；Linux Actions 验证安装、桌面启动、Host 退出与卸载，输出 SHA-256 并检查 x64 ELF 不超出 glibc 2.28 基线。测试包未发布到更新源，UOS V20 1070 兼容性仍需目标机验收。
 - 引用依据支持 SourceVersion + Evidence 最小闭环：固定授权原件/已有结果版本、类型化定位、多原件知识归纳、Host 内联小结果，以及分页元数据和按 ID 核对详情。空间分析成功后复用现有 manifest 登记计数依据；登记失败保留分析输出并返回警告。
 - 引用详情提供有界文本/表格与原件下载，Canvas 使用 Citation capability 固定版本定位 PDF 页、Markdown 章节、XLSX Sheet/单元格及 CSV 数据行；Markdown 导出、PDF 和书目出口保留全部依据位置。
 
