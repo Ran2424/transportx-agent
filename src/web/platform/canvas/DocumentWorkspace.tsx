@@ -2,10 +2,11 @@ import { exportCitationMarkdown } from '../../../contracts/citation-compiler';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css';
-import type { CitationEnvelope } from '../../../contracts/citation';
+import { isCitationResourceErrorCode, type CitationEnvelope, type CitationResourceErrorCode } from '../../../contracts/citation';
+import { CitationCurrentFile } from '../conversation/CitationCurrentFile';
 import { useCitationDetail } from '../conversation/citation-detail';
 import { appKernel } from '../../app/composition-root';
-import { citationResourceUrl } from '../conversation/citation-resource';
+import { citationResourceUrl, citationResponseError } from '../conversation/citation-resource';
 import { parseDelimited } from '../workspace/delimited-table';
 import { sessionFileUrl, withDownload } from '../workspace/file-urls';
 import { documentFormat, documentTarget, type DocumentPosition, type DocumentView } from './document-state';
@@ -18,6 +19,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
   const [refresh, setRefresh] = useState(0);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const [resourceError, setResourceError] = useState<CitationResourceErrorCode | null>(null);
   const [notice, setNotice] = useState('');
   const [stale, setStale] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
@@ -37,7 +39,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
   useEffect(() => {
     let current = true;
     const controller = new AbortController();
-    setReady(false); setError(''); setNotice(''); setStale(false); setReport(null); setRows([]); setCitations(null);
+    setReady(false); setError(''); setResourceError(null); setNotice(''); setStale(false); setReport(null); setRows([]); setCitations(null);
     async function readCitations() {
       const all: CitationEnvelope = { protocol: 'pi-citation', version: '3.0', sources: [], evidence: [] };
       let offset: number | undefined = 0;
@@ -53,7 +55,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
         // Check HTTP errors before embedding; iframe load does not prove a PDF rendered.
         const response = await fetch(resourceUrl, { signal: controller.signal, cache: 'no-store' });
         await response.body?.cancel();
-        if (!response.ok) throw new Error(response.status === 409 ? t('document.versionChanged') : t('document.loadFailed', { status: response.status }));
+        if (!response.ok) throw Object.assign(new Error(t('document.loadFailed', { status: response.status })), view.source ? { code: citationResponseError(response) } : {});
       } else {
         const [content, envelope] = await Promise.all([
           view.source ? appKernel.commands.report.loadSource(view.sessionId, resourceUrl) : appKernel.commands.session.readFileContent(view.sessionId, view.path),
@@ -72,9 +74,14 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
       }
       if (current) setReady(true);
     }
-    void load().catch((cause) => { if (current) setError((cause as Error).message || t('workspace.previewLoadFailed')); });
+    void load().catch((cause) => {
+      if (!current) return;
+      const code = isCitationResourceErrorCode(cause?.code) ? cause.code : null;
+      setResourceError(code);
+      setError(code ? t(`citation.error.${code}`) : (cause as Error).message || t('workspace.previewLoadFailed'));
+    });
     return () => { current = false; controller.abort(); };
-  }, [view.id, view.format, refresh, i18n.language, resourceUrl]);
+  }, [view.id, view.format, view.revision, refresh, i18n.language, resourceUrl]);
 
   useEffect(() => {
     if (active && document.activeElement?.getAttribute('role') !== 'tab') root.current?.focus({ preventScroll: true });
@@ -130,15 +137,16 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
     <header className="document-toolbar">
       <span className="document-source" title={view.source ? `${view.path} · ${view.source.content.sha256}` : view.path}>{t(view.source ? 'document.citationVersion' : 'document.currentFile')} {view.source?.content.sha256.slice(0, 8)} · {view.path}</span>
       {view.format === 'markdown' ? <button type="button" aria-expanded={outlineOpen} disabled={!report?.headings.length} onClick={() => setOutlineOpen((value) => !value)}>{t('document.outline')}</button> : null}
-      <button type="button" onClick={() => setRefresh((value) => value + 1)}>{t('document.refresh')}</button>
-      <button type="button" disabled={!!action} onClick={() => void runAction('download')}>{action === 'download' ? t('workspace.downloading') : t('workspace.downloadOriginal')}</button>
+      <button type="button" disabled={resourceError === 'content-changed'} onClick={() => setRefresh((value) => value + 1)}>{t('document.refresh')}</button>
+      <button type="button" disabled={!!action || !!resourceError} onClick={() => void runAction('download')}>{action === 'download' ? t('workspace.downloading') : t('workspace.downloadOriginal')}</button>
+      {resourceError === 'content-changed' && view.source ? <CitationCurrentFile sessionId={view.sessionId} source={view.source} /> : null}
       {view.format === 'markdown' ? <button type="button" disabled={!ready || !!action} onClick={() => void runAction('markdown')}>导出 Markdown</button> : null}
       {view.format === 'markdown' ? <button type="button" disabled={!ready || !!action} onClick={() => void runAction('export')}>{action === 'export' ? t('workspace.generating') : t('workspace.downloadPdf')}</button> : null}
     </header>
     {stale ? <p className="document-notice" role="status">{t('document.sourceUpdated')}</p> : null}
     {notice ? <p className="document-notice" role="status">{notice}</p> : null}
     {error ? <p className="document-notice is-error" role="alert">{error}</p> : !ready ? <p className="document-notice" role="status">{t('workspace.reading')}</p> : view.format === 'pdf' ? <>
-      <iframe key={`${view.navigationId}:${refresh}`} className="document-pdf" src={`${resourceUrl}#page=${pdfPage}&view=FitH`} title={t('workspace.originalPdfTitle', { name: view.title })} onError={() => setError(t('document.pdfUnavailable'))} />
+      <iframe key={`${view.navigationId}:${view.revision}:${refresh}`} className="document-pdf" src={`${resourceUrl}#page=${pdfPage}&view=FitH`} title={t('workspace.originalPdfTitle', { name: view.title })} onError={() => setError(t('document.pdfUnavailable'))} />
       <p className="document-pdf-help">{t('document.pdfHelp')}</p>
     </> : view.format === 'csv' ? <div className="document-reading-layout">
       <div ref={viewport} className="document-scroll" onScroll={(event) => { if (active && ready) positions.set(view.id, { scrollTop: event.currentTarget.scrollTop, navigationId: view.navigationId }); }}>

@@ -10,7 +10,7 @@ import { parseDelimited } from '../contracts/delimited-table.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import { isWithin } from './util/path.js';
 import { CitationRegistryStore } from './citation-registry.js';
-import { hashCitationFile, locateCitationFile, verifyCitationFile } from './citation-resources.js';
+import { citationResourceFailure, hashCitationFile, locateCitationFile, verifyCitationFile } from './citation-resources.js';
 export type CitationServiceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: ResolvedSessionPlan | null };
 export type CitationInput = { path: string; assetId?: string; title?: string; locator: CitationLocator; contentKind: CitationEvidence['contentKind']; text?: string; metadata?: CitationMetadata; deliverable?: boolean };
 function hash(value: string | Buffer) { return crypto.createHash('sha256').update(value).digest('hex'); }
@@ -106,7 +106,13 @@ export class CitationService {
     const registry = this.registry(session).load(), evidence = registry.evidence.find((item) => item.evidenceId === evidenceId);
     const source = evidence && registry.sources.find((item) => item.sourceVersionId === evidence.sourceVersionId);
     if (!evidence || !source) throw Object.assign(new Error('Evidence not found in this session.'), { code: 'ENOENT' });
-    const preview = source.content.kind === 'inline' && source.content.value !== undefined ? previewValue(source.content.value) : previewFile(verifyCitationFile(session, source).resolved, source.content.kind === 'file' ? source.content.mimeType : 'text/plain', evidence.locator);
+    let preview: CitationPreview;
+    try {
+      preview = source.content.kind === 'inline' && source.content.value !== undefined ? previewValue(source.content.value) : previewFile(verifyCitationFile(session, source).resolved, source.content.kind === 'file' ? source.content.mimeType : 'text/plain', evidence.locator);
+    } catch (error) {
+      const failure = citationResourceFailure(error);
+      preview = { kind: 'none', reason: failure.error, code: failure.code };
+    }
     return { source: publicCitationSource(source), evidence, preview };
   }
   async resolveWeb(session: CitationServiceSession, urls: string[]) {

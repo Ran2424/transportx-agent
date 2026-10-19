@@ -66,7 +66,9 @@ test('Canvas focus, document identity and content survive updates and navigation
     assert.equal(state.open, true);
     state = syncCanvas(state, withCanvasDocuments(projectCanvas([], []), state));
     assert.deepEqual(state.tabIds, [document.id]);
+    const previousRevision = state.documents[0].revision!;
     state = openCanvasDocument(state, document);
+    assert.equal(state.documents[0].revision, previousRevision + 1, 'explicitly reopening the current file reloads an existing tab');
     assert.equal(state.documents.length, 1);
     assert.equal(state.tabIds.length, 1);
     const locator = { kind: 'document' as const, section: '结论' };

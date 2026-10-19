@@ -108,7 +108,7 @@ export class CanvasService {
       const rawTarget = input.target === undefined ? previous.target : input.target;
       const target = validateTarget(previous.adapterId, rawTarget);
       if (rawTarget !== undefined && !target) throw serviceError('Canvas target is invalid for this adapter.');
-      return { ...previous, presentationId: crypto.randomUUID(), operation, ...(target !== undefined ? { target } : {}), generatedAt: new Date().toISOString() };
+      return { ...previous, revision: previous.revision + (operation === 'update' ? 1 : 0), presentationId: crypto.randomUUID(), operation, ...(target !== undefined ? { target } : {}), generatedAt: new Date().toISOString() };
     }
 
     const adapterId = typeof input.adapterId === 'string' ? input.adapterId.trim() : '';
@@ -148,8 +148,8 @@ export class CanvasService {
     if (input.target !== undefined && !target) throw serviceError('Document Canvas target is invalid.');
     const viewId = stableViewId(adapterId, reference);
     const previous = previousPresentation(session, viewId);
-    revision = Math.max(revision, previous?.revision ?? 0);
     const operation = requestedOperation(input.operation, previous ? 'update' : 'present');
+    revision = operation === 'focus' && previous ? previous.revision : Math.max(revision, (previous?.revision ?? -1) + (operation === 'update' ? 1 : 0));
     const title = typeof input.title === 'string' && input.title.trim() ? input.title.trim().slice(0, 300) : path.basename(resourcePath);
     return {
       protocol: CANVAS_PRESENTATION_PROTOCOL,

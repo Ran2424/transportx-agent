@@ -25,9 +25,20 @@ test('Citation evidence resolves controlled data and originals while refusing un
   assert.throws(() => service.resolve(session, [{ assetId: 'knowledge:one', path: 'one.md', locator: { kind: 'source' }, contentKind: 'excerpt', text: '伪造的摘录' }]), /verbatim/);
   assert.throws(() => service.resolve(session, [{ path: 'flow.csv', locator: { kind: 'table', rowStart: 3, rowEnd: 1 }, contentKind: 'result' }]), /locator/);
   fs.writeFileSync(path.join(cwd, 'flow.csv'), 'new data');
-  assert.throws(() => service.detail(session, result.evidence[0].evidenceId), /changed/);
+  const changed = service.detail(session, result.evidence[0].evidenceId);
+  assert.equal(changed.preview.code, 'content-changed');
+  assert.equal(changed.source.sourceVersionId, result.sources[0].sourceVersionId);
+  const { parseCitationDetail } = await import('../../src/contracts/citation.ts');
+  assert.equal(parseCitationDetail(changed)!.preview.kind, 'none');
+  assert.equal((parseCitationDetail(changed)!.preview as any).code, 'content-changed');
+  assert.equal(parseCitationDetail({ ...changed, preview: { ...changed.preview, code: 'invented' } }), null);
   const next = service.resolve(session, [{ path: 'flow.csv', locator: { kind: 'source' }, contentKind: 'source-only' }]);
   assert.notEqual(next.sources[0].sourceVersionId, result.sources[0].sourceVersionId);
+  fs.rmSync(path.join(cwd, 'flow.csv'));
+  assert.equal(service.detail(session, result.evidence[0].evidenceId).preview.code, 'missing');
+  try { fs.symlinkSync(path.join(asset, 'one.md'), path.join(cwd, 'flow.csv')); }
+  catch (error) { if (!['EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code || '')) throw error; t.diagnostic('Symlink creation is unavailable on this host.'); }
+  if (fs.existsSync(path.join(cwd, 'flow.csv'))) assert.equal(service.detail(session, result.evidence[0].evidenceId).preview.code, 'forbidden');
   fs.writeFileSync(path.join(cwd, 'manifest.json'), '{}');
   const { hashCitationFile } = require('../../bin/citation-resources.js');
   const input = { sourceKey: 'execution:one', title: '受控计数', value: { columns: ['count'], rows: [[3]] }, locator: { kind: 'result', field: 'count' }, executionRef: { path: 'manifest.json', sha256: hashCitationFile(path.join(cwd, 'manifest.json')), operation: 'count', inputHashes: [] } };

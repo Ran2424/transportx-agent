@@ -17,7 +17,7 @@ export const EMPTY_CANVAS: CanvasState = { tabIds: [], activeId: null, open: fal
 
 export function openCanvasDocument(state: CanvasState, document: DocumentView): CanvasState {
   const previous = state.documents.find((view) => view.id === document.id);
-  const next = { ...document, locator: document.locator ?? previous?.locator, navigationId: (previous?.navigationId ?? 0) + (document.locator ? 1 : 0) };
+  const next = { ...document, ...(!document.source ? { revision: (previous?.revision ?? 0) + 1 } : {}), locator: document.locator ?? previous?.locator, navigationId: (previous?.navigationId ?? 0) + (document.locator ? 1 : 0) };
   const documents = previous ? state.documents.map((view) => view.id === next.id ? next : view) : [...state.documents, next];
   return activateCanvas({ ...state, documents }, next.id);
 }

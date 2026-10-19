@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { citationRelativePath, type CitationSourceVersion } from '../contracts/index.js';
+import { citationRelativePath, type CitationResourceErrorCode, type CitationSourceVersion } from '../contracts/index.js';
 import { resourceSecurityHeaders } from './resource-policy.js';
 import { CitationRegistryStore } from './citation-registry.js';
 import { isWithin } from './util/path.js';
@@ -32,23 +32,34 @@ export function verifyCitationFile(session: CitationResourceSession, source: Cit
   if (location.stat.size !== source.content.size || hashCitationFile(location.resolved) !== source.content.sha256) throw Object.assign(new Error('The cited version is unavailable: source content has changed.'), { code: 'ECHANGED' });
   return location;
 }
-export function citationResourceError(res: ServerResponse, error: unknown) {
+export function citationResourceFailure(error: unknown): { code: CitationResourceErrorCode; status: number; error: string } {
   const code = (error as NodeJS.ErrnoException).code;
-  json(res, code === 'ENOENT' ? 404 : code === 'EACCES' ? 403 : code === 'ECHANGED' ? 409 : code === 'ENOTSUP' ? 415 : 409, { error: error instanceof Error ? error.message : 'Citation resource cannot be read.' });
+  const failure = code === 'ENOENT' || code === 'ENOTDIR' ? { code: 'missing' as const, status: 404 }
+    : code === 'EACCES' || code === 'EPERM' ? { code: 'forbidden' as const, status: 403 }
+    : code === 'ECHANGED' ? { code: 'content-changed' as const, status: 409 }
+    : code === 'EVERSION' ? { code: 'view-mismatch' as const, status: 409 }
+    : code === 'ENOTSUP' ? { code: 'unsupported' as const, status: 415 }
+    : { code: 'read-failed' as const, status: 500 };
+  return { ...failure, error: error instanceof Error ? error.message : 'Citation resource cannot be read.' };
+}
+export function citationResourceError(res: ServerResponse, error: unknown) {
+  const failure = citationResourceFailure(error);
+  res.setHeader('X-Citation-Error', failure.code);
+  json(res, failure.status, { error: failure.error, code: failure.code });
 }
 export function handleCitationResourceRoute(req: IncomingMessage, res: ServerResponse, cleanPath: string, deps: { getSession(id: string): CitationResourceSession | null | undefined }) {
   const match = cleanPath.match(/^\/api\/live-sessions\/([^/]+)\/citation-resources\/([^/]+)\/(content|preview)$/);
   if (!match || !['GET', 'HEAD'].includes(req.method || '')) return false;
   try {
     const session = deps.getSession(decodeURIComponent(match[1]));
-    if (!session) { json(res, 404, { error: 'Live session not found.' }); return true; }
+    if (!session) throw Object.assign(new Error('Live session not found.'), { code: 'ENOENT' });
     const source = new CitationRegistryStore(session.cwd, session.citationRegistryId || session.id).source(decodeURIComponent(match[2]));
-    if (!source) { json(res, 404, { error: 'SourceVersion not found in this session.' }); return true; }
+    if (!source) throw Object.assign(new Error('SourceVersion not found in this session.'), { code: 'ENOENT' });
     const expected = new URL(req.url || '/', 'http://localhost').searchParams.get('sha256');
-    if (expected && expected !== source.content.sha256) throw Object.assign(new Error('Citation source version does not match this view.'), { code: 'ECHANGED' });
+    if (expected && expected !== source.content.sha256) throw Object.assign(new Error('Citation source version does not match this view.'), { code: 'EVERSION' });
     const { resolved, stat } = verifyCitationFile(session, source);
     const mimeType = source.content.kind === 'file' ? source.content.mimeType : 'text/plain';
-    if (match[3] === 'preview' && !mimeType.startsWith('image/')) { json(res, 415, { error: 'Use evidence details or the original viewer for this source.' }); return true; }
+    if (match[3] === 'preview' && !mimeType.startsWith('image/')) throw Object.assign(new Error('Use evidence details or the original viewer for this source.'), { code: 'ENOTSUP' });
     const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
     res.writeHead(200, { 'Content-Type': mimeType === 'text/html' ? 'text/plain; charset=utf-8' : mimeType, 'Content-Length': stat.size, 'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(resolved))}`, 'Cache-Control': 'private, no-cache', ETag: `"${source.content.sha256}"`, ...resourceSecurityHeaders(mimeType) });
     if (req.method === 'HEAD') res.end();
