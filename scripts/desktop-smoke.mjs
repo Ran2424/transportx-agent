@@ -49,6 +49,9 @@ const app = await electron.launch({
 try {
   const window = await app.firstWindow({ timeout: 20_000 });
   await window.waitForSelector('.workspace-brand', { timeout: 20_000 });
+  await window.evaluate(() => localStorage.setItem('tau-locale', 'zh-CN'));
+  await window.reload();
+  await window.waitForSelector('.workspace-brand', { timeout: 20_000 });
   const title = await window.title();
   const brand = await window.locator('.workspace-brand').innerText();
   if (title !== 'TransportX Agent') throw new Error(`Unexpected title: ${title}`);

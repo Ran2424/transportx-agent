@@ -43,10 +43,6 @@ jobs:
         env:
           TAU_PYTHON_COMMAND: ${{ runner.temp }}/python-runtime/python/bin/python3
         run: node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/desktop-launch.test.ts test/suites/desktop-runtime.test.ts
-      - name: Install and launch the actual DEB
-        run: |
-          sudo apt-get install -y ./release/*-linux-x64.deb
-          TRANSPORTX_PACKAGED_APP='/opt/TransportX Agent' xvfb-run -a dbus-run-session -- node scripts/desktop-smoke.mjs
       - name: Record package metadata and binary requirements
         run: |
           {
@@ -55,17 +51,22 @@ jobs:
             cat /etc/os-release
             dpkg-deb --info release/*-linux-x64.deb
             echo 'Runtime versions referenced by bundled ELF binaries (target UOS: glibc 2.28):'
-            find '/opt/TransportX Agent' -type f \( -name '*.so*' -o -name '*.node' -o -perm /111 \) -exec sh -c 'for file do objdump -T "$file" 2>/dev/null | grep "\*UND\*" | grep -oE "(GLIBC|GLIBCXX|CXXABI)_[0-9.]+" || true; done' sh {} + | sort -Vu
+            find release/linux-unpacked -type f \( -name '*.so*' -o -name '*.node' -o -perm /111 \) -exec sh -c 'for file do objdump -T "$file" 2>/dev/null | grep "\*UND\*" | grep -oE "(GLIBC|GLIBCXX|CXXABI)_[0-9.]+" || true; done' sh {} + | sort -Vu
           } > release/linux-x64-validation.txt
           cat release/linux-x64-validation.txt
           cd release
           sha256sum *-linux-x64.deb > SHA256SUMS-linux-x64.txt
+      - name: Install and launch the actual DEB
+        run: |
+          sudo apt-get install -y ./release/*-linux-x64.deb
+          TRANSPORTX_PACKAGED_APP='/opt/TransportX Agent' xvfb-run -a dbus-run-session -- node scripts/desktop-smoke.mjs
       - name: Verify uninstall
         run: |
           sudo apt-get remove -y transportx-agent
           test ! -e '/opt/TransportX Agent/transportx-agent'
           test ! -e /usr/bin/transportx-agent
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: transportx-linux-x64-test
           compression-level: 0
