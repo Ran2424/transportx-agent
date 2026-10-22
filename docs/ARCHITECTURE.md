@@ -493,3 +493,5 @@ Citation 升级与边界回归分别落在 [citation-utils.test.ts](../test/suit
 ## 开发与发布记录
 
 版本开发状态、验收门槛与更新发布操作见 [版本开发与发布规范](RELEASE.md)，每个版本使用 [开发记录模板](releases/TEMPLATE.md)。
+
+后续工具与插件优化见 [Tool 与插件架构优化 PLAN](<Tool 与插件架构优化 PLAN.md>)，包括信任边界 ADR-T01、最小诊断、Spatial 试点和分级执行保障；该文档描述待实施方案，不改变本文的当前实现事实。

@@ -16,6 +16,9 @@
 
 ### Added
 
+- 新增 [TransportX Traffic Lab 交通仿真与优化能力升级 PLAN](<交通仿真与优化能力升级 PLAN.md>)：明确可安装 Module、GIS/SUMO/OR-Tools 网络适配、受管 TraCI Worker、接驳车辆优化与实验对比的功能范围、P0–P5 验收和双平台运行时前置条件；仅形成规划，尚未实现或验证仿真闭环。
+- 新增并评审修订 Tool 与插件架构优化 PLAN：保留 Pi 权威与 Capability–Tool–Operation 边界，以局部源码核查收敛 Binding 为三类只读诊断；先做 Spatial 单工具闭环，再抽通信共性，按风险补执行保障；明确 Extension 信任决策、未知提交禁止自动重试、独立模块分阶段验收、历史结果兼容和性能基线。补充桌面用户提供脚本/API 资料、由 Agent 完成封装校验并经现有入口安装使用的场景，复用制作 Skill，不另建万能框架；尚未实施运行时改造。
+- Tool PLAN 完成架构评审并冻结范围，补齐信任硬门槛、P1/P3 能力承诺、接口兼容规则及平台/真实 Agent 双重验收；启动 P0 记录和隔离行为探针，核查 Pi 显式加载及历史身份，确定 Spatial 持久 Owner 的组合与校验规则。信任门禁、故障恢复和性能基线尚未验收，不表示已完成运行时保障。
 - 提供显式 V2 → V3 引用注册表迁移脚本 `scripts/migrate-citations-v3.mjs <data-root> [--apply]`（先运行 `npm run build:server`），与启动迁移共用实现。默认只预检；应用前备份全部原注册表并生成原件核验报告，失败回滚。保留正文 occurrence ID、来源哈希和定位，不改写历史消息；旧摘录按知识归纳迁移，原件变化或缺失仍保留出处信息，旧来源关系保留于原始注册表备份。V2 未记录的文件大小按现存文件补齐，缺失时以 0 占位并在报告注明；再次执行跳过 V3 注册表。
 - 引用依据支持 SourceVersion + Evidence 最小闭环：固定授权原件/已有结果版本、类型化定位、多原件知识归纳、Host 内联小结果，以及分页元数据和按 ID 核对详情。空间分析成功后复用现有 manifest 登记计数依据；登记失败保留分析输出并返回警告。
 - 引用详情提供有界文本/表格与原件下载，Canvas 使用 Citation capability 固定版本定位 PDF 页、Markdown 章节、XLSX Sheet/单元格及 CSV 数据行；Markdown 导出、PDF 和书目出口保留全部依据位置。
