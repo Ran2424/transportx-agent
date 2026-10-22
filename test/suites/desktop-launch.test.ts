@@ -272,8 +272,8 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
         modelSpec: 'openai/gpt-5',
         appendSystemPrompt: '# Evaluation policy\nAnswer exactly.',
         resolvedSessionPlan: plan,
-        serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token', canvas: 'canvas-token' },
-        endpoints: { citation: 'http://127.0.0.1:3000', spatial: 'http://127.0.0.1:3001', video: 'http://127.0.0.1:3002', geo: 'http://127.0.0.1:3003', canvas: 'http://127.0.0.1:3004' },
+        serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token', canvas: 'canvas-token', moduleAuthoring: 'authoring-token' },
+        endpoints: { citation: 'http://127.0.0.1:3000', spatial: 'http://127.0.0.1:3001', video: 'http://127.0.0.1:3002', geo: 'http://127.0.0.1:3003', canvas: 'http://127.0.0.1:3004', moduleAuthoring: 'http://127.0.0.1:3005' },
       });
 
       assert.deepEqual(launch.args.slice(-10), [

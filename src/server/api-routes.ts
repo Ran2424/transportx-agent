@@ -18,6 +18,7 @@ import type { CanvasService } from './canvas-service.js';
 import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
+import { inspectTaskModule } from './module-authoring.js';
 
 type ApiRouteServices = {
   beginOperation?(url: URL): () => void;
@@ -314,6 +315,19 @@ export function createApiRouter(services: ApiRouteServices) {
         'Cache-Control': 'no-store',
       });
       res.end(entry.pdf);
+    })
+    .post('/api/internal/modules/package', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'moduleAuthoring');
+        if (!session) return;
+        await validatePilotToolRequest('com.transportx.module-authoring', body);
+        const { packageRoot, manifest } = inspectTaskModule(session.cwd, body.packagePath);
+        if (body.action === 'inspect') return deps.json(res, 200, { action: 'inspect', id: manifest.id, version: manifest.version, entries: manifest.entrypoints, dependencies: manifest.dependencies, codeExecuted: false, toolCallId: body.toolCallId });
+        const installed = await deps.handleRpc({ type: 'install_module', sourcePath: packageRoot });
+        if (!installed.success) throw new Error(String(installed.error || 'Module installation was not accepted'));
+        deps.json(res, 200, { action: 'install', id: manifest.id, version: manifest.version, installed: true, next: 'Create a new task to use the installed module. This task retains its frozen module plan.', toolCallId: body.toolCallId });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: 'module_package_failed', phase: 'package', commit: 'not_started' }); }
     })
     .post('/api/internal/citations/resolve', async ({ req, res, deps }) => {
       let toolCallId: string | undefined;

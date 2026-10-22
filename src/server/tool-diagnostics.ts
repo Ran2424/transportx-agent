@@ -29,8 +29,9 @@ export function diagnoseTool(contract: ToolInterfaceContract, selected: Resolved
   if (!ownsSource) return result('unavailable', 'name_conflict');
   if (canonicalToolSchema(tool.parameters) !== canonicalToolSchema(contract.input)) return result('unverified', 'schema_drift');
   const hostConfirmed = entries.some((entry) => {
-    const message = entry.message as { role?: string; toolName?: string; isError?: boolean; details?: { kind?: string; citations?: unknown; result?: unknown } } | undefined;
+    const message = entry.message as { role?: string; toolName?: string; isError?: boolean; details?: { kind?: string; citations?: unknown; result?: unknown; action?: string; installed?: boolean } } | undefined;
     if (message?.role !== 'toolResult' || message.toolName !== contract.piName || message.isError || message.details?.kind !== contract.output.detailsKind) return false;
+    if (contract.toolId === 'module.package') return message.details.action === 'inspect' || message.details.action === 'install' && message.details.installed === true;
     return contract.toolId === 'citation.resolve' ? !!parseCitationEnvelope(message.details.citations) : parseSpatialAnalysisResultStructured(message.details.result).ok;
   });
   return hostConfirmed ? result('available', 'observed_and_executed') : result('unverified', 'host_not_verified');

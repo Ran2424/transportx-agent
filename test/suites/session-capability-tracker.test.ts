@@ -9,7 +9,7 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
   assert.equal(require('../../bin/tool-contracts.js').readPilotToolContract(__dirname, 'com.transportx.citation'), null, 'legacy modules do not require new optional metadata');
   // Deliberate conformance capture imports only explicitly selected built
   // packages. Host discovery itself continues to read static metadata only.
-  for (const directory of ['citation', 'spatial-analysis']) {
+  for (const directory of ['citation', 'spatial-analysis', 'module-authoring']) {
     const packageRoot = path.resolve(__dirname, '../../dist/tool-modules', directory);
     const contract = JSON.parse(fs.readFileSync(path.join(packageRoot, 'tool-contract.json'), 'utf8'));
     const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, 'manifest.json'), 'utf8'));

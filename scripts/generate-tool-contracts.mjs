@@ -6,7 +6,8 @@ import { pilotToolContracts } from '../src/contracts/tool-definitions.mts';
 export function generateToolContracts() {
   for (const contract of pilotToolContracts) {
     const directory = contract.moduleId === 'com.transportx.citation' ? 'citation' : 'spatial-analysis';
-    const file = new URL(`../modules/capabilities/${directory}/${contract.toolId === 'spatial.execution' ? 'execution-contract.json' : 'tool-contract.json'}`, import.meta.url);
+    const location = contract.moduleId === 'com.transportx.module-authoring' ? 'official/module-authoring' : `capabilities/${directory}`;
+    const file = new URL(`../modules/${location}/${contract.toolId === 'spatial.execution' ? 'execution-contract.json' : 'tool-contract.json'}`, import.meta.url);
     const text = JSON.stringify({ $comment: 'Generated from src/contracts/tool-definitions.mts; do not edit.', ...contract }, null, 2) + '\n';
     if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== text) fs.writeFileSync(file, text);
   }

@@ -40,7 +40,10 @@ export const CitationResolveSchema = Type.Object({ sources: Type.Optional(Type.A
 
 export const SpatialExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), operationId: Type.Optional(Type.String({ pattern: '^spatial_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
 
+export const ModulePackageSchema = Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('install')]), packagePath: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false });
+
 export const pilotToolContracts = [
+  { moduleId: "com.transportx.module-authoring", toolId: "module.package", piName: "tau_module_package", contractVersion: "1.0.0", semanticVersion: "module-task-package-v1", input: ModulePackageSchema, output: { protocol: "transportx-module-package", version: 1, detailsKind: "tau-module-package" } },
   { moduleId: "com.transportx.spatial-analysis", toolId: "spatial.execution", piName: "tau_spatial_execution", contractVersion: "1.0.0", semanticVersion: "spatial-owner-confirmation-v1", input: SpatialExecutionSchema, output: { protocol: "transportx-spatial-execution", version: 1, detailsKind: "tau-spatial-execution" } },
   { moduleId: "com.transportx.spatial-analysis", toolId: "spatial.analyze", piName: "tau_spatial_analyze", contractVersion: "1.0.0", semanticVersion: "spatial-explicit-crs-v1", input: SpatialAnalyzeSchema, output: { protocol: "transportx-spatial-analysis", version: 1, detailsKind: "tau-spatial-analysis" } },
   { moduleId: "com.transportx.citation", toolId: "citation.resolve", piName: "tau_resolve_citation", contractVersion: "1.0.0", semanticVersion: "citation-exclusive-sources-webUrls-v1", input: CitationResolveSchema, output: { protocol: "pi-citation", version: "3.0", detailsKind: "tau-citations" } },

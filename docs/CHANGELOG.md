@@ -21,6 +21,8 @@
 
 ### Added
 
+- Tool/插件 P4 初版：Module Authoring 1.2.0 新增 `tau_module_package`，Agent 可在任务内生成包、静态检查，再经既有原生确认安装；工具不要求用户编辑清单或配置，新任务使用安装结果，旧任务保留冻结版本。制作 Skill 补脚本/CLI/API 包装、依赖检查与缺配置反馈；真实模型已完成 CSV 包制作、安装及新任务调用，缺 OR-Tools 与私有 API 缺凭据分别交付草稿并说明未执行。独立插件更新、禁用、恢复、卸载与重装闭环通过，保留旧历史；打包模块及 Video 独立分发沿现有机制。
+
 - Tool/插件 P3：Spatial 1.4.0 在首次计算前由 Host 签发并保存 operationId，绑定 Pi 持久历史 Owner、规范化参数、接口语义及输入哈希；同操作重放复用原成果，不同请求冲突。新增 `tau_spatial_execution` 查询及请求取消，沿用原 Job/PythonRunner；Host 重启后核验 manifest/输出，确认提交则返回原成果，不能确认则保持未知并禁止自动重算。Citation 继续用领域 Registry 处理重复和批量提交，不增加通用持久 Job。
 - Tool/插件 P2：Spatial 1.3.0 与 Citation 2.1.0 从单一 TypeBox 定义生成包内 Tool Contract，Host 执行前复核结构及接口版本；两模块随包携带薄通信实现，保留各自领域校验、结果协议和 Pi 注册。能力中心按当前任务的计划、实时 Bridge 来源/激活状态、Schema 和已确认调用提供三态核对，不自动激活工具。Web Bridge 1.0.2 在首次执行和分支切换重新观察，历史样本不冒充当前进程证明。Citation 补取消传播、有界摘要及未知提交指引；独立模块支持 ZIP 更新后的实际调用。
 - Tool/插件 P0 增加模块代码信任入口：Electron 原生确认经私有 IPC 返回 Host，绑定具体包/版本/入口/依赖；原始安装 RPC 的布尔参数及存储的来源标签不能授权。目录、ZIP、启用和历史启动共用核对，Pi 仅加载计划入口，拒绝未授权自动发现/reload；不承诺 OS 隔离。拒绝更新保留旧版本，卸载撤销接受记录。增加生产 Host + 真实 Pi 的错误、取消、历史落盘与信任探针，以及 Spatial 持久 Owner 的路径/header/cwd 校验器；持久执行查询仍待 P3。

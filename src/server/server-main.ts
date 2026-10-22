@@ -79,7 +79,7 @@ const liveManager = new LiveSessionManager({
     await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust);
     return buildSessionPiLaunch(input);
   }, spawn,
-  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '' },
+  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '' },
 });
 
 function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
@@ -445,6 +445,7 @@ function computeUrls(port: number) {
   liveManager.runtime.endpoints.video = endpoint;
   liveManager.runtime.endpoints.geo = endpoint;
   liveManager.runtime.endpoints.canvas = endpoint;
+  liveManager.runtime.endpoints.moduleAuthoring = endpoint;
 }
 
 let releaseHostWriter: (() => void) | null = null;
