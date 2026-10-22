@@ -526,6 +526,34 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const detail = await jsonBody(await fetch(`${base}/api/live-sessions/${owner.id}/citations/evidence/e_report`));
     assert.equal(detail.preview.kind, 'text');
     assert.equal((await fetch(`${base}/api/live-sessions/${owner.id}/citations/occurrences`, { method: 'POST' })).status, 404);
+
+    // A rejected mixed registration explains how to retry without losing either kind of evidence.
+    Object.assign(owner, { resolvedSessionPlan: { modules: [{ id: 'com.transportx.citation' }] } });
+    const register = (input: Record<string, unknown>) => fetch(`${base}/api/internal/citations/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: owner.id, token: 'citation-token', ...input }) });
+    const sources = [{ path: 'report.md', locator: { kind: 'source' }, contentKind: 'source-only', deliverable: true }];
+    const webUrls = ['https://public.example/report'];
+    const mixed = await register({ sources, webUrls });
+    assert.equal(mixed.status, 400);
+    assert.match((await jsonBody(mixed)).error, /separate calls/);
+    const localResponse = await register({ sources });
+    assert.equal(localResponse.status, 200);
+    const local = await jsonBody(localResponse);
+    assert.deepEqual(local.deliverableEvidenceIds, [local.citations.evidence[0].evidenceId]);
+    const lookup = t.mock.method(require('node:dns/promises'), 'lookup', async () => [{ address: '1.1.1.1', family: 4 }]);
+    const request = t.mock.method(require('node:https'), 'request', (_options: unknown, respond: (value: any) => void) => {
+      const response = require('node:stream').Readable.from([Buffer.from('<html>public original</html>')]);
+      response.headers = { 'content-type': 'text/html' }; response.statusCode = 200;
+      const outgoing = new EventEmitter(); outgoing.setTimeout = () => {}; outgoing.end = () => respond(response);
+      return outgoing;
+    });
+    try {
+      const webResponse = await register({ webUrls });
+      assert.equal(webResponse.status, 200);
+      const web = await jsonBody(webResponse);
+      assert.equal(web.citations.sources[0].metadata.url, webUrls[0]);
+      const registered = (await jsonBody(await fetch(`${base}/api/live-sessions/${owner.id}/citations`))).citations;
+      for (const evidence of [...local.citations.evidence, ...web.citations.evidence]) assert.ok(registered.evidence.some((item: any) => item.evidenceId === evidence.evidenceId));
+    } finally { lookup.mock.restore(); request.mock.restore(); }
   }
 
   // serves session files inline or as downloads with PDF byte ranges
@@ -703,13 +731,17 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     liveManager.sessions.clear();
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-resume-http-'));
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+    const { writeLegacyCitationFixture } = require('../support/citation-v2.ts');
+    const legacy = writeLegacyCitationFixture(cwd);
     const entries = [
       { type: 'session', id: 'resume', timestamp: '2026-01-01T00:00:00.000Z', cwd },
       { type: 'message', message: { role: 'user', content: 'resume this historical thread' } },
       { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: 'historical reply' }] } },
+      ...legacy.entries.slice(1),
       { type: 'session_info', name: 'Snapshot Chat' },
     ];
     const filePath = writeSessionFileAt(PROJ_DIR, 'resume.jsonl', entries);
+    const historicalBytes = fs.readFileSync(filePath, 'utf8');
     const child = makeFakeChild();
     let piArgs: string[] = [];
     _setSpawnPiForTest((_cmd: string, args: string[]) => {
@@ -739,6 +771,24 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.equal(snapshot.session.sessionName, 'Snapshot Chat');
     assert.equal(snapshot.session.sessionFile, path.resolve(filePath));
     assert.deepEqual(snapshot.entries, entries.slice(1));
+    assert.equal(fs.readFileSync(filePath, 'utf8'), historicalBytes, 'citation migration leaves historical messages intact');
+    const citationBase = `${base}/api/live-sessions/${encodeURIComponent(resumed.session.id)}`;
+    const citations = (await jsonBody(await fetch(`${citationBase}/citations?ids=occurrence_legacy,occurrence_missing`))).citations;
+    assert.deepEqual(citations.evidence.map((item: any) => item.evidenceId), ['occurrence_legacy', 'occurrence_missing']);
+    const detail = await jsonBody(await fetch(`${citationBase}/citations/evidence/occurrence_legacy`));
+    assert.equal(detail.preview.kind, 'text');
+    assert.equal(detail.source.content.sha256, legacy.sha256);
+    assert.equal(detail.evidence.locator.section, '历史依据');
+    const original = await fetch(`${citationBase}/citation-resources/${detail.source.sourceVersionId}/content?sha256=${legacy.sha256}`);
+    assert.equal(original.status, 200);
+    assert.equal(await original.text(), legacy.original);
+    const missing = await jsonBody(await fetch(`${citationBase}/citations/evidence/occurrence_missing`));
+    assert.equal(missing.preview.code, 'missing');
+    const { CitationService } = require('../../bin/citation-service.js');
+    const resumedSession = liveManager.get(resumed.session.id);
+    assert.equal(resumedSession.citationRegistryId, 'legacy_session');
+    new CitationService().resolve(resumedSession, [{ path: 'original.md', locator: { kind: 'source' }, contentKind: 'source-only' }]);
+    assert.equal((await jsonBody(await fetch(`${citationBase}/citations`))).citations.evidence.length, 3, 'resumed sessions can register new evidence alongside historical citations');
     const systemPromptIndex = piArgs.indexOf('--system-prompt');
     assert.ok(systemPromptIndex >= 0);
     const { hostPlatform } = require('../../bin/host-platform.js');
@@ -749,6 +799,45 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.ok(failureLog.includes('pi_run_failed'));
     assert.doesNotMatch(failureLog, /private-run-secret/);
     child.stdin.end();
+  }
+
+  // A frozen v3 plan from the previous release resumes without configuration confirmation.
+  {
+    liveManager.sessions.clear();
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-upgrade-http-'));
+    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+    const legacy = require('../support/citation-v2.ts').writeLegacyCitationFixture(cwd);
+    const { SESSION_ASSEMBLER } = require('../../bin/platform-composition.js');
+    const oldPlan = SESSION_ASSEMBLER.assemble('com.transportx.workbench', cwd);
+    oldPlan.platform.version = '3.23.0';
+    for (const module of oldPlan.modules) {
+      module.manifestSha256 = '0'.repeat(64);
+      for (const entry of module.entrypoints) entry.sha256 = '0'.repeat(64);
+    }
+    SESSION_ASSEMBLER.save(oldPlan);
+    const planPath = path.join(cwd, '.tau', 'resolved-session-plan.json');
+    const planBytes = fs.readFileSync(planPath, 'utf8');
+    const filePath = writeSessionFileAt(PROJ_DIR, 'upgrade.jsonl', legacy.entries);
+    const historyBytes = fs.readFileSync(filePath, 'utf8');
+    const child = makeFakeChild();
+    let starts = 0;
+    _setSpawnPiForTest(() => { starts++; return child; });
+    const resume = () => fetch(`${base}/api/live-sessions/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }) });
+    fs.writeFileSync(legacy.file, '{damaged');
+    const refused = await resume();
+    assert.equal(refused.status, 409);
+    assert.equal((await jsonBody(refused)).code, 'citation_migration_failed');
+    assert.equal(starts, 0, 'failed migration never starts Pi with unreadable citations');
+    assert.equal(fs.readFileSync(legacy.file, 'utf8'), '{damaged');
+    fs.writeFileSync(legacy.file, legacy.bytes);
+    const response = await resume();
+    assert.equal(response.status, 200);
+    const { session } = await jsonBody(response);
+    assert.equal((await jsonBody(await fetch(`${base}/api/live-sessions/${session.id}/citations/evidence/occurrence_legacy`))).preview.kind, 'text');
+    assert.equal(fs.readFileSync(filePath, 'utf8'), historyBytes);
+    assert.equal(fs.readFileSync(planPath, 'utf8'), planBytes, 'upgrade keeps the frozen session plan');
+    child.stdin.end();
+    _setSpawnPiForTest(null);
   }
 
   // PDF render and download cache enforce concurrency, byte and entry capacity

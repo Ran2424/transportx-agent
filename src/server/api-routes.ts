@@ -315,6 +315,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const session = resolveServiceSession(res, body, deps, 'citation');
         if (!session) return;
         if (['knowledgeIds', 'attachmentIds', 'artifacts', 'datasets', 'value', 'executionRef'].some((key) => key in body)) return deps.json(res, 400, { error: 'Unsupported citation input. Use concrete sources with typed locators.' });
+        if ('sources' in body && 'webUrls' in body) return deps.json(res, 400, { error: 'sources and webUrls cannot be combined. Register local files with sources and public HTTPS pages with webUrls in separate calls; omit the other field entirely. Reuse evidence IDs from both calls. Do not put URLs in sources[].path.' });
         if (Array.isArray(body.sources) && body.sources.length && !body.webUrls) {
           const inputs = body.sources as import('./citation-service.js').CitationInput[];
           const citations = deps.citation.resolve(session, inputs);
@@ -322,7 +323,7 @@ export function createApiRouter(services: ApiRouteServices) {
           return deps.json(res, 200, { citations, deliverableEvidenceIds });
         }
         if (Array.isArray(body.webUrls) && !body.sources) return deps.json(res, 200, { citations: await deps.citation.resolveWeb(session, body.webUrls as string[]) });
-        deps.json(res, 400, { error: 'Provide sources or webUrls.' });
+        deps.json(res, 400, { error: 'Provide exactly one non-empty array: sources for local files, or webUrls for public HTTPS pages. Omit the other field entirely.' });
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {

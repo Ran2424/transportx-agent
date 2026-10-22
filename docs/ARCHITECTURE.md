@@ -1,13 +1,13 @@
 # TransportX Agent 架构
 
-- 产品版本：3.22.0 + Unreleased 架构整改
+- 源码版本：3.23.1（未发布，按当前工作区实现核查）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-10-10
-- 发布 Profile：macOS arm64（DMG）与 Windows x64（NSIS）；Linux 不是发布目标
+- 更新日期：2026-10-22
+- 发布 Profile：macOS arm64（DMG + ZIP 更新包）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
 
-模型推理由配置的 Provider 提供，可使用远程 API 或本地服务；仓库没有自研模型推理引擎。本文以当前源码、Module manifest 和打包配置为依据，历史方案仅用于了解背景。
+模型推理由配置的 Provider 提供，可使用远程 API 或本地服务；仓库没有自研模型推理引擎。本文以当前源码、Module manifest 和打包配置为依据，历史方案仅用于了解背景。正式发布状态与源码实现分开记录，见 [CHANGELOG](CHANGELOG.md) 与 [发布记录](releases/3.23.0.md)。
 
 阅读顺序：第 2 节看进程与技术栈，第 3 节看执行闭环与功能位置，第 5 节看模块装配和依赖，第 4、6、7 节看状态与资源边界。
 
@@ -19,15 +19,16 @@ pi-tau-traffic/
 │  ├─ assets/                  图标、签名与平台资源
 │  └─ scripts/                 runtime 准备、发布前检查、打包钩子
 ├─ modules/                    随应用发布的能力单元
-│  ├─ capabilities/            Task、Geo、Citation、Spatial Analysis、Web Bridge
-│  └─ official/                Workbench/CLI Domain、报告模板、Module Authoring
+│  ├─ capabilities/            Canvas、Document、Geo、Citation、Spatial Analysis、Interaction、Web Bridge
+│  ├─ official/                Workbench/CLI Domain、报告模板、Module Authoring
+│  └─ installable/             本地暂存目录，不入 Git、不随包发布
 ├─ src/
 │  ├─ contracts/               跨层协议与验证原语；不依赖具体运行时
 │  ├─ server/                  Node Agent Host、会话、资源、HTTP/RPC 与鉴权
 │  ├─ public/                  浏览器 Kernel、共享工具与 Geo runtime 源码
 │  └─ web/                     React 工作台、功能面板、组件、i18n 与样式
 ├─ scripts/                    场景测试、fake Pi harness、eval 与构建辅助
-├─ test/                       细粒度诊断测试与固定 fixtures
+├─ test/                       suites/ 直接注册关键场景；support/ 与固定 fixtures
 ├─ docs/                       架构、发布说明、变更记录与历史文档
 ├─ package.json                构建、开发、发布与场景测试入口
 └─ tsconfig*.json / vite.config.ts
@@ -95,7 +96,7 @@ Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`san
 
 - HTTP API 与带 `clientCommandId` 的可靠 RPC；
 - WebSocket 实时事件与 Snapshot 更新；WebSocket 不接受有副作用命令；
-- Session、附件、文件预览、本机打开、引用、报告、Geo、空间分析和视频资源；
+- Session、附件、文件预览、本机打开、Canvas、引用、报告、Geo、空间分析和视频资源；
 - 模型配置、认证、Module Registry/Installer、Asset Resolver 与 Session Assembly；
 - Pi、Python，以及可安装 Video Capability 提供的 ffmpeg/ffprobe 受控调用。
 
@@ -109,9 +110,17 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 ### 2.7 React Workspace 与 Browser Kernel
 
-Canvas 在工作区顶部以具名标签承载当前任务的地图、视频和文档。`pi-canvas` Presentation Envelope 统一 `present / focus / update / clear` 生命周期、受控资源引用、`viewId`、`revision` 与每次呈现意图的 `presentationId`；Projection Core 兼容旧 Geo / Video Tool Result。受信任的 Adapter Registry 负责领域 payload、target、延迟 Renderer 和显式 Context，Canvas Shell 只管理标签与生命周期，不动态加载 Module 提供的前端代码。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。
+Canvas 打开后与对话列并排，分隔条可调整对话列宽度；Canvas 顶部的具名标签承载当前任务的地图、视频和文档。`pi-canvas` 1.0 Presentation Envelope 统一 `present / focus / update / clear` 生命周期、受控资源引用、`viewId`、`revision` 与每次呈现意图的 `presentationId`；Projection Core 兼容旧 Geo / Video Tool Result。受信任的 Adapter Registry 负责领域 payload、target、延迟 Renderer 和显式 Context，Canvas Shell 只管理标签与生命周期，不动态加载 Module 提供的前端代码。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。
 
 `src/public/` 提供浏览器端的 Kernel、Markdown/工具结果处理和 Geo runtime；`src/web/` 负责 React 应用、功能面板、i18n 与样式。React 通过 Kernel 消费 Snapshot/事件并发送命令，不解析原始 Pi RPC，也不直接访问本机文件。
+
+侧栏固定工具栏下方按能力区 30% / 会话区 70% 分配空间，两区可收起，移动端默认收起能力区。能力中心按技能、数据、知识、工具、模板分类并支持搜索；数据来自 `platform.getOverview()`，由 [capability-projection.ts](../src/web/platform/capabilities/capability-projection.ts) 按具体模块与资产状态投影。模块是否启用、资产是否就绪和本会话是否装配分别呈现。
+
+Light / Dark / Sand 的 primitive 与 semantic token 统一声明在 [tokens.css](../src/web/styles/tokens.css)，组件消费 semantic token。界面支持中英与跟随系统语言；主题、语言、执行详情偏好和按会话保存的输入草稿属于客户端状态。执行详情默认折叠为 Working，展开后读取同一组工具、思考与错误投影；耗时由 Host 的事件计时及任务侧计时索引恢复。
+
+### 2.8 构建时项目接入点
+
+[project-adapter.ts](../src/server/project-adapter.ts) 提供 Host 认证、模型 Provider 配置和额外 Pi Extension 的静态接入点；[project-ui.tsx](../src/web/app/project-ui.tsx) 提供桌面窗口控件、更新入口、原生操作和模块选项默认折叠设置，`App` 另接受账户区域。仓库默认实现使用现有桌面能力，Host 项目认证为空。接入点由产品构建选择，不是会话 Module 或运行时前端插件；额外项目 Extension 在会话计划中的 Extension 之前加入 Pi 启动参数。
 
 ## 3. 关键数据流
 
@@ -130,7 +139,11 @@ flowchart LR
 
 Prompt 按顺序装配：`src/server/prompts/PI_SYSTEM.md` 定义通用基础行为；Host 根据 `desktop/scripts/platform-profile.mjs` 的 `systemPrompt` 映射附加 `PI_SYSTEM_POSIX.md`（macOS / Linux）或 `PI_SYSTEM_WINDOWS.md`（Windows），两份环境规则独立维护，并与基础行为一起传入 Pi 的 `--system-prompt`；所选 Domain 的 `PI_SESSION_CONTEXT.md` 注入任务目录、Python 命令、Skill 与资产清单；CLI 可再追加用户指定的系统提示词文件。Windows 附加规则明确 `bash` 工具仍使用 Bash 语法，禁止 `nul` 重定向及创建 Windows 保留名。Skill 由 Pi 读取作为工作方法，Extension 在 Pi 进程内注册可执行工具或监听事件。
 
-新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module 版本、入口路径、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务沿用该计划中的模块目录与入口，允许用户修改模块清单、Skill、Extension 和 Prompt 内容，不进行这些文件的哈希比对。新计划不再记录这些内容哈希，旧 v3 计划中的对应字段兼容忽略；模块目录、清单和入口文件缺失仍报错。Native Runtime 与声明了完整性清单的资产继续执行各自的校验。唯一的升级迁移例外是 3.2.0 以前的内置 Video：仅当新版 Video Capability 已安装并启用时，恢复流程才会将旧条目映射到当前插件。
+基础行为要求按用户当前使用的语言回答；工作状态、计划、进度、阻塞说明和结论写在普通正文中，思考过程不承担用户沟通。
+
+新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module 版本、入口路径、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务沿用该计划中的模块目录与入口，允许用户修改模块清单、Skill、Extension 和 Prompt 内容，不进行这些文件的哈希比对，也不要求当前 manifest 的版本与计划记录相等。新计划不再记录这些内容哈希，旧 v3 计划中的对应字段兼容忽略；模块目录、清单和入口文件缺失仍报错。计划固定选择与路径，不保证可编辑代码的逐字复现。Native Runtime 与声明了完整性清单的资产继续执行各自的校验。
+
+恢复时优先读取 `.tau/resolved-session-plan.v3.json`，否则读取 `.tau/resolved-session-plan.json`。缺少计划或 schemaVersion 2 的旧计划需要用户选择使用当前配置，确认后另存 v3 计划；已有有效 v3 计划不需要这项确认。退役内置 Video 的目录缺失时，仅在新版 Video Capability 已安装并启用后映射到该包；已移除的内置 Timing 条目允许跳过。Citation 注册表升级属于独立的数据迁移，不要求重建会话计划，见第 4.2 节。
 
 模块的用户展示信息由 `manifest.json` 的可选 `presentation` 提供，不改变 `manifestVersion: 2`。`defaultLocale` 指定默认语言，`locales.zh-CN` / `locales.en-US` 分别包含 `name`、`description` 与可选 `features`。`presentation.skills` 按已声明的 Skill 入口路径覆盖，`presentation.assets` 按已声明的资源 ID 覆盖；各覆盖项沿用相同的 `defaultLocale + locales` 结构，不能引用未声明的入口或资源。
 
@@ -178,7 +191,7 @@ sequenceDiagram
 
 | 用户功能 | Agent / Module 侧 | Host 与持久化 | 展示或交互位置 |
 |---|---|---|---|
-| 对话、模型、历史恢复 | Pi 基础循环，Web Bridge 发布模型/工具清单 | `sessions.ts`、`session-projection.ts`、`pi-model-config.ts` | `platform/conversation/`、`platform/model/`，Kernel stores |
+| 对话、模型、历史恢复 | Pi 基础循环，Web Bridge 发布模型/工具清单 | `sessions.ts`、`session-projection.ts`、`pi-model-config.ts`；`local-model-service.ts` 探测兼容服务 | `platform/conversation/`、`platform/model/`，Kernel stores |
 | 用户交互与提问 | Interaction Extension：`tau_ask_user` | Pi Extension UI 请求与工具结果 | `platform/extension-ui/` |
 | 交通数据查询与统计制图 | 数据/绘图 Module 的 Skill + Pi 基础工具执行 Python/SQL | 冻结资产根目录；分析输出写入任务 cwd | 对话工具卡、`platform/workspace/` 文件预览 |
 | 地图发布与显示 | Geo：`publish_geodata`、`present_visualization`（含 `show_map` 操作） | Extension 写资源 manifest；`geo-resources.ts` 校验并提供 GeoJSON | `features/geo/GeoWorkspace.tsx` + `src/public/visualization/geo/` |
@@ -186,29 +199,47 @@ sequenceDiagram
 | 地图选取与截图 | Geo：`inspect_map_context`、`request_geo_input`、`capture_geo_screenshot` | `geo-interaction-service.ts` 维护上下文与等待请求 | GeoWorkspace 收集选择、渲染并上传 PNG；结果返回 Agent |
 | 视频检索与处理 | 可安装 Video Extension：search / present / snapshot / clip / sample_frames | `video-service.ts` → 会话冻结的 `VideoRunner`；资源与预计算指标接口 | `features/video/VideoWorkspace.tsx`，Canvas 视频标签 |
 | 知识检索与引用 | Knowledge Module 的 Skill/脚本检索；Citation Extension 注册和解析证据 | `citation-service.ts`、`citation-registry.ts`、`citation-resources.ts` | `platform/conversation/` 引用标记与原文定位 |
+| 共享 Canvas | Canvas Extension：`canvas_present`、`canvas_inspect_context`；Document 声明受信任 Adapter | `canvas-service.ts` 校验装配、资源、target 与显式上下文；呈现事件保存在工具结果 | `platform/canvas/` 的状态投影、Adapter/Renderer Registry 与标签容器 |
 | 报告、表格、PDF 与 OOXML | 报告 Template + Agent 写 Markdown，引用分析文件/图件 | 文件 API、Citation SHA-256 资源路由、`report-pdf.ts`；桌面请求交给 Electron PDF 渲染 | Canvas `DocumentWorkspace.tsx` 浏览 Markdown/CSV/PDF；`features/office/OfficeWorkspace.tsx` 按格式加载本地只读 DOCX/XLSX/PPTX Viewer |
 | 能力安装与任务选择 | Module manifest 声明能力、依赖与资产 | Registry / Installer / Assembler、`platform-overview.ts` | Settings、NewSessionDialog、`platform/capabilities/` |
 
 内置模块不再提供步骤规划器；`tau_ask_user` 只负责在缺少必要信息或审批时向用户发起结构化提问。历史会话仍保留 Task Snapshot 的读取兼容路径，但新会话不会装配 `tau_task` 或任务面板。Web Bridge 是 Pi 的模型/工具元数据桥，不是网页搜索或浏览器自动化服务。报告不是独立 Agent 或服务流水线：Agent 将数据、空间、视频与知识工具的结果组织成文件。
 
-### 3.4 文件、引用、地图与视频
+### 3.4 文件、Canvas、地图与视频
 
 - 文档既可由用户通过 WorkspaceDock、成果或引用入口打开，也可由 Agent 通过 `canvas_present` 呈现并定位。Agent 呈现事件写入 Session JSONL，可随会话重放；用户手动标签、活动标签和连续滚动状态留在前端。MD/CSV/PDF/DOCX/XLSX/PPTX 的既有入口继续调用 `OpenDocumentContext`；CSV 使用只读表格渲染，不加载 OOXML runtime。
-- 用户只有执行“附加当前 Canvas”时才生成 `CanvasContextV1`。Host 固定 View revision 与资源版本，并把 Context ID 附到下一轮用户消息；Agent 必须调用 `canvas_inspect_context` 读取本轮 ID，不能回退读取历史选区。连续滚动、播放和鼠标事件不进入会话。
+- `canvas_present` 通过 Host 新建资源视图时只接受 Document Adapter，资源可为任务文件或 Citation SourceVersion；地图与视频由各自工具发布 Canvas Envelope。操作已有 `viewId` 时沿用已声明 Adapter 和前次资源。文档 `update` 保证 revision 递增，即使文件 mtime 不变或回退，React 文档与 OOXML Viewer 也会重载，PDF iframe 同步重建；`focus` 保留原 revision，仅表达聚焦与导航意图。
+- 用户只有执行“附加当前 Canvas”时才生成 `CanvasContextV1`。Host 在创建时核对当前呈现的 View revision，并保存资源句柄、定位与选区，把 Context ID 附到下一轮用户消息；Agent 必须调用 `canvas_inspect_context` 读取本轮 ID，不能回退读取历史选区。Context 记录视图上下文，不为普通任务文件保存内容快照；连续滚动、播放和鼠标事件不进入会话。
 - Markdown 文档复用共享渲染器，由 `report-renderer.ts` 补充公式、Mermaid、图片和标题目录；文档定位在自己的容器内完成，不改变聊天 Markdown。PDF 通过受控 URL 在原生 iframe 阅读器中显示，引用传入物理页码；同会话标签切换保留 iframe，跨会话重建只恢复最后一次明确请求的页码，不读取原生阅读器内部滚动或缩放状态。
 - DOCX、XLSX 和 PPTX 由 `@silurus/ooxml` 在浏览器内通过 Rust/WASM 解析、Canvas 2D 只读渲染。`features/office/office-resource.ts` 在 GET 前用 HEAD 校验状态和 32 MiB 压缩文件上限；`office-viewer.ts` 按格式动态导入 Viewer，禁用在线字体与超链接并限制解压和图片内存。普通启动、Markdown 和 PDF 路径不加载 OOXML chunk、Worker 或 WASM。
-- 普通文件以会话与规范路径识别；引用文档以会话与固定 sourceVersionId 识别，并通过 Citation capability 句柄供用户和 Agent 复用同一标签。引用 URL 携带预期哈希，Host 同时检查注册版本与磁盘内容，失效时返回 409，不能回退到普通文件接口。手动刷新重新读取内容；关闭标签和切换会话后的迟到结果不会替换当前阅读内容。
+- 普通文件以会话与规范路径识别；引用文档以会话与固定 sourceVersionId 识别，并通过 Citation capability 句柄供用户和 Agent 复用同一标签。引用 URL 携带预期哈希，Host 同时检查注册版本与磁盘内容；原件变化或视图版本不匹配时返回 409，缺失与越权分别返回 404 / 403。手动刷新重新读取内容；关闭标签和切换会话后的迟到结果不会替换当前阅读内容。失效引用的处理见第 3.5 节。
 - 附件先上传到任务工作区，再以 `attachmentIds` 关联后续消息；服务端再次校验归属、状态、真实路径和文件存在性后才向 Pi 提供上下文。
-- Citation 3.0 只在会话的 `.tau/citations.json`（schemaVersion 2）保存 SourceVersion 与 Evidence。来源为已选 Knowledge/Data 资产原件或会话文件，Host 计算内容哈希；小型内联结果只由受控 Host 生产者登记。正文 `[[cite:evidenceId1,evidenceId2]]` 是使用位置的权威，不持久化 Occurrence、来源图或独立书目实体。旧 Citation 格式明确报错，不自动迁移或清理任务。
-- 单步 `tau_resolve_citation` 返回本次登记的元数据与 Evidence ID；Kernel 通过分页列表/按 ID 详情读取，普通文件浏览继续读取当前文件。引用区默认折叠，正文、候选和管理器共用详情；CSV/规则 JSON 有界表格支持定位行，Markdown/PDF 与书目导出保留同一版本的全部具体位置。
-- Knowledge/Data Module 自行提供目录概览、有限候选与原件/结果读取入口，启动不载入全量正文或记录；目录命中不能直接登记为证据。Citation 不扫描固定知识布局，不建立 Catalog/Provider 框架。Canvas 只接受正向查看与定位，Context 不转成 Evidence。
-- Citation 容量限制：内联内容 256 KiB，Registry 8 MiB，文本/表格预览原始读取 2 MiB，最多显示 200 行；文件哈希分块读取。固定内容改变或授权取消后拒绝读取；不退回当前文件。SpatialAnalysisService 成功后的 Host 接线复用其 manifest 与输入/输出校验，登记计数依据；登记失败单独返回警告并保留成功输出，重试登记幂等。
-
 - File、Preview、Geo 和 Spatial Analysis 以活动 Session cwd 为边界。Citation/Video 还可读取会话计划中明确解析的 Knowledge/Data 资产根目录，并将派生资源发布到当前任务。模块资产不必复制进 cwd；边界校验不能简化成“只允许读取 cwd”。
 - 用户可从地图提交要素、点位、矩形或当前视野四类 Geo Context，并显式附到下一轮消息。Agent 通过 `inspect_map_context` 读取本轮上下文，也可用 `request_geo_input` 等待用户在指定地图 revision 上补充输入；提交、取消、超时、中止和地图失效都有明确终态。
 - 地图截图由工作台按当前画面、图例和说明生成 PNG，再写入当前任务目录。截图不扩大资源访问范围。
 - Spatial Analysis 只处理当前会话的 GeoJSON，使用受控 Python 生成 WGS84 GeoJSON 与包含输入、参数、计数和哈希的 manifest，再发布到 Geo 界面。
 - Video 资源与指标由 Agent Host 使用当前会话冻结的 Video Capability ffmpeg/ffprobe 处理；发布版不得依赖系统 `PATH`。
+
+### 3.5 引用登记、交付成果与版本读取
+
+Citation 运行时只接受 `pi-citation` 3.0，在任务 `.tau/citations.json`（schemaVersion 2）保存 SourceVersion 与 Evidence。SourceVersion 固定来源身份、SHA-256、大小与可选书目信息；Evidence 固定对应版本、类型化 locator 与内容性质（原文摘录、知识归纳、数据结果或出处）。正文 `[[cite:evidenceId1,evidenceId2]]` 决定引用的使用位置；不再调用 `tau_cite`，不持久化 Occurrence、来源图或独立书目实体。旧注册表由第 4.2 节的迁移入口转换，运行时解析器不直接兼容旧 Envelope。
+
+`tau_resolve_citation` 有两种互斥输入，均返回本次登记的元数据与 Evidence ID，不返回累计注册表：
+
+| 输入 | 来源与处理 | 边界 |
+|---|---|---|
+| `sources` | 任务内的已有原件/结果文件，或 `assetId` 指定的已装配 Knowledge/Data 资产文件；Host 定位并计算哈希 | 每次 1–20 项，必须提供具体文件及 locator；`path` 为相对路径，不能填网址或目录 |
+| `webUrls` | Host 获取公共 HTTPS 文本页，按 URL 与内容哈希保存到 `.tau/citation-snapshots/`，登记为出处 | 每次 1–10 项；DNS 公网地址校验后固定连接地址，拒绝私网、非 2xx 响应和非 `text/*` 内容，不自动跟随重定向；单页最多 2 MiB |
+
+一次调用只能提供其中一个字段，另一字段须省略；同时引用文件与网页时分两次登记，再复用两次返回的 ID。`sources` 的原文摘录要求文本能在固定位置核对；知识归纳可以关联多个原件，但不能把归纳冒充原文。`metadata` / `querySummary` 是说明，不能证明分析已执行。
+
+Knowledge/Data Module 自行提供目录概览、有限候选与原件/结果读取入口，启动不载入全量正文或记录；目录命中不能直接登记为证据。Citation 不扫描固定知识布局，不建立 Catalog/Provider 框架。小型内联结果只由受控 Host 生产者登记；空间分析成功后，Host 复用 manifest 与输入/输出校验登记计数依据，登记失败单独返回警告并保留成功输出，重试登记幂等。Canvas Context 不转成 Evidence。
+
+Kernel 通过分页列表和按 Evidence ID 查询详情。列表包含来源元数据与 Evidence，不返回内联原始值；内联值仅在有界详情中返回。引用区默认折叠，正文、候选和管理器共用详情；CSV/规则 JSON 的有界表格支持定位行，Markdown/PDF 与书目导出保留同一来源版本的全部具体位置。`sources[].deliverable` 仅标记用户要求的最终文件，Host 返回 `deliverableEvidenceIds`，前端从工具结果和正文引用投影交付成果卡片；没有独立的成果文件扫描或成果注册表。
+
+读取引用原件时，Host 检查当前会话授权、注册哈希与文件大小。错误通过 JSON 的 `code` 与 `X-Citation-Error` 传递：`content-changed`、`view-mismatch`、`missing`、`forbidden`、`unsupported`、`read-failed`。详情在原件不可读时仍返回已登记的来源与定位，并停用失效原件的下载。原件变化后，任务内的文档可经普通文件 API 再次校验后，供用户主动选择打开“当前文件”；该入口明确标注当前文件不是引用版本，不自动替换引用、不改写历史 ID。资产原件不借此扩大为普通文件访问。
+
+本地文件引用保存元数据和哈希，不保存历史文件副本；网页登记单独保存抓取快照。容量上限为内联内容 256 KiB、Registry 8 MiB、文本/表格预览原始读取 2 MiB、最多显示 200 行；文件哈希分块读取。实现依据：[citation-service.ts](../src/server/citation-service.ts)、[citation-registry.ts](../src/server/citation-registry.ts)、[citation-resources.ts](../src/server/citation-resources.ts)、[citation-projection.ts](../src/web/features/citation/citation-projection.ts)。
 
 ## 4. 契约与事实来源
 
@@ -220,7 +251,10 @@ sequenceDiagram
 | 实时会话状态 | Agent Host live overlay | WebSocket、Browser Kernel |
 | 任务装配结果 | `<task>/.tau/resolved-session-plan*.json` | Session 恢复、审计 |
 | 附件索引 | `<task>/.tau/attachments.json` | Attachment API、会话投影 |
-| Citation/Geo/Video 资源 | 任务 cwd 下的受控资源目录 | 对应资源 API 与 React 面板 |
+| 引用版本与依据 | `<task>/.tau/citations.json`，由 `citationRegistryId` 绑定其持久 sessionId | Citation Service、资源路由、引用与成果投影 |
+| Geo/Video 资源与网页引用快照 | 任务 cwd 下的受控资源目录 | 对应资源 API 与 React 面板 |
+| Canvas 呈现与显式上下文 | 呈现为 Session JSONL 工具结果；上下文为 `<task>/.tau/canvas-contexts.json` | Canvas 投影、当前轮上下文读取 |
+| 执行耗时 | `<task>/.tau/timing-metrics.v1.json` 与 Host 实时计时 | 会话投影、Working 与工具详情 |
 | 地图交互上下文与等待请求 | Session Snapshot、Geo Interaction Service | Pi Geo 工具、Browser Kernel、React Geo Workspace |
 | 模型定义与密钥 | 用户目录 `models.json`、`auth.json` | Agent Host、Pi；密钥不返回前端 |
 | Module 声明与完整性 | Module `manifest.json`、`integrityFile` | Registry、Installer、Session Assembly |
@@ -239,6 +273,18 @@ sequenceDiagram
 - close、resume、历史 delete 共用 Writer 门禁；删除必须等待 Writer 和受管作业停止，停止失败保留文件。Host 最多 32 会话、4 受管作业/分析进程，每会话最多 2 作业；这些限制不覆盖 Pi bash 自行启动的全部进程。
 - 同一 Agent 目录只允许一个 Host；正常退出通过 IPC 释放租约，异常退出后仅在确认 owner PID 已退出时自动回收。owner 文件按 nonce 分代，回收者只能删除已检查的那一代；兼容旧 owner.json，缺失、损坏或进程状态无法确认时拒绝接管；settings/models/附件索引损坏拒绝覆盖并保全证据。资源策略、恢复步骤与兼容范围见 [整改 ADR](ADR-架构整改边界.md)。
 
+### 4.2 历史引用迁移与会话恢复
+
+[citation-migration.ts](../src/server/citation-migration.ts) 将 Citation 2.0 / Registry schemaVersion 1 转为 3.0 / schemaVersion 2，启动与恢复流程共用该实现：
+
+1. Agent Host 取得 `PI_AGENT_DIR` 的 Writer 租约后、HTTP listen 与 ready 消息之前，扫描默认 `scenario`、配置的项目根目录和历史 Session JSONL 头部指向的任务目录。按任务先备份、后转换，单个失败写入运行诊断，其他任务继续处理。
+2. 恢复指定历史会话时，在计划核验后、Pi 启动前补做迁移。损坏、越权或不支持的注册表返回 `409 citation_migration_failed`，保留原件并阻止该会话启动；有效的 3.0 注册表跳过转换，不重复写入。
+3. 原注册表和原件核验报告保存在 `<user-data>/migrations/citation-v3-<timestamp>-<id>/`。转换保留注册表 sessionId、来源哈希、书目信息与定位，以旧 occurrenceId 作为新 evidenceId，因此历史正文无需改写。未被 occurrence 使用的 locator 以原 locatorId 保留为 Evidence；旧 quote 按 summary 迁移，不提升为已核对摘录。
+
+V2 没有记录文件大小，迁移从现存文件补齐；原件缺失时用 0 占位并在报告注明，内容变化或缺失仍保留历史哈希和出处，读取时显示相应错误。迁移只备份注册表，不备份历史源文件；旧来源关系留在原注册表备份中，不作为 V3 的独立来源图继续运行。恢复后的活动会话 ID 可以改变，`citationRegistryId` 沿用磁盘注册表的 sessionId，既有依据与新增依据写入同一注册表。
+
+离线维护入口为 `node scripts/migrate-citations-v3.mjs <data-root> [--apply]`，需先构建 Server；默认只预检，`--apply` 先备份整批原注册表再写入，写入失败回滚该批已修改的注册表。不修改历史消息、会话计划或任务资料，也不删除注册表。
+
 ## 5. Module 与资产模型
 
 ### 5.1 名词与位置
@@ -248,7 +294,7 @@ Module 是统一安装与版本冻结单元，manifest 的 `type` 分为 `domain
 | 概念 | 实际含义 | 消费方式 |
 |---|---|---|
 | Domain | 一次会话的基础配置，贡献恰好一个会话 Prompt，并声明基础依赖 | SessionAssembler 选择 Workbench 或 CLI Domain |
-| Capability | 通用能力模块，如 Geo、Task、Video | 被 Domain 或业务 Module 依赖，或由用户显式选择 |
+| Capability | 通用能力模块，如 Canvas、Geo、Video | 被 Domain 或业务 Module 依赖，或由用户显式选择 |
 | 业务 Module（`type: module`） | 特定数据、知识、样式或模板的组合 | 按任务需要选择；可依赖 Capability |
 | Skill | `SKILL.md` 工作方法，可附参考文件和脚本 | `entrypoints.skills` → Pi `--skill`；本身不是可执行工具 |
 | Extension | TypeScript/JavaScript 扩展，在 Pi 进程中注册工具或监听事件 | `entrypoints.piExtensions` → Pi `--extension` |
@@ -271,27 +317,21 @@ flowchart LR
   wb --> interaction["interaction"]
   wb --> bridge["web-bridge"]
   wb --> citation["citation"]
+  wb --> canvas["canvas"]
+  wb --> document["document"]
   wb --> geo["geo"]
   wb --> spatial["spatial-analysis"]
   wb --> template["traffic.report-template"]
   wb --> author["module-authoring"]
+  document --> canvas
+  geo --> canvas
   spatial --> geo
+  spatial --> citation
 ```
 
-**可安装模块对能力的依赖：**
+Workbench 默认装配上述九个直接依赖；CLI Domain 无依赖，使用 `--module` 才会增加可选模块及其依赖。Video 不在 Workbench 的默认依赖中。可安装数据、知识或样式包可按其 manifest 依赖 Video、Geo、Citation 等模块；这些包不属于内置依赖图，实际可用包由用户安装目录及启用状态决定。
 
-```mermaid
-flowchart LR
-  demo["demo-video"] --> video["video：可安装 Capability<br/>含平台专属 ffmpeg/ffprobe"]
-  hongqiao["hongqiao-metro-demo"] --> video
-  shanghai["shanghaidata"] --> geo["geo：内置 Capability"]
-  knowledge["traffic-assurance-knowledge"] --> citation["citation：内置 Capability"]
-```
-
-`shanghai-hub-traffic`、`shanghai-multimodal-data`、`plot-style` 无模块依赖。
-
-
-Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--module` 才会增加可选模块及其依赖。Video 不在 Workbench 的默认依赖中。模块“已安装”“已启用”“被本任务选择”“实际工具已注册”是不同状态，能力展示应消费服务端投影，不能仅凭源码目录存在判断可用。
+模块“已安装”“已启用”“被本任务选择”“实际工具已注册”是不同状态，能力展示应消费服务端投影，不能仅凭源码目录存在判断可用。
 
 ### 5.3 模块清单与交付
 
@@ -299,11 +339,14 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 |---|---|---|
 | `official/workbench`、`official/cli` | 两种 Domain 的会话 Prompt | 随包注册，按入口选择一个 Domain |
 | `capabilities/interaction`、`citation`、`web-bridge` | 用户提问、引用工具、Pi 元数据桥接 Extension | Workbench 基础依赖 |
-| `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖，Spatial Analysis 依赖 Geo |
+| `capabilities/canvas`、`document` | 共享画布工具与 Skill、文档 Adapter 声明与使用 Skill | Workbench 基础依赖；Document 依赖 Canvas |
+| `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖；Geo 依赖 Canvas，Spatial Analysis 依赖 Geo + Citation |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
 | 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
 
 配置与路径读取位于 config；Registry、Installer、AssetResolver 与 Assembler 的实例装配位于 [platform-composition.ts](../src/server/platform-composition.ts)。server-main 是组合根，向 Manager 注入已有装配器、工作区创建、启动函数、spawn 与服务 endpoint；sessions 不再在 import 时创建全局 Manager。内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
+
+当前配置注册 11 个内置模块（两个 Domain 与九个基础依赖）。`capabilities/task` 的 manifest 与 Extension 仍留在源码，但不在 `BUILTIN_MODULE_MANIFESTS` 中，也不是新任务的默认能力；历史 Task Snapshot 兼容不代表重新装配旧规划工具。
 
 ### 5.4 从包到会话
 
@@ -334,6 +377,7 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 ├─ scenario/<task>/             每个任务的受控工作区
 ├─ sessions/                    Pi Session JSONL
 ├─ modules/<id>/<version>/      受管 Module
+├─ migrations/citation-v3-*/   引用升级的原注册表备份与核验报告
 ├─ settings.json                Pi 设置与 tau 平台配置
 ├─ settings/                    预留设置目录
 ├─ logs/                        Agent Host 等日志
@@ -343,6 +387,27 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 ```
 
 以上为桌面布局；CLI 默认共用根目录。Web 开发的 Pi 配置与历史默认在 `~/.pi/agent/` 下，任务工作区默认使用当前平台的 `<user-data>/scenario/`，可分别由 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` 与 `TAU_PROJECTS_DIR` 覆盖。`TAU_USER_DATA_DIR` 只用于开发或受控部署覆盖。安装包资源始终只读；升级和卸载不应删除用户数据。任务工作区中的附件、计划和派生资源均属于该任务，不可被其他任务直接读取。
+
+任务侧文件按功能创建，不要求每个任务都具备全部目录：
+
+```text
+<task>/
+├─ attachments/<id>/           用户上传的文件
+├─ 报告、图件、分析结果等        Agent / 受控服务生成的任务文件
+└─ .tau/
+   ├─ workspace-owner.json      受管工作区归属
+   ├─ resolved-session-plan*.json
+   │                           任务装配计划；兼容确认后另存 .v3.json
+   ├─ attachments.json          附件元数据与消息关联
+   ├─ citations.json            引用来源版本与 Evidence
+   ├─ citation-snapshots/       网页引用的抓取快照
+   ├─ canvas-contexts.json      用户显式附加的 Canvas 上下文
+   ├─ timing-metrics.v1.json    执行耗时索引
+   ├─ geo-resources/            GeoJSON 与 manifest
+   ├─ geo-interactions/         地图上下文、请求、响应与消息关联
+   ├─ spatial-results/          受控空间分析 manifest 与运行时临时请求
+   └─ video-resources/          视频派生资源与 manifest
+```
 
 运行诊断统一保存在 `<user-data>/logs/`，独立于任务工作目录，删除任务后仍可查看。`runtime.jsonl` 记录 Host 生命周期、HTTP/RPC 失败、Pi 启停及 stderr，包含时间、级别、进程与会话标识；不记录请求正文或完整工具输出。`agent-host.log` 保存启动与控制台信息，`desktop.log` 记录桌面启动及渲染进程异常，`updates.log` 保存更新状态。每份日志以 5 MiB 为轮转阈值，保留当前文件及 `.1`–`.3` 三份历史；写入前遮盖常见 API Key、Bearer、Cookie、密码和 token，写入失败只向 stderr 提示一次，不阻断任务。Web/CLI 与桌面版使用同一用户日志目录规则，桌面 Host 控制台由 supervisor 采集，避免重复写入。设置页“常规 → 本地目录”显示日志目录并可打开；打开操作只使用服务端解析的目录，不接受客户端指定路径。
 
@@ -355,6 +420,8 @@ Workbench 默认装配其七个直接依赖；CLI Domain 无依赖，使用 `--m
 5. API Key 不返回 Renderer；模型配置采用原子替换及有效备份；密钥由 Pi AuthStorage 管理，不能将 models 的原子写入保证推广到 auth.json。
 6. 基础打包运行时在桌面启动前校验相对路径与 SHA-256；Module Installer 对 Native Runtime 执行路径和 SHA-256 校验，并拒绝不匹配当前平台/架构的能力模块。
 7. PDF 使用禁用 JavaScript 的临时隐藏窗口，阻断 `about:`/`data:` 以外的请求。
+8. Extension 内部 HTTP 按会话、服务 token、计划中对应 Capability 与停止状态独立校验；用户登录凭据不能代替服务 token。开启用户认证时内部工具通道继续使用该校验；项目认证还会在 WebSocket 存续期间复核登录状态。
+9. Markdown 使用共享安全渲染；SVG/HTML 文件响应设置 `nosniff` 与沙箱 CSP，网页引用 HTML 快照按纯文本提供。资源路由与本机打开入口各自校验授权，引用原件变化不会自动改用普通文件路由。
 
 Module 是本机可信代码与数据包，而非操作系统级沙箱插件。若未来开放第三方市场，必须单独设计签名、权限与隔离模型。
 
@@ -365,18 +432,24 @@ Module 是本机可信代码与数据包，而非操作系统级沙箱插件。�
 ```text
 desktop/electron-builder.yml
   ├─ electron-builder.common.yml   通用资源与 asar 规则
-  ├─ electron-builder.mac.yml      macOS arm64 DMG
-  └─ electron-builder.win.yml      Windows x64 NSIS
+  ├─ electron-builder.mac.yml      macOS arm64 DMG + ZIP
+  ├─ electron-builder.win.yml      Windows x64 NSIS
+  └─ scripts/update-builder-config.cjs
+                                  按 Profile 注入产物命名、更新源与发布说明
 ```
+
+`npm run build` 按 Server → public 共享代码 → React/Vite → Desktop 顺序构建。`postbuild-layout.mjs` 整理 Server/public 的契约导入路径并生成 Host 平台操作表；Geo runtime 在 React/Vite 阶段打包。安装包将内置 `modules/**` 与 `src/contracts/**` 解包到 `app.asar.unpacked`，供 Pi 加载及用户在系统文件管理器打开模块目录；`modules/installable/**` 排除在包外。
 
 `npm run desktop:pack` 在目标平台运行同一入口：
 
 1. `check-desktop-release.mjs` 根据 Profile 验证宿主架构与签名条件；
-2. `prepare-runtime.mjs` 复制并实际启动 Python，生成基础运行时哈希清单；
-3. electron-builder 按对应 fragment 打包；
-4. macOS 正式发行需要 Developer ID + 公证，Windows 正式发行需要 Authenticode + 可信时间戳。
+2. `npm run build` 生成应用代码；
+3. `prepare-runtime.mjs` 要求显式设置 `TRANSPORTX_PYTHON_RUNTIME_DIR`，复制自包含 Python 后实际启动验证，并生成基础运行时哈希清单；
+4. electron-builder 按对应 fragment 与动态更新配置打包。
 
-Video Capability 使用 `TRANSPORTX_VIDEO_MODULE_DIR=/path/to/video-module npm run video:pack` 独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。源码目录只描述能力及其运行时要求，不可代替平台专属 ZIP 安装。
+macOS 产物包含 DMG、供自动更新使用的 ZIP、`latest-mac.yml`、blockmap、SHA-256 与安装说明；Windows 产物包含 NSIS setup、`latest.yml` 与校验文件。正式发行的签名预检要求 macOS Developer ID + 公证、Windows Authenticode + 可信时间戳；已发布版本的实际签名状态以对应发布记录为准。
+
+Video Capability 同时显式设置 `TRANSPORTX_VIDEO_MODULE_DIR` 与 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`，独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。ffmpeg runtime 没有仓库或个人开发目录的隐式默认值；源码目录不可代替平台专属 ZIP 安装。
 
 不要从 macOS 交叉生成 Windows 正式包。Windows 验收与签名条件由 `check-desktop-release.mjs` 和平台 Profile 统一定义。
 
@@ -407,13 +480,16 @@ Geo runtime ────────────────> contracts + MapLib
 |---|---|---|
 | `npm test` | 构建、40 个以内的实际测试节点，以及 Agent Host、Module、协议与安全边界回归 | 任意开发主机 |
 | `npm run test:budget` | 校验实际测试总数不超过 40，拒绝隐藏注册和子测试 | 任意开发主机 |
-| `npm run test:web` | 浏览器中创建交通任务、获得分析、发布地图 | 本机 Chrome + fake Pi |
+| `npm run typecheck` | Server、public、React、Extension、Desktop 与测试的类型检查 | 任意开发主机 |
+| `npm run test:web` | 真实 Host + fake Pi：任务、地图交互/截图、引用与成果、Canvas 文档/OOXML 更新、附件/上下文交付与三主题布局 | 本机 Chrome |
 | `npm run test:platform:macos` | Electron、Agent Host、PDF、内置 Python、退出清理 | macOS；可用 `TRANSPORTX_PACKAGED_APP` 验证 DMG/.app |
 | `npm run test:platform:windows` | Windows 未安装应用启动，或 NSIS 安装/启动/卸载/数据保留 | Windows x64；设置 `TRANSPORTX_PACKAGED_APP` 或 `TRANSPORTX_WINDOWS_INSTALLER` |
+| `npm run test:pi-smoke` | 真实 Pi RPC + 本地模拟 Provider 的命令与事件闭环 | 本机 Pi runtime；显式运行 |
 
-测试证据与未完成的外部验收见 [执行计划](架构整改执行计划.md)。默认套件、fake Pi 浏览器、真实 Pi + 本地模拟 Provider、目标 OS 实机和签名发布各自证明不同边界。
+Citation 升级与边界回归分别落在 [citation-utils.test.ts](../test/suites/citation-utils.test.ts)、[desktop-launch.test.ts](../test/suites/desktop-launch.test.ts)、[http-routes.test.ts](../test/suites/http-routes.test.ts)；覆盖迁移备份、保留历史 ID、Host 就绪前迁移、单 Writer、损坏注册表恢复拦截、引用版本错误与分次登记。Canvas 的身份、revision、Context 与 Adapter 校验在 [canvas-service.test.ts](../test/suites/canvas-service.test.ts)，浏览器加载与定位在 [document-smoke.mjs](../scripts/harness/document-smoke.mjs)。这些检查合并在现有场景内，不增加测试注册层。
 
-此外，`npm run typecheck` 检查全部 TypeScript 项目，`npm run test:pi-smoke` 是显式运行的真实 Pi RPC 冒烟。
+历史整改的测试证据见 [执行计划](架构整改执行计划.md)，各版本对外验收与签名状态见 `docs/releases/` 和 CHANGELOG。默认套件、fake Pi 浏览器、真实 Pi + 本地模拟 Provider、目标 OS 实机和签名发布各自证明不同边界；通过本地回归不代表正式安装包已发布或签名验收完成。
+
 ## 开发与发布记录
 
 版本开发状态、验收门槛与更新发布操作见 [版本开发与发布规范](RELEASE.md)，每个版本使用 [开发记录模板](releases/TEMPLATE.md)。

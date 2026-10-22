@@ -49,6 +49,7 @@ import { platformOverview, resolveModuleDirectory } from './platform-overview.js
 import { buildAttachmentContext } from '../contracts/attachments.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 import { CitationService } from './citation-service.js';
+import { migrateStoredCitations } from './citation-migration.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
 import { VideoService } from './video-service.js';
@@ -429,6 +430,11 @@ function listen(port: number, attemptsLeft = 10) {
     const release = () => { if (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount) return; releaseHostWriter?.(); releaseHostWriter = null; };
     server.once('close', release);
     process.once('exit', release);
+    try {
+      const migration = migrateStoredCitations(APP_PATHS.userDataDir, TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir, SESSIONS_DIR);
+      for (const item of migration.migrated) logHostEvent('info', 'citation_registry_migrated', item);
+      for (const item of migration.failures) logHostError('citation_migration_failed', item.error, { cwd: item.cwd });
+    } catch (error) { logHostError('citation_migration_failed', error); }
   }
   server.once('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE' && attemptsLeft > 0) { console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`); server.removeAllListeners('error'); listen(port + 1, attemptsLeft - 1); }

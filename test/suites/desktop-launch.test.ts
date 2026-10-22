@@ -12,6 +12,11 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
     {
       const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-host-'));
       t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
+      const { writeLegacyCitationFixture } = require('../support/citation-v2.ts');
+      const task = path.join(userData, 'scenario', 'old-task');
+      const legacy = writeLegacyCitationFixture(task);
+      const damaged = writeLegacyCitationFixture(path.join(userData, 'scenario', 'damaged-task'));
+      fs.writeFileSync(damaged.file, '{damaged');
       const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
         cwd: process.cwd(),
         env: {
@@ -50,6 +55,13 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       const health = await (await fetch(`http://127.0.0.1:${ready.port}/api/health`)).json();
       assert.equal(health.product, 'TransportX Agent');
       assert.equal(health.protocolVersion, 1);
+      const migrated = JSON.parse(fs.readFileSync(legacy.file, 'utf8'));
+      assert.equal(migrated.version, '3.0', 'upgrade migration finishes before Host readiness');
+      assert.equal(migrated.sessionId, 'legacy_session');
+      assert.equal(migrated.evidence[0].evidenceId, 'occurrence_legacy');
+      assert.equal(fs.readFileSync(damaged.file, 'utf8'), '{damaged', 'a damaged task does not prevent Host startup');
+      const backup = path.join(userData, 'migrations', fs.readdirSync(path.join(userData, 'migrations'))[0]);
+      assert.equal(fs.readFileSync(path.join(backup, 'scenario', 'old-task', '.tau', 'citations.json'), 'utf8'), legacy.bytes);
       const moduleSource = path.join(userData, 'install-source');
       fs.mkdirSync(path.join(moduleSource, 'skill'), { recursive: true });
       fs.writeFileSync(path.join(moduleSource, 'skill', 'SKILL.md'), '# Local test skill');
@@ -82,12 +94,16 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.equal(fs.existsSync(path.join(userData, 'host.transportx-lock')), false);
       const records = fs.readFileSync(path.join(userData, 'logs', 'runtime.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
       assert.ok(records.some((entry: any) => entry.event === 'host_ready'), 'Host startup logs remain in user data after exit');
+      assert.ok(records.some((entry: any) => entry.event === 'citation_registry_migrated'));
+      assert.ok(records.some((entry: any) => entry.event === 'citation_migration_failed'));
     }
 
     // Force-kill leaves a dead lease; the next Host recovers it and normal IPC stop removes it.
     {
       const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-host-restart-'));
       t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
+      const { writeLegacyCitationFixture } = require('../support/citation-v2.ts');
+      const legacy = writeLegacyCitationFixture(path.join(userData, 'scenario', 'old-task'));
       const lock = path.join(userData, 'host.transportx-lock');
       const start = async () => {
         const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
@@ -115,10 +131,14 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
         return child;
       };
       const first = await start();
+      const migratedBytes = fs.readFileSync(legacy.file, 'utf8');
+      const backups = fs.readdirSync(path.join(userData, 'migrations'));
       const crashed = new Promise<void>((resolve) => first.once('exit', resolve));
       first.kill('SIGKILL'); await crashed;
       assert.equal(fs.existsSync(lock), true);
       const second = await start();
+      assert.equal(fs.readFileSync(legacy.file, 'utf8'), migratedBytes, 'restart does not rewrite migrated registries');
+      assert.deepEqual(fs.readdirSync(path.join(userData, 'migrations')), backups);
       const ownerFile = path.join(lock, fs.readdirSync(lock)[0]);
       assert.equal(JSON.parse(fs.readFileSync(ownerFile, 'utf8')).pid, second.pid);
       const stopped = new Promise<number>((resolve) => second.once('exit', resolve));
@@ -142,6 +162,8 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       const lock = path.join(userData, 'host.transportx-lock');
       const ownerPath = path.join(lock, fs.readdirSync(lock)[0]);
       const owner = fs.readFileSync(ownerPath, 'utf8');
+      const { writeLegacyCitationFixture } = require('../support/citation-v2.ts');
+      const legacy = writeLegacyCitationFixture(path.join(userData, 'scenario', 'locked-task'));
       const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop'], {
         cwd: process.cwd(),
         env: {
@@ -166,6 +188,8 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.equal(code, 1);
       assert.match(stderr, /Another writer owns/);
       assert.equal(fs.readFileSync(ownerPath, 'utf8'), owner);
+      assert.equal(fs.readFileSync(legacy.file, 'utf8'), legacy.bytes, 'a second writer cannot migrate user data');
+      assert.equal(fs.existsSync(path.join(userData, 'migrations')), false);
     }
   }
 

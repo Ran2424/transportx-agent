@@ -21,7 +21,7 @@ import { makeSessionId, removeSessionWorkingDirectory, resolveSessionWorkspaceFo
 import { readSessionHeaderCwd } from './session-history-reader.js';
 import { listSessionHistoryFiles } from './session-history-files.js';
 import { containedFile } from './util/resource-path.js';
-import { logHostEvent } from './diagnostic-log.js';
+import { logHostEvent, logHostError } from './diagnostic-log.js';
 import { isWithin } from './util/path.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
@@ -43,6 +43,7 @@ import { getVisualizationFromToolResult, stripGeoContextPrompt } from '../contra
 import { geoInteractionService } from './geo-interaction-service.js';
 import { restoreCanvasContextMessage } from './canvas-service.js';
 import { stripCanvasContextPrompt } from '../contracts/canvas.js';
+import { migrateSessionCitations } from './citation-migration.js';
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
@@ -796,6 +797,14 @@ export class LiveSessionManager {
           if (!useCurrentConfiguration || !(error instanceof Error) || !('code' in error) || error.code !== 'legacy_plan_requires_confirmation') throw error;
           resolvedSessionPlan = this.runtime.assembler.assemble(this.runtime.defaultDomainId, cwd);
           this.runtime.assembler.save(resolvedSessionPlan, 'resolved-session-plan.v3.json');
+        }
+        try {
+          const { APP_PATHS } = require('./config.js');
+          const backup = migrateSessionCitations(cwd, APP_PATHS.userDataDir);
+          if (backup) logHostEvent('info', 'citation_registry_migrated', { cwd, backup });
+        } catch (cause) {
+          logHostError('citation_migration_failed', cause, { cwd });
+          throw Object.assign(new Error('Historical citations could not be migrated; original files are unchanged. See runtime logs.', { cause }), { code: 'citation_migration_failed', status: 409 });
         }
         const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
         await session.start();

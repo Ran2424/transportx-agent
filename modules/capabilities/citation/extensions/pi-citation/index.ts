@@ -9,7 +9,7 @@ const Locator = Type.Union([
   Type.Object({ kind: Type.Literal('result'), field: Text }, { additionalProperties: false }),
 ]);
 const Source = Type.Object({
-  path: Type.String({ minLength: 1, maxLength: 1000, description: 'Concrete original/result file relative to this session, or to the selected asset when assetId is supplied. Never a directory or catalog candidate.' }),
+  path: Type.String({ minLength: 1, maxLength: 1000, description: 'Concrete original/result file relative to this session, or to the selected asset when assetId is supplied. Never a URL, directory or catalog candidate; register URLs with webUrls in a separate call.' }),
   assetId: Type.Optional(Type.String({ minLength: 1, maxLength: 180 })), title: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
   locator: Locator, contentKind: Type.Union([Type.Literal('excerpt'), Type.Literal('summary'), Type.Literal('result'), Type.Literal('source-only')]),
   text: Type.Optional(Type.String({ minLength: 1, maxLength: 16000 })),
@@ -19,8 +19,8 @@ const Source = Type.Object({
 export default function citationExtension(pi: ExtensionAPI) {
   pi.on('before_agent_start', async (event) => ({ systemPrompt: `${event.systemPrompt}\n\nCitations use a single registration step: tau_resolve_citation returns evidence IDs. Put [[cite:evidenceId]] after the supported claim; use [[cite:id1,id2]] for multiple original sources. Reuse IDs directly; there is no tau_cite step. Knowledge/data modules own discovery: start with selected asset overview, browse bounded directories, retrieve a few candidates, then read specific originals/results. Never load all asset bodies at startup or cite a catalog hit as evidence. Knowledge summaries must cite every supporting original location with contentKind summary; only checkable verbatim text is an excerpt. Existing result files can be cited directly without exporting special evidence JSON. Metadata/querySummary is descriptive, not proof of execution. Inline results are registered only by Host producers. Paths are relative to the active session or selected asset. Set deliverable only for requested final files, never intermediate scripts or inputs. Report bodies use the same markers; do not handwrite reference lists or expose local paths as citations.` }));
   pi.registerTool({
-    name: 'tau_resolve_citation', label: '登记引用依据', description: 'Pin concrete authorized originals/results and register typed evidence in one step. Returns only this registration, never the accumulated registry.',
-    parameters: Type.Object({ sources: Type.Optional(Type.Array(Source, { minItems: 1, maxItems: 20 })), webUrls: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }), { minItems: 1, maxItems: 10 })) }, { additionalProperties: false }),
+    name: 'tau_resolve_citation', label: '登记引用依据', description: 'Pin concrete authorized originals/results and register typed evidence. Provide exactly one of sources (local files) or webUrls (public HTTPS pages); omit the other field entirely. For mixed references, make separate calls and reuse evidence IDs from both. Returns only this registration, never the accumulated registry.',
+    parameters: Type.Object({ sources: Type.Optional(Type.Array(Source, { minItems: 1, maxItems: 20, description: 'Local files only. Omit webUrls when supplying sources.' })), webUrls: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }), { minItems: 1, maxItems: 10, description: 'Public HTTPS page URLs. Omit sources when supplying webUrls.' })) }, { additionalProperties: false }),
     async execute(_toolCallId, params) {
       const endpoint = process.env.TAU_CITATION_ENDPOINT, sessionId = process.env.TAU_CITATION_SESSION_ID, token = process.env.TAU_CITATION_TOKEN;
       if (!endpoint || !sessionId || !token) throw new Error('Citation Host bridge is unavailable.');
