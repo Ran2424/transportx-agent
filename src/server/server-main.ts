@@ -16,6 +16,8 @@ import { acquireWriteLease } from './util/json-storage.js';
 import { APP_PATHS, ARGS, AUTH_CONFIGURED, PROJECT_AUTH, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
 import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SESSION_ASSEMBLER, reloadModules, setModuleEnabled, sessionAssemblerForProfile } from './platform-composition.js';
 import { buildSessionPiLaunch } from './session-pi-launch.js';
+import { BUILTIN_MODULE_MANIFESTS } from './config.js';
+import { ModuleTrustStore, confirmDesktopModuleTrust, ensureSessionModuleTrust } from './module-trust.js';
 import { createSessionWorkingDirectory } from './session-workspace.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
@@ -65,9 +67,13 @@ import { parseRpcCommand } from './rpc-command-input.js';
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
 const diagnoseCommand = boundedDiagnostics(200);
 
+const moduleTrust = new ModuleTrustStore(path.join(APP_PATHS.settingsDir, 'module-trust.json'), (request) => DESKTOP_MODE ? confirmDesktopModuleTrust(request) : Promise.resolve(false));
 const liveManager = new LiveSessionManager({
   defaultDomainId: DEFAULT_DOMAIN_ID, assembler: SESSION_ASSEMBLER, assemblerForProfile: sessionAssemblerForProfile,
-  createWorkspace: createSessionWorkingDirectory, command: PI_COMMAND, launch: buildSessionPiLaunch, spawn,
+  createWorkspace: createSessionWorkingDirectory, command: PI_COMMAND, launch: async (input) => {
+    await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust);
+    return buildSessionPiLaunch(input);
+  }, spawn,
   endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '' },
 });
 
@@ -106,6 +112,8 @@ const rpcHandlers: RpcHandlerRegistry = {
     desktopMode: DESKTOP_MODE,
     installer: MODULE_INSTALLER,
     registry: MODULE_REGISTRY,
+    authorizeModules: (roots) => moduleTrust.ensure(roots),
+    forgetModules: (roots) => moduleTrust.forget(roots),
     reloadModules,
     setModuleEnabled,
     hasActiveModule: (moduleId) => [...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId)),

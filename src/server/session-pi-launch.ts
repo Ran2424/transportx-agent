@@ -26,7 +26,7 @@ function assetDirectoryEnvironment(plan: ResolvedSessionPlan, kind: 'data' | 'kn
 
 export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
   const { resolvedSessionPlan: plan } = input;
-  const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
+  const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-approve', '--system-prompt', loadSystemPrompt()];
   for (const extensionPath of projectAdapter.piExtensions(APP_PATHS.appRoot)) {
     if (!fs.existsSync(extensionPath)) throw new Error(`Project extension not found: ${extensionPath}`);
     args.push('--extension', extensionPath);

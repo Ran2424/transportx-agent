@@ -67,18 +67,55 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       fs.writeFileSync(path.join(moduleSource, 'skill', 'SKILL.md'), '# Local test skill');
       fs.writeFileSync(path.join(moduleSource, 'manifest.json'), JSON.stringify({ manifestVersion: 2, id: 'local.test-skill', name: 'Local test skill', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['skill/SKILL.md'] } }));
       const rpc = async (command: Record<string, unknown>) => (await (await fetch(`http://127.0.0.1:${ready.port}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command) })).json()) as any;
+      let acceptTrust = false;
+      const trustRequests: any[] = [];
+      child.on('message', (message: any) => {
+        if (message.type !== 'transportx-module-trust-request') return;
+        trustRequests.push(message.request);
+        child.send({ type: 'transportx-module-trust-response', id: message.id, accepted: acceptTrust });
+      });
+      const rejected = await rpc({ type: 'install_module', sourcePath: moduleSource, trusted: true });
+      assert.equal(rejected.success, false, 'an RPC boolean cannot authorize code execution');
+      assert.match(rejected.error, /trust was not accepted/);
+      assert.equal(fs.existsSync(path.join(userData, 'modules', 'local.test-skill', '1.0.0')), false);
+      acceptTrust = true; // This harness owns and authorizes only the temporary fixture.
       const installed = await rpc({ type: 'install_module', sourcePath: moduleSource });
       assert.equal(installed.success, true);
       assert.equal(installed.data.installed.id, 'local.test-skill');
+      assert.equal(trustRequests.length, 2);
+      assert.deepEqual(trustRequests[1].entrypoints, ['skill/SKILL.md']);
       assert.equal(installed.data.overview.modules.some((module: any) => module.id === 'local.test-skill' && module.removable && module.enabled), true);
       const skillModule = installed.data.overview.modules.find((module: any) => module.id === 'local.test-skill');
       assert.deepEqual(skillModule.skillFiles, [{ entryPath: 'skill/SKILL.md', name: 'Local test skill', content: '# Local test skill', truncated: false }]);
+      const manifest = JSON.parse(fs.readFileSync(path.join(moduleSource, 'manifest.json'), 'utf8'));
+      fs.writeFileSync(path.join(moduleSource, 'manifest.json'), JSON.stringify({ ...manifest, version: '1.0.1' }));
+      acceptTrust = false;
+      assert.equal((await rpc({ type: 'install_module', sourcePath: moduleSource })).success, false);
+      assert.equal(fs.existsSync(path.join(userData, 'modules', 'local.test-skill', '1.0.0', 'manifest.json')), true, 'rejecting an update retains every prior version');
+      assert.equal(fs.existsSync(path.join(userData, 'modules', 'local.test-skill', '1.0.1')), false);
+      const yazl = require('yazl');
+      const archive = path.join(userData, 'update.zip');
+      const zip = new yazl.ZipFile();
+      zip.addBuffer(Buffer.from(JSON.stringify({ ...manifest, version: '1.0.1' })), 'local.test-skill/1.0.1/manifest.json');
+      zip.addBuffer(Buffer.from('# Local test skill'), 'local.test-skill/1.0.1/skill/SKILL.md');
+      await new Promise<void>((resolve, reject) => {
+        const output = fs.createWriteStream(archive);
+        output.on('close', resolve); output.on('error', reject); zip.outputStream.on('error', reject);
+        zip.outputStream.pipe(output); zip.end();
+      });
+      const inspection = await rpc({ type: 'inspect_module_archive', sourcePath: archive });
+      assert.equal(inspection.success, true);
+      const archiveDenied = await rpc({ type: 'install_module_archive', importId: inspection.data.inspection.importId, selections: [{ id: manifest.id, version: '1.0.1' }], trusted: true });
+      assert.equal(archiveDenied.success, false, 'archive installation must obtain a native decision too');
+      assert.equal(fs.existsSync(path.join(userData, 'modules', 'local.test-skill', '1.0.0', 'manifest.json')), true);
+      assert.equal(fs.existsSync(path.join(userData, 'modules', 'local.test-skill', '1.0.1')), false);
       const invalidFolder = await rpc({ type: 'open_module_directory', moduleId: '../unregistered', path: userData });
       assert.equal(invalidFolder.success, false);
       assert.match(invalidFolder.error, /Module is unavailable/);
       const removed = await rpc({ type: 'uninstall_module', moduleId: 'local.test-skill' });
       assert.equal(removed.success, true);
       assert.equal(removed.data.overview.modules.some((module: any) => module.id === 'local.test-skill'), false);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData, 'settings/module-trust.json'), 'utf8')), {}, 'uninstall revokes the removed package scopes');
       const stopped = new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Agent Host did not exit after SIGTERM')), 5000);
         child.once('exit', (code: number) => { clearTimeout(timer); if (code === 0) resolve(); else reject(new Error(`Host exited ${code}`)); });

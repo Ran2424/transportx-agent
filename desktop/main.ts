@@ -233,6 +233,20 @@ else {
         dialog.showErrorBox('TransportX Agent', `${message}\n${nativeText(`请查看 ${paths.logsDir} 中的日志。`, `See the logs in ${paths.logsDir}.`)}`);
         app.quit();
       },
+      confirmModuleTrust: async (request) => {
+        const result = await dialog.showMessageBox({
+          type: 'warning',
+          title: nativeText('信任模块代码', 'Trust module code'),
+          message: `${request.name} (${request.id}@${request.version})`,
+          detail: nativeText(
+            `来源：${request.packageRoot}\n入口：${request.entrypoints.join(', ') || '无'}\n依赖：${request.dependencies.join(', ') || '无'}\n\n此模块及其脚本、程序将以您的本机权限运行，可访问文件和网络。具体访问需求未经平台验证；这不是沙箱。仅信任您了解来源的代码。接受后允许此版本的安装、启用、样例测试和后续执行；代码可在该版本目录内编辑，新增入口或依赖及升级版本需重新确认。`,
+            `Source: ${request.packageRoot}\nEntries: ${request.entrypoints.join(', ') || 'none'}\nDependencies: ${request.dependencies.join(', ') || 'none'}\n\nThis module and its scripts/programs run with your local permissions and can access files and networks. Specific access requirements have not been verified; this is not a sandbox. Only trust code whose source you understand. Acceptance covers installation, enabling, sample tests and subsequent execution of this version, including edits within its package. New entries, dependencies or versions require another review.`,
+          ),
+          buttons: [nativeText('取消', 'Cancel'), nativeText('信任并继续', 'Trust and continue')],
+          defaultId: 0, cancelId: 0, noLink: true,
+        });
+        return result.response === 1;
+      },
       renderPdf,
     });
     try { createWindow(await supervisor.start()); }
