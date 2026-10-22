@@ -499,10 +499,12 @@ Citation 升级与边界回归分别落在 [citation-utils.test.ts](../test/suit
 
 版本开发状态、验收门槛与更新发布操作见 [版本开发与发布规范](RELEASE.md)，每个版本使用 [开发记录模板](releases/TEMPLATE.md)。
 
-Spatial / Citation 的模型输入统一编写于 `src/contracts/tool-definitions.mts`，构建生成各包的 `tool-contract.json`；Host 读取平台批准的静态定义执行最终结构校验，包声明不能扩大 Host 权限。两模块各自用原生 Pi API 注册；`modules/shared/host-client.ts` 仅为构建输入，分别 bundle 入模块入口，不承担领域调度、队列或自动重试。构建输出 `dist/tool-modules/` 可独立加载；桌面包用 `dist/module-extensions/` 替换这两个源码入口，包内相对路径保持不变。
+Spatial / Citation 的模型输入统一编写于 `src/contracts/tool-definitions.mts`，构建生成各包的 `tool-contract.json`；Host 读取平台批准的静态定义执行最终结构校验，包声明不能扩大 Host 权限。两模块各自用原生 Pi API 注册；`modules/shared/host-client.ts` 仅为构建输入，分别 bundle 入模块入口，不承担领域调度、队列或自动重试。构建输出 `dist/tool-modules/` 可独立加载；桌面包用 `dist/module-extensions/` 替换 Spatial、Citation 与 Module Authoring 三个模块的源码入口，包内相对路径保持不变。
 
 `platform.getOverview(sessionId?)` 在产品读取点核对两试点的精确计划、当前 Pi Bridge 观察、来源、active、接口及已成功执行的 Host 结果，返回可用/不可用/尚未验证与原因、代次和时间。没有会话、仅历史观察或缺少 Host 成功证明时保持尚未验证；Schema 指纹差异提示漂移，不直接证明语义不兼容。该诊断不是第二份 Registry、权限判定或永久可用性承诺。Bridge 在首次 agent_start 和分支切换发布新观察，不向每轮重复追加相同完整 Schema。
 
 Spatial L3 的执行确认保存于用户数据根 `executions/spatial/<owner-hash>/`：Owner 来自受管 Pi JSONL 的真实路径、header.id 和工作目录校验；活动会话 ID 与单独的 cwd 不构成归属。Host 在派发前保存随机 operationId 及请求/资源版本关联；同操作重复只读原确认，未知不派发第二次。`tau_spatial_execution` 可查询或请求取消，仍由既有 Job/PythonRunner 执行，取消请求不表示已经停止。重启后按原请求、manifest、输出哈希与 GeoJSON 核验成功；无 manifest 或无法确认时保持未知。Pi-local/L1 没有这些记录，Citation L2 沿用原子 Registry 和内容寻址对象。
 
-分阶段证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)、[P1 记录](<Tool 与插件架构优化 P1 记录.md>)、[P2 记录](<Tool 与插件架构优化 P2 记录.md>)、[P3 记录](<Tool 与插件架构优化 P3 记录.md>)。自主制作的剩余门槛仍按 [PLAN](<Tool 与插件架构优化 PLAN.md>) 验收。
+Module Authoring 1.2.0 提供 `tau_module_package`：inspect 只读取并验证当前任务内的模块目录，install 调用原 Module Installer / Native Trust 决定，不执行包代码。独立的 session service token 与已选择的 Module 限定该入口；没有开放任意 Host 代码或 RPC 网关。Agent 沿制作 Skill 保留用户程序、核查依赖/样例、生成目录包，再在用户请求安装时发起安装；凭据通过外部配置，缺依赖或配置时交付草稿并说明未执行。安装影响新任务；禁用影响新选择，显式恢复的已受信任旧任务仍按原精确版本运行；卸载须先关闭占用任务，已有历史与成果不删除。
+
+分阶段证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)、[P1 记录](<Tool 与插件架构优化 P1 记录.md>)、[P2 记录](<Tool 与插件架构优化 P2 记录.md>)、[P3 记录](<Tool 与插件架构优化 P3 记录.md>)。初版制作与生命周期证据见 [P4 记录](<Tool 与插件架构优化 P4 记录.md>)。目标平台正式发布验收单独记录，不等同于初版跑通。

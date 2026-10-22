@@ -13,6 +13,7 @@ export type ToolDiagnostic = {
 };
 
 export const PILOT_TOOL_IDS: Record<string, { toolId: string; piName: string }> = {
+  'com.transportx.module-authoring': { toolId: 'module.package', piName: 'tau_module_package' },
   'com.transportx.spatial-analysis': { toolId: 'spatial.analyze', piName: 'tau_spatial_analyze' },
   'com.transportx.citation': { toolId: 'citation.resolve', piName: 'tau_resolve_citation' },
 };

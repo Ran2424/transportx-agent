@@ -122,7 +122,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.throws(() => resolveModuleDirectory(path.join(workspace, 'missing')));
     const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [], version: '0.80.10' }, { command: 'python', args: [], version: '3.10' });
     const plan = assembler.assemble('com.transportx.workbench', workspace);
-    assert.equal(planExtensions(plan).length, 6);
+    assert.equal(planExtensions(plan).length, 7);
     assert.equal(planSkills(plan).length, 6);
     assert.ok(plan.assets.some((asset: any) => asset.id === 'data:installed-test'));
     assert.ok(plan.assets.some((asset: any) => asset.id === 'template:traffic-analysis-report'));

@@ -11,7 +11,7 @@ export function approvedHostToolContract(moduleId: string, toolId?: 'spatial.exe
   let contract = inputContracts.get(key);
   if (!contract) {
     const directory = moduleId === 'com.transportx.citation' ? 'citation' : 'spatial-analysis';
-    contract = readPilotToolContract(path.join(APP_PATHS.appRoot, 'modules', 'capabilities', directory), moduleId, toolId)!;
+    contract = readPilotToolContract(moduleId === 'com.transportx.module-authoring' ? path.join(APP_PATHS.appRoot, 'modules/official/module-authoring') : path.join(APP_PATHS.appRoot, 'modules', 'capabilities', directory), moduleId, toolId)!;
     if (!contract) throw new Error('No approved Host Tool Contract');
     inputContracts.set(key, contract);
   }
