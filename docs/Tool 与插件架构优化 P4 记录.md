@@ -25,6 +25,8 @@ Module Authoring 1.2.0 新增原生 Pi 工具 `tau_module_package`，输入从�
 
 ## 检查与打包
 
-完整 typecheck 通过；核心 40/40 通过，没有新增测试节点。P3 完整真实 Pi–Host–Python 恢复链路及 P4 生命周期已通过；P2 的完整 Web 与实际 asar 结果读取证明保持。P4 macOS 应用包及其实际包内调用继续作最终检查；Windows 安装器、签名公证、冷启动/长时间负载和正式发布矩阵不作为本次初版已验收结论。
+完整 typecheck 通过；核心 40/40 通过，没有新增测试节点。P3 完整真实 Pi–Host–Python 恢复链路及 P4 生命周期已通过；P2 的完整 Web 与实际 asar 结果读取证明保持。P4 macOS ad-hoc 应用包已经实际启动，通过桌面/PDF/原生确认检查；从真实 app.asar 启动内置 Electron/Host/Pi，使用包内 Python，完整 Spatial/Citation、目录与 ZIP 生命周期、tau_module_package 检查和安装均通过，当前任务计划保持冻结；Windows 安装器、签名公证、冷启动/长时间负载和正式发布矩阵不作为本次初版已验收结论。
 
 开发在受管 `tool-plugin-p4` worktree 完成，以避开原目录并行修改的 Traffic Lab PLAN；原文档内容保留，P3 PR 已移出该无关变更。没有强推或重置。平台仍为 3.23.1 未发布，未正式对外发布。
+
+最终交付代码见 [PR #79](https://github.com/Ran2424/transportx-agent/pull/79)。本机应用位于 `release/mac-arm64/TransportX Agent.app`，可分发初版归档为 `release/TransportX-Agent-3.23.1-tool-plugin-preview-mac-arm64.zip`；示例包和 Video 包在 `release/modules/`。这些是验收/预览产物，不冻结 3.23.1 的正式发布段。
