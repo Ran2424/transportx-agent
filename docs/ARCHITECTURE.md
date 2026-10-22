@@ -218,6 +218,7 @@ sequenceDiagram
 - 用户可从地图提交要素、点位、矩形或当前视野四类 Geo Context，并显式附到下一轮消息。Agent 通过 `inspect_map_context` 读取本轮上下文，也可用 `request_geo_input` 等待用户在指定地图 revision 上补充输入；提交、取消、超时、中止和地图失效都有明确终态。
 - 地图截图由工作台按当前画面、图例和说明生成 PNG，再写入当前任务目录。截图不扩大资源访问范围。
 - Spatial Analysis 只处理当前会话的 GeoJSON，使用受控 Python 生成 WGS84 GeoJSON 与包含输入、参数、计数和哈希的 manifest，再发布到 Geo 界面。
+- Spatial Extension 1.2.0 将 Pi `toolCallId` 与 AbortSignal 传给原 Host 路由（调用 ID 不授予权限）；130 秒客户端时限覆盖既有 120 秒 Python 时限。Host 保留最终语义/资源校验，输入拒绝不创建成果目录，正常响应关闭不触发取消。结果校验后原子写入 manifest，可选 Citation 失败继续返回 warning。客户端不重试；丢响应、协议无法确认或未确认取消返回 `spatial_result_unknown`，Pi `tool_result` 将其标记为错误，保留已有成功结果的 `tau-spatial-analysis` 格式。工作台显示“结果未知”，本轮有未确认分析时不提供整轮准备重试；已确认取消单独显示。尚无持久 Invocation 查询或跨 Host 重启的重复保护，需核验任务内已有 manifest/文件，不能据没有 HTTP 响应推断未提交。
 - Video 资源与指标由 Agent Host 使用当前会话冻结的 Video Capability ffmpeg/ffprobe 处理；发布版不得依赖系统 `PATH`。
 
 ### 3.5 引用登记、交付成果与版本读取

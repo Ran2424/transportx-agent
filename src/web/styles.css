@@ -728,6 +728,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .tool-card:has(.tool-status.preparing, .tool-status.running) .tool-card-toggle { background: color-mix(in srgb, var(--status-info) 7%, transparent); }
 .tool-status.completed { width: 22px; min-height: 22px; margin: 0; color: var(--selection-fg); background: var(--selection-bg); font-size: 0; }
 .tool-status.error { color: var(--status-danger); background: color-mix(in srgb, var(--status-danger) 8%, var(--surface-raised)); }
+.tool-status.unknown { color: var(--status-warning); background: color-mix(in srgb, var(--status-warning) 8%, var(--surface-raised)); }
+.tool-status.cancelled { color: var(--text-secondary); }
 .tool-card-body { margin-left: 30px; padding: 0 0 10px 8px; }
 .tool-args, .tool-output, .tool-diff pre { max-height: 360px; overflow: auto; margin: 0; padding: 13px 15px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); color: var(--text-secondary); background: color-mix(in srgb, var(--surface-sidebar) 58%, transparent); white-space: pre-wrap; font: 12.5px/1.6 var(--tx-font-mono); }
 .tool-output-actions { display: flex; justify-content: space-between; margin: 0; padding: 7px 15px 5px; color: var(--text-secondary); font-size: 11px; letter-spacing: .06em; }

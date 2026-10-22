@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Spatial Analysis Module 升级至 1.2.0：贯穿 Pi 调用 ID、取消信号和超时，区分确认拒绝/失败、取消与结果未知；错误经 Pi 错误通道写入历史。工作台显示结果未知，且本轮含未确认分析时不提供整轮准备重试。语义拒绝不创建输出目录，确认失败清理本次目录；manifest 原子写入，提交或进程停止无法确认时保留成果，不自动重算。可选引用呈现异常保留已确认分析。
 - 修复 Module 目录安装预先创建复制目标导致 Windows `fs.cpSync(errorOnExist)` 报 `EEXIST`；目标目录由复制操作创建，保留拒绝覆盖已有版本的规则。
 - Pi 0.80.10 依赖增加固定版本的资源发现补丁：TransportX 关闭全部自动资源后跳过 npm/git 包发现，阻止启动/reload 的隐式包管理器执行；安装和 server 构建自动应用，Pi 升级或源码不匹配时拒绝构建。保留 Pi Registry、Agent Loop、RPC 和显式 Extension，不引入第二套 Runtime。
 - Citation Module 升级至 2.0.2：工具说明明确本地文件 `sources` 与网页 `webUrls` 须分次登记、另一字段须省略，网址不能填入文件 `path`；混传时报错给出重试方法及两次 Evidence ID 的复用方式，避免将参数冲突误判为网页引用服务不可用。

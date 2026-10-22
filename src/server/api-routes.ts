@@ -327,15 +327,21 @@ export function createApiRouter(services: ApiRouteServices) {
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
+      let toolCallId: string | undefined;
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
+        if (body.toolCallId !== undefined && (typeof body.toolCallId !== 'string' || !body.toolCallId || body.toolCallId.length > 200)) return deps.json(res, 400, { error: 'Invalid Spatial toolCallId', code: 'spatial_input_invalid', phase: 'validation', commit: 'not_started' });
+        toolCallId = body.toolCallId;
         const result = await runJob(req, res, session, (signal) => deps.spatial.analyze(session, body, signal));
         // Citation failure must never re-enter SpatialAnalysisService's output cleanup.
-        try { deps.json(res, 200, { result, citations: deps.citation.registerSpatialResult(session, result) }); }
-        catch (error) { deps.json(res, 200, { result, citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        try { deps.json(res, 200, { result, ...(toolCallId ? { toolCallId } : {}), citations: deps.citation.registerSpatialResult(session, result) }); }
+        catch (error) { deps.json(res, 200, { result, ...(toolCallId ? { toolCallId } : {}), citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string };
+        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, code: failure.code || 'spatial_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown' });
+      }
     })
     .post('/api/internal/geo/inspect', async ({ req, res, deps }) => {
       try {

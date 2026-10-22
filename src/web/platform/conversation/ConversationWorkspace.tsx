@@ -14,6 +14,7 @@ import { AssistantMessage, UserMessage } from './message-cards';
 import { ExecutionGroup } from './execution-group';
 import { groupExecutionParts, type ExecutionPart } from './execution-parts';
 import { projectTools } from './tool-projection';
+import { spatialExecutionState } from './tool-card-utils';
 import { projectCitationText, projectMessageCitations } from '../../features/citation/citation-projection';
 
 export function ConversationWorkspace({ sessionId, showThinking, expandThinking }: { sessionId: string; showThinking: boolean; expandThinking: boolean }) {
@@ -75,9 +76,14 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   }, [compacting, entries, data?.live.streamingText, data?.live.streamingThinking, toolProjection, pending, waitingVisible]);
   const optimisticCitationProjection = data?.live.optimisticPrompt ? projectCitationText(data.live.optimisticPrompt.message, citationProjection.available) : undefined;
   const parts: ExecutionPart[] = [];
+  const unconfirmedRows = new Set<number>();
+  let unconfirmedSpatial = false;
   entries.forEach((entry, index) => {
     const message = entry.message;
     if (!message) return;
+    if (message.role === 'user') unconfirmedSpatial = false;
+    if (message.role === 'toolResult' && spatialExecutionState({ details: message.details }) === 'unknown') unconfirmedSpatial = true;
+    if (message.role === 'assistant' && unconfirmedSpatial) unconfirmedRows.add(index);
     if (message.role === 'user') parts.push({ kind: 'message', entry, index });
     if (message.role === 'assistant') {
       const thinking = messageThinking(message);
@@ -103,7 +109,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
           const message = row.entry.message as AppMessage;
           const projection = row.entry === entries[row.index] ? citationProjection.byEntry.get(row.entry) : message.role === 'user' ? optimisticCitationProjection : undefined;
           if (message.role === 'user') return <UserMessage key={row.entry.id || `user-${row.index}`} message={message} sessionId={sessionId} attachments={attachments} projection={projection} />;
-          return <AssistantMessage key={row.streaming ? 'live-assistant' : row.entry.id || row.index} message={message} streaming={row.streaming} showThinking={false} expandThinking={expandThinking} projection={projection} sessionId={sessionId} onRetry={!data?.live.active ? () => { const previous = entries.slice(0, row.index).reverse().find((entry) => entry.message?.role === 'user')?.message; if (previous) setRetryDraft({ message: messageText(previous) }); } : undefined} />;
+          return <AssistantMessage key={row.streaming ? 'live-assistant' : row.entry.id || row.index} message={message} streaming={row.streaming} showThinking={false} expandThinking={expandThinking} projection={projection} sessionId={sessionId} unconfirmedTool={unconfirmedRows.has(row.index)} onRetry={!data?.live.active && !unconfirmedRows.has(row.index) ? () => { const previous = entries.slice(0, row.index).reverse().find((entry) => entry.message?.role === 'user')?.message; if (previous) setRetryDraft({ message: messageText(previous) }); } : undefined} />;
         })}
         {!entries.length && !rows.length ? <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div> : null}
         {data?.live.retry ? <div className="compaction-status" role="status">{t('conversation.retrying', { attempt: data.live.retry.attempt, max: data.live.retry.maxAttempts, seconds: Math.ceil(data.live.retry.delayMs / 1000) })}</div> : data?.live.outcome ? <div className="compaction-status" role="status">{t(`conversation.${data.live.outcome.status}`)}</div> : showThinking && pending && waitingVisible && !showLiveAssistant && toolProjection.liveOnly.length === 0 ? <ExecutionGroup activities={[]} sessionId={sessionId} running pending startedAt={data.live.runStartedAt} showThinking={false} expandThinking={false} /> : null}

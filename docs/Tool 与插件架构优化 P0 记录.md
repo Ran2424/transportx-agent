@@ -1,14 +1,14 @@
 # Tool 与插件架构优化：P0 执行记录
 
 > 2026-10-22；基线 `12d6d209db380f95396f3eafa174140c02375c78` / TransportX 3.23.1 / Pi 0.80.10。  
-> 状态：P0 实现和本机边界验收完成；Windows 安装修复待阶段 PR 的 CI 确认后关闭门槛。不声明跨重启执行恢复。  
+> 状态：P0 门槛通过，PR #75 已合并；macOS / Windows / Ubuntu CI 均通过。不声明跨重启执行恢复。
 > 范围依据：[冻结的 PLAN](<Tool 与插件架构优化 PLAN.md>)。本文更新执行证据及落实状态，不扩大公共框架。
 
 ## 1. 本轮交付与门槛状态
 
 | P0 交付 | 当前证据 | 状态 |
 |---|---|---|
-| 信任入口及例外 | 原生确认/Host 接受记录、目录/ZIP 拒绝及保留旧版本、恢复/显式入口核对；生产 Pi 自动发现及 reload 否定探针 | 本机通过；Windows CI 待确认 |
+| 信任入口及例外 | 原生确认/Host 接受记录、目录/ZIP 拒绝及保留旧版本、恢复/显式入口核对；生产 Pi 自动发现及 reload 否定探针 | 本机及三平台 CI 通过 |
 | Spatial 状态归属/提交 | Extension 是模型适配；Host/Python 执行，校验结果后写 manifest；引用登记在提交返回后独立处理 | 源码核对完成，取消/断开/崩溃窗口待实测 |
 | 持久 Owner | `spatialOwner` 验证受管文件、header.id、header.cwd 与当前 cwd/计划 workspace；复制历史得到不同 owner | 身份校验通过；P3 绑定实际查询权限 |
 | Pi 行为基线 | 真实 Pi + 生产 Host 验证错误 `isError`、execute AbortSignal、首工具前 header 落盘、历史读取及 reload | 本机通过 |
@@ -122,3 +122,5 @@ Spatial 提交边界仍是：Python 输出 → Host 结构/路径/大小/哈希/
 本机检查：全量 typecheck、40/40 测试、Owner/安装定向复验、真实 Pi Host 探针、Electron 桌面/PDF smoke。测试预算保持 40；未修改 Module 内容，不提升模块或平台版本。正式签名包、Windows 本机、P3 故障恢复及 P4 三个真实模型制作案例均未验收。
 
 补充回归：Electron smoke 已贯穿生产 Host → Utility Process Supervisor → 主进程原生对话框调用，断言来源/入口/版本、默认取消、拒绝/接受和安装不执行代码；测试仅替换对话框返回值，不声称真人点击验收。Web harness 原先没有授权的固定模块被新门禁拒绝，已让 harness 显式接受自己创建的临时 fixture；不关闭生产启动核对。基线中 `--version` 和 HTML export 在 Pi 创建资源加载器之前返回，未发现这两条入口加载 Extension。
+
+退出证据：[PR #75](https://github.com/Ran2424/transportx-agent/pull/75)、[三平台 CI](https://github.com/Ran2424/transportx-agent/actions/runs/39805309217)。合并后从最新 main 创建 `codex/tool-plugin-plan-p1`，后续证据见 [P1 记录](<Tool 与插件架构优化 P1 记录.md>)。

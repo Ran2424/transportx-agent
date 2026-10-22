@@ -9,6 +9,7 @@ import { performance } from 'node:perf_hooks';
 
 const appRoot = path.resolve(process.env.TRANSPORTX_SMOKE_APP_ROOT || '.');
 const baseline = process.env.TRANSPORTX_SMOKE_BASELINE === '1';
+const spatialPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'spatial';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-tool-host-'));
 const source = path.join(root, 'probe');
 fs.mkdirSync(source);
@@ -23,6 +24,7 @@ import { Type } from 'typebox';
 export default function(pi) {
   fs.writeFileSync(${JSON.stringify(marker)}, 'loaded');
   pi.registerCommand('p0_reload', { description: 'Reload only approved resources', handler: async (_, ctx) => { await ctx.reload(); fs.writeFileSync(${JSON.stringify(reloaded)}, 'done'); } });
+  ${spatialPhase ? "pi.registerCommand('p1_spatial_endpoint', { description: 'Test-owned loopback fault relay', handler: async (value) => { const url = new URL(value.trim()); if (url.hostname !== '127.0.0.1') throw new Error('Only the local test relay is allowed'); process.env.TAU_SPATIAL_ENDPOINT = url.origin; } });" : ''}
   pi.registerTool({ name: 'tau_p0_probe', label: 'P0 probe', description: 'Isolated trust and Pi error/signal probe', parameters: Type.Object({ mode: Type.String() }),
     async execute(id, params, signal, update, ctx) {
       const file = ctx.sessionManager.getSessionFile();
@@ -43,7 +45,16 @@ const provider = http.createServer(async (req, res) => {
   const body = JSON.parse(raw); providerInputs.push(body);
   const last = body.messages.at(-1);
   const text = typeof last.content === 'string' ? last.content : (last.content || []).map((part) => part.text || '').join('\n');
-  const tool = last.role === 'user' ? { name: 'tau_p0_probe', arguments: JSON.stringify({ mode: text.trim().split('\n')[0] }) } : null;
+  const input = text.trim().split('\n')[0];
+  const previousUser = body.messages.findLast((message) => message.role === 'user');
+  const previousText = typeof previousUser?.content === 'string' ? previousUser.content : (previousUser?.content || []).map((part) => part.text || '').join('\n');
+  if (spatialPhase && last.role !== 'user' && previousText.startsWith('spatial-fail-model:')) {
+    res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'injected model failure after an unknown Spatial result' } })); return;
+  }
+  const tool = last.role !== 'user' ? null : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
+    ? { name: 'tau_spatial_analyze', arguments: input.slice(input.indexOf(':') + 1) }
+    : spatialPhase && input.startsWith('traffic:') ? { name: 'traffic_peak_hour', arguments: input.slice('traffic:'.length) }
+      : { name: 'tau_p0_probe', arguments: JSON.stringify({ mode: input }) };
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const chunk = (delta, finish_reason = null) => ({ id: 'probe', object: 'chat.completion.chunk', created: 1, model: 'smoke', choices: [{ index: 0, delta, finish_reason }] });
   res.write(`data: ${JSON.stringify(chunk(tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `call-${providerInputs.length}`, type: 'function', function: tool }] } : { role: 'assistant', content: 'probe_done' }))}\n\n`);
@@ -64,7 +75,7 @@ child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-8000); 
 child.on('message', (message) => {
   if (message.type !== 'transportx-module-trust-request') return;
   trustDecisions++;
-  assert.equal(message.request.id, 'local.p0-probe');
+  assert.ok(message.request.id === 'local.p0-probe' || spatialPhase && message.request.id === 'local.traffic-peak');
   child.send({ type: 'transportx-module-trust-response', id: message.id, accepted: accept });
 });
 async function until(check, label, timeout = 20000) {
@@ -155,7 +166,8 @@ try {
   }
   const persisted = fs.readFileSync(final.sessionFile, 'utf8');
   assert.match(persisted, /p0_expected_failure/); assert.match(persisted, /p0_ok/);
-  console.log(JSON.stringify({ phase: baseline ? 'before P0 trust changes' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, harnessRssBytes: process.memoryUsage().rss }, null, 2));
+  const spatial = spatialPhase ? await (await import('./harness/spatial-host-smoke.mjs')).spatialHostSmoke({ root, endpoint, json, rpc, until, appRoot, providerInputs }) : undefined;
+  console.log(JSON.stringify({ phase: baseline ? 'before P0 trust changes' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, spatial, harnessRssBytes: process.memoryUsage().rss }, null, 2));
 } finally {
   if (child.exitCode === null) {
     const closed = new Promise((resolve) => child.once('exit', resolve)); child.kill('SIGTERM');
