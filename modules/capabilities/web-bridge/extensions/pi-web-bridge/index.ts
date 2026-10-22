@@ -23,6 +23,7 @@ function bridgeModel(model: ExtensionContext['model']): BridgeModel | undefined 
 export default function piWebBridge(pi: ExtensionAPI) {
   let revision = 0;
   let previousSignature = '';
+  let needsLiveObservation = true;
 
   const collect = (ctx: ExtensionContext, modelOverride?: ExtensionContext['model'], thinkingOverride?: string) => {
     const active = new Set(pi.getActiveTools());
@@ -42,16 +43,17 @@ export default function piWebBridge(pi: ExtensionAPI) {
     };
   };
 
-  const publish = (ctx: ExtensionContext, modelOverride?: ExtensionContext['model'], thinkingOverride?: string) => {
+  const publish = (ctx: ExtensionContext, modelOverride?: ExtensionContext['model'], thinkingOverride?: string, force = false) => {
     const state = collect(ctx, modelOverride, thinkingOverride);
     const signature = JSON.stringify(state);
-    if (signature === previousSignature) return;
+    if (!force && signature === previousSignature) return;
     previousSignature = signature;
     revision += 1;
     pi.appendEntry(PI_WEB_BRIDGE_ENTRY, { schemaVersion: BRIDGE_ENVELOPE_SCHEMA_VERSION, revision, ...state });
   };
 
   pi.on('session_start', async (_event, ctx) => {
+    needsLiveObservation = true;
     revision = 0;
     previousSignature = '';
     for (const entry of ctx.sessionManager.getBranch()) {
@@ -64,7 +66,14 @@ export default function piWebBridge(pi: ExtensionAPI) {
     }
     publish(ctx);
   });
-  pi.on('agent_start', async (_event, ctx) => publish(ctx));
+  // A restored JSONL entry is history, not an observation of this process.
+  // Publish a fresh sample at an existing Pi lifecycle point; do not invent an
+  // atomic tools_changed stream or scan before every individual tool call.
+  pi.on('agent_start', async (_event, ctx) => {
+    publish(ctx, undefined, undefined, needsLiveObservation);
+    needsLiveObservation = false;
+  });
+  pi.on('session_tree', async (_event, ctx) => publish(ctx, undefined, undefined, true));
   pi.on('model_select', async (event, ctx) => publish(ctx, event.model));
   pi.on('thinking_level_select', async (event, ctx) => publish(ctx, undefined, event.level));
 }

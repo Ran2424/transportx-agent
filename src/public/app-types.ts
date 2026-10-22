@@ -84,6 +84,7 @@ export type LiveSession = {
     ok: boolean;
     mismatches: CapabilityMismatchReason[];
     diagnostics?: ContractDiagnostic[];
+    toolObservation?: { revision?: number; live: boolean; observedAt?: string };
   };
 };
 

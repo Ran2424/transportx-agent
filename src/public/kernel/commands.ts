@@ -10,6 +10,7 @@ import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
 import type { ModuleArchiveInspection, ModulePresentation } from '../../contracts/module.ts';
+import type { ToolDiagnostic } from '../../contracts/tool-interface.ts';
 import { parseCitationEnvelope, parseCitationDetail, type CitationDetail, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 import type { CanvasContextV1 } from '../../contracts/canvas.ts';
@@ -137,6 +138,7 @@ export type PlatformModule = {
   extensions: number;
   skills: number;
   nativeRuntimes?: number;
+  toolDiagnostics?: ToolDiagnostic[];
   skillFiles: Array<{ entryPath: string; name: string; description?: string; content?: string; truncated?: boolean; error?: string }>;
   assets: Array<{ id: string; kind: 'knowledge' | 'data' | 'template'; configured: boolean; active: boolean; error?: string }>;
 };
@@ -207,7 +209,7 @@ export type PlatformCommands = {
   updateModel(input: UpdateModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
   deleteModel(provider: string, modelId: string): Promise<void>;
   deleteModelProvider(provider: string): Promise<void>;
-  getOverview(): Promise<PlatformOverview>;
+  getOverview(sessionId?: string): Promise<PlatformOverview>;
   openModuleDirectory(moduleId: string): Promise<void>;
   openLogsDirectory(): Promise<void>;
   installModule(sourcePath: string): Promise<PlatformOverview>;
@@ -641,8 +643,8 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
       await rpcCommand(deps.http, { type: 'delete_model_provider', provider });
     },
 
-    async getOverview() {
-      const data = await rpcCommand(deps.http, { type: 'get_platform_overview' });
+    async getOverview(sessionId) {
+      const data = await rpcCommand(deps.http, { type: 'get_platform_overview', ...(sessionId ? { sessionId } : {}) });
       return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '', logs: '' }, modules: [], errors: [] });
     },
     async openLogsDirectory() {

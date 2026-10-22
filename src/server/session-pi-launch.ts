@@ -7,6 +7,7 @@ import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } 
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import type { SessionService } from './session-service.js';
 import { projectAdapter } from './project-adapter.js';
+import { readPilotToolContract } from './tool-contracts.js';
 
 export type SessionPiLaunchInput = {
   cwd: string;
@@ -27,6 +28,7 @@ function assetDirectoryEnvironment(plan: ResolvedSessionPlan, kind: 'data' | 'kn
 export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
   const { resolvedSessionPlan: plan } = input;
   assertPiResourceBoundary(PI_COMMAND_ARGS);
+  for (const module of plan.modules) readPilotToolContract(module.packageRoot, module.id);
   const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve', '--system-prompt', loadSystemPrompt()];
   for (const extensionPath of projectAdapter.piExtensions(APP_PATHS.appRoot)) {
     if (!fs.existsSync(extensionPath)) throw new Error(`Project extension not found: ${extensionPath}`);

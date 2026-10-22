@@ -27,6 +27,7 @@ export type CapabilityItem = {
   moduleOrigin: PlatformModule['origin'];
   moduleAssets: Array<PlatformModule['assets'][number] & { name: string }>;
   skillFiles: PlatformModule['skillFiles'];
+  toolDiagnostics?: PlatformModule['toolDiagnostics'];
   assetId?: string;
 };
 
@@ -94,6 +95,7 @@ export function projectCapabilities(overview: PlatformOverview, t: TFunction, la
         moduleOrigin: module.origin,
         moduleAssets,
         skillFiles,
+        toolDiagnostics: module.toolDiagnostics,
       });
     }
 

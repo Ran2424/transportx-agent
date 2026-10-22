@@ -17,6 +17,7 @@ import type { ModuleRegistry, RegisteredModule } from './module-registry.js';
 import type { AssetResolver, ResolvedAsset } from './asset-resolver.js';
 import { verifyChecksumFile, sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
+import { readPilotToolContract } from './tool-contracts.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
 const RETIRED_BUILTIN_MODULE_IDS = new Set(['com.transportx.timing']);
@@ -75,6 +76,7 @@ function resolvedNativeRuntimes(module: RegisteredModule): ResolvedPlanNativeRun
 }
 
 function resolvedPlanModule(module: RegisteredModule, domainId: string): ResolvedPlanModule {
+  readPilotToolContract(module.packageRoot, module.manifest.id);
   return {
     id: module.manifest.id,
     version: module.manifest.version,

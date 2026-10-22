@@ -18,6 +18,10 @@ import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SES
 import { buildSessionPiLaunch } from './session-pi-launch.js';
 import { BUILTIN_MODULE_MANIFESTS } from './config.js';
 import { ModuleTrustStore, confirmDesktopModuleTrust, ensureSessionModuleTrust } from './module-trust.js';
+import { readPilotToolContract } from './tool-contracts.js';
+import { approvedHostToolContract } from './tool-request.js';
+import { diagnoseTool } from './tool-diagnostics.js';
+import { PILOT_TOOL_IDS } from '../contracts/tool-interface.js';
 import { createSessionWorkingDirectory } from './session-workspace.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
 import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
@@ -54,6 +58,7 @@ import { CitationService } from './citation-service.js';
 import { migrateStoredCitations } from './citation-migration.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
+import { preferUnpackedPath } from './session-assembly.js';
 import { VideoService } from './video-service.js';
 import { verifyChecksumFile } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
@@ -84,7 +89,7 @@ let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
 const canvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath));
-const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
+const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py')));
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (response) => response.delivery === 'unknown');
 const updatePreparation = new UpdatePreparation();
@@ -263,13 +268,26 @@ function openUrl(url: string): Promise<void> {
   return openNativeTarget(url);
 }
 
-function currentPlatformOverview() {
+function currentPlatformOverview(sessionId?: string) {
   const storage = { root: PI_AGENT_DIR, scenario: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir };
+  const session = sessionId ? liveManager.get(sessionId) : null;
+  const withTools = (overview: ReturnType<typeof platformOverview>) => ({ ...overview, modules: overview.modules.map((module) => {
+    const identity = PILOT_TOOL_IDS[module.id];
+    if (!identity) return module;
+    try {
+      const selected = session?.resolvedSessionPlan?.modules.find((item) => item.id === module.id);
+      const contract = readPilotToolContract(selected?.packageRoot || MODULE_REGISTRY.get(module.id)!.packageRoot, module.id)!;
+      if (!contract) return { ...module, toolDiagnostics: [{ moduleId: module.id, ...identity, contractVersion: 'unknown', state: 'unverified' as const, reason: 'missing_contract', ...(session?.id ? { sessionId: session.id } : {}) }] };
+      return { ...module, toolDiagnostics: [diagnoseTool(contract, selected, session && !session.terminating && session.child ? session.capabilityTracker.observation() : undefined, session?.entries || [], session?.id, approvedHostToolContract(module.id))] };
+    } catch {
+      return { ...module, toolDiagnostics: [{ moduleId: module.id, ...identity, contractVersion: 'unknown', state: 'unavailable' as const, reason: 'invalid_contract', ...(session?.id ? { sessionId: session.id } : {}) }] };
+    }
+  }) });
   try {
     const plan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, storage.scenario);
-    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(plan.assets.map((asset) => asset.id)));
+    return withTools(platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(plan.assets.map((asset) => asset.id))));
   } catch (error) {
-    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(), errorMessage(error));
+    return withTools(platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(), errorMessage(error)));
   }
 }
 

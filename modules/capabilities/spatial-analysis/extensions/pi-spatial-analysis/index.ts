@@ -1,35 +1,21 @@
-import { Type } from 'typebox';
+import type { TSchema } from 'typebox';
+import { readFileSync } from 'node:fs';
+import { parseToolInterfaceContract } from '../../../../../src/contracts/tool-interface.ts';
+import { postHostOperation } from '../../../../shared/host-client.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { parseSpatialAnalysisResultStructured } from '../../../../../src/contracts/index.ts';
 
-const SpatialAnalyzeSchema = Type.Object({
-  operation: Type.Union([Type.Literal('buffer'), Type.Literal('nearest'), Type.Literal('spatial_join')]),
-  inputPath: Type.Optional(Type.String({ maxLength: 1000 })),
-  leftPath: Type.Optional(Type.String({ maxLength: 1000 })),
-  rightPath: Type.Optional(Type.String({ maxLength: 1000 })),
-  inputCrs: Type.Optional(Type.String({ maxLength: 120 })),
-  leftCrs: Type.Optional(Type.String({ maxLength: 120 })),
-  rightCrs: Type.Optional(Type.String({ maxLength: 120 })),
-  metricCrs: Type.Optional(Type.String({ maxLength: 120 })),
-  distanceMeters: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
-  maxDistanceMeters: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
-  dissolve: Type.Optional(Type.Boolean()),
-  predicate: Type.Optional(Type.Union([Type.Literal('intersects'), Type.Literal('within'), Type.Literal('contains')])),
-  cardinality: Type.Optional(Type.Union([Type.Literal('one-to-one'), Type.Literal('one-to-many')])),
-  multipleMatchStrategy: Type.Optional(Type.Union([Type.Literal('error'), Type.Literal('first')])),
-  rightFields: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 120 }), { maxItems: 20 })),
-  repairInvalid: Type.Optional(Type.Boolean()),
-}, { additionalProperties: false });
+const contract = parseToolInterfaceContract(JSON.parse(readFileSync(new URL("../../tool-contract.json", import.meta.url), "utf8")));
+if (!contract) throw new Error("Invalid Spatial Tool Contract");
 
 function spatialHost() {
   const endpoint = process.env.TAU_SPATIAL_ENDPOINT;
   const sessionId = process.env.TAU_SPATIAL_SESSION_ID;
   const token = process.env.TAU_SPATIAL_TOKEN;
-  if (!endpoint || !sessionId || !token) throw new Error('Spatial Analysis Agent Host bridge is unavailable for this session.');
   return { endpoint, sessionId, token };
 }
 
-type SpatialFailure = { code: string; phase: string; message: string; toolCallId: string; recovery: string };
+type SpatialFailure = { code: string; phase: string; message: string; toolCallId: string; recovery: string; field?: string };
 type SpatialToolResult = { content: { type: 'text'; text: string }[]; details: Record<string, unknown> };
 
 function failureResult(error: SpatialFailure): SpatialToolResult {
@@ -41,22 +27,7 @@ function unknownResult(toolCallId: string, phase: string): SpatialToolResult {
 }
 
 async function analyze(body: Record<string, unknown>, toolCallId: string, signal: AbortSignal | undefined, dispatched: () => void) {
-  const host = spatialHost();
-  if (signal?.aborted) throw Object.assign(new Error('Spatial call was cancelled before dispatch'), { code: 'spatial_cancelled', phase: 'prepare', commit: 'not_started' });
-  const lifetime = AbortSignal.any([AbortSignal.timeout(130_000), ...(signal ? [signal] : [])]);
-  dispatched();
-  const response = await fetch(`${host.endpoint}/api/internal/spatial/analyze`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, sessionId: host.sessionId, token: host.token, toolCallId }),
-    signal: lifetime,
-  });
-  const payload = await response.json() as { citations?: { evidence: { evidenceId: string }[] }; citationWarning?: string; error?: string; result?: unknown; code?: string; phase?: string; commit?: string; toolCallId?: string };
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) throw Object.assign(new Error('Spatial Host authorization was refused'), { code: 'spatial_authorization_denied', phase: 'authorization', commit: 'not_started' });
-    throw Object.assign(new Error(String(payload.error || 'Spatial Host request failed').slice(0, 1500)), { code: payload.code, phase: payload.phase, commit: payload.commit });
-  }
-  if (payload.toolCallId !== undefined && payload.toolCallId !== toolCallId) throw new Error('Spatial response call association is invalid');
+  const payload = await postHostOperation<{ citations?: { evidence: { evidenceId: string }[] }; citationWarning?: string; result?: unknown }>(spatialHost(), '/api/internal/spatial/analyze', body, { toolCallId, contractVersion: contract!.contractVersion, signal, timeoutMs: 130_000, dispatched });
   const result = parseSpatialAnalysisResultStructured(payload.result);
   if (!result.ok) throw new Error('Spatial response could not be validated; preserve existing results');
   const citationsValid = Array.isArray(payload.citations?.evidence) && payload.citations.evidence.every((item) => item && typeof item.evidenceId === 'string');
@@ -79,7 +50,7 @@ export default function spatialAnalysisExtension(pi: ExtensionAPI) {
     name: 'tau_spatial_analyze',
     label: '受控空间分析',
     description: 'Run a Host-controlled buffer, nearest-neighbor, or spatial join over session-relative GeoJSON. Distance operations require an explicit metric CRS. The output is WGS84 GeoJSON that can be passed to publish_geodata.',
-    parameters: SpatialAnalyzeSchema,
+    parameters: contract!.input as unknown as TSchema,
     async execute(toolCallId, params, signal) {
       const call: { dispatched: boolean; result?: SpatialToolResult } = { dispatched: false };
       pending.set(toolCallId, call);
@@ -92,9 +63,9 @@ export default function spatialAnalysisExtension(pi: ExtensionAPI) {
           details: { kind: 'tau-spatial-analysis' as const, result, citations: payload.citations, citationWarning: payload.citationWarning },
         };
       } catch (error) {
-        const failure = error as Error & { code?: string; phase?: string; commit?: string };
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
         call.result = failure.commit === 'not_started' || failure.commit === 'not_committed' || !call.dispatched
-          ? failureResult({ code: failure.code || 'spatial_unavailable', phase: failure.phase || 'prepare', message: String(failure.message).slice(0, 1500), toolCallId, recovery: 'The Host did not commit this analysis. Correct the reported input or availability issue before requesting a new execution.' })
+          ? failureResult({ code: failure.code === 'cancelled' ? 'spatial_cancelled' : failure.code || 'spatial_unavailable', phase: failure.phase || 'prepare', field: failure.field, message: String(failure.message).slice(0, 1500), toolCallId, recovery: 'The Host did not commit this analysis. Correct the reported input or availability issue before requesting a new execution.' })
           : unknownResult(toolCallId, failure.phase || (signal?.aborted ? 'cancel_requested' : failure.name === 'TimeoutError' ? 'timeout' : 'transport_or_response'));
       }
       return call.result!;

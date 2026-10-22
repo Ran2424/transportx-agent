@@ -12,6 +12,7 @@
   },
   "include": [
     "modules/**/extensions/**/*.ts",
-    "src/contracts/**/*.ts"
+    "src/contracts/**/*.ts",
+    "src/contracts/**/*.mts"
   ]
 }

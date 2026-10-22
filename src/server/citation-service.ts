@@ -59,31 +59,37 @@ export class CitationService {
   }
   resolve(session: CitationServiceSession, inputs: CitationInput[]): CitationEnvelope { return this.resolveFiles(session, inputs); }
   private resolveFiles(session: CitationServiceSession, inputs: CitationInput[], sourceKeys = new Map<string, string>()): CitationEnvelope {
-    if (!Array.isArray(inputs) || !inputs.length || inputs.length > 20) throw new Error('sources must contain 1–20 specific original files or results.');
-    const sources: CitationSourceVersion[] = [], evidence: CitationEvidence[] = [];
-    const registry = this.registry(session).load();
-    for (const input of inputs) {
-      if (!input || typeof input.path !== 'string' || (input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 500)) || (input.text !== undefined && (typeof input.text !== 'string' || input.text.length > 16000)) || !['excerpt', 'summary', 'result', 'source-only'].includes(input.contentKind)) throw new Error('A concrete source file is required; directory matches are candidates only.');
-      const scope = input.assetId ? 'asset' as const : 'session' as const;
-      const reference = { scope, ...(input.assetId ? { assetId: input.assetId } : {}), path: input.path };
-      const { resolved, stat } = locateCitationFile(session, reference), sha256 = hashCitationFile(resolved);
-      const sourceKey = sourceKeys.get(input.path) || `${scope}:${input.assetId || this.registry(session).sessionId}:${input.path}`;
-      const sourceVersionId = `sv_${hash(JSON.stringify([sourceKey, sha256]))}`;
-      const source: CitationSourceVersion = registry.sources.find((item) => item.sourceVersionId === sourceVersionId) || { sourceVersionId, sourceKey, title: input.title?.trim() || path.basename(resolved), acquiredAt: new Date().toISOString(), content: { kind: 'file', ...reference, mimeType: mimeFor(resolved), sha256, size: stat.size }, ...(input.metadata ? { metadata: input.metadata } : {}) };
-      const item = this.evidence(source, input);
-      // An excerpt is an independently checkable verbatim span, never a knowledge summary.
-      if (input.contentKind === 'excerpt') {
-        const preview = previewFile(resolved, mimeFor(resolved));
-        let original = preview.kind === 'text' ? fs.readFileSync(resolved, 'utf8') : '';
-        const locator = item.locator;
-        if (locator.kind === 'document' && (locator.page || locator.printedPage)) original = '';
-        if (locator.kind === 'document' && locator.lineStart) original = original.split(/\r?\n/).slice(locator.lineStart - 1, locator.lineEnd || locator.lineStart).join('\n');
-        if (!input.text || !original.includes(input.text)) throw new Error('A verbatim excerpt must be verifiable at the fixed text location; otherwise use summary or source-only.');
+    let phase = 'validation';
+    try {
+      if (!Array.isArray(inputs) || !inputs.length || inputs.length > 20) throw new Error('sources must contain 1–20 specific original files or results.');
+      const sources: CitationSourceVersion[] = [], evidence: CitationEvidence[] = [];
+      const registry = this.registry(session).load();
+      for (const input of inputs) {
+        if (!input || typeof input.path !== 'string' || (input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 500)) || (input.text !== undefined && (typeof input.text !== 'string' || input.text.length > 16000)) || !['excerpt', 'summary', 'result', 'source-only'].includes(input.contentKind)) throw new Error('A concrete source file is required; directory matches are candidates only.');
+        const scope = input.assetId ? 'asset' as const : 'session' as const;
+        const reference = { scope, ...(input.assetId ? { assetId: input.assetId } : {}), path: input.path };
+        const { resolved, stat } = locateCitationFile(session, reference), sha256 = hashCitationFile(resolved);
+        const sourceKey = sourceKeys.get(input.path) || `${scope}:${input.assetId || this.registry(session).sessionId}:${input.path}`;
+        const sourceVersionId = `sv_${hash(JSON.stringify([sourceKey, sha256]))}`;
+        const source: CitationSourceVersion = registry.sources.find((item) => item.sourceVersionId === sourceVersionId) || { sourceVersionId, sourceKey, title: input.title?.trim() || path.basename(resolved), acquiredAt: new Date().toISOString(), content: { kind: 'file', ...reference, mimeType: mimeFor(resolved), sha256, size: stat.size }, ...(input.metadata ? { metadata: input.metadata } : {}) };
+        const item = this.evidence(source, input);
+        // An excerpt is an independently checkable verbatim span, never a knowledge summary.
+        if (input.contentKind === 'excerpt') {
+          const preview = previewFile(resolved, mimeFor(resolved));
+          let original = preview.kind === 'text' ? fs.readFileSync(resolved, 'utf8') : '';
+          const locator = item.locator;
+          if (locator.kind === 'document' && (locator.page || locator.printedPage)) original = '';
+          if (locator.kind === 'document' && locator.lineStart) original = original.split(/\r?\n/).slice(locator.lineStart - 1, locator.lineEnd || locator.lineStart).join('\n');
+          if (!input.text || !original.includes(input.text)) throw new Error('A verbatim excerpt must be verifiable at the fixed text location; otherwise use summary or source-only.');
+        }
+        if (!sources.some((value) => value.sourceVersionId === sourceVersionId)) sources.push(source);
+        if (!evidence.some((value) => value.evidenceId === item.evidenceId)) evidence.push(item);
       }
-      if (!sources.some((value) => value.sourceVersionId === sourceVersionId)) sources.push(source);
-      if (!evidence.some((value) => value.evidenceId === item.evidenceId)) evidence.push(item);
+      phase = 'commit';
+      return this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources, evidence });
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: phase === 'commit' ? 'citation_result_unknown' : 'citation_input_invalid', phase, commit: phase === 'commit' ? 'unknown' : 'not_committed' });
     }
-    return this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources, evidence });
   }
   // Called only by Host producers after successful, validated execution; never exposed as Agent input.
   registerInline(session: CitationServiceSession, input: { sourceKey: string; title: string; value: CitationInline; locator: CitationLocator; executionRef: NonNullable<CitationSourceVersion['executionRef']> }): CitationEnvelope {
@@ -115,26 +121,39 @@ export class CitationService {
     }
     return { source: publicCitationSource(source), evidence, preview };
   }
-  async resolveWeb(session: CitationServiceSession, urls: string[]) {
-    if (!Array.isArray(urls) || !urls.length || urls.length > 10 || urls.some((url) => typeof url !== 'string')) throw new Error('webUrls must contain 1–10 public HTTPS URLs.');
-    const inputs: CitationInput[] = [], sourceKeys = new Map<string, string>();
-    for (const url of [...new Set(urls)]) {
-      const target = await publicCitationTarget(url), response = await fetchPinnedPublicCitation(target);
-      const mime = response.headers['content-type']?.split(';')[0].toLowerCase() || '';
-      if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300 || !mime.startsWith('text/')) { response.resume(); throw new Error('Web citation fetch failed.'); }
-      const body = await readWebSnapshot(response), relative = `.tau/citation-snapshots/${hash(target.url.href)}-${hash(body)}.html`;
-      // Locate the parent through the same root boundary before writing snapshots.
-      const directory = path.join(session.cwd, '.tau', 'citation-snapshots');
-      fs.mkdirSync(directory, { recursive: true });
-      const real = fs.realpathSync(directory);
-      if (!isWithin(fs.realpathSync(session.cwd), real)) throw new Error('Citation snapshot directory is outside this session.');
-      const snapshot = path.join(session.cwd, relative);
-      if (!fs.existsSync(snapshot)) fs.writeFileSync(snapshot, body, { mode: 0o600, flag: 'wx' });
-      else if (fs.lstatSync(snapshot).isSymbolicLink() || hashCitationFile(snapshot) !== hash(body)) throw new Error('Citation snapshot is unsafe or has changed.');
-      sourceKeys.set(relative, `web:${hash(target.url.href)}`);
-      inputs.push({ path: relative, title: target.url.hostname, locator: { kind: 'source' }, contentKind: 'source-only', metadata: { url } });
+  async resolveWeb(session: CitationServiceSession, urls: string[], signal?: AbortSignal) {
+    try {
+      signal?.throwIfAborted();
+      if (!Array.isArray(urls) || !urls.length || urls.length > 10 || urls.some((url) => typeof url !== 'string')) throw new Error('webUrls must contain 1–10 public HTTPS URLs.');
+      const inputs: CitationInput[] = [], sourceKeys = new Map<string, string>();
+      for (const url of [...new Set(urls)]) {
+        signal?.throwIfAborted();
+        const target = await publicCitationTarget(url);
+        signal?.throwIfAborted();
+        const response = await fetchPinnedPublicCitation(target, signal);
+        const mime = response.headers['content-type']?.split(';')[0].toLowerCase() || '';
+        if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300 || !mime.startsWith('text/')) { response.resume(); throw new Error('Web citation fetch failed.'); }
+        const body = await readWebSnapshot(response);
+        signal?.throwIfAborted();
+        const relative = `.tau/citation-snapshots/${hash(target.url.href)}-${hash(body)}.html`;
+        // Locate the parent through the same root boundary before writing snapshots.
+        const directory = path.join(session.cwd, '.tau', 'citation-snapshots');
+        fs.mkdirSync(directory, { recursive: true });
+        const real = fs.realpathSync(directory);
+        if (!isWithin(fs.realpathSync(session.cwd), real)) throw new Error('Citation snapshot directory is outside this session.');
+        const snapshot = path.join(session.cwd, relative);
+        if (!fs.existsSync(snapshot)) fs.writeFileSync(snapshot, body, { mode: 0o600, flag: 'wx' });
+        else if (fs.lstatSync(snapshot).isSymbolicLink() || hashCitationFile(snapshot) !== hash(body)) throw new Error('Citation snapshot is unsafe or has changed.');
+        sourceKeys.set(relative, `web:${hash(target.url.href)}`);
+        inputs.push({ path: relative, title: target.url.hostname, locator: { kind: 'source' }, contentKind: 'source-only', metadata: { url } });
+      }
+      signal?.throwIfAborted();
+      return this.resolveFiles(session, inputs, sourceKeys);
+    } catch (error) {
+      const failure = error as Error & { commit?: string };
+      if (failure.commit) throw failure;
+      throw Object.assign(failure, { code: signal?.aborted ? 'citation_cancelled' : 'citation_fetch_failed', phase: 'fetch', commit: 'not_committed' });
     }
-    return this.resolveFiles(session, inputs, sourceKeys);
   }
 }
 
@@ -167,13 +186,14 @@ export async function publicCitationUrl(rawUrl: string) {
   return (await publicCitationTarget(rawUrl)).url;
 }
 
-function fetchPinnedPublicCitation(target: PublicCitationTarget) {
+function fetchPinnedPublicCitation(target: PublicCitationTarget, signal?: AbortSignal) {
   return new Promise<IncomingMessage>((resolve, reject) => {
     const request = https.request({
       hostname: target.url.hostname,
       port: target.url.port || undefined,
       path: `${target.url.pathname}${target.url.search}`,
       method: 'GET',
+      signal,
       headers: { Accept: 'text/html, text/plain, application/xhtml+xml' },
       servername: target.url.hostname,
       lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),

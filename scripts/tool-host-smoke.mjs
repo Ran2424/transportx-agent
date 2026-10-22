@@ -9,7 +9,8 @@ import { performance } from 'node:perf_hooks';
 
 const appRoot = path.resolve(process.env.TRANSPORTX_SMOKE_APP_ROOT || '.');
 const baseline = process.env.TRANSPORTX_SMOKE_BASELINE === '1';
-const spatialPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'spatial';
+const citationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'citation';
+const spatialPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'spatial' || citationPhase;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-tool-host-'));
 const source = path.join(root, 'probe');
 fs.mkdirSync(source);
@@ -25,6 +26,8 @@ export default function(pi) {
   fs.writeFileSync(${JSON.stringify(marker)}, 'loaded');
   pi.registerCommand('p0_reload', { description: 'Reload only approved resources', handler: async (_, ctx) => { await ctx.reload(); fs.writeFileSync(${JSON.stringify(reloaded)}, 'done'); } });
   ${spatialPhase ? "pi.registerCommand('p1_spatial_endpoint', { description: 'Test-owned loopback fault relay', handler: async (value) => { const url = new URL(value.trim()); if (url.hostname !== '127.0.0.1') throw new Error('Only the local test relay is allowed'); process.env.TAU_SPATIAL_ENDPOINT = url.origin; } });" : ''}
+  ${citationPhase ? "pi.registerCommand('p2_citation_endpoint', { description: 'Test-owned Citation relay', handler: async (value) => { const url = new URL(value.trim()); if (url.hostname !== '127.0.0.1') throw new Error('Only the local test relay is allowed'); process.env.TAU_CITATION_ENDPOINT = url.origin; } });" : ''}
+  ${citationPhase ? "pi.registerCommand('p2_citation_active', { description: 'Test-owned native active-tool change', handler: async (value) => { const names = pi.getActiveTools().filter(name => name !== 'tau_resolve_citation'); pi.setActiveTools(value.trim() === 'off' ? names : [...names, 'tau_resolve_citation']); } });" : ''}
   pi.registerTool({ name: 'tau_p0_probe', label: 'P0 probe', description: 'Isolated trust and Pi error/signal probe', parameters: Type.Object({ mode: Type.String() }),
     async execute(id, params, signal, update, ctx) {
       const file = ctx.sessionManager.getSessionFile();
@@ -41,6 +44,16 @@ export default function(pi) {
 }`);
 const providerInputs = [];
 const provider = http.createServer(async (req, res) => {
+  if (req.url.startsWith('/citation-fixture')) {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    if (req.url.includes('slow=1')) {
+      fs.writeFileSync(path.join(root, 'web-fetch-started'), 'started');
+      res.write('<html><body>partial');
+      const timer = setTimeout(() => res.end(' complete</body></html>'), 4000);
+      res.on('close', () => { clearTimeout(timer); if (!res.writableEnded) fs.writeFileSync(path.join(root, 'web-fetch-aborted'), 'closed'); });
+    } else res.end('<html><body>Controlled web snapshot.</body></html>');
+    return;
+  }
   let raw = ''; for await (const chunk of req) raw += chunk;
   const body = JSON.parse(raw); providerInputs.push(body);
   const last = body.messages.at(-1);
@@ -53,7 +66,8 @@ const provider = http.createServer(async (req, res) => {
   }
   const tool = last.role !== 'user' ? null : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
     ? { name: 'tau_spatial_analyze', arguments: input.slice(input.indexOf(':') + 1) }
-    : spatialPhase && input.startsWith('traffic:') ? { name: 'traffic_peak_hour', arguments: input.slice('traffic:'.length) }
+    : citationPhase && input.startsWith('citation:') ? { name: 'tau_resolve_citation', arguments: input.slice('citation:'.length) }
+      : spatialPhase && input.startsWith('traffic:') ? { name: 'traffic_peak_hour', arguments: input.slice('traffic:'.length) }
       : { name: 'tau_p0_probe', arguments: JSON.stringify({ mode: input }) };
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const chunk = (delta, finish_reason = null) => ({ id: 'probe', object: 'chat.completion.chunk', created: 1, model: 'smoke', choices: [{ index: 0, delta, finish_reason }] });
@@ -67,8 +81,19 @@ const autoExtension = `import fs from 'node:fs'; export default () => fs.writeFi
 fs.mkdirSync(path.join(root, 'extensions'));
 fs.writeFileSync(path.join(root, 'extensions', 'untrusted.ts'), autoExtension);
 let stderr = '', stdout = '', accept = false, trustDecisions = 0;
-const child = spawn(process.execPath, [path.join(appRoot, 'bin/tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
-  cwd: appRoot, env: { ...process.env, TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER_DATA_DIR: root, PI_CODING_AGENT_DIR: root, PI_CODING_AGENT_SESSION_DIR: path.join(root, 'sessions'), TAU_PI_ENTRYPOINT: path.join(appRoot, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+const preload = path.join(root, 'citation-network-fixture.mjs');
+if (citationPhase) fs.writeFileSync(preload, `
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url), dns = require('node:dns/promises'), https = require('node:https'), http = require('node:http');
+const lookup = dns.lookup, request = https.request;
+dns.lookup = (name, options) => name === 'citation.fixture.test' ? Promise.resolve([{ address: '203.0.113.10', family: 4 }]) : lookup(name, options);
+https.request = (options, ...rest) => options.hostname === 'citation.fixture.test'
+  ? http.request({ hostname: '127.0.0.1', port: ${provider.address().port}, path: options.path, method: options.method, headers: options.headers, signal: options.signal }, ...rest)
+  : request(options, ...rest);
+`);
+const hostExecutable = process.env.TRANSPORTX_SMOKE_HOST_EXECUTABLE;
+const child = spawn(hostExecutable || process.execPath, [...(citationPhase ? ['--import', preload] : []), path.join(appRoot, 'bin/tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
+  cwd: fs.statSync(appRoot).isDirectory() ? appRoot : path.dirname(appRoot), env: { ...process.env, ...(hostExecutable ? { ELECTRON_RUN_AS_NODE: '1' } : {}), TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER_DATA_DIR: root, PI_CODING_AGENT_DIR: root, PI_CODING_AGENT_SESSION_DIR: path.join(root, 'sessions'), TAU_PI_ENTRYPOINT: path.join(appRoot, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 });
 child.stdout.on('data', (chunk) => { stdout += chunk; });
 child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-8000); });
@@ -167,7 +192,8 @@ try {
   const persisted = fs.readFileSync(final.sessionFile, 'utf8');
   assert.match(persisted, /p0_expected_failure/); assert.match(persisted, /p0_ok/);
   const spatial = spatialPhase ? await (await import('./harness/spatial-host-smoke.mjs')).spatialHostSmoke({ root, endpoint, json, rpc, until, appRoot, providerInputs }) : undefined;
-  console.log(JSON.stringify({ phase: baseline ? 'before P0 trust changes' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, spatial, harnessRssBytes: process.memoryUsage().rss }, null, 2));
+  const citation = citationPhase ? await (await import('./harness/citation-host-smoke.mjs')).citationHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
+  console.log(JSON.stringify({ phase: baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, spatial, citation, harnessRssBytes: process.memoryUsage().rss }, null, 2));
 } finally {
   if (child.exitCode === null) {
     const closed = new Promise((resolve) => child.once('exit', resolve)); child.kill('SIGTERM');

@@ -14,7 +14,7 @@ import { AssistantMessage, UserMessage } from './message-cards';
 import { ExecutionGroup } from './execution-group';
 import { groupExecutionParts, type ExecutionPart } from './execution-parts';
 import { projectTools } from './tool-projection';
-import { spatialExecutionState } from './tool-card-utils';
+import { hostExecutionState } from './tool-card-utils';
 import { projectCitationText, projectMessageCitations } from '../../features/citation/citation-projection';
 
 export function ConversationWorkspace({ sessionId, showThinking, expandThinking }: { sessionId: string; showThinking: boolean; expandThinking: boolean }) {
@@ -77,13 +77,13 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
   const optimisticCitationProjection = data?.live.optimisticPrompt ? projectCitationText(data.live.optimisticPrompt.message, citationProjection.available) : undefined;
   const parts: ExecutionPart[] = [];
   const unconfirmedRows = new Set<number>();
-  let unconfirmedSpatial = false;
+  let unconfirmedHost = false;
   entries.forEach((entry, index) => {
     const message = entry.message;
     if (!message) return;
-    if (message.role === 'user') unconfirmedSpatial = false;
-    if (message.role === 'toolResult' && spatialExecutionState({ details: message.details }) === 'unknown') unconfirmedSpatial = true;
-    if (message.role === 'assistant' && unconfirmedSpatial) unconfirmedRows.add(index);
+    if (message.role === 'user') unconfirmedHost = false;
+    if (message.role === 'toolResult' && hostExecutionState({ details: message.details }) === 'unknown') unconfirmedHost = true;
+    if (message.role === 'assistant' && unconfirmedHost) unconfirmedRows.add(index);
     if (message.role === 'user') parts.push({ kind: 'message', entry, index });
     if (message.role === 'assistant') {
       const thinking = messageThinking(message);

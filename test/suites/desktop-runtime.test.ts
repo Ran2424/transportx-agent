@@ -10,6 +10,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
   const builder = require('js-yaml').load(fs.readFileSync(path.join(process.cwd(), 'desktop/electron-builder.common.yml'), 'utf8'));
   assert.ok(builder.asarUnpack.includes('modules/**'), 'native module browsing needs complete physical module folders');
   assert.ok(builder.asarUnpack.includes('src/contracts/**'), 'unpacked extensions retain their relative contract imports');
+  assert.ok(builder.asarUnpack.includes('dist/module-extensions/**'), 'remapped bundled entries must also be unpacked by their source path');
 
   // Physical module folders must still load through Pi's extension loader.
   {
@@ -17,6 +18,8 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     t.after(() => fs.rmSync(unpacked, { recursive: true, force: true }));
     const capabilities = path.join(unpacked, 'modules', 'capabilities');
     fs.cpSync(path.join(process.cwd(), 'modules', 'capabilities'), capabilities, { recursive: true });
+    fs.cpSync(path.join(process.cwd(), 'dist', 'module-extensions', 'capabilities'), capabilities, { recursive: true });
+    assert.equal(fs.existsSync(path.join(unpacked, 'modules', 'shared')), false, 'private build helpers are not runtime dependencies');
     fs.cpSync(path.join(process.cwd(), 'src', 'contracts'), path.join(unpacked, 'src', 'contracts'), { recursive: true });
     const entries = fs.readdirSync(capabilities, { withFileTypes: true }).filter((entry: any) => entry.isDirectory()).flatMap((entry: any) => {
       const root = path.join(capabilities, entry.name);

@@ -12,6 +12,7 @@ import type { SpatialAnalysisService } from './spatial-analysis-service.js';
 import type { VideoService } from './video-service.js';
 import { parseSessionProfileStructured } from '../contracts/index.js';
 import { serviceModuleIds, sessionServiceLabel, type SessionService } from './session-service.js';
+import { validatePilotToolRequest } from './tool-request.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
 import type { CanvasService } from './canvas-service.js';
 
@@ -87,14 +88,15 @@ export function createApiRouter(services: ApiRouteServices) {
       return { pdf, filename: `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf` };
     } finally { renderingPdfs--; }
   };
-  const runJob = async <T>(req: IncomingMessage, res: ServerResponse, session: PiRpcSession, execute: (signal: AbortSignal) => Promise<T>) => {
+  const withRequestSignal = async <T>(req: IncomingMessage, res: ServerResponse, execute: (signal: AbortSignal) => Promise<T>) => {
     const controller = new AbortController();
     const cancel = () => controller.abort();
     req.once('aborted', cancel);
     res.once('close', cancel);
-    try { return await services.sessions.runJob(session.id, execute, controller.signal); }
+    try { return await execute(controller.signal); }
     finally { req.off('aborted', cancel); res.off('close', cancel); }
   };
+  const runJob = <T>(req: IncomingMessage, res: ServerResponse, session: PiRpcSession, execute: (signal: AbortSignal) => Promise<T>) => withRequestSignal(req, res, (signal) => services.sessions.runJob(session.id, execute, signal));
   const serveRawFile = ({ req, res, url, deps }: import('./router.js').RouteContext<ApiRouteServices>) => {
     const sessionId = url.searchParams.get('sessionId');
     if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
@@ -310,21 +312,28 @@ export function createApiRouter(services: ApiRouteServices) {
       res.end(entry.pdf);
     })
     .post('/api/internal/citations/resolve', async ({ req, res, deps }) => {
+      let toolCallId: string | undefined;
+      const rejected = (message: string) => deps.json(res, 400, { error: message, toolCallId, code: 'citation_input_invalid', phase: 'validation', commit: 'not_started' });
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'citation');
         if (!session) return;
-        if (['knowledgeIds', 'attachmentIds', 'artifacts', 'datasets', 'value', 'executionRef'].some((key) => key in body)) return deps.json(res, 400, { error: 'Unsupported citation input. Use concrete sources with typed locators.' });
-        if ('sources' in body && 'webUrls' in body) return deps.json(res, 400, { error: 'sources and webUrls cannot be combined. Register local files with sources and public HTTPS pages with webUrls in separate calls; omit the other field entirely. Reuse evidence IDs from both calls. Do not put URLs in sources[].path.' });
+        toolCallId = typeof body.toolCallId === 'string' ? body.toolCallId : undefined;
+        if (['knowledgeIds', 'attachmentIds', 'artifacts', 'datasets', 'value', 'executionRef'].some((key) => key in body)) return rejected('Unsupported citation input. Use concrete sources with typed locators.');
+        if ('sources' in body && 'webUrls' in body) return rejected('sources and webUrls cannot be combined. Register local files with sources and public HTTPS pages with webUrls in separate calls; omit the other field entirely. Reuse evidence IDs from both calls. Do not put URLs in sources[].path.');
+        await validatePilotToolRequest('com.transportx.citation', body);
         if (Array.isArray(body.sources) && body.sources.length && !body.webUrls) {
           const inputs = body.sources as import('./citation-service.js').CitationInput[];
           const citations = deps.citation.resolve(session, inputs);
           const deliverableEvidenceIds = inputs.flatMap((input) => input.deliverable ? citations.evidence.filter((item) => citations.sources.some((source) => source.sourceVersionId === item.sourceVersionId && source.content.kind === 'file' && source.content.path === input.path && source.content.assetId === input.assetId)).map((item) => item.evidenceId) : []);
-          return deps.json(res, 200, { citations, deliverableEvidenceIds });
+          return deps.json(res, 200, { citations, deliverableEvidenceIds, ...(toolCallId ? { toolCallId } : {}) });
         }
-        if (Array.isArray(body.webUrls) && !body.sources) return deps.json(res, 200, { citations: await deps.citation.resolveWeb(session, body.webUrls as string[]) });
-        deps.json(res, 400, { error: 'Provide exactly one non-empty array: sources for local files, or webUrls for public HTTPS pages. Omit the other field entirely.' });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        if (Array.isArray(body.webUrls) && !body.sources) return deps.json(res, 200, { citations: await withRequestSignal(req, res, (signal) => deps.citation.resolveWeb(session, body.webUrls as string[], signal)), ...(toolCallId ? { toolCallId } : {}) });
+        rejected('Provide exactly one non-empty array: sources for local files, or webUrls for public HTTPS pages. Omit the other field entirely.');
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, code: failure.code || 'citation_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown', field: failure.field });
+      }
     })
     .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
       let toolCallId: string | undefined;
@@ -332,6 +341,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
+        await validatePilotToolRequest('com.transportx.spatial-analysis', body);
         if (body.toolCallId !== undefined && (typeof body.toolCallId !== 'string' || !body.toolCallId || body.toolCallId.length > 200)) return deps.json(res, 400, { error: 'Invalid Spatial toolCallId', code: 'spatial_input_invalid', phase: 'validation', commit: 'not_started' });
         toolCallId = body.toolCallId;
         const result = await runJob(req, res, session, (signal) => deps.spatial.analyze(session, body, signal));
@@ -339,8 +349,8 @@ export function createApiRouter(services: ApiRouteServices) {
         try { deps.json(res, 200, { result, ...(toolCallId ? { toolCallId } : {}), citations: deps.citation.registerSpatialResult(session, result) }); }
         catch (error) { deps.json(res, 200, { result, ...(toolCallId ? { toolCallId } : {}), citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
       } catch (error) {
-        const failure = error as Error & { code?: string; phase?: string; commit?: string };
-        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, code: failure.code || 'spatial_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown' });
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, code: failure.code || 'spatial_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown', field: failure.field });
       }
     })
     .post('/api/internal/geo/inspect', async ({ req, res, deps }) => {
