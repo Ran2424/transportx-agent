@@ -135,6 +135,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.ok(persisted.modules.every((module: any) => !('manifestSha256' in module) && module.entrypoints.every((entry: any) => !('sha256' in entry))));
     assert.ok(persisted.modules.find((module: any) => module.id === 'com.transportx.document').canvasViews.some((view: any) => view.adapterId === 'com.transportx.canvas.document'));
     assert.deepEqual(assembler.load(workspace), plan);
+    assert.doesNotThrow(() => assembler.verify({ ...plan, workspace: fs.realpathSync(workspace) }, workspace), 'canonical aliases resolve to the same workspace during recovery');
 
     persisted.platform.name = 'TransportX Traffic Agent';
     fs.writeFileSync(saved, JSON.stringify(persisted));

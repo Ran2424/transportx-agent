@@ -21,6 +21,7 @@
 
 ### Added
 
+- Tool/插件 P3：Spatial 1.4.0 在首次计算前由 Host 签发并保存 operationId，绑定 Pi 持久历史 Owner、规范化参数、接口语义及输入哈希；同操作重放复用原成果，不同请求冲突。新增 `tau_spatial_execution` 查询及请求取消，沿用原 Job/PythonRunner；Host 重启后核验 manifest/输出，确认提交则返回原成果，不能确认则保持未知并禁止自动重算。Citation 继续用领域 Registry 处理重复和批量提交，不增加通用持久 Job。
 - Tool/插件 P2：Spatial 1.3.0 与 Citation 2.1.0 从单一 TypeBox 定义生成包内 Tool Contract，Host 执行前复核结构及接口版本；两模块随包携带薄通信实现，保留各自领域校验、结果协议和 Pi 注册。能力中心按当前任务的计划、实时 Bridge 来源/激活状态、Schema 和已确认调用提供三态核对，不自动激活工具。Web Bridge 1.0.2 在首次执行和分支切换重新观察，历史样本不冒充当前进程证明。Citation 补取消传播、有界摘要及未知提交指引；独立模块支持 ZIP 更新后的实际调用。
 - Tool/插件 P0 增加模块代码信任入口：Electron 原生确认经私有 IPC 返回 Host，绑定具体包/版本/入口/依赖；原始安装 RPC 的布尔参数及存储的来源标签不能授权。目录、ZIP、启用和历史启动共用核对，Pi 仅加载计划入口，拒绝未授权自动发现/reload；不承诺 OS 隔离。拒绝更新保留旧版本，卸载撤销接受记录。增加生产 Host + 真实 Pi 的错误、取消、历史落盘与信任探针，以及 Spatial 持久 Owner 的路径/header/cwd 校验器；持久执行查询仍待 P3。
 - 新增 [TransportX Traffic Lab 交通仿真与优化能力升级 PLAN](<交通仿真与优化能力升级 PLAN.md>)：明确可安装 Module、GIS/SUMO/OR-Tools 网络适配、受管 TraCI Worker、接驳车辆优化与实验对比的功能范围、P0–P5 验收和双平台运行时前置条件；仅形成规划，尚未实现或验证仿真闭环。

@@ -9,7 +9,8 @@ import { performance } from 'node:perf_hooks';
 
 const appRoot = path.resolve(process.env.TRANSPORTX_SMOKE_APP_ROOT || '.');
 const baseline = process.env.TRANSPORTX_SMOKE_BASELINE === '1';
-const citationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'citation';
+const recoveryPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'recovery';
+const citationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'citation' || recoveryPhase;
 const spatialPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'spatial' || citationPhase;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-tool-host-'));
 const source = path.join(root, 'probe');
@@ -66,6 +67,7 @@ const provider = http.createServer(async (req, res) => {
   }
   const tool = last.role !== 'user' ? null : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
     ? { name: 'tau_spatial_analyze', arguments: input.slice(input.indexOf(':') + 1) }
+    : spatialPhase && input.startsWith('spatial-status:') ? { name: 'tau_spatial_execution', arguments: input.slice('spatial-status:'.length) }
     : citationPhase && input.startsWith('citation:') ? { name: 'tau_resolve_citation', arguments: input.slice('citation:'.length) }
       : spatialPhase && input.startsWith('traffic:') ? { name: 'traffic_peak_hour', arguments: input.slice('traffic:'.length) }
       : { name: 'tau_p0_probe', arguments: JSON.stringify({ mode: input }) };
@@ -91,18 +93,46 @@ https.request = (options, ...rest) => options.hostname === 'citation.fixture.tes
   ? http.request({ hostname: '127.0.0.1', port: ${provider.address().port}, path: options.path, method: options.method, headers: options.headers, signal: options.signal }, ...rest)
   : request(options, ...rest);
 `);
+const recoveryPreload = path.join(root, 'spatial-crash-fixture.mjs');
+if (recoveryPhase) fs.writeFileSync(recoveryPreload, `
+import fs from 'node:fs'; import { createRequire } from 'node:module';
+const child = createRequire(import.meta.url)('node:child_process');
+const spawn = child.spawn, rename = fs.renameSync, write = fs.writeFileSync;
+const phaseFile = ${JSON.stringify(path.join(root, 'fault-phase'))}, countFile = ${JSON.stringify(path.join(root, 'python-dispatch-count'))};
+const phase = () => fs.existsSync(phaseFile) ? fs.readFileSync(phaseFile, 'utf8') : '';
+child.spawn = (...args) => {
+ const processChild = spawn(...args);
+ if (args[1]?.some(value => String(value).endsWith('/spatial_analysis.py'))) {
+  write(countFile, String(Number(fs.existsSync(countFile) ? fs.readFileSync(countFile, 'utf8') : '0') + 1));
+  write(${JSON.stringify(path.join(root, 'domain-child-pid'))}, String(processChild.pid));
+  if (phase() === 'during_execution') setTimeout(() => process.kill(process.pid, 'SIGKILL'), 50);
+ }
+ return processChild;
+};
+fs.renameSync = (source, target) => {
+ const manifest = String(target).includes('spatial-results') && String(target).endsWith('/manifest.json');
+ if (manifest && phase() === 'before_commit') process.kill(process.pid, 'SIGKILL');
+ const value = rename(source, target);
+ if (manifest && phase() === 'after_commit') process.kill(process.pid, 'SIGKILL');
+ return value;
+};
+`);
 const hostExecutable = process.env.TRANSPORTX_SMOKE_HOST_EXECUTABLE;
-const child = spawn(hostExecutable || process.execPath, [...(citationPhase ? ['--import', preload] : []), path.join(appRoot, 'bin/tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
+function launchHost() {
+const current = spawn(hostExecutable || process.execPath, [...(citationPhase ? ['--import', preload] : []), ...(recoveryPhase ? ['--import', recoveryPreload] : []), path.join(appRoot, 'bin/tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
   cwd: fs.statSync(appRoot).isDirectory() ? appRoot : path.dirname(appRoot), env: { ...process.env, ...(hostExecutable ? { ELECTRON_RUN_AS_NODE: '1' } : {}), TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER_DATA_DIR: root, PI_CODING_AGENT_DIR: root, PI_CODING_AGENT_SESSION_DIR: path.join(root, 'sessions'), TAU_PI_ENTRYPOINT: path.join(appRoot, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 });
-child.stdout.on('data', (chunk) => { stdout += chunk; });
-child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-8000); });
-child.on('message', (message) => {
+current.stdout.on('data', (chunk) => { stdout += chunk; });
+current.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-8000); });
+current.on('message', (message) => {
   if (message.type !== 'transportx-module-trust-request') return;
   trustDecisions++;
   assert.ok(message.request.id === 'local.p0-probe' || spatialPhase && message.request.id === 'local.traffic-peak');
-  child.send({ type: 'transportx-module-trust-response', id: message.id, accepted: accept });
+  current.send({ type: 'transportx-module-trust-response', id: message.id, accepted: accept });
 });
+return current;
+}
+let child = launchHost();
 async function until(check, label, timeout = 20000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -122,6 +152,16 @@ try {
     const value = await response.json(); assert.equal(response.ok, true, JSON.stringify(value)); return value;
   }
   const rpc = (body) => json('/api/rpc', body);
+  async function restartHost() {
+    const previous = child;
+    if (previous.exitCode === null && previous.signalCode === null) {
+      const exited = new Promise((resolve) => previous.once('exit', resolve)); previous.kill('SIGKILL'); await exited;
+    }
+    stdout = ''; stderr = ''; child = launchHost();
+    const ready = await until(() => stdout.split('\n').map((line) => { try { return JSON.parse(line); } catch { return null; } }).find((value) => value?.type === 'transportx-agent-host-ready'), 'restarted production Host');
+    endpoint = `http://127.0.0.1:${ready.port}`;
+    return endpoint;
+  }
   if (!baseline) {
     assert.equal((await rpc({ type: 'install_module', sourcePath: source, trusted: true })).success, false);
     assert.equal(fs.existsSync(marker), false, 'rejected code is neither imported nor executed');
@@ -193,9 +233,10 @@ try {
   assert.match(persisted, /p0_expected_failure/); assert.match(persisted, /p0_ok/);
   const spatial = spatialPhase ? await (await import('./harness/spatial-host-smoke.mjs')).spatialHostSmoke({ root, endpoint, json, rpc, until, appRoot, providerInputs }) : undefined;
   const citation = citationPhase ? await (await import('./harness/citation-host-smoke.mjs')).citationHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
-  console.log(JSON.stringify({ phase: baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, spatial, citation, harnessRssBytes: process.memoryUsage().rss }, null, 2));
+  const recovery = recoveryPhase ? await (await import('./harness/spatial-recovery-smoke.mjs')).spatialRecoverySmoke({ root, json, rpc, until, restartHost, endpoint: () => endpoint }) : undefined;
+  console.log(JSON.stringify({ phase: baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, spatial, citation, recovery, harnessRssBytes: process.memoryUsage().rss }, null, 2));
 } finally {
-  if (child.exitCode === null) {
+  if (child.exitCode === null && child.signalCode === null) {
     const closed = new Promise((resolve) => child.once('exit', resolve)); child.kill('SIGTERM');
     const timer = setTimeout(() => child.kill('SIGKILL'), 6000);
     await closed; clearTimeout(timer);

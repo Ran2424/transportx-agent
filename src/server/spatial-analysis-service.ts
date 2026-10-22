@@ -10,6 +10,7 @@ import { sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 import { relativePosixPath } from './util/path.js';
 import { writeJsonAtomic } from './util/json-storage.js';
+import { canonicalToolSchema } from '../contracts/tool-interface.js';
 
 const MAX_INPUT_BYTES = 100 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
@@ -52,17 +53,11 @@ export class SpatialAnalysisService {
     this.runner = new PythonRunner(executable);
   }
 
-  async analyze(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal): Promise<SpatialAnalysisResultV1> {
+  prepare(session: Pick<PiRpcSession, 'cwd'>, body: JsonRecord) {
     const operation = requiredString(body, 'operation', 40);
     if (operation !== 'buffer' && operation !== 'nearest' && operation !== 'spatial_join') throw new Error('Unsupported spatial operation');
-    const analysisId = `spatial_${Date.now().toString(36)}_${crypto.randomBytes(5).toString('hex')}`;
-    const resultRelativePath = `analysis/spatial/${analysisId}/result.geojson`;
-    const manifestRelativePath = `.tau/spatial-results/${analysisId}/manifest.json`;
-    const resultPath = path.join(session.cwd, resultRelativePath);
-    const manifestPath = path.join(session.cwd, manifestRelativePath);
     const inputs: JsonRecord[] = [];
     const parameters: JsonRecord = { repairInvalid: body.repairInvalid === true };
-    if (signal?.aborted) throw Object.assign(new Error('Analysis cancelled before execution'), { code: 'spatial_cancelled', phase: 'validation', commit: 'not_started' });
     try {
       if (operation === 'buffer') {
         const input = safeInput(session.cwd, requiredString(body, 'inputPath'));
@@ -97,6 +92,18 @@ export class SpatialAnalysisService {
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: 'spatial_input_invalid', phase: 'validation', commit: 'not_started' });
     }
 
+    return { operation, inputs, parameters };
+  }
+
+  async analyze(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal, analysisId = `spatial_${Date.now().toString(36)}_${crypto.randomBytes(5).toString('hex')}`, expected?: { operation: string; inputs: JsonRecord[]; parameters: JsonRecord }): Promise<SpatialAnalysisResultV1> {
+    if (signal?.aborted) throw Object.assign(new Error('Analysis cancelled before execution'), { code: 'spatial_cancelled', phase: 'validation', commit: 'not_started' });
+    const { operation, inputs, parameters } = this.prepare(session, body);
+    if (expected && canonicalToolSchema({ operation, inputs: inputs.map(({ absolutePath: _absolutePath, ...input }) => input), parameters }, 'data') !== canonicalToolSchema(expected, 'data')) throw Object.assign(new Error('Spatial input changed before dispatch'), { code: 'spatial_operation_conflict', phase: 'validation', commit: 'not_started', status: 409 });
+    const resultRelativePath = `analysis/spatial/${analysisId}/result.geojson`;
+    const manifestRelativePath = `.tau/spatial-results/${analysisId}/manifest.json`;
+    const resultPath = path.join(session.cwd, resultRelativePath);
+    const manifestPath = path.join(session.cwd, manifestRelativePath);
+
     const requestPath = path.join(path.dirname(manifestPath), 'request.json');
     let phase = 'execution';
     let preserve = false;
@@ -119,6 +126,7 @@ export class SpatialAnalysisService {
       const parsed = parseSpatialAnalysisResultStructured(JSON.parse(stdout));
       if (!parsed.ok) throw new Error(parsed.diagnostics.map(diagnosticMessage).join('; '));
       const result = parsed.value;
+      if (inputs.some((input) => sha256File(String(input.absolutePath)) !== input.sha256)) throw new Error('Spatial input changed during execution; no result was committed');
       if (result.analysisId !== analysisId || result.output.relativePath !== resultRelativePath) throw new Error('Spatial runner returned an unexpected output path');
       if (!fs.existsSync(resultPath) || fs.statSync(resultPath).size > MAX_INPUT_BYTES || sha256File(resultPath) !== result.output.sha256) throw new Error('Spatial output failed size or checksum validation');
       const output = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as { type?: unknown; features?: unknown };

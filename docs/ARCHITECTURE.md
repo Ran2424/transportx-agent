@@ -503,4 +503,6 @@ Spatial / Citation 的模型输入统一编写于 `src/contracts/tool-definition
 
 `platform.getOverview(sessionId?)` 在产品读取点核对两试点的精确计划、当前 Pi Bridge 观察、来源、active、接口及已成功执行的 Host 结果，返回可用/不可用/尚未验证与原因、代次和时间。没有会话、仅历史观察或缺少 Host 成功证明时保持尚未验证；Schema 指纹差异提示漂移，不直接证明语义不兼容。该诊断不是第二份 Registry、权限判定或永久可用性承诺。Bridge 在首次 agent_start 和分支切换发布新观察，不向每轮重复追加相同完整 Schema。
 
-分阶段证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)、[P1 记录](<Tool 与插件架构优化 P1 记录.md>)、[P2 记录](<Tool 与插件架构优化 P2 记录.md>)。持久执行确认与自主制作的剩余门槛仍按 [PLAN](<Tool 与插件架构优化 PLAN.md>) 验收。
+Spatial L3 的执行确认保存于用户数据根 `executions/spatial/<owner-hash>/`：Owner 来自受管 Pi JSONL 的真实路径、header.id 和工作目录校验；活动会话 ID 与单独的 cwd 不构成归属。Host 在派发前保存随机 operationId 及请求/资源版本关联；同操作重复只读原确认，未知不派发第二次。`tau_spatial_execution` 可查询或请求取消，仍由既有 Job/PythonRunner 执行，取消请求不表示已经停止。重启后按原请求、manifest、输出哈希与 GeoJSON 核验成功；无 manifest 或无法确认时保持未知。Pi-local/L1 没有这些记录，Citation L2 沿用原子 Registry 和内容寻址对象。
+
+分阶段证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)、[P1 记录](<Tool 与插件架构优化 P1 记录.md>)、[P2 记录](<Tool 与插件架构优化 P2 记录.md>)、[P3 记录](<Tool 与插件架构优化 P3 记录.md>)。自主制作的剩余门槛仍按 [PLAN](<Tool 与插件架构优化 PLAN.md>) 验收。

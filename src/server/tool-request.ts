@@ -6,22 +6,25 @@ import type { ToolInterfaceContract } from '../contracts/tool-interface.js';
 // Fixed, platform-reviewed operations use platform-owned definitions. Installed
 // package declarations cannot weaken an operation's final input validation.
 const inputContracts = new Map<string, ToolInterfaceContract>();
-export function approvedHostToolContract(moduleId: string) {
-  let contract = inputContracts.get(moduleId);
+export function approvedHostToolContract(moduleId: string, toolId?: 'spatial.execution') {
+  const key = `${moduleId}:${toolId || 'primary'}`;
+  let contract = inputContracts.get(key);
   if (!contract) {
     const directory = moduleId === 'com.transportx.citation' ? 'citation' : 'spatial-analysis';
-    contract = readPilotToolContract(path.join(APP_PATHS.appRoot, 'modules', 'capabilities', directory), moduleId)!;
+    contract = readPilotToolContract(path.join(APP_PATHS.appRoot, 'modules', 'capabilities', directory), moduleId, toolId)!;
     if (!contract) throw new Error('No approved Host Tool Contract');
-    inputContracts.set(moduleId, contract);
+    inputContracts.set(key, contract);
   }
   return contract;
 }
 
-export async function validatePilotToolRequest(moduleId: string, body: Record<string, unknown>) {
-  const contract = approvedHostToolContract(moduleId);
-  const { sessionId: _sessionId, token: _token, toolCallId, contractVersion, ...input } = body;
+export async function validatePilotToolRequest(moduleId: string, body: Record<string, unknown>, toolId?: 'spatial.execution') {
+  const contract = approvedHostToolContract(moduleId, toolId);
+  const { sessionId: _sessionId, token: _token, toolCallId, contractVersion, operationId, ...input } = body;
+  if (toolId === 'spatial.execution' && operationId !== undefined) input.operationId = operationId;
   const fail = (message: string, code = 'tool_input_invalid', status = 400) => Object.assign(new Error(message), { code, status, phase: 'validation', commit: 'not_started' });
   if (toolCallId !== undefined && (typeof toolCallId !== 'string' || !toolCallId || toolCallId.length > 200)) throw fail('Invalid toolCallId');
+  if (operationId !== undefined && (moduleId !== 'com.transportx.spatial-analysis' || typeof operationId !== 'string' || !/^spatial_[a-f0-9]{32}$/.test(operationId))) throw fail('Invalid operationId');
   if (contractVersion !== undefined && (typeof contractVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(contractVersion) || contractVersion.split('.')[0] !== contract.contractVersion.split('.')[0])) throw fail('Tool Contract version is incompatible with this Host. Reopen the task with a compatible Module.', 'tool_contract_incompatible', 409);
   const { Check, Errors } = await import('typebox/value');
   // The definition is generated from TypeBox; the JSON parser intentionally
