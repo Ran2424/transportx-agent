@@ -33,6 +33,7 @@
     "src",
     "dist/web",
     "scripts/postbuild-layout.mjs",
+    "scripts/patch-pi-resource-discovery.mjs",
     "desktop/scripts/platform-profile.mjs",
     "vite.config.ts",
     "tsconfig.json",
@@ -42,8 +43,9 @@
     "tsconfig.extensions.json"
   ],
   "scripts": {
+    "postinstall": "node scripts/patch-pi-resource-discovery.mjs",
     "build": "npm run build:server && npm run build:web && npm run build:react && npm run build:desktop",
-    "build:server": "tsc -p tsconfig.server.json && node scripts/postbuild-layout.mjs server",
+    "build:server": "node scripts/patch-pi-resource-discovery.mjs && tsc -p tsconfig.server.json && node scripts/postbuild-layout.mjs server",
     "build:web": "tsc -p tsconfig.public.json && node scripts/postbuild-layout.mjs public",
     "build:react": "vite build",
     "build:desktop": "tsc -p tsconfig.desktop.json",

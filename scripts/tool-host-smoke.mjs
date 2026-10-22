@@ -116,8 +116,20 @@ try {
   }
   const session = sessions.at(-1);
   const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  if (!baseline) {
+    const settingsPath = path.join(root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const hook = path.join(root, 'untrusted-package-hook.cjs');
+    fs.writeFileSync(hook, `require('node:fs').writeFileSync(${JSON.stringify(path.join(root, 'package-hook-ran'))}, 'unsafe');`);
+    fs.writeFileSync(settingsPath, JSON.stringify({ ...settings, packages: ['npm:@transportx-p0/missing-fixture@0.0.0'], npmCommand: [process.execPath, hook] }));
+  }
   assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message: '/p0_reload' })).success, true);
   await until(() => fs.existsSync(reloaded), 'Pi resource reload');
+  if (!baseline) {
+    const extra = await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'P0 package-hook denial' });
+    assert.equal((await rpc({ type: 'get_state', sessionId: extra.session.id })).success, true);
+    await fetch(`${endpoint}/api/live-sessions/${extra.session.id}`, { method: 'DELETE' });
+  }
   for (const mode of ['fail', 'cancel', 'success']) {
     fs.rmSync(started, { force: true });
     assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message: mode })).success, true);
@@ -138,6 +150,7 @@ try {
   assert.ok(results.some((result) => !result.isError && JSON.stringify(result).includes('p0_ok')));
   if (!baseline) {
     assert.equal(fs.existsSync(path.join(root, 'auto-loaded')), false, 'global/project auto-discovery stays disabled across reload');
+    assert.equal(fs.existsSync(path.join(root, 'package-hook-ran')), false, 'resource reload must not install settings packages or run npm hooks');
     assert.equal(trustDecisions, 2, 'accepted package scope is reused on every session startup');
   }
   const persisted = fs.readFileSync(final.sessionFile, 'utf8');

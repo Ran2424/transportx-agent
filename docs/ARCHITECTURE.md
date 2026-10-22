@@ -308,7 +308,7 @@ Module 是统一安装与版本冻结单元，manifest 的 `type` 分为 `domain
 
 普通模块的安装、启用及每次 Pi 启动均经过 `ModuleTrustStore`：Host 经私有父进程 IPC 请求 Electron 原生确认，保存具体包规范目录、ID、版本、入口和依赖的接受记录。RPC 的 `trusted:true`、Module 的 `origin` 或熟悉的内置 ID 不授予信任。随应用发布的内置包按平台配置的实际目录识别例外；会话计划中的入口还须由当前包声明。首次运行旧包或非 UI 注入包也必须核对；没有桌面确认通道且没有既有接受记录时拒绝加载。
 
-用户接受该版本按本机权限运行，包含包内编辑；这不锁定全部代码哈希，也不提供 OS 沙箱。新增入口、依赖、版本或更换目录须重新确认，卸载撤销对应记录。拒绝安装/升级仅清理本次复制的版本，保留旧版本。Pi 使用 `--no-extensions --no-skills --no-prompt-templates --no-approve`，由受控计划显式加载入口，禁止通过全局/项目自动发现或 reload 绕过确认；Pi 原生工具、Registry、Agent Loop 和历史格式不变。
+用户接受该版本按本机权限运行，包含包内编辑；这不锁定全部代码哈希，也不提供 OS 沙箱。新增入口、依赖、版本或更换目录须重新确认，卸载撤销对应记录。拒绝安装/升级仅清理本次复制的版本，保留旧版本。Pi 使用 `--offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-approve`，由受控计划显式加载入口，禁止通过全局/项目自动发现或 reload 绕过确认。Pi 0.80.10 在 offline 模式仍可能为全局 npm 路径查询执行自定义 `npmCommand`，因此安装依赖和 server 构建会运行版本固定的 `patch-pi-resource-discovery.mjs`：四类自动资源均禁用时，两个加载入口直接跳过包发现，只解析显式资源。源码不匹配则构建失败；升级 Pi 必须重新审计。此补丁不改变 Registry、Agent Loop、RPC 或工具调度，模型请求仍可联网；适用于受控发行/开发依赖，不将任意外部 Pi 命令视为等价实现。
 
 箭头统一表示 **“依赖”**，按仓库 `manifest.json` 绘制；图中使用模块短名，完整 ID 通常为 `com.transportx.<短名>`，报告模板为 `com.transportx.traffic.report-template`。
 

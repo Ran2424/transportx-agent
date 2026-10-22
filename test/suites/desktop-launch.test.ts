@@ -241,6 +241,11 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
     {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-session-pi-launch-'));
       t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const { assertPiResourceBoundary } = require('../../bin/pi-runtime.js');
+      const unpatched = path.join(root, 'dist');
+      fs.mkdirSync(path.join(unpatched, 'core'), { recursive: true });
+      fs.writeFileSync(path.join(unpatched, 'core/resource-loader.js'), '// Unpatched Pi fixture');
+      assert.throws(() => assertPiResourceBoundary([path.join(unpatched, 'cli.js')]), /boundary patch is missing/);
       const extension = path.join(root, 'extension.ts');
       const skill = path.join(root, 'SKILL.md');
       const prompt = path.join(root, 'prompt.md');

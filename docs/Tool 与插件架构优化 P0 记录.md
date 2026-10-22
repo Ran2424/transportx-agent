@@ -100,7 +100,7 @@ rtk proxy node scripts/tool-p0-probe.mjs
 
 静态 Installer/Registry 不导入 Extension；安装后、启用前请求接受；拒绝清理本次版本并保留全部旧版本。`desktop-launch.test.ts` 通过真实 Host 原始 RPC 验证目录/ZIP 否定、伪造 `trusted:true` 无效和更新回滚；测试父进程仅授权测试自己创建的临时包。`module-system.test.ts` 验证来源标签伪造、入口越界、声明变化重新接受与编辑兼容。此类测试模拟原生决定通道，不冒充真实人点击截图验收。
 
-`scripts/tool-host-smoke.mjs`：生产 Installer/Assembly/Host + Pi 0.80.10 + 固定 Provider。五个新会话实际执行独立探针包；拒绝时标记文件不存在，安装阶段不执行代码；接受范围被复用。实际错误进入 `isError` 及 JSONL；实际取消触发 execute signal。首工具读取的 header 已落盘且 cwd 与当前任务相符。全局/项目未授权标记 Extension 在启动和实际 `ctx.reload()` 后均未执行。此处仅为边界探针，用户业务脚本制作闭环仍按 P1/P4 单独验收。
+`scripts/tool-host-smoke.mjs`：生产 Installer/Assembly/Host + Pi 0.80.10 + 固定 Provider。五个新会话实际执行独立探针包；拒绝时标记文件不存在，安装阶段不执行代码；接受范围被复用。实际错误进入 `isError` 及 JSONL；实际取消触发 execute signal。首工具读取的 header 已落盘且 cwd 与当前任务相符。全局/项目未授权标记 Extension 在启动和实际 `ctx.reload()` 后均未执行。新增缺失 npm 包/恶意 `npmCommand` 否定用例曾发现 offline 仍执行全局 npm 路径查询；已补版本固定的依赖修正：关闭全部自动资源时跳过包发现（两个调用点），安装依赖与构建均应用，版本/源码不匹配失败。生产探针覆盖 reload 和随后新会话，确认命令标记未生成。此处仅为边界探针，用户业务脚本制作闭环仍按 P1/P4 单独验收。
 
 `spatialOwner` 是后续 L3 的身份校验器，不是 Invocation 存储：仅接收 Host 会话文件，验证受管路径/文件类型、有界 header、非空 ID、canonical cwd 与计划 workspace；测试验证同文件分支/不同 live ID 保持归属、复制文件归属不同、越界和跨 cwd/计划被拒绝。原执行的查询/去重授权将在 P3 接入后测试，不能据此声称已经恢复旧作业。
 
@@ -110,12 +110,12 @@ Spatial 提交边界仍是：Python 输出 → Host 结构/路径/大小/哈希/
 
 | 样本 | 改造前 main (ms) | P0 (ms) |
 |---|---:|---:|
-| 1 | 663 | 470 |
-| 2 | 434 | 450 |
-| 3 | 436 | 426 |
-| 4 | 464 | 422 |
-| 5 | 441 | 412 |
-| 中位数 | 441 | 426 |
+| 1 | 663 | 451 |
+| 2 | 434 | 429 |
+| 3 | 436 | 425 |
+| 4 | 464 | 425 |
+| 5 | 441 | 431 |
+| 中位数 | 441 | 429 |
 
 后续同条件启动预算：单样本 ≤1500 ms，中位数较基线增加 ≤250 ms；超出须定位/复测后说明。五个样本不足以声明稳定 p95；脚本的 harness RSS 约 100 MB，仅为探针进程，不是 Host/Python 峰值。P1 测 Spatial 输入/输出、摘要和取消资源清理，P2 对共性提取前后再比较；未测的大结果 RSS/跨重启恢复耗时不列为通过。
 

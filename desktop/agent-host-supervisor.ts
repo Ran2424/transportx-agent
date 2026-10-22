@@ -163,7 +163,10 @@ export class AgentHostSupervisor {
       if (trust?.type === 'transportx-module-trust-request' && trust.id) {
         const request = trust.request;
         if (!request || typeof request.id !== 'string' || typeof request.version !== 'string' || typeof request.name !== 'string' || typeof request.packageRoot !== 'string' || !Array.isArray(request.entrypoints) || !Array.isArray(request.dependencies)) return;
-        const respond = (accepted: boolean) => sendMessage(child, { type: 'transportx-module-trust-response', id: trust.id, accepted });
+        const respond = (accepted: boolean) => {
+          if (this.child !== child || this.stopping) return;
+          try { sendMessage(child, { type: 'transportx-module-trust-response', id: trust.id, accepted }); } catch {}
+        };
         if (!this.options.confirmModuleTrust) respond(false);
         else this.options.confirmModuleTrust(request).then(respond, () => respond(false));
         return;
