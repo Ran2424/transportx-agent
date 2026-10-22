@@ -64,6 +64,36 @@ try {
   const healthUrl = `${new URL(window.url()).origin}/api/health`;
   const health = await (await fetch(healthUrl)).json();
   if (health.product !== 'TransportX Agent' || health.protocolVersion !== 1) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
+  // Exercise the production Host -> Supervisor -> Electron dialog channel. Only
+  // this test-owned fixture is accepted; the native decision itself is stubbed.
+  const trustSource = path.join(temporaryHome, 'trust-probe');
+  const trustMarker = path.join(temporaryHome, 'trust-probe-executed');
+  fs.mkdirSync(trustSource);
+  fs.writeFileSync(path.join(trustSource, 'manifest.json'), JSON.stringify({ manifestVersion: 2, id: 'local.desktop-trust-probe', name: 'Desktop trust fixture', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { piExtensions: ['index.js'] } }));
+  fs.writeFileSync(path.join(trustSource, 'index.js'), `require('node:fs').writeFileSync(${JSON.stringify(trustMarker)}, 'executed');`);
+  await app.evaluate(({ dialog }) => {
+    globalThis.transportxTrustDialogOriginal = dialog.showMessageBox;
+    globalThis.transportxTrustDecision = 0;
+    globalThis.transportxTrustDialogs = [];
+    dialog.showMessageBox = async (options) => {
+      globalThis.transportxTrustDialogs.push(options);
+      return { response: globalThis.transportxTrustDecision, checkboxChecked: false };
+    };
+  });
+  const moduleRpc = async (body) => (await (await fetch(new URL('/api/rpc', healthUrl), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json());
+  try {
+    const denied = await moduleRpc({ type: 'install_module', sourcePath: trustSource, trusted: true });
+    if (denied.success !== false || fs.existsSync(trustMarker)) throw new Error('Native trust rejection did not block the fixture');
+    await app.evaluate(() => { globalThis.transportxTrustDecision = 1; });
+    const accepted = await moduleRpc({ type: 'install_module', sourcePath: trustSource });
+    if (!accepted.success || fs.existsSync(trustMarker)) throw new Error('Static installation executed the fixture or ignored native acceptance');
+    const dialogs = await app.evaluate(() => globalThis.transportxTrustDialogs);
+    if (dialogs.length !== 2 || dialogs.some((item) => item.defaultId !== 0 || item.cancelId !== 0 || !item.detail.includes('index.js') || !item.message.includes('local.desktop-trust-probe@1.0.0'))) throw new Error('Native trust disclosure or default choice is incorrect');
+    if (!(await moduleRpc({ type: 'uninstall_module', moduleId: 'local.desktop-trust-probe' })).success) throw new Error('Could not remove the test-owned module');
+    console.log('[desktop-smoke] native module trust IPC, rejection, acceptance and static install OK (test-owned decision stub)');
+  } finally {
+    await app.evaluate(({ dialog }) => { dialog.showMessageBox = globalThis.transportxTrustDialogOriginal; });
+  }
   // Phase 0 playback spike: the packaged renderer must accept the Video Input Spec codec.
   const codecSupport = await window.evaluate(() => {
     const probe = document.createElement('video');

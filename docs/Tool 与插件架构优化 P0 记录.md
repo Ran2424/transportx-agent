@@ -120,3 +120,5 @@ Spatial 提交边界仍是：Python 输出 → Host 结构/路径/大小/哈希/
 后续同条件启动预算：单样本 ≤1500 ms，中位数较基线增加 ≤250 ms；超出须定位/复测后说明。五个样本不足以声明稳定 p95；脚本的 harness RSS 约 100 MB，仅为探针进程，不是 Host/Python 峰值。P1 测 Spatial 输入/输出、摘要和取消资源清理，P2 对共性提取前后再比较；未测的大结果 RSS/跨重启恢复耗时不列为通过。
 
 本机检查：全量 typecheck、40/40 测试、Owner/安装定向复验、真实 Pi Host 探针、Electron 桌面/PDF smoke。测试预算保持 40；未修改 Module 内容，不提升模块或平台版本。正式签名包、Windows 本机、P3 故障恢复及 P4 三个真实模型制作案例均未验收。
+
+补充回归：Electron smoke 已贯穿生产 Host → Utility Process Supervisor → 主进程原生对话框调用，断言来源/入口/版本、默认取消、拒绝/接受和安装不执行代码；测试仅替换对话框返回值，不声称真人点击验收。Web harness 原先没有授权的固定模块被新门禁拒绝，已让 harness 显式接受自己创建的临时 fixture；不关闭生产启动核对。基线中 `--version` 和 HTML export 在 Pi 创建资源加载器之前返回，未发现这两条入口加载 Extension。

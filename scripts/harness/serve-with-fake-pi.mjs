@@ -55,9 +55,11 @@ process.env.TAU_HOST = '127.0.0.1';
 process.env.PI_OFFLINE = '1';
 
 // Exercise enabled, disabled and multiple installed versions without user data.
+const fixtureModuleRoots = [];
 for (const [id, versions] of [['smoke.alpha', ['1.0.0', '2.0.0']], ['smoke.beta', ['1.0.0']], ['smoke.disabled', ['1.0.0']]]) {
   for (const version of versions) {
     const packageRoot = path.join(agentDir, 'modules', id, version);
+    fixtureModuleRoots.push(packageRoot);
     fs.mkdirSync(packageRoot, { recursive: true });
     fs.writeFileSync(path.join(packageRoot, 'manifest.json'), JSON.stringify({
       manifestVersion: 2, id, name: id, version, type: 'module',
@@ -65,6 +67,9 @@ for (const [id, versions] of [['smoke.alpha', ['1.0.0', '2.0.0']], ['smoke.beta'
     }));
   }
 }
+// This harness owns these inert fixtures; production trust checks stay enabled.
+const { ModuleTrustStore } = require(path.join(REPO_ROOT, 'bin/module-trust.js'));
+await new ModuleTrustStore(path.join(agentDir, 'settings/module-trust.json'), async () => true).ensure(fixtureModuleRoots);
 fs.writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify({ tau: { enabledModuleIds: ['smoke.alpha', 'smoke.beta'] } }));
 
 // ---- 预置会话文件：resume 基线（straight fixture，cwd 重写进临时任务目录） ----
