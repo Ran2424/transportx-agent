@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 import { APP_PATHS, PI_COMMAND_ARGS, PI_AGENT_DIR, PYTHON_COMMAND, SESSIONS_DIR } from './config.js';
-import { piProcessEnv } from './pi-runtime.js';
+import { assertPiResourceBoundary, piProcessEnv } from './pi-runtime.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import type { SessionService } from './session-service.js';
@@ -26,7 +26,8 @@ function assetDirectoryEnvironment(plan: ResolvedSessionPlan, kind: 'data' | 'kn
 
 export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
   const { resolvedSessionPlan: plan } = input;
-  const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
+  assertPiResourceBoundary(PI_COMMAND_ARGS);
+  const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve', '--system-prompt', loadSystemPrompt()];
   for (const extensionPath of projectAdapter.piExtensions(APP_PATHS.appRoot)) {
     if (!fs.existsSync(extensionPath)) throw new Error(`Project extension not found: ${extensionPath}`);
     args.push('--extension', extensionPath);

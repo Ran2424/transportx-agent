@@ -1,11 +1,14 @@
 import type { ModuleInstaller } from '../module-installer.js';
 import type { ModuleRegistry } from '../module-registry.js';
 import type { RpcHandlerRegistry, RpcReply } from '../rpc-handlers.js';
+import fs from 'node:fs';
 
 type ModuleRpcDependencies = {
   desktopMode: boolean;
   installer: ModuleInstaller;
   registry: ModuleRegistry;
+  authorizeModules(packageRoots: string[]): Promise<void>;
+  forgetModules(packageRoots: string[]): void;
   reloadModules(): void;
   setModuleEnabled(moduleId: string, enabled: boolean): void;
   hasActiveModule(moduleId: string): boolean;
@@ -19,18 +22,19 @@ export function createModuleRpcHandlers(deps: ModuleRpcDependencies): RpcHandler
   const unavailable = (reply: RpcReply) => deps.desktopMode ? null : reply.failure(desktopOnlyMessage);
   return {
     install_module: {
-      handle: (command, reply) => {
+      handle: async (command, reply) => {
         const blocked = unavailable(reply); if (blocked) return blocked;
         let installed: { id: string; name: string; version: string; path: string } | null = null;
         try {
           installed = deps.installer.install(String(command.sourcePath || ''));
+          await deps.authorizeModules([installed.path]);
           deps.reloadModules();
           if (deps.registry.get(installed.id)?.origin !== 'installed') throw new Error(`Module id conflicts with an existing module: ${installed.id}`);
           deps.setModuleEnabled(installed.id, true);
           return reply.success({ installed, overview: deps.overview() });
         } catch (error) {
           if (installed) {
-            try { deps.installer.uninstall(installed.id); } catch {}
+            try { fs.rmSync(installed.path, { recursive: true, force: true }); } catch {}
             try { deps.reloadModules(); } catch {}
           }
           return reply.failure(deps.errorMessage(error));
@@ -54,6 +58,11 @@ export function createModuleRpcHandlers(deps: ModuleRpcDependencies): RpcHandler
             ? command.selections.filter((selection): selection is { id: string; version: string } => !!selection && typeof selection.id === 'string' && typeof selection.version === 'string')
             : [];
           const installed = await deps.installer.installArchive(String(command.importId || ''), selections);
+          try { await deps.authorizeModules(installed.map((module) => module.path)); }
+          catch (error) {
+            for (const module of installed) fs.rmSync(module.path, { recursive: true, force: true });
+            throw error;
+          }
           deps.reloadModules();
           for (const module of installed) deps.setModuleEnabled(module.id, true);
           return reply.success({ installed, overview: deps.overview() });
@@ -73,16 +82,23 @@ export function createModuleRpcHandlers(deps: ModuleRpcDependencies): RpcHandler
         try {
           const moduleId = String(command.moduleId || '');
           if (deps.hasActiveModule(moduleId)) throw new Error('Close active tasks that use this module before uninstalling it');
+          const roots = deps.installer.catalog().filter((module) => module.id === moduleId).map((module) => fs.realpathSync(module.source.packageRoot!));
           deps.installer.uninstall(moduleId, deps.registry);
+          deps.forgetModules(roots);
           deps.reloadModules();
           return reply.success({ overview: deps.overview() });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
     },
     set_module_enabled: {
-      handle: (command, reply) => {
+      handle: async (command, reply) => {
         const blocked = unavailable(reply); if (blocked) return blocked;
         try {
+          if (command.enabled === true) {
+            const module = deps.registry.get(String(command.moduleId || ''));
+            if (!module) throw new Error('Module is unavailable');
+            await deps.authorizeModules([module.packageRoot]);
+          }
           deps.setModuleEnabled(String(command.moduleId || ''), command.enabled === true);
           return reply.success({ overview: deps.overview() });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }

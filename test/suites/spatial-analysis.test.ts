@@ -20,6 +20,27 @@ test('Controlled spatial operations produce auditable results and reject CRS and
 
   function session(cwd: string) { return { cwd } as any; }
 
+  {
+    const { spatialOwner } = require('../../bin/spatial-owner.js');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-spatial-owner-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const histories = path.join(root, 'sessions'); fs.mkdirSync(histories);
+    const file = path.join(histories, 'owner.jsonl');
+    const owner = { cwd: root, sessionFile: file, resolvedSessionPlan: { workspace: root } };
+    assert.throws(() => spatialOwner(owner, histories), /ENOENT/);
+    fs.writeFileSync(file, JSON.stringify({ type: 'session', id: 'persistent_pi_id', cwd: root }) + '\n');
+    const original = spatialOwner(owner, histories);
+    assert.deepEqual(original, { historyKey: 'owner.jsonl', piSessionId: 'persistent_pi_id' });
+    assert.deepEqual(spatialOwner({ ...owner, id: 'another_live_id' }, histories), original);
+    fs.appendFileSync(file, JSON.stringify({ type: 'custom', id: 'branch-entry', parentId: null }) + '\n');
+    assert.deepEqual(spatialOwner(owner, histories), original, 'branch entries do not change owner');
+    const copied = path.join(histories, 'copy.jsonl'); fs.copyFileSync(file, copied);
+    assert.notDeepEqual(spatialOwner({ ...owner, sessionFile: copied }, histories), original, 'raw history copies have distinct owners');
+    assert.throws(() => spatialOwner({ ...owner, resolvedSessionPlan: { workspace: histories } }, histories), /mismatch/);
+    assert.throws(() => spatialOwner({ ...owner, cwd: histories }, histories), /mismatch/);
+    assert.throws(() => spatialOwner(owner, path.join(root, 'outside')), /escapes/);
+  }
+
   // spatial result contract rejects unknown schema, operations and unsafe output paths
   {
     const result = parseSpatialAnalysisResultStructured({ protocol: 'transportx-spatial-analysis', schemaVersion: 2, operation: 'route', output: { relativePath: '../outside.geojson' } });

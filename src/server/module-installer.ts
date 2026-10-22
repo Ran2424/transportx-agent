@@ -443,7 +443,6 @@ export class ModuleInstaller {
     if (fs.existsSync(target)) throw new Error(`Module version is already installed: ${manifest.id}@${manifest.version}`);
     const staging = path.join(this.modulesDir, `.install-${crypto.randomUUID()}`);
     try {
-      fs.mkdirSync(staging, { recursive: true });
       copyInstallSource(packageRoot, staging);
       const installedManifest = readManifest(path.join(staging, 'manifest.json'));
       ensureNativeRuntimePermissions(staging, installedManifest);

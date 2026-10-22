@@ -9,6 +9,35 @@ test('Module assembly and resume resolve explicit capabilities and exact install
   const { AssetResolver } = require('../../bin/asset-resolver.js');
   const { SessionAssembler, SessionPlanError, planExtensions, planSkills } = require('../../bin/session-assembly.js');
   const ROOT = process.cwd();
+  // Trust is established outside Pi; stored origin labels and RPC booleans are not evidence.
+  {
+    const { ModuleTrustStore, ensureSessionModuleTrust } = require('../../bin/module-trust.js');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-trust-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const manifest = { manifestVersion: 2, id: 'local.trust-probe', name: 'Trust probe', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { piExtensions: ['extension.ts'] } };
+    fs.writeFileSync(path.join(root, 'manifest.json'), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(root, 'extension.ts'), 'throw new Error("Static inspection must never execute this");');
+    const file = path.join(root, 'trust.json');
+    let accepted = false, decisions = 0;
+    const store = new ModuleTrustStore(file, async () => { decisions++; return accepted; });
+    const module = { id: manifest.id, version: manifest.version, origin: 'builtin', packageRoot: root, entrypoints: [{ kind: 'extension', path: path.join(root, 'extension.ts') }] };
+    const plan = { modules: [module] };
+    await assert.rejects(ensureSessionModuleTrust(plan, [], store), /trust was not accepted/);
+    assert.equal(fs.existsSync(file), false);
+    accepted = true;
+    await ensureSessionModuleTrust(plan, [], store);
+    fs.appendFileSync(path.join(root, 'extension.ts'), '\n// User edits remain permitted');
+    await ensureSessionModuleTrust(plan, [], new ModuleTrustStore(file, async () => { throw new Error('Do not prompt again'); }));
+    assert.equal(decisions, 2);
+    await assert.rejects(ensureSessionModuleTrust({ modules: [{ ...module, entrypoints: [{ kind: 'extension', path: __filename }] }] }, [], store), /Undeclared/);
+    fs.writeFileSync(path.join(root, 'manifest.json'), JSON.stringify({ ...manifest, dependencies: ['local.new-dependency'] }));
+    accepted = false;
+    await assert.rejects(ensureSessionModuleTrust(plan, [], store), /trust was not accepted/);
+    await ensureSessionModuleTrust(plan, [path.join(root, 'manifest.json')], store);
+    assert.equal(decisions, 3, 'only a platform-controlled root receives the builtin exception');
+    store.forget([root]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {});
+  }
   const MANIFESTS = [
     'modules/capabilities/web-bridge/manifest.json',
     'modules/capabilities/interaction/manifest.json',

@@ -205,7 +205,7 @@ export class PiRpcSession {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
     if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
-    const launch = this.manager.runtime.launch({
+    const launch = await this.manager.runtime.launch({
       cwd: this.cwd,
       sessionId: this.id,
       sessionFile: this.sessionFile,
@@ -609,7 +609,7 @@ export type SessionManagerDependencies = {
   command: string;
   spawn: SpawnFn;
   endpoints: Record<SessionService, string>;
-  launch(input: SessionPiLaunchInput): { args: string[]; env: NodeJS.ProcessEnv };
+  launch(input: SessionPiLaunchInput): { args: string[]; env: NodeJS.ProcessEnv } | Promise<{ args: string[]; env: NodeJS.ProcessEnv }>;
 };
 
 export class LiveSessionManager {

@@ -37,6 +37,8 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
       const handlers = createModuleRpcHandlers({
         desktopMode: false,
         installer: {},
+        async authorizeModules() { throw new Error('No trust entry outside Desktop'); },
+        forgetModules() {},
         registry: { modules: new Map(), get() { return undefined; } },
         reloadModules() { },
         setModuleEnabled() { },
