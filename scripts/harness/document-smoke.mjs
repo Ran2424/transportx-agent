@@ -30,6 +30,9 @@ export async function documentSmoke(page, browser) {
   const sourceVersion = (id, name, bytes, mimeType) => ({ sourceVersionId: id, sourceKey: `session:${name}`, title: name, acquiredAt: new Date().toISOString(), content: { kind: 'file', scope: 'session', path: name, mimeType, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), size: Buffer.byteLength(bytes) } });
   fs.writeFileSync(path.join(cwd, 'canvas-counts.csv'), '站点,数量\n上海站,12\n上海南站,24\n虹桥站,36\n');
   const sources = [sourceVersion('canvas:report', 'canvas-report.md', report, 'text/markdown'), sourceVersion('canvas:source', 'canvas-source.md', source, 'text/markdown'), sourceVersion('canvas:pdf', 'canvas-evidence.pdf', pdf, 'application/pdf'), sourceVersion('canvas:chart', 'canvas-chart.svg', fs.readFileSync(path.join(cwd, 'canvas-chart.svg')), 'image/svg+xml'), sourceVersion('canvas:counts', 'canvas-counts.csv', fs.readFileSync(path.join(cwd, 'canvas-counts.csv')), 'text/csv')];
+  sources[0].title = '2024-05-22订单清洗漏斗与运营指标分析报告：样本筛选、重复订单核验、异常数据处理及分时段统计口径说明';
+  sources[3].title = '2024-05-22五档次运营指标均值总表及图表';
+  sources[4].title = '2024-05-22_' + 'TrafficOperationsAnalysisAndOrderCleaning'.repeat(4) + '.csv';
   sources[1].metadata = { issuedAt: '2026-10-01', edition: '2026 版', standardNumber: 'TX-01' };
   const evidence = [
     { evidenceId: 'canvas:report', sourceVersionId: 'canvas:report', locator: { kind: 'source' }, contentKind: 'source-only' },
@@ -251,6 +254,43 @@ export async function documentSmoke(page, browser) {
   await present('markdown', 'clear');
   await present('pdf', 'clear');
   while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
+  await composer.fill('交付成果-长标题'); await composer.press('Enter');
+  const artifacts = page.locator('.assistant-message:not(.is-streaming)', { hasText: '长标题交付验收完成。' }).locator('.message-artifacts');
+  await artifacts.waitFor();
+  assert.equal(await artifacts.locator('button').count(), 3);
+  const originalTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  for (const mode of ['wide', 'split', 'mobile']) {
+    await page.setViewportSize({ width: mode === 'mobile' ? 390 : 1280, height: 900 });
+    if (mode === 'split') {
+      await artifacts.locator('button').first().focus(); await page.keyboard.press('Enter');
+      await reader.getByRole('heading', { name: 'Canvas 报告', exact: true }).waitFor();
+    }
+    if (mode === 'mobile') await page.getByRole('button', { name: '收起画布', exact: true }).click();
+    for (const theme of ['light', 'dark', 'sand']) {
+      await page.evaluate((value) => document.documentElement.dataset.theme = value, theme);
+      const metrics = await artifacts.locator('button').evaluateAll((nodes) => nodes.map((node) => {
+        const title = node.querySelector('strong'), copy = node.querySelector('.message-artifact-copy');
+        const action = node.querySelector('.message-artifact-action'), icon = node.querySelector('.message-artifact-icon');
+        const rect = node.getBoundingClientRect(), textRect = title.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, titleWidth: textRect.width, titleHeight: textRect.height, lineHeight: parseFloat(getComputedStyle(title).lineHeight), fullTitle: title.title === title.textContent, clamped: title.scrollHeight > title.clientHeight, ordered: icon.getBoundingClientRect().right <= copy.getBoundingClientRect().left && copy.getBoundingClientRect().right <= action.getBoundingClientRect().left, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, metadata: node.querySelector('small').textContent, action: action.textContent };
+      }));
+      for (const metric of metrics) {
+        assert.ok(metric.titleWidth >= metric.width / 2, 'long titles use the flexible text column');
+        assert.ok(metric.titleHeight <= metric.lineHeight * 2 + 1 && metric.height <= 84, 'titles occupy at most two lines');
+        assert.ok(metric.fullTitle && metric.ordered, 'full titles remain available and columns do not overlap');
+        assert.ok(metric.scrollWidth <= metric.clientWidth + 1, 'cards do not overflow horizontally');
+        assert.match(metric.metadata, /(?:MD|SVG|CSV) · .+ · \d+(?:\.\d+)? (?:B|KB|MB)/);
+        assert.equal(metric.action, '打开');
+      }
+      assert.ok(metrics.some((metric) => metric.clamped), 'long filenames exercise the two-line clamp');
+      await artifacts.screenshot({ path: path.join(evidenceDirectory, `artifacts-${mode}-${theme}.png`), animations: 'disabled' });
+    }
+  }
+  await page.evaluate((value) => document.documentElement.dataset.theme = value, originalTheme);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('button', { name: '切换画布', exact: true }).click();
+  while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
+  console.log('Artifact smoke: Chinese/date/continuous English titles, metadata, two-line bounds, keyboard opening and three-theme wide/split/mobile screenshots passed.');
   console.log('Citation smoke: collapsed references, shared details, multi-source groups, table rows, pinned Canvas navigation, exports and version failures passed.');
 }
 

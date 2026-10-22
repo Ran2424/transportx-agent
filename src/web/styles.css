@@ -871,18 +871,17 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .message-artifacts > header { margin-bottom: 7px; display: flex; align-items: baseline; gap: 7px; }
 .message-artifacts > header strong { font-size: 12px; font-weight: 680; }
 .message-artifacts > header span { color: var(--text-secondary); font-size: 11px; }
-.message-artifacts > div { display: grid; gap: 6px; }
-.message-artifacts > div > button { width: min(520px, 100%); min-height: 52px; padding: 8px 10px; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-md); color: var(--text-primary); background: var(--surface-default); cursor: pointer; text-align: left; transition: border-color 140ms ease, background 140ms ease; }
-.message-artifacts > div > button:hover, .message-artifacts > div > button:focus-visible { border-color: var(--border-strong); background: var(--selection-bg); outline: 0; }
-.message-artifacts > div > button > span:nth-child(2) { min-width: 0; }
-.message-artifacts > div > button strong, .message-artifacts > div > button small { overflow: hidden; display: block; text-overflow: ellipsis; white-space: nowrap; }
-.message-artifacts > div > button strong { font-size: 13px; font-weight: 650; white-space: normal; overflow-wrap: anywhere; }
-.message-artifacts > div > button small { margin-top: 3px; color: var(--text-secondary); font-size: 11px; }
-.message-artifact-action { display: inline-flex; align-items: center; gap: 4px; color: var(--selection-fg); font-size: 11px; white-space: nowrap; }
+.message-artifacts > div { display: grid; gap: 4px; }
+.message-artifact { width: min(520px, 100%); min-height: 52px; padding: 6px 8px; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; grid-template-areas: "icon copy action"; align-items: center; gap: 8px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-md); color: var(--text-primary); background: var(--surface-default); cursor: pointer; text-align: left; transition: border-color 140ms ease, background 140ms ease; }
+.message-artifact:hover, .message-artifact:focus-visible { border-color: var(--border-strong); background: var(--selection-bg); }
+.message-artifact-copy { grid-area: copy; min-width: 0; }
+.message-artifact-copy strong { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 13px; font-weight: 650; line-height: 1.45; word-break: break-all; }
+.message-artifact-copy small { overflow: hidden; display: block; margin-top: 4px; color: var(--text-secondary); font-size: 11px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.message-artifact-action { grid-area: action; display: inline-flex; align-items: center; gap: 4px; color: var(--selection-fg); font-size: 11px; white-space: nowrap; }
 .message-artifact-action svg { width: 12px; transform: rotate(-90deg); }
-.message-artifacts > div > button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.message-artifact-icon { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 5px; color: var(--selection-fg); background: var(--selection-bg); }
-.message-artifact-icon svg { width: 15px; height: 15px; }
+.message-artifact:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.message-artifact-icon { grid-area: icon; width: 31px; height: 31px; display: grid; place-items: center; border-radius: 5px; color: var(--selection-fg); background: var(--selection-bg); }
+.message-artifact-icon svg { width: 22px; height: 22px; }
 .citation-footer { margin-top: 22px; padding-top: 11px; border-top: 1px solid var(--border-default); }
 .citation-footer ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
 .citation-footer li { overflow: hidden; border-top: 1px solid var(--border-default); background: transparent; }
