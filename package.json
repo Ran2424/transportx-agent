@@ -1,6 +1,6 @@
 {
   "name": "transportx-agent",
-  "version": "3.23.1",
+  "version": "3.23.2",
   "description": "TransportX Agent 本地交通分析桌面工作台",
   "main": "dist-desktop/main.js",
   "keywords": [
@@ -52,7 +52,7 @@
     "build:web": "tsc -p tsconfig.public.json && node scripts/postbuild-layout.mjs public",
     "build:react": "vite build",
     "build:desktop": "tsc -p tsconfig.desktop.json",
-    "desktop:dev": "npm run build && electron .",
+    "desktop:dev": "npm run build && node --env-file-if-exists=.env.local node_modules/electron/cli.js .",
     "desktop:dir": "npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",
     "desktop:pack": "node desktop/scripts/check-desktop-release.mjs && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml",
     "desktop:dir:allow-unsigned": "node desktop/scripts/check-desktop-release.mjs --allow-unsigned && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",

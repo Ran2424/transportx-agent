@@ -17,4 +17,4 @@ npm run build
 
 printf '[Tau] Starting on http://%s:%s\n' "$TAU_HOST" "$TAU_PORT"
 echo "[Tau] Press Ctrl-C or close this terminal window to stop the service."
-exec node bin/tau.js "$@"
+exec node --env-file-if-exists=.env.local bin/tau.js "$@"

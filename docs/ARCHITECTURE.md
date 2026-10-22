@@ -104,6 +104,8 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 ### 2.6 Pi、Python 与 ffmpeg
 
+开发启动 `npm run desktop:dev` 和 `./start.sh` 会读取项目根目录的可选 `.env.local`，其中可设置 `TAU_PYTHON_COMMAND` 为目标环境的解释器绝对路径；已导出的同名环境变量优先，未配置时仍使用 PATH 中的 `python3`。`.env.local` 不入 Git，可参考 `.env.example`，不修改全局 shell PATH。Host 将选定解释器传给 Pi 的同名变量及会话上下文；脚本、依赖探测和 `-m pip` 应使用同一解释器。正式安装包不读取此开发配置，继续使用内置运行时机制。
+
 每个任务以 Pi RPC 进程运行。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
 发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely。

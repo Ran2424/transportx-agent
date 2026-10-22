@@ -4,9 +4,11 @@
 
 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/)，项目版本遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。日期采用 ISO 8601（`YYYY-MM-DD`）。
 
-## 3.23.1 - 未发布
+## 3.23.2 - 未发布
 
 ### Fixed
+
+- 开发启动 `desktop:dev` 与 `start.sh` 支持项目本地 `.env.local` 的 Python 覆盖配置，保留导出变量优先及安装包内置运行时；会话规则统一使用 Host 注入的解释器探测依赖，避免将系统 Python 的缺库误报为整机缺失。运筹优化本地模块提供 1.0.1 修订包，移除裸 `python3` 与 `pip3` 指引，保留旧安装版本。
 
 - 修复桌面 Spatial Python 入口仍指向 asar 虚拟路径的问题，复用现有 unpacked 路径解析后再启动外部 Python；两试点 bundle 的 FileSet 按构建源路径声明解包，保证物理入口存在。
 
@@ -34,6 +36,8 @@
 - 引用详情提供有界文本/表格与原件下载，Canvas 使用 Citation capability 固定版本定位 PDF 页、Markdown 章节、XLSX Sheet/单元格及 CSV 数据行；Markdown 导出、PDF 和书目出口保留全部依据位置。
 
 ### Changed
+
+- 平台版本更新为 3.23.2，同步 package、锁文件及 Host 版本；当前版本仍为未发布，沿用已有待发布变更。
 
 - 系统提示词明确按用户当前使用的语言回答，并要求在普通正文中说明工作状态、计划、进度和阻塞，避免依赖思考过程传达用户所需信息。
 - 按 3.23.1 当前源码维护架构文档：同步 Workbench 九项默认依赖、Canvas 与引用版本读取、历史注册表迁移、会话计划校验边界、构建时项目接入点、任务持久化布局及双平台打包与验证入口。
