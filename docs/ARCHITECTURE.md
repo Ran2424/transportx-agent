@@ -499,4 +499,8 @@ Citation 升级与边界回归分别落在 [citation-utils.test.ts](../test/suit
 
 版本开发状态、验收门槛与更新发布操作见 [版本开发与发布规范](RELEASE.md)，每个版本使用 [开发记录模板](releases/TEMPLATE.md)。
 
-后续工具与插件优化见 [Tool 与插件架构优化 PLAN](<Tool 与插件架构优化 PLAN.md>)，包括信任边界 ADR-T01、最小诊断、Spatial 试点和分级执行保障；该文档描述待实施方案，不改变本文的当前实现事实。
+Spatial / Citation 的模型输入统一编写于 `src/contracts/tool-definitions.mts`，构建生成各包的 `tool-contract.json`；Host 读取平台批准的静态定义执行最终结构校验，包声明不能扩大 Host 权限。两模块各自用原生 Pi API 注册；`modules/shared/host-client.ts` 仅为构建输入，分别 bundle 入模块入口，不承担领域调度、队列或自动重试。构建输出 `dist/tool-modules/` 可独立加载；桌面包用 `dist/module-extensions/` 替换这两个源码入口，包内相对路径保持不变。
+
+`platform.getOverview(sessionId?)` 在产品读取点核对两试点的精确计划、当前 Pi Bridge 观察、来源、active、接口及已成功执行的 Host 结果，返回可用/不可用/尚未验证与原因、代次和时间。没有会话、仅历史观察或缺少 Host 成功证明时保持尚未验证；Schema 指纹差异提示漂移，不直接证明语义不兼容。该诊断不是第二份 Registry、权限判定或永久可用性承诺。Bridge 在首次 agent_start 和分支切换发布新观察，不向每轮重复追加相同完整 Schema。
+
+分阶段证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)、[P1 记录](<Tool 与插件架构优化 P1 记录.md>)、[P2 记录](<Tool 与插件架构优化 P2 记录.md>)。持久执行确认与自主制作的剩余门槛仍按 [PLAN](<Tool 与插件架构优化 PLAN.md>) 验收。

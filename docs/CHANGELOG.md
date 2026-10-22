@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- 修复桌面 Spatial Python 入口仍指向 asar 虚拟路径的问题，复用现有 unpacked 路径解析后再启动外部 Python；两试点 bundle 的 FileSet 按构建源路径声明解包，保证物理入口存在。
+
 - Spatial Analysis Module 升级至 1.2.0：贯穿 Pi 调用 ID、取消信号和超时，区分确认拒绝/失败、取消与结果未知；错误经 Pi 错误通道写入历史。工作台显示结果未知，且本轮含未确认分析时不提供整轮准备重试。语义拒绝不创建输出目录，确认失败清理本次目录；manifest 原子写入，提交或进程停止无法确认时保留成果，不自动重算。可选引用呈现异常保留已确认分析。
 - 修复 Module 目录安装预先创建复制目标导致 Windows `fs.cpSync(errorOnExist)` 报 `EEXIST`；目标目录由复制操作创建，保留拒绝覆盖已有版本的规则。
 - Pi 0.80.10 依赖增加固定版本的资源发现补丁：TransportX 关闭全部自动资源后跳过 npm/git 包发现，阻止启动/reload 的隐式包管理器执行；安装和 server 构建自动应用，Pi 升级或源码不匹配时拒绝构建。保留 Pi Registry、Agent Loop、RPC 和显式 Extension，不引入第二套 Runtime。
@@ -19,6 +21,7 @@
 
 ### Added
 
+- Tool/插件 P2：Spatial 1.3.0 与 Citation 2.1.0 从单一 TypeBox 定义生成包内 Tool Contract，Host 执行前复核结构及接口版本；两模块随包携带薄通信实现，保留各自领域校验、结果协议和 Pi 注册。能力中心按当前任务的计划、实时 Bridge 来源/激活状态、Schema 和已确认调用提供三态核对，不自动激活工具。Web Bridge 1.0.2 在首次执行和分支切换重新观察，历史样本不冒充当前进程证明。Citation 补取消传播、有界摘要及未知提交指引；独立模块支持 ZIP 更新后的实际调用。
 - Tool/插件 P0 增加模块代码信任入口：Electron 原生确认经私有 IPC 返回 Host，绑定具体包/版本/入口/依赖；原始安装 RPC 的布尔参数及存储的来源标签不能授权。目录、ZIP、启用和历史启动共用核对，Pi 仅加载计划入口，拒绝未授权自动发现/reload；不承诺 OS 隔离。拒绝更新保留旧版本，卸载撤销接受记录。增加生产 Host + 真实 Pi 的错误、取消、历史落盘与信任探针，以及 Spatial 持久 Owner 的路径/header/cwd 校验器；持久执行查询仍待 P3。
 - 新增 [TransportX Traffic Lab 交通仿真与优化能力升级 PLAN](<交通仿真与优化能力升级 PLAN.md>)：明确可安装 Module、GIS/SUMO/OR-Tools 网络适配、受管 TraCI Worker、接驳车辆优化与实验对比的功能范围、P0–P5 验收和双平台运行时前置条件；仅形成规划，尚未实现或验证仿真闭环。
 - 新增并评审修订 Tool 与插件架构优化 PLAN：保留 Pi 权威与 Capability–Tool–Operation 边界，以局部源码核查收敛 Binding 为三类只读诊断；先做 Spatial 单工具闭环，再抽通信共性，按风险补执行保障；明确 Extension 信任决策、未知提交禁止自动重试、独立模块分阶段验收、历史结果兼容和性能基线。补充桌面用户提供脚本/API 资料、由 Agent 完成封装校验并经现有入口安装使用的场景，复用制作 Skill，不另建万能框架；尚未实施运行时改造。

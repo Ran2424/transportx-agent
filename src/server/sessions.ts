@@ -324,6 +324,7 @@ export class PiRpcSession {
     const data: PiRpcPayload = resp.data || resp.result || resp;
     const command = resp.command || data.command;
     if (data.sessionFile) {
+      if (this.sessionFile && path.resolve(this.sessionFile) !== path.resolve(data.sessionFile)) this.capabilityTracker.invalidateObservation(true);
       this.sessionFile = data.sessionFile;
       this.persistPendingSessionName();
       this.reconcileProjection();
@@ -349,6 +350,7 @@ export class PiRpcSession {
   handleEvent(event: PiRpcMessage) {
     this.touch(false);
     const type = event.type;
+    if (type === 'session_tree' || type === 'session_switch') this.capabilityTracker.invalidateObservation();
     const now = Date.now();
     if (type === 'thinking_level_changed') {
       const level = typeof event.thinkingLevel === 'string' ? event.thinkingLevel : typeof event.level === 'string' ? event.level : '';
@@ -421,7 +423,7 @@ export class PiRpcSession {
       : null;
     if (type === 'entry_appended' && appendedEntry?.type === 'custom') {
       this.projection.append(appendedEntry);
-      if (appendedEntry.customType === PI_WEB_BRIDGE_ENTRY) this.applyBridgePayload(appendedEntry.data);
+      if (appendedEntry.customType === PI_WEB_BRIDGE_ENTRY) this.applyBridgePayload(appendedEntry.data, typeof appendedEntry.id === 'string' ? appendedEntry.id : undefined);
     }
     // NOTE: the assistant `message_end` event carries `event.message.model` as
     // a bare id describing WHICH model produced that message, not a selection
@@ -437,8 +439,8 @@ export class PiRpcSession {
     this.manager.broadcastUpdated(this.id);
   }
 
-  applyBridgePayload(value: unknown) {
-    this.applyCapabilityUpdate(this.capabilityTracker.applyPayload(value), true);
+  applyBridgePayload(value: unknown, entryId?: string) {
+    this.applyCapabilityUpdate(this.capabilityTracker.applyPayload(value, entryId), true);
   }
 
   applyLatestBridgeEnvelope() {

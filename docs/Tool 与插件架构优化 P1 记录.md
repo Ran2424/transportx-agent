@@ -1,6 +1,6 @@
 # Tool 与插件架构优化：P1 执行记录
 
-> 2026-10-22；TransportX 3.23.1 / Pi 0.80.10。P0 已通过 PR #75 和三平台 CI；本阶段在 `codex/tool-plugin-plan-p1` 开发。P1 本机闭环通过，阶段完整回归/PR 验收进行中；P2–P4 尚未完成。
+> 2026-10-22；TransportX 3.23.1 / Pi 0.80.10。P1 经 [PR #76](https://github.com/Ran2424/transportx-agent/pull/76) 验收合并；本机类型检查、40/40 核心测试、完整 Web 冒烟、真实 Pi–Host 闭环通过，三平台 CI [39809624518](https://github.com/Ran2424/transportx-agent/actions/runs/39809624518) 通过。P2–P4 另行验收。
 
 ## 实现边界
 

@@ -136,7 +136,7 @@ export default function(pi) {
     await page.keyboard.press('Escape');
     await page.locator('.tool-status.unknown').first().waitFor();
     assert.ok(await page.locator('.tool-state-label').filter({ hasText: /结果未知|Result unknown/ }).count());
-    await page.getByText('本轮空间分析结果未知，请先核验已有成果，再决定下一步。', { exact: true }).waitFor();
+    await page.getByText('本轮工具结果未知，请先核验已有成果，再决定下一步。', { exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: /准备重试|Prepare retry/ }).count(), 0, 'a later model failure must not offer a blind prompt replay');
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.locator('.tool-status.unknown').first().waitFor();

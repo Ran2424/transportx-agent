@@ -1,9 +1,9 @@
 import type { RpcHandlerRegistry } from '../rpc-handlers.js';
 
-export function createPlatformRpcHandlers(overview: () => unknown, openLogs: () => Promise<void>, openModule: (moduleId: string) => Promise<void>): RpcHandlerRegistry {
+export function createPlatformRpcHandlers(overview: (sessionId?: string) => unknown, openLogs: () => Promise<void>, openModule: (moduleId: string) => Promise<void>): RpcHandlerRegistry {
   return {
     get_platform_overview: {
-      handle: (_command, reply) => reply.success(overview()),
+      handle: (command, reply) => reply.success(overview(command.sessionId)),
     },
     open_module_directory: {
       handle: async (command, reply) => {

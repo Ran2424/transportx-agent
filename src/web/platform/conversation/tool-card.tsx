@@ -6,7 +6,7 @@ import i18n from '../../i18n';
 import { copyText } from './conversation-clipboard';
 import { durationSeconds, useElapsedMilliseconds } from './conversation-duration';
 import { compactToolArgs, imagePaths, TOOL_OUTPUT_PREVIEW_LIMIT, TOOL_TEXT_PREVIEW_LIMIT, truncateToolText } from './tool-card-formatting';
-import { compactCharacterCount, spatialExecutionState, toolFilePath, toolIconName, TOOL_LABELS } from './tool-card-utils';
+import { compactCharacterCount, hostExecutionState, toolFilePath, toolIconName, TOOL_LABELS } from './tool-card-utils';
 import { ToolFilePreview } from './tool-file-preview';
 import type { ToolData } from './tool-projection';
 import { toolExpansionStore } from './tool-expansion-store';
@@ -49,7 +49,7 @@ export const ToolCard = memo(function ToolCard({ tool, sessionId }: { tool: Tool
   const displayedOutput = truncateToolText(output, TOOL_OUTPUT_PREVIEW_LIMIT);
   const normalizedToolName = tool.name.toLowerCase().replaceAll('-', '_');
   const readPath = normalizedToolName === 'read' || normalizedToolName.startsWith('read_') ? toolFilePath(tool.args) : '';
-  const state = spatialExecutionState(tool.result) || (tool.isError ? 'error' : tool.status);
+  const state = hostExecutionState(tool.result) || (tool.isError ? 'error' : tool.status);
   const status = state === 'unknown' ? t('conversation.tool.resultUnknown') : state === 'cancelled' ? t('conversation.cancelled') : state === 'preparing' ? t('conversation.tool.preparing') : state === 'running' ? t('conversation.tool.running') : state === 'error' ? t('conversation.tool.failed') : t('conversation.tool.completed');
   const object = preview(tool.args) || tool.name;
   const iconName = toolIconName(tool.name);

@@ -1,0 +1,292 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.citation",
+  "toolId": "citation.resolve",
+  "piName": "tau_resolve_citation",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "citation-exclusive-sources-webUrls-v1",
+  "input": {
+    "type": "object",
+    "properties": {
+      "sources": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "path",
+            "locator",
+            "contentKind"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000,
+              "description": "Concrete original/result file relative to this session, or to the selected asset when assetId is supplied. Never a URL, directory or catalog candidate; register URLs with webUrls in a separate call."
+            },
+            "assetId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 180
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "locator": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "source"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "document"
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "printedPage": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "section": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "lineStart": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "lineEnd": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "table"
+                    },
+                    "rowStart": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "rowEnd": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      }
+                    },
+                    "sheet": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "cell": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "field"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "result"
+                    },
+                    "field": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "contentKind": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "excerpt"
+                },
+                {
+                  "type": "string",
+                  "const": "summary"
+                },
+                {
+                  "type": "string",
+                  "const": "result"
+                },
+                {
+                  "type": "string",
+                  "const": "source-only"
+                }
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "metadata": {
+              "type": "object",
+              "properties": {
+                "bibliographicType": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "S"
+                    },
+                    {
+                      "type": "string",
+                      "const": "R"
+                    },
+                    {
+                      "type": "string",
+                      "const": "M"
+                    },
+                    {
+                      "type": "string",
+                      "const": "J"
+                    },
+                    {
+                      "type": "string",
+                      "const": "EB/OL"
+                    },
+                    {
+                      "type": "string",
+                      "const": "DS"
+                    },
+                    {
+                      "type": "string",
+                      "const": "Z"
+                    }
+                  ]
+                },
+                "author": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "issuer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "issuedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "standardNumber": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "edition": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "url": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "timeRange": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "querySummary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "additionalProperties": false
+            },
+            "deliverable": {
+              "type": "boolean",
+              "description": "True only for an intended final deliverable; delivery does not change source identity."
+            }
+          },
+          "additionalProperties": false
+        },
+        "minItems": 1,
+        "maxItems": 20,
+        "description": "Local files only. Omit webUrls when supplying sources."
+      },
+      "webUrls": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "minItems": 1,
+        "maxItems": 10,
+        "description": "Public HTTPS page URLs. Omit sources when supplying webUrls."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "pi-citation",
+    "version": "3.0",
+    "detailsKind": "tau-citations"
+  }
+}
