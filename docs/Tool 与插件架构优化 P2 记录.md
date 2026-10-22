@@ -25,7 +25,7 @@ Bridge 首次 agent_start 重新采样，即使恢复的 JSONL 内容相同；�
 - overview 无会话为尚未验证，实际成功后可用；用 Pi 原生 `setActiveTools` 停用后观察为 inactive；再启用和调用恢复可用。实际工作台消费这些结果，展示未知及能力核对，刷新仍可读。
 - `local.traffic-peak` 从目录安装 1.0.0、ZIP 更新至 1.0.1，新任务选择新版并实际计算 CSV 的 A/08=30；原制作目录已删除。Pi-local 无 Host Invocation。
 - 两模块分别 bundle 到 `dist/tool-modules/`；隔离平台根不含 `modules/shared`，只带普通平台依赖、包与契约，重复完整真实链路通过。不是公开公共 SDK。
-- macOS arm64 Electron 应用实际构建，使用自包含 Python 3.10.20；桌面启动、原生信任 IPC、PDF 导航、视频 codec 与退出通过。首次 asar 调用发现 FileSet remap 后未按源路径解包，已增加 `dist/module-extensions/**` 解包模式，随后实际执行又发现 Spatial 外部 Python 入口使用 asar 虚拟路径；改为复用 preferUnpackedPath，不新加 OS 分支。再次打包后验收。
+- macOS arm64 Electron 应用实际构建，使用自包含 Python 3.10.20；桌面启动、原生信任 IPC、PDF 导航、视频 codec 与退出通过。首次 asar 调用发现 FileSet remap 后未按源路径解包，已增加 `dist/module-extensions/**` 解包模式，随后实际执行又发现 Spatial 外部 Python 入口使用 asar 虚拟路径；改为复用 preferUnpackedPath，不新加 OS 分支。再次打包后，直接用应用自带 Electron 的 Node 模式从真实 app.asar 启动 Host/Pi，使用包内 Python，完整 Spatial/Citation/ZIP/实际工作台链路通过。不是仅复制解包文件的模拟。
 
 测试只对自建 fixture 的原生信任决定提供 stub；所有生产授权和领域执行保留。受控网页只替换测试域的外部 DNS/HTTPS 连接，Host 的 URL 安全校验、流读取、快照和 Registry 均为生产代码。没有把固定 HTTP 模型称为真实 Agent 自主制作证据。
 
@@ -36,3 +36,5 @@ Bridge 首次 agent_start 重新采样，即使恢复的 JSONL 内容相同；�
 尚未验收：Windows 实际安装包、Spatial 持久执行确认/重启恢复、独立包完整生命周期与三个真实模型制作案例；分别交由后续阶段及目标平台。旧协议读取沿用原测试与真实 JSONL，不改写历史。
 
 串行工具负载复测（期间桌面重打包仍在进行）：启动 535/577/634/505/572 ms，中位 572 ms，仍在既定预算；规模 189/2175 ms；Host/Pi/Python 采样最大 RSS 205,392/166,704/172,400 KiB。此处保留运行条件，不声称完全隔离的通信基准或稳定 p95。
+
+实际 asar 最终完整链路通过，启动仍在预算内；该包为 ad-hoc 验收包，未正式发布，不代表 Windows 安装包已经验收。最终本机证据：完整 typecheck、40/40 核心回归、完整 Web、真实 Pi RPC 均通过。
