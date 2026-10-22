@@ -15,6 +15,9 @@ import { serviceModuleIds, sessionServiceLabel, type SessionService } from './se
 import { validatePilotToolRequest } from './tool-request.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
 import type { CanvasService } from './canvas-service.js';
+import { SpatialInvocations } from './spatial-invocations.js';
+import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
+import path from 'node:path';
 
 type ApiRouteServices = {
   beginOperation?(url: URL): () => void;
@@ -58,6 +61,7 @@ type ApiRouteServices = {
 export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
 
 export function createApiRouter(services: ApiRouteServices) {
+  const spatialInvocations = new SpatialInvocations(path.join(PI_AGENT_DIR, 'executions', 'spatial'), SESSIONS_DIR, services.spatial);
   const router = new ServerRouter(services, services.beginOperation);
   const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number; timer: ReturnType<typeof setTimeout> }>();
   let renderingPdfs = 0;
@@ -335,6 +339,29 @@ export function createApiRouter(services: ApiRouteServices) {
         deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, code: failure.code || 'citation_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown', field: failure.field });
       }
     })
+    .post('/api/internal/spatial/prepare', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'spatial');
+        if (!session) return;
+        await validatePilotToolRequest('com.transportx.spatial-analysis', body);
+        const record = spatialInvocations.prepare(session, body);
+        deps.json(res, 200, { operationId: record.operationId, state: record.state, toolCallId: body.toolCallId });
+      } catch (error) { const failure = error as Error & { code?: string; commit?: string }; deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: failure.code || 'spatial_prepare_failed', phase: 'prepare', commit: failure.commit || 'not_started' }); }
+    })
+    .post('/api/internal/spatial/execution', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'spatial');
+        if (!session) return;
+        await validatePilotToolRequest('com.transportx.spatial-analysis', body, 'spatial.execution');
+        if (body.action !== 'query' && body.action !== 'cancel') throw Object.assign(new Error('Expected query or cancel'), { status: 400 });
+        const reference = { operationId: body.operationId, lookupToolCallId: body.lookupToolCallId };
+        const record = body.action === 'cancel' ? spatialInvocations.cancel(session, reference) : spatialInvocations.query(session, reference);
+        // Owner and normalized request remain Host metadata, not model/history.
+        deps.json(res, 200, { operationId: record.operationId, state: record.state, jobId: record.jobId, result: record.result, error: record.error, ...('cancellationRequested' in record ? { cancellationRequested: record.cancellationRequested } : {}), toolCallId: body.toolCallId });
+      } catch (error) { const failure = error as Error & { code?: string }; deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: failure.code || 'spatial_query_failed', phase: 'confirmation', commit: 'unknown' }); }
+    })
     .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
       let toolCallId: string | undefined;
       try {
@@ -344,13 +371,14 @@ export function createApiRouter(services: ApiRouteServices) {
         await validatePilotToolRequest('com.transportx.spatial-analysis', body);
         if (body.toolCallId !== undefined && (typeof body.toolCallId !== 'string' || !body.toolCallId || body.toolCallId.length > 200)) return deps.json(res, 400, { error: 'Invalid Spatial toolCallId', code: 'spatial_input_invalid', phase: 'validation', commit: 'not_started' });
         toolCallId = body.toolCallId;
-        const result = await runJob(req, res, session, (signal) => deps.spatial.analyze(session, body, signal));
+        const invocation = await withRequestSignal(req, res, (signal) => spatialInvocations.execute(session, body, signal, (jobSignal, analysisId, onJob, request) => services.sessions.runJob(session.id, (executionSignal) => deps.spatial.analyze(session, body, executionSignal, analysisId, request), jobSignal, onJob)));
+        const { result } = invocation;
         // Citation failure must never re-enter SpatialAnalysisService's output cleanup.
-        try { deps.json(res, 200, { result, ...(toolCallId ? { toolCallId } : {}), citations: deps.citation.registerSpatialResult(session, result) }); }
-        catch (error) { deps.json(res, 200, { result, ...(toolCallId ? { toolCallId } : {}), citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
+        try { deps.json(res, 200, { ...invocation, ...(toolCallId ? { toolCallId } : {}), citations: deps.citation.registerSpatialResult(session, result) }); }
+        catch (error) { deps.json(res, 200, { ...invocation, ...(toolCallId ? { toolCallId } : {}), citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
       } catch (error) {
-        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
-        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, code: failure.code || 'spatial_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown', field: failure.field });
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string; operationId?: string };
+        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, operationId: failure.operationId, code: failure.code || 'spatial_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown', field: failure.field });
       }
     })
     .post('/api/internal/geo/inspect', async ({ req, res, deps }) => {

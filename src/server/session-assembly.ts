@@ -193,7 +193,7 @@ export class SessionAssembler {
   }
 
   verify(plan: ResolvedSessionPlan, workspace = plan.workspace) {
-    if (path.resolve(plan.workspace) !== path.resolve(workspace)) throw new SessionPlanError('workspace_mismatch', 'Resolved session plan belongs to another workspace.', [{ expected: path.resolve(workspace), actual: path.resolve(plan.workspace) }]);
+    if (path.relative(fs.realpathSync(plan.workspace), fs.realpathSync(workspace)) !== '') throw new SessionPlanError('workspace_mismatch', 'Resolved session plan belongs to another workspace.', [{ expected: path.resolve(workspace), actual: path.resolve(plan.workspace) }]);
     for (let index = 0; index < plan.modules.length; index++) {
       let module = plan.modules[index];
       const manifestPath = path.join(module.packageRoot, 'manifest.json');

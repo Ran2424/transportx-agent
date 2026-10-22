@@ -702,17 +702,19 @@ export class LiveSessionManager {
   }
   hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
   hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
-  runJob<T>(id: string, execute: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  runJob<T>(id: string, execute: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, onJob?: (jobId: string) => void): Promise<T> {
     const session = this.sessions.get(id);
     if (!session || session.terminating) return Promise.reject(Object.assign(new Error('Session is closing or unavailable'), { status: 409 }));
     const owned = this.jobs.get(id) || new Set();
     const total = [...this.jobs.values()].reduce((count, jobs) => count + jobs.size, 0);
     if (owned.size >= 2 || total >= 4) return Promise.reject(Object.assign(new Error('Analysis job capacity reached'), { status: 503 }));
+    const jobId = crypto.randomUUID();
+    onJob?.(jobId);
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
-    const job = { id: crypto.randomUUID(), controller, completion: Promise.resolve() as Promise<unknown> };
+    const job = { id: jobId, controller, completion: Promise.resolve() as Promise<unknown> };
     owned.add(job);
     this.jobs.set(id, owned);
     const completion = Promise.resolve().then(() => {

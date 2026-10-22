@@ -84,14 +84,15 @@ export default function(pi) {
 
   // The relay only alters delivery after the real production route has replied.
   // It never replaces Host authorization, Python execution or domain commit.
-  let relayMode = 'drop', forwarded = 0;
+  let relayMode = 'drop', forwarded = 0, lastRequest;
   const relay = http.createServer(async (req, res) => {
     let raw = ''; for await (const chunk of req) raw += chunk;
-    forwarded++;
+    if (req.url.endsWith('/analyze')) lastRequest = JSON.parse(raw);
+    if (req.url.endsWith('/analyze')) forwarded++;
     const response = await fetch(endpoint + req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw });
     let body = await response.text();
-    if (relayMode === 'drop') { res.destroy(); return; }
-    if (relayMode === 'bad_citations') body = JSON.stringify({ ...JSON.parse(body), citations: { evidence: [null] } });
+    if (relayMode === 'drop' && req.url.endsWith('/analyze')) { res.destroy(); return; }
+    if (relayMode === 'bad_citations' && req.url.endsWith('/analyze')) body = JSON.stringify({ ...JSON.parse(body), citations: { evidence: [null] } });
     res.writeHead(response.status, { 'Content-Type': 'application/json' }); res.end(body);
   });
   await new Promise((resolve) => relay.listen(0, '127.0.0.1', resolve));
@@ -102,6 +103,21 @@ export default function(pi) {
     assert.equal(lost.result.details.error.code, 'spatial_result_unknown');
     assert.equal(forwarded, 1, 'a lost response never triggers a second calculation');
     assert.equal(fs.readdirSync(manifests).length, beforeInvalid.length + 1, 'the committed result survives response loss');
+    const existingId = lost.result.details.error.operationId;
+    assert.ok(existingId);
+    const countBeforeQuery = fs.readdirSync(manifests).length;
+    const recovered = await execute('spatial-status:', { action: 'query', operationId: existingId });
+    assert.equal(recovered.result.isError, false);
+    assert.equal(recovered.result.details.result.analysisId, existingId);
+    const bytes = fs.readFileSync(path.join(session.cwd, recovered.result.details.result.output.relativePath));
+    const replay = await fetch(endpoint + '/api/internal/spatial/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(lastRequest) });
+    assert.equal(replay.status, 200);
+    assert.equal((await replay.json()).reused, true);
+    assert.equal(fs.readdirSync(manifests).length, countBeforeQuery);
+    assert.deepEqual(fs.readFileSync(path.join(session.cwd, recovered.result.details.result.output.relativePath)), bytes);
+    const conflict = await fetch(endpoint + '/api/internal/spatial/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...lastRequest, distanceMeters: 11 }) });
+    assert.equal(conflict.status, 409);
+    assert.equal((await conflict.json()).code, 'spatial_operation_conflict');
     relayMode = 'bad_citations';
     const presentation = await execute('spatial:', buffer);
     assert.equal(presentation.result.isError, false, 'optional citation presentation cannot erase a confirmed analysis');

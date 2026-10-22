@@ -71,6 +71,11 @@ export async function citationHostSmoke({ root, endpoint, json, rpc, until, prov
     assert.deepEqual(repeated.details.citations.evidence, valid.details.citations.evidence);
     const registry = JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/citations.json'), 'utf8'));
     assert.equal(registry.evidence.length, 1);
+    const registryFile = path.join(session.cwd, '.tau/citations.json');
+    const beforeBatch = fs.readFileSync(registryFile);
+    const invalidBatch = await execute({ sources: [...input.sources, { path: 'missing.md', locator: { kind: 'source' }, contentKind: 'source-only' }] });
+    assert.equal(invalidBatch.isError, true);
+    assert.deepEqual(fs.readFileSync(registryFile), beforeBatch, 'invalid later batch input cannot partially register the first source');
     const invalid = await execute({ ...input, webUrls: ['https://example.com/'] });
     assert.equal(invalid.isError, true);
     assert.match(JSON.stringify(invalid.content), /sources and webUrls cannot be combined/);

@@ -17,9 +17,14 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     const registered: any[] = [];
     const extension = await import(require('node:url').pathToFileURL(path.join(packageRoot, manifest.entrypoints.piExtensions[0])).href);
     extension.default({ registerTool: (tool: any) => registered.push(tool), on: () => {} });
-    assert.equal(registered.length, 1);
-    assert.equal(registered[0].name, contract.piName);
-    assert.equal(canonicalToolSchema(registered[0].parameters), canonicalToolSchema(contract.input));
+    assert.equal(registered.length, directory === 'spatial-analysis' ? 2 : 1);
+    const primary = registered.find((tool: any) => tool.name === contract.piName);
+    assert.ok(primary);
+    assert.equal(canonicalToolSchema(primary.parameters), canonicalToolSchema(contract.input));
+    if (directory === 'spatial-analysis') {
+      const execution = JSON.parse(fs.readFileSync(path.join(packageRoot, 'execution-contract.json'), 'utf8'));
+      assert.equal(canonicalToolSchema(registered.find((tool: any) => tool.name === execution.piName).parameters), canonicalToolSchema(execution.input));
+    }
   }
 
   // Persisted observations never attest to a newly launched Pi process.

@@ -1,0 +1,43 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.spatial-analysis",
+  "toolId": "spatial.execution",
+  "piName": "tau_spatial_execution",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "spatial-owner-confirmation-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "query"
+          },
+          {
+            "type": "string",
+            "const": "cancel"
+          }
+        ]
+      },
+      "operationId": {
+        "type": "string",
+        "pattern": "^spatial_[a-f0-9]{32}$"
+      },
+      "lookupToolCallId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-spatial-execution",
+    "version": 1,
+    "detailsKind": "tau-spatial-execution"
+  }
+}

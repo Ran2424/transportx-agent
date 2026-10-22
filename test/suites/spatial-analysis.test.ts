@@ -39,6 +39,36 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     assert.throws(() => spatialOwner({ ...owner, resolvedSessionPlan: { workspace: histories } }, histories), /mismatch/);
     assert.throws(() => spatialOwner({ ...owner, cwd: histories }, histories), /mismatch/);
     assert.throws(() => spatialOwner(owner, path.join(root, 'outside')), /escapes/);
+
+    const { SpatialInvocations } = require('../../bin/spatial-invocations.js');
+    const domain = service(), records = path.join(root, 'executions');
+    const invocations = new SpatialInvocations(records, histories, domain);
+    writeGeo(root, 'points.geojson', collection([point('a', [121.44, 31.19])]));
+    const input = { operation: 'buffer', inputPath: 'points.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10, toolCallId: 'original-call' };
+    const first = invocations.prepare(owner, input);
+    assert.equal(invocations.prepare(owner, { ...input }).operationId, first.operationId);
+    assert.notEqual(invocations.prepare(owner, { ...input, toolCallId: 'new-intent' }).operationId, first.operationId, 'similar parameters do not identify a retry');
+    assert.throws(() => invocations.prepare(owner, { ...input, operationId: first.operationId, distanceMeters: 11 }), (error: any) => error.code === 'spatial_operation_conflict');
+    let calculations = 0;
+    const dispatch = async (signal: AbortSignal, id: string, onJob: (id: string) => void) => { calculations++; onJob('existing-job-id'); return domain.analyze(owner, input, signal, id); };
+    const result = await invocations.execute(owner, { ...input, operationId: first.operationId }, new AbortController().signal, dispatch);
+    assert.equal(result.result.analysisId, first.operationId);
+    assert.equal((await invocations.execute(owner, { ...input, operationId: first.operationId }, new AbortController().signal, dispatch)).reused, true);
+    assert.equal(calculations, 1);
+    const restored = new SpatialInvocations(records, histories, domain);
+    assert.equal(restored.query({ ...owner, id: 'new_live_id' }, { lookupToolCallId: input.toolCallId }).state, 'succeeded');
+    assert.throws(() => restored.query({ ...owner, sessionFile: copied }, { operationId: first.operationId }), (error: any) => error.status === 404);
+    writeGeo(root, 'points.geojson', collection([point('changed', [121.45, 31.20])]));
+    assert.throws(() => restored.prepare(owner, { ...input, operationId: first.operationId }), (error: any) => error.code === 'spatial_operation_conflict');
+    // Recovery reads the committed input versions, not the current source file.
+    assert.equal(restored.query(owner, { operationId: first.operationId }).state, 'succeeded');
+    const output = path.join(root, result.result.output.relativePath), originalBytes = fs.readFileSync(output);
+    fs.writeFileSync(output, '{}');
+    assert.equal(restored.query(owner, { operationId: first.operationId }).state, 'unknown');
+    fs.writeFileSync(output, originalBytes);
+    assert.equal(restored.query(owner, { operationId: first.operationId }).state, 'succeeded');
+    const prepared = restored.prepare(owner, { ...input, toolCallId: 'cancel-prepared' });
+    assert.equal(restored.cancel(owner, { operationId: prepared.operationId }).state, 'cancelled');
   }
 
   // spatial result contract rejects unknown schema, operations and unsafe output paths
