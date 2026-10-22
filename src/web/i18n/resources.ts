@@ -1,6 +1,8 @@
 export const zhCN = {
   'conversation.failed': '模型请求失败',
   'conversation.cancelled': '已取消',
+  'conversation.tool.resultUnknown': '结果未知',
+  'conversation.tool.retryUnconfirmed': '本轮空间分析结果未知，请先核验已有成果，再决定下一步。',
   'conversation.waiting': '等待模型响应…',
   'conversation.retrying': '自动重试 {{attempt}}/{{max}} · 等待 {{seconds}} 秒',
   'conversation.diagnostic': '诊断标识 {{id}}',
@@ -788,6 +790,8 @@ export const enUS: Record<TranslationKey, string> = {
   'model.local.error': 'Could not check the local model service',
   'conversation.failed': 'Model request failed',
   'conversation.cancelled': 'Cancelled',
+  'conversation.tool.resultUnknown': 'Result unknown',
+  'conversation.tool.retryUnconfirmed': 'This turn contains an unconfirmed spatial result. Inspect existing outputs before deciding what to do next.',
   'conversation.waiting': 'Waiting for the model…',
   'conversation.retrying': 'Retry {{attempt}}/{{max}} · waiting {{seconds}} seconds',
   'conversation.diagnostic': 'Diagnostic ID {{id}}',

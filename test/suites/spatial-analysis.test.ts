@@ -109,9 +109,15 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
     writeGeo(cwd, 'input.geojson', collection([point('p', [121, 31])]));
     await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: 'input.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:4326', distanceMeters: 10 }), /metricCrs cannot be EPSG:4326/);
+    assert.equal(fs.existsSync(path.join(cwd, 'analysis')), false, 'semantic rejection creates no output directory');
+    assert.equal(fs.existsSync(path.join(cwd, '.tau')), false, 'semantic rejection creates no manifest directory');
     await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: '../outside.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10 }), /relative \.geojson|Unsafe/);
     const controller = new AbortController(); controller.abort();
     await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: 'input.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10 }, controller.signal), /abort|cancel/i);
     assert.equal(fs.existsSync(path.join(cwd, '.tau/citations.json')), false, 'failed and cancelled analyses never create evidence');
+    writeGeo(cwd, 'bad.geojson', collection([{ type: 'Feature', geometry: { type: 'Unsupported', coordinates: [] }, properties: {} }]));
+    await assert.rejects(service().analyze(session(cwd), { operation: 'buffer', inputPath: 'bad.geojson', inputCrs: 'EPSG:4326', metricCrs: 'EPSG:32651', distanceMeters: 10 }), (error: any) => error.code === 'spatial_execution_failed' && error.commit === 'not_committed');
+    assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau/spatial-results')), [], 'confirmed Python failure cleans only this call directories');
+    assert.deepEqual(fs.readdirSync(path.join(cwd, 'analysis/spatial')), []);
   }
 });

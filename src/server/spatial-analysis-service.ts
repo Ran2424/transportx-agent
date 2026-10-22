@@ -9,6 +9,7 @@ import { diagnosticMessage, parseSpatialAnalysisResultStructured, type SpatialAn
 import { sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 import { relativePosixPath } from './util/path.js';
+import { writeJsonAtomic } from './util/json-storage.js';
 
 const MAX_INPUT_BYTES = 100 * 1024 * 1024;
 const MAX_FEATURES = 50_000;
@@ -59,45 +60,62 @@ export class SpatialAnalysisService {
     const manifestRelativePath = `.tau/spatial-results/${analysisId}/manifest.json`;
     const resultPath = path.join(session.cwd, resultRelativePath);
     const manifestPath = path.join(session.cwd, manifestRelativePath);
-    fs.mkdirSync(path.dirname(resultPath), { recursive: true });
-    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-
     const inputs: JsonRecord[] = [];
     const parameters: JsonRecord = { repairInvalid: body.repairInvalid === true };
-    if (operation === 'buffer') {
-      const input = safeInput(session.cwd, requiredString(body, 'inputPath'));
-      const distanceMeters = typeof body.distanceMeters === 'number' && Number.isFinite(body.distanceMeters) && body.distanceMeters > 0 ? body.distanceMeters : null;
-      const inputCrs = requiredString(body, 'inputCrs', 120); const metricCrs = requiredString(body, 'metricCrs', 120);
-      if (!distanceMeters) throw new Error('distanceMeters must be positive');
-      if (metricCrs.toUpperCase() === 'EPSG:4326') throw new Error('metricCrs cannot be EPSG:4326 for distance operations');
-      inputs.push({ role: 'input', ...input, crs: inputCrs });
-      Object.assign(parameters, { distanceMeters, inputCrs, metricCrs, dissolve: body.dissolve === true });
-    } else {
-      const left = safeInput(session.cwd, requiredString(body, 'leftPath')); const right = safeInput(session.cwd, requiredString(body, 'rightPath'));
-      const leftCrs = requiredString(body, 'leftCrs', 120); const rightCrs = requiredString(body, 'rightCrs', 120);
-      inputs.push({ role: 'left', ...left, crs: leftCrs }, { role: 'right', ...right, crs: rightCrs });
-      Object.assign(parameters, { leftCrs, rightCrs });
-      if (operation === 'nearest') {
-        const metricCrs = requiredString(body, 'metricCrs', 120);
+    if (signal?.aborted) throw Object.assign(new Error('Analysis cancelled before execution'), { code: 'spatial_cancelled', phase: 'validation', commit: 'not_started' });
+    try {
+      if (operation === 'buffer') {
+        const input = safeInput(session.cwd, requiredString(body, 'inputPath'));
+        const distanceMeters = typeof body.distanceMeters === 'number' && Number.isFinite(body.distanceMeters) && body.distanceMeters > 0 ? body.distanceMeters : null;
+        const inputCrs = requiredString(body, 'inputCrs', 120); const metricCrs = requiredString(body, 'metricCrs', 120);
+        if (!distanceMeters) throw new Error('distanceMeters must be positive');
         if (metricCrs.toUpperCase() === 'EPSG:4326') throw new Error('metricCrs cannot be EPSG:4326 for distance operations');
-        if (body.maxDistanceMeters !== undefined && (typeof body.maxDistanceMeters !== 'number' || !Number.isFinite(body.maxDistanceMeters) || body.maxDistanceMeters <= 0)) throw new Error('maxDistanceMeters must be positive');
-        Object.assign(parameters, { metricCrs, ...(body.maxDistanceMeters === undefined ? {} : { maxDistanceMeters: body.maxDistanceMeters as number }) });
+        inputs.push({ role: 'input', ...input, crs: inputCrs });
+        Object.assign(parameters, { distanceMeters, inputCrs, metricCrs, dissolve: body.dissolve === true });
       } else {
-        const predicate = body.predicate; const cardinality = body.cardinality;
-        if (predicate !== 'intersects' && predicate !== 'within' && predicate !== 'contains') throw new Error('predicate must be intersects, within or contains');
-        if (cardinality !== 'one-to-one' && cardinality !== 'one-to-many') throw new Error('cardinality must be one-to-one or one-to-many');
-        const multipleMatchStrategy = body.multipleMatchStrategy === undefined ? 'error' : body.multipleMatchStrategy;
-        if (multipleMatchStrategy !== 'error' && multipleMatchStrategy !== 'first') throw new Error('multipleMatchStrategy must be error or first');
-        Object.assign(parameters, { predicate, cardinality, multipleMatchStrategy });
+        const left = safeInput(session.cwd, requiredString(body, 'leftPath')); const right = safeInput(session.cwd, requiredString(body, 'rightPath'));
+        const leftCrs = requiredString(body, 'leftCrs', 120); const rightCrs = requiredString(body, 'rightCrs', 120);
+        inputs.push({ role: 'left', ...left, crs: leftCrs }, { role: 'right', ...right, crs: rightCrs });
+        Object.assign(parameters, { leftCrs, rightCrs });
+        if (operation === 'nearest') {
+          const metricCrs = requiredString(body, 'metricCrs', 120);
+          if (metricCrs.toUpperCase() === 'EPSG:4326') throw new Error('metricCrs cannot be EPSG:4326 for distance operations');
+          if (body.maxDistanceMeters !== undefined && (typeof body.maxDistanceMeters !== 'number' || !Number.isFinite(body.maxDistanceMeters) || body.maxDistanceMeters <= 0)) throw new Error('maxDistanceMeters must be positive');
+          Object.assign(parameters, { metricCrs, ...(body.maxDistanceMeters === undefined ? {} : { maxDistanceMeters: body.maxDistanceMeters as number }) });
+        } else {
+          const predicate = body.predicate; const cardinality = body.cardinality;
+          if (predicate !== 'intersects' && predicate !== 'within' && predicate !== 'contains') throw new Error('predicate must be intersects, within or contains');
+          if (cardinality !== 'one-to-one' && cardinality !== 'one-to-many') throw new Error('cardinality must be one-to-one or one-to-many');
+          const multipleMatchStrategy = body.multipleMatchStrategy === undefined ? 'error' : body.multipleMatchStrategy;
+          if (multipleMatchStrategy !== 'error' && multipleMatchStrategy !== 'first') throw new Error('multipleMatchStrategy must be error or first');
+          Object.assign(parameters, { predicate, cardinality, multipleMatchStrategy });
+        }
+        const rightFields = optionalFields(body);
+        if (rightFields.length) parameters.rightFields = rightFields.join(',');
       }
-      const rightFields = optionalFields(body);
-      if (rightFields.length) parameters.rightFields = rightFields.join(',');
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: 'spatial_input_invalid', phase: 'validation', commit: 'not_started' });
     }
 
     const requestPath = path.join(path.dirname(manifestPath), 'request.json');
-    fs.writeFileSync(requestPath, `${JSON.stringify({ analysisId, operation, inputs, parameters, resultPath, resultRelativePath }, null, 2)}\n`);
+    let phase = 'execution';
+    let preserve = false;
+    let prepared = false;
     try {
+      // Check existing ancestors before creating either of this call's directories.
+      for (const target of [path.dirname(resultPath), path.dirname(manifestPath)]) {
+        let cursor = path.resolve(session.cwd);
+        for (const part of relativePosixPath(cursor, target).split('/')) {
+          cursor = path.join(cursor, part);
+          if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw new Error('Spatial output cannot use symbolic links');
+        }
+      }
+      fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+      fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+      prepared = true;
+      fs.writeFileSync(requestPath, `${JSON.stringify({ analysisId, operation, inputs, parameters, resultPath, resultRelativePath }, null, 2)}\n`);
       const { stdout } = await this.runner.run(this.scriptPath, ['--request', requestPath], { cwd: session.cwd, timeoutMs: 120_000, signal });
+      phase = 'result_validation';
       const parsed = parseSpatialAnalysisResultStructured(JSON.parse(stdout));
       if (!parsed.ok) throw new Error(parsed.diagnostics.map(diagnosticMessage).join('; '));
       const result = parsed.value;
@@ -105,14 +123,19 @@ export class SpatialAnalysisService {
       if (!fs.existsSync(resultPath) || fs.statSync(resultPath).size > MAX_INPUT_BYTES || sha256File(resultPath) !== result.output.sha256) throw new Error('Spatial output failed size or checksum validation');
       const output = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as { type?: unknown; features?: unknown };
       if (output.type !== 'FeatureCollection' || !Array.isArray(output.features) || output.features.length !== result.output.featureCount || output.features.length > MAX_FEATURES) throw new Error('Spatial output failed GeoJSON validation');
-      fs.writeFileSync(manifestPath, `${JSON.stringify(result, null, 2)}\n`);
+      phase = 'commit';
+      writeJsonAtomic(manifestPath, result);
       return result;
     } catch (error) {
-      fs.rmSync(manifestPath, { force: true });
-      fs.rmSync(resultPath, { force: true });
-      throw error;
+      const failure = error as Error & { code?: string };
+      preserve = failure.code === 'process_stop_unconfirmed' || phase === 'commit';
+      if (!preserve && prepared) {
+        fs.rmSync(path.dirname(manifestPath), { recursive: true, force: true });
+        fs.rmSync(path.dirname(resultPath), { recursive: true, force: true });
+      }
+      throw Object.assign(failure, { code: failure.code || (preserve ? 'spatial_result_unknown' : signal?.aborted ? 'spatial_cancelled' : 'spatial_execution_failed'), phase, commit: preserve ? 'unknown' : 'not_committed' });
     } finally {
-      fs.rmSync(requestPath, { force: true });
+      if (!preserve && prepared) fs.rmSync(requestPath, { force: true });
     }
   }
 
