@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from 'react';
 
-export type IconName = 'menu' | 'plus' | 'refresh' | 'settings' | 'command' | 'workspace' | 'task' | 'map' | 'video' | 'cad' | 'search' | 'close' | 'chevron' | 'panel' | 'file' | 'report' | 'code' | 'image' | 'table' | 'write' | 'tool' | 'citation' | 'open' | 'minimize' | 'maximize' | 'restore';
+export type IconName = 'menu' | 'plus' | 'refresh' | 'settings' | 'command' | 'workspace' | 'task' | 'map' | 'video' | 'search' | 'close' | 'chevron' | 'panel' | 'file' | 'report' | 'code' | 'image' | 'table' | 'write' | 'tool' | 'citation' | 'open' | 'minimize' | 'maximize' | 'restore';
 
 const paths: Record<IconName, ReactNode> = {
   menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
@@ -12,7 +12,6 @@ const paths: Record<IconName, ReactNode> = {
   task: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M8 9h8M8 13h5M8 17h6" /></>,
   map: <><path d="m4 6 5-2 6 2 5-2v14l-5 2-6-2-5 2Z" /><path d="M9 4v14M15 6v14" /></>,
   video: <><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3Z" /></>,
-  cad: <><path d="M4 20 20 4" /><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="15" y="15" width="6" height="6" rx="1" /></>,
   search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></>,
   close: <><path d="m6 6 12 12M18 6 6 18" /></>,
   chevron: <><path d="m8 10 4 4 4-4" /></>,

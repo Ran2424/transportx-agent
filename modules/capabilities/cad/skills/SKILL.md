@@ -39,8 +39,7 @@ description: Draft, inspect, edit and verify 2D DXF traffic engineering drawings
 4. **先 dryRun**：批量或多实体写入调用 `cad_draw` 并设置 `dryRun=true`，检查命中数、预计新增实体和样例句柄。
 5. **再写入**：确认计划后用 `dryRun=false` 提交。
 6. **必校验**：写入后调用 `cad_verify`；再按需 `cad_inspect` 检查结果。
-7. **共享图纸**：成功写入后，Canvas 会以只读方式打开当前 revision；用户可选中实体并在下一轮附加 Canvas context。不要声称可以在 Canvas 中编辑或保存。
-8. **汇报**：文件名、revision、sha256、units、图层数、实体数、extents、校验 warning 和未解决项。
+7. **汇报**：文件名、revision、sha256、units、图层数、实体数、extents、校验 warning 和未解决项。
 
 ## `cad_draw` 三种模式
 

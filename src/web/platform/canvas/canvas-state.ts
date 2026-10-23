@@ -10,8 +10,7 @@ import { GEO_CANVAS_ADAPTER_ID, VIDEO_CANVAS_ADAPTER_ID } from '../../../contrac
 export type CanvasView =
   | DocumentView
   | { id: string; kind: 'geo'; title: string; envelope: VisualizationEnvelope; canvas?: CanvasPresentationV1 }
-  | { id: string; kind: 'video'; title: string; item: VideoSceneItemV1; revision: number; compareItem?: VideoSceneItemV1; canvas?: CanvasPresentationV1 }
-  | { id: string; kind: 'cad'; title: string; revision: number; canvas: CanvasPresentationV1; previewPath?: string };
+  | { id: string; kind: 'video'; title: string; item: VideoSceneItemV1; revision: number; compareItem?: VideoSceneItemV1; canvas?: CanvasPresentationV1 };
 export type CanvasContent = { views: CanvasView[]; presentation: { key: string; id: string } | null };
 export type CanvasState = { tabIds: string[]; activeId: string | null; open: boolean; presentationKey: string | null; documents: DocumentView[] };
 export const EMPTY_CANVAS: CanvasState = { tabIds: [], activeId: null, open: false, presentationKey: null, documents: [] };

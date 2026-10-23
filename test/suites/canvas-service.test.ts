@@ -110,40 +110,4 @@ test('Canvas documents round-trip with stable identity and reject unavailable ad
     assert.throws(() => service.present(current, { adapterId: 'unknown', resource: { scope: 'session-file', path: 'slides.pptx' } }), /not enabled/);
     assert.throws(() => service.present(current, { adapterId: 'com.transportx.canvas.document', resource: { scope: 'session-file', path: 'slides.pptx' }, target: { kind: 'slide', number: 0 } }), /target is invalid/);
   }
-
-  // CAD Canvas accepts viewport targets and bounded selections, and rejects malformed ones
-  {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-cad-canvas-'));
-    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const current = {
-      id: 'cad-session', cwd: root, entries: [], citationRegistryId: 'cad-session', activeCanvasContextIds: [] as string[],
-      resolvedSessionPlan: { modules: [{ id: 'com.transportx.cad', canvasViews: [{ adapterId: 'com.transportx.canvas.cad', kind: 'cad', protocolVersion: '1.0' }] }] },
-    };
-    const presentation = {
-      protocol: 'pi-canvas', version: '1.0', presentationId: 'cad_pres_test', adapterId: 'com.transportx.canvas.cad',
-      kind: 'cad', viewId: 'cad:junction_plan', revision: 1, operation: 'present', title: '路口平面图',
-      resources: [{ scope: 'session-file', path: 'cad/junction_plan/r1.dxf' }],
-      payload: { format: 'dxf', path: 'cad/junction_plan/r1.dxf', sha256: 'a'.repeat(64), units: 'm', layerCount: 3, entityCount: 4, preview: 'cad/junction_plan/r1.png' },
-      target: { kind: 'viewport', center: [500000, 3450000], zoom: 1, units: 'm' },
-      generatedAt: '2026-10-23T00:00:00Z',
-    };
-    (current.entries as any[]).push({ message: { details: { canvas: presentation } } });
-    const service = new CanvasService({ registry: () => ({ load: () => ({ resources: [] }) }) }, (_session: any, requested: string) => path.resolve(root, requested));
-    const context = service.createContext(current, {
-      viewId: presentation.viewId, revision: 1, target: presentation.target,
-      selection: { kind: 'cad-selection', handles: ['2F', 'A1'], layers: ['SIGNAL'], count: 2, truncated: false },
-    });
-    assert.equal(context.adapterId, 'com.transportx.canvas.cad');
-    assert.deepEqual(context.selection, { kind: 'cad-selection', handles: ['2F', 'A1'], layers: ['SIGNAL'], count: 2, truncated: false });
-    assert.match(buildCanvasContextPrompt([context.contextId]), /CAD drawing/);
-    const { projectCanvas } = await import('../../src/web/platform/canvas/canvas-state.ts');
-    const projected = projectCanvas([{ message: { details: { canvas: presentation } } }] as any, []);
-    assert.equal(projected.views[0].kind, 'cad');
-    assert.equal((projected.views[0] as any).previewPath, 'cad/junction_plan/r1.png');
-    assert.throws(() => service.createContext(current, { viewId: presentation.viewId, revision: 1, selection: { kind: 'cad-selection', handles: ['bad'], layers: [], count: 1, truncated: false } }), /selection is invalid/);
-    const focused = service.present(current, { viewId: presentation.viewId, target: { kind: 'viewport', center: [1, 2], zoom: 2, units: 'm' } });
-    assert.equal(focused.operation, 'focus');
-    assert.deepEqual(focused.target, { kind: 'viewport', center: [1, 2], zoom: 2, units: 'm' });
-    assert.throws(() => service.present(current, { viewId: presentation.viewId, target: { kind: 'viewport', center: [1, 2], zoom: 0, units: 'm' } }), /target is invalid/);
-  }
 });

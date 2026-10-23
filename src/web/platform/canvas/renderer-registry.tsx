@@ -1,5 +1,4 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
-import { CAD_CANVAS_ADAPTER_ID } from '../../../contracts/canvas-cad';
 import { DOCUMENT_CANVAS_ADAPTER_ID, GEO_CANVAS_ADAPTER_ID, VIDEO_CANVAS_ADAPTER_ID } from '../../../contracts/canvas-document';
 import type { CanvasView } from './canvas-state';
 import { canvasAdapterForView } from './adapter-registry';
@@ -9,7 +8,6 @@ const loaders: Record<string, () => Promise<{ default: ComponentType<CanvasRende
   [DOCUMENT_CANVAS_ADAPTER_ID]: () => import('./renderers/DocumentCanvasRenderer'),
   [GEO_CANVAS_ADAPTER_ID]: () => import('./renderers/GeoCanvasRenderer'),
   [VIDEO_CANVAS_ADAPTER_ID]: () => import('./renderers/VideoCanvasRenderer'),
-  [CAD_CANVAS_ADAPTER_ID]: () => import('./renderers/CadCanvasRenderer'),
 };
 const renderers = new Map<string, LazyExoticComponent<ComponentType<CanvasRendererProps>>>();
 

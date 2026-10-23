@@ -7,13 +7,10 @@ const path = require('node:path');
 import {
   CANVAS_PRESENTATION_PROTOCOL,
   CANVAS_PRESENTATION_VERSION,
-  CAD_CANVAS_ADAPTER_ID,
   DOCUMENT_CANVAS_ADAPTER_ID,
   GEO_CANVAS_ADAPTER_ID,
   VIDEO_CANVAS_ADAPTER_ID,
   documentCanvasFormat,
-  parseCadCanvasSelection,
-  parseCadCanvasTarget,
   getCanvasPresentationFromToolResult,
   parseDocumentCanvasTarget,
   parseGeoCanvasTarget,
@@ -87,7 +84,6 @@ function validateTarget(adapterId: string, target: unknown) {
   if (adapterId === DOCUMENT_CANVAS_ADAPTER_ID) return parseDocumentCanvasTarget(target);
   if (adapterId === GEO_CANVAS_ADAPTER_ID) return parseGeoCanvasTarget(target);
   if (adapterId === VIDEO_CANVAS_ADAPTER_ID) return parseVideoCanvasTarget(target);
-  if (adapterId === CAD_CANVAS_ADAPTER_ID) return parseCadCanvasTarget(target);
   return null;
 }
 
@@ -182,7 +178,6 @@ export class CanvasService {
     const target = input.target === undefined ? presentation.target : input.target;
     if (target !== undefined && !validateTarget(presentation.adapterId, target)) throw serviceError('Canvas target is invalid for this adapter.');
     if (presentation.adapterId === GEO_CANVAS_ADAPTER_ID && input.selection !== undefined && !parseGeoClientContextStructured(input.selection).ok) throw serviceError('Geo Canvas selection is invalid.');
-    if (presentation.adapterId === CAD_CANVAS_ADAPTER_ID && input.selection !== undefined && !parseCadCanvasSelection(input.selection)) throw serviceError('CAD Canvas selection is invalid.');
     if (presentation.adapterId === VIDEO_CANVAS_ADAPTER_ID && target !== undefined) {
       const videoTarget = target && typeof target === 'object' && !Array.isArray(target) ? target as Record<string, unknown> : null;
       const valid = videoTarget?.kind === 'timestamp' && parseVideoTimestamp(videoTarget.at) && Object.keys(videoTarget).every((key) => key === 'kind' || key === 'at')
@@ -252,7 +247,7 @@ export class CanvasService {
 
 export function buildCanvasContextPrompt(contextIds: string[]) {
   return contextIds.length
-    ? `\n\n[Canvas context]\nThe user explicitly attached Canvas context IDs: ${contextIds.join(', ')}. Call canvas_inspect_context with only these IDs before relying on page, slide, sheet, time, map view, CAD drawing, layer, entity handle, units, or selection details. Do not inspect older Canvas contexts.\n[/Canvas context]`
+    ? `\n\n[Canvas context]\nThe user explicitly attached Canvas context IDs: ${contextIds.join(', ')}. Call canvas_inspect_context with only these IDs before relying on page, slide, sheet, time, map view, or selection details. Do not inspect older Canvas contexts.\n[/Canvas context]`
     : '';
 }
 

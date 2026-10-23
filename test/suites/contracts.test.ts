@@ -192,8 +192,6 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
   // CAD contracts keep the draw/edit/verify authoritative shapes and reject unsafe input
   {
     const cad = await import('../../src/contracts/cad.ts');
-    const canvas = await import('../../src/contracts/canvas.ts');
-    const canvasCad = await import('../../src/contracts/canvas-cad.ts');
     const sha = 'a'.repeat(64);
     const base = { protocol: 'tau-cad', version: '1.0' };
 
@@ -298,31 +296,6 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     };
     assert.equal(cad.parseCadDrawingManifestStructured(manifest).ok, true);
     assert.equal(cad.parseCadDrawingManifestStructured({ ...manifest, currentRevision: 2 }).ok, false);
-
-    // CAD Canvas payloads are bounded adapter-owned values and reject unsafe paths.
-    const cadPayload = {
-      format: 'dxf', path: 'cad/junction_plan/r1.dxf', sha256: sha, units: 'm',
-      layerCount: 3, entityCount: 4, preview: 'cad/junction_plan/r1.png',
-    };
-    assert.equal(canvasCad.parseCadCanvasPayload(cadPayload)?.format, 'dxf');
-    assert.equal(canvasCad.parseCadCanvasPayload({ ...cadPayload, path: '../secret.dxf' }), null);
-    assert.equal(canvasCad.parseCadCanvasPayload({ ...cadPayload, preview: 'C:/secret.png' }), null);
-    assert.deepEqual(canvasCad.parseCadCanvasTarget({ kind: 'viewport', center: [10, 20], zoom: 1, units: 'm' })?.center, [10, 20]);
-    assert.equal(canvasCad.parseCadCanvasTarget({ kind: 'viewport', center: [10, 20], zoom: 0, units: 'm' }), null);
-    const selection = { kind: 'cad-selection', handles: ['2F', 'A1'], layers: ['SIGNAL'], count: 2, truncated: false };
-    assert.deepEqual(canvasCad.parseCadCanvasSelection(selection)?.handles, ['2F', 'A1']);
-    assert.equal(canvasCad.parseCadCanvasSelection({ ...selection, handles: ['not-a-handle'] }), null);
-    assert.equal(canvasCad.parseCadCanvasSelection({ ...selection, count: 1 }), null);
-
-    const canvasPresentation = {
-      protocol: 'pi-canvas', version: '1.0', presentationId: 'cad_pres_test', adapterId: canvasCad.CAD_CANVAS_ADAPTER_ID,
-      kind: 'cad', viewId: 'cad:junction_plan', revision: 1, operation: 'present', title: '路口平面图',
-      resources: [{ scope: 'session-file', path: 'cad/junction_plan/r1.dxf' }],
-      payload: cadPayload, target: { kind: 'viewport', center: [10, 20], zoom: 1, units: 'm' },
-      generatedAt: '2026-10-23T00:00:00Z',
-    };
-    assert.equal(canvas.parseCanvasPresentation(canvasPresentation)?.adapterId, canvasCad.CAD_CANVAS_ADAPTER_ID);
-    assert.equal(cad.parseCadDrawResultStructured({ ...drawResult, canvas: canvasPresentation }).ok, true);
   }
 
   // Server refreshes context usage after Pi settles without losing a compaction estimate
