@@ -41,6 +41,8 @@
 
 ### Changed
 
+- Module Tool Activation 的真实 Pi/Host 与独立模块链路已验收，Provider 首请求由 17 工具/19,940 字节收敛为 5 工具/3,664 字节；真实模型完成按需启用与执行。记录分支累积、缓存与延迟波动，不承诺统一性能收益；完整测试保持 40/40。
+
 - Web Bridge 升级至 1.1.0：移除 Task 能力版本声明、解析与匹配；Pi RPC 和 Web 冒烟改用独立 Interaction，不再装载旧 Task Extension。
 
 - 明确 Canvas 为共享视图底层，Document（含 Markdown/PDF/CSV/Office）、Geo 与已有 Video 为领域适配；Document 1.2.2 同步说明。保留 Geo 场景及恢复所有权，不恢复已退役 Task 规划器。Video 的独立工具迁移后置，CAD 仅列为未来适配方向。

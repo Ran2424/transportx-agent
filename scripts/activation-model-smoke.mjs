@@ -17,6 +17,7 @@ fs.writeFileSync(path.join(source, 'SKILL.md'), '---\nname: road-volume-sum\ndes
 fs.writeFileSync(path.join(source, 'index.ts'), `import fs from 'node:fs'; import path from 'node:path';
 export default function(pi) {
  pi.registerCommand('acceptance_eager', {handler:async()=>pi.setActiveTools(pi.getAllTools().filter(t=>!['find','grep','ls','manage_capabilities'].includes(t.name)).map(t=>t.name))});
+ pi.registerCommand('acceptance_memory', {handler:async(_,ctx)=>fs.writeFileSync(path.join(ctx.cwd,'.tau','acceptance-memory.json'),JSON.stringify({...process.memoryUsage(),registered:pi.getAllTools().length,active:pi.getActiveTools().length}))});
  pi.registerTool({name:'road_volume_sum',label:'Road volume sum',description:'Sum the numeric road volumes in a task-relative JSON file.',parameters:{type:'object',properties:{inputPath:{type:'string'}},required:['inputPath'],additionalProperties:false},async execute(id,p,signal,update,ctx){
   const file=path.resolve(ctx.cwd,p.inputPath),relative=path.relative(ctx.cwd,file);if(path.isAbsolute(relative)||relative==='..'||relative.startsWith('../'))throw new Error('Use a task-relative file');
   const values=JSON.parse(fs.readFileSync(file,'utf8'));if(!Array.isArray(values)||!values.every(v=>typeof v==='number'&&Number.isFinite(v)))throw new Error('Expected numeric array');
@@ -54,6 +55,8 @@ async function run(mode, task, message) {
   assert.equal((await rpc({ type: 'get_state', sessionId: session.id })).success, true);
   const initializedMs = Math.round(performance.now() - begin);
   if (mode === 'eager') assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message: '/acceptance_eager' })).success, true);
+  assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message: '/acceptance_memory' })).success, true);
+  const piInitializedMemory = JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/acceptance-memory.json'), 'utf8'));
   const before = (await snapshot()).entries.length;
   const started = performance.now();
   assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message })).success, true);
@@ -69,7 +72,7 @@ async function run(mode, task, message) {
   }
   if (task === 'geo') assert.ok(tools.some((tool) => tool.toolName === 'inspect_map_context' && !tool.isError));
   const usage = assistant.reduce((sum, message) => { for (const key of ['input', 'output', 'cacheRead', 'cacheWrite']) sum[key] += message.usage?.[key] || 0; return sum; }, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-  report.push({ mode, task, model, initializedMs, elapsedMs: Math.round(performance.now() - started), modelRequests: assistant.length, usage, toolCalls: tools.map((tool) => ({ name: tool.toolName, action: tool.details?.action, isError: !!tool.isError })), sessionFile: state.sessionFile, success: true });
+  report.push({ mode, task, model, initializedMs, piInitializedMemory, elapsedMs: Math.round(performance.now() - started), modelRequests: assistant.length, usage, toolCalls: tools.map((tool) => ({ name: tool.toolName, action: tool.details?.action, isError: !!tool.isError })), sessionFile: state.sessionFile, success: true });
   console.log(JSON.stringify(report.at(-1)));
   await fetch(`${endpoint}/api/live-sessions/${session.id}`, { method: 'DELETE' });
 }

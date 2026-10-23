@@ -4,6 +4,7 @@ import path from 'node:path';
 
 export async function activationHostSmoke({ root, json, rpc, until, providerInputs }) {
   const session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'Activation Host acceptance' })).session;
+  const firstRequestIndex = providerInputs.length;
   const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
   const results = (state) => state.entries.filter((entry) => entry.message?.role === 'toolResult').map((entry) => entry.message);
   const execute = async (params) => {
@@ -43,7 +44,19 @@ export async function activationHostSmoke({ root, json, rpc, until, providerInpu
   const state = await until(async () => { const value = await json(`/api/live-sessions/${next.id}/snapshot`); return !value.isStreaming && results(value).some((result) => result.details?.moduleId === moduleId) && value; }, 'skill-only module');
   assert.equal(results(state).at(-1).details.status, 'no_tools');
   assert.equal(providerInputs.at(-1).tools.length, 5);
-  const schemas = initial.tools.map(({ name, description, parameters }) => ({ type: 'function', function: { name, description, parameters } }));
+  // Compare actual Pi-built provider schemas with identical installed modules.
+  // Only this isolated fixture exposes the old eager set, then reload restores
+  // normal activation. There is no production feature flag or second runtime.
+  await rpc({ type: 'prompt', sessionId: session.id, message: '/activation_eager' });
+  const measurementIndex = providerInputs.length;
+  await rpc({ type: 'prompt', sessionId: session.id, message: 'activation-measurement' });
+  await until(async () => providerInputs.length > measurementIndex && !(await snapshot()).isStreaming, 'eager schema capture');
+  const eager = providerInputs[measurementIndex].tools, progressive = providerInputs[firstRequestIndex].tools;
+  const entriesBeforeReload = (await snapshot()).entries.length;
+  await rpc({ type: 'prompt', sessionId: session.id, message: '/p0_reload' });
+  await execute({ action: 'status' });
+  assert.equal(providerInputs.at(-1).tools.length, 10, 'first provider request after reload excludes eager-only tools');
+  const entriesAfterReload = (await snapshot()).entries.length;
   return { firstRequestFive: true, readOnlyUnchanged: true, moduleDependenciesDoNotActivate: true, bridgeRefresh: true, unknownPlanRefused: true, skillOnlyInstalledAndAssembled: true, installDoesNotExpandExistingPlan: true,
-    schemaMeasurement: { allRegisteredCount: schemas.length, allRegisteredBytes: Buffer.byteLength(JSON.stringify(schemas)), firstActiveCount: 5, firstActiveBytes: Buffer.byteLength(JSON.stringify(schemas.filter((tool) => initial.tools.find((item) => item.name === tool.function.name).active))), source: 'same production Pi Bridge definitions; provider capture separately asserts actual five-tool requests', tokens: 'controlled provider supplies no tokenizer/usage; bytes only' } };
+    schemaMeasurement: { registeredCount: initial.tools.length, eagerCount: eager.length, eagerBytes: Buffer.byteLength(JSON.stringify(eager)), firstActiveCount: progressive.length, firstActiveBytes: Buffer.byteLength(JSON.stringify(progressive)), afterGeoCount: 10, reloadFirstRequestCount: 10, reloadAddedHistoryEntries: entriesAfterReload - entriesBeforeReload, source: 'actual HTTP provider tools; same assembled modules', tokens: 'controlled provider supplies no tokenizer/usage; bytes only' } };
 }

@@ -33,3 +33,45 @@ Tool Activation 1.0.0、Workbench 1.4.0、Web Bridge 1.2.0、Module Authoring 1.
 `TRANSPORTX_TOOL_SMOKE_PHASE=recovery node scripts/tool-host-smoke.mjs` 也已通过：提交前、提交后及计算中强杀 Host，恢复分别为 unknown/succeeded/unknown，每例 Python 派发恰为一次；查询和重放不重算，已提交成果 ID/哈希保留，复制 JSONL 不能取得原执行权。
 
 实际模型证据保留在本机临时根 `transportx-activation-model-fxzt6H` 的 report.json 与 Pi JSONL，脚本退出已移除复制的 models/auth 文件。未将密钥或完整配置写入仓库。测试只授权自身 fixture 的原生信任决定，不声称真人点击或各平台安装包验收。
+
+## P3：实测与取舍
+
+Apple M4 / 24 GiB，macOS arm64，Node 24.2.0，Pi 0.80.10。固定 Provider 使用生产 Host 的同一装配集合，测试专用命令临时设置之前的 eager 集合后捕获真实 HTTP tools，再 reload 恢复正常行为；没有产品开关或第二套执行模式。
+
+| 实际请求 | 工具数 | tools JSON 字节 |
+|---|---:|---:|
+| 原全量开放集合 | 17 | 19,940 |
+| 新会话首次请求 | 5 | 3,664 |
+| 开启 Geo 后 | 10 | 11,388 |
+| Canvas/Geo/Citation/Interaction 连续使用并恢复后 | 14 | 17,616 |
+
+其中 all-registered 为 21，包含 Pi 自带但原本不开放的 find/grep/ls 和管理器；没有用这 21 个冒充旧 eager 基线。新首请求 Schema 字节减少 81.6%。Geo 数值由 P0 同样生产定义的 Provider 捕获；其余为 Host 同装配对照。reload 后第一次实际请求为 10 工具。随着分支使用更多模块，工具继续累积；不承诺长期保持五工具。
+
+真实模型第二次固定输入求和复测（DeepSeek deepseek-v4-flash，同一模块版本/输入；缓存未清）：
+
+| 指标 | eager | progressive |
+|---|---:|---:|
+| 任务结果 | 52 / 4，成功 | 52 / 4，成功 |
+| 模型请求 | 4 | 4 |
+| 工具调用 | 4 | 4（含 enable） |
+| 输入 token（未缓存） | 9,443 | 4,767 |
+| cacheRead token | 29,696 | 14,208 |
+| 合计输入 token | 39,139 | 18,975 |
+| 输出 token | 359 | 511 |
+| 任务耗时 | 4,822 ms | 5,474 ms |
+| 初始化至 get_state | 440 ms | 425 ms |
+| 初始化 Pi RSS | 215.6 MiB | 207.5 MiB |
+
+内存来自各 Pi 自己的 process.memoryUsage，一次初始化时点，不是 Host 内存或稳定峰值。两个模式都完成完整 Extension 注册，不能据此宣称代码懒加载或显著内存收益。第一次求和样本也是 4 次模型请求、均成功，但 eager/progressive 工具调用为 4/5，耗时 6290/4399 ms；保留波动，不承诺统一加速。当前样本不足以估计总体成功率、p95 或其他 Provider 的缓存表现。
+
+生产 Host 到首次工具/历史/Bridge 的最后五次观测为 493/483/456/456/452 ms，中位 456 ms。上轮同机 P0 记录中位 441 ms，但不是同一缓存和并发负载，不作为稳定差值；本轮未发现需要推迟 Extension 导入的启动瓶颈。
+
+真实模型只读介绍与 Geo 执行均通过。复测只读介绍仅 discover+inspect（2 工具调用），首轮曾使用 7 次查询；没有证据需要引入新检索架构。四动作返回已按方案有界；保持按 Module 开放，不增加单工具粒度、自动回收或依赖传播。
+
+第二次模型证据根 `transportx-activation-model-LvP31x`，已清除配置副本。可复核摘要见 [实测 JSON](acceptance/module-tool-activation.json)。最终构建、核心 40/40、完整 Web、真实 Pi RPC、完整类型检查通过；新增源码均小于 500 行。
+
+## 范围与回退
+
+本轮已验收源码与本机实际链路。未重新构建新协调器的 macOS/Windows 安装包，未运行其他 Provider 的原生 deferred 模式；PR CI 检查各 OS 的源码行为，目标机安装包仍需发布前验收。冻结旧 Plan 未包含协调器时继续使用原计划，不注入新模块；已有普通历史、引用、地图及业务结果不清理。
+
+需要回退时撤回协调器依赖/默认装配与相关启动、Bridge、诊断改动，恢复全量开放行为；保留 `transportx-tool-activation/v1` custom entries、Pi JSONL、Spatial/Citation 账本及成果。使用新会话或明确选择相应版本的计划，不通过删除记录或重跑业务回退。分阶段提交可供评审或反向提交；不 reset 用户数据。

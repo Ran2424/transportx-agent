@@ -30,6 +30,7 @@ import { Type } from 'typebox';
 export default function(pi) {
   fs.writeFileSync(${JSON.stringify(marker)}, 'loaded');
   pi.registerCommand('p0_reload', { description: 'Reload only approved resources', handler: async (_, ctx) => { await ctx.reload(); fs.writeFileSync(${JSON.stringify(reloaded)}, 'done'); } });
+  pi.registerCommand('activation_eager', { description: 'Test-only previous eager schema measurement', handler: async () => { pi.setActiveTools(pi.getAllTools().filter(tool => !['find','grep','ls','manage_capabilities'].includes(tool.name)).map(tool => tool.name)); } });
   ${spatialPhase ? "pi.registerCommand('p1_spatial_endpoint', { description: 'Test-owned loopback fault relay', handler: async (value) => { const url = new URL(value.trim()); if (url.hostname !== '127.0.0.1') throw new Error('Only the local test relay is allowed'); process.env.TAU_SPATIAL_ENDPOINT = url.origin; } });" : ''}
   ${citationPhase ? "pi.registerCommand('p2_citation_endpoint', { description: 'Test-owned Citation relay', handler: async (value) => { const url = new URL(value.trim()); if (url.hostname !== '127.0.0.1') throw new Error('Only the local test relay is allowed'); process.env.TAU_CITATION_ENDPOINT = url.origin; } });" : ''}
   ${citationPhase ? "pi.registerCommand('p2_citation_active', { description: 'Test-owned native active-tool change', handler: async (value) => { const names = pi.getActiveTools().filter(name => name !== 'tau_resolve_citation'); pi.setActiveTools(value.trim() === 'off' ? names : [...names, 'tau_resolve_citation']); } });" : ''}
@@ -71,7 +72,7 @@ const provider = http.createServer(async (req, res) => {
     res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'injected model failure after an unknown Spatial result' } })); return;
   }
   const core = input.startsWith('core:') ? JSON.parse(input.slice(5)) : null;
-  let tool = last.role !== 'user' && (lastToolName !== 'manage_capabilities' || core?.tool === 'manage_capabilities') ? null : core ? { name: core.tool, arguments: JSON.stringify(core.params) } : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
+  let tool = input === 'activation-measurement' || last.role !== 'user' && (lastToolName !== 'manage_capabilities' || core?.tool === 'manage_capabilities') ? null : core ? { name: core.tool, arguments: JSON.stringify(core.params) } : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
     ? { name: 'tau_spatial_analyze', arguments: input.slice(input.indexOf(':') + 1) }
     : spatialPhase && input.startsWith('spatial-status:') ? { name: 'tau_spatial_execution', arguments: input.slice('spatial-status:'.length) }
     : lifecyclePhase && input.startsWith('module-package:') ? { name: 'tau_module_package', arguments: input.slice('module-package:'.length) }
@@ -248,6 +249,7 @@ try {
   const persisted = fs.readFileSync(final.sessionFile, 'utf8');
   assert.match(persisted, /p0_expected_failure/); assert.match(persisted, /p0_ok/);
   const canvas = canvasPhase ? await (await import('./harness/canvas-core-smoke.mjs')).canvasCoreSmoke({ root, endpoint, json, rpc, until }) : undefined;
+  if (activationPhase) canvas.accumulatedSchemas = { count: providerInputs.at(-1).tools.length, bytes: Buffer.byteLength(JSON.stringify(providerInputs.at(-1).tools)), source: 'actual final provider request after Canvas/Geo/Citation/Interaction and resume' };
   const spatial = spatialPhase ? await (await import('./harness/spatial-host-smoke.mjs')).spatialHostSmoke({ root, endpoint, json, rpc, until, appRoot, providerInputs }) : undefined;
   const citation = citationPhase ? await (await import('./harness/citation-host-smoke.mjs')).citationHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
   if (lifecyclePhase) for (const version of ['1.0.0', '1.0.1']) fs.cpSync(path.join(root, 'modules/local.traffic-peak', version), path.join(root, `lifecycle-backup-${version}`), { recursive: true });
