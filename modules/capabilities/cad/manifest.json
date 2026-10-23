@@ -2,10 +2,12 @@
   "manifestVersion": 2,
   "id": "com.transportx.cad",
   "name": "CAD Drawing",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
-  "dependencies": [],
+  "dependencies": [
+    "com.transportx.canvas"
+  ],
   "entrypoints": {
     "piExtensions": [
       "extensions/pi-cad/index.ts"
@@ -28,22 +30,20 @@
     "locales": {
       "zh-CN": {
         "name": "CAD 制图",
-        "description": "使用 cad_inspect / cad_draw / cad_verify 将空间分析结果转换为可检查、可追溯的 2D DXF 图纸。",
+        "description": "用户与 Agent 共同查看 2D DXF，选择实体后由 Agent 查询并提交图纸修改。",
         "features": [
-          "GeoJSON 转 DXF，显式声明单位与坐标变换",
-          "查询、按 revision 编辑并原子提交 DXF",
-          "只读 Canvas 查看图纸并共享图层/实体上下文",
-          "生成 PNG/PDF 预览并重新打开校验"
+          "工作区与 Agent 复用同一 CAD 画布",
+          "选区绑定内容版本，Agent 受控修改并保留历史",
+          "按需转换 GeoJSON、检查与导出 PNG/PDF"
         ]
       },
       "en-US": {
         "name": "CAD Drawing",
-        "description": "Uses cad_inspect / cad_draw / cad_verify to turn spatial analysis into inspectable, revisioned 2D DXF drawings.",
+        "description": "View 2D DXF drawings together, select entities and let the Agent commit controlled revisions.",
         "features": [
-          "GeoJSON to DXF with explicit units and coordinate transform",
-          "Inspect, edit by revision and atomically commit DXF",
-          "Read-only Canvas with layer/entity context sharing",
-          "Renders PNG/PDF previews and reopens the file for verification"
+          "Shared CAD views from workspace and Agent",
+          "Version-bound selections and revisioned Agent edits",
+          "On-demand GeoJSON conversion, validation and PNG/PDF export"
         ]
       }
     }

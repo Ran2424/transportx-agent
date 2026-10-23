@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { CORE_TOOL_BINDINGS, canonicalToolSchema, type ToolDiagnostic, type ToolInterfaceContract } from '../contracts/tool-interface.js';
 import type { JsonRecord, PiWebBridgeEnvelope, ResolvedPlanModule } from '../contracts/index.js';
-import { asRecord, parseCitationEnvelope, parseSpatialAnalysisResultStructured, parseCanvasPresentation, parseCanvasContext, parseVisualizationEnvelope, parseGeoClientContextStructured, parseGeoInteractionResponseStructured } from '../contracts/index.js';
+import { asRecord, parseCadDrawResultStructured, parseCadInspectResultStructured, parseCadVerifyResultStructured, parseCitationEnvelope, parseSpatialAnalysisResultStructured, parseCanvasPresentation, parseCanvasContext, parseVisualizationEnvelope, parseGeoClientContextStructured, parseGeoInteractionResponseStructured } from '../contracts/index.js';
 
 type Observation = { envelope: PiWebBridgeEnvelope | null; live: boolean; observedAt?: string };
 
@@ -39,6 +39,10 @@ export function diagnoseTool(contract: ToolInterfaceContract, selected: Resolved
     switch (contract.toolId) {
       case 'capabilities.manage': return ['discover', 'inspect', 'enable', 'status'].includes(String(details.action));
       case 'citation.resolve': return !!parseCitationEnvelope(details.citations);
+      case 'cad.draw': return parseCadDrawResultStructured(details.result).ok;
+      case 'cad.inspect': return parseCadInspectResultStructured(details.result).ok;
+      case 'cad.verify': return parseCadVerifyResultStructured(details.result).ok;
+      case 'cad.execution': return typeof details.operationId === 'string' && ['running', 'succeeded', 'failed', 'cancelled', 'unknown'].includes(String(details.state));
       case 'spatial.analyze': return parseSpatialAnalysisResultStructured(details.result).ok;
       case 'spatial.execution': return typeof details.operationId === 'string' && ['prepared', 'running', 'succeeded', 'failed', 'cancelled', 'unknown'].includes(String(details.state));
       case 'module.package': return details.action === 'inspect' || details.action === 'install' && details.installed === true;

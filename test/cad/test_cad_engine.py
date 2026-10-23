@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,9 @@ class CadEngineTests(unittest.TestCase):
         target = self.workspace / "cad" / file_id / f"r{revision}.dxf"
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
+        manifest_path = self.workspace / '.tau' / 'cad-drawings' / file_id / 'manifest.json'
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps({'protocol': 'tau-cad-drawing', 'version': '1.0', 'currentRevision': revision, 'revisions': [{'revision': revision, 'path': target.relative_to(self.workspace).as_posix(), 'sha256': hashlib.sha256(target.read_bytes()).hexdigest()}]}), encoding='utf-8')
 
     def run_engine(self, action: str, request: dict, job_name: str = "job") -> dict:
         job_dir = self.workspace / ".tau" / "cad-jobs" / job_name
@@ -78,7 +82,9 @@ class CadEngineTests(unittest.TestCase):
             "protocol": "tau-cad",
             "version": "1.0",
             "kind": "from-geojson",
+            "sourceCrs": "EPSG:4326",
             "fileId": "junction_plan",
+            "exportPreview": True,
             "sourcePath": "input/01.geojson",
             "target": {"kind": "epsg", "code": "EPSG:32651"},
             "layerMap": {"roads": "ROAD-CENTERLINE", "buffers": "LANDUSE-300"},
@@ -104,6 +110,7 @@ class CadEngineTests(unittest.TestCase):
             "protocol": "tau-cad",
             "version": "1.0",
             "kind": "from-geojson",
+            "sourceCrs": "EPSG:4326",
             "fileId": "local_plan",
             "sourcePath": "input/01.geojson",
             "target": {"kind": "local", "origin": [121.47, 31.23], "rotationDeg": 90, "scale": 1},
@@ -119,6 +126,7 @@ class CadEngineTests(unittest.TestCase):
             "protocol": "tau-cad",
             "version": "1.0",
             "kind": "from-geojson",
+            "sourceCrs": "EPSG:4326",
             "sourcePath": "../secret.geojson",
             "target": {"kind": "epsg", "code": "EPSG:32651"},
             "layerMap": {"roads": "ROAD-CENTERLINE"},
@@ -145,7 +153,7 @@ class CadEngineTests(unittest.TestCase):
             "units": "m",
         }, "imported")
         self.assertTrue(imported["ok"], imported)
-        self.assertEqual(imported["drawing"]["revision"], 0)
+        self.assertEqual(imported["drawing"]["revision"], 1)
         self.assertEqual(imported["drawing"]["units"], "m")
 
     def test_edit_inspect_and_verify(self) -> None:
@@ -153,6 +161,7 @@ class CadEngineTests(unittest.TestCase):
             "protocol": "tau-cad",
             "version": "1.0",
             "kind": "from-geojson",
+            "sourceCrs": "EPSG:4326",
             "fileId": "edit_plan",
             "sourcePath": "input/08.geojson",
             "target": {"kind": "epsg", "code": "EPSG:32651"},
@@ -168,6 +177,7 @@ class CadEngineTests(unittest.TestCase):
             "kind": "edit",
             "fileId": "edit_plan",
             "baseRevision": 1,
+            "expectedSha256": hashlib.sha256((self.workspace / "cad/edit_plan/r1.dxf").read_bytes()).hexdigest(),
             "operations": [
                 {"op": "move", "selector": {"kind": "layer", "layer": "SIGNAL"}, "dx": 2, "dy": 0},
                 {"op": "copy", "selector": {"kind": "layer", "layer": "SIGNAL"}, "dx": 5, "dy": 0, "count": 1},
@@ -181,6 +191,8 @@ class CadEngineTests(unittest.TestCase):
         }, "edit")
         self.assertTrue(edited["ok"], edited)
         self.assertEqual(edited["drawing"]["revision"], 2)
+        self.assertNotIn("preview", edited)
+        self.assertFalse((self.workspace / ".tau/cad-jobs/edit/out/r2.png").exists())
         self.assertGreaterEqual(edited["plan"]["wouldModify"], 1)
         self.commit("edit", "edit_plan", 2)
 
@@ -202,6 +214,33 @@ class CadEngineTests(unittest.TestCase):
             "policy": "traffic-v1",
         }, "verify")
         self.assertTrue(verified["ok"], verified)
+
+    def test_explicit_source_crs_and_rotation(self) -> None:
+        from pyproj import Transformer
+        coordinates = [[121.44, 31.19], [121.441, 31.191]]
+        forward = Transformer.from_crs('EPSG:4326', 'EPSG:32651', always_xy=True)
+        projected = [list(forward.transform(*point)) for point in coordinates]
+        def collection(points):
+            return {'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'properties': {'kind': 'signal'}, 'geometry': {'type': 'Point', 'coordinates': point}} for point in points]}
+        path = self.workspace / 'input' / 'projected.geojson'
+        path.write_text(json.dumps(collection(projected)), encoding='utf-8')
+        request = {'protocol': 'tau-cad', 'version': '1.0', 'kind': 'from-geojson', 'fileId': 'projected', 'sourcePath': 'input/projected.geojson', 'sourceCrs': 'EPSG:32651', 'target': {'kind': 'epsg', 'code': 'EPSG:32651'}, 'layerMap': {'signal': 'SIGNAL'}}
+        result = self.run_engine('draw', request, 'projected')
+        self.assertTrue(result['ok'], result)
+        self.assertAlmostEqual(result['drawing']['extents']['min'][0], min(point[0] for point in projected), places=5)
+        self.assertFalse(self.run_engine('draw', {**request, 'sourceCrs': 'EPSG:4326'}, 'wrong-crs')['ok'])
+        self.assertFalse(self.run_engine('draw', {key: value for key, value in request.items() if key != 'sourceCrs'}, 'missing-crs')['ok'])
+        path.write_text(json.dumps(collection(coordinates)), encoding='utf-8')
+        normal = self.run_engine('draw', {**request, 'sourceCrs': 'EPSG:4326', 'target': {'kind': 'local', 'origin': coordinates[0]}}, 'normal')
+        rotated = self.run_engine('draw', {**request, 'sourceCrs': 'EPSG:4326', 'target': {'kind': 'local', 'origin': coordinates[0], 'rotationDeg': 90, 'scale': 2}}, 'rotated')
+        self.assertTrue(normal['ok'], normal)
+        self.assertTrue(rotated['ok'], rotated)
+        normal_doc = ezdxf.readfile(self.workspace / '.tau/cad-jobs/normal/out/r1.dxf')
+        rotated_doc = ezdxf.readfile(self.workspace / '.tau/cad-jobs/rotated/out/r1.dxf')
+        x, y, _ = list(normal_doc.modelspace())[1].dxf.location
+        rx, ry, _ = list(rotated_doc.modelspace())[1].dxf.location
+        self.assertAlmostEqual(rx, -2 * y, places=5)
+        self.assertAlmostEqual(ry, 2 * x, places=5)
 
     def test_verify_rejects_open_boundary(self) -> None:
         doc = ezdxf.new("R2013", setup=False)

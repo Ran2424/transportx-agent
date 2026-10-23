@@ -5,7 +5,7 @@ export const CAD_CANVAS_KIND = 'cad';
 export const CAD_CANVAS_MAX_HANDLES = 500;
 export const CAD_CANVAS_MAX_LAYERS = 100;
 
-export type CadCanvasUnits = 'm' | 'mm';
+export type CadCanvasUnits = 'm' | 'mm' | null;
 
 export type CadCanvasTarget = {
   kind: 'viewport';
@@ -20,6 +20,7 @@ export type CadCanvasSelection = {
   layers: string[];
   count: number;
   truncated: boolean;
+  drawingSha256?: string;
 };
 
 export type CadCanvasPayload = {
@@ -27,8 +28,8 @@ export type CadCanvasPayload = {
   path: string;
   sha256: string;
   units: CadCanvasUnits;
-  layerCount: number;
-  entityCount: number;
+  layerCount?: number;
+  entityCount?: number;
   preview?: string;
 };
 
@@ -69,13 +70,13 @@ export function parseCadCanvasTarget(value: unknown): CadCanvasTarget | null {
   const center = point(record.center);
   const zoom = record.zoom;
   const unit = units(record.units);
-  if (!center || typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0 || !unit) return null;
+  if (!center || typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0 || (record.units !== null && !unit)) return null;
   return { kind: 'viewport', center, zoom, units: unit };
 }
 
 export function parseCadCanvasSelection(value: unknown): CadCanvasSelection | null {
   const record = asRecord(value);
-  if (!record || !exactKeys(record, ['kind', 'handles', 'layers', 'count', 'truncated']) || record.kind !== 'cad-selection') return null;
+  if (!record || !exactKeys(record, ['kind', 'handles', 'layers', 'count', 'truncated', 'drawingSha256']) || record.kind !== 'cad-selection') return null;
   if (!Array.isArray(record.handles) || record.handles.length > CAD_CANVAS_MAX_HANDLES) return null;
   if (!Array.isArray(record.layers) || record.layers.length > CAD_CANVAS_MAX_LAYERS) return null;
   const handles: string[] = [];
@@ -92,7 +93,9 @@ export function parseCadCanvasSelection(value: unknown): CadCanvasSelection | nu
   }
   const count = asInteger(record.count);
   if (count === null || count < handles.length || count > MAX_COUNT || typeof record.truncated !== 'boolean') return null;
-  return { kind: 'cad-selection', handles, layers, count, truncated: record.truncated };
+  if (new Set(handles).size !== handles.length || !record.truncated && count !== handles.length) return null;
+  if (record.drawingSha256 !== undefined && (typeof record.drawingSha256 !== 'string' || !SHA256.test(record.drawingSha256))) return null;
+  return { kind: 'cad-selection', handles, layers, count, truncated: record.truncated, ...(typeof record.drawingSha256 === 'string' ? { drawingSha256: record.drawingSha256 } : {}) };
 }
 
 export function parseCadCanvasPayload(value: unknown): CadCanvasPayload | null {
@@ -102,9 +105,9 @@ export function parseCadCanvasPayload(value: unknown): CadCanvasPayload | null {
   const path = safeRelativePath(record.path);
   const sha256 = asString(record.sha256, 64);
   const unit = units(record.units);
-  const layerCount = asInteger(record.layerCount);
-  const entityCount = asInteger(record.entityCount);
+  const layerCount = record.layerCount === undefined ? undefined : asInteger(record.layerCount);
+  const entityCount = record.entityCount === undefined ? undefined : asInteger(record.entityCount);
   const preview = record.preview === undefined ? undefined : safeRelativePath(record.preview);
-  if (!path || !sha256 || !SHA256.test(sha256) || !unit || layerCount === null || layerCount < 0 || entityCount === null || entityCount < 0 || (record.preview !== undefined && !preview)) return null;
-  return { format: 'dxf', path, sha256, units: unit, layerCount, entityCount, ...(preview ? { preview } : {}) };
+  if (!path || !sha256 || !SHA256.test(sha256) || (record.units !== null && !unit) || layerCount === null || layerCount !== undefined && layerCount < 0 || entityCount === null || entityCount !== undefined && entityCount < 0 || (record.preview !== undefined && !preview)) return null;
+  return { format: 'dxf', path, sha256, units: unit, ...(layerCount !== undefined ? { layerCount } : {}), ...(entityCount !== undefined ? { entityCount } : {}), ...(preview ? { preview } : {}) };
 }

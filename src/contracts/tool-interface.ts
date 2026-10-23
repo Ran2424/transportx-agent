@@ -22,6 +22,12 @@ export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
   'com.transportx.module-authoring': [
     { toolId: 'module.package', piName: 'tau_module_package', file: 'tool-contract.json', execution: 'host' },
   ],
+  'com.transportx.cad': [
+    { toolId: 'cad.draw', piName: 'cad_draw', file: 'tool-contract.json', execution: 'host' },
+    { toolId: 'cad.inspect', piName: 'cad_inspect', file: 'inspect-contract.json', execution: 'host' },
+    { toolId: 'cad.verify', piName: 'cad_verify', file: 'verify-contract.json', execution: 'host' },
+    { toolId: 'cad.execution', piName: 'cad_execution', file: 'execution-contract.json', execution: 'host' },
+  ],
   'com.transportx.spatial-analysis': [
     { toolId: 'spatial.analyze', piName: 'tau_spatial_analyze', file: 'tool-contract.json', execution: 'host' },
     { toolId: 'spatial.execution', piName: 'tau_spatial_execution', file: 'execution-contract.json', execution: 'host' },

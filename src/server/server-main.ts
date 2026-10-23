@@ -89,9 +89,12 @@ let authEnabled = !!PROJECT_AUTH || (AUTH_CONFIGURED && TAU_SETTINGS.authEnabled
 let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
-const canvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath));
+const canvasService: CanvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath), {
+  present: (session, input) => cadService.present(liveManager.get(session.id)!, input),
+  resolve: (session, viewId) => cadService.resolvePresentation(liveManager.get(session.id)!, viewId),
+});
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py')));
-const cadService = new CadService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/cad/scripts/cad_engine.py')));
+const cadService: CadService = new CadService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/cad/scripts/cad_engine.py')), (session, ids) => canvasService.inspectContexts(session, ids));
 let cadHealth: { ok: boolean; version?: string; reason?: string } | null = null;
 void cadService.health().then((value) => { cadHealth = value; }).catch((error) => { cadHealth = { ok: false, reason: String(error) }; });
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
@@ -305,9 +308,13 @@ function currentSessionOptions() {
   const platformModules = [...MODULE_REGISTRY.modules.values()].filter((module) => module.origin !== 'installed');
   const platformSources = platformModules.map((module) => ({ manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin }));
   const platformModuleIds = new Set(platformModules.map((module) => module.manifest.id));
+  const defaultModuleIds = new Set(MODULE_REGISTRY.dependencyOrder('com.transportx.workbench').map((module) => module.manifest.id));
   return {
     schemaVersion: 1,
-    modules: MODULE_INSTALLER.catalog().map((entry) => {
+    modules: [
+      ...MODULE_INSTALLER.catalog(),
+      ...platformModules.filter((module) => module.origin === 'builtin' && module.enabled && module.manifest.type === 'capability' && !defaultModuleIds.has(module.manifest.id)).map((module) => ({ id: module.manifest.id, version: module.manifest.version, manifest: module.manifest, source: { manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin } })),
+    ].map((entry) => {
       const runtime = moduleRuntimeCompatible(entry.manifest);
       let dependenciesCompatible = false;
       try {
@@ -322,9 +329,9 @@ function currentSessionOptions() {
         ...(entry.manifest.presentation ? { presentation: entry.manifest.presentation } : {}),
         version: entry.version,
         type: entry.manifest.type,
-        origin: 'installed',
+        origin: entry.source.origin,
         compatible,
-        enabledForNewSessions: compatible && enabled.has(entry.id),
+        enabledForNewSessions: compatible && (entry.source.origin === 'builtin' || enabled.has(entry.id)),
         selectedByDefault: compatible && enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
         dependencies: entry.manifest.dependencies,
         assets: (entry.manifest.contributes?.assets || []).map((asset) => {

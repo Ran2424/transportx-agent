@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.workbench",
   "name": "TransportX Workbench",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "domain",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [
@@ -14,7 +14,6 @@
     "com.transportx.document",
     "com.transportx.geo",
     "com.transportx.spatial-analysis",
-    "com.transportx.cad",
     "com.transportx.traffic.report-template",
     "com.transportx.module-authoring"
   ],

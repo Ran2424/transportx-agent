@@ -16,7 +16,7 @@ export async function capabilitySmoke(page) {
   assert.equal(await center.locator('.capability-inspector').count(), 0);
   await center.getByRole('button', { name: '重置筛选', exact: true }).click();
   await cards.first().waitFor();
-  await cards.filter({ hasText: '空间分析' }).click();
+  await cards.filter({ has: page.getByText('空间分析', { exact: true }) }).click();
   await center.getByRole('heading', { name: '功能概览', exact: true }).waitFor();
   assert.equal(await center.getByRole('heading', { name: '当前任务', exact: true }).count(), 0);
   assert.equal(await center.getByRole('heading', { name: '如何使用', exact: true }).count(), 0);

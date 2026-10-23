@@ -201,6 +201,7 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
       ...base,
       kind: 'from-geojson',
       sourcePath: 'analysis/spatial/result.geojson',
+      sourceCrs: 'EPSG:4326',
       target: { kind: 'epsg', code: 'EPSG:32651' },
       layerMap: { roads: 'ROAD-CENTERLINE', buffers: 'LANDUSE-300' },
       fileId: 'junction_plan',
@@ -221,6 +222,7 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
       kind: 'edit',
       fileId: 'junction_plan',
       baseRevision: 3,
+      expectedSha256: sha,
       operations: [
         { op: 'move', selector: { kind: 'layer', layer: 'SIGNAL' }, dx: 2, dy: 0 },
         { op: 'drawPolyline', layer: 'MARKING', points: [[0, 0], [10, 0]], closed: false },
@@ -232,6 +234,8 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     };
     assert.equal(cad.parseCadDrawRequestStructured(edit).ok, true);
     assert.equal(cad.parseCadDrawRequestStructured({ ...edit, baseRevision: undefined }).ok, false);
+    assert.equal(cad.parseCadDrawRequestStructured({ ...edit, expectedSha256: undefined }).ok, false);
+    assert.equal(cad.parseCadDrawRequestStructured({ ...request, sourceCrs: undefined }).ok, false);
     assert.equal(cad.parseCadDrawRequestStructured({ ...edit, operations: [{ op: 'copy', selector: { kind: 'layer', layer: 'SIGNAL' }, dx: 0, dy: 0, count: 101 }] }).ok, false);
     assert.equal(cad.parseCadDrawRequestStructured({ ...base, kind: 'import', sourcePath: 'uploads/plan.dxf', units: 'mm' }).ok, true);
     assert.equal(cad.parseCadDrawRequestStructured({ ...base, kind: 'import', sourcePath: 'uploads/plan.dwg' }).ok, false);

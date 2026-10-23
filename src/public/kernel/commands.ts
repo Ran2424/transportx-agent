@@ -13,7 +13,7 @@ import type { ModuleArchiveInspection, ModulePresentation } from '../../contract
 import type { ToolDiagnostic } from '../../contracts/tool-interface.ts';
 import { parseCitationEnvelope, parseCitationDetail, type CitationDetail, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
-import type { CanvasContextV1 } from '../../contracts/canvas.ts';
+import type { CanvasContextV1, CanvasPresentationV1 } from '../../contracts/canvas.ts';
 import type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 export type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 
@@ -155,7 +155,7 @@ export type SessionModuleOption = {
   presentation?: ModulePresentation;
   version: string;
   type: 'module' | 'capability' | 'domain';
-  origin: 'installed';
+  origin: 'installed' | 'builtin';
   compatible: boolean;
   enabledForNewSessions: boolean;
   selectedByDefault: boolean;
@@ -245,6 +245,7 @@ export type GeoCommands = {
 };
 
 export type CanvasCommands = {
+  present(sessionId: string, input: { adapterId: string; resource: { scope: 'session-file'; path: string }; title?: string }): Promise<CanvasPresentationV1>;
   createContext(sessionId: string, input: { viewId: string; revision: number; target?: unknown; selection?: unknown }): Promise<CanvasContextV1>;
 };
 
@@ -563,6 +564,10 @@ export function createGeoCommands(deps: CommandDeps): GeoCommands {
 
 export function createCanvasCommands(deps: CommandDeps): CanvasCommands {
   return {
+    async present(sessionId, input) {
+      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/canvas-presentations`, { method: 'POST', body: input }, { category: 'session', sessionId });
+      return (data as { canvas: CanvasPresentationV1 }).canvas;
+    },
     async createContext(sessionId, input) {
       const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/canvas-contexts`, { method: 'POST', body: input }, { category: 'session', sessionId });
       return (data as { context: CanvasContextV1 }).context;

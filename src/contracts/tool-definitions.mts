@@ -198,7 +198,106 @@ export const AskUserSchema = Type.Object({
 }, { additionalProperties: false });
 
 
+const Point = Type.Array(Type.Number(), { minItems: 2, maxItems: 2 });
+const Layer = Type.String({ minLength: 1, maxLength: 255 });
+const Handle = Type.String({ pattern: '^[0-9A-F]{1,16}$' });
+
+const Selector = Type.Union([
+  Type.Object({ kind: Type.Literal('handle'), handle: Handle }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal('layer'), layer: Layer, entityType: Type.Optional(Type.String({ maxLength: 40 })) }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal('bounds'), layer: Type.Optional(Layer), entityType: Type.Optional(Type.String({ maxLength: 40 })), min: Point, max: Point }, { additionalProperties: false }),
+]);
+
+const Operation = Type.Union([
+  Type.Object({ op: Type.Literal('move'), selector: Selector, dx: Type.Number({ description: 'Translation along drawing X in drawing units; not true east or a curve offset.' }), dy: Type.Number({ description: 'Translation along drawing Y in drawing units.' }) }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('copy'), selector: Selector, dx: Type.Number({ description: 'Translation along drawing X in drawing units; not true east or a curve offset.' }), dy: Type.Number({ description: 'Translation along drawing Y in drawing units.' }), count: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('delete'), selector: Selector }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('setLayer'), selector: Selector, layer: Layer }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('drawPolyline'), layer: Layer, points: Type.Array(Point, { minItems: 2, maxItems: 10_000 }), closed: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('drawText'), layer: Layer, position: Point, text: Type.String({ maxLength: 500 }), height: Type.Number({ exclusiveMinimum: 0 }), rotationDeg: Type.Optional(Type.Number()) }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('drawHatch'), layer: Layer, boundary: Type.Array(Point, { minItems: 3, maxItems: 10_000 }) }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('insertBlock'), layer: Layer, name: Type.String({ maxLength: 255 }), position: Point, rotationDeg: Type.Optional(Type.Number()), scale: Type.Optional(Type.Number({ exclusiveMinimum: 0 })) }, { additionalProperties: false }),
+]);
+
+const Target = Type.Union([
+  Type.Object({ kind: Type.Literal('epsg'), code: Type.String({ pattern: '^EPSG:[0-9]{4,6}$', maxLength: 40, description: 'Projected CRS code in EPSG:<number> form, for example EPSG:32651. Units must be metres.' }) }, { additionalProperties: false }),
+  Type.Object({ kind: Type.Literal('local'), origin: Point, rotationDeg: Type.Optional(Type.Number()), scale: Type.Optional(Type.Number({ exclusiveMinimum: 0 })) }, { additionalProperties: false }),
+], { description: 'Required for kind="from-geojson"; omit for kind="edit" and kind="import".' });
+
+export const CadDrawSchema = Type.Object({
+  kind: Type.Union([Type.Literal('from-geojson'), Type.Literal('edit'), Type.Literal('import')], {
+    description: 'from-geojson creates a new drawing from GeoJSON; edit modifies an existing drawing; import registers an existing DXF.',
+  }),
+  fileId: Type.Optional(Type.String({
+    pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$',
+    description: 'Stable drawing id. Edits with contextId resolve it on the Host; otherwise required for edit.',
+  })),
+  sourceCrs: Type.Optional(Type.String({ minLength: 1, maxLength: 120, description: 'Required for from-geojson. Explicit input CRS, for example EPSG:4326.' })),
+  expectedSha256: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$', description: 'Exact base DXF hash for edits without contextId. With contextId the Host resolves and verifies the frozen selection version.' })),
+  contextId: Type.Optional(Type.String({ pattern: '^canvas_context_[a-f0-9-]+$' })),
+  sourcePath: Type.Optional(Type.String({
+    maxLength: 1000,
+    description: 'Session-relative .geojson/.json path for from-geojson, or .dxf path for import. Omit for edit.',
+  })),
+  target: Type.Optional(Target),
+  units: Type.Optional(Type.Union([Type.Literal('m'), Type.Literal('mm')], {
+    description: 'Drawing units. from-geojson currently supports only "m".',
+  })),
+  layerKey: Type.Optional(Type.String({ maxLength: 120, description: 'GeoJSON property used as the layer mapping key. Defaults to "kind".' })),
+  layerMap: Type.Optional(Type.Record(Type.String({ maxLength: 120 }), Layer, {
+    description: 'Required for from-geojson: maps GeoJSON property values to DXF layer names.',
+  })),
+  labelField: Type.Optional(Type.String({ maxLength: 120, description: 'GeoJSON property copied into text labels.' })),
+  labelLayer: Type.Optional(Layer),
+  fillLayers: Type.Optional(Type.Array(Layer, { maxItems: 64 })),
+  repairInvalid: Type.Optional(Type.Boolean()),
+  title: Type.Optional(Type.String({ maxLength: 300 })),
+  baseRevision: Type.Optional(Type.Integer({
+    minimum: 0,
+    description: 'Required only for kind="edit"; must equal the current revision from cad_inspect. Omit for from-geojson/import.',
+  })),
+  operations: Type.Optional(Type.Array(Operation, {
+    minItems: 1,
+    maxItems: 200,
+    description: 'Required only for kind="edit"; ordered drawing operations.',
+  })),
+  exportPreview: Type.Optional(Type.Boolean({ description: 'Generate PNG/PDF only when explicitly requested. Editing does not need an export.' })),
+  dryRun: Type.Optional(Type.Boolean({ description: 'When true, validate and return the plan without writing DXF or preview files.' })),
+}, { additionalProperties: false, anyOf: [
+  { properties: { kind: { const: 'from-geojson' } }, required: ['sourcePath', 'sourceCrs', 'target', 'layerMap'] },
+  { properties: { kind: { const: 'import' } }, required: ['sourcePath'] },
+  { properties: { kind: { const: 'edit' } }, required: ['operations'], anyOf: [{ required: ['contextId'] }, { required: ['fileId', 'baseRevision', 'expectedSha256'] }] },
+] });
+
+export const CadInspectSchema = Type.Object({
+  contextId: Type.Optional(Type.String({ pattern: '^canvas_context_[a-f0-9-]+$', description: 'Inspect only entities in this attached CAD selection; the Host resolves its exact file/version.' })),
+  fileId: Type.Optional(Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' })),
+  path: Type.Optional(Type.String({ maxLength: 1000 })),
+  include: Type.Optional(Type.Array(Type.Union([
+    Type.Literal('summary'), Type.Literal('layers'), Type.Literal('entities'),
+    Type.Literal('blocks'), Type.Literal('units'), Type.Literal('extents'), Type.Literal('textStyles'),
+  ]), { maxItems: 7 })),
+  selector: Type.Optional(Selector),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  cursor: Type.Optional(Type.String({ maxLength: 160 })),
+}, { additionalProperties: false });
+
+export const CadVerifySchema = Type.Object({
+  fileId: Type.Optional(Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$' })),
+  path: Type.Optional(Type.String({ maxLength: 1000 })),
+  revision: Type.Optional(Type.Integer({ minimum: 0 })),
+  exportPreview: Type.Optional(Type.Boolean({ description: 'Export PNG/PDF of this existing DXF without creating a revision.' })),
+  policy: Type.Optional(Type.Union([Type.Literal('basic'), Type.Literal('traffic-v1'), Type.Literal('strict')])),
+}, { additionalProperties: false });
+
+export const CadExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), operationId: Type.Optional(Type.String({ pattern: '^cad_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
+
 export const coreToolContracts = [
+  { moduleId: 'com.transportx.cad', toolId: 'cad.inspect', piName: 'cad_inspect', contractVersion: '1.0.0', semanticVersion: 'cad-inspect-v2', input: CadInspectSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-inspect' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.draw', piName: 'cad_draw', contractVersion: '1.0.0', semanticVersion: 'cad-draw-v3', input: CadDrawSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-draw' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v2', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.execution', piName: 'cad_execution', contractVersion: '1.0.0', semanticVersion: 'cad-execution-v2', input: CadExecutionSchema, output: { protocol: 'transportx-cad-execution', version: 1, detailsKind: 'tau-cad-execution' } },
+
   { moduleId: 'com.transportx.tool-activation', toolId: 'capabilities.manage', piName: 'manage_capabilities', contractVersion: '1.0.0', semanticVersion: 'module-activation-v1', input: ManageCapabilitiesSchema, output: { protocol: 'transportx-capability-management', version: 1, detailsKind: 'transportx-capability-management' } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.present", piName: "canvas_present", contractVersion: "1.0.0", semanticVersion: "canvas.present-v1", input: CanvasPresentSchema, output: { protocol: "pi-canvas", version: "1.0", detailsKind: "tau-canvas" } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.inspect", piName: "canvas_inspect_context", contractVersion: "1.0.0", semanticVersion: "canvas.inspect-v1", input: CanvasInspectSchema, output: { protocol: "pi-canvas-context", version: "1.0", detailsKind: "tau-canvas-contexts" } },

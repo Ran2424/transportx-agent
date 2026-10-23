@@ -71,6 +71,118 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     assert.equal(restored.cancel(owner, { operationId: prepared.operationId }).state, 'cancelled');
   }
 
+  // CAD writes share the persistent task identity and controlled Python lifecycle.
+  {
+    const { CadService } = require('../../bin/cad-service.js');
+    const { CadInvocations } = require('../../bin/cad-invocations.js');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-cad-confirmation-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const histories = path.join(root, 'sessions'); fs.mkdirSync(histories);
+    const history = path.join(histories, 'owner.jsonl');
+    fs.writeFileSync(history, JSON.stringify({ type: 'session', id: 'cad-owner', cwd: root }) + '\n');
+    const owner = { cwd: root, sessionFile: history, resolvedSessionPlan: { workspace: root }, activeCanvasContextIds: [] as string[] };
+    const records = path.join(root, 'executions');
+    const { CanvasService } = require('../../bin/canvas-service.js');
+    const canvas = new CanvasService(null, (session: any, relative: string) => path.join(session.cwd, relative));
+    const cad = new CadService({ command: PYTHON, args: [], version: '3.10' }, path.join(process.cwd(), 'modules/capabilities/cad/scripts/cad_engine.py'), (session: any, ids: string[]) => canvas.inspectContexts(session, ids));
+    const invocations = new CadInvocations(records, histories, cad);
+    writeGeo(root, 'input.geojson', collection([point('a', [121.44, 31.19], { kind: 'signal' }), point('b', [121.441, 31.191], { kind: 'signal' })]));
+    const base = { protocol: 'tau-cad', version: '1.0' };
+    const request = { ...base, kind: 'from-geojson', fileId: 'plan', sourcePath: 'input.geojson', sourceCrs: 'EPSG:4326', target: { kind: 'local', origin: [121.44, 31.19], rotationDeg: 90, scale: 2 }, layerMap: { signal: 'SIGNAL' }, toolCallId: 'create-plan', contractVersion: '1.0.0' };
+    let calculations = 0;
+    const dispatch = (signal: AbortSignal, record: any) => { calculations++; return cad.draw(owner, record.request, signal, record.operationId, record.inputSha256); };
+    const signal = new AbortController().signal;
+    const created = await invocations.execute(owner, request, signal, dispatch);
+    assert.equal(created.result.ok, true, JSON.stringify(created));
+    assert.equal((await invocations.execute(owner, request, signal, dispatch)).reused, true);
+    assert.equal(calculations, 1, 'same tool call never redraws');
+    const restored = new CadInvocations(records, histories, cad);
+    assert.equal(restored.query({ ...owner, id: 'new-live-id' }, { lookupToolCallId: 'create-plan' }).state, 'succeeded');
+    await assert.rejects(restored.execute(owner, { ...request, title: 'different-intent' }, signal, dispatch), (error: any) => error.code === 'cad_operation_conflict');
+    const copied = path.join(histories, 'copy.jsonl'); fs.copyFileSync(history, copied);
+    assert.throws(() => restored.query({ ...owner, sessionFile: copied }, { operationId: created.operationId }));
+    const inspected = await cad.inspect(owner, { ...base, fileId: 'plan', include: ['summary', 'entities'] });
+    assert.equal(inspected.drawing.revision, 1);
+    assert.equal(inspected.drawing.sourceCrs, 'EPSG:4326');
+    assert.equal(inspected.drawing.target.rotationDeg, 90);
+    const handle = inspected.entities[0].handle;
+    const edit = { ...base, kind: 'edit', fileId: 'plan', baseRevision: 1, expectedSha256: inspected.summary.sha256, operations: [{ op: 'move', selector: { kind: 'handle', handle }, dx: 3, dy: 0 }], toolCallId: 'move-plan', contractVersion: '1.0.0' };
+    await assert.rejects(cad.draw(owner, { ...edit, expectedSha256: 'a'.repeat(64) }), /checksum/);
+    const contextId = 'canvas_context_00000000-0000-4000-8000-000000000001';
+    const context = { protocol: 'pi-canvas-context', version: '1.0', contextId, adapterId: 'com.transportx.canvas.cad', viewId: 'cad:plan', revision: 1, resources: [{ scope: 'session-file', path: 'cad/plan/r1.dxf' }], selection: { kind: 'cad-selection', handles: [handle], layers: ['SIGNAL'], count: 501, truncated: true, drawingSha256: edit.expectedSha256 }, createdAt: new Date().toISOString() };
+    owner.activeCanvasContextIds = [contextId];
+    fs.writeFileSync(path.join(root, '.tau/canvas-contexts.json'), JSON.stringify([context]));
+    await assert.rejects(cad.draw(owner, { ...edit, contextId }), /empty or truncated/);
+    context.selection.count = 1; context.selection.truncated = false;
+    fs.writeFileSync(path.join(root, '.tau/canvas-contexts.json'), JSON.stringify([context]));
+    await assert.rejects(cad.draw(owner, edit), /contextId/);
+    await assert.rejects(cad.draw(owner, { ...edit, contextId, operations: [{ op: 'delete', selector: { kind: 'layer', layer: 'SIGNAL' } }] }), /handles from/);
+    const moved = await invocations.execute(owner, { kind: 'edit', contextId, operations: [...edit.operations, { op: 'drawText', layer: 'LABEL', position: [0, 0], text: 'Selected feature', height: 2.5 }], toolCallId: edit.toolCallId }, signal, dispatch);
+    assert.equal(moved.result.drawing.revision, 2);
+    assert.equal(moved.result.preview, undefined, 'ordinary edits do not render PNG/PDF');
+    const after = await cad.inspect(owner, { ...base, fileId: 'plan', include: ['entities'] });
+    assert.ok(Math.abs(after.entities[0].bounds.min[0] - inspected.entities[0].bounds.min[0] - 3) < 1e-6, 'move follows drawing X even for rotated/scaled local coordinates');
+    await assert.rejects(cad.draw(owner, { ...edit, contextId }), /revision mismatch/);
+    owner.activeCanvasContextIds = [];
+    const historical = await cad.present(owner, { resource: { scope: 'session-file', path: 'cad/plan/r1.dxf' } });
+    assert.equal(historical.viewId, 'cad:plan@r1');
+    assert.equal(historical.revision, 1);
+    assert.equal(historical.payload.sha256, inspected.summary.sha256);
+    const exported = await cad.verify(owner, { fileId: 'plan', exportPreview: true });
+    assert.ok(fs.existsSync(path.join(root, exported.preview.png)));
+    assert.equal((await cad.inspect(owner, { fileId: 'plan' })).drawing.revision, 2, 'export never revises a drawing');
+    const unknownFile = path.join(root, 'unknown.dxf');
+    fs.copyFileSync(path.join(process.cwd(), 'test/cad/fixtures/10_units_missing.dxf'), unknownFile);
+    const original = fs.readFileSync(unknownFile);
+    const opened = await cad.present(owner, { resource: { scope: 'session-file', path: 'unknown.dxf' } });
+    assert.equal(opened.payload.units, null, 'viewing does not guess units');
+    const repeated = await cad.present(owner, { resource: { scope: 'session-file', path: 'unknown.dxf' } });
+    assert.equal(opened.viewId, repeated.viewId);
+    assert.equal(repeated.revision, 1);
+    assert.deepEqual(fs.readFileSync(path.join(root, opened.payload.path)), original);
+    const unknownEdit = { kind: 'edit', fileId: opened.viewId.slice(4), baseRevision: 1, expectedSha256: opened.payload.sha256, operations: [{ op: 'drawText', layer: 'LABEL', position: [1, 1], text: 'Units confirmed', height: 2.5 }] };
+    assert.equal((await cad.draw(owner, unknownEdit)).ok, false, 'editing requires units');
+    assert.equal((await cad.draw(owner, { ...unknownEdit, units: 'mm' })).drawing.revision, 2);
+    assert.deepEqual(fs.readFileSync(unknownFile), original, 'editing never overwrites the original source');
+
+    // A lost confirmation after the manifest commit is recovered without a new draw.
+    const originalCommit = cad.commit.bind(cad);
+    cad.commit = (...args: any[]) => { originalCommit(...args); throw new Error('simulated lost confirmation after commit'); };
+    const next = { ...edit, baseRevision: 2, expectedSha256: after.summary.sha256, toolCallId: 'lost-response' };
+    await assert.rejects(invocations.execute(owner, next, signal, dispatch), /lost confirmation/);
+    cad.commit = originalCommit;
+    const recovery = new CadInvocations(records, histories, cad).query(owner, { lookupToolCallId: next.toolCallId });
+    assert.equal(recovery.state, 'succeeded');
+    assert.equal(recovery.result.drawing.revision, 3);
+    assert.equal((await invocations.execute(owner, next, signal, dispatch)).reused, true);
+    // Interrupt between output rename and manifest publication; only this generation is removed.
+    const current = await cad.inspect(owner, { ...base, fileId: 'plan' });
+    const rename = fs.renameSync;
+    fs.renameSync = (source: string, target: string) => {
+      if (target.endsWith('manifest.json') && target.includes('cad-drawings')) throw new Error('simulated commit interruption');
+      return rename(source, target);
+    };
+    try {
+      await assert.rejects(invocations.execute(owner, { ...next, baseRevision: 3, expectedSha256: current.summary.sha256, toolCallId: 'interrupted-before-manifest' }, signal, dispatch), /commit interruption/);
+    } finally { fs.renameSync = rename; }
+    assert.equal(fs.existsSync(path.join(root, 'cad/plan/r4.dxf')), true);
+    assert.equal(restored.query(owner, { lookupToolCallId: 'interrupted-before-manifest' }).state, 'failed');
+    assert.equal(fs.existsSync(path.join(root, 'cad/plan/r4.dxf')), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.tau/cad-drawings/plan/manifest.json'))).currentRevision, 3);
+    const output = path.join(root, recovery.result.drawing.path), bytes = fs.readFileSync(output);
+    fs.writeFileSync(output, 'changed externally');
+    assert.equal(restored.query(owner, { operationId: recovery.operationId }).state, 'unknown');
+    await assert.rejects(cad.inspect(owner, { ...base, fileId: 'plan' }), /checksum/);
+    fs.writeFileSync(output, bytes);
+    const cancelled = invocations.execute(owner, { ...next, baseRevision: 3, expectedSha256: current.summary.sha256, toolCallId: 'cancel-write' }, signal, (jobSignal: AbortSignal) => new Promise((_resolve, reject) => jobSignal.addEventListener('abort', () => reject(Object.assign(new Error('confirmed stopped'), { code: 'cad_cancelled', commit: 'not_committed' })), { once: true })));
+    const cancellation = invocations.cancel(owner, { lookupToolCallId: 'cancel-write' });
+    assert.equal(cancellation.cancellationRequested, true);
+    assert.equal(cancellation.state, 'running', 'requesting cancellation does not claim execution stopped');
+    await assert.rejects(cancelled, /confirmed stopped/);
+    assert.equal(invocations.query(owner, { lookupToolCallId: 'cancel-write' }).state, 'cancelled');
+    assert.equal(cad.activeCount, 0);
+  }
+
   // spatial result contract rejects unknown schema, operations and unsafe output paths
   {
     const result = parseSpatialAnalysisResultStructured({ protocol: 'transportx-spatial-analysis', schemaVersion: 2, operation: 'route', output: { relativePath: '../outside.geojson' } });

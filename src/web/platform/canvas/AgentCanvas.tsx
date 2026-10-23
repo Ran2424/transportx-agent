@@ -18,20 +18,21 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
 }) {
   const { t } = useTranslation();
   const tabList = useRef<HTMLDivElement>(null);
-  const [contextDrafts, setContextDrafts] = useState<Record<string, { target?: unknown; selection?: unknown }>>({});
+  const [contextDrafts, setContextDrafts] = useState<Record<string, { revision?: number; target?: unknown; selection?: unknown }>>({});
   const [contextStatus, setContextStatus] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const tabs = state.tabIds.flatMap((id) => views.find((view) => view.id === id) ?? []);
   const closed = views.filter((view) => !state.tabIds.includes(view.id));
   const activeView = tabs.find((view) => view.id === state.activeId);
   const activePresentation = activeView?.canvas;
   const shareablePresentation = activePresentation?.presentationId.startsWith('legacy:') ? undefined : activePresentation;
-  const updateContext = useCallback((viewId: string, target?: unknown, selection?: unknown) => {
-    setContextDrafts((current) => ({ ...current, [viewId]: { ...(target !== undefined ? { target } : {}), ...(selection !== undefined ? { selection } : {}) } }));
+  const updateContext = useCallback((viewId: string, revision: number | undefined, target?: unknown, selection?: unknown) => {
+    setContextDrafts((current) => ({ ...current, [viewId]: { revision, ...(target !== undefined ? { target } : {}), ...(selection !== undefined ? { selection } : {}) } }));
   }, []);
   async function shareContext() {
     if (!activeView || !shareablePresentation || contextStatus === 'busy') return;
     setContextStatus('busy');
-    const draft = contextDrafts[activeView.id] ?? { target: shareablePresentation.target };
+    const currentDraft = contextDrafts[activeView.id];
+    const draft = currentDraft?.revision === shareablePresentation.revision ? { target: currentDraft.target, selection: currentDraft.selection } : { target: shareablePresentation.target };
     try {
       await onShareContext({ viewId: activeView.id, revision: shareablePresentation.revision, ...draft });
       setContextStatus('done');
@@ -40,7 +41,7 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
   useEffect(() => {
     if (state.open) tabList.current?.querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [state.activeId, state.open]);
-  useEffect(() => { setContextStatus('idle'); }, [state.activeId]);
+  useEffect(() => { setContextStatus('idle'); }, [state.activeId, activePresentation?.revision]);
   function navigate(event: KeyboardEvent, index: number) {
     const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
     if (next < 0) return;
@@ -59,14 +60,14 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
         </div>)}
       </div>
       {closed.length ? <select className="canvas-reopen" aria-label={t('canvas.reopen')} value="" onChange={(event) => onActivate(event.target.value)}><option value="" disabled>＋</option>{closed.map((view) => <option key={view.id} value={view.id}>{view.title}</option>)}</select> : null}
-      <button className="canvas-context-action" type="button" disabled={!shareablePresentation || contextStatus === 'busy'} onClick={() => void shareContext()}>{contextStatus === 'done' ? t('canvas.contextAttached') : contextStatus === 'error' ? t('canvas.contextFailed') : t('canvas.attachContext')}</button>
+      <button className="canvas-context-action" type="button" disabled={!shareablePresentation || contextStatus === 'busy' || activeView?.kind === 'cad' && contextDrafts[activeView.id]?.revision !== shareablePresentation.revision} onClick={() => void shareContext()}>{contextStatus === 'done' ? t('canvas.contextAttached') : contextStatus === 'error' ? t('canvas.contextFailed') : t('canvas.attachContext')}</button>
       <button className="icon-button" type="button" aria-label={t('canvas.hide')} onClick={onClose}><Icon name="close" /></button>
     </header>
     <div className="workspace-float-body">
       {session && tabs.map((view) => {
         const Renderer = rendererForCanvasView(view);
         return <div className="canvas-panel" role="tabpanel" id={`canvas-panel-${view.id}`} aria-labelledby={`canvas-tab-${view.id}`} key={view.id} hidden={view.id !== state.activeId}>
-          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onContextChange={(target, selection) => updateContext(view.id, target, selection)} /></Suspense> : null}
+          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onContextChange={(target, selection) => updateContext(view.id, view.canvas?.revision, target, selection)} /></Suspense> : null}
         </div>;
       })}
     </div>

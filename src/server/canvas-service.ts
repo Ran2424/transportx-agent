@@ -1,3 +1,4 @@
+import { sha256File } from './asset-integrity.js';
 import type { CitationSourceVersion } from '../contracts/citation.js';
 import { verifyCitationFile } from './citation-resources.js';
 const crypto = require('node:crypto');
@@ -13,6 +14,7 @@ import {
   VIDEO_CANVAS_ADAPTER_ID,
   documentCanvasFormat,
   parseCadCanvasSelection,
+  parseCadCanvasPayload,
   parseCadCanvasTarget,
   getCanvasPresentationFromToolResult,
   parseDocumentCanvasTarget,
@@ -92,13 +94,35 @@ function validateTarget(adapterId: string, target: unknown) {
 }
 
 export class CanvasService {
-  constructor(private readonly citation: CitationService, private readonly resolveSessionPath: ResolveSessionPath) {}
+  constructor(private readonly citation: CitationService, private readonly resolveSessionPath: ResolveSessionPath, private readonly cad?: {
+    present(session: CanvasSession, input: PresentInput): Promise<CanvasPresentationV1>;
+    resolve(session: CanvasSession, viewId: string): CanvasPresentationV1 | null;
+  }) {}
+
+  async presentResource(session: CanvasSession, input: PresentInput): Promise<CanvasPresentationV1> {
+    if (input.adapterId !== CAD_CANVAS_ADAPTER_ID || !input.resource) return this.present(session, input);
+    const declaration = session.resolvedSessionPlan?.modules.flatMap((module) => module.canvasViews).find((view) => view.adapterId === CAD_CANVAS_ADAPTER_ID);
+    if (!this.cad || declaration?.protocolVersion !== CANVAS_PRESENTATION_VERSION) throw serviceError('CAD adapter is not enabled for this session.', 403);
+    const operation = requestedOperation(input.operation, 'present');
+    const target = validateTarget(CAD_CANVAS_ADAPTER_ID, input.target);
+    if (input.target !== undefined && !target) throw serviceError('CAD Canvas target is invalid.');
+    const canvas = await this.cad.present(session, input);
+    if (target && parseCadCanvasTarget(target)?.units !== parseCadCanvasPayload(canvas.payload)?.units) throw serviceError('CAD target units differ from drawing units.');
+    return { ...canvas, operation, ...(target !== undefined ? { target } : {}) };
+  }
+
+  private previous(session: CanvasSession, viewId: string) {
+    const previous = previousPresentation(session, viewId);
+    if (!viewId.startsWith('cad:')) return previous;
+    const stored = this.cad?.resolve(session, viewId);
+    return stored && (!previous || stored.revision > previous.revision) ? stored : previous;
+  }
 
   present(session: CanvasSession, input: PresentInput): CanvasPresentationV1 {
     const requestedViewId = typeof input.viewId === 'string' ? input.viewId.trim() : '';
     if (!input.resource) {
       if (!requestedViewId) throw serviceError('resource or viewId is required.');
-      const previous = previousPresentation(session, requestedViewId);
+      const previous = this.previous(session, requestedViewId);
       if (!previous) throw serviceError('Canvas view was not found in this session.', 404);
       const declaration = session.resolvedSessionPlan?.modules.flatMap((module) => module.canvasViews).find((view) => view.adapterId === previous.adapterId);
       if (!declaration || declaration.protocolVersion !== CANVAS_PRESENTATION_VERSION) throw serviceError('Canvas adapter is not enabled for this session.', 403);
@@ -112,7 +136,8 @@ export class CanvasService {
       const rawTarget = input.target === undefined ? previous.target : input.target;
       const target = validateTarget(previous.adapterId, rawTarget);
       if (rawTarget !== undefined && !target) throw serviceError('Canvas target is invalid for this adapter.');
-      return { ...previous, revision: previous.revision + (operation === 'update' ? 1 : 0), presentationId: crypto.randomUUID(), operation, ...(target !== undefined ? { target } : {}), generatedAt: new Date().toISOString() };
+      if (previous.adapterId === CAD_CANVAS_ADAPTER_ID && target && parseCadCanvasTarget(target)?.units !== parseCadCanvasPayload(previous.payload)?.units) throw serviceError('CAD target units differ from drawing units.');
+      return { ...previous, revision: previous.revision + (operation === 'update' && previous.adapterId === DOCUMENT_CANVAS_ADAPTER_ID ? 1 : 0), presentationId: crypto.randomUUID(), operation, ...(target !== undefined ? { target } : {}), generatedAt: new Date().toISOString() };
     }
 
     const adapterId = typeof input.adapterId === 'string' ? input.adapterId.trim() : '';
@@ -176,8 +201,9 @@ export class CanvasService {
     const viewId = typeof input.viewId === 'string' ? input.viewId.trim() : '';
     const revision = Number.isInteger(input.revision) && (input.revision as number) >= 0 ? input.revision as number : null;
     if (!viewId || revision === null) throw serviceError('viewId and a non-negative revision are required.');
-    const presentation = previousPresentation(session, viewId);
+    const presentation = this.previous(session, viewId);
     if (!presentation || presentation.operation === 'clear') throw serviceError('Canvas view was not found in this session.', 404);
+    if (presentation.adapterId === CAD_CANVAS_ADAPTER_ID && !session.resolvedSessionPlan?.modules.some((module) => module.canvasViews.some((view) => view.adapterId === CAD_CANVAS_ADAPTER_ID))) throw serviceError('CAD adapter is not enabled for this session.', 403);
     if (presentation.revision !== revision) throw serviceError('Canvas view revision has changed.', 409);
     const target = input.target === undefined ? presentation.target : input.target;
     if (target !== undefined && !validateTarget(presentation.adapterId, target)) throw serviceError('Canvas target is invalid for this adapter.');
@@ -189,6 +215,13 @@ export class CanvasService {
         || videoTarget?.kind === 'offset' && typeof videoTarget.seconds === 'number' && Number.isFinite(videoTarget.seconds) && videoTarget.seconds >= 0 && Object.keys(videoTarget).every((key) => key === 'kind' || key === 'seconds');
       if (!valid) throw serviceError('Video Canvas target is invalid.');
     }
+    let selection = input.selection;
+    if (presentation.adapterId === CAD_CANVAS_ADAPTER_ID) {
+      const payload = parseCadCanvasPayload(presentation.payload);
+      const resource = presentation.resources[0];
+      if (!payload || resource?.scope !== 'session-file' || resource.path !== payload.path || sha256File(this.resolveSessionPath(session, payload.path)) !== payload.sha256) throw serviceError('CAD drawing checksum has changed.', 409);
+      selection = { ...(selection === undefined ? { kind: 'cad-selection', handles: [], layers: [], count: 0, truncated: false } : parseCadCanvasSelection(selection)!), drawingSha256: payload.sha256 };
+    }
     const context = parseCanvasContext({
       protocol: CANVAS_CONTEXT_PROTOCOL,
       version: CANVAS_CONTEXT_VERSION,
@@ -198,7 +231,7 @@ export class CanvasService {
       revision,
       resources: presentation.resources,
       ...(target !== undefined ? { target } : {}),
-      ...(input.selection !== undefined ? { selection: input.selection } : {}),
+      ...(selection !== undefined ? { selection } : {}),
       createdAt: new Date().toISOString(),
     });
     if (!context) throw serviceError('Canvas context is invalid or exceeds protocol limits.');
@@ -212,6 +245,12 @@ export class CanvasService {
     const contexts = this.resolveContexts(session, input);
     const allowed = new Set(session.activeCanvasContextIds || []);
     if (contexts.some((context) => !allowed.has(context.contextId))) throw serviceError('Canvas context was not attached to the current user turn.', 403);
+    for (const context of contexts) {
+      if (context.adapterId !== CAD_CANVAS_ADAPTER_ID) continue;
+      const selection = parseCadCanvasSelection(context.selection);
+      const resource = context.resources[0];
+      if (!selection?.drawingSha256 || resource?.scope !== 'session-file' || sha256File(this.resolveSessionPath(session, resource.path)) !== selection.drawingSha256) throw serviceError('CAD context checksum is unavailable or changed; attach the drawing again.', 409);
+    }
     return contexts;
   }
 

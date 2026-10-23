@@ -7,118 +7,47 @@ import type { JsonRecord } from './types.js';
 import type { PiRpcSession } from './sessions.js';
 import { PythonRunner } from './python-runner.js';
 import { sha256File } from './asset-integrity.js';
-import { isWithin, relativePosixPath } from './util/path.js';
-import { writeJsonAtomic } from './util/json-storage.js';
+import { relativePosixPath } from './util/path.js';
+
 import {
   CAD_CANVAS_ADAPTER_ID,
-  CAD_CANVAS_KIND,
-  CAD_DRAWING_PROTOCOL,
-  CAD_DRAWING_VERSION,
   CAD_PROTOCOL,
   CAD_VERSION,
-  CANVAS_PRESENTATION_PROTOCOL,
-  CANVAS_PRESENTATION_VERSION,
   diagnosticMessage,
-  parseCadCanvasPayload,
-  parseCadCanvasTarget,
-  parseCanvasPresentation,
+  parseCadCanvasSelection,
   parseCadDrawRequestStructured,
   parseCadDrawResultStructured,
-  parseCadDrawingManifestStructured,
   parseCadInspectRequestStructured,
   parseCadInspectResultStructured,
   parseCadVerifyRequestStructured,
   parseCadVerifyResultStructured,
   type CadDrawRequestV1,
   type CadDrawResultV1,
-  type CadDrawingManifestV1,
   type CadInspectRequestV1,
   type CadInspectResultV1,
   type CadVerifyRequestV1,
   type CadVerifyResultV1,
 } from '../contracts/index.js';
 
+import { CadDrawingStore, safePath, jobArtifact, serviceError } from './cad/files.js';
+import { CadCommit } from './cad/commit.js';
+import { cadPresentation } from './cad/presentation.js';
+import type { CanvasContextV1 } from '../contracts/canvas.js';
+
 const MAX_ENGINE_OUTPUT = 8 * 1024 * 1024;
 const ENGINE_TIMEOUT_MS = 120_000;
-const MAX_INPUT_BYTES = 50 * 1024 * 1024;
 const FILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-type ServiceError = Error & { status?: number; code?: string };
-
-function serviceError(message: string, status = 400, code?: string): ServiceError {
-  const error = Object.assign(new Error(message), { status }) as ServiceError;
-  if (code) error.code = code;
-  return error;
-}
-
 function requestBody(body: JsonRecord): JsonRecord {
-  const { sessionId: _sessionId, token: _token, ...request } = body;
+  const { sessionId: _sessionId, token: _token, toolCallId: _toolCallId, contractVersion: _contractVersion, ...request } = body;
   return request;
 }
 
-function requestTitle(request: CadDrawRequestV1): string | undefined {
-  return 'title' in request ? request.title : undefined;
-}
-
-function requestTarget(request: CadDrawRequestV1) {
-  return 'target' in request ? request.target : undefined;
-}
-
-function requestSourcePath(request: CadDrawRequestV1): string | undefined {
-  return 'sourcePath' in request ? request.sourcePath : undefined;
-}
-
 function generatedFileId(request: CadDrawRequestV1): string {
-  const source = requestSourcePath(request) || 'drawing';
-  const raw = requestTitle(request) || path.basename(source).replace(/\.[^.]+$/, '') || 'drawing';
+  const source = 'sourcePath' in request ? request.sourcePath : 'drawing';
+  const raw = ('title' in request ? request.title : undefined) || path.basename(source).replace(/\.[^.]+$/, '') || 'drawing';
   const slug = raw.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'drawing';
   return `cad_${slug}_${crypto.randomBytes(3).toString('hex')}`;
-}
-
-function assertRelativePath(relativePath: string): void {
-  if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes('\\') || /^[A-Za-z]:/.test(relativePath)) {
-    throw serviceError('CAD paths must be relative POSIX paths.', 400, 'cad.unsafe_path');
-  }
-  if (relativePath.split('/').some((part) => !part || part === '.' || part === '..')) {
-    throw serviceError('CAD paths cannot contain empty, "." or ".." segments.', 400, 'cad.unsafe_path');
-  }
-}
-
-function safePath(session: PiRpcSession, relativePath: string, extensions: string[] = [], mustExist = true): string {
-  assertRelativePath(relativePath);
-  const root = fs.realpathSync(session.cwd);
-  let cursor = root;
-  for (const part of relativePath.split('/')) {
-    cursor = path.join(cursor, part);
-    if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) {
-      throw serviceError(`CAD path cannot use symbolic links: ${relativePath}`, 400, 'cad.unsafe_path');
-    }
-  }
-  const resolved = path.resolve(root, relativePath);
-  if (!isWithin(root, resolved)) throw serviceError(`CAD path escapes the session: ${relativePath}`, 400, 'cad.unsafe_path');
-  if (extensions.length && !extensions.some((extension) => resolved.toLowerCase().endsWith(extension))) {
-    throw serviceError(`CAD path must end with ${extensions.join(' or ')}.`, 400, 'cad.unsafe_path');
-  }
-  if (mustExist) {
-    if (!fs.existsSync(resolved)) throw serviceError(`CAD file not found: ${relativePath}`, 404, 'cad.not_found');
-    const real = fs.realpathSync(resolved);
-    if (!isWithin(root, real) || !fs.statSync(real).isFile()) {
-      throw serviceError(`CAD file is outside the session: ${relativePath}`, 400, 'cad.unsafe_path');
-    }
-    if (fs.statSync(real).size > MAX_INPUT_BYTES) {
-      throw serviceError(`CAD input exceeds ${MAX_INPUT_BYTES} bytes.`, 413, 'cad.too_large');
-    }
-    return real;
-  }
-  return resolved;
-}
-
-function jobArtifact(jobDir: string, name: string): string {
-  const candidate = path.resolve(jobDir, 'out', name);
-  if (!isWithin(jobDir, candidate) || !fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
-    throw serviceError(`CAD engine artifact is missing: ${name}`, 502, 'cad.engine_artifact');
-  }
-  return candidate;
 }
 
 function jsonFromEngine(stdout: string): unknown {
@@ -131,10 +60,12 @@ function jsonFromEngine(stdout: string): unknown {
 
 export class CadService {
   get activeCount() { return this.runner.activeCount; }
+  private store = new CadDrawingStore();
+  private commits = new CadCommit(this.store);
   private runner: PythonRunner;
   private locks = new Map<string, Promise<void>>();
 
-  constructor(executable: ConstructorParameters<typeof PythonRunner>[0], private scriptPath: string) {
+  constructor(executable: ConstructorParameters<typeof PythonRunner>[0], private scriptPath: string, private inspectContexts?: (session: PiRpcSession, ids: string[]) => CanvasContextV1[]) {
     this.runner = new PythonRunner(executable);
   }
 
@@ -149,18 +80,39 @@ export class CadService {
   }
 
   async inspect(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal): Promise<CadInspectResultV1> {
-    const parsed = parseCadInspectRequestStructured(requestBody(body));
+    const { contextId, ...input } = requestBody(body);
+    if (contextId !== undefined && typeof contextId !== 'string') throw serviceError('CAD contextId must be a string.');
+    const context = typeof contextId === 'string' ? this.attachedSelection(session, contextId) : undefined;
+    const selection = context && parseCadCanvasSelection(context.selection)!;
+    const contextFileId = context?.viewId.replace(/^cad:/, '').replace(/@r[0-9]+$/, '');
+    if (context) {
+      if (input.path !== undefined || input.fileId !== undefined && input.fileId !== contextFileId) throw serviceError('CAD query and selection refer to different drawings.', 409, 'cad.context_mismatch');
+      delete input.fileId;
+      const resource = context.resources[0];
+      if (resource?.scope !== 'session-file') throw serviceError('CAD selection has no file.', 409);
+      input.path = resource.path;
+    }
+    const parsed = parseCadInspectRequestStructured({ protocol: CAD_PROTOCOL, version: CAD_VERSION, ...input });
     if (!parsed.ok) throw serviceError(parsed.diagnostics.map(diagnosticMessage).join('; '), 400);
-    const input = this.resolveInput(session, parsed.value);
+    const file = this.resolveInput(session, parsed.value);
     const jobDir = this.createJob(session);
     try {
       const stdout = await this.runEngine(session, jobDir, 'inspect', {
         ...parsed.value,
         fileId: undefined,
-        path: input.relativePath,
+        path: file.relativePath,
+        ...(selection ? { selectionHandles: selection.handles } : {}),
       }, signal);
       const result = parseCadInspectResultStructured(jsonFromEngine(stdout));
       if (!result.ok) throw serviceError(result.diagnostics.map(diagnosticMessage).join('; '), 422);
+      if (result.value.warnings.some((item) => item.severity === 'error')) throw serviceError('CAD input could not be inspected.', 422, 'cad.invalid_input');
+      if (sha256File(file.absolutePath) !== result.value.summary.sha256) throw serviceError('CAD input changed during inspection.', 409, 'cad.checksum');
+      if (parsed.value.fileId || contextFileId) {
+        const manifest = this.readManifest(session, (contextFileId ?? parsed.value.fileId)!)!;
+        const entry = manifest.revisions.find((item) => item.path === file.relativePath);
+        if (!entry || entry.sha256 !== result.value.summary.sha256) throw serviceError('CAD inspection differs from its stored revision.', 409, 'cad.checksum');
+        return { ...result.value, drawing: { fileId: manifest.fileId, revision: entry.revision, sha256: entry.sha256, ...(manifest.sourceCrs ? { sourceCrs: manifest.sourceCrs } : {}), ...(manifest.target ? { target: manifest.target } : {}) } };
+      }
       return result.value;
     } finally {
       fs.rmSync(jobDir, { recursive: true, force: true });
@@ -168,9 +120,10 @@ export class CadService {
   }
 
   async verify(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal): Promise<CadVerifyResultV1> {
-    const parsed = parseCadVerifyRequestStructured(requestBody(body));
+    const parsed = parseCadVerifyRequestStructured({ protocol: CAD_PROTOCOL, version: CAD_VERSION, ...requestBody(body) });
     if (!parsed.ok) throw serviceError(parsed.diagnostics.map(diagnosticMessage).join('; '), 400);
     const input = this.resolveInput(session, parsed.value);
+    const inputHash = sha256File(input.absolutePath);
     const jobDir = this.createJob(session);
     try {
       const stdout = await this.runEngine(session, jobDir, 'verify', {
@@ -180,17 +133,29 @@ export class CadService {
       }, signal);
       const result = parseCadVerifyResultStructured(jsonFromEngine(stdout));
       if (!result.ok) throw serviceError(result.diagnostics.map(diagnosticMessage).join('; '), 422);
+      if (sha256File(input.absolutePath) !== inputHash) throw serviceError('CAD input changed during verification.', 409, 'cad.checksum');
+      if (result.value.preview) {
+        for (const format of ['png', 'pdf'] as const) {
+          const relative = result.value.preview[format];
+          if (relative !== `cad/previews/${inputHash}.${format}`) throw serviceError('CAD preview path differs.', 502, 'cad.engine_result');
+          const source = jobArtifact(jobDir, `preview.${format}`);
+          if (!fs.statSync(source).size) throw serviceError('CAD preview is empty.', 502);
+          const target = safePath(session, relative, [`.${format}`], false);
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          fs.renameSync(source, target);
+        }
+      }
       return result.value;
     } finally {
       fs.rmSync(jobDir, { recursive: true, force: true });
     }
   }
 
-  async draw(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal): Promise<CadDrawResultV1> {
-    const parsed = parseCadDrawRequestStructured(requestBody(body));
-    if (!parsed.ok) throw serviceError(parsed.diagnostics.map(diagnosticMessage).join('; '), 400);
-    const request = parsed.value;
-    const fileId = request.fileId ?? generatedFileId(request);
+  async draw(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal, operationId?: string, inputSha256?: string): Promise<CadDrawResultV1> {
+    const prepared = this.prepare(session, body);
+    const request = prepared.request;
+    if (inputSha256 && prepared.inputSha256 !== inputSha256) throw serviceError('CAD input changed before execution.', 409, 'cad.checksum');
+    const fileId = request.fileId!;
     if (!FILE_ID.test(fileId)) throw serviceError('Invalid CAD fileId.', 400);
     return this.withLock(`${session.cwd}:${fileId}`, async () => {
       const manifest = this.readManifest(session, fileId);
@@ -203,19 +168,118 @@ export class CadService {
         throw serviceError(`CAD fileId already exists: ${fileId}`, 409, 'cad.file_exists');
       }
 
-      const jobDir = this.createJob(session);
+      const jobDir = this.createJob(session, operationId);
+      let preserve = false;
       try {
+        if (signal?.aborted) throw serviceError('CAD cancelled before dispatch.', 409, 'cad_cancelled');
         const engineRequest = { ...request, fileId };
         const stdout = await this.runEngine(session, jobDir, 'draw', engineRequest, signal);
         const result = parseCadDrawResultStructured(jsonFromEngine(stdout));
         if (!result.ok) throw serviceError(result.diagnostics.map(diagnosticMessage).join('; '), 422);
         if (!result.value.ok || result.value.dryRun) return result.value;
-        return this.commit(session, fileId, request, manifest, result.value, jobDir);
+        if (this.prepare(session, body).inputSha256 !== prepared.inputSha256) throw serviceError('CAD input changed during execution.', 409, 'cad.checksum');
+        const committed = this.commit(session, fileId, request, manifest, result.value, jobDir);
+        preserve = !!operationId;
+        return { ...committed, canvas: cadPresentation(this.readManifest(session, fileId)!, committed.drawing!, request.kind === 'edit' ? 'update' : 'present', committed.preview) };
+      } catch (error) {
+        preserve = (error as { code?: string }).code === 'process_stop_unconfirmed' || fs.existsSync(path.join(jobDir, 'commit.json'));
+        throw Object.assign(error as Error, { commit: preserve ? 'unknown' : 'not_committed', phase: preserve ? 'commit' : 'execution' });
       } finally {
-        fs.rmSync(jobDir, { recursive: true, force: true });
+        if (!preserve) fs.rmSync(jobDir, { recursive: true, force: true });
       }
     });
   }
+
+  private sourceFileId(sourcePath: string) { return `cad_${crypto.createHash('sha256').update(sourcePath).digest('hex').slice(0, 24)}`; }
+
+  resolvePresentation(session: PiRpcSession, viewId: string) {
+    const identity = viewId.match(/^cad:([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:@r([0-9]+))?$/);
+    if (!identity) return null;
+    const fileId = identity[1];
+    const historicalRevision = identity[2] === undefined ? undefined : Number(identity[2]);
+    const manifest = this.readManifest(session, fileId);
+    if (!manifest) return null;
+    this.resolveInput(session, { protocol: CAD_PROTOCOL, version: CAD_VERSION, fileId, revision: historicalRevision, policy: 'basic' });
+    return cadPresentation(manifest, undefined, 'present', undefined, historicalRevision);
+  }
+
+  async present(session: PiRpcSession, input: { resource?: unknown; title?: unknown }) {
+    const resource = input.resource as { scope?: unknown; path?: unknown } | undefined;
+    if (resource?.scope !== 'session-file' || typeof resource.path !== 'string') throw serviceError('CAD requires a session DXF resource.');
+    const absolute = safePath(session, resource.path, ['.dxf']);
+    const sourcePath = relativePosixPath(fs.realpathSync(session.cwd), absolute);
+    const managed = sourcePath.match(/^cad\/([A-Za-z0-9._-]+)\/r([0-9]+)\.dxf$/);
+    const fileId = managed?.[1] ?? this.sourceFileId(sourcePath);
+    return this.withLock(`${session.cwd}:${fileId}`, async () => {
+      let manifest = this.readManifest(session, fileId);
+      if (!manifest) {
+        if (managed) throw serviceError('CAD revision has no manifest.', 409, 'cad.manifest_corrupt');
+        const inspected = await this.inspect(session, { path: sourcePath });
+        if (inspected.warnings.some((item) => item.severity === 'error' || item.code === 'cad.audit')) throw serviceError('DXF could not be opened without audit errors.', 422);
+        manifest = this.store.registerSnapshot(session, fileId, sourcePath, inspected.summary, input.title);
+      } else if (!managed && manifest.sourceRefs?.some((source) => source.path === sourcePath && source.sha256 !== sha256File(absolute))) {
+        throw serviceError('Original DXF changed; import it explicitly as a new drawing.', 409, 'cad.source_changed');
+      }
+      const historical = managed && Number(managed[2]) !== manifest.currentRevision ? Number(managed[2]) : undefined;
+      const inspected = await this.inspect(session, historical === undefined ? { fileId } : { path: sourcePath });
+      if (historical !== undefined && !manifest.revisions.some((entry) => entry.revision === historical && entry.sha256 === inspected.summary.sha256)) throw serviceError('Historical CAD revision differs.', 409, 'cad.checksum');
+      return cadPresentation(manifest, inspected.summary, 'present', undefined, historical);
+    });
+  }
+
+  private attachedSelection(session: PiRpcSession, contextId: string) {
+    const context = this.inspectContexts?.(session, [contextId])[0];
+    if (!context || context.adapterId !== CAD_CANVAS_ADAPTER_ID || !parseCadCanvasSelection(context.selection)?.drawingSha256) throw serviceError('Attach a current CAD selection.', 409, 'cad.context_mismatch');
+    return context;
+  }
+
+  prepare(session: PiRpcSession, body: JsonRecord) {
+    const input = { protocol: CAD_PROTOCOL, version: CAD_VERSION, ...requestBody(body) } as JsonRecord;
+    if (input.kind === 'edit' && typeof input.contextId === 'string') {
+      const context = this.attachedSelection(session, input.contextId);
+      const selection = context && parseCadCanvasSelection(context.selection);
+      if (!context || context.adapterId !== CAD_CANVAS_ADAPTER_ID || !selection?.drawingSha256) throw serviceError('Attach a current CAD selection.', 409, 'cad.context_mismatch');
+      const reference = { fileId: context.viewId.replace(/^cad:/, '').replace(/@r[0-9]+$/, ''), baseRevision: context.revision, expectedSha256: selection.drawingSha256 };
+      for (const [key, value] of Object.entries(reference)) {
+        if (input[key] !== undefined && input[key] !== value) throw serviceError('CAD selection and drawing version differ.', 409, 'cad.context_mismatch');
+        input[key] = value;
+      }
+    }
+    const parsed = parseCadDrawRequestStructured(input);
+    if (!parsed.ok) throw Object.assign(serviceError(parsed.diagnostics.map(diagnosticMessage).join('; '), 400), { commit: 'not_started', phase: 'validation' });
+    const request = { ...parsed.value, fileId: parsed.value.fileId ?? (parsed.value.kind === 'import' ? this.sourceFileId(parsed.value.sourcePath) : generatedFileId(parsed.value)) };
+    let inputPath: string;
+    if (request.kind === 'edit') {
+      const manifest = this.readManifest(session, request.fileId);
+      if (!manifest || manifest.currentRevision !== request.baseRevision) throw Object.assign(serviceError('CAD revision mismatch or missing manifest.', 409, 'cad.revision_mismatch'), { commit: 'not_started' });
+      inputPath = this.resolveInput(session, { protocol: CAD_PROTOCOL, version: CAD_VERSION, fileId: request.fileId, include: ['summary'], limit: 1 }).absolutePath;
+      if (sha256File(inputPath) !== request.expectedSha256) throw Object.assign(serviceError('CAD base checksum changed.', 409, 'cad.checksum'), { commit: 'not_started' });
+      this.validateEditContext(session, request);
+    } else {
+      if (this.readManifest(session, request.fileId)) throw Object.assign(serviceError('CAD fileId already exists.', 409, 'cad.file_exists'), { commit: 'not_started' });
+      inputPath = safePath(session, request.sourcePath, request.kind === 'import' ? ['.dxf'] : ['.geojson', '.json']);
+    }
+    return { request, inputSha256: sha256File(inputPath) };
+  }
+
+  private validateEditContext(session: PiRpcSession, request: Extract<CadDrawRequestV1, { kind: 'edit' }>) {
+    const ids = session.activeCanvasContextIds || [];
+    if (!ids.length && !request.contextId) return;
+    const contexts = ids.length ? this.inspectContexts?.(session, ids).filter((context) => context.adapterId === CAD_CANVAS_ADAPTER_ID && context.viewId === `cad:${request.fileId}`) ?? [] : [];
+    if (!contexts.length && !request.contextId) return;
+    const context = contexts.find((item) => item.contextId === request.contextId);
+    const selection = context && parseCadCanvasSelection(context.selection);
+    const resource = context?.resources[0];
+    if (!context || !selection || context.revision !== request.baseRevision || selection.drawingSha256 !== request.expectedSha256 || resource?.scope !== 'session-file' || resource.path !== `cad/${request.fileId}/r${request.baseRevision}.dxf`) throw serviceError('Attach the exact CAD revision and pass its contextId and checksum.', 409, 'cad.context_mismatch');
+    if (selection.truncated || selection.count !== selection.handles.length || !selection.count) throw serviceError('CAD selection is empty or truncated; narrow the selection and attach it again.', 409, 'cad.selection_truncated');
+    for (const operation of request.operations) {
+      if ('selector' in operation && (operation.selector.kind !== 'handle' || !selection.handles.includes(operation.selector.handle))) throw serviceError('Selection edits must address handles from the attached selection only.', 409, 'cad.selection_mismatch');
+    }
+  }
+
+  verifyCommitted(...args: Parameters<CadCommit['verifyCommitted']>) { return this.commits.verifyCommitted(...args); }
+  recover(...args: Parameters<CadCommit['recover']>) { return this.commits.recover(...args); }
+  finalize(...args: Parameters<CadCommit['finalize']>) { return this.commits.finalize(...args); }
 
   terminateAll() {
     return this.runner.terminateAll();
@@ -233,8 +297,9 @@ export class CadService {
     }
   }
 
-  private createJob(session: PiRpcSession): string {
-    const jobId = `cad_${Date.now().toString(36)}_${crypto.randomBytes(5).toString('hex')}`;
+  private createJob(session: PiRpcSession, operationId?: string): string {
+    if (operationId && !/^cad_[a-f0-9]{32}$/.test(operationId)) throw serviceError('Invalid CAD operation ID.');
+    const jobId = operationId ?? `cad_${Date.now().toString(36)}_${crypto.randomBytes(5).toString('hex')}`;
     const jobDir = safePath(session, `.tau/cad-jobs/${jobId}`, [], false);
     fs.mkdirSync(jobDir, { recursive: true, mode: 0o700 });
     return jobDir;
@@ -265,171 +330,7 @@ export class CadService {
     return stdout;
   }
 
-  private manifestPath(session: PiRpcSession, fileId: string): string {
-    return safePath(session, `.tau/cad-drawings/${fileId}/manifest.json`, [], false);
-  }
-
-  private readManifest(session: PiRpcSession, fileId: string): CadDrawingManifestV1 | null {
-    const file = this.manifestPath(session, fileId);
-    if (!fs.existsSync(file)) return null;
-    let value: unknown;
-    try {
-      value = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      throw serviceError(`CAD manifest is corrupt: ${fileId}`, 409, 'cad.manifest_corrupt');
-    }
-    const parsed = parseCadDrawingManifestStructured(value);
-    if (!parsed.ok) throw serviceError(parsed.diagnostics.map(diagnosticMessage).join('; '), 409, 'cad.manifest_corrupt');
-    return parsed.value;
-  }
-
-  private resolveInput(session: PiRpcSession, request: CadInspectRequestV1 | CadVerifyRequestV1): { relativePath: string; absolutePath: string } {
-    if (request.path) {
-      const absolutePath = safePath(session, request.path, ['.dxf'], true);
-      return { relativePath: relativePosixPath(fs.realpathSync(session.cwd), absolutePath), absolutePath };
-    }
-    if (!request.fileId) throw serviceError('fileId or path is required.', 400);
-    const requestedRevision = 'revision' in request ? request.revision : undefined;
-    const manifest = this.readManifest(session, request.fileId);
-    if (manifest) {
-      const revision = requestedRevision ?? manifest.currentRevision;
-      const entry = manifest.revisions.find((item) => item.revision === revision);
-      if (!entry) throw serviceError(`CAD revision not found: ${request.fileId} r${revision}`, 404, 'cad.not_found');
-      const absolutePath = safePath(session, entry.path, ['.dxf'], true);
-      return { relativePath: entry.path, absolutePath };
-    }
-    const directory = safePath(session, `cad/${request.fileId}`, [], false);
-    if (!fs.existsSync(directory)) throw serviceError(`CAD drawing not found: ${request.fileId}`, 404, 'cad.not_found');
-    const candidates: Array<{ name: string; revision: number }> = [];
-    for (const name of fs.readdirSync(directory) as string[]) {
-      const match = /^r(\d+)\.dxf$/.exec(name);
-      if (match) candidates.push({ name, revision: Number(match[1]) });
-    }
-    candidates.sort((a: { revision: number }, b: { revision: number }) => a.revision - b.revision);
-    if (!candidates.length) throw serviceError(`CAD drawing not found: ${request.fileId}`, 404, 'cad.not_found');
-    const revision = requestedRevision ?? candidates[candidates.length - 1].revision;
-    const entry = candidates.find((item: { revision: number }) => item.revision === revision);
-    if (!entry) throw serviceError(`CAD revision not found: ${request.fileId} r${revision}`, 404, 'cad.not_found');
-    const relativePath = `cad/${request.fileId}/${entry.name}`;
-    return { relativePath, absolutePath: safePath(session, relativePath, ['.dxf'], true) };
-  }
-
-  private commit(
-    session: PiRpcSession,
-    fileId: string,
-    request: CadDrawRequestV1,
-    previous: CadDrawingManifestV1 | null,
-    result: CadDrawResultV1,
-    jobDir: string,
-  ): CadDrawResultV1 {
-    const drawing = result.drawing;
-    if (!drawing) throw serviceError('CAD engine returned no drawing.', 502, 'cad.engine_result');
-    const expectedRevision = request.kind === 'edit' ? request.baseRevision + 1 : request.kind === 'import' ? 0 : 1;
-    if (drawing.fileId !== fileId || drawing.revision !== expectedRevision) {
-      throw serviceError('CAD engine returned an unexpected fileId or revision.', 502, 'cad.engine_result');
-    }
-    const expectedDxf = `cad/${fileId}/r${expectedRevision}.dxf`;
-    if (drawing.path !== expectedDxf) throw serviceError('CAD engine returned an unexpected drawing path.', 502, 'cad.engine_result');
-
-    const tempDxf = jobArtifact(jobDir, `r${expectedRevision}.dxf`);
-    if (fs.statSync(tempDxf).size !== drawing.bytes || sha256File(tempDxf) !== drawing.sha256) {
-      throw serviceError('CAD engine output failed checksum validation.', 502, 'cad.checksum');
-    }
-
-    const finalDxf = safePath(session, expectedDxf, ['.dxf'], false);
-    if (fs.existsSync(finalDxf)) throw serviceError(`CAD revision already exists: ${drawing.path}`, 409, 'cad.file_exists');
-
-    const artifacts: Array<{ temp: string; final: string }> = [{ temp: tempDxf, final: finalDxf }];
-    if (result.preview) {
-      const expectedPng = `cad/${fileId}/r${expectedRevision}.png`;
-      if (result.preview.png !== expectedPng) throw serviceError('CAD engine returned an unexpected preview path.', 502, 'cad.engine_result');
-      const tempPng = jobArtifact(jobDir, `r${expectedRevision}.png`);
-      if (fs.statSync(tempPng).size <= 0) throw serviceError('CAD preview is empty.', 502, 'cad.engine_result');
-      artifacts.push({ temp: tempPng, final: safePath(session, expectedPng, ['.png'], false) });
-      if (result.preview.pdf) {
-        const expectedPdf = `cad/${fileId}/r${expectedRevision}.pdf`;
-        if (result.preview.pdf !== expectedPdf) throw serviceError('CAD engine returned an unexpected PDF path.', 502, 'cad.engine_result');
-        const tempPdf = jobArtifact(jobDir, `r${expectedRevision}.pdf`);
-        if (fs.statSync(tempPdf).size <= 0) throw serviceError('CAD PDF preview is empty.', 502, 'cad.engine_result');
-        artifacts.push({ temp: tempPdf, final: safePath(session, expectedPdf, ['.pdf'], false) });
-      }
-    }
-
-    const now = new Date().toISOString();
-    const revisions = [...(previous?.revisions ?? []), {
-      revision: drawing.revision,
-      path: drawing.path,
-      sha256: drawing.sha256,
-      bytes: drawing.bytes,
-      ...(previous?.revisions.length ? { parentSha256: previous.revisions[previous.revisions.length - 1].sha256 } : {}),
-      ...(result.plan ? { operationCount: result.plan.operationCount } : {}),
-      createdAt: now,
-    }];
-    const target = requestTarget(request);
-    const sourceCrs = request.kind === 'from-geojson' ? 'EPSG:4326' : previous?.sourceCrs;
-    const manifest: CadDrawingManifestV1 = {
-      protocol: CAD_DRAWING_PROTOCOL,
-      version: CAD_DRAWING_VERSION,
-      drawingId: fileId,
-      fileId,
-      title: previous?.title || requestTitle(request) || fileId,
-      currentRevision: drawing.revision,
-      revisions,
-      units: drawing.units,
-      ...(sourceCrs ? { sourceCrs } : {}),
-      ...(target ? { target } : previous?.target ? { target: previous.target } : {}),
-      ...(result.sourceRefs ? { sourceRefs: result.sourceRefs } : previous?.sourceRefs ? { sourceRefs: previous.sourceRefs } : {}),
-      createdAt: previous?.createdAt || now,
-      updatedAt: now,
-    };
-    const parsedManifest = parseCadDrawingManifestStructured(manifest);
-    if (!parsedManifest.ok) throw serviceError(parsedManifest.diagnostics.map(diagnosticMessage).join('; '), 500, 'cad.manifest_invalid');
-
-    const moved: string[] = [];
-    try {
-      for (const artifact of artifacts) {
-        if (fs.existsSync(artifact.final)) throw serviceError(`CAD output already exists: ${artifact.final}`, 409, 'cad.file_exists');
-        fs.mkdirSync(path.dirname(artifact.final), { recursive: true });
-        fs.renameSync(artifact.temp, artifact.final);
-        moved.push(artifact.final);
-      }
-      writeJsonAtomic(this.manifestPath(session, fileId), parsedManifest.value);
-    } catch (error) {
-      for (const file of moved.reverse()) fs.rmSync(file, { force: true });
-      throw error;
-    }
-
-    const center: [number, number] = drawing.extents
-      ? [(drawing.extents.min[0] + drawing.extents.max[0]) / 2, (drawing.extents.min[1] + drawing.extents.max[1]) / 2]
-      : [0, 0];
-    const payload = parseCadCanvasPayload({
-      format: 'dxf',
-      path: drawing.path,
-      sha256: drawing.sha256,
-      units: drawing.units,
-      layerCount: drawing.layerCount,
-      entityCount: drawing.entityCount,
-      ...(result.preview?.png ? { preview: result.preview.png } : {}),
-    });
-    const canvasTarget = parseCadCanvasTarget({ kind: 'viewport', center, zoom: 1, units: drawing.units });
-    const canvas = payload && canvasTarget
-      ? parseCanvasPresentation({
-          protocol: CANVAS_PRESENTATION_PROTOCOL,
-          version: CANVAS_PRESENTATION_VERSION,
-          presentationId: `cad_pres_${crypto.randomUUID()}`,
-          adapterId: CAD_CANVAS_ADAPTER_ID,
-          kind: CAD_CANVAS_KIND,
-          viewId: `cad:${fileId}`,
-          revision: drawing.revision,
-          operation: request.kind === 'edit' ? 'update' : 'present',
-          title: manifest.title,
-          resources: [{ scope: 'session-file', path: drawing.path }],
-          payload,
-          target: canvasTarget,
-          generatedAt: now,
-        })
-      : null;
-    if (!canvas) throw serviceError('CAD Canvas presentation is invalid.', 500, 'cad.canvas_invalid');
-    return { ...result, canvas };
-  }
+  private readManifest(session: PiRpcSession, fileId: string) { return this.store.readManifest(session, fileId); }
+  private resolveInput(session: PiRpcSession, request: CadInspectRequestV1 | CadVerifyRequestV1) { return this.store.resolveInput(session, request); }
+  private commit(...args: Parameters<CadCommit['commit']>) { return this.commits.commit(...args); }
 }
