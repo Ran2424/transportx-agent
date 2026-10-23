@@ -209,6 +209,10 @@ sequenceDiagram
 
 ### 3.4 文件、Canvas、地图与视频
 
+Canvas 是共享视图底层，不等同于 Document，也不承接领域计算。它定义视图身份、`present/focus/update/clear`、revision、受控资源引用及用户显式附加的上下文；现有 Shell、Projection、Adapter/Renderer Registry 共用这些契约。Document、Geo 和已有 Video Adapter 位于其上：Document 包括 Markdown、PDF、CSV 和 Office，Geo 维护地图场景及交互，Video 维护视频资源与播放。Markdown 是 Document 的格式，不单独增加 Module 或 Runtime。未来 CAD 等类型应通过平台审核的 Adapter、资源/target 校验和 Renderer 接入；本轮不声明已支持 CAD，也不开放 Module 任意注入前端代码。
+
+本轮迁移 Canvas 两个工具、Geo 五个工具及 Pi-local Interaction 的接口：单一 TypeBox 来源生成各工具包内契约，按工具核对装配、实时 Pi 观察、Schema 与有效领域结果。Canvas/Geo Host 请求复用薄客户端、调用关联、超时及取消；Geo 场景状态、资源发布与 JSONL 恢复仍由原 Pi Extension 负责。Document 无独立执行工具，通过 Canvas 的两个工具完成呈现和上下文读取。Task 仍仅保留历史兼容，不重新启用旧规划器。Video 的独立工具迁移后置，保留其现有 Canvas 适配及历史读取。
+
 - 文档既可由用户通过 WorkspaceDock、成果或引用入口打开，也可由 Agent 通过 `canvas_present` 呈现并定位。Agent 呈现事件写入 Session JSONL，可随会话重放；用户手动标签、活动标签和连续滚动状态留在前端。MD/CSV/PDF/DOCX/XLSX/PPTX 的既有入口继续调用 `OpenDocumentContext`；CSV 使用只读表格渲染，不加载 OOXML runtime。
 - `canvas_present` 通过 Host 新建资源视图时只接受 Document Adapter，资源可为任务文件或 Citation SourceVersion；地图与视频由各自工具发布 Canvas Envelope。操作已有 `viewId` 时沿用已声明 Adapter 和前次资源。文档 `update` 保证 revision 递增，即使文件 mtime 不变或回退，React 文档与 OOXML Viewer 也会重载，PDF iframe 同步重建；`focus` 保留原 revision，仅表达聚焦与导航意图。
 - 用户只有执行“附加当前 Canvas”时才生成 `CanvasContextV1`。Host 在创建时核对当前呈现的 View revision，并保存资源句柄、定位与选区，把 Context ID 附到下一轮用户消息；Agent 必须调用 `canvas_inspect_context` 读取本轮 ID，不能回退读取历史选区。Context 记录视图上下文，不为普通任务文件保存内容快照；连续滚动、播放和鼠标事件不进入会话。
@@ -501,9 +505,9 @@ Citation 升级与边界回归分别落在 [citation-utils.test.ts](../test/suit
 
 版本开发状态、验收门槛与更新发布操作见 [版本开发与发布规范](RELEASE.md)，每个版本使用 [开发记录模板](releases/TEMPLATE.md)。
 
-Spatial / Citation 的模型输入统一编写于 `src/contracts/tool-definitions.mts`，构建生成各包的 `tool-contract.json`；Host 读取平台批准的静态定义执行最终结构校验，包声明不能扩大 Host 权限。两模块各自用原生 Pi API 注册；`modules/shared/host-client.ts` 仅为构建输入，分别 bundle 入模块入口，不承担领域调度、队列或自动重试。构建输出 `dist/tool-modules/` 可独立加载；桌面包用 `dist/module-extensions/` 替换 Spatial、Citation 与 Module Authoring 三个模块的源码入口，包内相对路径保持不变。
+Canvas / Geo / Interaction / Spatial / Citation / Module Authoring 的模型输入统一编写于 `src/contracts/tool-definitions.mts`，构建生成各包的 `tool-contract.json`；Host 读取平台批准的静态定义执行最终结构校验，包声明不能扩大 Host 权限。各模块仍用原生 Pi API 注册；`modules/shared/host-client.ts` 仅为构建输入，按需 bundle 入模块入口，不承担领域调度、队列或自动重试。构建输出 `dist/tool-modules/` 可独立加载；桌面包用 `dist/module-extensions/` 替换已接入契约的六个模块源码入口，包内相对路径保持不变。
 
-`platform.getOverview(sessionId?)` 在产品读取点核对两试点的精确计划、当前 Pi Bridge 观察、来源、active、接口及已成功执行的 Host 结果，返回可用/不可用/尚未验证与原因、代次和时间。没有会话、仅历史观察或缺少 Host 成功证明时保持尚未验证；Schema 指纹差异提示漂移，不直接证明语义不兼容。该诊断不是第二份 Registry、权限判定或永久可用性承诺。Bridge 在首次 agent_start 和分支切换发布新观察，不向每轮重复追加相同完整 Schema。
+`platform.getOverview(sessionId?)` 在产品读取点逐项核对已接入核心工具的精确计划、当前 Pi Bridge 观察、来源、active、接口及已成功执行的 Host 结果，返回可用/不可用/尚未验证与原因、代次和时间。没有会话、仅历史观察或缺少 Host 成功证明时保持尚未验证；Schema 指纹差异提示漂移，不直接证明语义不兼容。该诊断不是第二份 Registry、权限判定或永久可用性承诺。Bridge 在首次 agent_start 和分支切换发布新观察，不向每轮重复追加相同完整 Schema。
 
 Spatial L3 的执行确认保存于用户数据根 `executions/spatial/<owner-hash>/`：Owner 来自受管 Pi JSONL 的真实路径、header.id 和工作目录校验；活动会话 ID 与单独的 cwd 不构成归属。Host 在派发前保存随机 operationId 及请求/资源版本关联；同操作重复只读原确认，未知不派发第二次。`tau_spatial_execution` 可查询或请求取消，仍由既有 Job/PythonRunner 执行，取消请求不表示已经停止。重启后按原请求、manifest、输出哈希与 GeoJSON 核验成功；无 manifest 或无法确认时保持未知。Pi-local/L1 没有这些记录，Citation L2 沿用原子 Registry 和内容寻址对象。
 

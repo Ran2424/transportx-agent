@@ -12,11 +12,40 @@ export type ToolDiagnostic = {
   sessionId?: string; observedRevision?: number; observedAt?: string;
 };
 
-export const PILOT_TOOL_IDS: Record<string, { toolId: string; piName: string }> = {
-  'com.transportx.module-authoring': { toolId: 'module.package', piName: 'tau_module_package' },
-  'com.transportx.spatial-analysis': { toolId: 'spatial.analyze', piName: 'tau_spatial_analyze' },
-  'com.transportx.citation': { toolId: 'citation.resolve', piName: 'tau_resolve_citation' },
+export type CoreToolBinding = { toolId: string; piName: string; file: string; execution: 'host' | 'pi-local' };
+
+// Platform-owned bindings; Pi remains the only tool registry and runtime.
+export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
+  'com.transportx.module-authoring': [
+    { toolId: 'module.package', piName: 'tau_module_package', file: 'tool-contract.json', execution: 'host' },
+  ],
+  'com.transportx.spatial-analysis': [
+    { toolId: 'spatial.analyze', piName: 'tau_spatial_analyze', file: 'tool-contract.json', execution: 'host' },
+    { toolId: 'spatial.execution', piName: 'tau_spatial_execution', file: 'execution-contract.json', execution: 'host' },
+  ],
+  'com.transportx.citation': [
+    { toolId: 'citation.resolve', piName: 'tau_resolve_citation', file: 'tool-contract.json', execution: 'host' },
+  ],
+  'com.transportx.canvas': [
+    { toolId: 'canvas.present', piName: 'canvas_present', file: 'tool-contract.json', execution: 'host' },
+    { toolId: 'canvas.inspect', piName: 'canvas_inspect_context', file: 'inspect-contract.json', execution: 'host' },
+  ],
+  'com.transportx.geo': [
+    { toolId: 'geo.present', piName: 'present_visualization', file: 'tool-contract.json', execution: 'pi-local' },
+    { toolId: 'geo.publish', piName: 'publish_geodata', file: 'publish-contract.json', execution: 'pi-local' },
+    { toolId: 'geo.inspect', piName: 'inspect_map_context', file: 'inspect-contract.json', execution: 'host' },
+    { toolId: 'geo.request', piName: 'request_geo_input', file: 'request-contract.json', execution: 'host' },
+    { toolId: 'geo.screenshot', piName: 'capture_geo_screenshot', file: 'screenshot-contract.json', execution: 'host' },
+  ],
+  'com.transportx.interaction': [
+    { toolId: 'interaction.ask', piName: 'tau_ask_user', file: 'tool-contract.json', execution: 'pi-local' },
+  ],
 };
+
+export function coreModulePath(moduleId: string) {
+  if (!CORE_TOOL_BINDINGS[moduleId]) throw new Error(`No core tools for ${moduleId}`);
+  return `${moduleId === 'com.transportx.module-authoring' ? 'official' : 'capabilities'}/${moduleId.slice('com.transportx.'.length)}`;
+}
 
 export function parseToolInterfaceContract(value: unknown): ToolInterfaceContract | null {
   const record = asRecord(value), input = asRecord(record?.input), output = asRecord(record?.output);

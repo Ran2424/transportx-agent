@@ -1,20 +1,11 @@
 import crypto from 'node:crypto';
-import { Type } from 'typebox';
+import { readFileSync } from 'node:fs';
+import type { TSchema } from 'typebox';
+import { parseToolInterfaceContract } from '../../../../../src/contracts/tool-interface.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-const AskOptionSchema = Type.Object({
-  value: Type.String({ minLength: 1, maxLength: 200 }),
-  label: Type.String({ minLength: 1, maxLength: 200 }),
-  description: Type.Optional(Type.String({ maxLength: 500 })),
-}, { additionalProperties: false });
-
-const TauAskUserSchema = Type.Object({
-  kind: Type.Union([Type.Literal('confirm'), Type.Literal('select'), Type.Literal('input'), Type.Literal('editor')]),
-  title: Type.String({ minLength: 1, maxLength: 300 }),
-  message: Type.String({ minLength: 1, maxLength: 2000 }),
-  options: Type.Optional(Type.Array(AskOptionSchema, { minItems: 2, maxItems: 20 })),
-  required: Type.Optional(Type.Boolean()),
-}, { additionalProperties: false });
+const contract = parseToolInterfaceContract(JSON.parse(readFileSync(new URL('../../tool-contract.json', import.meta.url), 'utf8')));
+if (!contract) throw new Error('Invalid Interaction Tool Contract');
 
 type InteractionKind = 'confirm' | 'select' | 'input' | 'editor';
 type AskOption = { value: string; label: string; description?: string };
@@ -66,8 +57,9 @@ export default function userInteractionExtension(pi: ExtensionAPI) {
       'Only the host Pi agent should call tau_ask_user. Subagents should report that input is needed to the host.',
     ],
     executionMode: 'sequential',
-    parameters: TauAskUserSchema,
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+    parameters: contract!.input as unknown as TSchema,
+    async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
+      const params = rawParams as { kind: InteractionKind; title: string; message: string; options?: AskOption[]; required?: boolean };
       if (!ctx.hasUI) throw new Error('tau_ask_user requires an interactive TUI or RPC client');
       if (interactionPending) throw new Error('Another user interaction is already pending');
       const kind = params.kind as InteractionKind;

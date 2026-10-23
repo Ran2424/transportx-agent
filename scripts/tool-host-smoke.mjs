@@ -9,6 +9,7 @@ import { performance } from 'node:perf_hooks';
 
 const appRoot = path.resolve(process.env.TRANSPORTX_SMOKE_APP_ROOT || '.');
 const baseline = process.env.TRANSPORTX_SMOKE_BASELINE === '1';
+const canvasPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'canvas';
 const lifecyclePhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'lifecycle';
 const recoveryPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'recovery';
 const citationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'citation' || recoveryPhase || lifecyclePhase;
@@ -66,7 +67,8 @@ const provider = http.createServer(async (req, res) => {
   if (spatialPhase && last.role !== 'user' && previousText.startsWith('spatial-fail-model:')) {
     res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'injected model failure after an unknown Spatial result' } })); return;
   }
-  const tool = last.role !== 'user' ? null : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
+  const core = canvasPhase && input.startsWith('core:') ? JSON.parse(input.slice(5)) : null;
+  const tool = last.role !== 'user' ? null : core ? { name: core.tool, arguments: JSON.stringify(core.params) } : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
     ? { name: 'tau_spatial_analyze', arguments: input.slice(input.indexOf(':') + 1) }
     : spatialPhase && input.startsWith('spatial-status:') ? { name: 'tau_spatial_execution', arguments: input.slice('spatial-status:'.length) }
     : lifecyclePhase && input.startsWith('module-package:') ? { name: 'tau_module_package', arguments: input.slice('module-package:'.length) }
@@ -233,13 +235,14 @@ try {
   }
   const persisted = fs.readFileSync(final.sessionFile, 'utf8');
   assert.match(persisted, /p0_expected_failure/); assert.match(persisted, /p0_ok/);
+  const canvas = canvasPhase ? await (await import('./harness/canvas-core-smoke.mjs')).canvasCoreSmoke({ root, endpoint, json, rpc, until }) : undefined;
   const spatial = spatialPhase ? await (await import('./harness/spatial-host-smoke.mjs')).spatialHostSmoke({ root, endpoint, json, rpc, until, appRoot, providerInputs }) : undefined;
   const citation = citationPhase ? await (await import('./harness/citation-host-smoke.mjs')).citationHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
   if (lifecyclePhase) for (const version of ['1.0.0', '1.0.1']) fs.cpSync(path.join(root, 'modules/local.traffic-peak', version), path.join(root, `lifecycle-backup-${version}`), { recursive: true });
   const lifecycle = lifecyclePhase ? await (await import('./harness/module-lifecycle-smoke.mjs')).moduleLifecycleSmoke({ root, endpoint, json, rpc, until }) : undefined;
   const authoring = lifecyclePhase ? await (await import('./harness/module-package-smoke.mjs')).modulePackageSmoke({ root, json, rpc, until }) : undefined;
   const recovery = recoveryPhase ? await (await import('./harness/spatial-recovery-smoke.mjs')).spatialRecoverySmoke({ root, json, rpc, until, restartHost, endpoint: () => endpoint }) : undefined;
-  console.log(JSON.stringify({ phase: baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, spatial, citation, recovery, lifecycle, authoring, harnessRssBytes: process.memoryUsage().rss }, null, 2));
+  console.log(JSON.stringify({ phase: canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, harnessRssBytes: process.memoryUsage().rss }, null, 2));
 } finally {
   if (child.exitCode === null && child.signalCode === null) {
     const closed = new Promise((resolve) => child.once('exit', resolve)); child.kill('SIGTERM');

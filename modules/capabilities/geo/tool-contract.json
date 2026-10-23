@@ -1,0 +1,525 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.geo",
+  "toolId": "geo.present",
+  "piName": "present_visualization",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "geo.present-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "command",
+      "visualizationId"
+    ],
+    "properties": {
+      "command": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "create_map"
+          },
+          {
+            "type": "string",
+            "const": "add_layer"
+          },
+          {
+            "type": "string",
+            "const": "set_constant"
+          },
+          {
+            "type": "string",
+            "const": "set_step"
+          },
+          {
+            "type": "string",
+            "const": "set_continuous"
+          },
+          {
+            "type": "string",
+            "const": "set_categorical"
+          },
+          {
+            "type": "string",
+            "const": "set_popup"
+          },
+          {
+            "type": "string",
+            "const": "set_controls"
+          },
+          {
+            "type": "string",
+            "const": "set_metadata"
+          },
+          {
+            "type": "string",
+            "const": "set_camera"
+          },
+          {
+            "type": "string",
+            "const": "fit_bounds"
+          },
+          {
+            "type": "string",
+            "const": "set_visibility"
+          },
+          {
+            "type": "string",
+            "const": "remove_layer"
+          },
+          {
+            "type": "string",
+            "const": "reorder_layers"
+          },
+          {
+            "type": "string",
+            "const": "select"
+          },
+          {
+            "type": "string",
+            "const": "clear"
+          },
+          {
+            "type": "string",
+            "const": "show_map"
+          },
+          {
+            "type": "string",
+            "const": "add_chart_layer"
+          },
+          {
+            "type": "string",
+            "const": "set_chart"
+          }
+        ],
+        "description": "One atomic scene mutation: create/add content, change one style or popup/control/metadata concern, focus/select, or clear. create_map starts a visualizationId; later commands update it."
+      },
+      "visualizationId": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "title": {
+        "type": "string",
+        "description": "Map title for create_map, or replacement title for set_metadata."
+      },
+      "description": {
+        "type": "string"
+      },
+      "warnings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "resourceId": {
+        "type": "string",
+        "pattern": "^geo_[a-f0-9]{16,64}$"
+      },
+      "sourceId": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "idField": {
+        "type": "string"
+      },
+      "layerId": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "layerType": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "circle"
+          },
+          {
+            "type": "string",
+            "const": "line"
+          },
+          {
+            "type": "string",
+            "const": "fill"
+          },
+          {
+            "type": "string",
+            "const": "label"
+          },
+          {
+            "type": "string",
+            "const": "chart"
+          }
+        ]
+      },
+      "layerTitle": {
+        "type": "string"
+      },
+      "color": {
+        "type": "string"
+      },
+      "textField": {
+        "type": "string"
+      },
+      "basemap": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "default"
+          },
+          {
+            "type": "string",
+            "const": "light"
+          },
+          {
+            "type": "string",
+            "const": "dark"
+          },
+          {
+            "type": "string",
+            "const": "none"
+          }
+        ],
+        "description": "Use light/default for most maps, dark for high-contrast dashboards, and none only for an intentionally blank or offline canvas"
+      },
+      "visible": {
+        "type": "boolean"
+      },
+      "channel": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "color"
+          },
+          {
+            "type": "string",
+            "const": "radius"
+          },
+          {
+            "type": "string",
+            "const": "opacity"
+          },
+          {
+            "type": "string",
+            "const": "strokeColor"
+          },
+          {
+            "type": "string",
+            "const": "strokeWidth"
+          },
+          {
+            "type": "string",
+            "const": "width"
+          },
+          {
+            "type": "string",
+            "const": "dash"
+          },
+          {
+            "type": "string",
+            "const": "outlineColor"
+          },
+          {
+            "type": "string",
+            "const": "textField"
+          },
+          {
+            "type": "string",
+            "const": "size"
+          },
+          {
+            "type": "string",
+            "const": "haloColor"
+          },
+          {
+            "type": "string",
+            "const": "haloWidth"
+          }
+        ]
+      },
+      "value": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        ]
+      },
+      "field": {
+        "type": "string"
+      },
+      "defaultValue": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "stops": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "value",
+            "output"
+          ],
+          "properties": {
+            "value": {
+              "type": "number"
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        "minItems": 2,
+        "maxItems": 16
+      },
+      "categories": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "value",
+            "output"
+          ],
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        "minItems": 1,
+        "maxItems": 64
+      },
+      "fallback": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "fields": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "field",
+            "label"
+          ],
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "format": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "text"
+                },
+                {
+                  "type": "string",
+                  "const": "integer"
+                },
+                {
+                  "type": "string",
+                  "const": "decimal"
+                },
+                {
+                  "type": "string",
+                  "const": "percent"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "navigation": {
+        "type": "boolean"
+      },
+      "fullscreen": {
+        "type": "boolean"
+      },
+      "layerSwitcher": {
+        "type": "boolean"
+      },
+      "legend": {
+        "type": "boolean"
+      },
+      "fitToData": {
+        "type": "boolean"
+      },
+      "center": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "zoom": {
+        "type": "number"
+      },
+      "bounds": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 4,
+        "maxItems": 4
+      },
+      "padding": {
+        "type": "number"
+      },
+      "layerIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "minItems": 1,
+        "maxItems": 64
+      },
+      "featureIds": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "maxItems": 5000
+      },
+      "chartType": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "pie"
+          },
+          {
+            "type": "string",
+            "const": "donut"
+          },
+          {
+            "type": "string",
+            "const": "bar"
+          }
+        ]
+      },
+      "valueFields": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      },
+      "colors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1,
+        "maxItems": 5
+      },
+      "size": {
+        "type": "number",
+        "minimum": 16,
+        "maximum": 96
+      },
+      "collisionMode": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "show-all"
+          },
+          {
+            "type": "string",
+            "const": "hide-overlap"
+          }
+        ]
+      },
+      "maxValue": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "trackColor": {
+        "type": "string"
+      },
+      "labelField": {
+        "type": "string"
+      },
+      "labelFormat": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "text"
+          },
+          {
+            "type": "string",
+            "const": "integer"
+          },
+          {
+            "type": "string",
+            "const": "decimal"
+          },
+          {
+            "type": "string",
+            "const": "percent"
+          }
+        ]
+      }
+    },
+    "description": "Flat command parameters. Do not pass a scene JSON object."
+  },
+  "output": {
+    "protocol": "pi-visualization",
+    "version": "1.0",
+    "detailsKind": "tau-geo-visualization"
+  }
+}

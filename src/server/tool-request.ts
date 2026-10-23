@@ -1,24 +1,23 @@
 import path from 'node:path';
 import { APP_PATHS } from './config.js';
-import { readPilotToolContract } from './tool-contracts.js';
-import type { ToolInterfaceContract } from '../contracts/tool-interface.js';
+import { readToolContract } from './tool-contracts.js';
+import { coreModulePath, type ToolInterfaceContract } from '../contracts/tool-interface.js';
 
 // Fixed, platform-reviewed operations use platform-owned definitions. Installed
 // package declarations cannot weaken an operation's final input validation.
 const inputContracts = new Map<string, ToolInterfaceContract>();
-export function approvedHostToolContract(moduleId: string, toolId?: 'spatial.execution') {
+export function approvedHostToolContract(moduleId: string, toolId?: string) {
   const key = `${moduleId}:${toolId || 'primary'}`;
   let contract = inputContracts.get(key);
   if (!contract) {
-    const directory = moduleId === 'com.transportx.citation' ? 'citation' : 'spatial-analysis';
-    contract = readPilotToolContract(moduleId === 'com.transportx.module-authoring' ? path.join(APP_PATHS.appRoot, 'modules/official/module-authoring') : path.join(APP_PATHS.appRoot, 'modules', 'capabilities', directory), moduleId, toolId)!;
+    contract = readToolContract(path.join(APP_PATHS.appRoot, 'modules', coreModulePath(moduleId)), moduleId, toolId)!;
     if (!contract) throw new Error('No approved Host Tool Contract');
     inputContracts.set(key, contract);
   }
   return contract;
 }
 
-export async function validatePilotToolRequest(moduleId: string, body: Record<string, unknown>, toolId?: 'spatial.execution') {
+export async function validateToolRequest(moduleId: string, body: Record<string, unknown>, toolId?: string) {
   const contract = approvedHostToolContract(moduleId, toolId);
   const { sessionId: _sessionId, token: _token, toolCallId, contractVersion, operationId, ...input } = body;
   if (toolId === 'spatial.execution' && operationId !== undefined) input.operationId = operationId;

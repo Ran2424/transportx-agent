@@ -12,7 +12,7 @@ import type { SpatialAnalysisService } from './spatial-analysis-service.js';
 import type { VideoService } from './video-service.js';
 import { parseSessionProfileStructured } from '../contracts/index.js';
 import { serviceModuleIds, sessionServiceLabel, type SessionService } from './session-service.js';
-import { validatePilotToolRequest } from './tool-request.js';
+import { validateToolRequest } from './tool-request.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
 import type { CanvasService } from './canvas-service.js';
 import { SpatialInvocations } from './spatial-invocations.js';
@@ -321,7 +321,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'moduleAuthoring');
         if (!session) return;
-        await validatePilotToolRequest('com.transportx.module-authoring', body);
+        await validateToolRequest('com.transportx.module-authoring', body);
         const { packageRoot, manifest } = inspectTaskModule(session.cwd, body.packagePath);
         if (body.action === 'inspect') return deps.json(res, 200, { action: 'inspect', id: manifest.id, version: manifest.version, entries: manifest.entrypoints, dependencies: manifest.dependencies, codeExecuted: false, toolCallId: body.toolCallId });
         const installed = await deps.handleRpc({ type: 'install_module', sourcePath: packageRoot });
@@ -339,7 +339,7 @@ export function createApiRouter(services: ApiRouteServices) {
         toolCallId = typeof body.toolCallId === 'string' ? body.toolCallId : undefined;
         if (['knowledgeIds', 'attachmentIds', 'artifacts', 'datasets', 'value', 'executionRef'].some((key) => key in body)) return rejected('Unsupported citation input. Use concrete sources with typed locators.');
         if ('sources' in body && 'webUrls' in body) return rejected('sources and webUrls cannot be combined. Register local files with sources and public HTTPS pages with webUrls in separate calls; omit the other field entirely. Reuse evidence IDs from both calls. Do not put URLs in sources[].path.');
-        await validatePilotToolRequest('com.transportx.citation', body);
+        await validateToolRequest('com.transportx.citation', body);
         if (Array.isArray(body.sources) && body.sources.length && !body.webUrls) {
           const inputs = body.sources as import('./citation-service.js').CitationInput[];
           const citations = deps.citation.resolve(session, inputs);
@@ -358,7 +358,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
-        await validatePilotToolRequest('com.transportx.spatial-analysis', body);
+        await validateToolRequest('com.transportx.spatial-analysis', body);
         const record = spatialInvocations.prepare(session, body);
         deps.json(res, 200, { operationId: record.operationId, state: record.state, toolCallId: body.toolCallId });
       } catch (error) { const failure = error as Error & { code?: string; commit?: string }; deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: failure.code || 'spatial_prepare_failed', phase: 'prepare', commit: failure.commit || 'not_started' }); }
@@ -368,7 +368,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
-        await validatePilotToolRequest('com.transportx.spatial-analysis', body, 'spatial.execution');
+        await validateToolRequest('com.transportx.spatial-analysis', body, 'spatial.execution');
         if (body.action !== 'query' && body.action !== 'cancel') throw Object.assign(new Error('Expected query or cancel'), { status: 400 });
         const reference = { operationId: body.operationId, lookupToolCallId: body.lookupToolCallId };
         const record = body.action === 'cancel' ? spatialInvocations.cancel(session, reference) : spatialInvocations.query(session, reference);
@@ -382,7 +382,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
-        await validatePilotToolRequest('com.transportx.spatial-analysis', body);
+        await validateToolRequest('com.transportx.spatial-analysis', body);
         if (body.toolCallId !== undefined && (typeof body.toolCallId !== 'string' || !body.toolCallId || body.toolCallId.length > 200)) return deps.json(res, 400, { error: 'Invalid Spatial toolCallId', code: 'spatial_input_invalid', phase: 'validation', commit: 'not_started' });
         toolCallId = body.toolCallId;
         const invocation = await withRequestSignal(req, res, (signal) => spatialInvocations.execute(session, body, signal, (jobSignal, analysisId, onJob, request) => services.sessions.runJob(session.id, (executionSignal) => deps.spatial.analyze(session, body, executionSignal, analysisId, request), jobSignal, onJob)));
@@ -400,40 +400,65 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
-        deps.json(res, 200, { result: deps.geo.inspect(session, body) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        await validateToolRequest('com.transportx.geo', body, 'geo.inspect');
+        deps.json(res, 200, { result: deps.geo.inspect(session, body), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'geo_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/canvas/present', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'canvas');
         if (!session) return;
-        deps.json(res, 200, { canvas: deps.canvas.present(session, body as Parameters<CanvasService['present']>[1]) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        await validateToolRequest('com.transportx.canvas', body, 'canvas.present');
+        deps.json(res, 200, { canvas: deps.canvas.present(session, body as Parameters<CanvasService['present']>[1]), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'canvas_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/canvas/inspect', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'canvas');
         if (!session) return;
-        deps.json(res, 200, { contexts: deps.canvas.inspectContexts(session, body.contextIds) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        await validateToolRequest('com.transportx.canvas', body, 'canvas.inspect');
+        deps.json(res, 200, { contexts: deps.canvas.inspectContexts(session, body.contextIds), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'canvas_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/geo/request', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
-        deps.json(res, 200, { result: await deps.geo.request(session, body) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+        await validateToolRequest('com.transportx.geo', body, 'geo.request');
+        deps.json(res, 200, { result: await withRequestSignal(req, res, (signal) => deps.geo.request(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'geo_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/geo/screenshot', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
-        deps.json(res, 200, { result: await deps.geo.requestScreenshot(session, body) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+        await validateToolRequest('com.transportx.geo', body, 'geo.screenshot');
+        deps.json(res, 200, { result: await withRequestSignal(req, res, (signal) => deps.geo.requestScreenshot(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'geo_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/video/search', async ({ req, res, deps }) => {
       try {

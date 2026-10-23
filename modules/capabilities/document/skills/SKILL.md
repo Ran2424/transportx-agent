@@ -5,6 +5,8 @@ description: Open and navigate Markdown, PDF, CSV, DOCX, XLSX, and PPTX resource
 
 # Document Canvas
 
+Document is a domain adapter on the Canvas foundation, not the Canvas runtime. Markdown is a supported Document format alongside PDF, CSV and Office; it is not a separate runtime or module. The adapter owns format detection, navigation targets and document rendering.
+
 Call `canvas_present` with `adapterId: "com.transportx.canvas.document"` and a controlled resource.
 
 CSV files open as read-only tables in Canvas. They do not use the XLSX Viewer or Sheet targets.

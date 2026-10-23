@@ -46,12 +46,12 @@ export type GeoInteractionSession = {
 export type GeoMessageRef = { text: string; timestamp?: number | string; contextIds: string[] };
 
 type StoredContext = { context: GeoClientContextV1; provenance?: GeoContextProvenanceV1 };
-type Waiter = { sessionId: string; resolve(value: { response: GeoInteractionResponseV1; context?: GeoClientContextV1 }): void; timer: ReturnType<typeof setTimeout> };
+type Waiter = { sessionId: string; resolve(value: { response: GeoInteractionResponseV1; context?: GeoClientContextV1 }): void; timer: ReturnType<typeof setTimeout>; cleanup?(): void };
 type ScreenshotFailureReason = 'timeout' | 'agent_aborted' | 'session_closed' | 'scene_revision_changed' | 'visualization_changed' | 'capture_failed';
 type ScreenshotResult =
   | { status: 'captured'; filename: string; relativePath: string; bytes: number }
   | { status: 'failed'; reason: ScreenshotFailureReason };
-type ScreenshotWaiter = { resolve(value: ScreenshotResult): void; timer: ReturnType<typeof setTimeout> };
+type ScreenshotWaiter = { resolve(value: ScreenshotResult): void; timer: ReturnType<typeof setTimeout>; cleanup?(): void };
 
 function serviceError(message: string, status = 400, code?: string) {
   const error = new Error(message) as Error & { status?: number; code?: string };
@@ -265,7 +265,8 @@ export class GeoInteractionService {
     return { filename, path: target, bytes: image.length };
   }
 
-  requestScreenshot(session: GeoInteractionSession, value: JsonRecord) {
+  requestScreenshot(session: GeoInteractionSession, value: JsonRecord, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     requireGeo(session);
     const visualizationId = typeof value.visualizationId === 'string' ? value.visualizationId : '';
     const sceneRevision = typeof value.sceneRevision === 'number' ? value.sceneRevision : 0;
@@ -286,7 +287,10 @@ export class GeoInteractionService {
     session.manager?.broadcast({ type: 'geo_screenshot_updated', sessionId: session.id, request });
     return new Promise<ScreenshotResult>((resolve) => {
       const timer = setTimeout(() => this.finishScreenshot(session, request, { status: 'failed', reason: 'timeout' }), GEO_SCREENSHOT_TIMEOUT_SECONDS * 1000);
-      this.screenshotWaiters.set(request.requestId, { resolve, timer });
+      const abort = () => this.finishScreenshot(session, request, { status: 'failed', reason: 'agent_aborted' });
+      this.screenshotWaiters.set(request.requestId, { resolve, timer, cleanup: () => signal?.removeEventListener('abort', abort) });
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort();
     });
   }
 
@@ -328,7 +332,8 @@ export class GeoInteractionService {
     return value.refs.filter((item): item is GeoMessageRef => !!item && typeof item === 'object' && typeof item.text === 'string' && Array.isArray(item.contextIds));
   }
 
-  async request(session: GeoInteractionSession, value: JsonRecord) {
+  async request(session: GeoInteractionSession, value: JsonRecord, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     requireGeo(session);
     const visualizationId = typeof value.visualizationId === 'string' ? value.visualizationId : '';
     const revision = typeof value.sceneRevision === 'number' ? value.sceneRevision : 0;
@@ -370,7 +375,10 @@ export class GeoInteractionService {
     session.manager?.broadcast({ type: 'geo_interaction_updated', sessionId: session.id, request });
     return new Promise<{ response: GeoInteractionResponseV1; context?: GeoClientContextV1 }>((resolve) => {
       const timer = setTimeout(() => { void this.finish(session, request, responseFor(request.requestId, 'expired', { reason: 'timeout' })); }, request.timeoutSeconds * 1000);
-      this.waiters.set(request.requestId, { sessionId: session.id, resolve, timer });
+      const abort = () => { void this.finish(session, request, responseFor(request.requestId, 'aborted', { reason: 'agent_aborted' })); };
+      this.waiters.set(request.requestId, { sessionId: session.id, resolve, timer, cleanup: () => signal?.removeEventListener('abort', abort) });
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort();
     });
   }
 
@@ -497,6 +505,7 @@ export class GeoInteractionService {
     const waiter = this.screenshotWaiters.get(request.requestId);
     if (waiter) {
       clearTimeout(waiter.timer);
+      waiter.cleanup?.();
       this.screenshotWaiters.delete(request.requestId);
       waiter.resolve(result);
     }
@@ -518,6 +527,7 @@ export class GeoInteractionService {
     const waiter = this.waiters.get(request.requestId);
     if (waiter) {
       clearTimeout(waiter.timer);
+      waiter.cleanup?.();
       this.waiters.delete(request.requestId);
       waiter.resolve(result);
     }

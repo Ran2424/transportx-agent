@@ -1,0 +1,35 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.geo",
+  "toolId": "geo.inspect",
+  "piName": "inspect_map_context",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "geo.inspect-v1",
+  "input": {
+    "type": "object",
+    "properties": {
+      "contextIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^geoctx_[A-Za-z0-9_-]{12,64}$"
+        },
+        "maxItems": 8
+      },
+      "maxFeatures": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000
+      },
+      "includeProvenance": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-geo-context",
+    "version": 1,
+    "detailsKind": "tau-geo-context"
+  }
+}
