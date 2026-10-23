@@ -464,9 +464,16 @@ function listen(port: number, attemptsLeft = 10) {
   validateHostAccess(TAU_SETTINGS, !!PROJECT_AUTH);
   if (!releaseHostWriter) {
     releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host'));
-    const release = () => { if (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount) return; releaseHostWriter?.(); releaseHostWriter = null; };
-    server.once('close', release);
-    process.once('exit', release);
+    const release = (force = false) => {
+      // A background CAD health probe can still be settling while normal
+      // server shutdown completes. Once the process is exiting, this writer
+      // must release its own lease regardless of that transient probe.
+      if (!force && (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount)) return;
+      releaseHostWriter?.();
+      releaseHostWriter = null;
+    };
+    server.once('close', () => release());
+    process.once('exit', () => release(true));
     try {
       const migration = migrateStoredCitations(APP_PATHS.userDataDir, TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir, SESSIONS_DIR);
       for (const item of migration.migrated) logHostEvent('info', 'citation_registry_migrated', item);
