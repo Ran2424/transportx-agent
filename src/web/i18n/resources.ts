@@ -137,6 +137,11 @@ export const zhCN = {
   'canvas.attachContext': '附加当前 Canvas',
   'canvas.contextAttached': '已附加',
   'canvas.contextFailed': '附加失败',
+  'canvas.cad.readOnly': 'CAD · 只读',
+  'canvas.cad.openFailed': '无法打开 CAD 图纸。',
+  'canvas.cad.tooLarge': '图纸超过 50 MB，已停止加载。',
+  'canvas.cad.largeDrawing': '图纸实体较多，加载和交互可能较慢。',
+  'canvas.cad.workerWarning': 'CAD 文字渲染 worker 不可用，文字可能显示为替代字形。',
 
   'common.agent': 'Agent',
   'common.cancel': '取消',
@@ -947,6 +952,11 @@ export const enUS: Record<TranslationKey, string> = {
   'canvas.attachContext': 'Attach current Canvas',
   'canvas.contextAttached': 'Attached',
   'canvas.contextFailed': 'Attach failed',
+  'canvas.cad.readOnly': 'CAD · read-only',
+  'canvas.cad.openFailed': 'The CAD drawing could not be opened.',
+  'canvas.cad.tooLarge': 'The drawing exceeds 50 MB and was not loaded.',
+  'canvas.cad.largeDrawing': 'This drawing has many entities; loading and interaction may be slow.',
+  'canvas.cad.workerWarning': 'The CAD text worker is unavailable; text may use fallback glyphs.',
 
   'conversation.compacting': 'Compacting context…',
   'conversation.contextUsage': 'Context usage {{used}} / {{limit}} tokens ({{percent}})',

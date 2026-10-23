@@ -10,11 +10,18 @@ import { sha256File } from './asset-integrity.js';
 import { isWithin, relativePosixPath } from './util/path.js';
 import { writeJsonAtomic } from './util/json-storage.js';
 import {
+  CAD_CANVAS_ADAPTER_ID,
+  CAD_CANVAS_KIND,
   CAD_DRAWING_PROTOCOL,
   CAD_DRAWING_VERSION,
   CAD_PROTOCOL,
   CAD_VERSION,
+  CANVAS_PRESENTATION_PROTOCOL,
+  CANVAS_PRESENTATION_VERSION,
   diagnosticMessage,
+  parseCadCanvasPayload,
+  parseCadCanvasTarget,
+  parseCanvasPresentation,
   parseCadDrawRequestStructured,
   parseCadDrawResultStructured,
   parseCadDrawingManifestStructured,
@@ -391,6 +398,38 @@ export class CadService {
       for (const file of moved.reverse()) fs.rmSync(file, { force: true });
       throw error;
     }
-    return result;
+
+    const center: [number, number] = drawing.extents
+      ? [(drawing.extents.min[0] + drawing.extents.max[0]) / 2, (drawing.extents.min[1] + drawing.extents.max[1]) / 2]
+      : [0, 0];
+    const payload = parseCadCanvasPayload({
+      format: 'dxf',
+      path: drawing.path,
+      sha256: drawing.sha256,
+      units: drawing.units,
+      layerCount: drawing.layerCount,
+      entityCount: drawing.entityCount,
+      ...(result.preview?.png ? { preview: result.preview.png } : {}),
+    });
+    const canvasTarget = parseCadCanvasTarget({ kind: 'viewport', center, zoom: 1, units: drawing.units });
+    const canvas = payload && canvasTarget
+      ? parseCanvasPresentation({
+          protocol: CANVAS_PRESENTATION_PROTOCOL,
+          version: CANVAS_PRESENTATION_VERSION,
+          presentationId: `cad_pres_${crypto.randomUUID()}`,
+          adapterId: CAD_CANVAS_ADAPTER_ID,
+          kind: CAD_CANVAS_KIND,
+          viewId: `cad:${fileId}`,
+          revision: drawing.revision,
+          operation: request.kind === 'edit' ? 'update' : 'present',
+          title: manifest.title,
+          resources: [{ scope: 'session-file', path: drawing.path }],
+          payload,
+          target: canvasTarget,
+          generatedAt: now,
+        })
+      : null;
+    if (!canvas) throw serviceError('CAD Canvas presentation is invalid.', 500, 'cad.canvas_invalid');
+    return { ...result, canvas };
   }
 }

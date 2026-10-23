@@ -22,6 +22,7 @@ __pycache__/
 /dist/
 /dist-desktop/
 /release/
+/release-cadfix/
 /desktop/build/
 /public/geo-runtime.css
 
@@ -95,5 +96,6 @@ test/baselines/screenshots/*.png
 # 用户本地可安装模块不写入仓库
 modules/installable/
 
-# CAD Stage 0 generated outputs
+# CAD generated assets
 test/cad/out/
+src/web/public/workers/

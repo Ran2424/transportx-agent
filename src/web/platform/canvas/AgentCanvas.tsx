@@ -53,7 +53,7 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
       <div ref={tabList} className="agent-canvas-tabs" role="tablist" aria-label={t('canvas.views')}>
         {tabs.map((view, index) => <div className={`canvas-tab${view.id === state.activeId ? ' is-active' : ''}`} key={view.id}>
           <button id={`canvas-tab-${view.id}`} type="button" role="tab" aria-selected={view.id === state.activeId} aria-controls={`canvas-panel-${view.id}`} tabIndex={view.id === state.activeId ? 0 : -1} onKeyDown={(event) => navigate(event, index)} onClick={() => onActivate(view.id)} title={view.title}>
-            <Icon name={view.kind === 'geo' ? 'map' : view.kind === 'video' ? 'video' : 'file'} /><span>{view.title}</span>
+            <Icon name={view.kind === 'geo' ? 'map' : view.kind === 'video' ? 'video' : view.kind === 'cad' ? 'cad' : 'file'} /><span>{view.title}</span>
           </button>
           <button className="canvas-tab-close" type="button" aria-label={t('canvas.closeView', { title: view.title })} onClick={() => onCloseTab(view.id)}><Icon name="close" /></button>
         </div>)}

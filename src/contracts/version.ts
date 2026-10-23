@@ -5,7 +5,7 @@
  */
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 
-export const CONTRACT_VERSION = '1.30.0';
+export const CONTRACT_VERSION = '1.31.0';
 
 /**
  * Stable `schemaVersion` literals for the project-owned contract surfaces.
@@ -14,6 +14,7 @@ export const CONTRACT_VERSION = '1.30.0';
  * - Geo envelope: protocol version "1.0" (string-typed to match the wire envelope).
  * - Pi Web Bridge envelope: schema v1 (revisioned runtime manifest).
  * - CAD: request/result protocol "tau-cad" v1.0, manifest "tau-cad-drawing" v1.0.
+ * - CAD Canvas: adapter "com.transportx.canvas.cad" with bounded payload/target/selection values.
  */
 export const SESSION_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 export const GEO_ENVELOPE_PROTOCOL = 'pi-visualization' as const;
