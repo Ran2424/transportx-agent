@@ -1,0 +1,56 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.tool-activation",
+  "toolId": "capabilities.manage",
+  "piName": "manage_capabilities",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "module-activation-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "discover"
+          },
+          {
+            "type": "string",
+            "const": "inspect"
+          },
+          {
+            "type": "string",
+            "const": "enable"
+          },
+          {
+            "type": "string",
+            "const": "status"
+          }
+        ]
+      },
+      "moduleId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "query": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "toolName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-capability-management",
+    "version": 1,
+    "detailsKind": "transportx-capability-management"
+  }
+}
