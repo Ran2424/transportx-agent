@@ -56,7 +56,7 @@ test('Release versions and the total test budget remain consistent', async (t) =
       fs.writeFileSync(file, source);
       assert.throws(() => checkTestBudget(root), message);
     }
-    const reporter = path.resolve('scripts/test-budget-reporter.mjs');
+    const reporter = require('node:url').pathToFileURL(path.resolve('scripts/test-budget-reporter.mjs')).href;
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
     fs.writeFileSync(file, prefix + registrations);
