@@ -19,7 +19,6 @@ import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
 import { inspectTaskModule } from './module-authoring.js';
-import type { CadService } from './cad-service.js';
 
 type ApiRouteServices = {
   beginOperation?(url: URL): () => void;
@@ -58,7 +57,6 @@ type ApiRouteServices = {
   video: VideoService;
   geo: GeoInteractionService;
   canvas: CanvasService;
-  cad: CadService;
 };
 
 export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
@@ -435,30 +433,6 @@ export function createApiRouter(services: ApiRouteServices) {
         const status = deps.errorStatus(error);
         deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'canvas_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
       }
-    })
-    .post('/api/internal/cad/inspect', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        const session = resolveServiceSession(res, body, deps, 'cad');
-        if (!session) return;
-        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.inspect(session, body, signal)) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
-    })
-    .post('/api/internal/cad/draw', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        const session = resolveServiceSession(res, body, deps, 'cad');
-        if (!session) return;
-        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.draw(session, body, signal)) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
-    })
-    .post('/api/internal/cad/verify', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        const session = resolveServiceSession(res, body, deps, 'cad');
-        if (!session) return;
-        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.verify(session, body, signal)) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
     .post('/api/internal/geo/request', async ({ req, res, deps }) => {
       try {

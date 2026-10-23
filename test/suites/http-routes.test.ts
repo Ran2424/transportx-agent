@@ -51,7 +51,7 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
       contextUsage: null,
       entries: [],
       pendingExtensionUiRequests: new Map(),
-      serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token', canvas: 'canvas-token', cad: 'cad-token' },
+      serviceTokens: { citation: 'citation-token', spatial: 'spatial-token', video: 'video-token', geo: 'geo-token', canvas: 'canvas-token' },
       manager: liveManager,
       metadata: () => ({ id, cwd: '/tmp/proj', model: 'openai/gpt-5.5', isStreaming: false, sessionFile: `/tmp/${id}.jsonl` }),
       liveMetadata: () => ({ id, model: 'openai/gpt-5.5', isStreaming: false, isCompacting: false, autoCompactionEnabled: true }),
@@ -185,8 +185,6 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
       session.terminating = true;
       assert.equal((await call({ sessionId: session.id, token: 'canvas-token' })).status, 403);
       for (const route of ['/api/live-sessions', '/api/health-extra', '/api/internal/unknown', '/api/internal/canvas/inspect']) assert.equal((await fetch(`${base}${route}`)).status, 401, route);
-      const cad = await fetch(`${base}/api/internal/cad/inspect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id }) });
-      assert.equal(cad.status, 403, 'CAD route requires a service token');
     } finally { _setAuthForTest(false); }
   }
 

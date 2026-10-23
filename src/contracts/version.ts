@@ -5,7 +5,7 @@
  */
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 
-export const CONTRACT_VERSION = '1.30.0';
+export const CONTRACT_VERSION = '1.29.0';
 
 /**
  * Stable `schemaVersion` literals for the project-owned contract surfaces.
@@ -13,7 +13,6 @@ export const CONTRACT_VERSION = '1.30.0';
  * - Session snapshot: schema v1 (browser/server side agreement).
  * - Geo envelope: protocol version "1.0" (string-typed to match the wire envelope).
  * - Pi Web Bridge envelope: schema v1 (revisioned runtime manifest).
- * - CAD: request/result protocol "tau-cad" v1.0, manifest "tau-cad-drawing" v1.0.
  */
 export const SESSION_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 export const GEO_ENVELOPE_PROTOCOL = 'pi-visualization' as const;
@@ -25,12 +24,6 @@ export const CANVAS_PRESENTATION_PROTOCOL = 'pi-canvas' as const;
 export const CANVAS_PRESENTATION_VERSION = '1.0' as const;
 export const CANVAS_CONTEXT_PROTOCOL = 'pi-canvas-context' as const;
 export const CANVAS_CONTEXT_VERSION = '1.0' as const;
-export const CAD_PROTOCOL = 'tau-cad' as const;
-export const CAD_VERSION = '1.0' as const;
-export const CAD_DRAWING_PROTOCOL = 'tau-cad-drawing' as const;
-export const CAD_DRAWING_VERSION = '1.0' as const;
-export const CAD_ENGINE_PROTOCOL = 'tau-cad-engine' as const;
-export const CAD_ENGINE_VERSION = '1.0' as const;
 
 /** Mirror contract version that the Browser Kernel / Server expects from Pi workers. */
 export const PI_RUNTIME_MINIMUM = '0.80.10';

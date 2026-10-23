@@ -3,8 +3,6 @@ node_modules/
 .npm-cache/
 .tsbuildinfo/
 *.tsbuildinfo
-__pycache__/
-*.py[cod]
 
 # TypeScript build output
 /bin/
@@ -94,6 +92,3 @@ test/baselines/screenshots/*.png
 
 # 用户本地可安装模块不写入仓库
 modules/installable/
-
-# CAD Stage 0 generated outputs
-test/cad/out/

@@ -1,6 +1,6 @@
 const { test } = require('node:test') as typeof import('node:test');
 
-test('Session, Geo, Citation, Bridge and CAD contracts validate versions and preserve context', async () => {
+test('Session, Geo, Citation and Bridge contracts validate versions and preserve context', async () => {
   const assert = require('node:assert/strict');
   const fs = require('node:fs');
   const path = require('node:path');
@@ -187,115 +187,6 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     const regression = contract.acceptBridgeRevision(valid.value, stale);
     assert.equal(regression.accepted, false);
     assert.equal(regression.diagnostic?.code, 'revision_regression');
-  }
-
-  // CAD contracts keep the draw/edit/verify authoritative shapes and reject unsafe input
-  {
-    const cad = await import('../../src/contracts/cad.ts');
-    const sha = 'a'.repeat(64);
-    const base = { protocol: 'tau-cad', version: '1.0' };
-
-    const request = {
-      ...base,
-      kind: 'from-geojson',
-      sourcePath: 'analysis/spatial/result.geojson',
-      target: { kind: 'epsg', code: 'EPSG:32651' },
-      layerMap: { roads: 'ROAD-CENTERLINE', buffers: 'LANDUSE-300' },
-      fileId: 'junction_plan',
-      dryRun: true,
-    };
-    const parsedRequest = cad.parseCadDrawRequestStructured(request);
-    assert.equal(parsedRequest.ok, true);
-    if (!parsedRequest.ok) throw new Error('Valid CAD GeoJSON request was rejected');
-    assert.equal(parsedRequest.value.units, 'm');
-    assert.equal(parsedRequest.value.dryRun, true);
-    assert.equal(cad.parseCadDrawRequestStructured({ ...request, surprise: true }).ok, false);
-    assert.ok(diagnosticCodes(cad.parseCadDrawRequestStructured({ ...request, sourcePath: '../secret.geojson' })).includes('unsafe_value'));
-    assert.equal(cad.parseCadDrawRequestStructured({ ...request, units: 'mm' }).ok, false);
-    assert.equal(cad.parseCadDrawRequestStructured({ ...request, target: undefined }).ok, false);
-
-    const edit = {
-      ...base,
-      kind: 'edit',
-      fileId: 'junction_plan',
-      baseRevision: 3,
-      operations: [
-        { op: 'move', selector: { kind: 'layer', layer: 'SIGNAL' }, dx: 2, dy: 0 },
-        { op: 'drawPolyline', layer: 'MARKING', points: [[0, 0], [10, 0]], closed: false },
-        { op: 'drawText', layer: 'LABEL', position: [0, 0], text: '路口', height: 2.5 },
-        { op: 'drawHatch', layer: 'PAVEMENT', boundary: [[0, 0], [10, 0], [10, 10]] },
-        { op: 'insertBlock', layer: 'SIGNAL', name: 'SIGNAL_HEAD', position: [0, 0] },
-      ],
-      dryRun: false,
-    };
-    assert.equal(cad.parseCadDrawRequestStructured(edit).ok, true);
-    assert.equal(cad.parseCadDrawRequestStructured({ ...edit, baseRevision: undefined }).ok, false);
-    assert.equal(cad.parseCadDrawRequestStructured({ ...edit, operations: [{ op: 'copy', selector: { kind: 'layer', layer: 'SIGNAL' }, dx: 0, dy: 0, count: 101 }] }).ok, false);
-    assert.equal(cad.parseCadDrawRequestStructured({ ...base, kind: 'import', sourcePath: 'uploads/plan.dxf', units: 'mm' }).ok, true);
-    assert.equal(cad.parseCadDrawRequestStructured({ ...base, kind: 'import', sourcePath: 'uploads/plan.dwg' }).ok, false);
-
-    assert.equal(cad.parseCadInspectRequestStructured({ ...base, fileId: 'junction_plan', include: ['summary', 'layers'], limit: 50 }).ok, true);
-    assert.equal(cad.parseCadInspectRequestStructured({ ...base, fileId: 'junction_plan', path: 'cad/junction_plan/r1.dxf' }).ok, false);
-    assert.equal(cad.parseCadVerifyRequestStructured({ ...base, fileId: 'junction_plan', revision: 2 }).ok, true);
-    assert.equal(cad.parseCadVerifyRequestStructured({ ...base, path: 'cad/junction_plan/r1.dxf', revision: 2 }).ok, false);
-
-    const drawResult = {
-      ...base,
-      ok: true,
-      dryRun: false,
-      drawing: {
-        fileId: 'junction_plan',
-        revision: 1,
-        path: 'cad/junction_plan/r1.dxf',
-        sha256: sha,
-        bytes: 100,
-        units: 'm',
-        extents: { min: [0, 0], max: [10, 10] },
-        layerCount: 3,
-        entityCount: 4,
-      },
-      preview: { png: 'cad/junction_plan/r1.png', width: 1200, height: 800, dpi: 150 },
-      checks: [{ id: 'units', status: 'pass', message: 'units ok' }],
-      warnings: [],
-      diagnostics: [],
-    };
-    const parsedDrawResult = cad.parseCadDrawResultStructured(drawResult);
-    assert.equal(parsedDrawResult.ok, true);
-    if (!parsedDrawResult.ok) throw new Error('Valid CAD draw result was rejected');
-    assert.equal(parsedDrawResult.value.drawing?.revision, 1);
-    const missingUnits = { ...drawResult, drawing: { ...drawResult.drawing, units: undefined } };
-    assert.equal(cad.parseCadDrawResultStructured(missingUnits).ok, false);
-    assert.ok(diagnosticCodes(cad.parseCadDrawResultStructured(missingUnits)).includes('missing_required_field'));
-    assert.equal(cad.parseCadDrawResultStructured({ ...drawResult, drawing: { ...drawResult.drawing, sha256: 'not-a-hash' } }).ok, false);
-
-    const inspectResult = {
-      ...base,
-      summary: { units: 'm', extents: { min: [0, 0], max: [10, 10] }, layerCount: 2, entityCount: 2, blockCount: 0, sha256: sha },
-      layers: [{ name: 'SIGNAL', entityCount: 1, color: 3, linetype: 'CONTINUOUS' }],
-      entities: [{ handle: '2F', type: 'POINT', layer: 'SIGNAL', bounds: { min: [0, 0], max: [0, 0] } }],
-      blocks: [],
-      textStyles: [{ name: 'CJK', font: 'Microsoft YaHei' }],
-      warnings: [],
-    };
-    assert.equal(cad.parseCadInspectResultStructured(inspectResult).ok, true);
-    assert.equal(cad.parseCadInspectResultStructured({ ...inspectResult, entities: [{ handle: '2F', type: 'FOO', layer: 'SIGNAL' }] }).ok, false);
-    assert.equal(cad.parseCadVerifyResultStructured({ ...base, ok: true, checks: [{ id: 'units', status: 'pass', message: 'ok' }], diagnostics: [] }).ok, true);
-
-    const manifest = {
-      protocol: 'tau-cad-drawing',
-      version: '1.0',
-      drawingId: 'junction_plan',
-      fileId: 'junction_plan',
-      title: '路口平面图',
-      currentRevision: 1,
-      revisions: [{ revision: 1, path: 'cad/junction_plan/r1.dxf', sha256: sha, bytes: 100, createdAt: '2026-10-23T00:00:00Z' }],
-      units: 'm',
-      target: { kind: 'epsg', code: 'EPSG:32651' },
-      createdAt: '2026-10-23T00:00:00Z',
-      updatedAt: '2026-10-23T00:00:00Z',
-    };
-    assert.equal(cad.parseCadDrawingManifestStructured(manifest).ok, true);
-    assert.equal(cad.parseCadDrawingManifestStructured({ ...manifest, currentRevision: 2 }).ok, false);
   }
 
   // Server refreshes context usage after Pi settles without losing a compaction estimate

@@ -81,7 +81,6 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/document/manifest.json',
   'modules/capabilities/geo/manifest.json',
   'modules/capabilities/spatial-analysis/manifest.json',
-  'modules/capabilities/cad/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
   'modules/official/cli/manifest.json',
