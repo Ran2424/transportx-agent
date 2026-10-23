@@ -11,12 +11,10 @@ export const CONTRACT_VERSION = '1.29.0';
  * Stable `schemaVersion` literals for the project-owned contract surfaces.
  *
  * - Session snapshot: schema v1 (browser/server side agreement).
- * - Task snapshot: schema v1 (Pi task-mode state entry + tool result details).
  * - Geo envelope: protocol version "1.0" (string-typed to match the wire envelope).
  * - Pi Web Bridge envelope: schema v1 (revisioned runtime manifest).
  */
 export const SESSION_SNAPSHOT_SCHEMA_VERSION = 1 as const;
-export const TASK_SNAPSHOT_SCHEMA_VERSION = 1 as const;
 export const GEO_ENVELOPE_PROTOCOL = 'pi-visualization' as const;
 export const GEO_ENVELOPE_VERSION = '1.0' as const;
 export const CITATION_ENVELOPE_PROTOCOL = 'pi-citation' as const;

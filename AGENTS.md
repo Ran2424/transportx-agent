@@ -25,7 +25,7 @@
 
 ```
 src/
-  contracts/        共享协议权威（Session/Task/Geo/Bridge 契约、验证原语）
+  contracts/        共享协议权威（Session/Canvas/Geo/Bridge 契约、验证原语）
   public/           浏览器内核与共享工具（kernel stores、markdown、tool-result、可视化 runtime）
   server/           Agent Host：会话、模块注册、资产解析、HTTP/WebSocket、鉴权
   web/              React 工作台（app 组合根、components UI 基元、platform 面板、features 功能）
@@ -62,7 +62,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 
 - **不要用 `sudo` 启动**；桌面安装包使用内置 Pi/Python，Web 开发模式可用环境变量覆盖运行时。
 - **用户数据根目录按平台解析**：macOS 为 `~/.transportx/traffic-agent/`，Windows 与 Linux 见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；任务工作区 `scenario/`、模型 `models.json`、认证 `auth.json`、会话/日志/缓存、受管模块 `modules/` 均位于对应根目录。API Key 不返回前端。
-- **Module 是统一安装单元**：可组合贡献 Skill / Extension / Native Runtime / Data / Knowledge。内置模块只提供 Workbench、Task、Geo、Citation、Web Bridge 等通用能力；`modules/installable/` 是用户本地可安装模块暂存目录，默认不入 Git，不是平台启动依赖。大体积交通知识库/数据库资产不写入仓库与安装包。
+- **Module 是统一安装单元**：可组合贡献 Skill / Extension / Native Runtime / Data / Knowledge。内置模块只提供 Workbench、Canvas、Geo、Citation、Interaction、Web Bridge 等通用能力；`modules/installable/` 是用户本地可安装模块暂存目录，默认不入 Git，不是平台启动依赖。大体积交通知识库/数据库资产不写入仓库与安装包。
 - **模块版本纪律**：每次改动某个 Module（manifest、Skill、Extension、脚本、数据目录内容）后，必须同步提升该模块 `manifest.json` 的 `version`（新能力升 minor、修复升 patch），并在 CHANGELOG 中说明；Resolved Session Plan 按精确版本冻结，版本号是会话可复现性的依据。
 - **测试预算纪律**：全项目 Node 测试的实际注册总数不得超过 40 个，顶层测试、子测试、skip、todo 均计入，不能只限制套件或文件数量。测试在 `test/suites/*.test.ts` 中直接注册；新增检查应合并到已有关键场景，删除重复或低价值检查，不保留旧 case 回调列表作为隐藏测试层。先运行 `npm run test:budget`；预检禁止注册别名、循环、条件注册及子测试，`npm test` 的运行时报告器再次按实际测试节点计数，超限即失败。环境不支持某个断言时用 diagnostic 说明，不能额外注册跳过子测试。
 - **主题纪律（UI 改造后）**：`src/web/styles/tokens.css` 是 Light / Dark / Sand 三主题的**唯一 token 声明源**（primitive + semantic）。组件只消费 semantic token，禁止 `[data-theme] .component` 式覆盖，禁止在组件中写主题专属色值。功能文字不得低于 11px。新的样式修改应直接落在 `src/web/styles.css` 或遵循其分层结构，不要重复定义 token。

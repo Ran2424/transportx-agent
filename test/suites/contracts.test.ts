@@ -1,6 +1,6 @@
 const { test } = require('node:test') as typeof import('node:test');
 
-test('Session, task, Geo, Citation and Bridge contracts validate versions and preserve context', async () => {
+test('Session, Geo, Citation and Bridge contracts validate versions and preserve context', async () => {
   const assert = require('node:assert/strict');
   const fs = require('node:fs');
   const path = require('node:path');
@@ -116,32 +116,6 @@ test('Session, task, Geo, Citation and Bridge contracts validate versions and pr
     const invalidEntries = contract.parseSessionSnapshot(session.invalidEntries);
     assert.equal(invalidEntries.ok, false);
     assert.deepEqual(diagnosticCodes(invalidEntries), ['invalid_type']);
-  }
-
-  // TaskSnapshot contract is shared by Web and diagnoses version/revision failures
-  {
-    const task = fixture('task');
-    const contract = await import('../../src/contracts/task.ts');
-    const web = await import('../../src/contracts/task.ts');
-    const valid = contract.parseTaskSnapshotStructured(task.valid);
-    assert.equal(valid.ok, true);
-    if (!valid.ok) throw new Error('valid TaskSnapshot fixture was rejected');
-    assert.deepEqual(web.parseTaskSnapshot(task.valid), valid.value);
-
-    const invalidVersion = contract.parseTaskSnapshotStructured(task.invalidVersion);
-    assert.equal(invalidVersion.ok, false);
-    assert.deepEqual(diagnosticCodes(invalidVersion), ['unknown_schema_version']);
-
-    const invalidRevision = contract.parseTaskSnapshotStructured(task.invalidRevision);
-    assert.equal(invalidRevision.ok, false);
-    assert.ok(diagnosticCodes(invalidRevision).includes('out_of_range'));
-
-    const stale = contract.parseTaskSnapshot({ ...task.valid, revision: task.staleRevision });
-    assert.ok(stale);
-    if (!stale) throw new Error('stale TaskSnapshot fixture was not structurally valid');
-    const regression = contract.acceptTaskSnapshotRevision(valid.value, stale);
-    assert.equal(regression.accepted, false);
-    assert.equal(regression.diagnostic?.code, 'revision_regression');
   }
 
   // Geo envelope contract is shared by Extension/Web and diagnoses version/revision failures

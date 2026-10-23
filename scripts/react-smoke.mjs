@@ -163,7 +163,7 @@ try {
   await page.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).waitFor({ timeout: 10_000 });
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor({ timeout: 10_000 });
 
-  await composer.fill('基线-task');
+  await composer.fill('基线-interaction');
   await composer.press('Enter');
   const askUserDialog = page.getByRole('dialog', { name: '选择分析范围' });
   await askUserDialog.getByRole('button', { name: '只看工作日' }).waitFor({ timeout: 10_000 });
@@ -173,7 +173,7 @@ try {
   await customAnswer.dispatchEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 229 });
   assert.equal(await askUserDialog.isVisible(), true, 'composition does not submit a custom answer');
   await customAnswer.press('Enter');
-  await page.locator('.assistant-message', { hasText: '任务面板已更新，继续执行查询步骤。' }).waitFor({ timeout: 10_000 });
+  await page.locator('.assistant-message', { hasText: '分析范围已确认，继续执行查询步骤。' }).waitFor({ timeout: 10_000 });
   assert.match(output, /ui ui_scope responded: .*"value":"仅分析节假日"/);
 
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();

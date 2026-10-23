@@ -205,13 +205,13 @@ sequenceDiagram
 | 报告、表格、PDF 与 OOXML | 报告 Template + Agent 写 Markdown，引用分析文件/图件 | 文件 API、Citation SHA-256 资源路由、`report-pdf.ts`；桌面请求交给 Electron PDF 渲染 | Canvas `DocumentWorkspace.tsx` 浏览 Markdown/CSV/PDF；`features/office/OfficeWorkspace.tsx` 按格式加载本地只读 DOCX/XLSX/PPTX Viewer |
 | 能力安装与任务选择 | Module manifest 声明能力、依赖与资产 | Registry / Installer / Assembler、`platform-overview.ts` | Settings、NewSessionDialog、`platform/capabilities/` |
 
-内置模块不再提供步骤规划器；`tau_ask_user` 只负责在缺少必要信息或审批时向用户发起结构化提问。历史会话仍保留 Task Snapshot 的读取兼容路径，但新会话不会装配 `tau_task` 或任务面板。Web Bridge 是 Pi 的模型/工具元数据桥，不是网页搜索或浏览器自动化服务。报告不是独立 Agent 或服务流水线：Agent 将数据、空间、视频与知识工具的结果组织成文件。
+内置模块不再提供步骤规划器；`tau_ask_user` 只负责在缺少必要信息或审批时向用户发起结构化提问。Task 模块、旧 Task Snapshot 协议及其专用历史兼容已移除，不再提供 `tau_task`、`/task` 或任务面板。Web Bridge 是 Pi 的模型/工具元数据桥，不是网页搜索或浏览器自动化服务。报告不是独立 Agent 或服务流水线：Agent 将数据、空间、视频与知识工具的结果组织成文件。
 
 ### 3.4 文件、Canvas、地图与视频
 
 Canvas 是共享视图底层，不等同于 Document，也不承接领域计算。它定义视图身份、`present/focus/update/clear`、revision、受控资源引用及用户显式附加的上下文；现有 Shell、Projection、Adapter/Renderer Registry 共用这些契约。Document、Geo 和已有 Video Adapter 位于其上：Document 包括 Markdown、PDF、CSV 和 Office，Geo 维护地图场景及交互，Video 维护视频资源与播放。Markdown 是 Document 的格式，不单独增加 Module 或 Runtime。未来 CAD 等类型应通过平台审核的 Adapter、资源/target 校验和 Renderer 接入；本轮不声明已支持 CAD，也不开放 Module 任意注入前端代码。
 
-本轮迁移 Canvas 两个工具、Geo 五个工具及 Pi-local Interaction 的接口：单一 TypeBox 来源生成各工具包内契约，按工具核对装配、实时 Pi 观察、Schema 与有效领域结果。Canvas/Geo Host 请求复用薄客户端、调用关联、超时及取消；Geo 场景状态、资源发布与 JSONL 恢复仍由原 Pi Extension 负责。Document 无独立执行工具，通过 Canvas 的两个工具完成呈现和上下文读取。Task 仍仅保留历史兼容，不重新启用旧规划器。Video 的独立工具迁移后置，保留其现有 Canvas 适配及历史读取。
+本轮迁移 Canvas 两个工具、Geo 五个工具及 Pi-local Interaction 的接口：单一 TypeBox 来源生成各工具包内契约，按工具核对装配、实时 Pi 观察、Schema 与有效领域结果。Canvas/Geo Host 请求复用薄客户端、调用关联、超时及取消；Geo 场景状态、资源发布与 JSONL 恢复仍由原 Pi Extension 负责。Document 无独立执行工具，通过 Canvas 的两个工具完成呈现和上下文读取。Task 模块及其专用历史兼容均已删除。Video 的独立工具迁移后置，保留其现有 Canvas 适配及历史读取。
 
 - 文档既可由用户通过 WorkspaceDock、成果或引用入口打开，也可由 Agent 通过 `canvas_present` 呈现并定位。Agent 呈现事件写入 Session JSONL，可随会话重放；用户手动标签、活动标签和连续滚动状态留在前端。MD/CSV/PDF/DOCX/XLSX/PPTX 的既有入口继续调用 `OpenDocumentContext`；CSV 使用只读表格渲染，不加载 OOXML runtime。
 - `canvas_present` 通过 Host 新建资源视图时只接受 Document Adapter，资源可为任务文件或 Citation SourceVersion；地图与视频由各自工具发布 Canvas Envelope。操作已有 `viewId` 时沿用已声明 Adapter 和前次资源。文档 `update` 保证 revision 递增，即使文件 mtime 不变或回退，React 文档与 OOXML Viewer 也会重载，PDF iframe 同步重建；`focus` 保留原 revision，仅表达聚焦与导航意图。
@@ -253,7 +253,6 @@ Kernel 通过分页列表和按 Evidence ID 查询详情。列表包含来源元
 | 内容 | 权威来源 | 主要消费者 |
 |---|---|---|
 | Session、Geo、Citation、附件等跨层协议 | `src/contracts/` | Extension、Server、Kernel、React |
-| 历史 Task Snapshot 兼容协议 | `src/contracts/task.ts` | 旧 Task Module 恢复与历史测试 |
 | 已完成的对话历史 | Pi Session JSONL | Session Projection、历史 API |
 | 实时会话状态 | Agent Host live overlay | WebSocket、Browser Kernel |
 | 任务装配结果 | `<task>/.tau/resolved-session-plan*.json` | Session 恢复、审计 |
@@ -357,7 +356,7 @@ Workbench 默认装配上述九个直接依赖；CLI Domain 无依赖，使用 `
 
 配置与路径读取位于 config；Registry、Installer、AssetResolver 与 Assembler 的实例装配位于 [platform-composition.ts](../src/server/platform-composition.ts)。server-main 是组合根，向 Manager 注入已有装配器、工作区创建、启动函数、spawn 与服务 endpoint；sessions 不再在 import 时创建全局 Manager。内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
 
-当前配置注册 11 个内置模块（两个 Domain 与九个基础依赖）。`capabilities/task` 的 manifest 与 Extension 仍留在源码，但不在 `BUILTIN_MODULE_MANIFESTS` 中，也不是新任务的默认能力；历史 Task Snapshot 兼容不代表重新装配旧规划工具。
+当前配置注册 11 个内置模块（两个 Domain 与九个基础依赖）。Task 的 manifest、Extension、历史协议和能力握手字段均已删除；旧 Task 模块不再随源码及新安装包提供。
 
 ### 5.4 从包到会话
 

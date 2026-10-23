@@ -11,7 +11,6 @@
       "tools": [
         { "name": "read", "description": "读取文件内容", "parameters": { "type": "object" }, "active": true },
         { "name": "bash", "description": "执行终端命令", "parameters": { "type": "object" }, "active": true },
-        { "name": "tau_task", "description": "任务模式状态管理", "parameters": { "type": "object" }, "promptGuidelines": ["长任务开始时创建计划"], "sourceInfo": { "source": "extension", "path": "extensions/pi-task-mode/index.ts" }, "active": true },
         { "name": "present_visualization", "description": "发布 GIS 可视化", "parameters": { "type": "object" }, "sourceInfo": { "source": "extension", "path": "extensions/pi-geo-visualization/index.ts" }, "active": false }
       ]
     },
