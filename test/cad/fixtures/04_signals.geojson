@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "kind": "signals", "name": "东进口信号灯" },
+      "geometry": { "type": "Point", "coordinates": [121.4698, 31.2302] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "kind": "signals", "name": "西进口信号灯" },
+      "geometry": { "type": "Point", "coordinates": [121.4702, 31.2302] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "kind": "signals", "name": "南进口信号灯" },
+      "geometry": { "type": "Point", "coordinates": [121.47, 31.2298] }
+    }
+  ]
+}
