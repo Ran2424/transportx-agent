@@ -42,6 +42,14 @@ export const SpatialExecutionSchema = Type.Object({ action: Type.Union([Type.Lit
 
 export const ModulePackageSchema = Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('install')]), packagePath: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false });
 
+// Keep an object root for providers that require function parameters.type=object.
+export const ManageCapabilitiesSchema = Type.Object({
+  action: Type.Union(['discover', 'inspect', 'enable', 'status'].map((action) => Type.Literal(action))),
+  moduleId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  query: Type.Optional(Type.String({ maxLength: 300 })),
+  toolName: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+}, { additionalProperties: false });
+
 const ResourceSchema = Type.Union([
   Type.Object({ scope: Type.Literal('session-file'), path: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false }),
   Type.Object({ scope: Type.Literal('capability'), moduleId: Type.String({ minLength: 1, maxLength: 200 }), resourceId: Type.String({ minLength: 1, maxLength: 160 }), revision: Type.Optional(Type.Integer({ minimum: 0 })) }, { additionalProperties: false }),
@@ -191,6 +199,7 @@ export const AskUserSchema = Type.Object({
 
 
 export const coreToolContracts = [
+  { moduleId: 'com.transportx.tool-activation', toolId: 'capabilities.manage', piName: 'manage_capabilities', contractVersion: '1.0.0', semanticVersion: 'module-activation-v1', input: ManageCapabilitiesSchema, output: { protocol: 'transportx-capability-management', version: 1, detailsKind: 'transportx-capability-management' } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.present", piName: "canvas_present", contractVersion: "1.0.0", semanticVersion: "canvas.present-v1", input: CanvasPresentSchema, output: { protocol: "pi-canvas", version: "1.0", detailsKind: "tau-canvas" } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.inspect", piName: "canvas_inspect_context", contractVersion: "1.0.0", semanticVersion: "canvas.inspect-v1", input: CanvasInspectSchema, output: { protocol: "pi-canvas-context", version: "1.0", detailsKind: "tau-canvas-contexts" } },
   { moduleId: "com.transportx.geo", toolId: "geo.inspect", piName: "inspect_map_context", contractVersion: "1.0.0", semanticVersion: "geo.inspect-v1", input: InspectMapContextSchema, output: { protocol: "transportx-geo-context", version: 1, detailsKind: "tau-geo-context" } },

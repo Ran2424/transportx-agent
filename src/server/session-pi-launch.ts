@@ -8,6 +8,23 @@ import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import type { SessionService } from './session-service.js';
 import { projectAdapter } from './project-adapter.js';
 import { readModuleToolContracts } from './tool-contracts.js';
+import { CORE_TOOL_BINDINGS } from '../contracts/tool-interface.js';
+
+function sessionModules(plan: ResolvedSessionPlan) {
+  return plan.modules.map((module) => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(module.packageRoot, 'manifest.json'), 'utf8'));
+    const skills = module.entrypoints.filter((entry) => entry.kind === 'skill').map((entry) => entry.path);
+    return {
+      id: module.id, version: module.version, name: manifest.name, description: manifest.description || '',
+      searchText: [JSON.stringify(manifest.presentation || {}), ...skills.map((file) => {
+        const text = fs.readFileSync(file, 'utf8');
+        return text.startsWith('---') ? text.slice(0, text.indexOf('\n---', 3) + 4).slice(0, 16000) : '';
+      })].join(' '),
+      extensions: module.entrypoints.filter((entry) => entry.kind === 'extension').map((entry) => entry.path), skills,
+      contractFiles: (CORE_TOOL_BINDINGS[module.id] || []).filter((binding) => fs.existsSync(path.join(module.packageRoot, binding.file))).map((binding) => path.join(module.packageRoot, binding.file)),
+    };
+  });
+}
 
 export type SessionPiLaunchInput = {
   cwd: string;
@@ -54,6 +71,7 @@ export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
       PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
       TAU_DISABLED: '1',
       TAU_PYTHON_COMMAND: PYTHON_COMMAND,
+      TRANSPORTX_SESSION_MODULES_JSON: JSON.stringify(sessionModules(plan)),
       TAU_MODULE_ENDPOINT: input.endpoints.moduleAuthoring,
       TAU_MODULE_SESSION_ID: input.sessionId,
       TAU_MODULE_TOKEN: input.serviceTokens.moduleAuthoring,

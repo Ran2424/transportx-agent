@@ -11,6 +11,10 @@
 
 ## 已装载 Module 资源
 
+专业任务使用 `manage_capabilities` 查找本会话 Module；需要了解工具时 inspect，已知 Module ID 时直接 enable(moduleId)，再调用原工具。Skill 按需阅读，无需每次先搜索。开放工具不代表业务已执行、运行环境就绪或操作已授权。新增或更新模块在新任务装配。
+
+附加地图/Canvas 后，保留本轮 context ID，启用对应模块后调用原上下文工具；管理器的 inspect 只介绍工具。需要用户补充信息时先启用 Interaction，再调用 `tau_ask_user`。
+
 {{MODULE_RESOURCE_GUIDE}}
 
 ## 资产渐进披露

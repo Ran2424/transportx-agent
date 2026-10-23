@@ -1,8 +1,8 @@
 # TransportX Agent 架构
 
-- 源码版本：3.23.1（未发布，按当前工作区实现核查）
+- 源码版本：3.23.2（未发布，按当前工作区实现核查）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-10-22
+- 更新日期：2026-10-23
 - 发布 Profile：macOS arm64（DMG + ZIP 更新包）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
@@ -48,6 +48,10 @@ pi-tau-traffic/
 实线表示运行时请求、调用或结果；虚线表示模块装配。图中的 Host 边框表示会话与资源管理边界：Pi RPC 是 Host 启动的独立进程，Python 可由 Pi 工具或 Host 领域服务调用；Module 不是独立服务。当前 Supervisor 在 macOS 使用 `utilityProcess.fork`，Windows 使用 Electron 可执行文件配合 `ELECTRON_RUN_AS_NODE=1` 启动 Node 子进程。CLI 自行启动 Host 子进程；Web 模式直接运行 Host，均使用同一组会话与领域服务。Pi 的基础工具读写任务文件，部分 Extension 直接发布资源或持久化状态；Host 负责对外提供经过校验的文件与资源。文件与资产的具体边界见第 3.4、4、6 节。
 
 图左侧的 Extension、Skill、Knowledge、Data 是 Module 可组合的贡献类型，不是四种互斥的安装包。Pi 默认启用 `read`、`write`、`edit`、`bash` 四个基础工具；Extension 可注册额外工具，Skill 提供工作方法，Knowledge 和 Data 作为会话资产供工具与脚本使用。Pi 维护活动工具集合并发起调用：基础工具和部分 Extension 在 Pi 侧执行，另一些 Extension 调用 Host 领域服务。Host 负责会话装配、资源校验与领域服务，并非所有工具的统一执行器。Python 仅由 `bash` 或 Host 受控作业按需调用。
+
+Workbench 采用 Eager Registration + Lazy Activation：计划内 Extension 初始化时完整注册，新的受管会话首请求只开放上述四工具与 `manage_capabilities`。管理工具以 discover/inspect/status 只读查询，以 enable(moduleId) 开放该模块全部来源和契约核对合格的工具；Module 依赖只影响装配，不传播 active。归属通过 Host 已核验 Plan 的精确入口与 Pi sourceInfo 的 realpath 相等派生，独立包不需进入核心工具表。Pi 仍是唯一 Registry 与 Agent Runtime，enable 不安装模块、不启动业务、不授予执行权限。
+
+`transportx-tool-activation/v1` custom entry 是唯一开放状态恢复记录：assembly 保存初始化成员，enable 保存本分支成功意图；启动、reload、恢复与分支导航从有效分支重建，压缩不依赖模型记忆，不重放业务。成员漂移拒绝启用，需新会话装配；运行中晚注册不支持，已有核对点诊断不兼容，不增加监听器。新安装/更新不改变已有计划；冻结旧计划没有该模块时不注入额外 Extension。Bridge 在开放事件重新采样，inactive 且来源/Schema 合格为待启用，执行和授权仍由原工具/Host 判断。实测及边界见 [验收记录](<Module 工具按需启用验收.md>)。
 
 ### 2.2 技术栈分工
 
@@ -323,6 +327,7 @@ Module 是统一安装与版本冻结单元，manifest 的 `type` 分为 `domain
 ```mermaid
 flowchart LR
   wb["workbench：Domain"]
+  wb --> activation["tool-activation"]
   cliDomain["cli：Domain<br/>无默认依赖"]
   wb --> interaction["interaction"]
   wb --> bridge["web-bridge"]
@@ -339,7 +344,7 @@ flowchart LR
   spatial --> citation
 ```
 
-Workbench 默认装配上述九个直接依赖；CLI Domain 无依赖，使用 `--module` 才会增加可选模块及其依赖。Video 不在 Workbench 的默认依赖中。可安装数据、知识或样式包可按其 manifest 依赖 Video、Geo、Citation 等模块；这些包不属于内置依赖图，实际可用包由用户安装目录及启用状态决定。
+Workbench 默认装配上述十个直接依赖；CLI Domain 无依赖，使用 `--module` 才会增加可选模块及其依赖。Video 不在 Workbench 的默认依赖中。可安装数据、知识或样式包可按其 manifest 依赖 Video、Geo、Citation 等模块；这些包不属于内置依赖图，实际可用包由用户安装目录及启用状态决定。
 
 模块“已安装”“已启用”“被本任务选择”“实际工具已注册”是不同状态，能力展示应消费服务端投影，不能仅凭源码目录存在判断可用。
 
@@ -349,6 +354,7 @@ Workbench 默认装配上述九个直接依赖；CLI Domain 无依赖，使用 `
 |---|---|---|
 | `official/workbench`、`official/cli` | 两种 Domain 的会话 Prompt | 随包注册，按入口选择一个 Domain |
 | `capabilities/interaction`、`citation`、`web-bridge` | 用户提问、引用工具、Pi 元数据桥接 Extension | Workbench 基础依赖 |
+| `capabilities/tool-activation` | Module→Tool 来源核对、四动作和分支开放记录 | Workbench 基础依赖；只控制 Pi active |
 | `capabilities/canvas`、`document` | 共享画布工具与 Skill、文档 Adapter 声明与使用 Skill | Workbench 基础依赖；Document 依赖 Canvas |
 | `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖；Geo 依赖 Canvas，Spatial Analysis 依赖 Geo + Citation |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |

@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- 修复 Tool Activation 打包规则遗漏：排除与 bundle 映射目标重复的原始 Extension 入口，沿用其他核心模块的交付路径；现有桌面运行时场景统一核对全部核心模块的入口排除规则。本轮不构建或发行安装包。
+
 - 开发启动 `desktop:dev` 与 `start.sh` 支持项目本地 `.env.local` 的 Python 覆盖配置，保留导出变量优先及安装包内置运行时；会话规则统一使用 Host 注入的解释器探测依赖，避免将系统 Python 的缺库误报为整机缺失。运筹优化本地模块提供 1.0.1 修订包，移除裸 `python3` 与 `pip3` 指引，保留旧安装版本。
 
 - 修复桌面 Spatial Python 入口仍指向 asar 虚拟路径的问题，复用现有 unpacked 路径解析后再启动外部 Python；两试点 bundle 的 FileSet 按构建源路径声明解包，保证物理入口存在。
@@ -22,6 +24,8 @@
 - 引用读取区分原件变化、视图哈希不匹配、文件缺失、越权及内部读取失败；原件不可读时仍展示已登记的版本元信息。原件变化后可经现有授权入口打开任务目录内的当前文件，明确标注非引用版本，并停用失效原件的下载操作；不替换历史引用、不保存历史文件副本（#67）。
 
 ### Added
+
+- Workbench 新增 Module Tool Activation 1.0.0，初始化完整注册、默认仅开放 read/write/edit/bash/manage_capabilities；支持 discover/inspect/enable/status，按可信 Plan 入口派生 Module→Tool。启用只开放 Schema，分支 custom entry 在 reload、恢复、分叉及压缩后重建工具集合，不重放业务。Workbench 1.4.0、Web Bridge 1.2.0、Module Authoring 1.2.1 同步更新，未启用工具显示待启用；沿用原安装信任、Host 执行与结果恢复。
 
 - Canvas 核心推广：Canvas 1.3.0、Geo 1.5.0、Interaction 1.1.0 接入逐工具生成契约，Canvas/Geo 复用薄 Host Client 与最终参数复核；六个模块的 12 个工具逐项核对实时注册、来源、Schema 与领域结果，保留旧模块缺元数据时的未验证状态。Geo 等待输入及截图支持连接级取消、终态和监听清理；名称、结果协议与 Pi 历史兼容。
 
@@ -38,6 +42,8 @@
 - 引用详情提供有界文本/表格与原件下载，Canvas 使用 Citation capability 固定版本定位 PDF 页、Markdown 章节、XLSX Sheet/单元格及 CSV 数据行；Markdown 导出、PDF 和书目出口保留全部依据位置。
 
 ### Changed
+
+- Module Tool Activation 的真实 Pi/Host 与独立模块链路已验收，Provider 首请求由 17 工具/19,940 字节收敛为 5 工具/3,664 字节；真实模型完成按需启用与执行。记录分支累积、缓存与延迟波动，不承诺统一性能收益；完整测试保持 40/40。
 
 - Web Bridge 升级至 1.1.0：移除 Task 能力版本声明、解析与匹配；Pi RPC 和 Web 冒烟改用独立 Interaction，不再装载旧 Task Extension。
 

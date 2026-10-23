@@ -252,8 +252,10 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       fs.writeFileSync(extension, 'export {};\n');
       fs.writeFileSync(skill, '# Skill\n');
       fs.writeFileSync(prompt, '工作目录：{{TASK_WORKING_DIRECTORY}}\n');
+      fs.writeFileSync(path.join(root, 'manifest.json'), JSON.stringify({ name: 'Launch fixture' }));
       const plan = {
         modules: [{
+          id: 'local.launch', version: '1.0.0', packageRoot: root,
           entrypoints: [
             { kind: 'extension', path: extension },
             { kind: 'skill', path: skill },

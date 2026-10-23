@@ -16,6 +16,9 @@ export type CoreToolBinding = { toolId: string; piName: string; file: string; ex
 
 // Platform-owned bindings; Pi remains the only tool registry and runtime.
 export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
+  'com.transportx.tool-activation': [
+    { toolId: 'capabilities.manage', piName: 'manage_capabilities', file: 'tool-contract.json', execution: 'pi-local' },
+  ],
   'com.transportx.module-authoring': [
     { toolId: 'module.package', piName: 'tau_module_package', file: 'tool-contract.json', execution: 'host' },
   ],

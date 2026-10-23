@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.tool-activation",
+  "name": "Module Tool Activation",
+  "version": "1.0.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "entrypoints": { "piExtensions": ["extensions/pi-tool-activation/index.ts"] },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": { "name": "工具按需启用", "description": "发现会话模块、查看工具并按模块开放工具定义。" },
+      "en-US": { "name": "Tool activation", "description": "Discover session modules, inspect tools and activate module tools on demand." }
+    }
+  }
+}

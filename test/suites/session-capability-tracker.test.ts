@@ -16,7 +16,14 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, 'manifest.json'), 'utf8'));
     const registered: any[] = [];
     const extension = await import(require('node:url').pathToFileURL(path.join(packageRoot, manifest.entrypoints.piExtensions[0])).href);
-    extension.default({ registerTool: (tool: any) => registered.push(tool), on: () => {} });
+    const previousModules = process.env.TRANSPORTX_SESSION_MODULES_JSON;
+    try {
+      process.env.TRANSPORTX_SESSION_MODULES_JSON = '[]';
+      extension.default({ registerTool: (tool: any) => registered.push(tool), on: () => {} });
+    } finally {
+      if (previousModules === undefined) delete process.env.TRANSPORTX_SESSION_MODULES_JSON;
+      else process.env.TRANSPORTX_SESSION_MODULES_JSON = previousModules;
+    }
     assert.equal(registered.length, bindings.length);
     for (const binding of bindings) {
       const contract = JSON.parse(fs.readFileSync(path.join(packageRoot, binding.file), 'utf8'));
@@ -24,6 +31,61 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
       assert.ok(tool, `${moduleId}:${binding.piName} is registered`);
       assert.equal(canonicalToolSchema(tool.parameters), canonicalToolSchema(contract.input));
     }
+  }
+
+  // Persisted observations never attest to a newly launched Pi process.
+  {
+    const managerRoot = path.resolve(__dirname, '../../dist/tool-modules/tool-activation');
+    const managerPath = path.join(managerRoot, 'extensions/pi-tool-activation/index.ts');
+    const extension = await import(require('node:url').pathToFileURL(managerPath).href);
+    const toolContract = JSON.parse(fs.readFileSync(path.join(managerRoot, 'tool-contract.json'), 'utf8'));
+    const module = (id: string, extensions: string[], contractFiles: string[] = []) => ({ id, version: '1.0.0', name: id, description: '', searchText: '', skills: [], extensions, contractFiles });
+    const definitions = [module('com.transportx.tool-activation', [managerPath], [path.join(managerRoot, 'tool-contract.json')]), module('local.fixture', [__filename])];
+    definitions.push(module('local.ambiguous-a', [path.join(managerRoot, 'manifest.json')]), module('local.ambiguous-b', [path.join(managerRoot, 'manifest.json')]), module('com.transportx.citation', [], [path.resolve(__dirname, '../../modules/capabilities/citation/tool-contract.json')]));
+    const hooks: Record<string, Function> = {};
+    let manager: any, failRecord = false;
+    const entries: any[] = [];
+    let tools: any[] = ['read', 'write', 'edit', 'bash'].map((name) => ({ name, parameters: {}, sourceInfo: { path: `<builtin:${name}>`, source: 'builtin' } }));
+    tools.push({ name: 'manage_capabilities', parameters: toolContract.input, sourceInfo: { path: managerPath } }, { name: 'fixture_tool', parameters: {}, description: 'Fixture', sourceInfo: { path: __filename } });
+    let active: string[] = [];
+    const previousModules = process.env.TRANSPORTX_SESSION_MODULES_JSON;
+    try {
+      process.env.TRANSPORTX_SESSION_MODULES_JSON = JSON.stringify(definitions);
+      extension.default({
+        registerTool: (tool: any) => { manager = tool; }, on: (name: string, hook: Function) => { hooks[name] = hook; },
+        getAllTools: () => tools, getActiveTools: () => [...active], setActiveTools: (names: string[]) => { active = names.filter((name) => tools.some((tool) => tool.name === name)); },
+        appendEntry: (customType: string, data: any) => { if (failRecord) throw new Error('fixture disk failure'); entries.push({ type: 'custom', customType, data }); }, events: { emit: () => {} },
+      });
+    } finally {
+      if (previousModules === undefined) delete process.env.TRANSPORTX_SESSION_MODULES_JSON;
+      else process.env.TRANSPORTX_SESSION_MODULES_JSON = previousModules;
+    }
+    const ctx = { sessionManager: { getBranch: () => entries } };
+    const call = async (input: any) => (await manager.execute('call', input, undefined, undefined, ctx)).details;
+    hooks.session_start({}, ctx);
+    assert.equal(active.length, 5);
+    for (const action of ['discover', 'inspect', 'status']) {
+      await call({ action, ...(action === 'discover' ? {} : { moduleId: 'local.fixture' }) });
+      assert.equal(active.length, 5); assert.equal(entries.length, 1);
+    }
+    await assert.rejects(call({ action: 'enable', moduleId: 'local.fixture', query: 'unrelated' }), /Invalid fields/);
+    assert.equal((await call({ action: 'enable', moduleId: 'local.absent' })).status, 'not_in_session_plan');
+    assert.ok((await call({ action: 'enable', moduleId: 'local.ambiguous-a' })).reasons.includes('ambiguous_source'));
+    assert.ok((await call({ action: 'enable', moduleId: 'com.transportx.citation' })).reasons.includes('missing_tool:tau_resolve_citation'));
+    failRecord = true;
+    assert.equal((await call({ action: 'enable', moduleId: 'local.fixture' })).status, 'active_but_record_failed');
+    assert.ok(active.includes('fixture_tool')); assert.equal(entries.length, 1);
+    failRecord = false;
+    await Promise.all([call({ action: 'enable', moduleId: 'local.fixture' }), call({ action: 'enable', moduleId: 'com.transportx.tool-activation' })]);
+    assert.equal(entries.filter((entry) => entry.data.kind === 'enable' && entry.data.moduleId === 'local.fixture').length, 1);
+    tools.push({ name: 'late_tool', parameters: {}, sourceInfo: { path: __filename } });
+    assert.ok((await call({ action: 'enable', moduleId: 'local.fixture' })).reasons.includes('registration_changed_requires_new_session'));
+    hooks.session_start({ reason: 'reload' }, ctx);
+    assert.equal(active.includes('fixture_tool'), false, 'member drift refuses the whole module on reload');
+    assert.equal(active.includes('late_tool'), false);
+    tools = tools.filter((tool) => tool.name !== 'late_tool');
+    tools.find((tool) => tool.name === 'fixture_tool').sourceInfo.path = managerPath;
+    assert.ok((await call({ action: 'enable', moduleId: 'local.fixture' })).reasons.includes('registration_changed_requires_new_session'));
   }
 
   // Persisted observations never attest to a newly launched Pi process.
@@ -54,6 +116,7 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     assert.equal(diagnoseTool(contract, undefined, observation, [], 'session').reason, 'not_selected');
     assert.equal(diagnose({ ...observation, envelope: { tools: [] } }).reason, 'missing_tool');
     assert.equal(diagnose({ ...observation, envelope: { tools: [{ ...tool, active: false }] } }).reason, 'inactive');
+    assert.equal(diagnose({ ...observation, envelope: { tools: [{ ...tool, active: false }] } }).state, 'unverified');
     assert.equal(diagnose({ ...observation, envelope: { tools: [{ ...tool, sourceInfo: {} }] } }).reason, 'source_unverified');
     assert.equal(diagnose({ ...observation, envelope: { tools: [{ ...tool, sourceInfo: { path: __filename } }] } }).reason, 'name_conflict');
     assert.equal(diagnose({ ...observation, envelope: { tools: [{ ...tool, parameters: { type: 'object' } }] } }).reason, 'schema_drift');

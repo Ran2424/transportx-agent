@@ -1,0 +1,651 @@
+{
+  "date": "2026-10-23",
+  "baseline": "e4b6546",
+  "pi": "0.80.10",
+  "providerBoundary": "Controlled OpenAI Completions HTTP + real DeepSeek deepseek-v4-flash; no claim for native deferred providers or installed OS artifacts",
+  "p0": {
+    "phase": "P0/P2",
+    "pi": "0.80.10",
+    "requests": [
+      {
+        "label": "first",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "discover",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "discover",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "inspect",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "inspect",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "status",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "status",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "enable-and-execute",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "enable-and-execute",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "enable-and-execute",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "enable-repeat",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "enable-repeat",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "after-reload",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "other-branch",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "enabled-branch",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "resume",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "after-compact",
+        "tools": [
+          "bash",
+          "capture_geo_screenshot",
+          "edit",
+          "inspect_map_context",
+          "manage_capabilities",
+          "present_visualization",
+          "publish_geodata",
+          "read",
+          "request_geo_input",
+          "write"
+        ],
+        "schemaBytes": 11388
+      },
+      {
+        "label": "fork-before-enable",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      },
+      {
+        "label": "unsupported-late-registration",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "unsupported_late_tool",
+          "write"
+        ],
+        "schemaBytes": 3845
+      },
+      {
+        "label": "unsupported-late-registration",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "unsupported_late_tool",
+          "write"
+        ],
+        "schemaBytes": 3845
+      },
+      {
+        "label": "late-module-enable-refused",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "unsupported_late_tool",
+          "write"
+        ],
+        "schemaBytes": 3845
+      },
+      {
+        "label": "late-module-enable-refused",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "unsupported_late_tool",
+          "write"
+        ],
+        "schemaBytes": 3845
+      },
+      {
+        "label": "reload-after-unsupported-late",
+        "tools": [
+          "bash",
+          "edit",
+          "manage_capabilities",
+          "read",
+          "write"
+        ],
+        "schemaBytes": 3664
+      }
+    ],
+    "readOnlyActionsPreserveActive": true,
+    "sameTurnEnableExecute": true,
+    "reload": true,
+    "branchIsolation": true,
+    "resumeWithoutReplay": true,
+    "compaction": true,
+    "fork": true,
+    "lateRegistrationDiagnosedAndEnableRefused": true
+  },
+  "host": {
+    "phase": "Module activation P1-P3",
+    "pi": "0.80.10",
+    "node": "v24.2.0",
+    "platform": "darwin/arm64",
+    "cpu": "Apple M4",
+    "memoryGiB": 24,
+    "samples": [
+      {
+        "startupToFirstToolHistoryAndBridgeMs": 493,
+        "tools": 21,
+        "moduleCount": 12
+      },
+      {
+        "startupToFirstToolHistoryAndBridgeMs": 483,
+        "tools": 21,
+        "moduleCount": 12
+      },
+      {
+        "startupToFirstToolHistoryAndBridgeMs": 456,
+        "tools": 21,
+        "moduleCount": 12
+      },
+      {
+        "startupToFirstToolHistoryAndBridgeMs": 456,
+        "tools": 21,
+        "moduleCount": 12
+      },
+      {
+        "startupToFirstToolHistoryAndBridgeMs": 452,
+        "tools": 21,
+        "moduleCount": 12
+      }
+    ],
+    "errorsUsePiChannel": true,
+    "executeSignalObserved": true,
+    "headerPersistedBeforeFirstTool": true,
+    "rejectedCodeNeverLoaded": true,
+    "automaticDiscoveryBlocked": true,
+    "historyVerified": true,
+    "canvas": {
+      "realPi": true,
+      "productionHost": true,
+      "browser": true,
+      "markdownUpdateSameMtime": true,
+      "csvRows": true,
+      "pdfPage": true,
+      "pinnedCitation": true,
+      "currentTurnContexts": true,
+      "geoPublishRenderScreenshotAndInput": true,
+      "interactionAnswered": true,
+      "eightCoreToolsAvailable": true,
+      "taskNotReenabled": true,
+      "historyAndGeoRestore": true,
+      "clearPreservesFile": true,
+      "accumulatedSchemas": {
+        "count": 14,
+        "bytes": 17616,
+        "source": "actual final provider request after Canvas/Geo/Citation/Interaction and resume"
+      }
+    },
+    "spatial": {
+      "valid": [
+        {
+          "operation": "buffer",
+          "elapsedMs": 283,
+          "outputBytes": 2719
+        },
+        {
+          "operation": "nearest",
+          "elapsedMs": 184,
+          "outputBytes": 223
+        },
+        {
+          "operation": "spatial_join",
+          "elapsedMs": 192,
+          "outputBytes": 216
+        }
+      ],
+      "scale": [
+        {
+          "features": 1000,
+          "elapsedMs": 217,
+          "inputBytes": 100931,
+          "outputBytes": 169932,
+          "summaryChars": 318
+        },
+        {
+          "features": 50000,
+          "elapsedMs": 1916,
+          "inputBytes": 5138931,
+          "outputBytes": 8588932,
+          "summaryChars": 319
+        }
+      ],
+      "independentCsvPackage": true,
+      "semanticRejectionNoDirectories": true,
+      "authorizationDenied": true,
+      "responseLossPreservesManifest": true,
+      "optionalCitationWarningRetainsResult": true,
+      "noAutomaticRetry": true,
+      "cancellationOutcome": "spatial_cancelled",
+      "cancellationClearsDirectories": true,
+      "realResultsUiAndReload": true,
+      "unknownBlocksPromptReplayAfterModelFailure": true,
+      "modelHttpResultsVerified": true
+    },
+    "citation": {
+      "independentZipUpdateAndExecution": true,
+      "productionRegistration": true,
+      "liveThreeStateDiagnostics": true,
+      "duplicateRegistrationKeepsEvidence": true,
+      "mutuallyExclusiveInputRejected": true,
+      "undeclaredFieldRejected": true,
+      "incompatibleContractRejected": true,
+      "controlledExternalWebStream": true,
+      "cancellationClosesWebStream": true,
+      "committedResponseLossIsUnknown": true,
+      "noAutomaticRetry": true,
+      "realResultsUiAndReload": true
+    },
+    "lifecycle": {
+      "disableNewTasks": true,
+      "existingTaskStillExecutes": true,
+      "disabledTrustedHistoryResumesExactVersion": true,
+      "updateNewTaskExecutes": true,
+      "activeUninstallRefused": true,
+      "uninstallPreservesHistory": true,
+      "missingVersionExplained": true,
+      "exactVersionReinstallAndResume": true
+    },
+    "authoring": {
+      "nativePiPackageInspection": true,
+      "nativeTrustInstall": true,
+      "currentTaskPlanRemainsFrozen": true
+    },
+    "activation": {
+      "firstRequestFive": true,
+      "readOnlyUnchanged": true,
+      "moduleDependenciesDoNotActivate": true,
+      "bridgeRefresh": true,
+      "unknownPlanRefused": true,
+      "skillOnlyInstalledAndAssembled": true,
+      "installDoesNotExpandExistingPlan": true,
+      "schemaMeasurement": {
+        "registeredCount": 21,
+        "eagerCount": 17,
+        "eagerBytes": 19940,
+        "firstActiveCount": 5,
+        "firstActiveBytes": 3664,
+        "afterGeoCount": 10,
+        "reloadFirstRequestCount": 10,
+        "reloadAddedHistoryEntries": 6,
+        "source": "actual HTTP provider tools; same assembled modules",
+        "tokens": "controlled provider supplies no tokenizer/usage; bytes only"
+      }
+    },
+    "harnessRssBytes": 252280832
+  },
+  "realModel": {
+    "evidenceRoot": "/var/folders/pc/0sxcvr_x0c14vfd9807b194h0000gn/T/transportx-activation-model-LvP31x",
+    "report": [
+      {
+        "mode": "eager",
+        "task": "sum",
+        "model": "deepseek/deepseek-v4-flash",
+        "initializedMs": 440,
+        "piInitializedMemory": {
+          "rss": 226050048,
+          "heapTotal": 125353984,
+          "heapUsed": 66587336,
+          "external": 4038998,
+          "arrayBuffers": 309147,
+          "registered": 21,
+          "active": 17
+        },
+        "elapsedMs": 4822,
+        "modelRequests": 4,
+        "usage": {
+          "input": 9443,
+          "output": 359,
+          "cacheRead": 29696,
+          "cacheWrite": 0
+        },
+        "toolCalls": [
+          {
+            "name": "bash",
+            "isError": false
+          },
+          {
+            "name": "read",
+            "isError": false
+          },
+          {
+            "name": "read",
+            "isError": false
+          },
+          {
+            "name": "road_volume_sum",
+            "isError": false
+          }
+        ],
+        "sessionFile": "/var/folders/pc/0sxcvr_x0c14vfd9807b194h0000gn/T/transportx-activation-model-LvP31x/sessions/2026-10-23T10-40-42-572Z_01a16859-424c-70ac-a89e-fbc8a1ee67a9.jsonl",
+        "success": true
+      },
+      {
+        "mode": "progressive",
+        "task": "sum",
+        "model": "deepseek/deepseek-v4-flash",
+        "initializedMs": 425,
+        "piInitializedMemory": {
+          "rss": 217595904,
+          "heapTotal": 123781120,
+          "heapUsed": 56139624,
+          "external": 4034679,
+          "arrayBuffers": 304828,
+          "registered": 21,
+          "active": 5
+        },
+        "elapsedMs": 5474,
+        "modelRequests": 4,
+        "usage": {
+          "input": 4767,
+          "output": 511,
+          "cacheRead": 14208,
+          "cacheWrite": 0
+        },
+        "toolCalls": [
+          {
+            "name": "read",
+            "isError": false
+          },
+          {
+            "name": "bash",
+            "isError": false
+          },
+          {
+            "name": "manage_capabilities",
+            "action": "enable",
+            "isError": false
+          },
+          {
+            "name": "road_volume_sum",
+            "isError": false
+          }
+        ],
+        "sessionFile": "/var/folders/pc/0sxcvr_x0c14vfd9807b194h0000gn/T/transportx-activation-model-LvP31x/sessions/2026-10-23T10-40-47-858Z_01a16859-56f2-79d3-8269-5167541d9838.jsonl",
+        "success": true
+      },
+      {
+        "mode": "progressive",
+        "task": "discovery",
+        "model": "deepseek/deepseek-v4-flash",
+        "initializedMs": 441,
+        "piInitializedMemory": {
+          "rss": 195624960,
+          "heapTotal": 115654656,
+          "heapUsed": 66322248,
+          "external": 3860893,
+          "arrayBuffers": 131042,
+          "registered": 21,
+          "active": 5
+        },
+        "elapsedMs": 6349,
+        "modelRequests": 3,
+        "usage": {
+          "input": 4422,
+          "output": 815,
+          "cacheRead": 9984,
+          "cacheWrite": 0
+        },
+        "toolCalls": [
+          {
+            "name": "manage_capabilities",
+            "action": "discover",
+            "isError": false
+          },
+          {
+            "name": "manage_capabilities",
+            "action": "inspect",
+            "isError": false
+          }
+        ],
+        "sessionFile": "/var/folders/pc/0sxcvr_x0c14vfd9807b194h0000gn/T/transportx-activation-model-LvP31x/sessions/2026-10-23T10-40-53-794Z_01a16859-6e22-733d-98ec-9dd898611642.jsonl",
+        "success": true
+      },
+      {
+        "mode": "progressive",
+        "task": "geo",
+        "model": "deepseek/deepseek-v4-flash",
+        "initializedMs": 466,
+        "piInitializedMemory": {
+          "rss": 198393856,
+          "heapTotal": 115916800,
+          "heapUsed": 66267952,
+          "external": 3860893,
+          "arrayBuffers": 131042,
+          "registered": 21,
+          "active": 5
+        },
+        "elapsedMs": 5640,
+        "modelRequests": 4,
+        "usage": {
+          "input": 9429,
+          "output": 577,
+          "cacheRead": 17664,
+          "cacheWrite": 0
+        },
+        "toolCalls": [
+          {
+            "name": "manage_capabilities",
+            "action": "discover",
+            "isError": false
+          },
+          {
+            "name": "manage_capabilities",
+            "action": "status",
+            "isError": false
+          },
+          {
+            "name": "manage_capabilities",
+            "action": "enable",
+            "isError": false
+          },
+          {
+            "name": "inspect_map_context",
+            "isError": false
+          }
+        ],
+        "sessionFile": "/var/folders/pc/0sxcvr_x0c14vfd9807b194h0000gn/T/transportx-activation-model-LvP31x/sessions/2026-10-23T10-41-00-623Z_01a16859-88cf-7e9a-8b69-c8c375ad7bf5.jsonl",
+        "success": true
+      }
+    ]
+  }
+}
