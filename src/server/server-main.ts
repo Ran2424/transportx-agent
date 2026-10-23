@@ -568,6 +568,11 @@ async function shutdown(signal: string) {
   } catch (error) {
     console.error('[Tau] Shutdown could not confirm process exit:', error);
     process.exitCode = 1;
+    // A Python child may not acknowledge termination on some hosts. The Host
+    // is already shutting down, so do not let that child keep the writer lease
+    // alive indefinitely.
+    server.close(() => process.exit(process.exitCode || 1));
+    setTimeout(() => process.exit(process.exitCode || 1), 2500).unref();
   }
 }
 function startCli() {
