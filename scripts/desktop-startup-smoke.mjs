@@ -19,9 +19,17 @@ async function start() {
   return { healthUrl, owner: JSON.parse(fs.readFileSync(ownerFile(), 'utf8')) };
 }
 
+async function waitForLeaseRelease(timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (fs.existsSync(lock) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
 async function stop(healthUrl) {
   await app.close();
   app = null;
+  await waitForLeaseRelease();
   assert.equal(fs.existsSync(lock), false, 'normal desktop exit must release its lease');
   await assert.rejects(fetch(healthUrl), 'normal desktop exit must stop its Host');
   for (const file of ['runtime.jsonl', 'agent-host.log', 'desktop.log']) {
