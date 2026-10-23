@@ -37,10 +37,12 @@ fs.writeFileSync(fixture, `export default function(pi) {
   pi.registerCommand('activation_reload', { handler: async (_,ctx) => { await ctx.reload(); } });
   pi.registerCommand('activation_tree', { handler: async (id,ctx) => { await ctx.navigateTree(id.trim(), {summarize:false}); } });
   pi.registerCommand('activation_compact', { handler: async (_,ctx) => { ctx.compact(); } });
+  pi.registerCommand('activation_late', {handler:async()=>pi.registerTool({name:'unsupported_late_tool',label:'Late fixture',description:'Unsupported late registration boundary',parameters:{type:'object',properties:{}},async execute(){return {content:[{type:'text',text:'fixture'}]};}})});
   pi.on('session_before_compact', () => ({ compaction: { summary:'Activation smoke summary', firstKeptEntryId:undefined, tokensBefore:1 } }));
 }`);
 fs.writeFileSync(path.join(root, 'roads.geojson'), JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [121, 31] } }] }));
-let pi = piRpc(root, modules, [fixture]);
+modules.push({ id: 'local.lifecycle-fixture', version: '1.0.0', name: 'Lifecycle fixture', description: '', searchText: '', extensions: [fixture], skills: [], contractFiles: [] });
+let pi = piRpc(root, modules);
 const manage = (input) => ({ name: 'manage_capabilities', input });
 const active = () => requests.at(-1).tools;
 const run = async (name, calls = []) => { label = name; pending = calls; await pi.prompt(name); assert.equal(pending.length, 0); };
@@ -65,7 +67,7 @@ try {
   const state = (await pi.send('get_state')).response.data;
   const file = state.sessionFile;
   assert.ok(file);
-  await pi.close(); pi = piRpc(root, modules, [fixture], file); await pi.send('get_state');
+  await pi.close(); pi = piRpc(root, modules, [], file); await pi.send('get_state');
   await run('resume'); assert.deepEqual(active(), enabled);
   const businessCount = (await pi.entries()).filter((entry) => entry.message?.toolName === 'publish_geodata').length;
   assert.equal(businessCount, 1, 'resume never replays business tools');
@@ -73,7 +75,14 @@ try {
   await pi.send('compact'); await run('after-compact'); assert.deepEqual(active(), enabled);
   await pi.send('fork', { entryId: (await pi.entries()).find((entry) => entry.message?.role === 'user' && entry.message.content?.some((part) => part.text === 'enable-and-execute')).id });
   await run('fork-before-enable'); assert.deepEqual(active(), base);
-  const report = { phase: 'P0', pi: '0.80.10', requests, readOnlyActionsPreserveActive: true, sameTurnEnableExecute: true, reload: true, branchIsolation: true, resumeWithoutReplay: true, compaction: true, fork: true };
+  await pi.prompt('/activation_late');
+  await run('unsupported-late-registration', [manage({ action: 'status', moduleId: 'local.lifecycle-fixture' })]);
+  const diagnostic = (await pi.entries()).filter((entry) => entry.message?.toolName === 'manage_capabilities').at(-1).message.details;
+  assert.ok(diagnostic.modules[0].reasons.includes('registration_changed_requires_new_session'));
+  await run('late-module-enable-refused', [manage({ action: 'enable', moduleId: 'local.lifecycle-fixture' })]);
+  assert.equal((await pi.entries()).filter((entry) => entry.message?.toolName === 'manage_capabilities').at(-1).message.details.status, 'incompatible');
+  await pi.prompt('/activation_reload'); await run('reload-after-unsupported-late'); assert.deepEqual(active(), base);
+  const report = { phase: 'P0/P2', pi: '0.80.10', requests, readOnlyActionsPreserveActive: true, sameTurnEnableExecute: true, reload: true, branchIsolation: true, resumeWithoutReplay: true, compaction: true, fork: true, lateRegistrationDiagnosedAndEnableRefused: true };
   const output = process.env.TRANSPORTX_ACTIVATION_REPORT;
   if (output) fs.writeFileSync(output, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));

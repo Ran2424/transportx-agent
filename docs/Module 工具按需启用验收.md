@@ -21,3 +21,15 @@ Tool Activation 1.0.0、Workbench 1.4.0、Web Bridge 1.2.0、Module Authoring 1.
 真实生产 Host + Pi + Python 3.10 + Chrome 的 activation 链路通过：首请求严格五工具；discover/inspect/status 不开放；Geo 的依赖 Canvas 不被连带开放；Document 与独立 Skill-only 包返回 no_tools；新安装模块不扩大当前 Plan。原 Canvas 场景实际验证 Markdown/CSV/PDF、固定版本引用、当轮上下文、Geo 发布/地图/截图/输入、Interaction 回答及历史恢复。Spatial/Citation 的计算、取消、提交后丢响应、未知结果查询和原成果复用保持通过。
 
 启动 custom entry 在首次对话时落盘是 Pi 原有行为，验收先进行只读 status 后检查历史；不增加空白业务调用或产品持久化旁路。
+
+## P2：独立扩展与历史执行
+
+生产 Installer 安装源码树外的 `local.traffic-peak`，新任务装配后以实际工具名搜索、查看和查询状态，三次查询保持五工具，然后 enable 并执行原 CSV Python，A/08=30。删除制作目录后仍可执行；ZIP 更新至 1.0.1、禁用/启用、旧任务精确版本恢复、占用时拒绝卸载、卸载保留 JSONL、精确重装恢复均沿原生命周期通过。管理器没有该模块 ID 或工具名的硬编码；测试 Provider 仅负责确定性驱动调用。
+
+`activation-model-smoke.mjs` 另将 `local.activation-sum` 安装至隔离受管目录并删除制作源，真实 DeepSeek `deepseek-v4-flash` 自行 inspect/enable，然后调用 `road_volume_sum` 得到 52/4。只读地图介绍实际使用 discover/status/inspect，active 保持五工具；地图任务自行 discover/enable Geo 后执行 inspect_map_context，正确报告无地图输入。
+
+真实 Pi 晚注册负例返回 `registration_changed_requires_new_session`，enable 拒绝不兼容模块，reload 后收敛回有效分支集合。Pi 在晚注册发生时仍会自动开放新名称，这是明确不支持的插件行为；没有增加监听器或声称提供代码隔离。已知缺失工具、重复入口归属与来源漂移的拒绝断言合并在现有 suite。
+
+`TRANSPORTX_TOOL_SMOKE_PHASE=recovery node scripts/tool-host-smoke.mjs` 也已通过：提交前、提交后及计算中强杀 Host，恢复分别为 unknown/succeeded/unknown，每例 Python 派发恰为一次；查询和重放不重算，已提交成果 ID/哈希保留，复制 JSONL 不能取得原执行权。
+
+实际模型证据保留在本机临时根 `transportx-activation-model-fxzt6H` 的 report.json 与 Pi JSONL，脚本退出已移除复制的 models/auth 文件。未将密钥或完整配置写入仓库。测试只授权自身 fixture 的原生信任决定，不声称真人点击或各平台安装包验收。

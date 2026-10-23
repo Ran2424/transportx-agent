@@ -41,6 +41,7 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     const toolContract = JSON.parse(fs.readFileSync(path.join(managerRoot, 'tool-contract.json'), 'utf8'));
     const module = (id: string, extensions: string[], contractFiles: string[] = []) => ({ id, version: '1.0.0', name: id, description: '', searchText: '', skills: [], extensions, contractFiles });
     const definitions = [module('com.transportx.tool-activation', [managerPath], [path.join(managerRoot, 'tool-contract.json')]), module('local.fixture', [__filename])];
+    definitions.push(module('local.ambiguous-a', [path.join(managerRoot, 'manifest.json')]), module('local.ambiguous-b', [path.join(managerRoot, 'manifest.json')]), module('com.transportx.citation', [], [path.resolve(__dirname, '../../modules/capabilities/citation/tool-contract.json')]));
     const hooks: Record<string, Function> = {};
     let manager: any, failRecord = false;
     const entries: any[] = [];
@@ -69,6 +70,8 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     }
     await assert.rejects(call({ action: 'enable', moduleId: 'local.fixture', query: 'unrelated' }), /Invalid fields/);
     assert.equal((await call({ action: 'enable', moduleId: 'local.absent' })).status, 'not_in_session_plan');
+    assert.ok((await call({ action: 'enable', moduleId: 'local.ambiguous-a' })).reasons.includes('ambiguous_source'));
+    assert.ok((await call({ action: 'enable', moduleId: 'com.transportx.citation' })).reasons.includes('missing_tool:tau_resolve_citation'));
     failRecord = true;
     assert.equal((await call({ action: 'enable', moduleId: 'local.fixture' })).status, 'active_but_record_failed');
     assert.ok(active.includes('fixture_tool')); assert.equal(entries.length, 1);

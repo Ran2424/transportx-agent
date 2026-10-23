@@ -38,6 +38,13 @@ export default function(pi) {
     return { result: toolResults(state).at(-1), elapsedMs: Math.round(performance.now() - start) };
   }
   fs.writeFileSync(path.join(session.cwd, 'volumes.csv'), 'road,hour,volume\nA,08,10\nA,08,20\nA,09,15\nB,08,7\n');
+  for (const action of ['discover', 'inspect', 'status']) {
+    const actual = await execute('core:', { tool: 'manage_capabilities', params: { action, ...(action === 'discover' ? { query: 'traffic_peak_hour' } : { moduleId: 'local.traffic-peak' }) } });
+    assert.equal(actual.result.isError, false);
+    if (action === 'discover') assert.ok(actual.result.details.modules.some((module) => module.moduleId === 'local.traffic-peak'));
+    if (action === 'inspect') assert.equal(actual.result.details.tools[0].name, 'traffic_peak_hour');
+    assert.equal(providerInputs.at(-1).tools.length, 5, 'independent module inspection is read-only');
+  }
   const peak = await execute('traffic:', { inputPath: 'volumes.csv' });
   assert.equal(peak.result.isError, false);
   assert.equal(peak.result.details.kind, 'local.traffic-peak');
