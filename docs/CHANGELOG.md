@@ -32,6 +32,8 @@
 
 - Workbench 新增 Module Tool Activation 1.0.0，初始化完整注册、默认仅开放 read/write/edit/bash/manage_capabilities；支持 discover/inspect/enable/status，按可信 Plan 入口派生 Module→Tool。启用只开放 Schema，分支 custom entry 在 reload、恢复、分叉及压缩后重建工具集合，不重放业务。Workbench 1.4.0、Web Bridge 1.2.0、Module Authoring 1.2.1 同步更新，未启用工具显示待启用；沿用原安装信任、Host 执行与结果恢复。
 
+- 新增并修订 [Agent 主动启用工具与动态加载 PLAN](<Agent 主动启用工具与动态加载 PLAN.md>) v3：以 Module→Tool 为唯一能力组织关系，保留 `read/write/edit/bash + manage_capabilities` 五工具和 discover/inspect/enable/status 四动作，按 `enable(moduleId)` 开放模块工具。移除 v2 新增的领域、工具组、单工具启用及分页框架；补即时来源归属、初始化完整预注册、reload 后恢复、唯一分支启用记录和 P0 准入证据。沿 Pi 原生 Registry，不新增执行 Runtime；仅形成设计，尚未修改运行代码或验证五工具闭环。
+
 - Canvas 核心推广：Canvas 1.3.0、Geo 1.5.0、Interaction 1.1.0 接入逐工具生成契约，Canvas/Geo 复用薄 Host Client 与最终参数复核；六个模块的 12 个工具逐项核对实时注册、来源、Schema 与领域结果，保留旧模块缺元数据时的未验证状态。Geo 等待输入及截图支持连接级取消、终态和监听清理；名称、结果协议与 Pi 历史兼容。
 
 - Tool/插件 P4 初版：Module Authoring 1.2.0 新增 `tau_module_package`，Agent 可在任务内生成包、静态检查，再经既有原生确认安装；工具不要求用户编辑清单或配置，新任务使用安装结果，旧任务保留冻结版本。制作 Skill 补脚本/CLI/API 包装、依赖检查与缺配置反馈；真实模型已完成 CSV 包制作、安装及新任务调用，缺 OR-Tools 与私有 API 缺凭据分别交付草稿并说明未执行。独立插件更新、禁用、恢复、卸载与重装闭环通过，保留旧历史；打包模块及 Video 独立分发沿现有机制。
@@ -39,7 +41,7 @@
 - Tool/插件 P3：Spatial 1.4.0 在首次计算前由 Host 签发并保存 operationId，绑定 Pi 持久历史 Owner、规范化参数、接口语义及输入哈希；同操作重放复用原成果，不同请求冲突。新增 `tau_spatial_execution` 查询及请求取消，沿用原 Job/PythonRunner；Host 重启后核验 manifest/输出，确认提交则返回原成果，不能确认则保持未知并禁止自动重算。Citation 继续用领域 Registry 处理重复和批量提交，不增加通用持久 Job。
 - Tool/插件 P2：Spatial 1.3.0 与 Citation 2.1.0 从单一 TypeBox 定义生成包内 Tool Contract，Host 执行前复核结构及接口版本；两模块随包携带薄通信实现，保留各自领域校验、结果协议和 Pi 注册。能力中心按当前任务的计划、实时 Bridge 来源/激活状态、Schema 和已确认调用提供三态核对，不自动激活工具。Web Bridge 1.0.2 在首次执行和分支切换重新观察，历史样本不冒充当前进程证明。Citation 补取消传播、有界摘要及未知提交指引；独立模块支持 ZIP 更新后的实际调用。
 - Tool/插件 P0 增加模块代码信任入口：Electron 原生确认经私有 IPC 返回 Host，绑定具体包/版本/入口/依赖；原始安装 RPC 的布尔参数及存储的来源标签不能授权。目录、ZIP、启用和历史启动共用核对，Pi 仅加载计划入口，拒绝未授权自动发现/reload；不承诺 OS 隔离。拒绝更新保留旧版本，卸载撤销接受记录。增加生产 Host + 真实 Pi 的错误、取消、历史落盘与信任探针，以及 Spatial 持久 Owner 的路径/header/cwd 校验器；持久执行查询仍待 P3。
-- 新增 [TransportX Traffic Lab 交通仿真与优化能力升级 PLAN](<交通仿真与优化能力升级 PLAN.md>)：明确可安装 Module、GIS/SUMO/OR-Tools 网络适配、受管 TraCI Worker、接驳车辆优化与实验对比的功能范围、P0–P5 验收和双平台运行时前置条件；仅形成规划，尚未实现或验证仿真闭环。
+- 新增 [交通仿真（Traffic Simulation）模块 PLAN](<交通仿真与优化能力升级 PLAN.md>)：明确可安装 Module、GIS 路网与场景变体、受管无头仿真、结果查询/对比及双平台交付；保留运筹优化、交互控制和回放的后续接入方向。仅形成规划，尚未实现或验证仿真闭环。
 - 新增并评审修订 Tool 与插件架构优化 PLAN：保留 Pi 权威与 Capability–Tool–Operation 边界，以局部源码核查收敛 Binding 为三类只读诊断；先做 Spatial 单工具闭环，再抽通信共性，按风险补执行保障；明确 Extension 信任决策、未知提交禁止自动重试、独立模块分阶段验收、历史结果兼容和性能基线。补充桌面用户提供脚本/API 资料、由 Agent 完成封装校验并经现有入口安装使用的场景，复用制作 Skill，不另建万能框架；尚未实施运行时改造。
 - Tool PLAN 完成架构评审并冻结范围，补齐信任硬门槛、P1/P3 能力承诺、接口兼容规则及平台/真实 Agent 双重验收；启动 P0 记录和隔离行为探针，核查 Pi 显式加载及历史身份，确定 Spatial 持久 Owner 的组合与校验规则。信任门禁、故障恢复和性能基线尚未验收，不表示已完成运行时保障。
 - 提供显式 V2 → V3 引用注册表迁移脚本 `scripts/migrate-citations-v3.mjs <data-root> [--apply]`（先运行 `npm run build:server`），与启动迁移共用实现。默认只预检；应用前备份全部原注册表并生成原件核验报告，失败回滚。保留正文 occurrence ID、来源哈希和定位，不改写历史消息；旧摘录按知识归纳迁移，原件变化或缺失仍保留出处信息，旧来源关系保留于原始注册表备份。V2 未记录的文件大小按现存文件补齐，缺失时以 0 占位并在报告注明；再次执行跳过 V3 注册表。
@@ -51,6 +53,14 @@
 ### Changed
 
 - Module Tool Activation 的真实 Pi/Host 与独立模块链路已验收，Provider 首请求由 17 工具/19,940 字节收敛为 5 工具/3,664 字节；真实模型完成按需启用与执行。记录分支累积、缓存与延迟波动，不承诺统一性能收益；完整测试保持 40/40。
+
+- 动态工具 PLAN 明确 Eager Registration + Lazy Activation：初始化后受管模块工具成员固定，仅 active 随 Agent 决策变化；首版不支持晚注册、不修改 Pi Runtime、不增加通用 Registry 监听或复杂校正。reload 后核对当前 Plan、真实 Registry 和有效分支记录，并验收首次及 reload 后第一次实际 Provider 请求；第三方不遵守预注册约定时明确诊断不兼容。
+
+- 动态工具 PLAN 补真实 Pi 0.80.10 刷新核查：晚注册新工具和 reload 可自动扩大 active，并已从本地 Provider 实际请求确认；已有名称的普通刷新不会自动重开隐藏工具。记录 session_start 的 reload 校正有效、before_agent_start/turn_start 对同轮晚注册仍不足，区分 Host 模块目录刷新与 Pi Registry 刷新；未修改运行代码或宣称完整 P0 通过。
+
+- 交通仿真 PLAN 对齐当前 Tool/Module 实现：以 `CORE_TOOL_BINDINGS` 的六模块十二工具、逐工具契约和诊断为基线；明确 Canvas/Geo/Document/Citation 分层及 P2 的 Document 依赖，补可选模块源码、批准契约、独立包和 Host 服务的静态映射。保留同步有界 Job，列明 SUMO/模块 Python 的解析、安装校验、装配恢复与打包，以及 ProcessRunner 环境替换开发项；在线 OSM 后移至 P2。仅修订规划，未运行第三方后端。
+
+- 根据 AgentSUMO / ChatSUMO 固定提交源码修订 [交通仿真 PLAN](<交通仿真与优化能力升级 PLAN.md>)：模块名称统一为“交通仿真（Traffic Simulation）”，拟用 ID 为 `com.transportx.traffic-simulation`；定位为现有 Pi 平台的交通仿真与方案评估能力，先验证 AgentSUMO 执行层复用与模块私有 MCP/直接调用的适配成本；首版完成限速变体的批量无头实验、Run 独立 SQLite 结果及 GIS 对比。补充路径、解释器、终止原因、导入身份与实验变量边界，长期 Worker、OR-Tools 和时间回放按需后置；未安装或运行参考项目。
 
 - Web Bridge 升级至 1.1.0：移除 Task 能力版本声明、解析与匹配；Pi RPC 和 Web 冒烟改用独立 Interaction，不再装载旧 Task Extension。
 
