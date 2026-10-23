@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "kind": "roads", "name": "主路" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[121.469, 31.2300], [121.471, 31.2300]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "kind": "markings", "name": "导向线" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[121.4698, 31.2300], [121.4698, 31.2303]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "kind": "signals", "name": "待移动信号灯" },
+      "geometry": { "type": "Point", "coordinates": [121.4700, 31.2300] }
+    }
+  ]
+}

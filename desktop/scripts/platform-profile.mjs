@@ -31,7 +31,7 @@ export function getPlatformProfile(builderPlatform = builderPlatformFor()) {
 // `archCheck` receives platform.machine() output and returns true on success.
 // `archErrorMessage` is the human-readable architecture requirement (used in
 // error messages).
-const PYTHON_REQUIRED_MODULES = ['ssl', 'sqlite3', 'yaml', 'numpy', 'matplotlib', 'pandas', 'pyproj', 'shapely'];
+const PYTHON_REQUIRED_MODULES = ['ssl', 'sqlite3', 'yaml', 'numpy', 'matplotlib', 'pandas', 'pyproj', 'shapely', 'ezdxf'];
 
 const PYTHON_PROFILE = {
   darwin: {
