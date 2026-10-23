@@ -23,6 +23,8 @@
 
 ### Added
 
+- Canvas 核心推广：Canvas 1.3.0、Geo 1.5.0、Interaction 1.1.0 接入逐工具生成契约，Canvas/Geo 复用薄 Host Client 与最终参数复核；六个模块的 12 个工具逐项核对实时注册、来源、Schema 与领域结果，保留旧模块缺元数据时的未验证状态。Geo 等待输入及截图支持连接级取消、终态和监听清理；名称、结果协议与 Pi 历史兼容。
+
 - Tool/插件 P4 初版：Module Authoring 1.2.0 新增 `tau_module_package`，Agent 可在任务内生成包、静态检查，再经既有原生确认安装；工具不要求用户编辑清单或配置，新任务使用安装结果，旧任务保留冻结版本。制作 Skill 补脚本/CLI/API 包装、依赖检查与缺配置反馈；真实模型已完成 CSV 包制作、安装及新任务调用，缺 OR-Tools 与私有 API 缺凭据分别交付草稿并说明未执行。独立插件更新、禁用、恢复、卸载与重装闭环通过，保留旧历史；打包模块及 Video 独立分发沿现有机制。
 
 - Tool/插件 P3：Spatial 1.4.0 在首次计算前由 Host 签发并保存 operationId，绑定 Pi 持久历史 Owner、规范化参数、接口语义及输入哈希；同操作重放复用原成果，不同请求冲突。新增 `tau_spatial_execution` 查询及请求取消，沿用原 Job/PythonRunner；Host 重启后核验 manifest/输出，确认提交则返回原成果，不能确认则保持未知并禁止自动重算。Citation 继续用领域 Registry 处理重复和批量提交，不增加通用持久 Job。
@@ -36,6 +38,8 @@
 - 引用详情提供有界文本/表格与原件下载，Canvas 使用 Citation capability 固定版本定位 PDF 页、Markdown 章节、XLSX Sheet/单元格及 CSV 数据行；Markdown 导出、PDF 和书目出口保留全部依据位置。
 
 ### Changed
+
+- 明确 Canvas 为共享视图底层，Document（含 Markdown/PDF/CSV/Office）、Geo 与已有 Video 为领域适配；Document 1.2.2 同步说明。保留 Geo 场景及恢复所有权，不恢复已退役 Task 规划器。Video 的独立工具迁移后置，CAD 仅列为未来适配方向。
 
 - 平台版本更新为 3.23.2，同步 package、锁文件及 Host 版本；当前版本仍为未发布，沿用已有待发布变更。
 

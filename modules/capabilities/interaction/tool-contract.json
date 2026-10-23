@@ -1,0 +1,86 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.interaction",
+  "toolId": "interaction.ask",
+  "piName": "tau_ask_user",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "interaction.ask-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "kind",
+      "title",
+      "message"
+    ],
+    "properties": {
+      "kind": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "confirm"
+          },
+          {
+            "type": "string",
+            "const": "select"
+          },
+          {
+            "type": "string",
+            "const": "input"
+          },
+          {
+            "type": "string",
+            "const": "editor"
+          }
+        ]
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "message": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      },
+      "options": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "value",
+            "label"
+          ],
+          "properties": {
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          "additionalProperties": false
+        },
+        "minItems": 2,
+        "maxItems": 20
+      },
+      "required": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-interaction",
+    "version": 1,
+    "detailsKind": "tau-interaction"
+  }
+}

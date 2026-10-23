@@ -26,6 +26,9 @@ files:
   - "!modules/official/module-authoring/extensions/pi-module-package/index.ts"
   - "!modules/capabilities/citation/extensions/pi-citation/index.ts"
   - "!modules/capabilities/spatial-analysis/extensions/pi-spatial-analysis/index.ts"
+  - "!modules/capabilities/canvas/extensions/pi-canvas/index.ts"
+  - "!modules/capabilities/geo/extensions/pi-geo-visualization/index.ts"
+  - "!modules/capabilities/interaction/extensions/pi-user-interaction/index.ts"
   - from: dist/module-extensions
     to: modules
   - src/contracts/**

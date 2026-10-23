@@ -1,6 +1,8 @@
 # Tool 与插件架构优化 PLAN
 
 > 状态：P0–P3 已经 PR #75–#78 合并；P4 初版代码、真实模型制作、插件生命周期和实际 macOS 包内调用闭环通过，交付见 PR #79 及 P4 记录。2026-10-23 用户调整为优先完成完整可运行初版；正式发布的剩余边界另行记录，不继续扩展测试矩阵。
+> 核心推广：Canvas 作为共享视图底层；Document（含 Markdown）与 Geo 作为适配模块接入。将 Canvas/Geo/Interaction 的工具契约、通信与逐工具诊断推广到实际核心能力，保留 Task 历史兼容；Video 独立工具迁移后置。P0–P4 初版通过不等于所有模块已迁移，范围以代码及验收记录为准。
+
 > 日期：2026-10-22。基线：3.23.1 / `12d6d209db380f95396f3eafa174140c02375c78`；Pi `@earendil-works/pi-coding-agent@0.80.10`。  
 > 最终执行规则：信任入口为 P0 硬门槛；区分 P1/P3 承诺；按兼容性规则升级；平台执行与真实 Agent 制作分别验收。执行证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)。  
 > 当前架构权威：[ARCHITECTURE.md](ARCHITECTURE.md)。后续实现与本文有差异时，记录决策及验证依据，不用计划覆盖实现事实。
@@ -522,3 +524,28 @@ P0 必须固定持久 Owner 的现有标识、建立/认证者、恢复验证、
 
 - 当前架构与持久化约束：[ARCHITECTURE.md](ARCHITECTURE.md)、[引用依据模块升级 PLAN](<引用依据模块升级 PLAN.md>)。
 - DeepSeek Harness 的边界与工具机制参考固定在 `687f282e8625c6b8d11ff58211a90524be2e4317`：[架构](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/docs/architecture.md)、[工具契约](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/docs/subsystems/tools.md)、[测试策略](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/docs/testing.md)。仅借鉴设计与验收方法，不引入其插件容器、会话格式或执行循环。
+
+
+## 11. Canvas 核心推广验收（2026-10-23）
+
+用户追加要求：Canvas 是共享视图底层，先完成其相关核心模块迁移；Video 的独立工具标准化后置。原 P0–P4 初版的完成范围不再表述为全量迁移完成。
+
+| 层/模块 | 本轮交付 | 版本 |
+|---|---|---|
+| Canvas 底层 | 两个工具生成契约、最终 Host 校验、薄客户端、调用关联/取消、逐工具结果诊断；保留生命周期和上下文协议 | 1.3.0 |
+| Document 适配 | 明确 Markdown/PDF/CSV/Office 同属 Document，经 Canvas 呈现；不另建执行 Runtime 或重复工具 | 1.2.2 |
+| Geo 适配 | 五个工具全部生成契约；三个 Host 交互复用薄客户端；资源发布/场景仍在 Pi，连接取消只终结对应等待，保留场景恢复 | 1.5.0 |
+| Interaction | 单一契约和 Pi 本地有效结果诊断，沿用 Pi UI 和顺序提问 | 1.1.0 |
+| Task | 保留历史读取；不重新装配旧规划器 | 不改版 |
+| Video / CAD | Video 原有 Canvas 适配和历史回归保持；独立工具迁移后置。CAD 需要后续受信任适配器、资源/target 和 Renderer，当前不支持 | 未新增能力 |
+
+原固定试点名单改为核心工具的静态接口映射，六个模块的 12 个工具均按项生成、打包和核对；映射不调度、注册或激活工具，Pi Registry 和 Agent Loop 保持唯一权威。旧精确版本缺少新增元数据时仍可装配，但诊断保持未验证。
+
+验收证据：
+
+- `npm run typecheck`、完整构建、核心 40/40 通过；在原场景内增加契约一致性和请求级取消检查，没有新增注册测试。
+- `TRANSPORTX_TOOL_SMOKE_PHASE=canvas node scripts/tool-host-smoke.mjs`：真实 Pi 0.80.10、生产 Host 和 Chrome，模型仅由本地确定性 Provider 选择工具；不是 fake Pi。实际执行 Markdown 同 mtime 更新、focus/revision、CSV 行、PDF 页、固定 Citation 原件、当前轮 Canvas Context、越界拒绝、Geo 发布/地图渲染/浏览器截图/视野输入、Interaction 原生 Pi UI 回答；8 个新迁移工具逐项得到可用诊断。关闭恢复不改写原 JSONL，Geo 从原历史恢复 scene，clear 不删除文件。
+- 相同核心脚本从实际 `app.asar`、内置 Electron/Host/Pi 与包内 Python 再次执行通过。macOS arm64、Apple M4、24 GiB；源码五次启动到首工具/历史/Bridge 为 445–538 ms，包内为 607–939 ms。这是本机观测，不是性能 SLA。
+- `node scripts/react-smoke.mjs`：文档、Office 更新、地图与截图、Context、三主题、标签/滚动与历史、既有 Video 标签播放/暂停及软件更新 UI 回归通过。
+- `desktop:dir` 生成 macOS ad-hoc 应用，实际 `desktop-smoke.mjs` 启动、PDF、模块信任 IPC 与退出通过；信任动作仅对自建 fixture 使用测试 stub，更新服务处于未发布版本检查错误态，不宣称在线更新已发布。
+- Windows/Linux 本轮未在本机执行；正式签名、DMG/NSIS 发布、CAD、新 Video 工具契约均不作为本轮完成项。当前平台仍为 3.23.2 未发布，不分发正式安装包。

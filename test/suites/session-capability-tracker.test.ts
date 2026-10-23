@@ -6,24 +6,23 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
   const path = require('node:path');
   const { SessionCapabilityTracker } = require('../../bin/session-capability-tracker.js');
   const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'contracts', 'bridge.json'), 'utf8'));
-  assert.equal(require('../../bin/tool-contracts.js').readPilotToolContract(__dirname, 'com.transportx.citation'), null, 'legacy modules do not require new optional metadata');
+  assert.equal(require('../../bin/tool-contracts.js').readToolContract(__dirname, 'com.transportx.citation'), null, 'legacy modules do not require new optional metadata');
   // Deliberate conformance capture imports only explicitly selected built
   // packages. Host discovery itself continues to read static metadata only.
-  for (const directory of ['citation', 'spatial-analysis', 'module-authoring']) {
+  const { CORE_TOOL_BINDINGS, canonicalToolSchema } = require('../../bin/contracts/tool-interface.js');
+  for (const [moduleId, bindings] of Object.entries(CORE_TOOL_BINDINGS) as Array<[string, any[]]>) {
+    const directory = moduleId.slice('com.transportx.'.length);
     const packageRoot = path.resolve(__dirname, '../../dist/tool-modules', directory);
-    const contract = JSON.parse(fs.readFileSync(path.join(packageRoot, 'tool-contract.json'), 'utf8'));
     const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, 'manifest.json'), 'utf8'));
-    const { canonicalToolSchema } = require('../../bin/contracts/tool-interface.js');
     const registered: any[] = [];
     const extension = await import(require('node:url').pathToFileURL(path.join(packageRoot, manifest.entrypoints.piExtensions[0])).href);
     extension.default({ registerTool: (tool: any) => registered.push(tool), on: () => {} });
-    assert.equal(registered.length, directory === 'spatial-analysis' ? 2 : 1);
-    const primary = registered.find((tool: any) => tool.name === contract.piName);
-    assert.ok(primary);
-    assert.equal(canonicalToolSchema(primary.parameters), canonicalToolSchema(contract.input));
-    if (directory === 'spatial-analysis') {
-      const execution = JSON.parse(fs.readFileSync(path.join(packageRoot, 'execution-contract.json'), 'utf8'));
-      assert.equal(canonicalToolSchema(registered.find((tool: any) => tool.name === execution.piName).parameters), canonicalToolSchema(execution.input));
+    assert.equal(registered.length, bindings.length);
+    for (const binding of bindings) {
+      const contract = JSON.parse(fs.readFileSync(path.join(packageRoot, binding.file), 'utf8'));
+      const tool = registered.find((tool: any) => tool.name === binding.piName);
+      assert.ok(tool, `${moduleId}:${binding.piName} is registered`);
+      assert.equal(canonicalToolSchema(tool.parameters), canonicalToolSchema(contract.input));
     }
   }
 

@@ -160,6 +160,13 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     assert.equal(fs.existsSync(path.join(cwd, captured.relativePath)), true);
     assert.deepEqual(await pending, captured);
     assert.equal(service.snapshot(session)?.waitingScreenshotRequest, undefined);
+    const controller = new AbortController();
+    const cancelled = service.requestScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 1 }, controller.signal);
+    controller.abort();
+    assert.deepEqual(await cancelled, { status: 'failed', reason: 'agent_aborted' });
+    assert.equal(service.snapshot(session)?.waitingScreenshotRequest, undefined);
+    assert.equal(service.screenshotWaiters.size, 0);
+
   }
 
   // Geo requests submit once, persist terminal state and restore through snapshots
@@ -180,6 +187,15 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     assert.equal(service.snapshot(session)?.waitingRequest, undefined);
     const duplicate = await service.respond(session, request!.requestId, { status: 'submitted', context: geoContext('rectangle', 'd') });
     assert.equal(duplicate.response.contextId, submitted.response.contextId);
+    session.activeGeoContextIds = [submitted.response.contextId];
+    const controller = new AbortController();
+    const cancelled = service.request(session, { visualizationId: 'traffic_map', sceneRevision: 1, mode: 'viewport', prompt: '选择视野' }, controller.signal);
+    controller.abort();
+    assert.equal((await cancelled).response.status, 'aborted');
+    assert.equal(service.waitingRequest(session), null);
+    assert.equal(service.waiters.size, 0);
+    assert.deepEqual(session.activeGeoContextIds, [submitted.response.contextId], 'one cancelled request must not discard the current turn context');
+
     assert.equal(fs.existsSync(path.join(cwd, '.tau', 'geo-interactions', 'contexts', `geoctx_${'d'.repeat(16)}`)), false);
   }
 

@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.canvas",
   "name": "Shared Canvas",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
@@ -19,20 +19,20 @@
     "locales": {
       "zh-CN": {
         "name": "共享画布",
-        "description": "把已有文档和地图成果放入共享画布，支持在分析过程中切换、更新和定位内容。",
+        "description": "共享视图底层：管理标签、呈现生命周期、受控资源与显式上下文，由 Document、Geo 等适配器提供内容。",
         "features": [
-          "展示已授权的任务文件与引用原件",
-          "重新聚焦、定位或更新已有视图",
-          "清除不再需要展示的视图"
+          "管理视图的呈现、聚焦、更新与清除",
+          "承载 Document、Geo 及已有 Video 适配器",
+          "读取用户明确附加的当前视图上下文"
         ]
       },
       "en-US": {
         "name": "Shared Canvas",
-        "description": "Presents existing documents and maps in the shared Canvas for navigation and updates during analysis.",
+        "description": "Shared view foundation for presentation lifecycle, controlled resources and explicit context, with domain adapters such as Document and Geo.",
         "features": [
-          "Presents authorized task files and citation originals",
-          "Refocuses, navigates or updates existing views",
-          "Clears views that are no longer needed"
+          "Manages presentation, focus, update and clear",
+          "Hosts Document, Geo and the existing Video adapter",
+          "Reads explicitly attached current-view context"
         ]
       }
     }

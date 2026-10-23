@@ -1,0 +1,107 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.canvas",
+  "toolId": "canvas.present",
+  "piName": "canvas_present",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "canvas.present-v1",
+  "input": {
+    "type": "object",
+    "properties": {
+      "adapterId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "operation": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "present"
+          },
+          {
+            "type": "string",
+            "const": "focus"
+          },
+          {
+            "type": "string",
+            "const": "update"
+          },
+          {
+            "type": "string",
+            "const": "clear"
+          }
+        ]
+      },
+      "resource": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "scope",
+              "path"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "const": "session-file"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "scope",
+              "moduleId",
+              "resourceId"
+            ],
+            "properties": {
+              "scope": {
+                "type": "string",
+                "const": "capability"
+              },
+              "moduleId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "resourceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "target": {},
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "viewId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "pi-canvas",
+    "version": "1.0",
+    "detailsKind": "tau-canvas"
+  }
+}

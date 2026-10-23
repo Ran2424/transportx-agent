@@ -1,0 +1,31 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.geo",
+  "toolId": "geo.screenshot",
+  "piName": "capture_geo_screenshot",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "geo.screenshot-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "visualizationId",
+      "sceneRevision"
+    ],
+    "properties": {
+      "visualizationId": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "sceneRevision": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-geo-screenshot",
+    "version": 1,
+    "detailsKind": "tau-geo-screenshot"
+  }
+}

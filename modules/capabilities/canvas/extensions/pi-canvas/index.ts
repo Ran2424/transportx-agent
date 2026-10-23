@@ -1,23 +1,17 @@
-import { Type } from 'typebox';
+import { readFileSync } from 'node:fs';
+import type { TSchema } from 'typebox';
+import { parseToolInterfaceContract } from '../../../../../src/contracts/tool-interface.ts';
+import { parseCanvasPresentation, parseCanvasContext } from '../../../../../src/contracts/canvas.ts';
+import { HostCallError, postHostOperation } from '../../../../shared/host-client.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-const ResourceSchema = Type.Union([
-  Type.Object({ scope: Type.Literal('session-file'), path: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false }),
-  Type.Object({ scope: Type.Literal('capability'), moduleId: Type.String({ minLength: 1, maxLength: 200 }), resourceId: Type.String({ minLength: 1, maxLength: 160 }), revision: Type.Optional(Type.Integer({ minimum: 0 })) }, { additionalProperties: false }),
-]);
-
-const PresentSchema = Type.Object({
-  adapterId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
-  operation: Type.Optional(Type.Union([Type.Literal('present'), Type.Literal('focus'), Type.Literal('update'), Type.Literal('clear')])),
-  resource: Type.Optional(ResourceSchema),
-  target: Type.Optional(Type.Unknown()),
-  title: Type.Optional(Type.String({ minLength: 1, maxLength: 300 })),
-  viewId: Type.Optional(Type.String({ minLength: 1, maxLength: 240 })),
-}, { additionalProperties: false });
-
-const InspectSchema = Type.Object({
-  contextIds: Type.Array(Type.String({ pattern: '^canvas_context_[a-f0-9-]+$' }), { minItems: 1, maxItems: 20 }),
-}, { additionalProperties: false });
+function contract(file: string) {
+  const value = parseToolInterfaceContract(JSON.parse(readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8')));
+  if (!value) throw new Error('Invalid Canvas Tool Contract');
+  return value;
+}
+const presentContract = contract('tool-contract.json');
+const inspectContract = contract('inspect-contract.json');
 
 function canvasHost() {
   const endpoint = process.env.TAU_CANVAS_ENDPOINT;
@@ -27,28 +21,18 @@ function canvasHost() {
   return { endpoint, sessionId, token };
 }
 
-async function hostRequest(path: string, body: Record<string, unknown>) {
-  const host = canvasHost();
-  const response = await fetch(`${host.endpoint}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, sessionId: host.sessionId, token: host.token }),
-  });
-  const payload = await response.json() as { error?: string; canvas?: unknown; contexts?: unknown };
-  if (!response.ok) throw new Error(payload.error || 'Canvas Agent Host request failed.');
-  return payload;
-}
-
 export default function canvasExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'canvas_present',
     label: '在 Canvas 中呈现',
     description: 'Present, focus, update, clear, or navigate an authorized resource in the shared Canvas. Use a session-relative path for local documents.',
-    parameters: PresentSchema,
-    async execute(_toolCallId, params) {
+    parameters: presentContract.input as unknown as TSchema,
+    async execute(toolCallId, rawParams, signal) {
+      const params = rawParams as Record<string, unknown>;
       if (!params.resource && !params.viewId) throw new Error('resource or viewId is required.');
-      const { canvas } = await hostRequest('/api/internal/canvas/present', params as Record<string, unknown>);
-      if (!canvas) throw new Error('Canvas Agent Host did not return a presentation.');
+      const payload = await postHostOperation<{ canvas: unknown }>(canvasHost(), '/api/internal/canvas/present', params, { toolCallId, contractVersion: presentContract.contractVersion, signal, timeoutMs: 30_000 });
+      const canvas = parseCanvasPresentation(payload.canvas);
+      if (!canvas) throw new HostCallError('Canvas presentation was not confirmed. Inspect existing views before another request.', 'host_result_unknown', 'response_decode', 'unknown');
       return {
         content: [{ type: 'text' as const, text: 'Canvas presentation accepted.' }],
         details: { kind: 'tau-canvas' as const, canvas },
@@ -59,10 +43,11 @@ export default function canvasExtension(pi: ExtensionAPI) {
     name: 'canvas_inspect_context',
     label: '读取已附加的 Canvas 上下文',
     description: 'Read only Canvas context IDs explicitly attached to the current user turn.',
-    parameters: InspectSchema,
-    async execute(_toolCallId, params) {
-      const { contexts } = await hostRequest('/api/internal/canvas/inspect', params as Record<string, unknown>);
-      if (!Array.isArray(contexts)) throw new Error('Canvas Agent Host did not return contexts.');
+    parameters: inspectContract.input as unknown as TSchema,
+    async execute(toolCallId, rawParams, signal) {
+      const params = rawParams as Record<string, unknown>;
+      const { contexts } = await postHostOperation<{ contexts: unknown[] }>(canvasHost(), '/api/internal/canvas/inspect', params, { toolCallId, contractVersion: inspectContract.contractVersion, signal, timeoutMs: 30_000 });
+      if (!Array.isArray(contexts) || contexts.some((context) => !parseCanvasContext(context))) throw new HostCallError('Canvas contexts were not confirmed.', 'host_result_unknown', 'response_decode', 'unknown');
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(contexts, null, 2) }],
         details: { kind: 'tau-canvas-contexts' as const, contexts },

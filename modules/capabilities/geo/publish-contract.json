@@ -1,0 +1,31 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.geo",
+  "toolId": "geo.publish",
+  "piName": "publish_geodata",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "geo.publish-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "path"
+    ],
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "GeoJSON path inside the current task directory"
+      },
+      "title": {
+        "type": "string"
+      },
+      "idField": {
+        "type": "string"
+      }
+    }
+  },
+  "output": {
+    "protocol": "transportx-geo-resource",
+    "version": 1,
+    "detailsKind": "tau-geo-resource"
+  }
+}
