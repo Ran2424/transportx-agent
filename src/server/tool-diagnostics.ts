@@ -17,7 +17,6 @@ export function diagnoseTool(contract: ToolInterfaceContract, selected: Resolved
   if (hostContract.semanticVersion !== contract.semanticVersion || canonicalToolSchema(hostContract.input) !== canonicalToolSchema(contract.input)) return result('unverified', 'host_contract_drift');
   const tool = observation.envelope.tools.find((item) => item.name === contract.piName);
   if (!tool) return result('unavailable', 'missing_tool');
-  if (!tool.active) return result('unavailable', 'inactive');
   const source = tool.sourceInfo as { path?: unknown } | undefined;
   if (!source || typeof source.path !== 'string' || source.path.startsWith('<')) return result('unverified', 'source_unverified');
   let sourcePath: string;
@@ -28,6 +27,7 @@ export function diagnoseTool(contract: ToolInterfaceContract, selected: Resolved
   });
   if (!ownsSource) return result('unavailable', 'name_conflict');
   if (canonicalToolSchema(tool.parameters) !== canonicalToolSchema(contract.input)) return result('unverified', 'schema_drift');
+  if (!tool.active) return result('unverified', 'inactive');
   const confirmed = entries.some((entry) => {
     const message = asRecord(entry.message);
     if (message?.role !== 'toolResult' || message.toolName !== contract.piName || message.isError) return false;
@@ -37,6 +37,7 @@ export function diagnoseTool(contract: ToolInterfaceContract, selected: Resolved
     if (details.kind !== contract.output.detailsKind) return false;
     const value = asRecord(details.result);
     switch (contract.toolId) {
+      case 'capabilities.manage': return ['discover', 'inspect', 'enable', 'status'].includes(String(details.action));
       case 'citation.resolve': return !!parseCitationEnvelope(details.citations);
       case 'spatial.analyze': return parseSpatialAnalysisResultStructured(details.result).ok;
       case 'spatial.execution': return typeof details.operationId === 'string' && ['prepared', 'running', 'succeeded', 'failed', 'cancelled', 'unknown'].includes(String(details.state));

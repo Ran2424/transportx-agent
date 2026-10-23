@@ -6,11 +6,13 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { CORE_TOOL_BINDINGS } from '../src/contracts/tool-interface.ts';
 
 const appRoot = path.resolve(process.env.TRANSPORTX_SMOKE_APP_ROOT || '.');
 const baseline = process.env.TRANSPORTX_SMOKE_BASELINE === '1';
-const canvasPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'canvas';
-const lifecyclePhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'lifecycle';
+const activationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'activation';
+const canvasPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'canvas' || activationPhase;
+const lifecyclePhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'lifecycle' || activationPhase;
 const recoveryPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'recovery';
 const citationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'citation' || recoveryPhase || lifecyclePhase;
 const spatialPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'spatial' || citationPhase;
@@ -60,21 +62,29 @@ const provider = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk;
   const body = JSON.parse(raw); providerInputs.push(body);
   const last = body.messages.at(-1);
+  const lastToolName = last.name || body.messages.findLast((message) => message.tool_calls)?.tool_calls.find((call) => call.id === last.tool_call_id)?.function.name;
   const text = typeof last.content === 'string' ? last.content : (last.content || []).map((part) => part.text || '').join('\n');
-  const input = text.trim().split('\n')[0];
   const previousUser = body.messages.findLast((message) => message.role === 'user');
   const previousText = typeof previousUser?.content === 'string' ? previousUser.content : (previousUser?.content || []).map((part) => part.text || '').join('\n');
+  const input = (last.role === 'user' ? text : previousText).trim().split('\n')[0];
   if (spatialPhase && last.role !== 'user' && previousText.startsWith('spatial-fail-model:')) {
     res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'injected model failure after an unknown Spatial result' } })); return;
   }
-  const core = canvasPhase && input.startsWith('core:') ? JSON.parse(input.slice(5)) : null;
-  const tool = last.role !== 'user' ? null : core ? { name: core.tool, arguments: JSON.stringify(core.params) } : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
+  const core = input.startsWith('core:') ? JSON.parse(input.slice(5)) : null;
+  let tool = last.role !== 'user' && (lastToolName !== 'manage_capabilities' || core?.tool === 'manage_capabilities') ? null : core ? { name: core.tool, arguments: JSON.stringify(core.params) } : spatialPhase && (input.startsWith('spatial:') || input.startsWith('spatial-fail-model:'))
     ? { name: 'tau_spatial_analyze', arguments: input.slice(input.indexOf(':') + 1) }
     : spatialPhase && input.startsWith('spatial-status:') ? { name: 'tau_spatial_execution', arguments: input.slice('spatial-status:'.length) }
     : lifecyclePhase && input.startsWith('module-package:') ? { name: 'tau_module_package', arguments: input.slice('module-package:'.length) }
     : citationPhase && input.startsWith('citation:') ? { name: 'tau_resolve_citation', arguments: input.slice('citation:'.length) }
       : spatialPhase && input.startsWith('traffic:') ? { name: 'traffic_peak_hour', arguments: input.slice('traffic:'.length) }
       : { name: 'tau_p0_probe', arguments: JSON.stringify({ mode: input }) };
+  if (tool && !body.tools.some((item) => item.function.name === tool.name)) {
+    const moduleId = Object.entries(CORE_TOOL_BINDINGS).find(([, bindings]) => bindings.some((binding) => binding.piName === tool.name))?.[0]
+      || (tool.name === 'traffic_peak_hour' ? 'local.traffic-peak' : tool.name === 'tau_p0_probe' ? 'local.p0-probe' : undefined);
+    assert.ok(moduleId, `No fixture module for ${tool.name}`);
+    assert.ok(lastToolName !== 'manage_capabilities', 'enable must make the original tool available');
+    tool = { name: 'manage_capabilities', arguments: JSON.stringify({ action: 'enable', moduleId }) };
+  }
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const chunk = (delta, finish_reason = null) => ({ id: 'probe', object: 'chat.completion.chunk', created: 1, model: 'smoke', choices: [{ index: 0, delta, finish_reason }] });
   res.write(`data: ${JSON.stringify(chunk(tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `call-${providerInputs.length}`, type: 'function', function: tool }] } : { role: 'assistant', content: 'probe_done' }))}\n\n`);
@@ -131,7 +141,7 @@ current.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-8000)
 current.on('message', (message) => {
   if (message.type !== 'transportx-module-trust-request') return;
   trustDecisions++;
-  assert.ok(message.request.id === 'local.p0-probe' || spatialPhase && message.request.id === 'local.traffic-peak');
+  assert.ok(message.request.id === 'local.p0-probe' || spatialPhase && message.request.id === 'local.traffic-peak' || activationPhase && message.request.id === 'local.activation-skill');
   current.send({ type: 'transportx-module-trust-response', id: message.id, accepted: accept });
 });
 return current;
@@ -183,6 +193,7 @@ try {
     await until(() => fs.existsSync(started), 'first Pi tool');
     await until(async () => !(await json(`/api/live-sessions/${session.id}/snapshot`)).isStreaming, 'first turn settled');
     await rpc({ type: 'get_state', sessionId: session.id });
+    if (index === 0) assert.deepEqual(providerInputs[0].tools.map((tool) => tool.function.name).sort(), ['bash', 'edit', 'manage_capabilities', 'read', 'write']);
     const entries = await until(async () => {
       const response = await json(`/api/live-sessions/${session.id}/snapshot`);
       return response.entries.some((entry) => entry.customType === 'pi-web-bridge') && response.entries;
@@ -196,6 +207,7 @@ try {
   }
   const session = sessions.at(-1);
   const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  const activation = activationPhase ? await (await import('./harness/activation-host-smoke.mjs')).activationHostSmoke({ root, json, rpc, until, providerInputs }) : undefined;
   if (!baseline) {
     const settingsPath = path.join(root, 'settings.json');
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -231,7 +243,7 @@ try {
   if (!baseline) {
     assert.equal(fs.existsSync(path.join(root, 'auto-loaded')), false, 'global/project auto-discovery stays disabled across reload');
     assert.equal(fs.existsSync(path.join(root, 'package-hook-ran')), false, 'resource reload must not install settings packages or run npm hooks');
-    assert.equal(trustDecisions, 2, 'accepted package scope is reused on every session startup');
+    assert.equal(trustDecisions, activationPhase ? 3 : 2, 'accepted package scope is reused on every session startup');
   }
   const persisted = fs.readFileSync(final.sessionFile, 'utf8');
   assert.match(persisted, /p0_expected_failure/); assert.match(persisted, /p0_ok/);
@@ -242,7 +254,9 @@ try {
   const lifecycle = lifecyclePhase ? await (await import('./harness/module-lifecycle-smoke.mjs')).moduleLifecycleSmoke({ root, endpoint, json, rpc, until }) : undefined;
   const authoring = lifecyclePhase ? await (await import('./harness/module-package-smoke.mjs')).modulePackageSmoke({ root, json, rpc, until }) : undefined;
   const recovery = recoveryPhase ? await (await import('./harness/spatial-recovery-smoke.mjs')).spatialRecoverySmoke({ root, json, rpc, until, restartHost, endpoint: () => endpoint }) : undefined;
-  console.log(JSON.stringify({ phase: canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, harnessRssBytes: process.memoryUsage().rss }, null, 2));
+  const report = { phase: activationPhase ? 'Module activation P1-P3' : canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, activation, harnessRssBytes: process.memoryUsage().rss };
+  if (process.env.TRANSPORTX_ACTIVATION_REPORT) fs.writeFileSync(process.env.TRANSPORTX_ACTIVATION_REPORT, JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
 } finally {
   if (child.exitCode === null && child.signalCode === null) {
     const closed = new Promise((resolve) => child.once('exit', resolve)); child.kill('SIGTERM');

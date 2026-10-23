@@ -28,7 +28,14 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     });
     const { pathToFileURL } = require('node:url');
     const { loadExtensions } = await import(pathToFileURL(path.join(process.cwd(), 'node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js')).href);
-    const loaded = await loadExtensions(entries, unpacked);
+    const previousModules = process.env.TRANSPORTX_SESSION_MODULES_JSON;
+    process.env.TRANSPORTX_SESSION_MODULES_JSON = '[]';
+    let loaded;
+    try { loaded = await loadExtensions(entries, unpacked); }
+    finally {
+      if (previousModules === undefined) delete process.env.TRANSPORTX_SESSION_MODULES_JSON;
+      else process.env.TRANSPORTX_SESSION_MODULES_JSON = previousModules;
+    }
     assert.deepEqual(loaded.errors, []);
     assert.equal(loaded.extensions.length, entries.length);
   }

@@ -23,6 +23,8 @@
 
 ### Added
 
+- Workbench 新增 Module Tool Activation 1.0.0，初始化完整注册、默认仅开放 read/write/edit/bash/manage_capabilities；支持 discover/inspect/enable/status，按可信 Plan 入口派生 Module→Tool。启用只开放 Schema，分支 custom entry 在 reload、恢复、分叉及压缩后重建工具集合，不重放业务。Workbench 1.4.0、Web Bridge 1.2.0、Module Authoring 1.2.1 同步更新，未启用工具显示待启用；沿用原安装信任、Host 执行与结果恢复。
+
 - Canvas 核心推广：Canvas 1.3.0、Geo 1.5.0、Interaction 1.1.0 接入逐工具生成契约，Canvas/Geo 复用薄 Host Client 与最终参数复核；六个模块的 12 个工具逐项核对实时注册、来源、Schema 与领域结果，保留旧模块缺元数据时的未验证状态。Geo 等待输入及截图支持连接级取消、终态和监听清理；名称、结果协议与 Pi 历史兼容。
 
 - Tool/插件 P4 初版：Module Authoring 1.2.0 新增 `tau_module_package`，Agent 可在任务内生成包、静态检查，再经既有原生确认安装；工具不要求用户编辑清单或配置，新任务使用安装结果，旧任务保留冻结版本。制作 Skill 补脚本/CLI/API 包装、依赖检查与缺配置反馈；真实模型已完成 CSV 包制作、安装及新任务调用，缺 OR-Tools 与私有 API 缺凭据分别交付草稿并说明未执行。独立插件更新、禁用、恢复、卸载与重装闭环通过，保留旧历史；打包模块及 Video 独立分发沿现有机制。

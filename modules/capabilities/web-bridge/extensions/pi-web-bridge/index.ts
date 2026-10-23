@@ -24,6 +24,7 @@ export default function piWebBridge(pi: ExtensionAPI) {
   let revision = 0;
   let previousSignature = '';
   let needsLiveObservation = true;
+  let currentContext: ExtensionContext | undefined;
 
   const collect = (ctx: ExtensionContext, modelOverride?: ExtensionContext['model'], thinkingOverride?: string) => {
     const active = new Set(pi.getActiveTools());
@@ -53,6 +54,7 @@ export default function piWebBridge(pi: ExtensionAPI) {
   };
 
   pi.on('session_start', async (_event, ctx) => {
+    currentContext = ctx;
     needsLiveObservation = true;
     revision = 0;
     previousSignature = '';
@@ -73,7 +75,11 @@ export default function piWebBridge(pi: ExtensionAPI) {
     publish(ctx, undefined, undefined, needsLiveObservation);
     needsLiveObservation = false;
   });
-  pi.on('session_tree', async (_event, ctx) => publish(ctx, undefined, undefined, true));
+  pi.on('session_tree', async (_event, ctx) => { currentContext = ctx; publish(ctx, undefined, undefined, true); });
+  const unsubscribe = pi.events.on('transportx:tool-activation-changed', () => {
+    if (currentContext) publish(currentContext);
+  });
+  pi.on('session_shutdown', () => { unsubscribe(); currentContext = undefined; });
   pi.on('model_select', async (event, ctx) => publish(ctx, event.model));
   pi.on('thinking_level_select', async (event, ctx) => publish(ctx, undefined, event.level));
 }
