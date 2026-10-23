@@ -75,3 +75,7 @@ Apple M4 / 24 GiB，macOS arm64，Node 24.2.0，Pi 0.80.10。固定 Provider 使
 本轮已验收源码与本机实际链路。未重新构建新协调器的 macOS/Windows 安装包，未运行其他 Provider 的原生 deferred 模式；PR CI 检查各 OS 的源码行为，目标机安装包仍需发布前验收。冻结旧 Plan 未包含协调器时继续使用原计划，不注入新模块；已有普通历史、引用、地图及业务结果不清理。
 
 需要回退时撤回协调器依赖/默认装配与相关启动、Bridge、诊断改动，恢复全量开放行为；保留 `transportx-tool-activation/v1` custom entries、Pi JSONL、Spatial/Citation 账本及成果。使用新会话或明确选择相应版本的计划，不通过删除记录或重跑业务回退。分阶段提交可供评审或反向提交；不 reset 用户数据。
+
+## 合并前复查
+
+按评审意见复查当前代码，保留预注册约定、分支记录和业务授权的职责边界，没有扩大架构。发现并修复打包 FileSet 的一处遗漏：Tool Activation 原始 index.ts 与 dist/module-extensions 映射到同一包内入口，现沿其他核心模块的规则排除原始入口，只由 bundle 提供目标文件。先补现有 desktop-runtime 场景断言，确认新模块缺少规则时失败，再补配置；断言覆盖全部核心模块，不增加测试节点。本次没有构建或发行安装包，实际 asar/Windows 安装器仍是发布前验收项。

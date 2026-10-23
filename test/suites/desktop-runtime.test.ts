@@ -11,6 +11,14 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
   assert.ok(builder.asarUnpack.includes('modules/**'), 'native module browsing needs complete physical module folders');
   assert.ok(builder.asarUnpack.includes('src/contracts/**'), 'unpacked extensions retain their relative contract imports');
   assert.ok(builder.asarUnpack.includes('dist/module-extensions/**'), 'remapped bundled entries must also be unpacked by their source path');
+  const { CORE_TOOL_BINDINGS, coreModulePath } = require('../../bin/contracts/tool-interface.js');
+  for (const moduleId of Object.keys(CORE_TOOL_BINDINGS)) {
+    const directory = coreModulePath(moduleId);
+    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'modules', directory, 'manifest.json'), 'utf8'));
+    for (const entry of manifest.entrypoints.piExtensions) {
+      assert.ok(builder.files.includes(`!modules/${directory}/${entry}`), `${moduleId}: exclude the source entry so only the mapped bundle targets its packaged path`);
+    }
+  }
 
   // Physical module folders must still load through Pi's extension loader.
   {

@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- 修复 Tool Activation 打包规则遗漏：排除与 bundle 映射目标重复的原始 Extension 入口，沿用其他核心模块的交付路径；现有桌面运行时场景统一核对全部核心模块的入口排除规则。本轮不构建或发行安装包。
+
 - 开发启动 `desktop:dev` 与 `start.sh` 支持项目本地 `.env.local` 的 Python 覆盖配置，保留导出变量优先及安装包内置运行时；会话规则统一使用 Host 注入的解释器探测依赖，避免将系统 Python 的缺库误报为整机缺失。运筹优化本地模块提供 1.0.1 修订包，移除裸 `python3` 与 `pip3` 指引，保留旧安装版本。
 
 - 修复桌面 Spatial Python 入口仍指向 asar 虚拟路径的问题，复用现有 unpacked 路径解析后再启动外部 Python；两试点 bundle 的 FileSet 按构建源路径声明解包，保证物理入口存在。
