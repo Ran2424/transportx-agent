@@ -1051,38 +1051,6 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .cad-canvas-retry { pointer-events: auto; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1f2937; font-size: 12px; cursor: pointer; }
 .cad-canvas-warning { position: absolute; right: 12px; bottom: 12px; z-index: 3; max-width: min(520px, calc(100% - 24px)); margin: 0; padding: 6px 10px; border: 1px solid #f0c36d; border-radius: 6px; background: #fff8e6; color: #6b4f00; font-size: 11px; line-height: 1.5; }
 .cad-canvas-badge { position: absolute; left: 12px; bottom: 12px; z-index: 3; padding: 4px 8px; border: 1px solid #e2e8f0; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #64748b; font-size: 10px; letter-spacing: .02em; }
-.cad-canvas-selection { position: absolute; top: 12px; left: 12px; z-index: 4; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 150px); overflow: hidden; padding: 5px 9px; border: 1px solid rgba(148, 163, 184, .45); border-radius: 999px; background: rgba(255, 255, 255, .94); color: #475569; font-size: 11px; white-space: nowrap; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); pointer-events: none; }
-.cad-canvas-selection.is-active { border-color: #93c5fd; background: rgba(239, 246, 255, .97); color: #1e3a8a; }
-.cad-canvas-selection-sep { color: #cbd5e1; }
-.cad-canvas-selection-truncated { color: #b45309; }
-.cad-canvas-tools { position: absolute; top: 12px; right: 12px; z-index: 4; display: flex; gap: 6px; }
-.cad-canvas-tool { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid rgba(148, 163, 184, .45); border-radius: 999px; background: rgba(255, 255, 255, .94); color: #334155; font: inherit; font-size: 11px; cursor: pointer; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); }
-.cad-canvas-tool:hover { background: #f8fafc; }
-.cad-canvas-tool:focus-visible { outline: 2px solid var(--selection-border); outline-offset: 2px; }
-.cad-canvas-tool-icon { width: 14px; height: 14px; }
-.cad-canvas-tool-count { min-width: 22px; padding: 1px 5px; border-radius: 999px; background: #f1f5f9; color: #64748b; font-size: 10px; text-align: center; }
-.cad-canvas-layers { position: absolute; top: 48px; right: 12px; z-index: 4; display: flex; flex-direction: column; width: min(260px, calc(100% - 24px)); max-height: min(420px, calc(100% - 100px)); overflow: hidden; border: 1px solid rgba(148, 163, 184, .45); border-radius: 10px; background: rgba(255, 255, 255, .98); box-shadow: 0 10px 30px rgba(15, 23, 42, .16); }
-.cad-canvas-layers-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
-.cad-canvas-layers-head strong { font-weight: 600; color: #334155; }
-.cad-canvas-layers-head span { color: #64748b; }
-.cad-canvas-layers-head button { margin-left: auto; padding: 2px 4px; border: 0; background: transparent; color: #2563eb; font: inherit; font-size: 10px; cursor: pointer; }
-.cad-canvas-layers-head button:disabled { color: #94a3b8; cursor: default; }
-.cad-canvas-layer-list { list-style: none; margin: 0; padding: 4px; overflow: auto; }
-.cad-canvas-layer-list li { border-radius: 6px; }
-.cad-canvas-layer-list li:hover { background: #f8fafc; }
-.cad-canvas-layer-list li.is-selected { background: #eff6ff; }
-.cad-canvas-layer-list label { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 5px 6px; color: #334155; font-size: 11px; cursor: pointer; }
-.cad-canvas-layer-list input { flex: 0 0 auto; width: 13px; height: 13px; margin: 0; accent-color: #2563eb; }
-.cad-canvas-layer-swatch { flex: 0 0 auto; width: 12px; height: 12px; border: 1px solid #94a3b8; border-radius: 3px; }
-.cad-canvas-layer-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cad-canvas-layer-state { flex: 0 0 auto; color: #94a3b8; font-size: 9px; }
-.cad-canvas-layers-empty { margin: 0; padding: 10px; color: #94a3b8; font-size: 11px; }
-.cad-canvas-revision-notice { position: absolute; top: 48px; left: 12px; z-index: 5; max-width: min(360px, calc(100% - 320px)); padding: 6px 10px; border: 1px solid #bfdbfe; border-radius: 6px; background: rgba(239, 246, 255, .97); color: #1d4ed8; font-size: 11px; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); }
-@media (max-width: 640px) {
-  .cad-canvas-selection { max-width: calc(100% - 120px); }
-  .cad-canvas-selection-layers { display: none; }
-  .cad-canvas-revision-notice { max-width: calc(100% - 24px); }
-}
 .document-workspace { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; outline: none; background: var(--surface-canvas); }
 .document-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 9px 12px; border-bottom: 1px solid var(--border-default); }
 .document-source { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 11px; }
