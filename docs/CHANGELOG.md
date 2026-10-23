@@ -39,6 +39,8 @@
 
 ### Changed
 
+- Web Bridge 升级至 1.1.0：移除 Task 能力版本声明、解析与匹配；Pi RPC 和 Web 冒烟改用独立 Interaction，不再装载旧 Task Extension。
+
 - 明确 Canvas 为共享视图底层，Document（含 Markdown/PDF/CSV/Office）、Geo 与已有 Video 为领域适配；Document 1.2.2 同步说明。保留 Geo 场景及恢复所有权，不恢复已退役 Task 规划器。Video 的独立工具迁移后置，CAD 仅列为未来适配方向。
 
 - 平台版本更新为 3.23.2，同步 package、锁文件及 Host 版本；当前版本仍为未发布，沿用已有待发布变更。
@@ -59,6 +61,11 @@
 
 - 官网快速上手更新交流群二维码，有效期延长至 2026 年 10 月 23 日，并更新图片与脚本缓存版本。
 - 官网中英文产品首页移除新版说明与版本专属入口；使用文档统一设立“版本更新”页，3.23.0 作为页内版本条目，原 3.23 更新说明链接跳转到对应条目。
+
+### Removed
+
+- 删除 Task Module 源码及旧会话专用兼容：移除 manifest、Extension、Task Snapshot 契约/导出/常量、旧工具卡标签和测试夹具；不再提供 `tau_task`、`/task` 或旧任务状态恢复。普通会话、交通任务范围及分析成果保留。
+
 
 ## 3.23.0 - 2026-10-15
 

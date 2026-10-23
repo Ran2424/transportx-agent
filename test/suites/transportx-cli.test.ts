@@ -11,11 +11,11 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
   // transportx arguments keep Module selection explicit
   {
     const { parseCliArgs } = require('../../bin/transportx.js');
-    const parsed = parseCliArgs(['--module', 'com.transportx.task@1.0.1', '--append-system-prompt-file', 'eval.md', '--print', '--json', '分析数据']);
-    assert.deepEqual(parsed.modules, ['com.transportx.task@1.0.1']);
+    const parsed = parseCliArgs(['--module', 'com.transportx.interaction@1.1.0', '--append-system-prompt-file', 'eval.md', '--print', '--json', '分析数据']);
+    assert.deepEqual(parsed.modules, ['com.transportx.interaction@1.1.0']);
     assert.equal(parsed.appendSystemPromptFile, path.resolve('eval.md'));
     assert.equal(parsed.prompt, '分析数据');
-    assert.throws(() => parseCliArgs(['--no-modules', '--module', 'com.transportx.task']), /cannot be combined/);
+    assert.throws(() => parseCliArgs(['--no-modules', '--module', 'com.transportx.interaction']), /cannot be combined/);
     assert.throws(() => parseCliArgs(['--json', '分析数据']), /require --print/);
   }
 

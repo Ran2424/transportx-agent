@@ -10,7 +10,6 @@ import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 import {
   BRIDGE_ENVELOPE_SCHEMA_VERSION,
   GEO_ENVELOPE_VERSION,
-  TASK_SNAPSHOT_SCHEMA_VERSION,
   PI_RUNTIME_MINIMUM,
 } from './version.ts';
 
@@ -19,7 +18,6 @@ export type ExtensionUiKind = 'select' | 'confirm' | 'input' | 'editor' | 'notif
 export type RuntimeCapabilities = {
   piVersion: string;
   bridgeVersion: typeof BRIDGE_ENVELOPE_SCHEMA_VERSION;
-  taskEnvelopeVersion: typeof TASK_SNAPSHOT_SCHEMA_VERSION;
   geoSceneVersion: typeof GEO_ENVELOPE_VERSION;
   extensionUiKinds: ExtensionUiKind[];
   eventReplay: boolean;
@@ -35,7 +33,6 @@ export function runtimeCapabilities(piVersion = PI_RUNTIME_MINIMUM): RuntimeCapa
   return {
     piVersion,
     bridgeVersion: BRIDGE_ENVELOPE_SCHEMA_VERSION,
-    taskEnvelopeVersion: TASK_SNAPSHOT_SCHEMA_VERSION,
     geoSceneVersion: GEO_ENVELOPE_VERSION,
     extensionUiKinds: [...SUPPORTED_EXTENSION_UI_KINDS],
     eventReplay: true,
@@ -54,9 +51,6 @@ export function parseRuntimeCapabilities(value: unknown): CapabilityParseResult 
   if (input.bridgeVersion !== BRIDGE_ENVELOPE_SCHEMA_VERSION) {
     diagnostics.push(diagnostic({ code: 'unknown_schema_version', path: 'capabilities.bridgeVersion', message: `Unsupported bridgeVersion ${JSON.stringify(input.bridgeVersion)}.`, expected: BRIDGE_ENVELOPE_SCHEMA_VERSION, received: input.bridgeVersion as number }));
   }
-  if (input.taskEnvelopeVersion !== TASK_SNAPSHOT_SCHEMA_VERSION) {
-    diagnostics.push(diagnostic({ code: 'unknown_schema_version', path: 'capabilities.taskEnvelopeVersion', message: `Unsupported taskEnvelopeVersion ${JSON.stringify(input.taskEnvelopeVersion)}.`, expected: TASK_SNAPSHOT_SCHEMA_VERSION, received: input.taskEnvelopeVersion as number }));
-  }
   if (input.geoSceneVersion !== GEO_ENVELOPE_VERSION) {
     diagnostics.push(diagnostic({ code: 'unknown_schema_version', path: 'capabilities.geoSceneVersion', message: `Unsupported geoSceneVersion ${JSON.stringify(input.geoSceneVersion)}.`, expected: GEO_ENVELOPE_VERSION, received: input.geoSceneVersion as string }));
   }
@@ -72,7 +66,6 @@ export function parseRuntimeCapabilities(value: unknown): CapabilityParseResult 
     value: {
       piVersion: input.piVersion as string,
       bridgeVersion: BRIDGE_ENVELOPE_SCHEMA_VERSION,
-      taskEnvelopeVersion: TASK_SNAPSHOT_SCHEMA_VERSION,
       geoSceneVersion: GEO_ENVELOPE_VERSION,
       extensionUiKinds: [...input.extensionUiKinds as ExtensionUiKind[]],
       eventReplay: input.eventReplay as boolean,
@@ -97,9 +90,6 @@ export function matchCapabilities(advertised: RuntimeCapabilities): CapabilityMa
   const mismatches: CapabilityMismatchReason[] = [];
   if (advertised.bridgeVersion !== BRIDGE_ENVELOPE_SCHEMA_VERSION) {
     mismatches.push({ field: 'bridgeVersion', message: 'Bridge envelope version is incompatible.', expected: BRIDGE_ENVELOPE_SCHEMA_VERSION, received: advertised.bridgeVersion });
-  }
-  if (advertised.taskEnvelopeVersion !== TASK_SNAPSHOT_SCHEMA_VERSION) {
-    mismatches.push({ field: 'taskEnvelopeVersion', message: 'Task snapshot version is incompatible.', expected: TASK_SNAPSHOT_SCHEMA_VERSION, received: advertised.taskEnvelopeVersion });
   }
   if (advertised.geoSceneVersion !== GEO_ENVELOPE_VERSION) {
     mismatches.push({ field: 'geoSceneVersion', message: 'Geo scene version is incompatible.', expected: GEO_ENVELOPE_VERSION, received: advertised.geoSceneVersion });

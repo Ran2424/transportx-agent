@@ -1,5 +1,5 @@
 export const TOOL_LABELS: Record<string, string> = {
-  read: 'conversation.tool.read', bash: 'conversation.tool.command', shell: 'conversation.tool.command', command: 'conversation.tool.command', exec: 'conversation.tool.command', edit: 'conversation.tool.edit', write: 'conversation.tool.write', create: 'conversation.tool.create', apply_patch: 'conversation.tool.patch', tau_task: 'conversation.tool.taskStatus', tau_ask_user: 'conversation.tool.ask', publish_geodata: 'conversation.tool.publish', present_visualization: 'conversation.tool.mapDisplay', tau_resolve_citation: 'conversation.tool.citation',
+  read: 'conversation.tool.read', bash: 'conversation.tool.command', shell: 'conversation.tool.command', command: 'conversation.tool.command', exec: 'conversation.tool.command', edit: 'conversation.tool.edit', write: 'conversation.tool.write', create: 'conversation.tool.create', apply_patch: 'conversation.tool.patch', tau_ask_user: 'conversation.tool.ask', publish_geodata: 'conversation.tool.publish', present_visualization: 'conversation.tool.mapDisplay', tau_resolve_citation: 'conversation.tool.citation',
 };
 
 export function hostExecutionState(result: unknown): 'unknown' | 'cancelled' | null {

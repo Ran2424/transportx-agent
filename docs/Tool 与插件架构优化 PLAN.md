@@ -1,7 +1,7 @@
 # Tool 与插件架构优化 PLAN
 
 > 状态：P0–P3 已经 PR #75–#78 合并；P4 初版代码、真实模型制作、插件生命周期和实际 macOS 包内调用闭环通过，交付见 PR #79 及 P4 记录。2026-10-23 用户调整为优先完成完整可运行初版；正式发布的剩余边界另行记录，不继续扩展测试矩阵。
-> 核心推广：Canvas 作为共享视图底层；Document（含 Markdown）与 Geo 作为适配模块接入。将 Canvas/Geo/Interaction 的工具契约、通信与逐工具诊断推广到实际核心能力，保留 Task 历史兼容；Video 独立工具迁移后置。P0–P4 初版通过不等于所有模块已迁移，范围以代码及验收记录为准。
+> 核心推广：Canvas 作为共享视图底层；Document（含 Markdown）与 Geo 作为适配模块接入。将 Canvas/Geo/Interaction 的工具契约、通信与逐工具诊断推广到实际核心能力，Task 模块及专用历史兼容已按用户要求删除；Video 独立工具迁移后置。P0–P4 初版通过不等于所有模块已迁移，范围以代码及验收记录为准。
 
 > 日期：2026-10-22。基线：3.23.1 / `12d6d209db380f95396f3eafa174140c02375c78`；Pi `@earendil-works/pi-coding-agent@0.80.10`。  
 > 最终执行规则：信任入口为 P0 硬门槛；区分 P1/P3 承诺；按兼容性规则升级；平台执行与真实 Agent 制作分别验收。执行证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)。  
@@ -48,7 +48,7 @@ Pi 继续作为唯一 Agent Runtime，负责模型循环、实际工具注册与
 | Geo Extension 维护 scene/revision，并从当前 Pi 分支恢复；Interaction 直接使用 Pi UI 和取消上下文 | Geo Extension；[Interaction](../modules/capabilities/interaction/extensions/pi-user-interaction/index.ts) | 保留原生 Extension 模式，作为抽象不能越界的检验样本 |
 | Host 已有受管作业、并发上限、请求断开取消与进程树终止；作业表为内存状态 | [sessions.ts](../src/server/sessions.ts)、[process-runner.ts](../src/server/process-runner.ts) | 补跨边界确认与必要的持久执行状态，不重复实现已有作业调度 |
 | Citation、Canvas、Geo、Spatial 已有领域结果协议和前端投影 | [contracts](../src/contracts)、[tool-projection.ts](../src/web/platform/conversation/tool-projection.ts) | 复用领域数据及现有 details，不再用通用 Envelope 重新定义领域实体 |
-| 已有真实 Pi + 固定模型输出的 Citation/Canvas smoke，但使用简化 Host 路由；普通 Pi RPC smoke 主要验证 Task/Web Bridge 和消息队列 | [citation-smoke.mjs](../scripts/citation-smoke.mjs)、[pi-rpc-smoke.mjs](../scripts/pi-rpc-smoke.mjs) | 复用并升级为真实装配/路由/授权的边界验收，不能说当前没有真实工具集成测试 |
+| 已有真实 Pi + 固定模型输出的 Citation/Canvas smoke，但使用简化 Host 路由；普通 Pi RPC smoke 主要验证 Interaction/Web Bridge 和消息队列 | [citation-smoke.mjs](../scripts/citation-smoke.mjs)、[pi-rpc-smoke.mjs](../scripts/pi-rpc-smoke.mjs) | 复用并升级为真实装配/路由/授权的边界验收，不能说当前没有真实工具集成测试 |
 
 补充核查 Pi 0.80.10 的公开 Extension 类型：`execute(toolCallId, params, signal, onUpdate, ctx)`、`executionMode`、`tool_call` / `tool_result`、`session_start` / `session_tree` / `session_shutdown` 均已有定义。`tool_call` 的输入允许被前置 handler 修改，类型说明明确修改后不再自动校验。因此 Host 的最终请求校验必须保留，不能只依赖 Pi 注册时的 Schema。公开 API 的声明不是对卸载、事件先后或断开取消效果的运行时证明，后续用固定版本集成测试确认。
 
@@ -64,9 +64,9 @@ Pi 继续作为唯一 Agent Runtime，负责模型循环、实际工具注册与
 | Job / 子进程 | `sessions.runJob()` 的 Map、job ID 和并发控制为内存态；ProcessRunner 已有 abort、超时、进程树终止及停止未确认错误 | 不能把内存 Job 当成重启后的提交事实；停止竞态和强杀后的资源状态待运行验证 |
 | Tracker / 授权 | Tracker 已有 Bridge 解析、revision 拒收与运行协议诊断；`session-service.ts` 主要是服务名/Module/路由映射，实际会话鉴权在路由 | 复杂 Binding 状态系统尚未实现；持久 owner 不能直接从服务映射推导，须核实任务/会话归属和恢复路径 |
 | Extension 信任 | Installer 校验包树/路径/运行时等；启动器将 Extension 加载到同一 Pi，并传递服务凭据；未见该链路的逐 Extension 隔离/自动代码信任审查 | 安装验证不证明代码可信；不声明具备不可信多租户隔离，见 ADR-T01 |
-| Task 清理候选 | 默认内置清单无 Task，但真实 Pi smoke 直接加载它；历史解析和 fixture 仍使用 `pi-task-mode` / `tau-task` | 不能据“不在默认清单”删除整套 Task；区分可退役生产者、测试用途和持久格式读取，再单独决定 |
+| Task 删除 | 2026-10-23 用户明确要求删除模块及旧会话专用兼容 | 删除生产者、历史协议、握手字段及夹具；Pi RPC smoke 改用 Interaction |
 
-补充依据：[Spatial Service](../src/server/spatial-analysis-service.ts)、[ProcessRunner](../src/server/process-runner.ts)、[Module Installer](../src/server/module-installer.ts)、[Task 历史契约](../src/contracts/task.ts)、[Task 历史夹具](../test/fixtures/features/task-entries.json)。其余定位见上表已有实现链接。未发现证据的性能瓶颈、数据竞争或依赖漏洞保留为待核实项，不写成既成结论。
+补充依据：[Spatial Service](../src/server/spatial-analysis-service.ts)、[ProcessRunner](../src/server/process-runner.ts)、[Module Installer](../src/server/module-installer.ts)。其余定位见上表已有实现链接。未发现证据的性能瓶颈、数据竞争或依赖漏洞保留为待核实项，不写成既成结论。
 
 ## 3. 底层模型：分别回答归属、执行与状态三个问题
 
@@ -83,7 +83,7 @@ Pi 继续作为唯一 Agent Runtime，负责模型循环、实际工具注册与
 | `tau_ask_user` | Interaction Extension + Pi | Pi UI / RPC 交互 | Pi 交互结果与当前 pending 状态；取消不等于授权 |
 | 可安装 Video 与用户/项目 Extension | 对应包或项目 | 以实际实现为准 | 按已解析运行时、资源协议及注册证据核对，不能从核心目录推测可用性 |
 
-基线配置内的 Extension 静态注册了上述 10 个 TransportX 工具；Web Bridge 自身不注册模型工具，Task 是留存的兼容源码，未进入当前内置装配清单。此数量只是源码盘点，当前运行时集合及 active 仍以 Pi 为准。
+基线配置内的 Extension 静态注册了上述 10 个 TransportX 工具；Web Bridge 自身不注册模型工具，Task 已按用户追加要求从源码与历史兼容中删除。此数量只是源码盘点，当前运行时集合及 active 仍以 Pi 为准。
 
 ### 3.1 Capability–Tool–Operation 映射
 
@@ -516,7 +516,7 @@ P0 必须固定持久 Owner 的现有标识、建立/认证者、恢复验证、
 | 是否所有 Host 操作都需要持久 Job | 按 L1/L2/L3 选择，Spatial 先验证最小索引 | 具体操作确有无法用领域对象解决的恢复/重复保护需求；不能只因字段统一就升级机制 |
 | 是否发布公共 SDK / 开放 Host 插件 | 先随模块打包精简客户端；Host 仅平台批准的实现/绑定 | 多个独立包有稳定兼容证据；任意 Host 插件须另行完成信任与隔离设计，不隐含在工具贡献字段中 |
 | 是否重构所有历史协议/日志 | 沿用 Pi JSONL 与现有领域协议，补稳定关联 | 明确的历史无法恢复问题及可回滚迁移方案，而非接口整齐度 |
-| 是否删除 Task 等兼容源码 | 不纳入本轮运行时改造；先区分生产者、smoke 调用及历史读取 | 引用搜索、发布承诺与旧会话验证证明可退役的具体范围；不因默认未装配就删除持久读取 |
+| Task 退役 | 用户已明确要求删除模块及旧会话专用兼容 | 已删除；普通会话消息和分析成果不作为 Task 数据清理对象 |
 
 第一项实施工作是完成 P0 的信任入口、owner/提交点及 Pi 行为核查，并确定 Spatial 单工具闭环的测试与测量数据。公共类型、状态、映射或持久记录只有在存在真实问题、唯一权威和可验证用例时才进入实现。若草案必须接管 Pi 调度、搬迁 Geo 状态、复制会话历史或新增平行权限系统才能成立，应缩小范围。
 
@@ -536,7 +536,7 @@ P0 必须固定持久 Owner 的现有标识、建立/认证者、恢复验证、
 | Document 适配 | 明确 Markdown/PDF/CSV/Office 同属 Document，经 Canvas 呈现；不另建执行 Runtime 或重复工具 | 1.2.2 |
 | Geo 适配 | 五个工具全部生成契约；三个 Host 交互复用薄客户端；资源发布/场景仍在 Pi，连接取消只终结对应等待，保留场景恢复 | 1.5.0 |
 | Interaction | 单一契约和 Pi 本地有效结果诊断，沿用 Pi UI 和顺序提问 | 1.1.0 |
-| Task | 保留历史读取；不重新装配旧规划器 | 不改版 |
+| Task | 用户追加要求后删除模块、历史协议/适配、握手和夹具 | 已移除 |
 | Video / CAD | Video 原有 Canvas 适配和历史回归保持；独立工具迁移后置。CAD 需要后续受信任适配器、资源/target 和 Renderer，当前不支持 | 未新增能力 |
 
 原固定试点名单改为核心工具的静态接口映射，六个模块的 12 个工具均按项生成、打包和核对；映射不调度、注册或激活工具，Pi Registry 和 Agent Loop 保持唯一权威。旧精确版本缺少新增元数据时仍可装配，但诊断保持未验证。
@@ -549,3 +549,8 @@ P0 必须固定持久 Owner 的现有标识、建立/认证者、恢复验证、
 - `node scripts/react-smoke.mjs`：文档、Office 更新、地图与截图、Context、三主题、标签/滚动与历史、既有 Video 标签播放/暂停及软件更新 UI 回归通过。
 - `desktop:dir` 生成 macOS ad-hoc 应用，实际 `desktop-smoke.mjs` 启动、PDF、模块信任 IPC 与退出通过；信任动作仅对自建 fixture 使用测试 stub，更新服务处于未发布版本检查错误态，不宣称在线更新已发布。
 - Windows/Linux 本轮未在本机执行；正式签名、DMG/NSIS 发布、CAD、新 Video 工具契约均不作为本轮完成项。当前平台仍为 3.23.2 未发布，不分发正式安装包。
+
+
+### 11.1 Task 完整移除（用户追加要求）
+
+删除 Task Module 的 manifest/Extension、`src/contracts/task.ts` 及导出、Task Snapshot 常量、Bridge 的 `taskEnvelopeVersion` 声明/匹配、专用工具标签和历史夹具。Pi RPC smoke 改为真实 Interaction/Web Bridge，不再装载 Task 或调用 `/task`；Web smoke 改用独立交互场景。Web Bridge 升级到 1.1.0。普通 SessionProfile 的交通任务范围、会话工作目录及通用 Pi 消息读取不属于 Task Module，不做数据删除或历史格式迁移。旧 Task 专用功能不再恢复。

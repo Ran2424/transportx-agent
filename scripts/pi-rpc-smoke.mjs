@@ -29,7 +29,7 @@ const command = process.env.TAU_PI_COMMAND || process.execPath;
 const child = spawn(command, [
   ...(process.env.TAU_PI_COMMAND ? [] : [path.resolve('node_modules/@earendil-works/pi-coding-agent/dist/cli.js')]),
   '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--approve',
-  '--extension', path.resolve('modules/capabilities/task/extensions/pi-task-mode/index.ts'),
+  '--extension', path.resolve('modules/capabilities/interaction/extensions/pi-user-interaction/index.ts'),
   '--extension', path.resolve('modules/capabilities/web-bridge/extensions/pi-web-bridge/index.ts'),
 ], {
   cwd: process.cwd(),
@@ -88,19 +88,15 @@ try {
   const bridge = entries.data?.entries?.find((entry) => entry.type === 'custom' && entry.customType === 'pi-web-bridge');
   assert.equal(bridge?.data?.schemaVersion, 1);
   assert.ok(Array.isArray(bridge?.data?.tools));
-  const taskTool = bridge.data.tools.find((candidate) => candidate.name === 'tau_task');
-  assert.ok(taskTool);
-  assert.equal(taskTool.active, false);
+  const interactionTool = bridge.data.tools.find((candidate) => candidate.name === 'tau_ask_user');
+  assert.ok(interactionTool?.active);
+  assert.ok(!bridge.data.tools.some((candidate) => candidate.name === 'tau_task'));
+  assert.equal('taskEnvelopeVersion' in bridge.data.capabilities, false);
 
   send({ id: 'commands', type: 'get_commands' });
   const commands = await waitFor((line) => line.type === 'response' && line.id === 'commands');
   assert.equal(commands.success, true);
-  assert.ok(commands.data?.commands?.some((candidate) => candidate.name === 'task'));
-
-  send({ id: 'task-on', type: 'prompt', message: '/task on' });
-  assert.equal((await waitFor((line) => line.type === 'response' && line.id === 'task-on')).success, true);
-  const appended = await waitFor((line) => line.type === 'entry_appended' && line.entry?.customType === 'pi-task-mode');
-  assert.equal(appended.entry?.data?.enabled, true);
+  assert.ok(!commands.data?.commands?.some((candidate) => candidate.name === 'task'));
   send({ id: 'smoke-model', type: 'set_model', provider: 'traffic-smoke', modelId: 'smoke' });
   assert.equal((await waitFor((line) => line.id === 'smoke-model')).success, true);
   send({ id: 'initial', type: 'prompt', message: 'initial message' });
@@ -123,7 +119,7 @@ try {
   const users = lines.filter((line) => line.type === 'message_start' && line.message?.role === 'user');
   assert.deepEqual(users.map((line) => line.message.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n')), ['initial message', 'steering message', 'follow-up message']);
   assert.ok(users.every((line) => line.id === undefined && line.message.id === undefined), 'Pi user messages do not echo the command id');
-  console.log('Pi RPC smoke passed: bridge, task command, rejection ACK, text correlation and steer-before-follow-up delivery (local provider).');
+  console.log('Pi RPC smoke passed: bridge, Interaction registration, rejection ACK, text correlation and steer-before-follow-up delivery (local provider).');
 } finally {
   if (child.exitCode === null) child.kill('SIGTERM');
   provider.closeAllConnections();
