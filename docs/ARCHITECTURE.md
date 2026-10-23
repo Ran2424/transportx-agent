@@ -112,7 +112,7 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 每个任务以 Pi RPC 进程运行。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
-发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely。
+发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely、ezdxf。
 
 ### 2.7 React Workspace 与 Browser Kernel
 
@@ -213,12 +213,12 @@ sequenceDiagram
 
 ### 3.4 文件、Canvas、地图与视频
 
-Canvas 是共享视图底层，不等同于 Document，也不承接领域计算。它定义视图身份、`present/focus/update/clear`、revision、受控资源引用及用户显式附加的上下文；现有 Shell、Projection、Adapter/Renderer Registry 共用这些契约。Document、Geo 和已有 Video Adapter 位于其上：Document 包括 Markdown、PDF、CSV 和 Office，Geo 维护地图场景及交互，Video 维护视频资源与播放。Markdown 是 Document 的格式，不单独增加 Module 或 Runtime。未来 CAD 等类型应通过平台审核的 Adapter、资源/target 校验和 Renderer 接入；本轮不声明已支持 CAD，也不开放 Module 任意注入前端代码。
+Canvas 是共享视图底层，不等同于 Document，也不承接领域计算。它定义视图身份、`present/focus/update/clear`、revision、受控资源引用及用户显式附加的上下文；现有 Shell、Projection、Adapter/Renderer Registry 共用这些契约。Document、Geo 和已有 Video Adapter 位于其上：Document 包括 Markdown、PDF、CSV 和 Office，Geo 维护地图场景及交互，Video 维护视频资源与播放。Markdown 是 Document 的格式，不单独增加 Module 或 Runtime。CAD 通过平台审核的 Adapter、资源/target 校验和懒加载 Renderer 接入；Module 不允许任意注入前端代码。
 
 本轮迁移 Canvas 两个工具、Geo 五个工具及 Pi-local Interaction 的接口：单一 TypeBox 来源生成各工具包内契约，按工具核对装配、实时 Pi 观察、Schema 与有效领域结果。Canvas/Geo Host 请求复用薄客户端、调用关联、超时及取消；Geo 场景状态、资源发布与 JSONL 恢复仍由原 Pi Extension 负责。Document 无独立执行工具，通过 Canvas 的两个工具完成呈现和上下文读取。Task 模块及其专用历史兼容均已删除。Video 的独立工具迁移后置，保留其现有 Canvas 适配及历史读取。
 
 - 文档既可由用户通过 WorkspaceDock、成果或引用入口打开，也可由 Agent 通过 `canvas_present` 呈现并定位。Agent 呈现事件写入 Session JSONL，可随会话重放；用户手动标签、活动标签和连续滚动状态留在前端。MD/CSV/PDF/DOCX/XLSX/PPTX 的既有入口继续调用 `OpenDocumentContext`；CSV 使用只读表格渲染，不加载 OOXML runtime。
-- `canvas_present` 通过 Host 新建资源视图时只接受 Document Adapter，资源可为任务文件或 Citation SourceVersion；地图与视频由各自工具发布 Canvas Envelope。操作已有 `viewId` 时沿用已声明 Adapter 和前次资源。文档 `update` 保证 revision 递增，即使文件 mtime 不变或回退，React 文档与 OOXML Viewer 也会重载，PDF iframe 同步重建；`focus` 保留原 revision，仅表达聚焦与导航意图。
+- `canvas_present` 通过 Host 新建资源视图时接受 Document 与 CAD Adapter；文档资源可为任务文件或 Citation SourceVersion，CAD 只接受当前会话 DXF。地图与视频由各自工具发布 Canvas Envelope。操作已有 `viewId` 时沿用已声明 Adapter 和前次资源。只有文档 `update` 由呈现层递增 revision；CAD/Geo/Video 的内容 revision 由领域维护。文档更新时，即使文件 mtime 不变或回退，React 文档与 OOXML Viewer 也会重载，PDF iframe 同步重建；`focus` 保留原 revision，仅表达聚焦与导航意图。
 - 用户只有执行“附加当前 Canvas”时才生成 `CanvasContextV1`。Host 在创建时核对当前呈现的 View revision，并保存资源句柄、定位与选区，把 Context ID 附到下一轮用户消息；Agent 必须调用 `canvas_inspect_context` 读取本轮 ID，不能回退读取历史选区。Context 记录视图上下文，不为普通任务文件保存内容快照；连续滚动、播放和鼠标事件不进入会话。
 - Markdown 文档复用共享渲染器，由 `report-renderer.ts` 补充公式、Mermaid、图片和标题目录；文档定位在自己的容器内完成，不改变聊天 Markdown。PDF 通过受控 URL 在原生 iframe 阅读器中显示，引用传入物理页码；同会话标签切换保留 iframe，跨会话重建只恢复最后一次明确请求的页码，不读取原生阅读器内部滚动或缩放状态。
 - DOCX、XLSX 和 PPTX 由 `@silurus/ooxml` 在浏览器内通过 Rust/WASM 解析、Canvas 2D 只读渲染。`features/office/office-resource.ts` 在 GET 前用 HEAD 校验状态和 32 MiB 压缩文件上限；`office-viewer.ts` 按格式动态导入 Viewer，禁用在线字体与超链接并限制解压和图片内存。普通启动、Markdown 和 PDF 路径不加载 OOXML chunk、Worker 或 WASM。
@@ -358,11 +358,12 @@ Workbench 默认装配上述十个直接依赖；CLI Domain 无依赖，使用 `
 | `capabilities/canvas`、`document` | 共享画布工具与 Skill、文档 Adapter 声明与使用 Skill | Workbench 基础依赖；Document 依赖 Canvas |
 | `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖；Geo 依赖 Canvas，Spatial Analysis 依赖 Geo + Citation |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
+| `capabilities/cad` | DXF 协作工具、按需 Skill 与受控 Python 引擎 | 官方可选 Capability，依赖 Canvas，默认不选择 |
 | 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
 
 配置与路径读取位于 config；Registry、Installer、AssetResolver 与 Assembler 的实例装配位于 [platform-composition.ts](../src/server/platform-composition.ts)。server-main 是组合根，向 Manager 注入已有装配器、工作区创建、启动函数、spawn 与服务 endpoint；sessions 不再在 import 时创建全局 Manager。内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
 
-当前配置注册 11 个内置模块（两个 Domain 与九个基础依赖）。Task 的 manifest、Extension、历史协议和能力握手字段均已删除；旧 Task 模块不再随源码及新安装包提供。
+当前配置注册 13 个内置模块（两个 Domain、十个 Workbench 直接依赖与一个可选 CAD Capability）。Task 的 manifest、Extension、历史协议和能力握手字段均已删除；旧 Task 模块不再随源码及新安装包提供。
 
 ### 5.4 从包到会话
 
@@ -519,3 +520,14 @@ Spatial L3 的执行确认保存于用户数据根 `executions/spatial/<owner-ha
 Module Authoring 1.2.0 提供 `tau_module_package`：inspect 只读取并验证当前任务内的模块目录，install 调用原 Module Installer / Native Trust 决定，不执行包代码。独立的 session service token 与已选择的 Module 限定该入口；没有开放任意 Host 代码或 RPC 网关。Agent 沿制作 Skill 保留用户程序、核查依赖/样例、生成目录包，再在用户请求安装时发起安装；凭据通过外部配置，缺依赖或配置时交付草稿并说明未执行。安装影响新任务；禁用影响新选择，显式恢复的已受信任旧任务仍按原精确版本运行；卸载须先关闭占用任务，已有历史与成果不删除。
 
 分阶段证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)、[P1 记录](<Tool 与插件架构优化 P1 记录.md>)、[P2 记录](<Tool 与插件架构优化 P2 记录.md>)、[P3 记录](<Tool 与插件架构优化 P3 记录.md>)。初版制作与生命周期证据见 [P4 记录](<Tool 与插件架构优化 P4 记录.md>)。目标平台正式发布验收单独记录，不等同于初版跑通。
+
+
+### CAD 可选能力
+
+`com.transportx.cad` 1.2.0 随应用提供，未列入 Workbench 默认依赖；新任务选项展示默认依赖闭包外的内置 Capability，按精确版本显式选择。恢复旧计划不会自动加入 CAD。其 Module 贡献 Skill、Extension、Python 引擎与 Canvas View 声明；平台提供固定 CadService、受审核的 Adapter/Renderer，以及包含 ezdxf 的 Python runtime。这不等同于第三方 ZIP 可以动态安装任意 Host 服务或前端代码。
+
+四个工具 `cad_inspect` / `cad_draw` / `cad_verify` / `cad_execution` 使用现有生成契约、批准的 Host 输入校验、bundle 和按需启用流程；Canvas 作为模块依赖只参与装配，不传播工具 active。工具由 Pi 预注册；Node Host 维护受控资源与执行确认，PythonRunner 按结构化参数调用引擎。Canvas 1.4.0 支持从工作区或 Agent 打开同一 DXF；首次打开按原始字节建立 r1 快照，重新打开复用图纸，不增加 revision，未知单位可查看，编辑需明确单位。
+
+CAD 执行确认位于用户目录 `executions/cad/<owner-hash>/`；Owner 复用受管 Pi JSONL 的真实路径、header ID 和工作目录核验。相同 toolCallId 只读取既有确认，不重复派发。`cad_execution` 查询或请求取消；取消和响应丢失都不证明未提交。作业 journal 在文件移动前写入，manifest 是提交点；查询核验 journal、请求和产物哈希，恢复已提交结果或清理可确认的本次未提交文件；无法确认时保持 unknown，不覆盖文件、不自动重绘。
+
+`cad/<fileId>/rN.dxf` 只有被有效 manifest 记录才是已提交 revision；预览可重建。编辑校验基础 revision、expectedSha256 和输入执行前后哈希。Canvas Context 在服务端绑定呈现 payload 的 DXF 哈希，用户选区编辑另核验当前轮 contextId、完整选区和句柄；浏览器加载也核验文件字节。图纸编辑不自动回写 GeoJSON、重算缓冲或同步相关实体；dx/dy 沿图纸轴使用图纸单位。前端 `features/cad` 管理 Workspace 与 SDK 对接，平台 Renderer 仅转接；SDK 激活串行，缓存键含会话、图纸、revision 和哈希，显示状态不写回 DXF。普通修改只做结构审计，不自动渲染 PNG/PDF；`cad_verify(exportPreview=true)` 可导出现有图纸而不新增修订。通用检查默认 basic；traffic-v1 图层规则作为显式策略文件提供。Skill 首页只保留流程和硬约束，编辑、转换、导出、交通规则与运行时参考按需读取。字体从实际可用资源发现，不按 OS 猜测；OS 入口仍由平台 profile 维护。详见 [CAD 模块接入与开发验收](CAD-模块接入与验收.md)。

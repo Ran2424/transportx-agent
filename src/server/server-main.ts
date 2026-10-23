@@ -58,6 +58,7 @@ import { CitationService } from './citation-service.js';
 import { migrateStoredCitations } from './citation-migration.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
+import { CadService } from './cad-service.js';
 import { preferUnpackedPath } from './session-assembly.js';
 import { VideoService } from './video-service.js';
 import { verifyChecksumFile } from './asset-integrity.js';
@@ -79,7 +80,7 @@ const liveManager = new LiveSessionManager({
     await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust);
     return buildSessionPiLaunch(input);
   }, spawn,
-  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '' },
+  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '', cad: '' },
 });
 
 function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
@@ -88,8 +89,14 @@ let authEnabled = !!PROJECT_AUTH || (AUTH_CONFIGURED && TAU_SETTINGS.authEnabled
 let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
-const canvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath));
+const canvasService: CanvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath), {
+  present: (session, input) => cadService.present(liveManager.get(session.id)!, input),
+  resolve: (session, viewId) => cadService.resolvePresentation(liveManager.get(session.id)!, viewId),
+});
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py')));
+const cadService: CadService = new CadService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/cad/scripts/cad_engine.py')), (session, ids) => canvasService.inspectContexts(session, ids));
+let cadHealth: { ok: boolean; version?: string; reason?: string } | null = null;
+void cadService.health().then((value) => { cadHealth = value; }).catch((error) => { cadHealth = { ok: false, reason: String(error) }; });
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (response) => response.delivery === 'unknown');
 const updatePreparation = new UpdatePreparation();
@@ -301,9 +308,13 @@ function currentSessionOptions() {
   const platformModules = [...MODULE_REGISTRY.modules.values()].filter((module) => module.origin !== 'installed');
   const platformSources = platformModules.map((module) => ({ manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin }));
   const platformModuleIds = new Set(platformModules.map((module) => module.manifest.id));
+  const defaultModuleIds = new Set(MODULE_REGISTRY.dependencyOrder('com.transportx.workbench').map((module) => module.manifest.id));
   return {
     schemaVersion: 1,
-    modules: MODULE_INSTALLER.catalog().map((entry) => {
+    modules: [
+      ...MODULE_INSTALLER.catalog(),
+      ...platformModules.filter((module) => module.origin === 'builtin' && module.enabled && module.manifest.type === 'capability' && !defaultModuleIds.has(module.manifest.id)).map((module) => ({ id: module.manifest.id, version: module.manifest.version, manifest: module.manifest, source: { manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin } })),
+    ].map((entry) => {
       const runtime = moduleRuntimeCompatible(entry.manifest);
       let dependenciesCompatible = false;
       try {
@@ -318,9 +329,9 @@ function currentSessionOptions() {
         ...(entry.manifest.presentation ? { presentation: entry.manifest.presentation } : {}),
         version: entry.version,
         type: entry.manifest.type,
-        origin: 'installed',
+        origin: entry.source.origin,
         compatible,
-        enabledForNewSessions: compatible && enabled.has(entry.id),
+        enabledForNewSessions: compatible && (entry.source.origin === 'builtin' || enabled.has(entry.id)),
         selectedByDefault: compatible && enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
         dependencies: entry.manifest.dependencies,
         assets: (entry.manifest.contributes?.assets || []).map((asset) => {
@@ -390,7 +401,7 @@ const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projec
 const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath: isWithin, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
 const apiRouter = createApiRouter({
   beginOperation: (url) => url.pathname === '/api/health' ? () => {} : updatePreparation.beginOperation(),
-  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), sessionOptions: currentSessionOptions, json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, serveRawFile: files.serveRawFile, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
+  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform, cad: cadHealth ? { status: cadHealth.ok ? 'ok' : 'unavailable', ...(cadHealth.version ? { version: cadHealth.version } : {}), ...(cadHealth.reason ? { reason: cadHealth.reason } : {}) } : { status: 'unknown' } }), sessionOptions: currentSessionOptions, json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, serveRawFile: files.serveRawFile, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
   listAttachments: listSessionAttachments,
   uploadAttachments: saveUploadedAttachments,
   deleteAttachment: deleteSessionAttachment,
@@ -399,6 +410,7 @@ const apiRouter = createApiRouter({
   video: videoService,
   geo: geoInteractionService,
   canvas: canvasService,
+  cad: cadService,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -450,6 +462,7 @@ function computeUrls(port: number) {
   liveManager.runtime.endpoints.geo = endpoint;
   liveManager.runtime.endpoints.canvas = endpoint;
   liveManager.runtime.endpoints.moduleAuthoring = endpoint;
+  liveManager.runtime.endpoints.cad = endpoint;
 }
 
 let releaseHostWriter: (() => void) | null = null;
@@ -458,9 +471,16 @@ function listen(port: number, attemptsLeft = 10) {
   validateHostAccess(TAU_SETTINGS, !!PROJECT_AUTH);
   if (!releaseHostWriter) {
     releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host'));
-    const release = () => { if (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount) return; releaseHostWriter?.(); releaseHostWriter = null; };
-    server.once('close', release);
-    process.once('exit', release);
+    const release = (force = false) => {
+      // A background CAD health probe can still be settling while normal
+      // server shutdown completes. Once the process is exiting, this writer
+      // must release its own lease regardless of that transient probe.
+      if (!force && (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount)) return;
+      releaseHostWriter?.();
+      releaseHostWriter = null;
+    };
+    server.once('close', () => release());
+    process.once('exit', () => release(true));
     try {
       const migration = migrateStoredCitations(APP_PATHS.userDataDir, TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir, SESSIONS_DIR);
       for (const item of migration.migrated) logHostEvent('info', 'citation_registry_migrated', item);
@@ -486,7 +506,7 @@ function listen(port: number, attemptsLeft = 10) {
 let shuttingDown = false;
 async function verifyIdleAndSave() {
   const busy = () => { throw Object.assign(new Error('Host is busy'), { code: 'host_busy' }); };
-  if (shuttingDown || liveManager.pendingResumes.size || liveManager.terminatingResumes.size || spatialAnalysisService.activeCount || videoService.activeCount) busy();
+  if (shuttingDown || liveManager.pendingResumes.size || liveManager.terminatingResumes.size || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount) busy();
   const sessions = [...liveManager.sessions.values()];
   for (const session of sessions) {
     if (session.isStreaming || session.isCompacting || session.terminating || session.transport.pendingCount || session.pendingExtensionUiRequests.size) busy();
@@ -549,12 +569,17 @@ async function shutdown(signal: string) {
   logHostEvent('info', 'host_shutdown', { signal, sessions: liveManager.sessions.size });
   socketHandler.close(); try { wss.close(); } catch {}
   try {
-    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), liveManager.shutdown()]);
+    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), cadService.terminateAll(), liveManager.shutdown()]);
     server.close(() => process.exit(process.exitCode || 0));
     setTimeout(() => process.exit(process.exitCode || 0), 2500).unref();
   } catch (error) {
     console.error('[Tau] Shutdown could not confirm process exit:', error);
     process.exitCode = 1;
+    // A Python child may not acknowledge termination on some hosts. The Host
+    // is already shutting down, so do not let that child keep the writer lease
+    // alive indefinitely.
+    server.close(() => process.exit(process.exitCode || 1));
+    setTimeout(() => process.exit(process.exitCode || 1), 2500).unref();
   }
 }
 function startCli() {

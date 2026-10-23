@@ -10,9 +10,10 @@ import { GEO_CANVAS_ADAPTER_ID, VIDEO_CANVAS_ADAPTER_ID } from '../../../contrac
 export type CanvasView =
   | DocumentView
   | { id: string; kind: 'geo'; title: string; envelope: VisualizationEnvelope; canvas?: CanvasPresentationV1 }
-  | { id: string; kind: 'video'; title: string; item: VideoSceneItemV1; revision: number; compareItem?: VideoSceneItemV1; canvas?: CanvasPresentationV1 };
-export type CanvasContent = { views: CanvasView[]; presentation: { key: string; id: string } | null };
-export type CanvasState = { tabIds: string[]; activeId: string | null; open: boolean; presentationKey: string | null; documents: DocumentView[] };
+  | { id: string; kind: 'video'; title: string; item: VideoSceneItemV1; revision: number; compareItem?: VideoSceneItemV1; canvas?: CanvasPresentationV1 }
+  | { id: string; kind: 'cad'; title: string; revision: number; canvas: CanvasPresentationV1; previewPath?: string };
+export type CanvasContent = { views: CanvasView[]; presentation: { key: string; id: string } | null; cleared?: Record<string, string> };
+export type CanvasState = { tabIds: string[]; activeId: string | null; open: boolean; presentationKey: string | null; documents: DocumentView[]; resources?: CanvasView[] };
 export const EMPTY_CANVAS: CanvasState = { tabIds: [], activeId: null, open: false, presentationKey: null, documents: [] };
 
 export function openCanvasDocument(state: CanvasState, document: DocumentView): CanvasState {
@@ -22,9 +23,21 @@ export function openCanvasDocument(state: CanvasState, document: DocumentView): 
   return activateCanvas({ ...state, documents }, next.id);
 }
 
+export function openCanvasResource(state: CanvasState, canvas: CanvasPresentationV1): CanvasState {
+  const previous = state.resources?.find((view) => view.id === canvas.viewId);
+  const view = getCanvasAdapter(canvas.adapterId)?.reduce(previous, canvas);
+  if (!view) return state;
+  return activateCanvas({ ...state, resources: [...(state.resources ?? []).filter((item) => item.id !== view.id), view] }, view.id);
+}
+
 export function withCanvasDocuments(content: CanvasContent, state: CanvasState): CanvasContent {
   const views = new Map(content.views.map((view) => [view.id, view]));
   for (const view of state.documents) views.set(view.id, view);
+  for (const view of state.resources ?? []) {
+    if (content.cleared?.[view.id] && (!view.canvas || content.cleared[view.id] >= view.canvas.generatedAt)) continue;
+    const latest = views.get(view.id);
+    if (!latest || latest.kind === 'cad' && view.kind === 'cad' && latest.revision < view.revision) views.set(view.id, view);
+  }
   return { ...content, views: [...views.values()] };
 }
 
@@ -35,6 +48,7 @@ export function projectCanvas(entries: SessionEntry[], executions: ToolExecution
   const geoRevisions = new Map<string, number>();
   const canvasRevisions = new Map<string, number>();
   let videoRevision = -1;
+  const cleared: Record<string, string> = {};
   let presentation: CanvasContent['presentation'] = null;
   const applyPresentation = (canvas: CanvasPresentationV1, presentationKey: string) => {
     const previousRevision = canvasRevisions.get(canvas.viewId) ?? -1;
@@ -44,7 +58,8 @@ export function projectCanvas(entries: SessionEntry[], executions: ToolExecution
     if (!adapter || adapter.kind !== canvas.kind) return;
     const next = adapter.reduce(views.get(canvas.viewId), canvas, context);
     if (next) views.set(canvas.viewId, next);
-    else if (canvas.operation === 'clear') views.delete(canvas.viewId);
+    else if (canvas.operation === 'clear') { views.delete(canvas.viewId); cleared[canvas.viewId] = canvas.generatedAt; }
+    if (next) delete cleared[canvas.viewId];
     if (next || canvas.operation === 'clear') presentation = { key: presentationKey, id: canvas.viewId };
   };
   const accept = (value: unknown, key: string) => {
@@ -91,7 +106,7 @@ export function projectCanvas(entries: SessionEntry[], executions: ToolExecution
   executions.forEach((execution) => {
     if (!seen.has(execution.toolCallId) && execution.status === 'completed' && !execution.isError) accept(execution.result, execution.toolCallId);
   });
-  return { views: [...views.values()], presentation };
+  return { views: [...views.values()], presentation, ...(Object.keys(cleared).length ? { cleared } : {}) };
 }
 
 export function activateCanvas(state: CanvasState, id: string): CanvasState {

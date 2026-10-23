@@ -1,0 +1,35 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "kind": "solid", "name": "实线" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[121.469, 31.2300], [121.469, 31.2305]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "kind": "dashed", "name": "虚线" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[121.4695, 31.2300], [121.4695, 31.2305]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "kind": "hatch", "name": "导流线" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [121.4700, 31.2300],
+          [121.4704, 31.2300],
+          [121.4704, 31.2304],
+          [121.4700, 31.2304],
+          [121.4700, 31.2300]
+        ]]
+      }
+    }
+  ]
+}

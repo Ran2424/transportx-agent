@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.workbench",
   "name": "TransportX Workbench",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "domain",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [
@@ -31,6 +31,7 @@
         "features": [
           "提供交通分析会话的工作上下文",
           "连接地图、文档和共享画布",
+          "把空间分析结果输出为 DXF 工程图纸",
           "组合引用、空间分析和报告模板"
         ]
       },
@@ -40,6 +41,7 @@
         "features": [
           "Provides the working context for traffic analysis sessions",
           "Connects maps, documents and the shared Canvas",
+          "Turns spatial analysis into DXF engineering drawings",
           "Combines evidence, spatial analysis and report templates"
         ]
       }

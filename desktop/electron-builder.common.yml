@@ -23,6 +23,7 @@ files:
   - modules/**
   - "!modules/installable/**"
   - "!modules/shared/**"
+  - "!modules/capabilities/cad/extensions/pi-cad/index.ts"
   - "!modules/official/module-authoring/extensions/pi-module-package/index.ts"
   - "!modules/capabilities/citation/extensions/pi-citation/index.ts"
   - "!modules/capabilities/spatial-analysis/extensions/pi-spatial-analysis/index.ts"

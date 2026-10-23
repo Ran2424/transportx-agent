@@ -47,6 +47,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     'modules/capabilities/document/manifest.json',
     'modules/capabilities/geo/manifest.json',
     'modules/capabilities/spatial-analysis/manifest.json',
+    'modules/capabilities/cad/manifest.json',
     'modules/official/traffic-report/manifest.json',
     'modules/official/module-authoring/manifest.json',
     'modules/official/cli/manifest.json',
@@ -125,6 +126,12 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     const plan = assembler.assemble('com.transportx.workbench', workspace);
     assert.equal(planExtensions(plan).length, 8);
     assert.equal(planSkills(plan).length, 6);
+    assert.equal(plan.modules.some((module: any) => module.id === 'com.transportx.cad'), false);
+    const cadPlan = assembler.assemble('com.transportx.workbench', workspace, { ...plan.profile, modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.cad', version: '1.2.0' }] } });
+    assert.ok(cadPlan.modules.some((module: any) => module.id === 'com.transportx.cad'));
+    assert.ok(cadPlan.modules.some((module: any) => module.id === 'com.transportx.canvas'));
+    assert.ok(planExtensions(cadPlan).some((entry: string) => entry.includes('pi-cad')));
+    assert.ok(planSkills(cadPlan).some((entry: string) => /cad[\\/]skills[\\/]SKILL\.md$/.test(entry)));
     assert.ok(plan.assets.some((asset: any) => asset.id === 'data:installed-test'));
     assert.ok(plan.assets.some((asset: any) => asset.id === 'template:traffic-analysis-report'));
     assert.ok(plan.modules.some((module: any) => module.id === 'local.installed.test'));

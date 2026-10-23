@@ -4,9 +4,9 @@ export const TOOL_LABELS: Record<string, string> = {
 
 export function hostExecutionState(result: unknown): 'unknown' | 'cancelled' | null {
   const details = result && typeof result === 'object' ? (result as { details?: { kind?: string; error?: { code?: string } } }).details : undefined;
-  if (!['tau-spatial-analysis-error', 'tau-citation-error', 'tau-module-package-error'].includes(details?.kind || '')) return null;
-  if (['spatial_result_unknown', 'citation_result_unknown', 'module_install_unknown'].includes(details?.error?.code || '')) return 'unknown';
-  if (['spatial_cancelled', 'citation_cancelled'].includes(details?.error?.code || '')) return 'cancelled';
+  if (!['tau-spatial-analysis-error', 'tau-cad-error', 'tau-citation-error', 'tau-module-package-error'].includes(details?.kind || '')) return null;
+  if (['cad_result_unknown', 'spatial_result_unknown', 'citation_result_unknown', 'module_install_unknown'].includes(details?.error?.code || '')) return 'unknown';
+  if (['cad_cancelled', 'spatial_cancelled', 'citation_cancelled'].includes(details?.error?.code || '')) return 'cancelled';
   return null;
 }
 

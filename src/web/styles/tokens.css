@@ -8,6 +8,8 @@
 
 /* ---------- Primitives（品牌基础值，组件不得直接消费） ---------- */
 :root {
+  /* CAD geometry uses paper independent of the surrounding UI theme. */
+  --canvas-paper: #FFFFFF;
   /* TransportX 品牌暖色阶（Terracotta） */
   --tx-brand-700: #7C3E24;
   --tx-brand-600: #8F4A2E;

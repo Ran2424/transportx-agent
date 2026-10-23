@@ -15,10 +15,12 @@ import { serviceModuleIds, sessionServiceLabel, type SessionService } from './se
 import { validateToolRequest } from './tool-request.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
 import type { CanvasService } from './canvas-service.js';
+import { CadInvocations } from './cad-invocations.js';
 import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
 import { inspectTaskModule } from './module-authoring.js';
+import type { CadService } from './cad-service.js';
 
 type ApiRouteServices = {
   beginOperation?(url: URL): () => void;
@@ -57,11 +59,13 @@ type ApiRouteServices = {
   video: VideoService;
   geo: GeoInteractionService;
   canvas: CanvasService;
+  cad: CadService;
 };
 
 export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
 
 export function createApiRouter(services: ApiRouteServices) {
+  const cadInvocations = new CadInvocations(path.join(PI_AGENT_DIR, 'executions', 'cad'), SESSIONS_DIR, services.cad);
   const spatialInvocations = new SpatialInvocations(path.join(PI_AGENT_DIR, 'executions', 'spatial'), SESSIONS_DIR, services.spatial);
   const router = new ServerRouter(services, services.beginOperation);
   const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number; timer: ReturnType<typeof setTimeout> }>();
@@ -194,6 +198,12 @@ export function createApiRouter(services: ApiRouteServices) {
         const created = deps.geo.createContext(session, await deps.readBody(req));
         deps.json(res, 200, created);
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+    })
+    .post(/^\/api\/sessions\/([^/]+)\/canvas-presentations$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, { canvas: await deps.canvas.presentResource(session, await deps.readBody(req) as Parameters<CanvasService['present']>[1]) }); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post(/^\/api\/sessions\/([^/]+)\/canvas-contexts$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
@@ -414,7 +424,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const session = resolveServiceSession(res, body, deps, 'canvas');
         if (!session) return;
         await validateToolRequest('com.transportx.canvas', body, 'canvas.present');
-        deps.json(res, 200, { canvas: deps.canvas.present(session, body as Parameters<CanvasService['present']>[1]), toolCallId: body.toolCallId });
+        deps.json(res, 200, { canvas: await deps.canvas.presentResource(session, body as Parameters<CanvasService['present']>[1]), toolCallId: body.toolCallId });
       } catch (error) {
         const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
         const status = deps.errorStatus(error);
@@ -432,6 +442,60 @@ export function createApiRouter(services: ApiRouteServices) {
         const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
         const status = deps.errorStatus(error);
         deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'canvas_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
+    })
+    .post('/api/internal/cad/inspect', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.inspect');
+        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.inspect(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
+      }
+    })
+    .post('/api/internal/cad/draw', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.draw');
+        const confirmation = await withRequestSignal(req, res, (signal) => cadInvocations.execute(session, body, signal, (jobSignal, record) => services.sessions.runJob(session.id, (executionSignal) => deps.cad.draw(session, record.request, executionSignal, record.operationId, record.inputSha256), jobSignal)));
+        deps.json(res, 200, { ...confirmation, toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
+      }
+    })
+    .post('/api/internal/cad/verify', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.verify');
+        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.verify(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
+      }
+    })
+    .post('/api/internal/cad/execution', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.execution');
+        const record = body.action === 'cancel' ? cadInvocations.cancel(session, { operationId: body.operationId, lookupToolCallId: body.lookupToolCallId }) : cadInvocations.query(session, { operationId: body.operationId, lookupToolCallId: body.lookupToolCallId });
+        deps.json(res, 200, { operationId: record.operationId, state: record.state, result: record.result, error: record.error, ...('cancellationRequested' in record ? { cancellationRequested: record.cancellationRequested } : {}), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
       }
     })
     .post('/api/internal/geo/request', async ({ req, res, deps }) => {

@@ -3,6 +3,8 @@ node_modules/
 .npm-cache/
 .tsbuildinfo/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 
 # TypeScript build output
 /bin/
@@ -20,6 +22,7 @@ node_modules/
 /dist/
 /dist-desktop/
 /release/
+/release-cadfix/
 /desktop/build/
 /public/geo-runtime.css
 
@@ -92,3 +95,7 @@ test/baselines/screenshots/*.png
 
 # 用户本地可安装模块不写入仓库
 modules/installable/
+
+# CAD generated assets
+test/cad/out/
+src/web/public/workers/

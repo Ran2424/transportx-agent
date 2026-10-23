@@ -65,7 +65,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
 
   async function openFile(item: WorkspaceFile) {
     if (item.isDirectory) { await load(item.path); return; }
-    if (session && documentFormat(item.path)) { openDocument({ sessionId: session.id, title: item.name, path: item.path }); return; }
+    if (session && (documentFormat(item.path) || /\.dxf$/i.test(item.path))) { openDocument({ sessionId: session.id, title: item.name, path: item.path }); return; }
     if (filePresentation(item).preview) { setPreviewFiles((current) => [...current.filter((file) => file.path !== item.path), item]); return; }
     await navigator.clipboard?.writeText(item.path);
     setCopiedPath(item.path);

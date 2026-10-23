@@ -10,6 +10,7 @@ import { CORE_TOOL_BINDINGS } from '../src/contracts/tool-interface.ts';
 
 const appRoot = path.resolve(process.env.TRANSPORTX_SMOKE_APP_ROOT || '.');
 const baseline = process.env.TRANSPORTX_SMOKE_BASELINE === '1';
+const cadPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'cad';
 const activationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'activation';
 const canvasPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'canvas' || activationPhase;
 const lifecyclePhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'lifecycle' || activationPhase;
@@ -135,7 +136,7 @@ fs.renameSync = (source, target) => {
 const hostExecutable = process.env.TRANSPORTX_SMOKE_HOST_EXECUTABLE;
 function launchHost() {
 const current = spawn(hostExecutable || process.execPath, [...(citationPhase ? ['--import', preload] : []), ...(recoveryPhase ? ['--import', recoveryPreload] : []), path.join(appRoot, 'bin/tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
-  cwd: fs.statSync(appRoot).isDirectory() ? appRoot : path.dirname(appRoot), env: { ...process.env, ...(hostExecutable ? { ELECTRON_RUN_AS_NODE: '1' } : {}), TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER_DATA_DIR: root, PI_CODING_AGENT_DIR: root, PI_CODING_AGENT_SESSION_DIR: path.join(root, 'sessions'), TAU_PI_ENTRYPOINT: path.join(appRoot, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+  cwd: fs.statSync(appRoot).isDirectory() ? appRoot : path.dirname(appRoot), env: { ...process.env, ...(hostExecutable ? { ELECTRON_RUN_AS_NODE: '1' } : {}), TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: process.env.TRANSPORTX_SMOKE_RESOURCES_DIR || appRoot, ...(process.env.TRANSPORTX_SMOKE_RESOURCES_DIR ? { TAU_PYTHON_COMMAND: '' } : {}), TAU_USER_DATA_DIR: root, PI_CODING_AGENT_DIR: root, PI_CODING_AGENT_SESSION_DIR: path.join(root, 'sessions'), TAU_PI_ENTRYPOINT: path.join(appRoot, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js') }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 });
 current.stdout.on('data', (chunk) => { stdout += chunk; });
 current.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-8000); });
@@ -256,7 +257,8 @@ try {
   const lifecycle = lifecyclePhase ? await (await import('./harness/module-lifecycle-smoke.mjs')).moduleLifecycleSmoke({ root, endpoint, json, rpc, until }) : undefined;
   const authoring = lifecyclePhase ? await (await import('./harness/module-package-smoke.mjs')).modulePackageSmoke({ root, json, rpc, until }) : undefined;
   const recovery = recoveryPhase ? await (await import('./harness/spatial-recovery-smoke.mjs')).spatialRecoverySmoke({ root, json, rpc, until, restartHost, endpoint: () => endpoint }) : undefined;
-  const report = { phase: activationPhase ? 'Module activation P1-P3' : canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, activation, harnessRssBytes: process.memoryUsage().rss };
+  const cad = cadPhase ? await (await import('./harness/cad-host-smoke.mjs')).cadHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
+  const report = { cad, phase: cadPhase ? 'CAD module alignment' : activationPhase ? 'Module activation P1-P3' : canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, activation, harnessRssBytes: process.memoryUsage().rss };
   if (process.env.TRANSPORTX_ACTIVATION_REPORT) fs.writeFileSync(process.env.TRANSPORTX_ACTIVATION_REPORT, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 } finally {

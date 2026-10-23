@@ -23,9 +23,9 @@ import { SettingsPage, themes, type SettingsSectionId, type ThemeId } from '../p
 import { WorkspaceDock } from '../platform/workspace/WorkspaceDock';
 import { AgentCanvas } from '../platform/canvas/AgentCanvas';
 import { canvasContextStore } from '../platform/canvas/canvas-context-store';
-import { projectCanvas, syncCanvas, activateCanvas, closeCanvasTab, openCanvasDocument, withCanvasDocuments, EMPTY_CANVAS, type CanvasState } from '../platform/canvas/canvas-state';
+import { projectCanvas, syncCanvas, activateCanvas, closeCanvasTab, openCanvasDocument, openCanvasResource, withCanvasDocuments, EMPTY_CANVAS, type CanvasState } from '../platform/canvas/canvas-state';
 import { OpenDocumentContext } from '../platform/canvas/document-context';
-import { resolveDocument, type DocumentRequest, type DocumentPosition } from '../platform/canvas/document-state';
+import { documentPath, resolveDocument, type DocumentRequest, type DocumentPosition } from '../platform/canvas/document-state';
 import { geoContextStore } from '../features/geo/geo-context-store';
 
 const LEGACY_THEME_MIGRATION: Record<string, ThemeId> = {
@@ -108,7 +108,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
     activeSession ? conversation?.snapshotEntries ?? [] : [],
     activeSession ? Object.values(tools ?? {}) : [],
     activeSession?.cwd ? { sessionId: activeSession.id, cwd: activeSession.cwd } : undefined,
-  ), canvas), [activeSession?.id, activeSession?.cwd, conversation, tools, canvas.documents]);
+  ), canvas), [activeSession?.id, activeSession?.cwd, conversation, tools, canvas.documents, canvas.resources]);
   const canvasAvailable = canvasContent.views.length > 0;
   useEffect(() => { documentOpenSequence.current += 1; }, [activeSession?.id]);
   const updateCanvas = useCallback((update: (state: CanvasState) => CanvasState) => {
@@ -155,6 +155,18 @@ export function App({ account }: { account?: ReactNode } = {}) {
     void (request.source ? Promise.resolve(null) : kernel.commands.session.listFiles(session.id).catch(() => null)).then((files) => {
       const current = kernel.stores.session.get();
       if (sequence !== documentOpenSequence.current || current.activeSessionId !== session.id || !current.sessions.some((item) => item.id === session.id)) return;
+      if (/\.dxf$/i.test(request.path) && !request.source) {
+        const absolute = documentPath(request.path, cwd);
+        const roots = [documentPath(cwd, ''), documentPath(files?.path ?? cwd, '')];
+        const root = roots.find((value) => absolute.startsWith(`${value}/`));
+        const path = root ? absolute.slice(root.length + 1) : request.path;
+        void kernel.commands.canvas.present(session.id, { adapterId: 'com.transportx.canvas.cad', resource: { scope: 'session-file', path }, title: request.title }).then((canvas) => {
+          if (sequence !== documentOpenSequence.current || kernel.stores.session.get().activeSessionId !== session.id) return;
+          setCanvases((states) => ({ ...states, [session.id]: openCanvasResource(states[session.id] ?? EMPTY_CANVAS, canvas) }));
+          if (window.matchMedia('(max-width: 860px)').matches) { setFilesOpen(false); setSidebarOpen(false); }
+        }).catch(() => {});
+        return;
+      }
       const document = resolveDocument(request, cwd, files?.path ?? cwd);
       if (!document) return;
       setCanvases((states) => ({ ...states, [session.id]: openCanvasDocument(states[session.id] ?? EMPTY_CANVAS, document) }));

@@ -1,0 +1,43 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.cad",
+  "toolId": "cad.execution",
+  "piName": "cad_execution",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "cad-execution-v2",
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "query"
+          },
+          {
+            "type": "string",
+            "const": "cancel"
+          }
+        ]
+      },
+      "operationId": {
+        "type": "string",
+        "pattern": "^cad_[a-f0-9]{32}$"
+      },
+      "lookupToolCallId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-cad-execution",
+    "version": 1,
+    "detailsKind": "tau-cad-execution"
+  }
+}
