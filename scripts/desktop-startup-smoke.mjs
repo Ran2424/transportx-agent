@@ -30,6 +30,19 @@ async function stop(healthUrl) {
   await app.close();
   app = null;
   await waitForLeaseRelease();
+  if (fs.existsSync(lock)) {
+    try {
+      const owner = JSON.parse(fs.readFileSync(ownerFile(), 'utf8'));
+      let alive = false;
+      try { process.kill(owner.pid, 0); alive = true; } catch {}
+      console.error('[desktop-startup] lease still present', { owner, alive });
+    } catch (error) {
+      console.error('[desktop-startup] lease owner unreadable', error);
+    }
+    for (const file of ['desktop.log', 'agent-host.log']) {
+      try { console.error(`[desktop-startup] ${file}\n${fs.readFileSync(path.join(dataRoot, 'logs', file), 'utf8').slice(-4000)}`); } catch {}
+    }
+  }
   assert.equal(fs.existsSync(lock), false, 'normal desktop exit must release its lease');
   await assert.rejects(fetch(healthUrl), 'normal desktop exit must stop its Host');
   for (const file of ['runtime.jsonl', 'agent-host.log', 'desktop.log']) {
