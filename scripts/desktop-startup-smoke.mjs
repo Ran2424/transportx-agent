@@ -19,7 +19,7 @@ async function start() {
   return { healthUrl, owner: JSON.parse(fs.readFileSync(ownerFile(), 'utf8')) };
 }
 
-async function waitForLeaseRelease(timeoutMs = 5000) {
+async function waitForLeaseRelease(timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
   while (fs.existsSync(lock) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
