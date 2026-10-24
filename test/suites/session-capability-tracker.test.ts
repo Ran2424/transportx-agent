@@ -46,7 +46,7 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     let manager: any, failRecord = false;
     const entries: any[] = [];
     let tools: any[] = ['read', 'write', 'edit', 'bash'].map((name) => ({ name, parameters: {}, sourceInfo: { path: `<builtin:${name}>`, source: 'builtin' } }));
-    tools.push({ name: 'manage_capabilities', parameters: toolContract.input, sourceInfo: { path: managerPath } }, { name: 'fixture_tool', parameters: {}, description: 'Fixture', sourceInfo: { path: __filename } });
+    tools.push({ name: 'manage_capabilities', description: 'Manage fixture capabilities', parameters: toolContract.input, sourceInfo: { path: managerPath } }, { name: 'fixture_tool', parameters: { type: 'object', properties: { selector: { anyOf: [{ const: 'a' }, { const: 'b' }] } }, required: ['selector'] }, description: 'Fixture', sourceInfo: { path: __filename } });
     let active: string[] = [];
     const previousModules = process.env.TRANSPORTX_SESSION_MODULES_JSON;
     try {
@@ -64,6 +64,9 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     const call = async (input: any) => (await manager.execute('call', input, undefined, undefined, ctx)).details;
     hooks.session_start({}, ctx);
     assert.equal(active.length, 5);
+    const toolInfo = await call({ action: 'inspect', moduleId: 'local.fixture', toolName: 'fixture_tool' });
+    assert.deepEqual(toolInfo.tools[0].parameters, tools.find((tool) => tool.name === 'fixture_tool').parameters, 'named inspection returns the complete nested schema');
+    assert.match(toolInfo.guide, /next model request/);
     for (const action of ['discover', 'inspect', 'status']) {
       await call({ action, ...(action === 'discover' ? {} : { moduleId: 'local.fixture' }) });
       assert.equal(active.length, 5); assert.equal(entries.length, 1);

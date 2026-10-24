@@ -71,7 +71,7 @@ export function detachViewer(host: HTMLDivElement) {
   if (managerHost?.parentElement === host) managerHost.remove();
 }
 
-export function openDrawing(host: HTMLDivElement, sessionId: string, view: CadView, signal: AbortSignal): Promise<AcApDocManager> {
+export function openDrawing(host: HTMLDivElement, sessionId: string, view: CadView, signal: AbortSignal, reload = false): Promise<AcApDocManager> {
   const load = async () => {
     signal.throwIfAborted();
     const payload = parseCadCanvasPayload(view.canvas.payload);
@@ -83,6 +83,9 @@ export function openDrawing(host: HTMLDivElement, sessionId: string, view: CadVi
     host.appendChild(managerHost!);
     attached = { host, key: stateKey, view, ready: false };
     try {
+      if (reload) {
+        for (const document of [...mgr.documents]) if (document.docTitle === documentKey) await mgr.closeDocument(document);
+      }
       const existing = mgr.documents.find((document) => document.docTitle === documentKey);
       if (existing) {
         if (!await mgr.activateDocument(existing)) throw new Error('CAD drawing could not be activated.');

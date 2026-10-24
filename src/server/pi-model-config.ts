@@ -18,6 +18,7 @@ export type AddPiModelInput = {
   apiKey?: string;
   name?: string;
   contextWindow?: number;
+  maxTokens?: number;
   reasoning?: boolean;
   images?: boolean;
 };
@@ -54,15 +55,18 @@ function validated(input: AddPiModelPayload): AddPiModelInput {
   if (name.length > 200) throw new Error('显示名称过长');
   const contextWindow = input.contextWindow === undefined || input.contextWindow === null ? undefined : Number(input.contextWindow);
   if (contextWindow !== undefined && (!Number.isInteger(contextWindow) || contextWindow <= 0)) throw new Error('上下文窗口必须是正整数');
-  return { provider, modelId, api, baseUrl, ...(apiKey ? { apiKey } : {}), ...(name ? { name } : {}), ...(contextWindow !== undefined ? { contextWindow } : {}), reasoning: !!input.reasoning, images: !!input.images };
+  const maxTokens = input.maxTokens === undefined || input.maxTokens === null ? undefined : Number(input.maxTokens);
+  if (maxTokens !== undefined && (!Number.isSafeInteger(maxTokens) || maxTokens <= 0 || contextWindow !== undefined && maxTokens > contextWindow)) throw new Error('最大输出必须是正整数且不能超过上下文窗口');
+  return { provider, modelId, api, baseUrl, ...(apiKey ? { apiKey } : {}), ...(name ? { name } : {}), ...(contextWindow !== undefined ? { contextWindow } : {}), ...(maxTokens !== undefined ? { maxTokens } : {}), reasoning: !!input.reasoning, images: !!input.images };
 }
 
-type ModelPatchInput = Pick<AddPiModelInput, 'name' | 'contextWindow' | 'reasoning' | 'images'>;
+type ModelPatchInput = Pick<AddPiModelInput, 'name' | 'contextWindow' | 'maxTokens' | 'reasoning' | 'images'>;
 
 function modelPatch(model: ModelPatchInput): JsonRecord {
   return {
     ...(model.name ? { name: model.name } : {}),
     ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
+    ...(model.maxTokens !== undefined ? { maxTokens: model.maxTokens } : {}),
     reasoning: !!model.reasoning,
     input: model.images ? ['text', 'image'] : ['text'],
   };
@@ -73,7 +77,7 @@ async function addPiModelMutation(input: AddPiModelPayload, agentDir: string, lo
   const { path: modelsPath, config, providers } = readModelsConfig(agentDir);
   const existingProvider = providerConfig(providers, model.provider);
   const existingModels = Array.isArray(existingProvider.models) ? existingProvider.models.filter((item) => item && typeof item === 'object') as JsonRecord[] : [];
-  const definition: JsonRecord = { id: model.modelId, ...modelPatch(model) };
+  const definition: JsonRecord = { ...existingModels.find((item) => item.id === model.modelId), id: model.modelId, ...modelPatch(model) };
   const nextModels = existingModels.filter((item) => item.id !== model.modelId);
   nextModels.push(definition);
   const nextProviders = {
@@ -98,6 +102,7 @@ export type UpdatePiModelInput = {
   modelId: string;
   name?: string;
   contextWindow?: number;
+  maxTokens?: number;
   reasoning?: boolean;
   images?: boolean;
 };
@@ -110,7 +115,9 @@ function validatedUpdate(input: UpdatePiModelInput) {
   if (name.length > 200) throw new Error('显示名称过长');
   const contextWindow = input.contextWindow === undefined || input.contextWindow === null ? undefined : Number(input.contextWindow);
   if (contextWindow !== undefined && (!Number.isInteger(contextWindow) || contextWindow <= 0)) throw new Error('上下文窗口必须是正整数');
-  return { provider, modelId, name, contextWindow, reasoning: !!input.reasoning, images: !!input.images };
+  const maxTokens = input.maxTokens === undefined || input.maxTokens === null ? undefined : Number(input.maxTokens);
+  if (maxTokens !== undefined && (!Number.isSafeInteger(maxTokens) || maxTokens <= 0 || contextWindow !== undefined && maxTokens > contextWindow)) throw new Error('最大输出必须是正整数且不能超过上下文窗口');
+  return { provider, modelId, name, contextWindow, maxTokens, reasoning: !!input.reasoning, images: !!input.images };
 }
 
 function providerConfig(providers: JsonRecord, provider: string) {

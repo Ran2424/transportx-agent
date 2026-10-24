@@ -4,7 +4,7 @@
   "toolId": "cad.inspect",
   "piName": "cad_inspect",
   "contractVersion": "1.0.0",
-  "semanticVersion": "cad-inspect-v2",
+  "semanticVersion": "cad-inspect-v3",
   "input": {
     "type": "object",
     "properties": {

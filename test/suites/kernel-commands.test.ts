@@ -369,6 +369,10 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     event('a', { type: 'auto_retry_end', success: false, finalError: '429 secret-token' });
     event('a', { type: 'agent_settled' });
     assert.deepEqual(kernel.stores.conversation.get().bySession.a.live.outcome, { status: 'failed', reason: 'rate_limit' });
+    const { messageOutcome } = require('../../bin/contracts/run-feedback.js');
+    const truncated = { role: 'assistant', content: [{ type: 'thinking', thinking: 'reasoning only' }], stopReason: 'length', usage: { output: 16384, reasoning: 16384 } };
+    assert.deepEqual(messageOutcome(truncated), { status: 'failed', reason: 'output_limit' });
+    event('a', { type: 'auto_retry_end', success: false, finalError: 'Output token limit' });
     event('a', { type: 'agent_start' });
     assert.equal(kernel.stores.conversation.get().bySession.a.live.outcome, null);
     kernel.dispose();

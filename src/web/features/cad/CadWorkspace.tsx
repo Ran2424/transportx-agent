@@ -1,13 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CAD_CANVAS_MAX_HANDLES, type CadCanvasSelection } from '../../../contracts/canvas-cad';
+import { connectCadSelection, type CadSelectionMode, type SelectionBox } from './cad-selection';
 import { Icon } from '../../components/icons';
 import type { CanvasRendererProps } from '../../platform/canvas/renderers/types';
 import { openDrawing, retainViewer, detachViewer, viewerManager, currentTarget, emptySelection, selectionFor, layersFor, dropSelectionOnLayer, type CadLayerRow } from './cad-viewer';
 
 type RevisionMark = { sessionId: string; viewId: string; revision: number };
 
-export function CadWorkspace({ session, view, active, onContextChange }: CanvasRendererProps) {
+export function CadWorkspace({ session, view, active, onContextChange, onAttachContext, contextStatus }: CanvasRendererProps) {
   const { t } = useTranslation();
   const layerPanelId = useId();
   const container = useRef<HTMLDivElement>(null);
@@ -18,6 +19,10 @@ export function CadWorkspace({ session, view, active, onContextChange }: CanvasR
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [retry, setRetry] = useState(0);
+  const [mode, setMode] = useState<CadSelectionMode>('point');
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const [box, setBox] = useState<SelectionBox | null>(null);
   const [selection, setSelection] = useState<CadCanvasSelection>(emptySelection);
   const [layers, setLayers] = useState<CadLayerRow[]>([]);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -46,11 +51,7 @@ export function CadWorkspace({ session, view, active, onContextChange }: CanvasR
     let detachSelection: (() => void) | undefined;
     let detachLayers: (() => void) | undefined;
     let detachViewport: (() => void) | undefined;
-    let canvas: HTMLCanvasElement | null = null;
-    let onClick: ((event: MouseEvent) => void) | undefined;
-    let onPointerDown: ((event: PointerEvent) => void) | undefined;
-    let onPointerUp: ((event: PointerEvent) => void) | undefined;
-    let onPointerCancel: (() => void) | undefined;
+    let detachPointer: (() => void) | undefined;
     setStatus('loading');
     setError('');
     setWarning('');
@@ -59,7 +60,7 @@ export function CadWorkspace({ session, view, active, onContextChange }: CanvasR
 
     void (async () => {
       try {
-        const mgr = await openDrawing(host, session.id, cadView, controller.signal);
+        const mgr = await openDrawing(host, session.id, cadView, controller.signal, retry > 0);
         if (cancelled) return;
         setStatus('ready');
         setRevision(cadView.revision);
@@ -91,52 +92,7 @@ export function CadWorkspace({ session, view, active, onContextChange }: CanvasR
           selectionSet.events.selectionRemoved.removeEventListener(updateSelection);
         };
 
-        canvas = mgr.curView.canvas;
-        let pointerStart: { x: number; y: number } | null = null;
-        let suppressClick = false;
-        onPointerDown = (event: PointerEvent) => {
-          if (event.button !== 0) return;
-          pointerStart = { x: event.clientX, y: event.clientY };
-          suppressClick = false;
-        };
-        onPointerUp = (event: PointerEvent) => {
-          if (!pointerStart) return;
-          suppressClick = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4;
-          pointerStart = null;
-        };
-        onPointerCancel = () => {
-          pointerStart = null;
-          suppressClick = false;
-        };
-        onClick = (event: MouseEvent) => {
-          if (event.button !== 0 || suppressClick) {
-            suppressClick = false;
-            return;
-          }
-          if (cancelled) return;
-          try {
-            const rect = canvas?.getBoundingClientRect();
-            if (!rect) return;
-            const point = mgr.curView.screenToWorld({
-              x: event.clientX - rect.left,
-              y: event.clientY - rect.top,
-            });
-            const layers = new Map(layersFor(mgr).map((layer) => [layer.name, layer.isOn && !layer.isFrozen]));
-            const hits = mgr.curView.pick(point);
-            const visibleHit = hits.some((hit) => {
-              const entity = mgr.curDocument.database.getObjectById(hit.id) as { layer?: unknown } | undefined;
-              return !entity || typeof entity.layer !== 'string' || layers.get(entity.layer) !== false;
-            });
-            if (!visibleHit) {
-              mgr.curView.selectionSet.clear();
-              updateSelection();
-            }
-          } catch { /* no active document */ }
-        };
-        canvas.addEventListener('pointerdown', onPointerDown);
-        canvas.addEventListener('pointerup', onPointerUp);
-        canvas.addEventListener('pointercancel', onPointerCancel);
-        canvas.addEventListener('click', onClick);
+        detachPointer = connectCadSelection(mgr, () => modeRef.current, setBox);
 
         const previous = lastRevision.current;
         if (revisionTimer.current) {
@@ -173,12 +129,7 @@ export function CadWorkspace({ session, view, active, onContextChange }: CanvasR
       detachSelection?.();
       detachLayers?.();
       detachViewport?.();
-      if (canvas) {
-        if (onClick) canvas.removeEventListener('click', onClick);
-        if (onPointerDown) canvas.removeEventListener('pointerdown', onPointerDown);
-        if (onPointerUp) canvas.removeEventListener('pointerup', onPointerUp);
-        if (onPointerCancel) canvas.removeEventListener('pointercancel', onPointerCancel);
-      }
+      detachPointer?.();
       detachViewer(host);
     };
   }, [active, retry, session.id, t, cadView?.id, cadView?.revision, cadView?.canvas.presentationId]);
@@ -221,6 +172,14 @@ export function CadWorkspace({ session, view, active, onContextChange }: CanvasR
 
   if (!cadView) return null;
   return <div className="cad-canvas" ref={container} data-testid="cad-canvas">
+    <div className="cad-canvas-toolbar" role="toolbar" aria-label={t('canvas.cad.tools')}>
+      {(['point', 'box', 'pan'] as const).map((value) => <button key={value} type="button" className="cad-canvas-tool" aria-pressed={mode === value} disabled={status !== 'ready'} onClick={() => setMode(value)}>{t(`canvas.cad.mode.${value}`)}</button>)}
+      <button type="button" className="cad-canvas-tool" disabled={status !== 'ready' || contextStatus === 'busy'} onClick={() => void onAttachContext?.()}>{t(contextStatus === 'done' ? 'canvas.contextAttached' : contextStatus === 'error' ? 'canvas.contextFailed' : 'canvas.attachContext')}</button>
+      <button type="button" className="cad-canvas-tool" disabled={status === 'loading'} onClick={() => setRetry((value) => value + 1)}>{t('canvas.cad.refresh')}</button>
+      <button type="button" className="cad-canvas-tool" disabled={status !== 'ready'} onClick={() => { const mgr = container.current && viewerManager(container.current); mgr?.curView.zoomToFitDrawing(2_000); }}>{t('canvas.cad.fit')}</button>
+      <button type="button" className="cad-canvas-tool" aria-expanded={legendOpen} aria-controls={layerPanelId} onClick={() => setLegendOpen((value) => !value)}><Icon name="layers" className="cad-canvas-tool-icon" />{t('canvas.cad.layers')} <span>{visibleLayers}/{layers.length}</span></button>
+    </div>
+    {box ? <div className="cad-selection-box" style={{ left: box.left, top: box.top + 42, width: box.width, height: box.height }} /> : null}
     {status !== 'ready' ? <div className="cad-canvas-overlay">
       <p className="document-notice">{status === 'error' ? error : t('common.loading')}</p>
       {status === 'error' ? <button type="button" className="cad-canvas-retry" onClick={() => setRetry((value) => value + 1)}>{t('common.retry')}</button> : null}
@@ -236,19 +195,6 @@ export function CadWorkspace({ session, view, active, onContextChange }: CanvasR
           <span className="cad-canvas-selection-sep" aria-hidden="true">·</span>
           <span className="cad-canvas-selection-truncated">{t('canvas.cad.selectionTruncated', { count: CAD_CANVAS_MAX_HANDLES })}</span>
         </> : null}
-      </div>
-      <div className="cad-canvas-tools">
-        <button
-          type="button"
-          className="cad-canvas-tool"
-          aria-expanded={legendOpen}
-          aria-controls={layerPanelId}
-          onClick={() => setLegendOpen((value) => !value)}
-        >
-          <Icon name="layers" className="cad-canvas-tool-icon" />
-          <span>{t('canvas.cad.layers')}</span>
-          <span className="cad-canvas-tool-count">{visibleLayers}/{layers.length}</span>
-        </button>
       </div>
       {legendOpen ? <div id={layerPanelId} className="cad-canvas-layers" role="group" aria-label={t('canvas.cad.layersPanel')}>
         <div className="cad-canvas-layers-head">

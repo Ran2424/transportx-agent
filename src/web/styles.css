@@ -1039,7 +1039,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .canvas-panel { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; }
 .canvas-panel[hidden] { display: none; }
 .cad-canvas { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; background: var(--canvas-paper); isolation: isolate; }
-.cad-canvas-host { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; }
+.cad-canvas-host { position: absolute; inset: 42px 0 0; z-index: 0; width: 100%; height: calc(100% - 42px); }
 .cad-canvas-host canvas { display: block; width: 100%; height: 100%; }
 .cad-canvas-host .ml-cli-container,
 .cad-canvas-host .ml-mobile-cmd,
@@ -1051,11 +1051,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .cad-canvas-retry { pointer-events: auto; padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-elevated); color: var(--text-primary); font-size: 12px; cursor: pointer; }
 .cad-canvas-warning { position: absolute; right: 12px; bottom: 12px; z-index: 3; max-width: min(520px, calc(100% - 24px)); margin: 0; padding: 6px 10px; border: 1px solid var(--status-warning); border-radius: 6px; background: var(--surface-elevated); color: var(--status-warning); font-size: 11px; line-height: 1.5; }
 .cad-canvas-badge { position: absolute; left: 12px; bottom: 12px; z-index: 3; padding: 4px 8px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--surface-elevated); color: var(--text-secondary); font-size: 11px; letter-spacing: .02em; }
-.cad-canvas-selection { position: absolute; top: 12px; left: 12px; z-index: 4; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 150px); overflow: hidden; padding: 5px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface-elevated); color: var(--text-primary); font-size: 11px; white-space: nowrap; box-shadow: var(--shadow-menu); pointer-events: none; }
+.cad-canvas-selection { position: absolute; top: 54px; left: 12px; z-index: 4; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 150px); overflow: hidden; padding: 5px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface-elevated); color: var(--text-primary); font-size: 11px; white-space: nowrap; box-shadow: var(--shadow-menu); pointer-events: none; }
 .cad-canvas-selection.is-active { border-color: var(--selection-border); background: var(--selection-bg); color: var(--selection-fg); }
 .cad-canvas-selection-sep { color: var(--border-strong); }
 .cad-canvas-selection-truncated { color: var(--status-warning); }
-.cad-canvas-tools { position: absolute; top: 12px; right: 12px; z-index: 4; display: flex; gap: 6px; }
 .cad-canvas-tool { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface-elevated); color: var(--text-primary); font: inherit; font-size: 11px; cursor: pointer; box-shadow: var(--shadow-menu); }
 .cad-canvas-tool:hover { background: var(--surface-hover); }
 .cad-canvas-tool:focus-visible { outline: 2px solid var(--selection-border); outline-offset: 2px; }
@@ -1077,7 +1076,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .cad-canvas-layer-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cad-canvas-layer-state { flex: 0 0 auto; color: var(--text-secondary); font-size: 11px; }
 .cad-canvas-layers-empty { margin: 0; padding: 10px; color: var(--text-secondary); font-size: 11px; }
-.cad-canvas-revision-notice { position: absolute; top: 48px; left: 12px; z-index: 5; max-width: min(360px, calc(100% - 320px)); padding: 6px 10px; border: 1px solid var(--selection-border); border-radius: 6px; background: var(--selection-bg); color: var(--selection-fg); font-size: 11px; box-shadow: var(--shadow-menu); }
+.cad-canvas-revision-notice { position: absolute; top: 86px; left: 12px; z-index: 5; max-width: min(360px, calc(100% - 320px)); padding: 6px 10px; border: 1px solid var(--selection-border); border-radius: 6px; background: var(--selection-bg); color: var(--selection-fg); font-size: 11px; box-shadow: var(--shadow-menu); }
 @media (max-width: 640px) {
   .cad-canvas-selection { max-width: calc(100% - 120px); }
   .cad-canvas-selection-layers { display: none; }
@@ -1366,3 +1365,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 @media (max-width: 600px) { .citation-manager-toolbar { grid-template-columns: repeat(3, auto); } .citation-manager-toolbar input { grid-column: 1 / -1; } }
 
 .user-message:has(.citation-footer) .message-content { padding-inline-end: 32px; }
+
+.cad-canvas-toolbar { position: absolute; inset: 0 0 auto; height: 42px; z-index: 5; display: flex; align-items: center; gap: 4px; padding: 0 8px; overflow-x: auto; border-bottom: 1px solid var(--border-default); background: var(--surface-elevated); }
+.cad-canvas-toolbar .cad-canvas-tool { flex-shrink: 0; border-radius: 5px; box-shadow: none; }
+.cad-canvas-tool[aria-pressed="true"] { background: var(--selection-bg); border-color: var(--selection-border); color: var(--selection-fg); }
+.cad-canvas-tool:disabled { opacity: 0.5; cursor: default; }
+.cad-selection-box { position: absolute; z-index: 3; border: 1px solid var(--selection-border); background: var(--selection-bg); pointer-events: none; }

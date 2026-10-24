@@ -127,7 +127,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.equal(planExtensions(plan).length, 8);
     assert.equal(planSkills(plan).length, 6);
     assert.equal(plan.modules.some((module: any) => module.id === 'com.transportx.cad'), false);
-    const cadPlan = assembler.assemble('com.transportx.workbench', workspace, { ...plan.profile, modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.cad', version: '1.2.0' }] } });
+    const cadPlan = assembler.assemble('com.transportx.workbench', workspace, { ...plan.profile, modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.cad', version: '1.3.0' }] } });
     assert.ok(cadPlan.modules.some((module: any) => module.id === 'com.transportx.cad'));
     assert.ok(cadPlan.modules.some((module: any) => module.id === 'com.transportx.canvas'));
     assert.ok(planExtensions(cadPlan).some((entry: string) => entry.includes('pi-cad')));

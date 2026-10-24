@@ -26,6 +26,10 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
   const firstRequestIndex = providerInputs.length;
   await execute('manage_capabilities', { action: 'status' });
   assert.equal(providerInputs[firstRequestIndex].tools.length, 5);
+  const capability = await execute('manage_capabilities', { action: 'inspect', moduleId: 'com.transportx.cad', toolName: 'cad_draw' });
+  const metadata = JSON.parse(capability.content[0].text);
+  assert.ok(metadata.description.length > 0, 'Host forwards the localized module description');
+  assert.ok(metadata.tools[0].parameters.properties.operations.items.anyOf, 'tool inspection exposes nested operation schemas without source reads');
   const source = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { kind: 'road', name: '道路 ROAD-01' }, geometry: { type: 'LineString', coordinates: [[121.44, 31.19], [121.441, 31.19]] } }] };
   fs.writeFileSync(path.join(session.cwd, 'road.geojson'), JSON.stringify(source));
   const request = { kind: 'from-geojson', fileId: 'road', sourcePath: 'road.geojson', sourceCrs: 'EPSG:4326', target: { kind: 'local', origin: [121.44, 31.19] }, layerMap: { road: 'ROADS' }, labelField: 'name', labelLayer: 'LABELS' };
@@ -90,6 +94,15 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     await canvas.hover();
     await page.mouse.wheel(0, -180);
 
+    await panel.getByRole('button', { name: '框选', exact: true }).click();
+    assert.equal(await panel.getByRole('button', { name: '框选', exact: true }).getAttribute('aria-pressed'), 'true');
+    const bounds = await canvas.boundingBox();
+    await page.mouse.move(bounds.x + 2, bounds.y + 2);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width - 2, bounds.y + bounds.height - 2, { steps: 5 });
+    await page.mouse.up();
+    assert.match(await panel.locator('.cad-canvas-selection').innerText(), /已选 [1-9]/);
+    await panel.getByRole('button', { name: '点选', exact: true }).click();
     const context = await attachCurrent();
     assert.equal(context.revision, 1);
     assert.equal(context.selection.drawingSha256, inspected.summary.sha256);
@@ -98,14 +111,26 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     assert.equal(shared.details.contexts[0].selection.drawingSha256, inspected.summary.sha256);
     const selected = (await execute('cad_inspect', { contextId: context.contextId, include: ['entities'] }, { canvasContextIds: [context.contextId] })).details.result;
     assert.deepEqual(selected.entities.map((entity) => entity.handle).sort(), [...context.selection.handles].sort());
+    const selectedText = JSON.parse((await snapshot()).entries.filter((entry) => entry.message?.toolName === 'cad_inspect').at(-1).message.content[0].text);
+    assert.equal(selectedText.summary.sha256, inspected.summary.sha256);
+    assert.deepEqual(selectedText.entities, selected.entities);
+    const modelResult = JSON.parse(providerInputs.at(-1).messages.filter((message) => message.role === 'tool').at(-1).content);
+    assert.equal(modelResult.summary.sha256, inspected.summary.sha256);
+    assert.deepEqual(modelResult.entities, selected.entities, 'actual Provider request includes query details');
     const edited = await execute('cad_draw', { kind: 'edit', contextId: context.contextId, operations: [...context.selection.handles.map((handle) => ({ op: 'setLayer', selector: { kind: 'handle', handle }, layer: 'REVIEW' })), { op: 'drawText', layer: 'REVIEW', position: [0, 5], text: '选区标注', height: 2.5 }] }, { canvasContextIds: [context.contextId] });
     assert.equal(edited.details.result.preview, undefined);
     const stale = await execute('cad_draw', { kind: 'edit', contextId: context.contextId, operations: [{ op: 'delete', selector: { kind: 'handle', handle: context.selection.handles[0] } }] }, { canvasContextIds: [context.contextId] }, session, true);
     assert.match(stale.details.error.code, /revision|context/);
     assert.equal(edited.details.result.drawing.revision, 2);
-    await panel.locator('.cad-canvas-badge', { hasText: 'r2' }).waitFor();
+    const receipt = JSON.parse(edited.content[0].text.split('\n').at(-1)).drawing;
+    assert.equal(receipt.sha256, edited.details.result.drawing.sha256);
+    const continued = await execute('cad_draw', { kind: 'edit', fileId: receipt.fileId, baseRevision: receipt.revision, expectedSha256: receipt.sha256, operations: [{ op: 'drawText', layer: 'LABELS', position: [0, 8], text: 'Continuous edit outside reference selection', height: 1.5 }] }, { canvasContextIds: [context.contextId] });
+    assert.equal(continued.details.result.drawing.revision, 3);
+    const currentView = (await execute('canvas_present', { adapterId: 'com.transportx.canvas.cad', viewId: 'cad:road', operation: 'focus' })).details.canvas;
+    assert.equal(currentView.revision, 3);
+    await panel.locator('.cad-canvas-badge', { hasText: 'r3' }).waitFor();
     await panel.locator('canvas').waitFor();
-    await page.screenshot({ path: path.join(output, 'cad-r2.png') });
+    await page.screenshot({ path: path.join(output, 'cad-r3.png') });
     const afterContext = await attachCurrent();
     assert.ok(Math.abs(afterContext.target.zoom / context.target.zoom - 1) < 1e-6, 'revision keeps actual camera zoom');
     assert.ok(afterContext.target.center.every((value, index) => Math.abs(value - context.target.center[index]) < 1e-6), 'revision keeps camera center');
@@ -113,8 +138,8 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     assert.equal(await panel.getByRole('checkbox', { name: '显示或隐藏图层 0', exact: true }).isChecked(), false);
     await panel.getByRole('button', { name: /^图层/ }).click();
 
-    await panel.locator('.cad-canvas-badge', { hasText: 'r2' }).waitFor();
-    await panel.locator('.cad-canvas-revision-notice', { hasText: 'r2' }).waitFor();
+    await panel.locator('.cad-canvas-badge', { hasText: 'r3' }).waitFor();
+    await panel.locator('.cad-canvas-revision-notice', { hasText: 'r3' }).waitFor();
     await canvas.click({ position: { x: 20, y: box.height - 60 } });
     assert.match(await panel.locator('.cad-canvas-selection').innerText(), /已选 0/);
     await execute('cad_draw', { ...request, fileId: 'second', title: 'Second CAD' });
@@ -122,9 +147,13 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     await panel.locator('.cad-canvas-badge', { hasText: 'r1' }).waitFor();
     await panel.locator('canvas').waitFor();
     await page.getByRole('tab', { name: 'road', exact: true }).click();
-    await panel.locator('.cad-canvas-badge', { hasText: 'r2' }).waitFor();
+    await panel.locator('.cad-canvas-badge', { hasText: 'r3' }).waitFor();
     await panel.locator('canvas').waitFor();
     assert.equal(await page.locator('.cad-canvas-host canvas').count(), 1);
+    const reloadResponse = page.waitForResponse((response) => response.url().includes('/api/file/raw?') && decodeURIComponent(response.url()).includes('road/r3.dxf'));
+    await panel.getByRole('button', { name: '刷新图纸', exact: true }).click();
+    await reloadResponse;
+    await until(() => panel.getByRole('button', { name: '点选', exact: true }).isEnabled(), 'refreshed CAD ready');
     // User and Agent reopen the same source without creating another revision.
     await page.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
     const openResponse = page.waitForResponse((response) => response.url().includes('/canvas-presentations') && response.request().method() === 'POST');
@@ -161,7 +190,7 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     await page.screenshot({ path: path.join(output, 'cad-other-session.png') });
     const verify = (await execute('cad_verify', { fileId: 'road' })).details.result;
     assert.equal(verify.ok, true);
-    return { firstRequestFive: true, optionalModuleSelected: true, nativePiAndApprovedContracts: true, dxfPngPdf: true, onDemandExportWithoutRevision: true, selectedEntityQuery: true, selectedAnnotation: true, staleSelectionRejected: true, userAndAgentOpenSameDrawing: true, crossSessionIsolation: true, queryExistingWrite: true, exactSelectionHash: true, revisionUpdate: true, cameraAndLayersPreserved: true, layerVisibility: true, blankClears: true, twoTabsOneHost: true, threeThemes: true, textEntity: '道路 ROAD-01', pageErrors: errors, screenshotDirectory: output };
+    return { firstRequestFive: true, optionalModuleSelected: true, nativePiAndApprovedContracts: true, dxfPngPdf: true, onDemandExportWithoutRevision: true, selectedEntityQuery: true, selectedAnnotation: true, staleSelectionRejected: true, continuousRevisionEdits: true, selectionIsReference: true, modelFacingInspectDetails: true, pointAndBoxSelection: true, refreshedDocument: true, userAndAgentOpenSameDrawing: true, crossSessionIsolation: true, queryExistingWrite: true, exactSelectionHash: true, revisionUpdate: true, cameraAndLayersPreserved: true, layerVisibility: true, blankClears: true, twoTabsOneHost: true, threeThemes: true, textEntity: '道路 ROAD-01', pageErrors: errors, screenshotDirectory: output };
   } catch (error) {
     await page.screenshot({ path: path.join(output, 'cad-failure.png') }).catch(() => {});
     fs.writeFileSync(path.join(output, 'cad-failure.html'), await page.content());

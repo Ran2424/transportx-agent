@@ -18,6 +18,13 @@ export async function feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryC
   await page.getByRole('status', { name: '' }).filter({ hasText: '自动重试 1/3' }).waitFor();
   await page.locator('.assistant-message', { hasText: '重试后的回复成功' }).waitFor();
   assert.equal(await page.getByText('自动重试 1/3', { exact: false }).count(), 0);
+  await composer.fill('反馈-output-limit');
+  await composer.press('Enter');
+  await page.locator('.model-feedback', { hasText: '本次输出达到模型上限' }).waitFor();
+  await page.getByRole('button', { name: '继续当前任务', exact: true }).click();
+  assert.match(await composer.inputValue(), /不重复执行已完成的修改/);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('.model-feedback', { hasText: '本次输出达到模型上限' }).waitFor();
   await composer.fill('反馈-cancelled');
   await composer.press('Enter');
   await page.locator('.model-feedback', { hasText: '已取消' }).waitFor();

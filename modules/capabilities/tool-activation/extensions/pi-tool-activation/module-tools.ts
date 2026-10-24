@@ -95,8 +95,8 @@ export function inspect(row: ModuleTools, active: Set<string>, toolName?: string
     ...summarize(row, active), ...(toolName && !tools.length ? { error: 'tool_not_in_module' } : {}),
     total: row.tools.length, truncated: !toolName && row.tools.length > 20,
     tools: tools.map((tool) => ({ name: tool.name, description: tool.description.slice(0, 500), ...(toolName ? {
-      parameters: Object.entries((tool.parameters as { properties?: Record<string, { type?: string; description?: string }> }).properties || {}).slice(0, 30).map(([name, value]) => ({ name, type: value.type || 'union', description: value.description?.slice(0, 160) })),
+      parameters: tool.parameters,
       result: row.module.contracts.find((contract) => contract.piName === tool.name)?.output || 'See tool result; no platform contract declared',
-    } : {}) })), skillEntries: row.module.skills,
+    } : {}) })), skillEntries: row.module.skills, guide: 'Enable the module to receive its tool schemas in the next model request. Inspect a named tool for its complete schema. Read only task-relevant skill references; do not read source code or contract files to discover parameters.',
   };
 }

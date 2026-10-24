@@ -293,8 +293,8 @@ export const CadVerifySchema = Type.Object({
 export const CadExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), operationId: Type.Optional(Type.String({ pattern: '^cad_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
 
 export const coreToolContracts = [
-  { moduleId: 'com.transportx.cad', toolId: 'cad.inspect', piName: 'cad_inspect', contractVersion: '1.0.0', semanticVersion: 'cad-inspect-v2', input: CadInspectSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-inspect' } },
-  { moduleId: 'com.transportx.cad', toolId: 'cad.draw', piName: 'cad_draw', contractVersion: '1.0.0', semanticVersion: 'cad-draw-v3', input: CadDrawSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-draw' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.inspect', piName: 'cad_inspect', contractVersion: '1.0.0', semanticVersion: 'cad-inspect-v3', input: CadInspectSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-inspect' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.draw', piName: 'cad_draw', contractVersion: '1.0.0', semanticVersion: 'cad-draw-v4', input: CadDrawSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-draw' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v2', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.execution', piName: 'cad_execution', contractVersion: '1.0.0', semanticVersion: 'cad-execution-v2', input: CadExecutionSchema, output: { protocol: 'transportx-cad-execution', version: 1, detailsKind: 'tau-cad-execution' } },
 

@@ -42,7 +42,7 @@ export default function canvasExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'canvas_inspect_context',
     label: '读取已附加的 Canvas 上下文',
-    description: 'Read only Canvas context IDs explicitly attached to the current user turn.',
+    description: 'Read Canvas context IDs explicitly attached to the current user turn. These snapshots guide interpretation; selections do not restrict the Agent edit scope. Use current domain revision/checksum for subsequent edits.',
     parameters: inspectContract.input as unknown as TSchema,
     async execute(toolCallId, rawParams, signal) {
       const params = rawParams as Record<string, unknown>;

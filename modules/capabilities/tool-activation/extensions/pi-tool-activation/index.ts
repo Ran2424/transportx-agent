@@ -10,7 +10,7 @@ export default function toolActivation(pi: ExtensionAPI) {
   pi.on('session_tree', (_event, ctx) => state.restore(ctx));
   pi.registerTool({
     name: 'manage_capabilities', label: 'Manage capabilities',
-    description: 'Discover/search modules in this session, inspect their tools and skills, enable all tools of a module, or query status. Read-only actions do not enable tools. Known module IDs can be enabled directly; activation does not execute business operations.',
+    description: 'Discover/search modules in this session, inspect their tools and skills, enable all tools of a module, or query status. Read-only actions do not enable tools. Enable known module IDs directly to receive tool schemas on the next model request. Inspect a named tool for its full schema. Read task-relevant skill references only; module source and contract files are not needed for parameter discovery. Activation does not execute business operations.',
     parameters: ManageCapabilitiesSchema,
     async execute(_id, input, _signal, _update, ctx) {
       const { action, moduleId, toolName, query } = input;
@@ -22,7 +22,10 @@ export default function toolActivation(pi: ExtensionAPI) {
       if (moduleId && !row) result = { moduleId, status: 'not_in_session_plan' };
       else if (action === 'discover') result = discover(rows, active, query);
       else if (action === 'inspect') result = inspect(row!, active, toolName);
-      else if (action === 'enable') result = { moduleId: row!.module.id, moduleVersion: row!.module.version, ...state.enable(row!, ctx) };
+      else if (action === 'enable') {
+        const enabled = state.enable(row!, ctx);
+        result = { ...summarize(row!, new Set(pi.getActiveTools())), ...(enabled.status === 'enabled' ? inspect(row!, new Set(pi.getActiveTools())) : {}), ...enabled };
+      }
       else {
         const selected = row ? [row] : rows.slice(0, 20);
         const owned = new Set(rows.flatMap((item) => item.tools.map((tool) => tool.name)));

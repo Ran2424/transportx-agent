@@ -7,6 +7,7 @@ export type AddLocalModelInput = LocalModelConnectionInput & {
   modelId: string;
   name?: string;
   contextWindow?: number;
+  maxTokens?: number;
   reasoning?: boolean;
   images?: boolean;
 };

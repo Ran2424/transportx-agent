@@ -4,7 +4,7 @@
   "toolId": "cad.draw",
   "piName": "cad_draw",
   "contractVersion": "1.0.0",
-  "semanticVersion": "cad-draw-v3",
+  "semanticVersion": "cad-draw-v4",
   "input": {
     "type": "object",
     "required": [

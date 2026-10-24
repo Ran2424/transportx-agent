@@ -67,6 +67,7 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
         const prompt = JSON.parse(body);
         assert.equal(request.url, '/v1/chat/completions');
         assert.equal(prompt.model, 'traffic-local');
+        assert.equal(prompt.max_tokens ?? prompt.max_completion_tokens, 32768, 'configured output budget reaches the actual Provider request');
         response.writeHead(200, { 'Content-Type': 'text/event-stream' });
         const chunk = { id: 'local-reply', object: 'chat.completion.chunk', created: 1, model: prompt.model, choices: [{ index: 0, delta: { role: 'assistant', content: 'local reply' }, finish_reason: null }] };
         response.end(`data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
@@ -93,7 +94,7 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
       assert.equal((await discoverLocalModels({ baseUrl, apiKey: 'local-secret' })).models.length, 1);
       catalog = 'models';
 
-      const added = await addLocalPiModel({ baseUrl, modelId: 'traffic-local', contextWindow: 8192 }, agentDir);
+      const added = await addLocalPiModel({ baseUrl, modelId: 'traffic-local', contextWindow: 1_000_000, maxTokens: 32768 }, agentDir);
       assert.match(added.provider, /^local-[a-f0-9]{12}$/);
       assert.deepEqual(JSON.parse(fs.readFileSync(path.join(agentDir, 'auth.json'), 'utf8')), {}, 'keyless access stores no user credential');
       assert.equal((await listAvailablePiModels(agentDir)).find((model: any) => model.provider === added.provider)?.id, 'traffic-local');
@@ -102,10 +103,14 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
         const runtime = await ModelRuntime.create({ authPath: path.join(agentDir, 'auth.json'), modelsPath: path.join(agentDir, 'models.json'), allowModelNetwork: false });
         const model = runtime.getModel(added.provider, 'traffic-local');
         assert.ok(model);
-        const reply = await runtime.completeSimple(model!, { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] });
+        assert.equal(model!.contextWindow, 1_000_000);
+        assert.equal(model!.maxTokens, 32768);
+        const reply = await runtime.completeSimple(model!, { messages: [{ role: 'user', content: 'history '.repeat(20_000), timestamp: Date.now() }] });
         assert.equal(reply.stopReason, 'stop');
         assert.deepEqual(reply.content, [{ type: 'text', text: 'local reply' }]);
       };
+      await assert.rejects(updatePiModel({ provider: added.provider, modelId: 'traffic-local', contextWindow: 1000, maxTokens: 1001 }, agentDir), /最大输出/);
+      await assert.rejects(updatePiModel({ provider: added.provider, modelId: 'traffic-local', maxTokens: -1 }, agentDir), /最大输出/);
       await send();
       assert.equal(requestAuth, 'Bearer transportx-local');
       const sameService = await addLocalPiModel({ baseUrl: `${baseUrl}/v1/`, modelId: 'second-model' }, agentDir);
