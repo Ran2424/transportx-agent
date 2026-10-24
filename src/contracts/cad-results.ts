@@ -1,3 +1,4 @@
+import { parseCadGeometry } from './cad-geometry.ts';
 import { asInteger, asRecord, asString } from './common.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 import { parseCanvasPresentationStructured, type CanvasPresentationV1 } from './canvas.ts';
@@ -268,7 +269,9 @@ export function parseEntities(value: unknown, path: string, diagnostics: Contrac
       diagnostics.push(diagnostic({ code: 'invalid_type', path: `${path}[${index}]`, message: 'Invalid CAD entity record.' }));
       return;
     }
-    entities.push({ handle, type: type as CadEntityType, layer, ...(bounds ? { bounds } : {}), ...(text ? { text } : {}) });
+    const geometry = record.geometry === undefined ? undefined : parseCadGeometry(record.geometry, `${path}[${index}].geometry`, diagnostics);
+    if (record.geometryTruncated !== undefined && typeof record.geometryTruncated !== 'boolean') diagnostics.push(diagnostic({ code: 'invalid_type', path, message: 'geometryTruncated must be boolean.' }));
+    entities.push({ ...(geometry ? { geometry } : {}), ...(record.geometryTruncated === true ? { geometryTruncated: true } : {}), handle, type: type as CadEntityType, layer, ...(bounds ? { bounds } : {}), ...(text ? { text } : {}) });
   });
   return entities.length === value.length ? entities : null;
 }

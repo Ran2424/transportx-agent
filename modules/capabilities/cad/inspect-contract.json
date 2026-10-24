@@ -4,7 +4,7 @@
   "toolId": "cad.inspect",
   "piName": "cad_inspect",
   "contractVersion": "1.0.0",
-  "semanticVersion": "cad-inspect-v3",
+  "semanticVersion": "cad-inspect-v4",
   "input": {
     "type": "object",
     "properties": {
@@ -52,10 +52,14 @@
             {
               "type": "string",
               "const": "textStyles"
+            },
+            {
+              "type": "string",
+              "const": "geometry"
             }
           ]
         },
-        "maxItems": 7
+        "maxItems": 8
       },
       "selector": {
         "anyOf": [

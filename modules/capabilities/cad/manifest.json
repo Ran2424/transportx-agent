@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.cad",
   "name": "CAD Drawing",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [
@@ -30,7 +30,7 @@
     "locales": {
       "zh-CN": {
         "name": "CAD 制图",
-        "description": "用户与 Agent 共同查看 2D DXF，选择实体后由 Agent 查询并提交图纸修改。",
+        "description": "通用二维 CAD 协作工作空间：接入 Python 或其他引擎生成的 DXF，持续修订、观察和展示同一份图纸。",
         "features": [
           "工作区与 Agent 复用同一 CAD 画布",
           "选区提供参考，Agent 按版本连续修改并保留历史",
@@ -39,7 +39,7 @@
       },
       "en-US": {
         "name": "CAD Drawing",
-        "description": "View 2D DXF drawings together, select entities and let the Agent commit controlled revisions.",
+        "description": "A general-purpose 2D CAD workspace for Python-generated DXF and native edits, with shared views, observations and revisioned commits.",
         "features": [
           "Shared CAD views from workspace and Agent",
           "Reference selections and continuous revisioned Agent edits",

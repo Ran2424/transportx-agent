@@ -56,10 +56,10 @@ export default function cadExtension(pi: ExtensionAPI) {
       name: contract.piName,
       label: `CAD ${action}`,
       description: action === 'draw'
-        ? 'Create/import/edit a revisioned 2D DXF. from-geojson requires sourcePath, sourceCrs, target and layerMap. edit uses contextId to target an attached revision, or fileId/baseRevision/expectedSha256. A selection is reference information, not an edit boundary. After each commit, continue with the returned drawing.fileId, drawing.revision as baseRevision and drawing.sha256; do not reuse a stale contextId. exportPreview is opt-in. move/copy use drawing axes and units, not curve offsets. Bulk edits dryRun first. Lost responses must be queried with cad_execution, never automatically repeated.'
+        ? 'Create/import/edit a general-purpose revisioned 2D DXF. Python and other engines may generate DXF candidates: import the first draft, then commit-candidate with the same fileId/baseRevision/expectedSha256 and candidateMode=rebuild or based-on-current. Both modes require re-querying old entity references; a producer declaration does not guarantee handle identity. Successful commits automatically present/update the same Canvas view; do not re-import to show progress. from-geojson requires sourcePath, sourceCrs, target and layerMap. edit uses contextId to target an attached revision, or fileId/baseRevision/expectedSha256. A selection is reference information, not an edit boundary. After each commit, continue with the returned drawing.fileId, drawing.revision as baseRevision and drawing.sha256; do not reuse a stale contextId. exportPreview is opt-in. move/copy use drawing axes and units, not curve offsets. Bulk edits dryRun first. Lost responses must be queried with cad_execution, never automatically repeated.'
         : action === 'execution' ? 'Query or request cancellation of an existing CAD write. Supply exactly one operationId or lookupToolCallId. Never draws or retries. Unknown is not proof of no commit.'
-        : action === 'inspect' ? 'Inspect DXF revision, full sha256, units, layers and requested entities with pagination. contextId defaults to selected entities when nonempty; an explicit selector overrides this focus. Use fileId for the whole current drawing. The result content contains the requested details.'
-        : 'Reopen DXF for basic geometry checks; optionally exportPreview=true produces PNG/PDF without a new revision. Passing is not traffic engineering design approval.',
+        : action === 'inspect' ? 'Inspect DXF revision, full sha256, units, layers and requested entities with pagination. include=["geometry"] returns bounded precise geometry; geometryTruncated means query a narrower set. contextId defaults to selected entities when nonempty; an explicit selector overrides this focus. Use fileId for the whole current drawing. The result content contains the requested details.'
+        : 'Reopen DXF for basic geometry checks; optionally exportPreview=true with previewOptions bounds/layers/width/height produces a whole or local PNG/PDF without a new revision. Passing does not establish visual conformity or design approval.',
       parameters: contract.input as unknown as TSchema,
       async execute(toolCallId, params, signal) {
         const call: { dispatched: boolean; mutation: boolean; result?: ReturnType<typeof failure> | { content: { type: 'text'; text: string }[]; details: ToolResult } } = { dispatched: false, mutation: action === 'draw' };
@@ -75,7 +75,9 @@ export default function cadExtension(pi: ExtensionAPI) {
             call.result = failure(toolCallId, 'cad_draw_failed', 'validation', messages(result) || 'CAD validation failed.', false);
             return call.result;
           }
-          const text = action === 'draw' ? `${drawText(result)}\n${JSON.stringify({ drawing: result.drawing, plan: result.plan, operationId: payload.operationId })}` : JSON.stringify(result);
+          const text = action === 'draw' ? `${drawText(result)}\n${JSON.stringify({ drawing: result.drawing, plan: result.plan, operationId: payload.operationId,
+            presentation: result.canvas ? { viewId: (result.canvas as { viewId?: string }).viewId, status: 'accepted', browserRenderConfirmed: false } : undefined,
+            references: (params as { kind?: string }).kind === 'commit-candidate' ? { requeryRequired: true, candidateMode: (params as { candidateMode?: string }).candidateMode } : undefined })}` : JSON.stringify(result);
           call.result = { content: [{ type: 'text', text }], details: { kind: contract.output.detailsKind, result, ...(action === 'execution' ? payload : {}), operationId: payload.operationId, ...(action === 'draw' && result.canvas ? { canvas: result.canvas } : {}) } };
         } catch (error) {
           const problem = error as Error & { code?: string; phase?: string; commit?: string };

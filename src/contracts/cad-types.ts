@@ -85,6 +85,18 @@ export type CadDrawRequestV1 =
   | {
       protocol: typeof CAD_PROTOCOL;
       version: typeof CAD_VERSION;
+      kind: 'commit-candidate';
+      fileId: string;
+      sourcePath: string;
+      baseRevision: number;
+      expectedSha256: string;
+      candidateMode: 'rebuild' | 'based-on-current';
+      dryRun: boolean;
+      exportPreview?: boolean;
+    }
+  | {
+      protocol: typeof CAD_PROTOCOL;
+      version: typeof CAD_VERSION;
       kind: 'import';
       sourcePath: string;
       fileId?: string;
@@ -99,10 +111,17 @@ export type CadInspectRequestV1 = {
   version: typeof CAD_VERSION;
   fileId?: string;
   path?: string;
-  include: Array<'summary' | 'layers' | 'entities' | 'blocks' | 'units' | 'extents' | 'textStyles'>;
+  include: Array<'summary' | 'layers' | 'entities' | 'blocks' | 'units' | 'extents' | 'textStyles' | 'geometry'>;
   selector?: CadSelector;
   limit: number;
   cursor?: string;
+};
+
+export type CadPreviewOptions = {
+  bounds?: { min: CadPoint2; max: CadPoint2 };
+  layers?: string[];
+  width?: number;
+  height?: number;
 };
 
 export type CadVerifyRequestV1 = {
@@ -113,6 +132,7 @@ export type CadVerifyRequestV1 = {
   revision?: number;
   policy: 'basic' | 'traffic-v1' | 'strict';
   exportPreview?: boolean;
+  previewOptions?: CadPreviewOptions;
 };
 
 export type CadDiagnostic = {
@@ -186,6 +206,8 @@ export type CadInspectResultV1 = {
     layer: string;
     bounds?: { min: CadPoint2; max: CadPoint2 };
     text?: string;
+    geometry?: import('./cad-geometry.ts').CadEntityGeometry;
+    geometryTruncated?: boolean;
   }>;
   blocks?: Array<{ name: string; entityCount: number }>;
   textStyles?: Array<{ name: string; font: string }>;

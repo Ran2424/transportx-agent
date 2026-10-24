@@ -75,6 +75,17 @@ export function jobArtifact(jobDir: string, name: string): string {
 }
 
 export class CadDrawingStore {
+  findSource(session: PiRpcSession, sourcePath: string): CadDrawingManifestV1 | null {
+    const root = safePath(session, '.tau/cad-drawings', [], false);
+    if (!fs.existsSync(root)) return null;
+    const matches = fs.readdirSync(root, { withFileTypes: true })
+      .filter((entry: import('node:fs').Dirent) => entry.isDirectory())
+      .map((entry: import('node:fs').Dirent) => this.readManifest(session, entry.name))
+      .filter((manifest: CadDrawingManifestV1 | null): manifest is CadDrawingManifestV1 => !!manifest?.sourceRefs?.some((source) => source.path === sourcePath));
+    if (matches.length > 1) throw serviceError('Multiple drawings reference this source. Open a managed revision path or the returned viewId.', 409, 'cad.source_ambiguous');
+    return matches[0] ?? null;
+  }
+
   registerSnapshot(session: PiRpcSession, fileId: string, sourcePath: string, summary: CadInspectResultV1['summary'], title: unknown): CadDrawingManifestV1 {
     const absolute = safePath(session, sourcePath, ['.dxf']);
     const sha256 = sha256File(absolute);

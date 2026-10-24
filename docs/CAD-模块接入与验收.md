@@ -1,8 +1,18 @@
 # CAD 模块接入与开发验收
 
+## 1.4.0 通用协作闭环
+
+CAD 是通用二维图纸工作空间，Python、原生操作和其他几何引擎均可创作。首次候选导入 r1，后续 `commit-candidate` 携带同一 fileId、baseRevision、expectedSha256、sourcePath、candidateMode，自动更新同一 Canvas。候选单位须与原图一致；基础或候选执行中变化则不提交。整图重建和基于当前图纸修改均要求重新查询实体引用，不通过生产者声明保证句柄身份。
+
+`cad_inspect(include=["geometry"])` 返回按需、有界几何；`cad_verify(exportPreview=true, previewOptions=...)` 提供局部/指定图层/指定分辨率观察，回执尺寸与实际 PNG 一致，不新增修订。几何检查提供重复和无效直线闭合边界的定位句柄，外部参照按实际块定义检测；曲线拓扑未检查明确报告。视觉是否符合任务意图需要观察，不由 DXF 结构校验代替。
+
+开发在项目主目录进行。内置代码随当前应用根加载，旧 worktree 路径在会话恢复时重定位；不会迁移用户安装模块或图纸文件。已对既有会话只读加载验证：CAD Skill 指向本项目，全部内置入口不再引用旧 worktree，原计划文件未改写。
+
+回归包括 Python 设备布置候选 → 原生编辑 → 局部观察的非交通闭环，以及既有交通/选区、冲突、取消和结果未知恢复；真实 Pi/Host/Chrome 冒烟的模型工具选择由测试脚本控制，不视为真实 LLM 自主创作能力评测。Windows 与安装包验收后置。
+
 ## 范围
 
-首版支持用户与 Agent 共同查看 2D DXF：用户选区并显式附加，Agent 查询、修改已有实体或新增标注，Host 提交新修订后更新同一标签。没有前端直接绘制/保存、DWG、道路等距偏移或工程审定能力。Windows 与安装包验收后置。
+支持用户与 Agent 共同查看和迭代 2D DXF：用户选区并显式附加，Agent 查询、原生修改或提交外部生成的候选，Host 提交新修订后更新同一标签。没有前端直接绘制/保存、DWG、道路等距偏移或工程审定能力。Windows 与安装包验收后置。
 
 ## 领域边界
 
@@ -18,7 +28,7 @@
 
 ## 数据流与版本
 
-1. 工作区或 canvas_present 打开 DXF。首次打开保留原始字节为受管 r1，不重写实体；相同源路径映射稳定 fileId。之后重新打开显示该图纸当前版本，不生成修订。源文件在快照后被外部改变时，要求显式作为另一图纸导入。
+1. 工作区或 canvas_present 打开 DXF。首次打开保留原始字节为受管 r1，不重写实体；相同源路径映射稳定 fileId。之后重新打开显示该图纸当前版本，不生成修订。源文件在快照后被外部改变时，提示用 commit-candidate 提交到当前图纸；需要独立成果时也可显式导入另一图纸。
 2. 用户选区并附加 Canvas，Host 根据受控资源保存哈希和内容 revision。连续鼠标、缩放和图层显示不写入对话。
 3. Agent 读取本轮 Context。cad_inspect(contextId) 只分页查询选中实体；cad_draw(kind=edit, contextId, operations) 由 Host 解析冻结的基础版本。
 4. 附加选区是参考信息，不限定 Agent 编辑范围。按任务可使用 handle、图层、区域 selector。提交回执通过模型可读 content 返回完整 drawing.fileId/revision/sha256；后续显式传 fileId、baseRevision、expectedSha256，可在原选区仍绑定 r1 时继续 r2 → r3。旧 contextId 作为固定版本目标时仍拒绝过期写入。
@@ -30,7 +40,7 @@
 ## 克制实现
 
 - 提交仅强制重新打开、审计与数量上限；完整几何检查由 cad_verify 按需执行，默认 basic，traffic-v1 显式应用交通图层规则。
-- 修改不默认生成 PNG/PDF。cad_verify(exportPreview=true) 对已有版本导出，缓存路径按 DXF 哈希确定，不产生新图纸修订；新图也可显式 exportPreview。
+- 修改不默认生成 PNG/PDF。cad_verify(exportPreview=true) 对已有版本导出，缓存路径按 DXF 哈希与观察参数确定，不产生新图纸修订；新图也可显式 exportPreview。
 - manifest 是图纸谱系，Pi JSONL 是对话历史，执行回执用于重复保护，临时 commit journal 只用于中断确认，完成后清理。没有通用事务/任务/事件框架。
 - Skill 首页保留入口、流程、必要约束和参考索引，编辑/转换/导出/交通/运行时细节按需加载。工具不包含操作系统分支；字体从实际资源发现，平台入口仍由 platform-profile.mjs 管理。
 

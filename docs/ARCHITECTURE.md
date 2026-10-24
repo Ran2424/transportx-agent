@@ -151,7 +151,7 @@ Prompt 按顺序装配：`src/server/prompts/PI_SYSTEM.md` 定义通用基础行
 
 基础行为要求按用户当前使用的语言回答；工作状态、计划、进度、阻塞说明和结论写在普通正文中，思考过程不承担用户沟通。
 
-新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module 版本、入口路径、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务沿用该计划中的模块目录与入口，允许用户修改模块清单、Skill、Extension 和 Prompt 内容，不进行这些文件的哈希比对，也不要求当前 manifest 的版本与计划记录相等。新计划不再记录这些内容哈希，旧 v3 计划中的对应字段兼容忽略；模块目录、清单和入口文件缺失仍报错。计划固定选择与路径，不保证可编辑代码的逐字复现。Native Runtime 与声明了完整性清单的资产继续执行各自的校验。
+新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module 版本、入口路径、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务沿用该计划中的模块目录与入口，允许用户修改模块清单、Skill、Extension 和 Prompt 内容，不进行这些文件的哈希比对，也不要求当前 manifest 的版本与计划记录相等。新计划不再记录这些内容哈希，旧 v3 计划中的对应字段兼容忽略；模块目录、清单和入口文件缺失仍报错。计划固定选择与路径，不保证可编辑代码的逐字复现。内置模块的代码根目录跟随当前应用位置，恢复时将入口从旧根相对映射到当前可信内置模块根，不再绑定开发 worktree；安装模块和资产保持原路径与校验规则。Native Runtime 与声明了完整性清单的资产继续执行各自的校验。
 
 恢复时优先读取 `.tau/resolved-session-plan.v3.json`，否则读取 `.tau/resolved-session-plan.json`。缺少计划或 schemaVersion 2 的旧计划需要用户选择使用当前配置，确认后另存 v3 计划；已有有效 v3 计划不需要这项确认。退役内置 Video 的目录缺失时，仅在新版 Video Capability 已安装并启用后映射到该包；已移除的内置 Timing 条目允许跳过。Citation 注册表升级属于独立的数据迁移，不要求重建会话计划，见第 4.2 节。
 
@@ -536,3 +536,7 @@ Module Authoring 1.2.0 提供 `tau_module_package`：inspect 只读取并验证�
 CAD 执行确认位于用户目录 `executions/cad/<owner-hash>/`；Owner 复用受管 Pi JSONL 的真实路径、header ID 和工作目录核验。相同 toolCallId 只读取既有确认，不重复派发。`cad_execution` 查询或请求取消；取消和响应丢失都不证明未提交。作业 journal 在文件移动前写入，manifest 是提交点；查询核验 journal、请求和产物哈希，恢复已提交结果或清理可确认的本次未提交文件；无法确认时保持 unknown，不覆盖文件、不自动重绘。
 
 `cad/<fileId>/rN.dxf` 只有被有效 manifest 记录才是已提交 revision；预览可重建。编辑校验基础 revision、expectedSha256 和输入执行前后哈希。Canvas Context 在服务端绑定呈现 payload 的 DXF 哈希，contextId 只能引用本轮附加的固定快照，选区是参考信息，不是编辑范围边界；显式查询 selector 可覆盖选区焦点。提交回执把完整修订号与哈希交给模型，后续可沿 fileId/baseRevision/expectedSha256 连续编辑；浏览器加载也核验文件字节。图纸编辑不自动回写 GeoJSON、重算缓冲或同步相关实体；dx/dy 沿图纸轴使用图纸单位。前端 `features/cad` 管理 Workspace 与 SDK 对接，平台 Renderer 仅转接；SDK 激活串行，缓存键含会话、图纸、revision 和哈希，显示状态不写回 DXF。普通修改只做结构审计，不自动渲染 PNG/PDF；`cad_verify(exportPreview=true)` 可导出现有图纸而不新增修订。通用检查默认 basic；traffic-v1 图层规则作为显式策略文件提供。Skill 首页只保留流程和硬约束，编辑、转换、导出、交通规则与运行时参考按需读取。字体从实际可用资源发现，不按 OS 猜测；OS 入口仍由平台 profile 维护。详见 [CAD 模块接入与开发验收](CAD-模块接入与验收.md)。
+
+CAD 工作空间不限制创作引擎或领域。首次候选 DXF 用 import，Python/其他引擎重新生成后用 commit-candidate 提交至同一 fileId，并携带基础 revision/hash；候选须位于受管 cad/ 之外，执行前后验证候选与基础内容，单位必须一致。candidateMode 区分 rebuild / based-on-current 的生产者声明，不保证 handle 身份，旧 Context 仍绑定旧版本，后续必须查询当前引用。候选替换计数表示整文件置换，不是语义实体差异。首次草图、主要内容和细节按有意义阶段提交，提交自动更新同一 Canvas，工具正文回执给出 viewId 与 accepted 状态，不承诺浏览器渲染完成。
+
+查询 include=geometry 按页返回实体结构，折线顶点总预算 10,000，超过时标记 geometryTruncated，不返回伪完整几何。cad_verify 的 previewOptions 支持图纸区域、图层与 256..4096 像素尺寸；观察不修改 DXF 或用户图层状态，缓存键绑定内容与观察参数。校验与视觉观察分工：闭合直线多段线检查有效性，曲线拓扑未检查会报告；诊断提供有界实体句柄以继续修正，不把检查通过等同于设计符合业务要求。

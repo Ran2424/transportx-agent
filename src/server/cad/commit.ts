@@ -77,7 +77,7 @@ export class CadCommit {
   ): CadDrawResultV1 {
     const drawing = result.drawing;
     if (!drawing) throw serviceError('CAD engine returned no drawing.', 502, 'cad.engine_result');
-    const expectedRevision = request.kind === 'edit' ? request.baseRevision + 1 : 1;
+    const expectedRevision = request.kind === 'edit' || request.kind === 'commit-candidate' ? request.baseRevision + 1 : 1;
     if (drawing.fileId !== fileId || drawing.revision !== expectedRevision) {
       throw serviceError('CAD engine returned an unexpected fileId or revision.', 502, 'cad.engine_result');
     }
@@ -121,6 +121,10 @@ export class CadCommit {
     }];
     const target = requestTarget(request);
     const sourceCrs = request.kind === 'from-geojson' ? request.sourceCrs : previous?.sourceCrs;
+    const sources = request.kind === 'commit-candidate'
+      ? [...new Map([...(previous?.sourceRefs || []), ...(result.sourceRefs || [])].map((source) => [source.path, source])).values()]
+      : result.sourceRefs || previous?.sourceRefs;
+    const sourceRefs = sources && sources.length > 16 ? [sources[0], ...sources.slice(-15)] : sources;
     const manifest: CadDrawingManifestV1 = {
       protocol: CAD_DRAWING_PROTOCOL,
       version: CAD_DRAWING_VERSION,
@@ -132,7 +136,7 @@ export class CadCommit {
       units: drawing.units,
       ...(sourceCrs ? { sourceCrs } : {}),
       ...(target ? { target } : previous?.target ? { target: previous.target } : {}),
-      ...(result.sourceRefs ? { sourceRefs: result.sourceRefs } : previous?.sourceRefs ? { sourceRefs: previous.sourceRefs } : {}),
+      ...(sourceRefs ? { sourceRefs } : {}),
       createdAt: previous?.createdAt || now,
       updatedAt: now,
     };

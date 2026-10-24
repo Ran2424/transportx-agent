@@ -1,3 +1,4 @@
+import { parsePreviewOptions } from './cad-preview.ts';
 import { asRecord, asString, type JsonRecord } from './common.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 
@@ -42,7 +43,7 @@ export const INSPECT_KEYS = new Set([
   'protocol', 'version', 'fileId', 'path', 'include', 'selector', 'limit', 'cursor',
 ]);
 export const VERIFY_KEYS = new Set([
-  'protocol', 'version', 'fileId', 'path', 'revision', 'policy', 'exportPreview',
+  'protocol', 'version', 'fileId', 'path', 'revision', 'policy', 'exportPreview', 'previewOptions',
 ]);
 export function parseInputRef(record: JsonRecord, diagnostics: ContractDiagnostic[], extensions: string[]): { fileId?: string; path?: string } | null {
   const hasFileId = record.fileId !== undefined;
@@ -67,8 +68,8 @@ export function parseCadDrawRequestStructured(value: unknown, diagnostics: Contr
   }
   checkProtocol(record, CAD_PROTOCOL, CAD_VERSION, 'cad', diagnostics);
   const kind = asString(record.kind, 40);
-  if (kind !== 'from-geojson' && kind !== 'edit' && kind !== 'import') {
-    diagnostics.push(diagnostic({ code: 'unsupported_value', path: 'cad.kind', message: 'kind must be from-geojson, edit or import.' }));
+  if (kind !== 'from-geojson' && kind !== 'edit' && kind !== 'import' && kind !== 'commit-candidate') {
+    diagnostics.push(diagnostic({ code: 'unsupported_value', path: 'cad.kind', message: 'kind must be from-geojson, edit, import or commit-candidate.' }));
     return { ok: false, value: null, diagnostics };
   }
 
@@ -109,6 +110,20 @@ export function parseCadDrawRequestStructured(value: unknown, diagnostics: Contr
       dryRun,
       ...(exportPreview !== undefined ? { exportPreview } : {}),
     }, diagnostics);
+  }
+
+  if (kind === 'commit-candidate') {
+    rejectUnknown(record, new Set([...COMMON_REQUEST_KEYS, 'fileId', 'sourcePath', 'baseRevision', 'expectedSha256', 'candidateMode', 'dryRun', 'exportPreview']), 'cad', diagnostics);
+    const fileId = parseFileId(record.fileId, 'cad.fileId', diagnostics);
+    const sourcePath = parsePath(record.sourcePath, 'cad.sourcePath', diagnostics, ['.dxf']);
+    const baseRevision = requiredInteger(record, 'baseRevision', 'cad', diagnostics, 1);
+    const expectedSha256 = parseSha256(record.expectedSha256, 'cad.expectedSha256', diagnostics);
+    const candidateMode = record.candidateMode;
+    if (candidateMode !== 'rebuild' && candidateMode !== 'based-on-current') diagnostics.push(diagnostic({ code: 'unsupported_value', path: 'cad.candidateMode', message: 'Declare rebuild or based-on-current. Old contexts must be queried again in either mode.' }));
+    const dryRun = optionalBoolean(record, 'dryRun', 'cad', diagnostics) ?? false;
+    const exportPreview = optionalBoolean(record, 'exportPreview', 'cad', diagnostics);
+    if (!fileId || !sourcePath || !expectedSha256 || baseRevision === null || (candidateMode !== 'rebuild' && candidateMode !== 'based-on-current')) return { ok: false, value: null, diagnostics };
+    return finish({ protocol: CAD_PROTOCOL, version: CAD_VERSION, kind, fileId, sourcePath, baseRevision, expectedSha256, candidateMode, dryRun, ...(exportPreview !== undefined ? { exportPreview } : {}) }, diagnostics);
   }
 
   if (kind === 'edit') {
@@ -168,7 +183,7 @@ export function parseCadInspectRequestStructured(value: unknown, diagnostics: Co
   checkProtocol(record, CAD_PROTOCOL, CAD_VERSION, 'cad', diagnostics);
   rejectUnknown(record, INSPECT_KEYS, 'cad', diagnostics);
   const reference = parseInputRef(record, diagnostics, ['.dxf']);
-  const includeValues = ['summary', 'layers', 'entities', 'blocks', 'units', 'extents', 'textStyles'] as const;
+  const includeValues = ['summary', 'layers', 'entities', 'blocks', 'units', 'extents', 'textStyles', 'geometry'] as const;
   const include = record.include === undefined
     ? ['summary'] as CadInspectRequestV1['include']
     : parseStringList(record.include, 'cad.include', diagnostics, includeValues.length, (item, itemPath) => {
@@ -208,6 +223,8 @@ export function parseCadVerifyRequestStructured(value: unknown, diagnostics: Con
   const reference = parseInputRef(record, diagnostics, ['.dxf']);
   const revision = optionalInteger(record, 'revision', 'cad', diagnostics, 0);
   const exportPreview = optionalBoolean(record, 'exportPreview', 'cad', diagnostics);
+  const previewOptions = record.previewOptions === undefined ? undefined : parsePreviewOptions(record.previewOptions, diagnostics);
+  if (record.previewOptions !== undefined && record.exportPreview !== true) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'cad.previewOptions', message: 'previewOptions requires exportPreview=true.' }));
   const policy = record.policy === undefined ? 'basic' : record.policy;
   if (policy !== 'basic' && policy !== 'traffic-v1' && policy !== 'strict') {
     diagnostics.push(diagnostic({ code: 'unsupported_value', path: 'cad.policy', message: 'policy must be basic, traffic-v1 or strict.' }));
@@ -222,6 +239,7 @@ export function parseCadVerifyRequestStructured(value: unknown, diagnostics: Con
     ...reference,
     ...(revision !== undefined ? { revision } : {}),
     policy,
+    ...(previewOptions ? { previewOptions } : {}),
     ...(exportPreview !== undefined ? { exportPreview } : {}),
   }, diagnostics);
 }

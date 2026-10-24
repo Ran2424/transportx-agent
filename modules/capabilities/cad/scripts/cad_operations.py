@@ -64,9 +64,9 @@ def apply_operations(doc: Any, operations: list[dict[str, Any]]) -> dict[str, An
             elif op == "copy":
                 count = int(operation.get("count", 1))
                 for entity in selected:
-                    for _ in range(count):
+                    for index in range(1, count + 1):
                         copied = entity.copy()
-                        copied.translate(float(operation["dx"]), float(operation["dy"]), 0)
+                        copied.translate(index * float(operation["dx"]), index * float(operation["dy"]), 0)
                         msp.add_entity(copied)
                         would_create += 1
             elif op == "delete":
@@ -92,7 +92,7 @@ def apply_operations(doc: Any, operations: list[dict[str, Any]]) -> dict[str, An
             msp.add_text(
                 operation["text"],
                 height=float(operation["height"]),
-                dxfattribs={"layer": layer, "style": text_style(doc)},
+                dxfattribs={"layer": layer, "style": text_style(doc), "rotation": float(operation.get("rotationDeg", 0))},
             ).set_placement(tuple(operation["position"]))
             would_create += 1
         elif op == "drawHatch":
@@ -104,7 +104,10 @@ def apply_operations(doc: Any, operations: list[dict[str, Any]]) -> dict[str, An
         elif op == "insertBlock":
             layer = operation["layer"]
             add_layer(doc, layer)
-            msp.add_blockref(operation["name"], tuple(operation["position"]), dxfattribs={"layer": layer})
+            if operation["name"] not in doc.blocks:
+                raise ValueError(f"Block definition not found: {operation['name']}")
+            scale = float(operation.get("scale", 1))
+            msp.add_blockref(operation["name"], tuple(operation["position"]), dxfattribs={"layer": layer, "rotation": float(operation.get("rotationDeg", 0)), "xscale": scale, "yscale": scale, "zscale": scale})
             would_create += 1
         else:
             raise ValueError(f"Unsupported operation: {op}")

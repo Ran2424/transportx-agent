@@ -124,10 +124,12 @@ export class CadService {
     if (!parsed.ok) throw serviceError(parsed.diagnostics.map(diagnosticMessage).join('; '), 400);
     const input = this.resolveInput(session, parsed.value);
     const inputHash = sha256File(input.absolutePath);
+    const previewKey = inputHash + (parsed.value.previewOptions ? '_' + crypto.createHash('sha256').update(JSON.stringify(parsed.value.previewOptions)).digest('hex').slice(0, 16) : '');
     const jobDir = this.createJob(session);
     try {
       const stdout = await this.runEngine(session, jobDir, 'verify', {
         ...parsed.value,
+        _previewKey: previewKey,
         fileId: undefined,
         path: input.relativePath,
       }, signal);
@@ -137,7 +139,7 @@ export class CadService {
       if (result.value.preview) {
         for (const format of ['png', 'pdf'] as const) {
           const relative = result.value.preview[format];
-          if (relative !== `cad/previews/${inputHash}.${format}`) throw serviceError('CAD preview path differs.', 502, 'cad.engine_result');
+          if (relative !== `cad/previews/${previewKey}.${format}`) throw serviceError('CAD preview path differs.', 502, 'cad.engine_result');
           const source = jobArtifact(jobDir, `preview.${format}`);
           if (!fs.statSync(source).size) throw serviceError('CAD preview is empty.', 502);
           const target = safePath(session, relative, [`.${format}`], false);
@@ -159,7 +161,7 @@ export class CadService {
     if (!FILE_ID.test(fileId)) throw serviceError('Invalid CAD fileId.', 400);
     return this.withLock(`${session.cwd}:${fileId}`, async () => {
       const manifest = this.readManifest(session, fileId);
-      if (request.kind === 'edit') {
+      if (request.kind === 'edit' || request.kind === 'commit-candidate') {
         if (!manifest) throw serviceError(`CAD drawing not found: ${fileId}`, 404, 'cad.not_found');
         if (manifest.currentRevision !== request.baseRevision) {
           throw serviceError(`CAD revision mismatch: current r${manifest.currentRevision}, request r${request.baseRevision}`, 409, 'cad.revision_mismatch');
@@ -180,7 +182,7 @@ export class CadService {
         if (this.prepare(session, body).inputSha256 !== prepared.inputSha256) throw serviceError('CAD input changed during execution.', 409, 'cad.checksum');
         const committed = this.commit(session, fileId, request, manifest, result.value, jobDir);
         preserve = !!operationId;
-        return { ...committed, canvas: cadPresentation(this.readManifest(session, fileId)!, committed.drawing!, request.kind === 'edit' ? 'update' : 'present', committed.preview) };
+        return { ...committed, canvas: cadPresentation(this.readManifest(session, fileId)!, committed.drawing!, request.kind === 'edit' || request.kind === 'commit-candidate' ? 'update' : 'present', committed.preview) };
       } catch (error) {
         preserve = (error as { code?: string }).code === 'process_stop_unconfirmed' || fs.existsSync(path.join(jobDir, 'commit.json'));
         throw Object.assign(error as Error, { commit: preserve ? 'unknown' : 'not_committed', phase: preserve ? 'commit' : 'execution' });
@@ -209,7 +211,8 @@ export class CadService {
     const absolute = safePath(session, resource.path, ['.dxf']);
     const sourcePath = relativePosixPath(fs.realpathSync(session.cwd), absolute);
     const managed = sourcePath.match(/^cad\/([A-Za-z0-9._-]+)\/r([0-9]+)\.dxf$/);
-    const fileId = managed?.[1] ?? this.sourceFileId(sourcePath);
+    const existing = !managed ? this.store.findSource(session, sourcePath) : null;
+    const fileId = managed?.[1] ?? existing?.fileId ?? this.sourceFileId(sourcePath);
     return this.withLock(`${session.cwd}:${fileId}`, async () => {
       let manifest = this.readManifest(session, fileId);
       if (!manifest) {
@@ -218,7 +221,7 @@ export class CadService {
         if (inspected.warnings.some((item) => item.severity === 'error' || item.code === 'cad.audit')) throw serviceError('DXF could not be opened without audit errors.', 422);
         manifest = this.store.registerSnapshot(session, fileId, sourcePath, inspected.summary, input.title);
       } else if (!managed && manifest.sourceRefs?.some((source) => source.path === sourcePath && source.sha256 !== sha256File(absolute))) {
-        throw serviceError('Original DXF changed; import it explicitly as a new drawing.', 409, 'cad.source_changed');
+        throw serviceError(`Source DXF changed. Submit commit-candidate to ${fileId} using its current revision/hash, or explicitly import a separate drawing.`, 409, 'cad.source_changed');
       }
       const historical = managed && Number(managed[2]) !== manifest.currentRevision ? Number(managed[2]) : undefined;
       const inspected = await this.inspect(session, historical === undefined ? { fileId } : { path: sourcePath });
@@ -249,11 +252,15 @@ export class CadService {
     if (!parsed.ok) throw Object.assign(serviceError(parsed.diagnostics.map(diagnosticMessage).join('; '), 400), { commit: 'not_started', phase: 'validation' });
     const request = { ...parsed.value, fileId: parsed.value.fileId ?? (parsed.value.kind === 'import' ? this.sourceFileId(parsed.value.sourcePath) : generatedFileId(parsed.value)) };
     let inputPath: string;
-    if (request.kind === 'edit') {
+    if (request.kind === 'edit' || request.kind === 'commit-candidate') {
       const manifest = this.readManifest(session, request.fileId);
       if (!manifest || manifest.currentRevision !== request.baseRevision) throw Object.assign(serviceError('CAD revision mismatch or missing manifest.', 409, 'cad.revision_mismatch'), { commit: 'not_started' });
       inputPath = this.resolveInput(session, { protocol: CAD_PROTOCOL, version: CAD_VERSION, fileId: request.fileId, include: ['summary'], limit: 1 }).absolutePath;
       if (sha256File(inputPath) !== request.expectedSha256) throw Object.assign(serviceError('CAD base checksum changed.', 409, 'cad.checksum'), { commit: 'not_started' });
+      if (request.kind === 'commit-candidate') {
+        if (request.sourcePath.startsWith('cad/')) throw Object.assign(serviceError('Write candidates outside the managed cad/ directory.', 400, 'cad.candidate_path'), { commit: 'not_started' });
+        inputPath = safePath(session, request.sourcePath, ['.dxf']);
+      }
     } else {
       if (this.readManifest(session, request.fileId)) throw Object.assign(serviceError('CAD fileId already exists.', 409, 'cad.file_exists'), { commit: 'not_started' });
       inputPath = safePath(session, request.sourcePath, request.kind === 'import' ? ['.dxf'] : ['.geojson', '.json']);
