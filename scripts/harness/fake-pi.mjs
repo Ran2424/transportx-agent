@@ -348,6 +348,7 @@ async function handleCommand(command) {
     case 'get_commands':
       respond(id, true, {
         commands: [
+          { name: 'transportx_reload_models', source: 'extension' },
           { name: 'shanghai-traffic-data-assets', description: '查询受治理的上海体育馆交通数据', source: 'skill', path: path.join(REPO_ROOT, 'modules', 'official', 'traffic-data', 'skill', 'SKILL.md'), location: 'project' },
         ],
       });
@@ -356,7 +357,7 @@ async function handleCommand(command) {
       respond(id, true, { entries: [] });
       return;
     case 'set_model': {
-      const spec = String(command.model || modelSpec);
+      const spec = String(command.provider && command.modelId ? `${command.provider}/${command.modelId}` : command.model || modelSpec);
       const [provider, rest] = spec.split('/', 2);
       model.provider = rest ? provider : model.provider;
       model.id = (rest || provider).split(':')[0];
@@ -386,8 +387,13 @@ async function handleCommand(command) {
     case 'prompt':
     case 'steer':
     case 'follow_up': {
-      respond(id, true, {});
       const message = String(command.message || '');
+      if (message.startsWith('/transportx_reload_models ')) {
+        emit({ type: 'extension_ui_request', id: crypto.randomUUID(), method: 'setStatus', statusKey: 'transportx:model-sync', statusText: JSON.stringify({ token: message.split(' ')[1] }) });
+        respond(id, true, {});
+        return;
+      }
+      respond(id, true, {});
       const rule = (scenario.rules || []).find((candidate) => message.includes(candidate.match));
       const steps = (rule || scenario.fallback || { steps: [{ streamText: { text: '（fake-pi 默认回复）', chunks: 4 } }] }).steps;
       replaying = runSteps(steps, message).finally(() => { replaying = null; });

@@ -1,3 +1,4 @@
+import { ModelRefreshButton } from './ModelRefreshButton';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
@@ -23,6 +24,7 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
   const [model, setModel] = useState('');
   const [thinking, setThinking] = useState('off');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,13 +43,13 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
       setModels(available);
       if (state.model !== undefined) setModel(modelReference(state.model));
       if (state.thinkingLevel) setThinking(state.thinkingLevel);
-    }).catch(() => {
-      if (current) setError(t('model.error.list'));
+    }).catch((cause) => {
+      if (current) setError((cause as { message?: string })?.message || t('model.error.list'));
     }).finally(() => {
       if (current) setLoading(false);
     });
     return () => { current = false; };
-  }, [kernel, open, session, t]);
+  }, [kernel, open, session?.id, t]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -57,9 +59,8 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
     try {
       await kernel.commands.agent.setModel({ sessionId: session.id, model });
       await kernel.commands.agent.setThinkingLevel({ sessionId: session.id, level: thinking });
-      const slash = model.indexOf('/');
-      const nextModel = slash > 0 ? { provider: model.slice(0, slash), id: model.slice(slash + 1) } : model;
-      kernel.dispatch({ type: 'session/updated', session: { id: session.id, model: nextModel, modelSpec: model, thinkingLevel: thinking } });
+      const state = await kernel.commands.agent.getState(session.id);
+      kernel.dispatch({ type: 'session/updated', session: { id: session.id, model: state.model, thinkingLevel: state.thinkingLevel } });
       onOpenChange(false);
     } catch (cause) {
       setError((cause as { message?: string })?.message || t('model.error.update'));
@@ -93,10 +94,11 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
           compact
           onChange={setThinking}
         />
+        <ModelRefreshButton key={session?.id} sessionId={session?.id} disabled={loading || saving} onModels={(next) => { setModels(next); setError(''); }} onBusy={setRefreshing} />
         {error ? <div className="inline-error" role="alert">{error}</div> : null}
         <div className="form-actions is-split">
           <Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button>
-          <span><DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose><Button type="submit" disabled={!session || !model || saving}>{saving ? t('common.saving') : t('common.save')}</Button></span>
+          <span><DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose><Button type="submit" disabled={!session || !model || saving || refreshing}>{saving ? t('common.saving') : t('common.save')}</Button></span>
         </div>
       </form>
     </Dialog>

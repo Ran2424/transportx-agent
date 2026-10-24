@@ -29,3 +29,4 @@ export * from './canvas-cad.ts';
 export * from './cad.ts';
 export * from './canvas-document.ts';
 export * from './canvas-media.ts';
+export * from './model.ts';

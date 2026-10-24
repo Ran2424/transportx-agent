@@ -1,3 +1,4 @@
+import { MODEL_SYNC_STATUS, RELOAD_MODELS_COMMAND } from '../../../../../src/contracts/model.ts';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import {
   BRIDGE_ENVELOPE_SCHEMA_VERSION,
@@ -52,6 +53,19 @@ export default function piWebBridge(pi: ExtensionAPI) {
     revision += 1;
     pi.appendEntry(PI_WEB_BRIDGE_ENTRY, { schemaVersion: BRIDGE_ENVELOPE_SCHEMA_VERSION, revision, ...state });
   };
+
+  pi.registerCommand(RELOAD_MODELS_COMMAND, {
+    description: 'Reload the local model catalog for the workbench',
+    handler: async (token, ctx) => {
+      let error: string | undefined;
+      try {
+        if (!ctx.isIdle()) throw new Error('当前任务正在运行，请在结束后切换模型。');
+        await ctx.modelRegistry.refresh();
+        error = ctx.modelRegistry.getError();
+      } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
+      ctx.ui.setStatus(MODEL_SYNC_STATUS, JSON.stringify({ token, ...(error ? { error } : {}) }));
+    },
+  });
 
   pi.on('session_start', async (_event, ctx) => {
     currentContext = ctx;

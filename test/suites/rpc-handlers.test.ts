@@ -61,6 +61,48 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
       failure(error: string) { return { success: false, error }; },
     };
 
+    // Model sync uses a registered Pi command, requires its receipt and never
+    // forwards an unknown command as a model prompt or during an active run.
+    {
+      const { SessionModelSync } = require('../../bin/model-session-sync.js');
+      const sync = new SessionModelSync();
+      let mode = 'ok';
+      const sent: any[] = [];
+      const session = {
+        isStreaming: false, isCompacting: false,
+        async send(command: any) {
+          sent.push(command);
+          if (command.type === 'get_commands') return { success: true, data: { commands: mode === 'missing' ? [] : [{ name: 'transportx_reload_models', source: 'extension' }] } };
+          if (mode !== 'no-receipt') sync.consume({ type: 'extension_ui_request', method: 'setStatus', statusKey: 'transportx:model-sync', statusText: JSON.stringify({ token: command.message.split(' ')[1], ...(mode === 'error' ? { error: 'invalid model configuration' } : {}) }) });
+          return { success: true };
+        },
+      };
+      await Promise.all([sync.reload(session), sync.reload(session)]);
+      assert.deepEqual(sent.map((command) => command.type), ['get_commands', 'prompt'], 'concurrent callers share one synchronization');
+      assert.equal(sync.consume({ type: 'extension_ui_request', method: 'notify' }), false, 'other extension UI traffic is unchanged');
+      for (const modeValue of ['missing', 'no-receipt', 'error']) {
+        mode = modeValue; sent.length = 0;
+        await assert.rejects(sync.reload(session), mode === 'missing' ? /重新打开/ : mode === 'error' ? /invalid model/ : /未确认/);
+        if (mode === 'missing') assert.equal(sent.length, 1);
+      }
+      session.isStreaming = true; sent.length = 0;
+      await assert.rejects(sync.reload(session), /正在运行/);
+      assert.equal(sent.length, 0);
+      session.isStreaming = false; session.isCompacting = true;
+      await assert.rejects(sync.reload(session), /正在运行/);
+      session.isCompacting = false; mode = 'ok';
+      await sync.reload(session);
+
+      const ordered: string[] = [];
+      const native = createNativeRpcHandlers({ getLiveSession: () => ({ ...session, send: async () => { ordered.push('set_model'); return { success: true }; } }), syncModels: async () => { ordered.push('sync'); }, errorMessage: (error: Error) => error.message });
+      await native.set_model.handle({ type: 'set_model', sessionId: 'active', provider: 'deepseek', modelId: 'new' }, reply);
+      assert.deepEqual(ordered, ['sync', 'set_model']);
+      const rejected = createNativeRpcHandlers({ getLiveSession: () => session, syncModels: async () => { throw new Error('sync rejected'); }, errorMessage: (error: Error) => error.message });
+      sent.length = 0;
+      assert.equal((await rejected.set_model.handle({ type: 'set_model', sessionId: 'active', provider: 'deepseek', modelId: 'new' }, reply)).error, 'sync rejected');
+      assert.equal(sent.length, 0, 'a failed sync prevents a false successful model switch');
+    }
+
     // pending message identity protects reordered contexts and discards only a rejected command
     {
       const fs = require('node:fs');

@@ -1,3 +1,4 @@
+import { SessionModelSync } from './model-session-sync.js';
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
 import { hostPlatform } from './host-platform.js';
 const fs = require('node:fs');
@@ -132,6 +133,7 @@ export class PiRpcSession {
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
   timingMetrics: TimingMetricsStore;
   eventTiming: SessionEventTiming;
+  readonly modelSync = new SessionModelSync();
   private termination: Promise<void> | null = null;
   private retry: RetryState | null = null;
   private runOutcome: RunOutcome | null = null;
@@ -348,6 +350,7 @@ export class PiRpcSession {
   }
 
   handleEvent(event: PiRpcMessage) {
+    if (this.modelSync.consume(event)) return;
     this.touch(false);
     const type = event.type;
     if (type === 'session_tree' || type === 'session_switch') this.capabilityTracker.invalidateObservation();

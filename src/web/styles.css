@@ -1371,3 +1371,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .cad-canvas-tool[aria-pressed="true"] { background: var(--selection-bg); border-color: var(--selection-border); color: var(--selection-fg); }
 .cad-canvas-tool:disabled { opacity: 0.5; cursor: default; }
 .cad-selection-box { position: absolute; z-index: 3; border: 1px solid var(--selection-border); background: var(--selection-bg); pointer-events: none; }
+
+.model-access-actions { display: flex; align-items: flex-start; gap: 8px; }
+.model-refresh { display: grid; gap: 8px; }
+.model-refresh .inline-error { white-space: pre-line; max-width: 480px; }

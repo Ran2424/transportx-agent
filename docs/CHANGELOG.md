@@ -34,6 +34,9 @@
 
 ### Added
 
+- 模型选择器与 Agent 设置新增模型列表刷新，复用 Pi `ModelRuntime.refresh` 的远程目录、缓存及用户覆盖；刷新失败展示供应商错误并保留已有模型，自定义服务继续通过模型接入检测列表。
+- Web Bridge 1.3.0 增加仅重载模型配置的工作台命令，刷新与切换模型前同步当前空闲会话；带确认的控制请求不产生对话或模型调用，忙碌/旧会话显示原因，不重启工具模块。
+
 - Workbench 新增 Module Tool Activation 1.0.0，初始化完整注册、默认仅开放 read/write/edit/bash/manage_capabilities；支持 discover/inspect/enable/status，按可信 Plan 入口派生 Module→Tool。启用只开放 Schema，分支 custom entry 在 reload、恢复、分叉及压缩后重建工具集合，不重放业务。Workbench 1.4.0、Web Bridge 1.2.0、Module Authoring 1.2.1 同步更新，未启用工具显示待启用；沿用原安装信任、Host 执行与结果恢复。
 
 - 新增并修订 [Agent 主动启用工具与动态加载 PLAN](<Agent 主动启用工具与动态加载 PLAN.md>) v3：以 Module→Tool 为唯一能力组织关系，保留 `read/write/edit/bash + manage_capabilities` 五工具和 discover/inspect/enable/status 四动作，按 `enable(moduleId)` 开放模块工具。移除 v2 新增的领域、工具组、单工具启用及分页框架；补即时来源归属、初始化完整预注册、reload 后恢复、唯一分支启用记录和 P0 准入证据。沿 Pi 原生 Registry，不新增执行 Runtime；仅形成设计，尚未修改运行代码或验证五工具闭环。
@@ -55,6 +58,8 @@
 - 引用详情提供有界文本/表格与原件下载，Canvas 使用 Citation capability 固定版本定位 PDF 页、Markdown 章节、XLSX Sheet/单元格及 CSV 数据行；Markdown 导出、PDF 和书目出口保留全部依据位置。
 
 ### Changed
+
+- Host 复用 Pi 模型运行时并检测配置/认证变化，移除重复的五分钟列表缓存和静默空列表回退；设置页模型列表、过滤和刷新界面归入独立组件。
 
 - Module Tool Activation 的真实 Pi/Host 与独立模块链路已验收，Provider 首请求由 17 工具/19,940 字节收敛为 5 工具/3,664 字节；真实模型完成按需启用与执行。记录分支累积、缓存与延迟波动，不承诺统一性能收益；完整测试保持 40/40。
 
