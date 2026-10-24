@@ -24,7 +24,7 @@ import { diagnoseTool } from './tool-diagnostics.js';
 import { CORE_TOOL_BINDINGS } from '../contracts/tool-interface.js';
 import { createSessionWorkingDirectory } from './session-workspace.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
-import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
+import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession } from './sessions.js';
 import { makeSessionId as makeId } from './session-workspace.js';
 import { appendSessionNameEntry, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
@@ -119,7 +119,11 @@ const rpcHandlers: RpcHandlerRegistry = {
       timer.unref?.();
     },
   }),
-  ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, invalidateModelListCache, errorMessage }),
+  ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, errorMessage, syncModels: async (sessionId) => {
+    const session = liveManager.get(sessionId);
+    if (!session) throw new Error('当前任务已关闭，请重新选择任务。');
+    await session.modelSync.reload(session);
+  } }),
   ...createModuleRpcHandlers({
     desktopMode: DESKTOP_MODE,
     installer: MODULE_INSTALLER,
@@ -149,6 +153,7 @@ const rpcHandlers: RpcHandlerRegistry = {
     validateCanvasContexts: (session, contextIds) => canvasService.validateContextIds(session, contextIds),
     buildCanvasContext: buildCanvasContextPrompt,
     parseModel: parseModelSpecToModel,
+    syncModels: (session) => session.modelSync.reload(session),
     errorMessage,
     completeCommand: (command, response) => {
       if (command.clientCommandId && reliableCommandTypes.has(command.type || '')) rpcCommandLedger.settle(`${command.sessionId || ''}:${command.clientCommandId}`, { ...response, clientCommandId: command.clientCommandId });
@@ -602,4 +607,4 @@ function _setAuthForTest(enabled: boolean) { authEnabled = !!enabled; }
 function _setCredentialsForTest(user: string, pass: string) { TAU_SETTINGS.user = user; TAU_SETTINGS.pass = pass; }
 function _issueSessionTokenForTest(expiresAtSeconds?: number) { return issueSessionToken(expiresAtSeconds); }
 
-module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: isWithin, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, invalidateModelListCache };
+module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: isWithin, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest };

@@ -661,8 +661,11 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const commands: Array<Record<string, unknown>> = [];
     const session = {
       ...fakeSession('tau_set_model'),
+      modelSync: new (require('../../bin/model-session-sync.js').SessionModelSync)(),
       send: async (command: Record<string, unknown>) => {
         commands.push(command);
+        if (command.type === 'get_commands') return { success: true, data: { commands: [{ name: 'transportx_reload_models', source: 'extension' }] } };
+        if (command.type === 'prompt') session.modelSync.consume({ type: 'extension_ui_request', method: 'setStatus', statusKey: 'transportx:model-sync', statusText: JSON.stringify({ token: String(command.message).split(' ')[1] }) });
         return { success: true, data: { model: { provider: 'deepseek', id: 'deepseek-v4-flash' } } };
       },
     };
@@ -670,8 +673,9 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
 
     const response = await handleRpcCommand({ type: 'set_model', sessionId: session.id, model: 'deepseek/deepseek-v4-flash' });
     assert.equal(response.success, true);
-    assert.equal(commands[0].provider, 'deepseek');
-    assert.equal(commands[0].modelId, 'deepseek-v4-flash');
+    assert.deepEqual(commands.map((command) => command.type), ['get_commands', 'prompt', 'set_model']);
+    assert.equal(commands[2].provider, 'deepseek');
+    assert.equal(commands[2].modelId, 'deepseek-v4-flash');
   }
 
   // reliable prompt command IDs are acknowledged and executed once

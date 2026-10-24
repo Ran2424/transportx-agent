@@ -1,3 +1,4 @@
+import type { ModelRefreshError } from '../../contracts/model.js';
 /**
  * Command ports (migration plan §4.2). Components never fetch(), touch the
  * WebSocket or assemble RPC JSON themselves — they call these ports.
@@ -201,6 +202,7 @@ export type SessionCommands = {
 
 export type PlatformCommands = {
   getAvailableModels(sessionId?: string | null): Promise<Array<ModelRecord | string>>;
+  refreshModels(sessionId?: string): Promise<{ models: Array<ModelRecord | string>; errors: ModelRefreshError[] }>;
   getModelProviders(): Promise<ModelProviderAccess[]>;
   connectModelProvider(provider: string, apiKey: string): Promise<ModelProviderAccess>;
   disconnectModelProvider(provider: string): Promise<void>;
@@ -601,6 +603,11 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
         ...(sessionId ? { sessionId } : {}),
       });
       return ((data as { data?: { models?: Array<ModelRecord | string> } }).data?.models ?? []);
+    },
+
+    async refreshModels(sessionId) {
+      const response = await rpcCommand(deps.http, { type: 'refresh_models', ...(sessionId ? { sessionId } : {}) });
+      return (response as { data: { models: Array<ModelRecord | string>; errors: ModelRefreshError[] } }).data;
     },
 
     async getSessionOptions() {

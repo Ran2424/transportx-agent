@@ -2,7 +2,7 @@ const { test } = require('node:test') as typeof import('node:test');
 
 test('Kernel delivery, attachments and reconnects reconcile authoritative session state', async () => {
   const assert = require('node:assert/strict');
-  const { createAgentCommands, createReportCommands, createSessionCommands } = require('../../public/kernel/commands.js');
+  const { createAgentCommands, createReportCommands, createSessionCommands, createPlatformCommands } = require('../../public/kernel/commands.js');
   const { createAppKernel } = require('../../public/kernel/app-kernel.js');
   const { ConversationStore } = require('../../public/kernel/stores/conversation-store.js');
   const { SessionStore } = require('../../public/kernel/stores/session-store.js');
@@ -42,6 +42,17 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
         isCompacting: () => false,
       },
     };
+  }
+
+  // Refresh keeps per-provider and session-sync diagnostics in a successful
+  // partial result; transport/Host failures still reject with their real reason.
+  {
+    const result = { models: ['deepseek/new'], errors: [{ provider: 'openai', message: 'HTTP 503' }, { message: 'session busy' }] };
+    const fixture = deps(() => ({ success: true, data: result }));
+    assert.deepEqual(await createPlatformCommands(fixture.value).refreshModels('current'), result);
+    assert.deepEqual(fixture.commands, [{ type: 'refresh_models', sessionId: 'current' }]);
+    const failed = deps(() => ({ success: false, error: 'catalog unavailable' }));
+    await assert.rejects(createPlatformCommands(failed.value).refreshModels(), (error: { message: string }) => error.message === 'catalog unavailable');
   }
 
   // prompt uses acknowledged HTTP RPC before optimistic state

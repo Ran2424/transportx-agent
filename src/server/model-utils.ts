@@ -50,24 +50,6 @@ export function parseModelSpecToModel(spec: unknown): ParsedModelSpec {
   return { model: normalizeModel(core), level };
 }
 
-const MODEL_LIST_CACHE_MS = 5 * 60 * 1000;
-let modelListCache: { at: number; models: ModelIdentity[] } = { at: 0, models: [] };
-
-export async function getAvailableModels() {
-  const now = Date.now();
-  if (modelListCache.at && now - modelListCache.at < MODEL_LIST_CACHE_MS) {
-    return modelListCache.models;
-  }
-  try {
-    const models = await listAvailablePiModels(require('./config.js').PI_AGENT_DIR);
-    modelListCache = { at: now, models };
-    return models;
-  } catch (err) {
-    console.warn('[Tau] Failed to list Pi models:', err instanceof Error ? err.message : err);
-    modelListCache = { at: now, models: modelListCache.models || [] };
-    return modelListCache.models;
-  }
+export function getAvailableModels() {
+  return listAvailablePiModels(require('./config.js').PI_AGENT_DIR);
 }
-
-
-export function invalidateModelListCache() { modelListCache = { at: 0, models: [] }; }

@@ -28,6 +28,7 @@ type NativeRpcDependencies<T extends NativeSession> = {
   buildCanvasContext(contextIds: string[]): string;
   parseModel(model: unknown): { model: { provider?: string; id?: string } | null };
   errorMessage(error: unknown): string;
+  syncModels?(session: T): Promise<void>;
   completeCommand?(command: RpcCommand, response: RpcResponse): void;
 };
 
@@ -76,6 +77,7 @@ export function createNativeRpcHandlers<T extends NativeSession>(deps: NativeRpc
         if (!parsed.model?.provider || !parsed.model.id) return reply.failure('模型格式无效，请使用 provider/model');
         rpcCommand = { ...command, provider: parsed.model.provider, modelId: parsed.model.id };
       }
+      if (command.type === 'set_model' || command.type === 'cycle_model') await deps.syncModels?.(session);
       delete rpcCommand.clientCommandId;
       const response = await session.send(rpcCommand, {
         timeoutMs: command.type === 'prompt' ? 300000 : 60000,

@@ -1,3 +1,4 @@
+import { modelHostSmoke } from './harness/model-host-smoke.mjs';
 // Real Pi, production Host routes/assembly and isolated, explicitly authorized fixtures.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,6 +10,8 @@ import { performance } from 'node:perf_hooks';
 import { CORE_TOOL_BINDINGS } from '../src/contracts/tool-interface.ts';
 
 const appRoot = path.resolve(process.env.TRANSPORTX_SMOKE_APP_ROOT || '.');
+const modelPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'models';
+let modelRefresh;
 const baseline = process.env.TRANSPORTX_SMOKE_BASELINE === '1';
 const cadPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'cad';
 const activationPhase = process.env.TRANSPORTX_TOOL_SMOKE_PHASE === 'activation';
@@ -202,6 +205,7 @@ try {
     }, 'production Bridge');
     const bridge = entries.filter((entry) => entry.customType === 'pi-web-bridge').at(-1).data;
     assert.ok(bridge.tools.some((tool) => tool.name === 'tau_p0_probe' && tool.active));
+    if (modelPhase && index === 0) modelRefresh = await modelHostSmoke({ rpc, json, root, session, providerInputs });
     samples.push({ startupToFirstToolHistoryAndBridgeMs: Math.round(performance.now() - begin), tools: bridge.tools.length, moduleCount: JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/resolved-session-plan.json'), 'utf8')).modules.length });
     fs.mkdirSync(path.join(session.cwd, '.pi/extensions'), { recursive: true });
     fs.writeFileSync(path.join(session.cwd, '.pi/extensions/untrusted.ts'), autoExtension);
@@ -258,7 +262,7 @@ try {
   const authoring = lifecyclePhase ? await (await import('./harness/module-package-smoke.mjs')).modulePackageSmoke({ root, json, rpc, until }) : undefined;
   const recovery = recoveryPhase ? await (await import('./harness/spatial-recovery-smoke.mjs')).spatialRecoverySmoke({ root, json, rpc, until, restartHost, endpoint: () => endpoint }) : undefined;
   const cad = cadPhase ? await (await import('./harness/cad-host-smoke.mjs')).cadHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
-  const report = { cad, phase: cadPhase ? 'CAD module alignment' : activationPhase ? 'Module activation P1-P3' : canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, activation, harnessRssBytes: process.memoryUsage().rss };
+  const report = { modelRefresh, cad, phase: modelPhase ? 'Pi model refresh' : cadPhase ? 'CAD module alignment' : activationPhase ? 'Module activation P1-P3' : canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, activation, harnessRssBytes: process.memoryUsage().rss };
   if (process.env.TRANSPORTX_ACTIVATION_REPORT) fs.writeFileSync(process.env.TRANSPORTX_ACTIVATION_REPORT, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 } finally {

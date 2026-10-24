@@ -128,6 +128,10 @@ Light / Dark / Sand 的 primitive 与 semantic token 统一声明在 [tokens.css
 
 [project-adapter.ts](../src/server/project-adapter.ts) 提供 Host 认证、模型 Provider 配置和额外 Pi Extension 的静态接入点；[project-ui.tsx](../src/web/app/project-ui.tsx) 提供桌面窗口控件、更新入口、原生操作和模块选项默认折叠设置，`App` 另接受账户区域。仓库默认实现使用现有桌面能力，Host 项目认证为空。接入点由产品构建选择，不是会话 Module 或运行时前端插件；额外项目 Extension 在会话计划中的 Extension 之前加入 Pi 启动参数。
 
+模型目录由 Host 持有的单个 Pi `ModelRuntime` 维护，普通读取离线加载 `models-store.json` 与 `models.json`，配置/认证变化时调用 Pi `reloadConfig()`；不另设列表 TTL 缓存。工作台的「刷新模型列表」调用 Pi `refresh({ allowNetwork: true, force: true, signal })`，复用 Pi 的供应商目录、缓存和用户覆盖规则，逐供应商返回失败原因；刷新有 15 秒上限，失败保留已有目录。自定义兼容服务仍经 `discover_local_models` 获取 ID，能力由显式模型配置提供。
+
+运行中的 Pi 子进程继续 `--offline`。刷新当前空闲任务，以及 `set_model` / `cycle_model` 前，Host 先通过原生 `get_commands` 确认 Web Bridge 的 `transportx_reload_models` 已注册，再通过原生 Extension command 调用 `ctx.modelRegistry.refresh()`，只重读本地模型配置与缓存。`setStatus` 回执按随机 token 确认完成并由 Host 消费，不进入对话或调用模型；Pi 对 Extension command 错误仍可能 ACK，因此不能只依赖 prompt ACK。任务忙碌或旧 Bridge 缺失时明确提示，禁止发送未知 slash command；不重启进程、不执行完整 `/reload`，不改变已激活工具或自动切换当前模型。
+
 ## 3. 关键数据流
 
 ### 3.1 创建与装配
@@ -400,6 +404,7 @@ Workbench 默认装配上述十个直接依赖；CLI Domain 无依赖，使用 `
 ├─ logs/                        Agent Host 等日志
 ├─ cache/                       Python/Matplotlib 等可清理缓存
 ├─ models.json                  模型定义
+├─ models-store.json            Pi 模型目录缓存
 └─ auth.json                    模型密钥
 ```
 
