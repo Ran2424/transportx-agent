@@ -60,14 +60,14 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
         </div>)}
       </div>
       {closed.length ? <select className="canvas-reopen" aria-label={t('canvas.reopen')} value="" onChange={(event) => onActivate(event.target.value)}><option value="" disabled>＋</option>{closed.map((view) => <option key={view.id} value={view.id}>{view.title}</option>)}</select> : null}
-      <button className="canvas-context-action" type="button" disabled={!shareablePresentation || contextStatus === 'busy' || activeView?.kind === 'cad' && contextDrafts[activeView.id]?.revision !== shareablePresentation.revision} onClick={() => void shareContext()}>{contextStatus === 'done' ? t('canvas.contextAttached') : contextStatus === 'error' ? t('canvas.contextFailed') : t('canvas.attachContext')}</button>
+      {activeView?.kind !== 'cad' ? <button className="canvas-context-action" type="button" disabled={!shareablePresentation || contextStatus === 'busy'} onClick={() => void shareContext()}>{contextStatus === 'done' ? t('canvas.contextAttached') : contextStatus === 'error' ? t('canvas.contextFailed') : t('canvas.attachContext')}</button> : null}
       <button className="icon-button" type="button" aria-label={t('canvas.hide')} onClick={onClose}><Icon name="close" /></button>
     </header>
     <div className="workspace-float-body">
       {session && tabs.map((view) => {
         const Renderer = rendererForCanvasView(view);
         return <div className="canvas-panel" role="tabpanel" id={`canvas-panel-${view.id}`} aria-labelledby={`canvas-tab-${view.id}`} key={view.id} hidden={view.id !== state.activeId}>
-          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onContextChange={(target, selection) => updateContext(view.id, view.canvas?.revision, target, selection)} /></Suspense> : null}
+          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer onAttachContext={shareContext} contextStatus={contextStatus} session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onContextChange={(target, selection) => updateContext(view.id, view.canvas?.revision, target, selection)} /></Suspense> : null}
         </div>;
       })}
     </div>

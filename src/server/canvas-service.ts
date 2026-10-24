@@ -291,7 +291,7 @@ export class CanvasService {
 
 export function buildCanvasContextPrompt(contextIds: string[]) {
   return contextIds.length
-    ? `\n\n[Canvas context]\nThe user explicitly attached Canvas context IDs: ${contextIds.join(', ')}. Call canvas_inspect_context with only these IDs before relying on page, slide, sheet, time, map view, CAD drawing, layer, entity handle, units, or selection details. Do not inspect older Canvas contexts.\n[/Canvas context]`
+    ? `\n\n[Canvas context]\nThe user explicitly attached Canvas context IDs: ${contextIds.join(', ')}. Call canvas_inspect_context with only these IDs before relying on page, slide, sheet, time, map view, CAD drawing, layer, entity handle, units, or selection details. Do not inspect older Canvas contexts. Attached selections are reference information, not restrictions on editing scope. Follow the user request and use current domain revisions/checksums for edits.\n[/Canvas context]`
     : '';
 }
 

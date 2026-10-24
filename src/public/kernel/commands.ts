@@ -51,6 +51,7 @@ export type AddModelInput = {
   apiKey?: string;
   name?: string;
   contextWindow?: number;
+  maxTokens?: number;
   reasoning?: boolean;
   images?: boolean;
 };
@@ -59,6 +60,7 @@ export type UpdateModelInput = {
   modelId: string;
   name?: string;
   contextWindow?: number;
+  maxTokens?: number;
   reasoning: boolean;
   images: boolean;
 };

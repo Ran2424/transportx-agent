@@ -105,6 +105,24 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     assert.equal(inspected.drawing.revision, 1);
     assert.equal(inspected.drawing.sourceCrs, 'EPSG:4326');
     assert.equal(inspected.drawing.target.rotationDeg, 90);
+    // Exercise the built module's model-facing result, not only the Host details.
+    const extension = await import(require('node:url').pathToFileURL(path.resolve('dist/tool-modules/cad/extensions/pi-cad/index.ts')).href);
+    const registered: any[] = [];
+    extension.default({ registerTool: (tool: any) => registered.push(tool), on() {} });
+    const originalFetch = globalThis.fetch;
+    const environment = { TAU_CAD_ENDPOINT: process.env.TAU_CAD_ENDPOINT, TAU_CAD_SESSION_ID: process.env.TAU_CAD_SESSION_ID, TAU_CAD_TOKEN: process.env.TAU_CAD_TOKEN };
+    try {
+      Object.assign(process.env, { TAU_CAD_ENDPOINT: 'http://127.0.0.1', TAU_CAD_SESSION_ID: 'inspect', TAU_CAD_TOKEN: 'test' });
+      globalThis.fetch = async () => new Response(JSON.stringify({ result: inspected }));
+      const query = await registered.find((tool) => tool.name === 'cad_inspect').execute('inspect-details', { fileId: 'plan', include: ['entities'] }, signal);
+      const visible = JSON.parse(query.content[0].text);
+      assert.deepEqual(visible.entities, inspected.entities);
+      assert.equal(visible.summary.sha256, inspected.summary.sha256, 'model receives the full checksum');
+      assert.deepEqual(visible.drawing, inspected.drawing, 'model can continue a versioned edit without reading source files');
+    } finally {
+      globalThis.fetch = originalFetch;
+      for (const [name, value] of Object.entries(environment)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
     const handle = inspected.entities[0].handle;
     const edit = { ...base, kind: 'edit', fileId: 'plan', baseRevision: 1, expectedSha256: inspected.summary.sha256, operations: [{ op: 'move', selector: { kind: 'handle', handle }, dx: 3, dy: 0 }], toolCallId: 'move-plan', contractVersion: '1.0.0' };
     await assert.rejects(cad.draw(owner, { ...edit, expectedSha256: 'a'.repeat(64) }), /checksum/);
@@ -112,18 +130,20 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     const context = { protocol: 'pi-canvas-context', version: '1.0', contextId, adapterId: 'com.transportx.canvas.cad', viewId: 'cad:plan', revision: 1, resources: [{ scope: 'session-file', path: 'cad/plan/r1.dxf' }], selection: { kind: 'cad-selection', handles: [handle], layers: ['SIGNAL'], count: 501, truncated: true, drawingSha256: edit.expectedSha256 }, createdAt: new Date().toISOString() };
     owner.activeCanvasContextIds = [contextId];
     fs.writeFileSync(path.join(root, '.tau/canvas-contexts.json'), JSON.stringify([context]));
-    await assert.rejects(cad.draw(owner, { ...edit, contextId }), /empty or truncated/);
+    assert.equal((await cad.draw(owner, { ...edit, contextId, dryRun: true })).ok, true, 'truncated reference selection does not restrict editing');
     context.selection.count = 1; context.selection.truncated = false;
     fs.writeFileSync(path.join(root, '.tau/canvas-contexts.json'), JSON.stringify([context]));
-    await assert.rejects(cad.draw(owner, edit), /contextId/);
-    await assert.rejects(cad.draw(owner, { ...edit, contextId, operations: [{ op: 'delete', selector: { kind: 'layer', layer: 'SIGNAL' } }] }), /handles from/);
+    const widerQuery = await cad.inspect(owner, { ...base, contextId, include: ['entities'], selector: { kind: 'layer', layer: 'SIGNAL' } });
+    assert.equal(widerQuery.entities.length, 2, 'explicit queries can inspect outside the reference selection');
+    assert.equal((await cad.draw(owner, { ...edit, dryRun: true })).ok, true, 'attached context does not require contextId on explicit versioned edits');
+    assert.equal((await cad.draw(owner, { ...edit, contextId, dryRun: true, operations: [{ op: 'delete', selector: { kind: 'layer', layer: 'SIGNAL' } }] })).ok, true, 'selectors are not confined to selected handles');
     const moved = await invocations.execute(owner, { kind: 'edit', contextId, operations: [...edit.operations, { op: 'drawText', layer: 'LABEL', position: [0, 0], text: 'Selected feature', height: 2.5 }], toolCallId: edit.toolCallId }, signal, dispatch);
     assert.equal(moved.result.drawing.revision, 2);
     assert.equal(moved.result.preview, undefined, 'ordinary edits do not render PNG/PDF');
     const after = await cad.inspect(owner, { ...base, fileId: 'plan', include: ['entities'] });
     assert.ok(Math.abs(after.entities[0].bounds.min[0] - inspected.entities[0].bounds.min[0] - 3) < 1e-6, 'move follows drawing X even for rotated/scaled local coordinates');
     await assert.rejects(cad.draw(owner, { ...edit, contextId }), /revision mismatch/);
-    owner.activeCanvasContextIds = [];
+    // Keep the r1 context attached through r2 -> r3; it is reference information.
     const historical = await cad.present(owner, { resource: { scope: 'session-file', path: 'cad/plan/r1.dxf' } });
     assert.equal(historical.viewId, 'cad:plan@r1');
     assert.equal(historical.revision, 1);
@@ -148,12 +168,14 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     // A lost confirmation after the manifest commit is recovered without a new draw.
     const originalCommit = cad.commit.bind(cad);
     cad.commit = (...args: any[]) => { originalCommit(...args); throw new Error('simulated lost confirmation after commit'); };
-    const next = { ...edit, baseRevision: 2, expectedSha256: after.summary.sha256, toolCallId: 'lost-response' };
+    const next = { ...edit, baseRevision: 2, expectedSha256: after.summary.sha256, operations: [{ op: 'move', selector: { kind: 'handle', handle: inspected.entities[1].handle }, dx: 0, dy: 1 }], toolCallId: 'lost-response' };
     await assert.rejects(invocations.execute(owner, next, signal, dispatch), /lost confirmation/);
     cad.commit = originalCommit;
     const recovery = new CadInvocations(records, histories, cad).query(owner, { lookupToolCallId: next.toolCallId });
     assert.equal(recovery.state, 'succeeded');
     assert.equal(recovery.result.drawing.revision, 3);
+    const outsideEntity = (await cad.inspect(owner, { ...base, fileId: 'plan', include: ['entities'] })).entities.find((entity: any) => entity.handle === inspected.entities[1].handle);
+    assert.ok(Math.abs(outsideEntity.bounds.min[1] - inspected.entities[1].bounds.min[1] - 1) < 1e-6, 'r3 can modify an existing entity outside the r1 reference selection');
     assert.equal((await invocations.execute(owner, next, signal, dispatch)).reused, true);
     // Interrupt between output rename and manifest publication; only this generation is removed.
     const current = await cad.inspect(owner, { ...base, fileId: 'plan' });

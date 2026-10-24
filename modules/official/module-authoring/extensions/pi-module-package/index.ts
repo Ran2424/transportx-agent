@@ -20,7 +20,7 @@ export default function modulePackage(pi: ExtensionAPI) {
     async execute(toolCallId, params, signal): Promise<{ content: { type: 'text'; text: string }[]; details: Record<string, unknown> }> {
       try {
         const result = await postHostOperation<Record<string, unknown>>({ endpoint: process.env.TAU_MODULE_ENDPOINT, sessionId: process.env.TAU_MODULE_SESSION_ID, token: process.env.TAU_MODULE_TOKEN }, '/api/internal/modules/package', params as Record<string, unknown>, { toolCallId, contractVersion: '1.0.0', signal, timeoutMs: 300_000 });
-        return { content: [{ type: 'text', text: JSON.stringify(result).slice(0, 6000) }], details: { kind: 'tau-module-package', ...result } };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { kind: 'tau-module-package', ...result } };
       } catch (error) {
         errors.add(toolCallId);
         const failure = error as Error & { commit?: string };

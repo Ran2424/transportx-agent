@@ -101,7 +101,7 @@ export class CadService {
         ...parsed.value,
         fileId: undefined,
         path: file.relativePath,
-        ...(selection ? { selectionHandles: selection.handles } : {}),
+        ...(selection?.handles.length && !parsed.value.selector ? { selectionHandles: selection.handles } : {}),
       }, signal);
       const result = parseCadInspectResultStructured(jsonFromEngine(stdout));
       if (!result.ok) throw serviceError(result.diagnostics.map(diagnosticMessage).join('; '), 422);
@@ -254,27 +254,11 @@ export class CadService {
       if (!manifest || manifest.currentRevision !== request.baseRevision) throw Object.assign(serviceError('CAD revision mismatch or missing manifest.', 409, 'cad.revision_mismatch'), { commit: 'not_started' });
       inputPath = this.resolveInput(session, { protocol: CAD_PROTOCOL, version: CAD_VERSION, fileId: request.fileId, include: ['summary'], limit: 1 }).absolutePath;
       if (sha256File(inputPath) !== request.expectedSha256) throw Object.assign(serviceError('CAD base checksum changed.', 409, 'cad.checksum'), { commit: 'not_started' });
-      this.validateEditContext(session, request);
     } else {
       if (this.readManifest(session, request.fileId)) throw Object.assign(serviceError('CAD fileId already exists.', 409, 'cad.file_exists'), { commit: 'not_started' });
       inputPath = safePath(session, request.sourcePath, request.kind === 'import' ? ['.dxf'] : ['.geojson', '.json']);
     }
     return { request, inputSha256: sha256File(inputPath) };
-  }
-
-  private validateEditContext(session: PiRpcSession, request: Extract<CadDrawRequestV1, { kind: 'edit' }>) {
-    const ids = session.activeCanvasContextIds || [];
-    if (!ids.length && !request.contextId) return;
-    const contexts = ids.length ? this.inspectContexts?.(session, ids).filter((context) => context.adapterId === CAD_CANVAS_ADAPTER_ID && context.viewId === `cad:${request.fileId}`) ?? [] : [];
-    if (!contexts.length && !request.contextId) return;
-    const context = contexts.find((item) => item.contextId === request.contextId);
-    const selection = context && parseCadCanvasSelection(context.selection);
-    const resource = context?.resources[0];
-    if (!context || !selection || context.revision !== request.baseRevision || selection.drawingSha256 !== request.expectedSha256 || resource?.scope !== 'session-file' || resource.path !== `cad/${request.fileId}/r${request.baseRevision}.dxf`) throw serviceError('Attach the exact CAD revision and pass its contextId and checksum.', 409, 'cad.context_mismatch');
-    if (selection.truncated || selection.count !== selection.handles.length || !selection.count) throw serviceError('CAD selection is empty or truncated; narrow the selection and attach it again.', 409, 'cad.selection_truncated');
-    for (const operation of request.operations) {
-      if ('selector' in operation && (operation.selector.kind !== 'handle' || !selection.handles.includes(operation.selector.handle))) throw serviceError('Selection edits must address handles from the attached selection only.', 409, 'cad.selection_mismatch');
-    }
   }
 
   verifyCommitted(...args: Parameters<CadCommit['verifyCommitted']>) { return this.commits.verifyCommitted(...args); }

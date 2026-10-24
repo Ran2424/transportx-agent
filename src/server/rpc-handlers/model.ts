@@ -70,7 +70,7 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
     update_model: {
       handle: async (command, reply) => {
         try {
-          const model = await updatePiModel(command as { provider: string; modelId: string; name?: string; contextWindow?: number; reasoning?: boolean; images?: boolean }, deps.agentDir);
+          const model = await updatePiModel(command as { provider: string; modelId: string; name?: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean; images?: boolean }, deps.agentDir);
           deps.invalidateModelListCache();
           return reply.success({ model });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }

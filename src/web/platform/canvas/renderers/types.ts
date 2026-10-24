@@ -7,5 +7,7 @@ export type CanvasRendererProps = {
   view: CanvasView;
   active: boolean;
   documentPositions: Map<string, DocumentPosition>;
+  onAttachContext?(): Promise<void>;
+  contextStatus?: 'idle' | 'busy' | 'done' | 'error';
   onContextChange(target?: unknown, selection?: unknown): void;
 };

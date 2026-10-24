@@ -34,20 +34,6 @@ function drawText(result: ToolResult): string {
   return `CAD 已提交：${drawing?.path || '未知路径'}，revision ${drawing?.revision ?? '?'}，单位 ${drawing?.units || '?'}，实体 ${drawing?.entityCount ?? '?'}，图层 ${drawing?.layerCount ?? '?'}。预览：${preview?.png || '无'}${preview?.pdf ? `；PDF：${preview.pdf}` : ''}。${messages(result) ? `注意：${messages(result)}` : ''}`;
 }
 
-function inspectText(result: ToolResult): string {
-  const summary = result.summary as { units?: string | null; entityCount?: number; layerCount?: number; extents?: unknown; sha256?: string } | undefined;
-  const warning = messages(result);
-  return `CAD 查询：单位 ${summary?.units ?? '未知'}，实体 ${summary?.entityCount ?? '?'}，图层 ${summary?.layerCount ?? '?'}。${summary?.sha256 ? `sha256 ${summary.sha256.slice(0, 12)}…。` : ''}${warning ? `警告：${warning}` : ''}`;
-}
-
-function verifyText(result: ToolResult): string {
-  const checks = Array.isArray(result.checks) ? result.checks : [];
-  const failed = checks.filter((item) => item && typeof item === 'object' && (item as { status?: string }).status === 'fail').length;
-  const warned = checks.filter((item) => item && typeof item === 'object' && (item as { status?: string }).status === 'warning').length;
-  const preview = result.preview as { png?: string; pdf?: string } | undefined;
-  return `CAD 校验：${result.ok === true ? '通过' : '未通过'}；${checks.length} 项检查，${failed} 项失败，${warned} 项警告。${messages(result) ? `诊断：${messages(result)}` : ''}${preview ? ` 预览：${preview.png}；${preview.pdf}` : ''}`;
-}
-
 export default function cadExtension(pi: ExtensionAPI) {
   const pending = new Map<string, { dispatched: boolean; mutation: boolean; result?: ReturnType<typeof failure> | { content: { type: 'text'; text: string }[]; details: ToolResult } }>();
   function failure(toolCallId: string, code: string, phase: string, message: string, unknown: boolean, mutation = true) {
@@ -70,9 +56,9 @@ export default function cadExtension(pi: ExtensionAPI) {
       name: contract.piName,
       label: `CAD ${action}`,
       description: action === 'draw'
-        ? 'Create/import/edit a revisioned 2D DXF. from-geojson requires sourcePath, sourceCrs, target and layerMap. edit uses contextId and operations for an attached selection; otherwise supply fileId, baseRevision and expectedSha256. exportPreview is opt-in. move/copy use drawing axes and units, not curve offsets. Bulk edits dryRun first. Lost responses must be queried with cad_execution, never automatically repeated.'
+        ? 'Create/import/edit a revisioned 2D DXF. from-geojson requires sourcePath, sourceCrs, target and layerMap. edit uses contextId to target an attached revision, or fileId/baseRevision/expectedSha256. A selection is reference information, not an edit boundary. After each commit, continue with the returned drawing.fileId, drawing.revision as baseRevision and drawing.sha256; do not reuse a stale contextId. exportPreview is opt-in. move/copy use drawing axes and units, not curve offsets. Bulk edits dryRun first. Lost responses must be queried with cad_execution, never automatically repeated.'
         : action === 'execution' ? 'Query or request cancellation of an existing CAD write. Supply exactly one operationId or lookupToolCallId. Never draws or retries. Unknown is not proof of no commit.'
-        : action === 'inspect' ? 'Inspect DXF revision, exact sha256, units, layers, entities and coordinate metadata before editing.'
+        : action === 'inspect' ? 'Inspect DXF revision, full sha256, units, layers and requested entities with pagination. contextId defaults to selected entities when nonempty; an explicit selector overrides this focus. Use fileId for the whole current drawing. The result content contains the requested details.'
         : 'Reopen DXF for basic geometry checks; optionally exportPreview=true produces PNG/PDF without a new revision. Passing is not traffic engineering design approval.',
       parameters: contract.input as unknown as TSchema,
       async execute(toolCallId, params, signal) {
@@ -89,7 +75,7 @@ export default function cadExtension(pi: ExtensionAPI) {
             call.result = failure(toolCallId, 'cad_draw_failed', 'validation', messages(result) || 'CAD validation failed.', false);
             return call.result;
           }
-          const text = action === 'draw' ? drawText(result) : action === 'inspect' ? inspectText(result) : action === 'verify' ? verifyText(result) : JSON.stringify(result).slice(0, 6000);
+          const text = action === 'draw' ? `${drawText(result)}\n${JSON.stringify({ drawing: result.drawing, plan: result.plan, operationId: payload.operationId })}` : JSON.stringify(result);
           call.result = { content: [{ type: 'text', text }], details: { kind: contract.output.detailsKind, result, ...(action === 'execution' ? payload : {}), operationId: payload.operationId, ...(action === 'draw' && result.canvas ? { canvas: result.canvas } : {}) } };
         } catch (error) {
           const problem = error as Error & { code?: string; phase?: string; commit?: string };

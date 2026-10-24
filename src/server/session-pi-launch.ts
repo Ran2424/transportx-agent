@@ -15,7 +15,7 @@ function sessionModules(plan: ResolvedSessionPlan) {
     const manifest = JSON.parse(fs.readFileSync(path.join(module.packageRoot, 'manifest.json'), 'utf8'));
     const skills = module.entrypoints.filter((entry) => entry.kind === 'skill').map((entry) => entry.path);
     return {
-      id: module.id, version: module.version, name: manifest.name, description: manifest.description || '',
+      id: module.id, version: module.version, name: manifest.name, description: manifest.description || manifest.presentation?.locales?.[manifest.presentation?.defaultLocale || 'zh-CN']?.description || '',
       searchText: [JSON.stringify(manifest.presentation || {}), ...skills.map((file) => {
         const text = fs.readFileSync(file, 'utf8');
         return text.startsWith('---') ? text.slice(0, text.indexOf('\n---', 3) + 4).slice(0, 16000) : '';

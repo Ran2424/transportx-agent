@@ -20,6 +20,7 @@ export function ModelEditDialog({ open, onOpenChange, provider, model, onSaved }
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [contextWindow, setContextWindow] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
   const [reasoning, setReasoning] = useState(false);
   const [images, setImages] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -30,6 +31,7 @@ export function ModelEditDialog({ open, onOpenChange, provider, model, onSaved }
     setName(String(model.name || model.label || ''));
     const context = Number(model.contextWindow || model.context || model.context_window);
     setContextWindow(Number.isFinite(context) && context > 0 ? String(context) : '');
+    setMaxTokens(model.maxOutput ? String(model.maxOutput) : '');
     setReasoning(booleanValue(model.thinking));
     setImages(booleanValue(model.images));
     setError('');
@@ -45,7 +47,7 @@ export function ModelEditDialog({ open, onOpenChange, provider, model, onSaved }
         provider,
         modelId: String(model.id || model.model),
         name,
-        ...(contextWindow.trim() ? { contextWindow: Number(contextWindow) } : {}),
+        ...(contextWindow.trim() ? { contextWindow: Number(contextWindow) } : {}), ...(maxTokens.trim() ? { maxTokens: Number(maxTokens) } : {}),
         reasoning,
         images,
       });
@@ -65,6 +67,7 @@ export function ModelEditDialog({ open, onOpenChange, provider, model, onSaved }
       <div className="model-edit-identity"><span>{t('settings.model.id')}</span><code>{provider}/{modelId}</code></div>
       <label className="field-label"><span>{t('model.setup.displayName')}</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('model.setup.displayNamePlaceholder')} autoFocus /></label>
       <label className="field-label"><span>{t('model.setup.contextWindow')} <small>{contextLabel}</small></span><input type="number" min="1" step="1000" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder="128000" /></label>
+      <label className="field-label"><span>{t('model.setup.maxTokens')}</span><input type="number" min="1" step="1" value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} placeholder="16384" /><small>{t('model.setup.tokenLimitsHelp')}</small></label>
       <div className="model-capability-row">
         <label><input type="checkbox" checked={reasoning} onChange={(event) => setReasoning(event.target.checked)} />{t('model.setup.reasoning')}</label>
         <label><input type="checkbox" checked={images} onChange={(event) => setImages(event.target.checked)} />{t('model.setup.images')}</label>
