@@ -210,7 +210,7 @@ const Selector = Type.Union([
 
 const Operation = Type.Union([
   Type.Object({ op: Type.Literal('move'), selector: Selector, dx: Type.Number({ description: 'Translation along drawing X in drawing units; not true east or a curve offset.' }), dy: Type.Number({ description: 'Translation along drawing Y in drawing units.' }) }, { additionalProperties: false }),
-  Type.Object({ op: Type.Literal('copy'), selector: Selector, dx: Type.Number({ description: 'Translation along drawing X in drawing units; not true east or a curve offset.' }), dy: Type.Number({ description: 'Translation along drawing Y in drawing units.' }), count: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('copy'), selector: Selector, dx: Type.Number({ description: 'Translation along drawing X in drawing units; not true east or a curve offset.' }), dy: Type.Number({ description: 'Translation along drawing Y in drawing units.' }), count: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: 'Place copies at n*dx,n*dy for n=1..count.' })) }, { additionalProperties: false }),
   Type.Object({ op: Type.Literal('delete'), selector: Selector }, { additionalProperties: false }),
   Type.Object({ op: Type.Literal('setLayer'), selector: Selector, layer: Layer }, { additionalProperties: false }),
   Type.Object({ op: Type.Literal('drawPolyline'), layer: Layer, points: Type.Array(Point, { minItems: 2, maxItems: 10_000 }), closed: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
@@ -225,13 +225,14 @@ const Target = Type.Union([
 ], { description: 'Required for kind="from-geojson"; omit for kind="edit" and kind="import".' });
 
 export const CadDrawSchema = Type.Object({
-  kind: Type.Union([Type.Literal('from-geojson'), Type.Literal('edit'), Type.Literal('import')], {
-    description: 'from-geojson creates a new drawing from GeoJSON; edit modifies an existing drawing; import registers an existing DXF.',
+  kind: Type.Union([Type.Literal('from-geojson'), Type.Literal('edit'), Type.Literal('import'), Type.Literal('commit-candidate')], {
+    description: 'from-geojson creates a new drawing from GeoJSON; edit modifies an existing drawing; import registers an existing DXF; commit-candidate submits a Python/other-engine candidate as the next revision of an existing drawing.',
   }),
   fileId: Type.Optional(Type.String({
     pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$',
     description: 'Stable drawing id. Edits with contextId resolve it on the Host; otherwise required for edit.',
   })),
+  candidateMode: Type.Optional(Type.Union([Type.Literal('rebuild'), Type.Literal('based-on-current')], { description: 'Required for commit-candidate: declare whole regeneration or editing a copy of the current DXF. Both invalidate old version-bound contexts; preserving handles is not guaranteed.' })),
   sourceCrs: Type.Optional(Type.String({ minLength: 1, maxLength: 120, description: 'Required for from-geojson. Explicit input CRS, for example EPSG:4326.' })),
   expectedSha256: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$', description: 'Exact base DXF hash for edits without contextId. With contextId the Host resolves and verifies the frozen selection version.' })),
   contextId: Type.Optional(Type.String({ pattern: '^canvas_context_[a-f0-9-]+$' })),
@@ -266,6 +267,7 @@ export const CadDrawSchema = Type.Object({
 }, { additionalProperties: false, anyOf: [
   { properties: { kind: { const: 'from-geojson' } }, required: ['sourcePath', 'sourceCrs', 'target', 'layerMap'] },
   { properties: { kind: { const: 'import' } }, required: ['sourcePath'] },
+  { properties: { kind: { const: 'commit-candidate' } }, required: ['sourcePath', 'fileId', 'baseRevision', 'expectedSha256', 'candidateMode'] },
   { properties: { kind: { const: 'edit' } }, required: ['operations'], anyOf: [{ required: ['contextId'] }, { required: ['fileId', 'baseRevision', 'expectedSha256'] }] },
 ] });
 
@@ -275,8 +277,8 @@ export const CadInspectSchema = Type.Object({
   path: Type.Optional(Type.String({ maxLength: 1000 })),
   include: Type.Optional(Type.Array(Type.Union([
     Type.Literal('summary'), Type.Literal('layers'), Type.Literal('entities'),
-    Type.Literal('blocks'), Type.Literal('units'), Type.Literal('extents'), Type.Literal('textStyles'),
-  ]), { maxItems: 7 })),
+    Type.Literal('blocks'), Type.Literal('units'), Type.Literal('extents'), Type.Literal('textStyles'), Type.Literal('geometry'),
+  ]), { maxItems: 8 })),
   selector: Type.Optional(Selector),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   cursor: Type.Optional(Type.String({ maxLength: 160 })),
@@ -287,15 +289,21 @@ export const CadVerifySchema = Type.Object({
   path: Type.Optional(Type.String({ maxLength: 1000 })),
   revision: Type.Optional(Type.Integer({ minimum: 0 })),
   exportPreview: Type.Optional(Type.Boolean({ description: 'Export PNG/PDF of this existing DXF without creating a revision.' })),
+  previewOptions: Type.Optional(Type.Object({
+    bounds: Type.Optional(Type.Object({ min: Point, max: Point }, { additionalProperties: false })),
+    layers: Type.Optional(Type.Array(Layer, { minItems: 1, maxItems: 64 })),
+    width: Type.Optional(Type.Integer({ minimum: 256, maximum: 4096 })),
+    height: Type.Optional(Type.Integer({ minimum: 256, maximum: 4096 })),
+  }, { additionalProperties: false, description: 'With exportPreview=true: observe a local region and selected layers at a bounded resolution. Does not change the drawing or Canvas visibility.' })),
   policy: Type.Optional(Type.Union([Type.Literal('basic'), Type.Literal('traffic-v1'), Type.Literal('strict')])),
 }, { additionalProperties: false });
 
 export const CadExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), operationId: Type.Optional(Type.String({ pattern: '^cad_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
 
 export const coreToolContracts = [
-  { moduleId: 'com.transportx.cad', toolId: 'cad.inspect', piName: 'cad_inspect', contractVersion: '1.0.0', semanticVersion: 'cad-inspect-v3', input: CadInspectSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-inspect' } },
-  { moduleId: 'com.transportx.cad', toolId: 'cad.draw', piName: 'cad_draw', contractVersion: '1.0.0', semanticVersion: 'cad-draw-v4', input: CadDrawSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-draw' } },
-  { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v2', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.inspect', piName: 'cad_inspect', contractVersion: '1.0.0', semanticVersion: 'cad-inspect-v4', input: CadInspectSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-inspect' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.draw', piName: 'cad_draw', contractVersion: '1.0.0', semanticVersion: 'cad-draw-v5', input: CadDrawSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-draw' } },
+  { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v3', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.execution', piName: 'cad_execution', contractVersion: '1.0.0', semanticVersion: 'cad-execution-v2', input: CadExecutionSchema, output: { protocol: 'transportx-cad-execution', version: 1, detailsKind: 'tau-cad-execution' } },
 
   { moduleId: 'com.transportx.tool-activation', toolId: 'capabilities.manage', piName: 'manage_capabilities', contractVersion: '1.0.0', semanticVersion: 'module-activation-v1', input: ManageCapabilitiesSchema, output: { protocol: 'transportx-capability-management', version: 1, detailsKind: 'transportx-capability-management' } },

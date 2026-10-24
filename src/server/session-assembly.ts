@@ -196,6 +196,16 @@ export class SessionAssembler {
     if (path.relative(fs.realpathSync(plan.workspace), fs.realpathSync(workspace)) !== '') throw new SessionPlanError('workspace_mismatch', 'Resolved session plan belongs to another workspace.', [{ expected: path.resolve(workspace), actual: path.resolve(plan.workspace) }]);
     for (let index = 0; index < plan.modules.length; index++) {
       let module = plan.modules[index];
+      const builtin = module.origin === 'builtin' ? this.registry.get(module.id) : undefined;
+      if (builtin?.origin === 'builtin' && builtin.packageRoot !== module.packageRoot) {
+        const oldRoot = module.packageRoot;
+        const relocate = (file: string) => {
+          if (!isWithin(oldRoot, file)) throw new SessionPlanError('module_content_mismatch', 'Builtin entry escapes its original package root.', [{ moduleId: module.id, path: file }]);
+          return resolvePackagePath(builtin.packageRoot, path.relative(oldRoot, file), 'Builtin entry');
+        };
+        module = { ...module, packageRoot: builtin.packageRoot, entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: relocate(entry.path) })), nativeRuntimes: module.nativeRuntimes.map((runtime) => ({ ...runtime, ffmpeg: { ...runtime.ffmpeg, path: relocate(runtime.ffmpeg.path) }, ffprobe: { ...runtime.ffprobe, path: relocate(runtime.ffprobe.path) } })) };
+        plan.modules[index] = module;
+      }
       const manifestPath = path.join(module.packageRoot, 'manifest.json');
       if (!fs.existsSync(manifestPath)) {
         if (module.origin === 'builtin' && INSTALLABLE_REPLACEMENTS_FOR_RETIRED_BUILTINS.has(module.id)) {

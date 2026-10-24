@@ -1,32 +1,37 @@
 ---
 name: cad-drafting
-description: Open, inspect and revise 2D DXF drawings together with the user. Use for entity selection, geometry edits, layers, labels and GeoJSON conversion.
+description: Create, view and iteratively revise general-purpose 2D DXF drawings with the user. Combine Python or other geometry engines with native CAD edits, versioned commits, inspection and Canvas presentation.
 ---
 
-# CAD 图纸协作
+# CAD 协作工作空间
 
-用户在 Canvas 查看并选择实体，Agent 通过受控工具修改；首版支持 2D DXF。
+用于通用二维 DXF 创作与修改。Python、原生 CAD 操作和其他几何引擎均可使用；模块统一接入成果、管理版本、观察几何并在 Canvas 展示。先用 `manage_capabilities` 启用 CAD；需要显式聚焦或读取用户上下文时启用 Canvas。
 
-## 入口与流程
+## 协作创作
 
-1. 用 `manage_capabilities` 启用 CAD；呈现或读取选区时另行启用 Canvas。依赖装配不自动开放工具。
-2. 已有 DXF 用 `canvas_present` 打开：`adapterId="com.transportx.canvas.cad"`，`resource={"scope":"session-file","path":"图纸.dxf"}`。首次打开保存原始快照，重新打开复用同一图纸；不要为了查看调用绘图工具。
-3. 用户附加选区后，用 `canvas_inspect_context` 读取本轮 contextId；再按需查询实体。
-4. 编辑调用 `cad_draw`：`kind="edit"`、`contextId`、`operations`。Host 解析选区固定的图纸、revision 和哈希。也可显式传 `fileId/baseRevision/expectedSha256`。
-5. 成功提交返回 drawing.fileId/revision/sha256；据此显式传 fileId/baseRevision/expectedSha256 继续编辑，不复用旧 contextId。同一 Canvas 标签更新。报告实际修改与诊断；需要导出或完整检查时再请求。
+1. 根据任务选择创作方式。复杂布局、参数化或批量生成可用 Python；少量实体修改可直接用 `cad_draw(kind="edit")`。不需要逐个阅读模块源码来发现参数。
+2. 首份可讨论的基础结构完成后即提交草图，不等所有细节完成。Python 候选文件首次用 `cad_draw(kind="import", sourcePath=...)` 接入；已有文件只查看用 `canvas_present`。
+3. 后续 Python/其他引擎候选使用 `cad_draw(kind="commit-candidate")`，沿用返回的 fileId，传 baseRevision、expectedSha256、sourcePath 和 candidateMode。不要换 ID 重复导入来更新成果。
+4. 在主要内容、细节完善及用户反馈等有意义的阶段提交新修订；按任务选择节点，不按工具调用次数机械提交。成功提交自动呈现/更新同一个 Canvas 标签，无需再次打开原始路径。回执 presentation.status="accepted" 不是浏览器渲染成功确认；需要聚焦时复用 presentation.viewId。
+5. 用 `cad_inspect(include=["geometry"])` 按需观察几何；需要视觉判断时 `cad_verify(exportPreview=true, previewOptions=...)` 后读取返回的 PNG。检查与视觉观察分别判断，不能用 DXF 校验通过证明符合用户参考图。
 
-## 必要约束
+## 连续修改
 
-- 不直接改受管 DXF、manifest 或作业文件；旧 revision 不覆盖。
-- 不把经纬度当长度，不猜未知单位和地理方向；移动沿图纸 X/Y。
-- 用户选区用于提示意图，不限制编辑范围。截断选区不能当成完整集合；按需查询当前图纸，版本和哈希检查仍保留。
-- 响应丢失或取消未确认时，使用 `cad_execution` 查询原 operationId 或 lookupToolCallId，不能重复提交。
-- Viewer 不支持前端绘制或保存；不承诺 DWG、道路等距偏移、自动渠化或工程审定。
+- 回执 drawing.fileId/revision/sha256 是后续提交依据；revision 作为下一次 baseRevision。冲突时重新查询，不能覆盖新版本。
+- candidateMode="rebuild" 表示全量重建；"based-on-current" 表示生成器基于当前 DXF 修改。两者都要重新确认旧实体引用，不把相同 handle 当作身份保证，也不复用旧版本 contextId。
+- 用户附加选区后，先 `canvas_inspect_context`，按需 `cad_inspect`。选区是意图参考，不限制编辑范围；当前 revision/hash 的一致性检查始终保留。
+- 修改原生实体时使用 contextId，或明确的 fileId/baseRevision/expectedSha256。批量操作先 dryRun 核对命中对象；copy.count 按 1×、2×…位移排列。
+- Python 使用当前 Host 的 TAU_PYTHON_COMMAND，可读取受管 revision，但候选写在任务目录的 cad/ 之外。不要直接覆盖受管 DXF、manifest 或作业文件。
+- 不猜单位、比例或地理方向。局部示意坐标不等于真实测量坐标；需要坐标标定时先明确依据。
+- 响应丢失或取消未确认时，用 `cad_execution` 查询原 operationId/lookupToolCallId，不能自动重提。确认提交后可用回执路径或 viewId 恢复展示。
 
-## 按需读取
+## 按需参考
 
-- 修改实体、新增标注、批量预检：[editing.md](references/editing.md)
-- GeoJSON 转换与坐标：[conversion.md](references/conversion.md)
-- PNG/PDF 与检查：[export-validation.md](references/export-validation.md)
-- 交通图层与示意图约定：[traffic-drafting.md](references/traffic-drafting.md)
-- 运行时或字体故障：[runtime.md](references/runtime.md)
+- Python 首稿与持续提交：[python-authoring.md](references/python-authoring.md)
+- 原生编辑与选区：[editing.md](references/editing.md)
+- GeoJSON 与坐标转换：[conversion.md](references/conversion.md)
+- 局部预览、检查与交付：[export-validation.md](references/export-validation.md)
+- 可选交通领域约定：[traffic-drafting.md](references/traffic-drafting.md)
+- 运行时与字体：[runtime.md](references/runtime.md)
+
+Viewer 首版支持查看、选择与附加上下文；不提供前端手绘保存，不承诺 DWG、三维编辑或工程审定。

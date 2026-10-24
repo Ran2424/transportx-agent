@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from ezdxf import bbox
 from ezdxf import recover
+from shapely.geometry import Polygon
 from cad_fonts import font_warning
 from cad_io import diag, units_code, MAX_ENTITY_COUNT
 
@@ -18,13 +19,14 @@ def check(
     message: str,
     count: int | None = None,
     code: str | None = None,
+    handles: list[str] | None = None,
 ) -> None:
     entry: dict[str, Any] = {"id": check_id, "status": status, "message": message}
     if count is not None:
         entry["count"] = count
     checks.append(entry)
     if status in ("warning", "fail") and code:
-        diagnostics.append(diag(code, "error" if status == "fail" else "warning", message, **({"count": count} if count is not None else {})))
+        diagnostics.append(diag(code, "error" if status == "fail" else "warning", message, **({"count": count} if count is not None else {}), **({"details": {"entityHandles": handles[:100], "truncated": len(handles) > 100}} if handles else {})))
 
 
 def verify_dxf(path: Path, policy: str = "basic") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -66,7 +68,9 @@ def verify_dxf(path: Path, policy: str = "basic") -> tuple[list[dict[str, Any]],
     degenerate = 0
     unsupported = 0
     text_warning = 0
-    signatures: dict[Any, int] = {}
+    signatures: dict[Any, list[str]] = {}
+    invalid_boundaries: list[str] = []
+    curved_boundaries = 0
     for entity in entities:
         kind = entity.dxftype()
         layer = entity.dxf.layer
@@ -74,6 +78,11 @@ def verify_dxf(path: Path, policy: str = "basic") -> tuple[list[dict[str, Any]],
             points = [(float(x), float(y)) for x, y in entity.get_points("xy")]
             if len(points) < 2 or any(math.dist(points[index], points[index + 1]) < 1e-9 for index in range(len(points) - 1)):
                 degenerate += 1
+            if entity.closed:
+                if any(abs(p[0]) > 1e-12 for p in entity.get_points("b")):
+                    curved_boundaries += 1
+                elif len(points) < 3 or not Polygon(points).is_valid:
+                    invalid_boundaries.append(str(entity.dxf.handle))
             if layer in closed_layers:
                 if entity.closed:
                     closed_count += 1
@@ -81,15 +90,15 @@ def verify_dxf(path: Path, policy: str = "basic") -> tuple[list[dict[str, Any]],
                     check(checks, diagnostics, "closed", "fail", f"Boundary layer {layer} contains an open LWPOLYLINE.", code="cad.open_boundary", count=1)
             elif not entity.closed:
                 open_count += 1
-            signatures[("LWPOLYLINE", layer, tuple((round(x, 6), round(y, 6)) for x, y in points), bool(entity.closed))] = signatures.get(("LWPOLYLINE", layer, tuple((round(x, 6), round(y, 6)) for x, y in points), bool(entity.closed)), 0) + 1
+            signatures.setdefault(("LWPOLYLINE", layer, tuple((round(x, 6), round(y, 6)) for x, y in points), bool(entity.closed)), []).append(str(entity.dxf.handle))
         elif kind == "LINE":
             if math.dist((float(entity.dxf.start.x), float(entity.dxf.start.y)), (float(entity.dxf.end.x), float(entity.dxf.end.y))) < 1e-9:
                 degenerate += 1
             start, end = entity.dxf.start, entity.dxf.end
-            signatures[("LINE", layer, tuple(sorted([(round(float(start.x), 6), round(float(start.y), 6)), (round(float(end.x), 6), round(float(end.y), 6))])))] = signatures.get(("LINE", layer, tuple(sorted([(round(float(start.x), 6), round(float(start.y), 6)), (round(float(end.x), 6), round(float(end.y), 6))]))), 0) + 1
+            signatures.setdefault(("LINE", layer, tuple(sorted([(round(float(start.x), 6), round(float(start.y), 6)), (round(float(end.x), 6), round(float(end.y), 6))]))), []).append(str(entity.dxf.handle))
         elif kind == "POINT":
             location = entity.dxf.location
-            signatures[("POINT", layer, (round(float(location.x), 6), round(float(location.y), 6)))] = signatures.get(("POINT", layer, (round(float(location.x), 6), round(float(location.y), 6))), 0) + 1
+            signatures.setdefault(("POINT", layer, (round(float(location.x), 6), round(float(location.y), 6))), []).append(str(entity.dxf.handle))
         elif kind == "HATCH":
             if layer in closed_layers:
                 closed_count += 1
@@ -116,10 +125,11 @@ def verify_dxf(path: Path, policy: str = "basic") -> tuple[list[dict[str, Any]],
     else:
         check(checks, diagnostics, "degenerate", "pass", "No degenerate entities.")
 
-    duplicates = sum(count - 1 for count in signatures.values() if count > 1)
+    duplicates = sum(len(handles) - 1 for handles in signatures.values() if len(handles) > 1)
+    duplicate_handles = [handle for group in signatures.values() if len(group) > 1 for handle in group]
     if duplicates:
         status = "fail" if policy == "strict" else "warning"
-        check(checks, diagnostics, "duplicate", status, f"{duplicates} duplicate geometries.", count=duplicates, code="cad.duplicate")
+        check(checks, diagnostics, "duplicate", status, f"{duplicates} duplicate geometries.", count=duplicates, code="cad.duplicate", handles=duplicate_handles)
     else:
         check(checks, diagnostics, "duplicate", "pass", "No duplicate geometries.")
 
@@ -131,10 +141,12 @@ def verify_dxf(path: Path, policy: str = "basic") -> tuple[list[dict[str, Any]],
     if text_warning:
         check(checks, diagnostics, "text", "warning", f"{text_warning} text entities have a suspicious height.", count=text_warning, code="cad.text_height")
 
-    try:
-        xrefs = list(doc.xrefs)
-    except Exception:
-        xrefs = []
+    check(checks, diagnostics, "boundary_validity", "fail" if invalid_boundaries else "pass",
+          f"{len(invalid_boundaries)} invalid straight closed polyline boundaries." if invalid_boundaries else "Straight closed polyline boundaries are valid.",
+          count=len(invalid_boundaries), code="cad.invalid_boundary", handles=invalid_boundaries)
+    if curved_boundaries:
+        check(checks, diagnostics, "boundary_curves", "warning", "Curved polyline topology was not checked.", count=curved_boundaries, code="cad.topology_not_checked")
+    xrefs = [block.name for block in doc.blocks if block.block.is_xref]
     if xrefs:
         check(checks, diagnostics, "xref", "warning", f"{len(xrefs)} external references are present.", count=len(xrefs), code="cad.xref")
     else:

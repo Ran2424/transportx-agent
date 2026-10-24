@@ -1,3 +1,4 @@
+import { cadWorkspaceSmoke } from './cad-workspace-smoke.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -173,6 +174,7 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     assert.equal(updated.revision, 1);
     assert.equal((await attachCurrent()).revision, 1);
 
+    const workspace = await cadWorkspaceSmoke({ execute, session, page, panel, output });
     // Same fileId and revision in another session must load its own bytes.
     fs.mkdirSync(path.join(root, 'other-scenario'), { recursive: true });
     const other = (await json('/api/live-sessions', { cwd: path.join(root, 'other-scenario'), model: 'probe/smoke', name: 'CAD other session', profile })).session;
@@ -190,7 +192,7 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     await page.screenshot({ path: path.join(output, 'cad-other-session.png') });
     const verify = (await execute('cad_verify', { fileId: 'road' })).details.result;
     assert.equal(verify.ok, true);
-    return { firstRequestFive: true, optionalModuleSelected: true, nativePiAndApprovedContracts: true, dxfPngPdf: true, onDemandExportWithoutRevision: true, selectedEntityQuery: true, selectedAnnotation: true, staleSelectionRejected: true, continuousRevisionEdits: true, selectionIsReference: true, modelFacingInspectDetails: true, pointAndBoxSelection: true, refreshedDocument: true, userAndAgentOpenSameDrawing: true, crossSessionIsolation: true, queryExistingWrite: true, exactSelectionHash: true, revisionUpdate: true, cameraAndLayersPreserved: true, layerVisibility: true, blankClears: true, twoTabsOneHost: true, threeThemes: true, textEntity: '道路 ROAD-01', pageErrors: errors, screenshotDirectory: output };
+    return { workspace, firstRequestFive: true, optionalModuleSelected: true, nativePiAndApprovedContracts: true, dxfPngPdf: true, onDemandExportWithoutRevision: true, selectedEntityQuery: true, selectedAnnotation: true, staleSelectionRejected: true, continuousRevisionEdits: true, selectionIsReference: true, modelFacingInspectDetails: true, pointAndBoxSelection: true, refreshedDocument: true, userAndAgentOpenSameDrawing: true, crossSessionIsolation: true, queryExistingWrite: true, exactSelectionHash: true, revisionUpdate: true, cameraAndLayersPreserved: true, layerVisibility: true, blankClears: true, twoTabsOneHost: true, threeThemes: true, textEntity: '道路 ROAD-01', pageErrors: errors, screenshotDirectory: output };
   } catch (error) {
     await page.screenshot({ path: path.join(output, 'cad-failure.png') }).catch(() => {});
     fs.writeFileSync(path.join(output, 'cad-failure.html'), await page.content());

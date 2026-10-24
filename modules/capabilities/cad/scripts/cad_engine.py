@@ -13,6 +13,7 @@ import ezdxf
 from ezdxf import recover
 from cad_io import diag, sha256_file, relative_posix, workspace_path, safe_job_dir, units_code, units_name, units_from_request, resolve_manifest, resolve_drawing_path, resolve_input, document_summary, save_document, split_diagnostics, CAD_PROTOCOL, CAD_VERSION, CAD_ENGINE_PROTOCOL, CAD_ENGINE_VERSION, MAX_HANDLES, MAX_TEXT, FILE_ID_RE, SUPPORTED_ENTITY_TYPES
 from cad_projection import build_geojson_document
+from cad_geometry import entity_geometry
 from cad_operations import entity_bbox, selector_matches, apply_operations
 from cad_checks import verify_dxf, validate_commit
 from cad_render import render_dxf
@@ -96,8 +97,8 @@ def fail_draw(dry_run: bool, code: str, message: str) -> dict[str, Any]:
 def draw(workspace: Path, job_dir: Path, request: dict[str, Any]) -> dict[str, Any]:
     kind = request.get("kind")
     dry_run = bool(request.get("dryRun", False))
-    if kind not in ("from-geojson", "edit", "import"):
-        return fail_draw(dry_run, "cad.invalid_request", "draw request kind must be from-geojson, edit or import.")
+    if kind not in ("from-geojson", "edit", "import", "commit-candidate"):
+        return fail_draw(dry_run, "cad.invalid_request", "draw request kind must be from-geojson, edit, import or commit-candidate.")
     try:
         source_refs: list[dict[str, Any]] = []
         if kind == "from-geojson":
@@ -146,6 +147,18 @@ def draw(workspace: Path, job_dir: Path, request: dict[str, Any]) -> dict[str, A
             raise ValueError("Revision mismatch against manifest.")
         if request.get('expectedSha256') != sha256_file(source):
             raise ValueError('Exact base DXF expectedSha256 is required and must match.')
+        if kind == "commit-candidate":
+            base_doc = ezdxf.readfile(str(source))
+            source = workspace_path(workspace, request.get("sourcePath"), {".dxf"})
+            doc, auditor = recover.readfile(str(source))
+            if auditor.has_errors:
+                raise ValueError(f"Candidate DXF audit failed: {auditor.errors}")
+            if units_code(doc) != units_code(base_doc) or units_code(doc) not in (4, 6):
+                raise ValueError("Candidate units must match the current drawing; convert geometry explicitly before submission.")
+            source_refs = [{"kind": "dxf", "path": relative_posix(source, workspace), "sha256": sha256_file(source)}]
+            plan = {"operationCount": 1, "matchedCount": 0, "sampleHandles": [], "wouldCreate": len(doc.modelspace()), "wouldModify": 0, "wouldDelete": len(base_doc.modelspace())}
+            return draw_result(workspace, job_dir, request, doc, base_revision + 1, file_id, file_id, plan, source_refs, dry_run)
+
         doc, auditor = recover.readfile(str(source))
         if auditor.has_errors:
             raise ValueError(f"Source DXF audit failed: {auditor.errors}")
@@ -210,7 +223,7 @@ def inspect_entities(workspace: Path, request: dict[str, Any]) -> dict[str, Any]
             }
             for layer in doc.layers
         ]
-    if "entities" in include:
+    if "entities" in include or "geometry" in include:
         limit = min(int(request.get("limit", 500)), MAX_HANDLES)
         try:
             offset = int(request.get("cursor") or 0)
@@ -218,6 +231,7 @@ def inspect_entities(workspace: Path, request: dict[str, Any]) -> dict[str, Any]
             offset = 0
         page = filtered[offset:offset + limit]
         records = []
+        point_budget = 10_000
         for entity in page:
             kind = entity.dxftype()
             if kind not in SUPPORTED_ENTITY_TYPES:
@@ -235,6 +249,13 @@ def inspect_entities(workspace: Path, request: dict[str, Any]) -> dict[str, Any]
                 record["text"] = str(entity.dxf.text)[:MAX_TEXT]
             elif kind == "MTEXT":
                 record["text"] = str(entity.plain_text())[:MAX_TEXT]
+            if "geometry" in include:
+                geometry, used, truncated = entity_geometry(entity, point_budget)
+                point_budget -= used
+                if geometry is not None:
+                    record["geometry"] = geometry
+                if truncated:
+                    record["geometryTruncated"] = True
             records.append(record)
         result["entities"] = records
         if offset + limit < len(filtered):
@@ -273,8 +294,10 @@ def verify(workspace: Path, job_dir: Path, request: dict[str, Any]) -> dict[str,
             out.mkdir(parents=True, exist_ok=True)
             try:
                 doc, _auditor = recover.readfile(str(path))
-                rendered = render_dxf(doc, out / "preview.png", out / "preview.pdf")
-                digest = sha256_file(path)
+                rendered = render_dxf(doc, out / "preview.png", out / "preview.pdf", request.get("previewOptions"))
+                digest = request.get("_previewKey") or sha256_file(path)
+                if not re.fullmatch(r"[a-f0-9]{64}(?:_[a-f0-9]{16})?", digest):
+                    raise ValueError("Invalid preview identity.")
                 preview = {"png": f"cad/previews/{digest}.png", "pdf": f"cad/previews/{digest}.pdf", **rendered}
             except Exception as error:
                 diagnostics.append(diag("cad.render", "warning", str(error)))

@@ -4,7 +4,7 @@
   "toolId": "cad.verify",
   "piName": "cad_verify",
   "contractVersion": "1.0.0",
-  "semanticVersion": "cad-verify-v2",
+  "semanticVersion": "cad-verify-v3",
   "input": {
     "type": "object",
     "properties": {
@@ -23,6 +23,59 @@
       "exportPreview": {
         "type": "boolean",
         "description": "Export PNG/PDF of this existing DXF without creating a revision."
+      },
+      "previewOptions": {
+        "type": "object",
+        "properties": {
+          "bounds": {
+            "type": "object",
+            "required": [
+              "min",
+              "max"
+            ],
+            "properties": {
+              "min": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "max": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "additionalProperties": false
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "minItems": 1,
+            "maxItems": 64
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 4096
+          }
+        },
+        "additionalProperties": false,
+        "description": "With exportPreview=true: observe a local region and selected layers at a bounded resolution. Does not change the drawing or Canvas visibility."
       },
       "policy": {
         "anyOf": [

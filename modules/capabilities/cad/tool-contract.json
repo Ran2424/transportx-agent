@@ -4,7 +4,7 @@
   "toolId": "cad.draw",
   "piName": "cad_draw",
   "contractVersion": "1.0.0",
-  "semanticVersion": "cad-draw-v4",
+  "semanticVersion": "cad-draw-v5",
   "input": {
     "type": "object",
     "required": [
@@ -24,14 +24,31 @@
           {
             "type": "string",
             "const": "import"
+          },
+          {
+            "type": "string",
+            "const": "commit-candidate"
           }
         ],
-        "description": "from-geojson creates a new drawing from GeoJSON; edit modifies an existing drawing; import registers an existing DXF."
+        "description": "from-geojson creates a new drawing from GeoJSON; edit modifies an existing drawing; import registers an existing DXF; commit-candidate submits a Python/other-engine candidate as the next revision of an existing drawing."
       },
       "fileId": {
         "type": "string",
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
         "description": "Stable drawing id. Edits with contextId resolve it on the Host; otherwise required for edit."
+      },
+      "candidateMode": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "rebuild"
+          },
+          {
+            "type": "string",
+            "const": "based-on-current"
+          }
+        ],
+        "description": "Required for commit-candidate: declare whole regeneration or editing a copy of the current DXF. Both invalidate old version-bound contexts; preserving handles is not guaranteed."
       },
       "sourceCrs": {
         "type": "string",
@@ -389,7 +406,8 @@
                 "count": {
                   "type": "integer",
                   "minimum": 1,
-                  "maximum": 100
+                  "maximum": 100,
+                  "description": "Place copies at n*dx,n*dy for n=1..count."
                 }
               },
               "additionalProperties": false
@@ -786,6 +804,20 @@
         },
         "required": [
           "sourcePath"
+        ]
+      },
+      {
+        "properties": {
+          "kind": {
+            "const": "commit-candidate"
+          }
+        },
+        "required": [
+          "sourcePath",
+          "fileId",
+          "baseRevision",
+          "expectedSha256",
+          "candidateMode"
         ]
       },
       {

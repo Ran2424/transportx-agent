@@ -207,9 +207,16 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
       fileId: 'junction_plan',
       dryRun: true,
     };
+    const candidateRequest = { protocol: 'tau-cad', version: '1.0', kind: 'commit-candidate', fileId: 'layout', sourcePath: 'candidate.dxf', baseRevision: 1, expectedSha256: 'a'.repeat(64), candidateMode: 'rebuild' };
+    assert.equal(cad.parseCadDrawRequestStructured(candidateRequest).ok, true);
+    assert.equal(cad.parseCadDrawRequestStructured({ ...candidateRequest, expectedSha256: undefined }).ok, false);
+    assert.equal(cad.parseCadDrawRequestStructured({ ...candidateRequest, candidateMode: 'preserve-handles-guaranteed' }).ok, false);
+    assert.equal(cad.parseCadVerifyRequestStructured({ protocol: 'tau-cad', version: '1.0', fileId: 'layout', exportPreview: true, previewOptions: { width: 4097 } }).ok, false);
+    assert.equal(cad.parseCadVerifyRequestStructured({ protocol: 'tau-cad', version: '1.0', fileId: 'layout', previewOptions: { width: 800 } }).ok, false);
+    assert.equal(cad.parseCadVerifyRequestStructured({ protocol: 'tau-cad', version: '1.0', fileId: 'layout', exportPreview: true, previewOptions: { bounds: { min: [1, 0], max: [0, 1] } } }).ok, false);
     const parsedRequest = cad.parseCadDrawRequestStructured(request);
     assert.equal(parsedRequest.ok, true);
-    if (!parsedRequest.ok) throw new Error('Valid CAD GeoJSON request was rejected');
+    if (!parsedRequest.ok || parsedRequest.value.kind !== 'from-geojson') throw new Error('Valid CAD GeoJSON request was rejected');
     assert.equal(parsedRequest.value.units, 'm');
     assert.equal(parsedRequest.value.dryRun, true);
     assert.equal(cad.parseCadDrawRequestStructured({ ...request, surprise: true }).ok, false);

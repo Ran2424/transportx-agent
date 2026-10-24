@@ -202,6 +202,92 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     assert.equal(cancellation.state, 'running', 'requesting cancellation does not claim execution stopped');
     await assert.rejects(cancelled, /confirmed stopped/);
     assert.equal(invocations.query(owner, { lookupToolCallId: 'cancel-write' }).state, 'cancelled');
+    // General-purpose Python -> import -> candidate -> native edit -> observe.
+    const { execFileSync } = require('node:child_process');
+    execFileSync(PYTHON, ['-c', `
+import sys, pathlib, ezdxf
+sys.path.insert(0, str(pathlib.Path.cwd()/'modules/capabilities/cad/scripts'))
+from cad_operations import apply_operations
+root=pathlib.Path(sys.argv[1]); d=ezdxf.new('R2010');d.header['$INSUNITS']=4
+d.layers.add('EQUIPMENT');d.layers.add('LABELS');d.blocks.new('SYMBOL').add_line((0,0),(1,0))
+line=d.modelspace().add_line((0,0),(10,0),dxfattribs={'layer':'EQUIPMENT'})
+apply_operations(d,[{'op':'copy','selector':{'kind':'handle','handle':line.dxf.handle},'dx':20,'dy':0,'count':3}, {'op':'drawText','layer':'LABELS','position':[0,5],'text':'Device','height':2.5,'rotationDeg':45}, {'op':'insertBlock','layer':'EQUIPMENT','name':'SYMBOL','position':[5,5],'rotationDeg':90,'scale':2}])
+assert [e.dxf.start.x for e in d.modelspace().query('LINE')]==[0,20,40,60]
+assert list(d.modelspace().query('TEXT'))[0].dxf.rotation==45
+block=list(d.modelspace().query('INSERT'))[0];assert block.dxf.rotation==90 and block.dxf.xscale==2
+d.saveas(root/'equipment.dxf')
+`, root]);
+    const firstDraft = await cad.draw(owner, { kind: 'import', fileId: 'equipment', sourcePath: 'equipment.dxf', units: 'mm' });
+    const initialView = firstDraft.canvas.viewId;
+    assert.equal((await cad.present(owner, { resource: { scope: 'session-file', path: 'equipment.dxf' } })).viewId, initialView, 'present reuses explicit import identity');
+    const details = await cad.inspect(owner, { fileId: 'equipment', include: ['geometry'] });
+    assert.equal(details.entities.find((e: any) => e.type === 'TEXT').geometry.rotationDeg, 45);
+    assert.equal(details.entities.find((e: any) => e.type === 'INSERT').geometry.scale[0], 2);
+    assert.deepEqual(details.entities.find((e: any) => e.type === 'LINE').geometry.start, [0, 0]);
+    execFileSync(PYTHON, ['-c', `import sys,pathlib,ezdxf; p=pathlib.Path(sys.argv[1]);d=ezdxf.readfile(p/'cad/equipment/r1.dxf');d.modelspace().add_circle((30,30),5,dxfattribs={'layer':'EQUIPMENT'});d.saveas(p/'equipment.dxf')`, root]);
+    const submit = { kind: 'commit-candidate', fileId: 'equipment', sourcePath: 'equipment.dxf', baseRevision: 1, expectedSha256: firstDraft.drawing.sha256, candidateMode: 'based-on-current', toolCallId: 'python-candidate' };
+    await assert.rejects(cad.present(owner, { resource: { scope: 'session-file', path: 'equipment.dxf' } }), /commit-candidate/);
+    const previewPlan = await cad.draw(owner, { ...submit, dryRun: true });
+    assert.equal(previewPlan.drawing, undefined);
+    assert.equal((await cad.inspect(owner, { fileId: 'equipment' })).drawing.revision, 1);
+    const candidate = await invocations.execute(owner, submit, signal, dispatch);
+    assert.equal(candidate.result.drawing.revision, 2);
+    assert.equal(candidate.result.canvas.viewId, initialView);
+    assert.equal(candidate.result.canvas.operation, 'update');
+    assert.equal((await invocations.execute(owner, submit, signal, dispatch)).reused, true, 'candidate retries reuse durable confirmation');
+    await assert.rejects(cad.draw(owner, submit), /revision mismatch/);
+    assert.equal((await cad.present(owner, { resource: { scope: 'session-file', path: 'equipment.dxf' } })).viewId, initialView);
+    const changed = await cad.inspect(owner, { fileId: 'equipment', include: ['geometry'] });
+    assert.equal(changed.entities.find((e: any) => e.type === 'CIRCLE').geometry.radius, 5);
+    try {
+      Object.assign(process.env, { TAU_CAD_ENDPOINT: 'http://127.0.0.1', TAU_CAD_SESSION_ID: 'candidate', TAU_CAD_TOKEN: 'test' });
+      globalThis.fetch = async () => new Response(JSON.stringify({ result: candidate.result, operationId: candidate.operationId }));
+      const response = await registered.find((tool) => tool.name === 'cad_draw').execute('candidate-visible', submit, signal);
+      const receipt = JSON.parse(response.content[0].text.split('\n').at(-1));
+      assert.equal(receipt.presentation.viewId, initialView);
+      assert.equal(receipt.presentation.browserRenderConfirmed, false);
+      assert.equal(receipt.references.requeryRequired, true);
+      assert.equal(receipt.drawing.sha256, candidate.result.drawing.sha256);
+    } finally {
+      globalThis.fetch = originalFetch;
+      for (const [name, value] of Object.entries(environment)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    const native = await cad.draw(owner, { kind: 'edit', fileId: 'equipment', baseRevision: 2, expectedSha256: candidate.result.drawing.sha256, operations: [{ op: 'move', selector: { kind: 'handle', handle: changed.entities.find((e: any) => e.type === 'CIRCLE').handle }, dx: 5, dy: 0 }] });
+    assert.equal(native.drawing.revision, 3);
+    assert.equal(native.canvas.viewId, initialView);
+    const observation = await cad.verify(owner, { fileId: 'equipment', exportPreview: true, previewOptions: { bounds: { min: [20, 10], max: [50, 40] }, layers: ['EQUIPMENT'], width: 800, height: 600 } });
+    assert.equal(observation.preview.width, 800);
+    assert.equal(observation.preview.height, 600);
+    const full = await cad.verify(owner, { fileId: 'equipment', exportPreview: true });
+    assert.notEqual(observation.preview.png, full.preview.png, 'local and full previews cannot overwrite each other');
+    assert.equal((await cad.inspect(owner, { fileId: 'equipment' })).drawing.revision, 3);
+    // A rebuilt candidate also continues this identity; no promise about old handles.
+    fs.copyFileSync(path.join(root, native.drawing.path), path.join(root, 'rebuilt.dxf'));
+    const rebuild = await cad.draw(owner, { ...submit, sourcePath: 'rebuilt.dxf', candidateMode: 'rebuild', baseRevision: 3, expectedSha256: native.drawing.sha256 });
+    assert.equal(rebuild.drawing.revision, 4);
+    assert.equal(rebuild.canvas.viewId, initialView);
+    const wrongUnits = path.join(root, 'wrong-units.dxf');
+    execFileSync(PYTHON, ['-c', `import sys,ezdxf;d=ezdxf.new('R2010');d.header['$INSUNITS']=6;d.modelspace().add_line((0,0),(1,0));d.saveas(sys.argv[1])`, wrongUnits]);
+    assert.equal((await cad.draw(owner, { ...submit, sourcePath: 'wrong-units.dxf', baseRevision: 4, expectedSha256: rebuild.drawing.sha256 })).ok, false);
+    await assert.rejects(cad.draw(owner, { ...submit, sourcePath: rebuild.drawing.path, baseRevision: 4, expectedSha256: rebuild.drawing.sha256 }), /outside the managed/);
+    // Source changes during a dispatched candidate cannot be committed.
+    const tamperedSubmit = { ...submit, baseRevision: 4, expectedSha256: rebuild.drawing.sha256, toolCallId: 'candidate-changed' };
+    const run = cad.runEngine.bind(cad);
+    cad.runEngine = async (...args: any[]) => { const result = await run(...args); fs.appendFileSync(path.join(root, 'equipment.dxf'), 'changed'); return result; };
+    try { await assert.rejects(cad.draw(owner, tamperedSubmit), /input changed/); }
+    finally { cad.runEngine = run; }
+    assert.equal((await cad.inspect(owner, { fileId: 'equipment' })).drawing.revision, 4);
+    execFileSync(PYTHON, ['-c', `
+import sys,pathlib,ezdxf
+p=pathlib.Path(sys.argv[1]);d=ezdxf.new('R2010');d.header['$INSUNITS']=4;d.layers.add('SURFACE')
+d.modelspace().add_lwpolyline([(0,0),(10,10),(0,10),(10,0)],close=True,dxfattribs={'layer':'SURFACE'})
+b=d.blocks.new('EXTERNAL',dxfattribs={'flags':4,'xref_path':'missing.dxf'});d.modelspace().add_blockref('EXTERNAL',(0,0),dxfattribs={'layer':'SURFACE'})
+d.saveas(p/'invalid.dxf')
+`, root]);
+    const problems = await cad.verify(owner, { path: 'invalid.dxf' });
+    assert.equal(problems.ok, false);
+    assert.ok(problems.diagnostics.find((d: any) => d.code === 'cad.invalid_boundary').details.entityHandles.length);
+    assert.ok(problems.diagnostics.some((d: any) => d.code === 'cad.xref'));
     assert.equal(cad.activeCount, 0);
   }
 
