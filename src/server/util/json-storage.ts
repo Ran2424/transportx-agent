@@ -99,10 +99,14 @@ export function acquireWriteLease(target: string) {
   const ownerFile = path.join(lock, `owner.${nonce}.json`);
   try { fs.writeFileSync(ownerFile, JSON.stringify({ pid: process.pid, nonce, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' }); }
   catch (error) { try { fs.rmdirSync(lock); } catch {} throw error; }
-  return () => {
+  const release = () => {
     const lease = readLease(lock);
     if (lease?.owner.nonce === nonce) removeLeaseOwner(lock, ownerFile);
   };
+  return Object.assign(release, { assertOwned() {
+    const lease = readLease(lock);
+    if (lease?.owner.nonce !== nonce || lease.owner.pid !== process.pid) throw Object.assign(new Error(`Writer lease generation changed: ${lock}`), { code: 'writer_busy', status: 409 });
+  } });
 }
 
 export function assertHostWriter(agentDir: string) {

@@ -15,6 +15,7 @@ export * from './common.ts';
 export * from './errors.ts';
 export * from './session.ts';
 export * from './workspace.ts';
+export * from './workspace-migration.ts';
 export * from './geo.ts';
 export * from './citation.ts';
 export * from './bridge.ts';
