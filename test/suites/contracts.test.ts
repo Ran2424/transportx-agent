@@ -13,6 +13,35 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     return result.diagnostics?.map((item) => item.code) || [];
   }
 
+  // Persistent identity is independent from live metadata and never accepts a client history path.
+  {
+    const workspace = await import('../../src/contracts/workspace.ts');
+    const { defaultSessionProfile } = await import('../../src/contracts/session-profile.ts');
+    const id = 'ws_00000000-0000-4000-8000-000000000001';
+    const conversationId = 'conv_00000000-0000-4000-8000-000000000002';
+    const input = { requestId: 'create-1', workspace: { kind: 'new', name: '上海分析' }, name: '首次分析', domainId: 'com.transportx.workbench', model: 'probe/model', profile: defaultSessionProfile() };
+    assert.equal(workspace.parseCreateConversationStructured(input).ok, true);
+    assert.equal(workspace.parseCreateConversationStructured({ ...input, cwd: '/tmp/arbitrary' }).ok, false);
+    assert.equal(workspace.parseCreateConversationStructured({ ...input, model: undefined }).ok, false);
+    assert.equal(workspace.parseCreateConversationStructured({ ...input, profile: defaultSessionProfile([], 'compat-default') }).ok, false);
+    assert.equal(workspace.parseCreateConversationStructured({ ...input, workspace: { kind: 'existing', workspaceId: id, expectedRevision: 0, defaultsRevision: 0 }, model: undefined, profile: undefined, domainId: undefined }).ok, true);
+    assert.equal(workspace.parseCreateConversationStructured({ ...input, workspace: { kind: 'existing', workspaceId: id, defaultsRevision: 0 } }).ok, false, 'existing workspace creation checks management and defaults revisions');
+    assert.equal(workspace.parseCreateConversationStructured({ ...input, workspace: { kind: 'existing', workspaceId: id, expectedRevision: 0, defaultsRevision: 0, parentDirectory: '/tmp' } }).ok, false);
+    assert.equal(workspace.parseCreateConversationStructured({ ...input, name: 'x'.repeat(121) }).ok, false);
+    const at = '2026-10-25T00:00:00.000Z';
+    const record = { id: conversationId, creationRequestId: null, creationInputSha256: null, name: '旧历史', createdAt: at, updatedAt: at, defaultsRevision: null, modelSpec: null, appendSystemPrompt: '', state: 'ready', history: { key: 'old/history.jsonl', headerId: 'pi-original-id' }, plan: null, privateState: 'needs-review', lastStartFailure: null, deletion: null };
+    const manifest = { schemaVersion: 1, id, revision: 0, name: '工作区', createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: { domainId: null, modelSpec: null, profile: null }, citationRegistryId: 'legacy-registry', conversations: [record] };
+    assert.equal(workspace.parseWorkspaceManifestStructured(manifest).ok, true, 'unknown original plans remain unknown during migration');
+    assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, conversations: [{ ...record, creationRequestId: 'new', creationInputSha256: 'a'.repeat(64) }] }).ok, false, 'newly committed conversations require their own plan');
+    assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, conversations: [{ ...record, plan: { path: `conversations/${conversationId}/plan.json`, source: 'legacy-workspace' } }] }).ok, true);
+    assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, conversations: [{ ...record, history: { ...record.history, key: '../outside.jsonl' } }] }).ok, false);
+    assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, conversations: [record, record] }).ok, false);
+    assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, token: 'never-persist' }).ok, false);
+    const tombstone = { workspaceId: id, path: '/managed/original', creationRequestId: null, creationInputSha256: null, state: 'deleted', deletion: { requestId: 'delete-1', manifestRevision: 1, historyKeys: ['old/history.jsonl'], invocationOwnerKeys: [], stage: 'workspace-cleaned' } };
+    assert.equal(workspace.parseWorkspaceCatalogStructured({ schemaVersion: 1, revision: 2, entries: [tombstone] }).ok, true);
+    assert.equal(workspace.parseWorkspaceCatalogStructured({ schemaVersion: 1, revision: 2, entries: [{ ...tombstone, deletion: null }] }).ok, false, 'deleted catalog entries retain deletion targets');
+  }
+
   // Presentation is optional and never changes runtime identity or Skill instructions.
   {
     const { parseModuleManifestStructured } = await import('../../src/contracts/module.ts');

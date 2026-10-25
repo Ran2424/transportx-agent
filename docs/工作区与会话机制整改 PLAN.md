@@ -398,7 +398,7 @@ type CreateConversationInput = {
   requestId: string;
   workspace:
     | { kind: 'new'; name: string; parentDirectory?: string }
-    | { kind: 'existing'; workspaceId: string; defaultsRevision: number };
+    | { kind: 'existing'; workspaceId: string; expectedRevision: number; defaultsRevision: number };
   name: string;
   model?: string;
   profile?: SessionProfileV1;
@@ -408,6 +408,8 @@ type CreateConversationInput = {
 ```
 
 workspace 为互斥联合，禁止同时传 workspaceId 和父目录，也不接受裸 cwd 表示“猜测复用”。新工作区必须明确有效 profile/domain/model；新 UI 的 defaults 初始化为首个会话配置。
+
+2026-10-25 实施确认：existing 工作区创建同时传 expectedRevision 与 defaultsRevision，分别校验管理版本和所用默认配置版本。相同 requestId 先核对不可变输入摘要并返回原记录，再对尚未提交的新请求做版本校验；不因已成功请求导致的版本增加而重复创建。
 
 GET history 的 entries 沿用现有消息契约，不新增第二套消息对象。新只读资源接口统一使用 /api/conversations/:conversationId/ 下的命名空间：PR 2A 只交付 files/attachments 的基础入口，citations、geo-resources、video-resources 等高级离线映射在 PR 2B 逐项验收后启用。参数、下载与错误码复用既有实现，不开放任意资产路径入口。
 

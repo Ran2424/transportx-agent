@@ -1,6 +1,79 @@
 const { test } = require('node:test') as typeof import('node:test');
 
 test('Session close, history deletion and process cancellation preserve writer ownership', async (t) => {
+  // Workspace RMW transactions preserve independent revisions and failed writes leave committed data intact.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const { WorkspaceStore, workspaceCreationDigest } = require('../../bin/workspace-store.js');
+    const { toPosixPath } = require('../../bin/util/path.js');
+    const { defaultSessionProfile } = require('../../bin/contracts/session-profile.js');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-workspace-store-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const directory = fs.realpathSync(root), workspaceDirectory = path.join(directory, 'workspace'); fs.mkdirSync(workspaceDirectory);
+    const store = new WorkspaceStore(directory, path.join(directory, 'sessions'));
+    assert.throws(() => store.readCatalog(), { code: 'catalog_missing' });
+    await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
+    const id = 'ws_00000000-0000-4000-8000-000000000001', conversationId = 'conv_00000000-0000-4000-8000-000000000002';
+    const at = '2026-10-25T00:00:00.000Z', profile = defaultSessionProfile();
+    await store.editCatalog(0, (catalog: any) => catalog.entries.push({ workspaceId: id, path: toPosixPath(workspaceDirectory), creationRequestId: 'new-workspace', creationInputSha256: 'a'.repeat(64), state: 'creating', deletion: null }));
+    const plan = { schemaVersion: 3, platform: { name: 'TransportX Agent', version: '3.23.2' }, profile, domain: { id: 'com.transportx.workbench', version: '1.4.1' }, modules: [], assets: [], runtime: {}, workspace: workspaceDirectory, createdAt: at };
+    await store.savePlan(workspaceDirectory, conversationId, plan);
+    await assert.rejects(store.savePlan(workspaceDirectory, conversationId, { ...plan, createdAt: '2026-10-26T00:00:00.000Z' }), { code: 'workspace_revision_conflict' });
+    const record = { id: conversationId, creationRequestId: 'new-conversation', creationInputSha256: 'b'.repeat(64), name: '首次分析', createdAt: at, updatedAt: at, defaultsRevision: 0, modelSpec: 'probe/first', appendSystemPrompt: '', state: 'created', history: { key: store.newHistoryKey(conversationId), headerId: null }, plan: { path: `conversations/${conversationId}/plan.json`, source: 'created' }, privateState: 'isolated', lastStartFailure: null, deletion: null };
+    const manifest = { schemaVersion: 1, id, revision: 0, name: '工作区', createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: { domainId: 'com.transportx.workbench', modelSpec: 'probe/first', profile }, citationRegistryId: id, conversations: [record] };
+    await store.publishWorkspace(id, manifest);
+    assert.equal(store.readCatalog().entries[0].state, 'ready');
+    assert.equal(fs.existsSync(path.join(store.sessionsDirectory, record.history.key)), false, 'zero-message existence does not require a Pi file');
+    await Promise.all([
+      store.editWorkspace(id, 0, (value: any) => { value.name = '名称已修改'; }),
+      store.updateDefaults(id, 0, { ...manifest.defaults, modelSpec: 'probe/next' }),
+    ]);
+    const renamed = store.readWorkspace(id).manifest;
+    assert.deepEqual([renamed.revision, renamed.defaultsRevision, renamed.name, renamed.defaults.modelSpec], [1, 1, '名称已修改', 'probe/next']);
+    assert.equal(store.readPlan(workspaceDirectory, renamed.conversations[0]).domain.id, plan.domain.id);
+    assert.equal(renamed.conversations[0].modelSpec, 'probe/first', 'default edits do not change old conversations');
+    await assert.rejects(store.editWorkspace(id, 0, () => {}), { code: 'workspace_revision_conflict' });
+    await store.updateRuntime(id, conversationId, { state: 'start-failed', history: record.history, modelSpec: 'probe/first', lastStartFailure: { code: 'pi_failed', message: 'Retry explicitly.', at } });
+    const recovered = new WorkspaceStore(directory, store.sessionsDirectory).readWorkspace(id).manifest;
+    assert.deepEqual([recovered.revision, recovered.defaultsRevision, recovered.updatedAt], [renamed.revision, renamed.defaultsRevision, renamed.updatedAt], 'runtime updates do not create management conflicts or alter activity ordering');
+    assert.equal(recovered.conversations[0].state, 'start-failed');
+    const reserved = store.inspectHistory(workspaceDirectory, recovered.conversations[0]);
+    assert.equal(reserved.sessionFile, null);
+    fs.mkdirSync(path.dirname(reserved.file), { recursive: true });
+    fs.writeFileSync(reserved.file, JSON.stringify({ type: 'session', id: 'native-pi-id', cwd: workspaceDirectory }) + '\n');
+    const bound = { ...record.history, headerId: 'native-pi-id' };
+    await store.updateRuntime(id, conversationId, { state: 'ready', history: bound, modelSpec: 'probe/first', lastStartFailure: null });
+    fs.rmSync(reserved.file);
+    await assert.rejects(store.updateRuntime(id, conversationId, { state: 'created', history: record.history, modelSpec: 'probe/first', lastStartFailure: null }), { code: 'history_identity_mismatch' });
+    assert.throws(() => store.inspectHistory(workspaceDirectory, store.readWorkspace(id).manifest.conversations[0]), { code: 'history_missing' });
+    assert.equal(fs.existsSync(reserved.file), false, 'missing bound histories are never recreated by a read');
+    const before = fs.readFileSync(path.join(workspaceDirectory, '.tau/workspace.json'));
+    const rename = fs.renameSync;
+    fs.renameSync = (source: string, target: string) => { if (target === path.join(workspaceDirectory, '.tau/workspace.json')) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); return rename(source, target); };
+    try { await assert.rejects(store.editWorkspace(id, 1, (value: any) => { value.name = 'Must not commit'; }), { code: 'ENOSPC' }); }
+    finally { fs.renameSync = rename; }
+    assert.deepEqual(fs.readFileSync(path.join(workspaceDirectory, '.tau/workspace.json')), before);
+    assert.equal(workspaceCreationDigest({ a: 1, nested: { b: 2, a: 3 } }), workspaceCreationDigest({ nested: { a: 3, b: 2 }, a: 1 }));
+    await store.editWorkspace(id, 1, (value: any) => { value.conversations[0].state = 'deleted'; value.conversations[0].deletion = { requestId: 'deleted-conversation', invocationOwnerKey: null, stage: 'history-cleaned' }; });
+    await assert.rejects(store.editWorkspace(id, 2, (value: any) => { value.conversations = []; }), { code: 'workspace_identity_conflict' });
+    const metadata = path.join(workspaceDirectory, '.tau'), held = path.join(workspaceDirectory, '.tau-held');
+    fs.renameSync(metadata, held);
+    let linked = false;
+    try { fs.symlinkSync(held, metadata, 'dir'); linked = true; }
+    catch (error) { t.diagnostic(`Symlink assertion unavailable: ${(error as Error).message}`); }
+    try { if (linked) assert.throws(() => store.readWorkspace(id), { code: 'workspace_identity_conflict' }); }
+    finally { if (linked) fs.unlinkSync(metadata); fs.renameSync(held, metadata); }
+    const revision = store.readCatalog().revision;
+    await store.editCatalog(revision, (catalog: any) => { catalog.entries[0].state = 'deleted'; catalog.entries[0].deletion = { requestId: 'deleted-workspace', manifestRevision: 2, historyKeys: [record.history.key], invocationOwnerKeys: [], stage: 'workspace-cleaned' }; });
+    await assert.rejects(store.editCatalog(revision + 1, (catalog: any) => { catalog.entries = []; }), { code: 'workspace_identity_conflict' });
+    fs.writeFileSync(store.catalogFile, '{broken');
+    assert.throws(() => store.readCatalog(), { code: 'metadata_corrupt' });
+    await assert.rejects(store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] }), { code: 'workspace_revision_conflict' });
+    assert.equal(fs.readFileSync(store.catalogFile, 'utf8'), '{broken', 'corrupt catalogs are never reset to an empty catalog');
+    fs.rmSync(store.catalogFile);
+    await assert.rejects(store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] }), { code: 'metadata_corrupt' });
+    assert.equal(fs.existsSync(store.catalogFile), false, 'missing catalogs with surviving backups require explicit recovery');
+  }
   {
     const assert = require('node:assert/strict');
     const { execFileSync } = require('node:child_process');
