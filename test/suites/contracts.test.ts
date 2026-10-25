@@ -37,7 +37,7 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, conversations: [{ ...record, history: { ...record.history, key: '../outside.jsonl' } }] }).ok, false);
     assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, conversations: [record, record] }).ok, false);
     assert.equal(workspace.parseWorkspaceManifestStructured({ ...manifest, token: 'never-persist' }).ok, false);
-    const tombstone = { workspaceId: id, path: '/managed/original', creationRequestId: null, creationInputSha256: null, state: 'deleted', deletion: { requestId: 'delete-1', manifestRevision: 1, historyKeys: ['old/history.jsonl'], invocationOwnerKeys: [], stage: 'workspace-cleaned' } };
+    const tombstone = { workspaceId: id, path: '/managed/original', creationRequestId: null, creationInputSha256: null, state: 'deleted', deletion: { requestId: 'delete-1', manifestRevision: 1, historyKeys: ['old/history.jsonl'], invocationOwnerKeys: [], conversationIds: [], rootIdentity: 'a'.repeat(64), error: null, stage: 'workspace-cleaned' } };
     assert.equal(workspace.parseWorkspaceCatalogStructured({ schemaVersion: 1, revision: 2, entries: [tombstone] }).ok, true);
     assert.equal(workspace.parseWorkspaceCatalogStructured({ schemaVersion: 1, revision: 2, entries: [{ ...tombstone, deletion: null }] }).ok, false, 'deleted catalog entries retain deletion targets');
   }

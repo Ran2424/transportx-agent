@@ -193,6 +193,19 @@ export class WorkspaceStore {
       return manifest;
     });
   }
+  freezeWorkspaceDeletion(workspaceId: string, expectedRevision: number, deletion: NonNullable<WorkspaceCatalogEntryV1['deletion']>) {
+    const { directory } = this.readWorkspace(workspaceId);
+    return mutateJson(workspaceMetadataPath(directory, '.tau/workspace.json'), async () => {
+      const { manifest } = this.readWorkspace(workspaceId);
+      if (manifest.revision !== expectedRevision) throw failure('workspace_revision_conflict', 'Workspace changed before deletion targets froze.');
+      const catalog = this.readCatalog();
+      return this.editCatalog(catalog.revision, (value) => {
+        const entry = value.entries.find((entry) => entry.workspaceId === workspaceId)!;
+        if (entry.state !== 'ready') throw failure('workspace_revision_conflict', 'Workspace lifecycle changed before deletion.');
+        entry.state = 'deleting'; entry.deletion = deletion;
+      });
+    });
+  }
   commitConversation(workspaceId: string, requestId: string, inputSha256: string, expectedRevision: number, defaultsRevision: number, prepare: (manifest: WorkspaceManifestV1, directory: string) => Promise<ConversationRecordV1>) {
     const { directory } = this.readWorkspace(workspaceId);
     const file = workspaceMetadataPath(directory, '.tau/workspace.json');

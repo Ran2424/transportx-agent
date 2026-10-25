@@ -260,6 +260,8 @@ Pi 在首次 assistant 前的用户输入持久性是现有运行时边界；本
 
 Host 按 canonical cwd 管理 WorkspaceRuntimeGate；门禁覆盖 Pi 启动、空闲、执行、压缩、问答等待、Pi 队列、停止及受管作业清理，不只覆盖 prompt HTTP 请求。
 
+运行协调文件与锁位于固定用户配置目录的 `runtime-guards/`，使用平台 profile 的 home fallback，不随 `TAU_USER_DATA_DIR` 或 `PI_CODING_AGENT_DIR` 改变。锁不放在将被删除的工作区内部；目录删除后，仍可凭 catalog 中的固定目标查看诊断、核验代次并完成提交。删除目标另外保存目录身份及会话 ID 墓碑，不能对同路径重建的新目录继续递归清理。
+
 1. 浏览另一条会话的历史不启动 Pi，也不停止当前运行。
 2. 用户请求激活 B，若同工作区 A 空闲，等待 A 持久化、受管作业结束及进程树停止后，再启动 B。
 3. A 正在执行、压缩、等待输入或有 steering/follow-up 队列：返回 workspace_busy，展示 A 和状态。用户可以返回 A，或明确选择“停止 A 并切换”；不能静默取消或转移队列。

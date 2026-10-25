@@ -18,7 +18,7 @@ export type MigrationSource = { path: string; bytes: number; sha256: string; kin
 export type MigrationWrite = { relative: string; value: unknown; bytes: number; sha256: string; previousSha256: string | null; previousBytes: number; backup: string | null };
 export type WorkspaceMigrationPlan = {
   schemaVersion: 1; itemId: string; workspaceId: string; directory: string; sessionsDirectory: string; sourceDigest: string; preparedAt: string;
-  sources: MigrationSource[]; writes: MigrationWrite[]; manifest: WorkspaceManifestV1;
+  sources: MigrationSource[]; writes: MigrationWrite[]; manifest: WorkspaceManifestV1; singleHistoryProven: boolean;
   issues: MigrationPrivateIssue[]; assignments: Array<{ sourceId: string; conversationId: string | null; basis: string }>;
   notes: Array<{ code: string; file: string; message: string }>;
 };
@@ -50,7 +50,7 @@ export async function migrationFileVersion(file: string): Promise<{ bytes: numbe
 }
 
 /** Full reads happen only in the frozen target workspace, never in global startup inventory. */
-export async function planWorkspaceMigration(item: WorkspaceMigrationItemV1, preparedAt = new Date().toISOString()): Promise<WorkspaceMigrationPlan> {
+export async function planWorkspaceMigration(item: WorkspaceMigrationItemV1, preparedAt = new Date().toISOString(), singleHistoryProven = true): Promise<WorkspaceMigrationPlan> {
   if (item.kind !== 'workspace' || !item.workspaceId || !fs.existsSync(item.path) || fs.realpathSync(item.path) !== path.resolve(item.path)) throw fail('workspace_identity_conflict', 'Migration target is not its canonical inventoried workspace.');
   const sources: MigrationSource[] = [], metadata = new Map<string, unknown>(), notes: WorkspaceMigrationPlan['notes'] = [];
   if (fs.existsSync(workspaceMetadataPath(item.path, '.tau/conversations'))) throw fail('workspace_identity_conflict', 'Unpublished new-format private directories already exist. Recover their index before legacy conversion.');
@@ -131,7 +131,7 @@ export async function planWorkspaceMigration(item: WorkspaceMigrationItemV1, pre
   }
   if (!managed) throw fail('workspace_ownership_unproven', 'No history, saved plan or valid managed-directory marker proves this legacy candidate. Keep it for review rather than enrolling an arbitrary folder.');
   const sourceDigest = workspaceCreationDigest(sources.map((source) => [source.path, source.bytes, source.sha256]).sort(([left], [right]) => String(left).localeCompare(String(right))));
-  const privateState = migratePrivateState(item, sourceDigest, histories, metadata, preparedAt);
+  const privateState = migratePrivateState(item, sourceDigest, histories, metadata, preparedAt, singleHistoryProven);
   const createdAt = histories.length ? histories.map((history) => history.timestamp).sort()[0] : new Date(fs.statSync(item.path).mtimeMs).toISOString();
   const manifest: WorkspaceManifestV1 = {
     schemaVersion: 1, id: item.workspaceId, revision: item.revision, name: path.basename(item.path).trim().slice(0, 120) || '历史工作区', createdAt, updatedAt: createdAt,
@@ -154,5 +154,5 @@ export async function planWorkspaceMigration(item: WorkspaceMigrationItemV1, pre
     writes.push({ ...output, bytes: bytes.length, sha256: migrationBytesHash(bytes), previousSha256: old?.sha256 || null, previousBytes: old?.bytes || 0, backup: old ? `.tau/migrations/workspace-v1/backups/${relativePosixPath(item.path, file)}` : null });
   }
   if (!parseWorkspaceManifestStructured(manifest).ok) throw fail('metadata_corrupt', 'Migration generated an invalid Manifest.');
-  return { schemaVersion: 1, itemId: item.id, workspaceId: item.workspaceId, directory: item.path, sessionsDirectory: item.sessionsDirectory, sourceDigest, preparedAt, sources, writes, manifest, issues: privateState.issues, assignments: privateState.assignments, notes };
+  return { schemaVersion: 1, itemId: item.id, workspaceId: item.workspaceId, directory: item.path, sessionsDirectory: item.sessionsDirectory, sourceDigest, preparedAt, singleHistoryProven, sources, writes, manifest, issues: privateState.issues, assignments: privateState.assignments, notes };
 }

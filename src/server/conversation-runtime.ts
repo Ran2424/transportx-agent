@@ -165,6 +165,23 @@ export class ConversationRuntime {
       return { closed: true };
     });
   }
+  /** Deletion owns the same queue from confirmed shutdown through its final stage commit. */
+  withWorkspaceStopped<T>(directory: string, stopRunning: boolean, execute: () => Promise<T>) {
+    const matches = (candidate: string) => path.resolve(candidate) === path.resolve(directory);
+    for (const instance of this.instances.values()) if (matches(instance.session.cwd) && !instance.started) instance.session.cancelStart();
+    return this.options.gate.serialize(directory, async () => {
+      for (const instance of this.instances.values()) if (matches(instance.session.cwd)) {
+        if (!stopRunning && !instance.session.terminating) await this.requireIdle(instance.session);
+        await this.stop(instance.session, 'workspace_deletion');
+      }
+      for (const [id, failed] of this.failedStarts) if (matches(failed.lease.directory)) {
+        const target = this.options.store.findConversation(id);
+        await this.options.store.updateRuntime(target.manifest.id, id, { state: 'start-failed', history: target.conversation.history, modelSpec: target.conversation.modelSpec, lastStartFailure: failed.failure });
+        failed.lease.finish(); this.failedStarts.delete(id);
+      }
+      return execute();
+    });
+  }
   snapshot(conversationId: string) {
     const target = this.resolve(conversationId), instance = this.instances.get(conversationId);
     const history = this.options.store.inspectHistory(target.directory, target.conversation);

@@ -121,6 +121,6 @@ export async function removeSessionWorkingDirectory(cwd: string) {
         if (!fs.existsSync(marker)) fs.writeFileSync(marker, JSON.stringify(owner), { flag: 'wx' });
       }
     } catch (recovery) { recoveryError = ` Ownership recovery failed: ${recovery instanceof Error ? recovery.message : String(recovery)}.`; }
-    throw Object.assign(new Error(`Workspace cleanup failed (${cause.code || 'unknown'}): ${cause.path || cwd}. History retained; retry after resolving the error.${recoveryError}`), { status: 500, code: cause.code, path: cause.path || cwd });
+    throw Object.assign(new Error(`Workspace cleanup failed (${cause.code || 'unknown'}): ${cause.path || cwd}. Retry after resolving the error.${recoveryError}`), { status: 500, code: cause.code, path: cause.path || cwd });
   }
 }

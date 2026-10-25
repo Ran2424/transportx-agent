@@ -32,17 +32,18 @@ function ids(message: JsonRecord, kind: 'geo' | 'canvas') {
 }
 
 /** Complete message/resource evidence selects one history; bare text/tool IDs never suffice. */
-export function migratePrivateState(item: WorkspaceMigrationItemV1, sourceDigest: string, histories: MigrationHistoryMessages[], metadata: Map<string, unknown>, preparedAt: string) {
+export function migratePrivateState(item: WorkspaceMigrationItemV1, sourceDigest: string, histories: MigrationHistoryMessages[], metadata: Map<string, unknown>, preparedAt: string, singleHistoryProven: boolean) {
   const files = new Map<string, unknown>(), issues: MigrationPrivateIssue[] = [];
   const assignments: Array<{ sourceId: string; conversationId: string | null; basis: string }> = [];
   const scoped = (id: string, relative: string) => `.tau/conversations/${id}/${relative}`;
   const choose = (file: string, key: string, matches: (history: MigrationHistoryMessages) => boolean): string | null => {
     const sourceId = `source_${workspaceCreationDigest([file, key])}`;
-    const candidates = histories.length === 1 ? [histories[0].conversationId] : histories.filter(matches).map((history) => history.conversationId);
+    const single = singleHistoryProven && histories.length === 1;
+    const candidates = single ? [histories[0].conversationId] : histories.filter(matches).map((history) => history.conversationId);
     const decision = [...item.decisions].reverse().find((decision) => decision.sourceId === sourceId && decision.reportDigest === sourceDigest);
     if (decision?.action === 'isolate') { assignments.push({ sourceId, conversationId: null, basis: 'explicit-isolation' }); return null; }
     if (decision?.action === 'bind' && candidates.length === 1 && candidates[0] === decision.conversationId) { assignments.push({ sourceId, conversationId: candidates[0], basis: 'verified-bind' }); return candidates[0]; }
-    if (candidates.length === 1 && !decision) { assignments.push({ sourceId, conversationId: candidates[0], basis: histories.length === 1 ? 'single-history' : 'unique-complete-message-evidence' }); return candidates[0]; }
+    if (candidates.length === 1 && !decision) { assignments.push({ sourceId, conversationId: candidates[0], basis: single ? 'single-history' : 'unique-complete-message-evidence' }); return candidates[0]; }
     issues.push({ sourceId, file, key, reason: candidates.length > 1 ? 'Multiple histories contain the same complete evidence.' : 'No unique complete message/resource association can be proven.', candidates });
     return null;
   };

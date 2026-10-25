@@ -124,7 +124,7 @@ export class WorkspaceMigration {
     }
     return false;
   }
-  async updateItem(id: string, update: (item: WorkspaceMigrationItemV1) => void) {
+  async updateItem(id: string, update: (item: WorkspaceMigrationItemV1, state: WorkspaceMigrationStateV1) => void) {
     this.assertSystemReady();
     let release: ReturnType<typeof acquireWriteLease> | undefined, retain = false, reading = true, committing = false;
     try {
@@ -135,7 +135,7 @@ export class WorkspaceMigration {
       const item = state.items.find((item) => item.id === id);
       if (!item) throw failure('workspace_missing', 'Migration source is unavailable.');
       const identity = workspaceCreationDigest([item.id, item.workspaceId, item.path, item.sessionsDirectory]);
-      update(item);
+      update(item, state);
       if (workspaceCreationDigest([item.id, item.workspaceId, item.path, item.sessionsDirectory]) !== identity) throw failure('workspace_identity_conflict', 'Target progress cannot replace source identity.');
       state.phase = state.items.every((item) => ['ready', 'isolated'].includes(item.state)) ? 'complete' : state.items.some((item) => ['failed', 'needs-review'].includes(item.state)) ? 'needs-attention' : 'converting';
       committing = true; this.save(state); return structuredClone(item);
@@ -192,13 +192,18 @@ export class WorkspaceMigration {
       const registeredKeys = new Set<string>();
       const registeredConversations = new Set<string>(), registeredHistories = new Set<string>();
       const deletedKeys = new Map<string, string>();
+      const deletedConversations = new Map<string, string>();
+      for (const entry of catalog.entries) if (entry.deletion) for (const id of entry.deletion.conversationIds) {
+        if (deletedConversations.has(id) && deletedConversations.get(id) !== entry.workspaceId) throw failure('metadata_corrupt', 'Workspace deletion identities overlap in the catalog.');
+        deletedConversations.set(id, entry.workspaceId);
+      }
       for (const entry of catalog.entries) if (entry.deletion) for (const key of entry.deletion.historyKeys) {
         if (deletedKeys.has(key) && deletedKeys.get(key) !== entry.workspaceId) throw failure('metadata_corrupt', 'Workspace deletion targets overlap in the catalog.');
         deletedKeys.set(key, entry.workspaceId);
       }
       for (const entry of catalog.entries) {
         if (entry.deletion) for (const key of entry.deletion.historyKeys) for (const scope of scopes) registeredKeys.add(`${scope.sessionsDirectory}\n${key}`);
-        if (entry.state === 'deleted') continue;
+        if (entry.state === 'deleted' || entry.state === 'deleting') continue;
         const migrating = state.items.find((item) => item.kind === 'workspace' && item.workspaceId === entry.workspaceId && item.path === entry.path);
         if (migrating && entry.creationRequestId === null) {
           candidate('workspace', migrating.path, migrating.sessionsDirectory);
@@ -213,7 +218,7 @@ export class WorkspaceMigration {
           continue;
         }
         for (const record of workspace.manifest.conversations) {
-          if (registeredConversations.has(record.id) || registeredHistories.has(record.history.key) || deletedKeys.has(record.history.key) && deletedKeys.get(record.history.key) !== entry.workspaceId) throw failure('metadata_corrupt', 'Registered workspaces reuse a conversation identity/history key or conflict with a deletion target. Repair the shared index before business writes.');
+          if (registeredConversations.has(record.id) || registeredHistories.has(record.history.key) || deletedKeys.has(record.history.key) && deletedKeys.get(record.history.key) !== entry.workspaceId || deletedConversations.has(record.id) && deletedConversations.get(record.id) !== entry.workspaceId) throw failure('metadata_corrupt', 'Registered workspaces reuse a conversation identity/history key or conflict with a deletion target. Repair the shared index before business writes.');
           registeredConversations.add(record.id); registeredHistories.add(record.history.key);
           for (const scope of scopes) registeredKeys.add(`${scope.sessionsDirectory}\n${record.history.key}`);
         }
@@ -223,6 +228,7 @@ export class WorkspaceMigration {
         const sources = historySources(root, (target, code, reason) => issue(candidate('path', target, root), code, reason));
         for (const source of sources) {
           if (registeredKeys.has(`${root}\n${source.key}`)) continue;
+          if (state.items.some((item) => item.state === 'isolated' && item.kind !== 'workspace' && item.sessionsDirectory === root && item.path === toPosixPath(source.file))) continue;
           try {
             const header = historyHeader(root, source.key);
             const registered = catalog.entries.find((entry) => entry.path === header.cwd);
@@ -236,9 +242,11 @@ export class WorkspaceMigration {
               if (migrating.stage !== 'inventory') issue(migrating, 'migration_source_changed', 'A new history appeared after preparation; preserve the prepared target for source review.');
             }
             const item = candidate('workspace', header.cwd, root);
+            if (item.state === 'isolated') continue;
             const known = item.histories.find((history) => history.key === source.key);
             const version: WorkspaceMigrationHistoryV1 = { key: source.key, conversationId: known?.conversationId || `conv_${uuid()}`, headerId: header.id, headerSha256: header.sha256, size: header.size, mtimeMs: header.mtimeMs };
-            if (known && item.stage !== 'inventory' && workspaceCreationDigest(known) !== workspaceCreationDigest(version)) issue(item, 'migration_source_changed', 'History changed after migration preparation; preserve the prepared report and explicitly retry.');
+            if (known?.headerId && known.headerId !== header.id) issue(item, 'history_identity_mismatch', 'The native history identity changed; restore the original header or explicitly isolate its source.');
+            else if (known && item.stage !== 'inventory' && workspaceCreationDigest(known) !== workspaceCreationDigest(version)) issue(item, 'migration_source_changed', 'History changed after migration preparation; preserve the prepared report and explicitly retry.');
             else if (known) Object.assign(known, version); else item.histories.push(version);
             if (!fs.existsSync(header.cwd)) issue(item, 'workspace_missing', 'History points to a missing workspace directory.');
           } catch (error) {
@@ -268,7 +276,7 @@ export class WorkspaceMigration {
       // Preserve diagnostics and committed identities even after a source disappears.
       for (const item of state.items) if (!drafts.some((candidate) => candidate.id === item.id)) drafts.push(item);
       for (const item of drafts) {
-        if (item.kind === 'workspace' && !fs.existsSync(item.path)) issue(item, 'workspace_missing', 'Inventory workspace is no longer available.');
+        if (item.kind === 'workspace' && !fs.existsSync(item.path) && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.deletion)) issue(item, 'workspace_missing', 'Inventory workspace is no longer available.');
         for (const other of drafts) {
           if (other.id === item.id || other.state === 'isolated') continue;
           if (item.kind === 'workspace' && other.protectedPaths.some((protectedPath) => overlap(item.path, protectedPath))) issue(item, 'workspace_path_conflict', 'Inventory paths overlap or alias another protected object.');

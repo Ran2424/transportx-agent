@@ -25,13 +25,13 @@ export type WorkspaceMigrationItemV1 = {
   histories: WorkspaceMigrationHistoryV1[];
   protectedPaths: string[];
   state: 'pending' | 'converting' | 'needs-review' | 'failed' | 'ready' | 'isolated';
-  stage: 'inventory' | 'prepared' | 'backed-up' | 'published';
+  stage: 'inventory' | 'prepared' | 'backed-up' | 'restoring' | 'published';
   revision: number;
   sourceDigest: string | null;
   preparedDigest: string | null;
   report: string | null;
   error: null | { code: string; message: string };
-  decisions: Array<{ requestId: string; inputSha256: string; reportDigest: string; action: 'bind' | 'isolate'; sourceId: string | null; conversationId: string | null }>;
+  decisions: Array<{ requestId: string; inputSha256: string; reportDigest: string; action: 'bind' | 'isolate' | 'retry' | 'reprepare'; sourceId: string | null; conversationId: string | null }>;
 };
 export type WorkspaceMigrationStateV1 = {
   schemaVersion: 1;
@@ -64,7 +64,7 @@ export function parseWorkspaceMigrationStructured(value: unknown): WorkspacePars
   const ids = new Set(), workspaceIds = new Set(), conversations = new Set(), historyKeys = new Set();
   for (const value of root.items) {
     const item = asRecord(value);
-    if (!item || !fields(item, 'id kind path sessionsDirectory workspaceId histories protectedPaths state stage revision sourceDigest preparedDigest report error decisions') || typeof item.id !== 'string' || !/^mig_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(item.id) || ids.has(item.id) || !choice(item.kind, ['workspace', 'history', 'path']) || !pathValue(item.path) || !pathValue(item.sessionsDirectory) || !Array.isArray(item.protectedPaths) || !item.protectedPaths.every(pathValue) || !choice(item.state, ['pending', 'converting', 'needs-review', 'failed', 'ready', 'isolated']) || !choice(item.stage, ['inventory', 'prepared', 'backed-up', 'published']) || !integer(item.revision) || item.sourceDigest !== null && !sha(item.sourceDigest) || item.preparedDigest !== null && !sha(item.preparedDigest) || item.report !== null && !pathValue(item.report) || !Array.isArray(item.histories) || !Array.isArray(item.decisions) || item.state === 'ready' && item.stage !== 'published') return invalid();
+    if (!item || !fields(item, 'id kind path sessionsDirectory workspaceId histories protectedPaths state stage revision sourceDigest preparedDigest report error decisions') || typeof item.id !== 'string' || !/^mig_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(item.id) || ids.has(item.id) || !choice(item.kind, ['workspace', 'history', 'path']) || !pathValue(item.path) || !pathValue(item.sessionsDirectory) || !Array.isArray(item.protectedPaths) || !item.protectedPaths.every(pathValue) || !choice(item.state, ['pending', 'converting', 'needs-review', 'failed', 'ready', 'isolated']) || !choice(item.stage, ['inventory', 'prepared', 'backed-up', 'restoring', 'published']) || !integer(item.revision) || item.sourceDigest !== null && !sha(item.sourceDigest) || item.preparedDigest !== null && !sha(item.preparedDigest) || item.report !== null && !pathValue(item.report) || !Array.isArray(item.histories) || !Array.isArray(item.decisions) || item.state === 'ready' && item.stage !== 'published') return invalid();
     ids.add(item.id);
     if (item.stage !== 'inventory' && (!sha(item.sourceDigest) || !sha(item.preparedDigest) || !pathValue(item.report))) return invalid();
     if (item.workspaceId !== null) {
@@ -82,11 +82,12 @@ export function parseWorkspaceMigrationStructured(value: unknown): WorkspacePars
     const requests = new Set();
     for (const value of item.decisions) {
       const decision = asRecord(value);
-      if (!decision || !fields(decision, 'requestId inputSha256 reportDigest action sourceId conversationId') || !text(decision.requestId) || requests.has(decision.requestId) || !sha(decision.inputSha256) || !sha(decision.reportDigest) || !choice(decision.action, ['bind', 'isolate']) || decision.sourceId !== null && !text(decision.sourceId) || decision.conversationId !== null && (typeof decision.conversationId !== 'string' || !CONVERSATION_ID.test(decision.conversationId))) return invalid();
+      if (!decision || !fields(decision, 'requestId inputSha256 reportDigest action sourceId conversationId') || !text(decision.requestId) || requests.has(decision.requestId) || !sha(decision.inputSha256) || !sha(decision.reportDigest) || !choice(decision.action, ['bind', 'isolate', 'retry', 'reprepare']) || decision.sourceId !== null && !text(decision.sourceId) || decision.conversationId !== null && (typeof decision.conversationId !== 'string' || !CONVERSATION_ID.test(decision.conversationId)) || ['retry', 'reprepare'].includes(String(decision.action)) && (decision.sourceId !== null || decision.conversationId !== null)) return invalid();
       requests.add(decision.requestId);
       if (decision.action === 'bind' && (decision.sourceId === null || !item.histories.some((history: unknown) => asRecord(history)?.conversationId === decision.conversationId))) return invalid();
     }
     if (item.state === 'isolated' && !item.decisions.some((decision: unknown) => { const record = asRecord(decision); return record?.action === 'isolate' && record.sourceId === null && record.conversationId === null; })) return invalid();
+    if (item.stage === 'restoring' && !item.decisions.some((decision: unknown) => asRecord(decision)?.action === 'reprepare')) return invalid();
   }
   if (root.systemReadiness === 'ready' && root.phase === 'inventory') return invalid();
   if (root.phase === 'complete' && root.items.some((item) => !['ready', 'isolated'].includes(item.state))) return invalid();

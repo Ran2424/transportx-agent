@@ -15,8 +15,8 @@ test('Session close, history deletion and process cancellation preserve writer o
     t.after(() => { release(); fs.rmSync(root, { recursive: true, force: true }); });
     const write = (directory: string, relative: string, value: unknown) => { const file = path.join(directory, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n'); return file; };
     const at = '2026-10-25T00:00:00.000Z';
-    const single = path.join(scenario, 'single'), ambiguous = path.join(scenario, 'ambiguous'), corrupt = path.join(scenario, 'corrupt'), empty = path.join(scenario, 'empty');
-    for (const directory of [single, ambiguous, corrupt, empty]) {
+    const single = path.join(scenario, 'single'), ambiguous = path.join(scenario, 'ambiguous'), corrupt = path.join(scenario, 'corrupt'), empty = path.join(scenario, 'empty'), repairing = path.join(scenario, 'repairing');
+    for (const directory of [single, ambiguous, corrupt, empty, repairing]) {
       fs.mkdirSync(directory);
       write(directory, '.tau/resolved-session-plan.v3.json', { schemaVersion: 3, platform: { name: 'TransportX Agent', version: '3.23.2' }, profile: defaultSessionProfile(), domain: { id: 'com.transportx.workbench', version: '1.4.1' }, modules: [], assets: [], runtime: {}, workspace: directory, createdAt: at });
     }
@@ -33,7 +33,8 @@ test('Session close, history deletion and process cancellation preserve writer o
     write(ambiguous, '.tau/attachments.json', { version: 1, attachments: [attachment], messageRefs: [{ text: '同一问题', timestamp: 1000, attachmentIds: [attachment.id] }] });
     write(ambiguous, '.tau/timing-metrics.v1.json', { schemaVersion: 1, updatedAt: at, records: { 'tool:same-id': { kind: 'tool', sourceId: 'same-id', startedAt: 1000, endedAt: 1100, durationMs: 100 } } });
     const badIndex = write(corrupt, '.tau/canvas-contexts.json', {}), nativeFiles: string[] = [];
-    for (const [key, directory] of [['single', single], ['ambiguous-a', ambiguous], ['ambiguous-b', ambiguous], ['corrupt', corrupt]]) {
+    write(repairing, '.tau/attachments.json', { version: 1, attachments: [attachment], messageRefs: [{ text: '同一问题', timestamp: 1000, attachmentIds: [attachment.id] }] });
+    for (const [key, directory] of [['single', single], ['ambiguous-a', ambiguous], ['ambiguous-b', ambiguous], ['corrupt', corrupt], ['repairing', repairing]]) {
       const rows = [{ type: 'session', version: 3, id: `native-${key}`, cwd: directory, timestamp: at }, { type: 'message', id: 'm1', parentId: null, message: { role: 'user', content: '同一问题', timestamp: 1000, attachmentIds: [attachment.id] } }, { type: 'message', id: 'm2', parentId: 'm1', message: { role: 'assistant', timestamp: 1000, content: [{ type: 'toolCall', id: 'same-id', name: 'read', arguments: { path: key } }] } }, { type: 'message', id: 'm3', parentId: 'm2', message: { role: 'toolResult', toolCallId: 'same-id', toolName: 'read', timestamp: 1100, content: [{ type: 'text', text: key }] } }];
       const file = path.join(sessions, `${key}.jsonl`); fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join('\n') + '\n'); nativeFiles.push(file);
     }
@@ -41,8 +42,8 @@ test('Session close, history deletion and process cancellation preserve writer o
     const resource = path.join(single, '.tau/video-resources/large.bin'); fs.mkdirSync(path.dirname(resource)); fs.closeSync(fs.openSync(resource, 'w')); fs.truncateSync(resource, 32 * 1024 * 1024); const resourceStat = fs.statSync(resource);
     const store = new WorkspaceStore(userData, sessions); await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
     const migration = new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] }); await migration.initialize();
-    const items = migration.read().items, a = items.find((item: any) => item.path === single), b = items.find((item: any) => item.path === ambiguous), c = items.find((item: any) => item.path === corrupt), d = items.find((item: any) => item.path === empty);
-    const python = process.env.TAU_PYTHON_COMMAND || 'python3', gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs')), runner = new WorkspaceMigrationRunner(migration, gate, python);
+    const items = migration.read().items, a = items.find((item: any) => item.path === single), b = items.find((item: any) => item.path === ambiguous), c = items.find((item: any) => item.path === corrupt), d = items.find((item: any) => item.path === empty), e = items.find((item: any) => item.path === repairing);
+    const python = process.env.TAU_PYTHON_COMMAND || 'python3', gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'), path.join(root, 'coordination')), runner = new WorkspaceMigrationRunner(migration, gate, python);
     assert.equal((await runner.convert(d.id)).state, 'ready'); assert.equal(store.readWorkspace(d.workspaceId).manifest.conversations.length, 0, 'managed zero-history directory becomes a workspace without an invented conversation');
     assert.ok(JSON.parse(fs.readFileSync(migration.read().items.find((item: any) => item.id === d.id).report)).notes.some((note: any) => note.code === 'invalid_session_plan'), 'unavailable old plan location is diagnosed without substituting the current configuration');
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: single, stdio: 'ignore' });
@@ -67,7 +68,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(fs.existsSync(path.join(single, '.tau/workspace.json')), true); assert.equal(store.readCatalog().entries.find((entry: any) => entry.workspaceId === a.workspaceId).state, 'creating');
     await migration.initialize(); migration.assertWorkspaceReady(d.workspaceId);
     const updateItem = migration.updateItem.bind(migration); let heldAtCommit = false;
-    migration.updateItem = (id: string, update: any) => updateItem(id, (current: any) => { update(current); if (id === a.id && current.stage === 'published') { assert.throws(() => gate.takeMaintenance(single, a.workspaceId), { code: 'workspace_busy' }); heldAtCommit = true; } });
+    migration.updateItem = (id: string, update: any) => updateItem(id, (current: any, state: any) => { update(current, state); if (id === a.id && current.stage === 'published') { assert.throws(() => gate.takeMaintenance(single, a.workspaceId), { code: 'workspace_busy' }); heldAtCommit = true; } });
     const resumedRunner = new WorkspaceMigrationRunner(migration, gate, python);
     try { assert.equal((await resumedRunner.convert(a.id)).state, 'ready'); } finally { migration.updateItem = updateItem; }
     assert.equal(heldAtCommit, true, 'runtime mutex remains held through the final global publication');
@@ -92,7 +93,43 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(resolved.state, 'ready'); assert.equal((await runner.resolvePrivate(b.id, firstInput)).state, 'ready', 'retry deduplication precedes stale expectedRevision');
     const firstId = b.histories[0].conversationId; assert.deepEqual(JSON.parse(fs.readFileSync(path.join(ambiguous, '.tau/conversations', firstId, 'attachment-message-refs.json'))).refs, []);
     await assert.rejects(runner.convert(c.id), { code: 'metadata_corrupt' }); migration.assertWorkspaceReady(a.workspaceId); assert.deepEqual(fs.readFileSync(badIndex), badBytes);
+    const sourceReport = await runner.report(c.id), isolate = { requestId: 'whole-source-isolate', expectedRevision: sourceReport.item.revision, reportDigest: sourceReport.reportDigest, action: 'isolate' };
+    const isolated = await runner.resolveSource(c.id, isolate); assert.equal(isolated.state, 'isolated'); assert.deepEqual(fs.readFileSync(badIndex), badBytes);
+    write(corrupt, '.tau/canvas-contexts.json', []); await migration.initialize(); assert.equal(migration.read().items.find((item: any) => item.id === c.id).state, 'isolated', 'rescan cannot silently undo isolation after a source is repaired');
+    assert.equal((await runner.resolveSource(c.id, isolate)).revision, isolated.revision, 'whole-source retries deduplicate before stale revision checks');
+    const repairedReport = await runner.report(c.id);
+    await assert.rejects(runner.resolveSource(c.id, { requestId: 'stale-whole-source', expectedRevision: repairedReport.item.revision, reportDigest: sourceReport.reportDigest, action: 'retry' }), { code: 'workspace_revision_conflict' });
+    assert.equal((await runner.resolveSource(c.id, { requestId: 'retry-repaired-source', expectedRevision: repairedReport.item.revision, reportDigest: repairedReport.reportDigest, action: 'retry' })).state, 'ready');
+    let failedRepair = false;
+    fs.renameSync = (from: string, to: string) => { if (!failedRepair && to.startsWith(path.join(repairing, '.tau/conversations')) && to.endsWith('/plan.json')) { failedRepair = true; throw Object.assign(new Error('repair fixture interruption'), { code: 'ENOSPC' }); } return rename(from, to); };
+    try { await assert.rejects(runner.convert(e.id), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    const originalRepair = migration.read().items.find((item: any) => item.id === e.id), repairNative = path.join(sessions, 'repairing.jsonl');
+    fs.appendFileSync(repairNative, JSON.stringify({ type: 'message', id: 'm4', parentId: 'm3', message: { role: 'user', content: '新增的真实源消息', timestamp: 1200 } }) + '\n'); nativeBytes[4] = fs.readFileSync(repairNative);
+    await assert.rejects(runner.convert(e.id), { code: 'migration_source_changed' });
+    const unknown = path.join(repairing, '.tau/conversations', e.histories[0].conversationId, 'notes.txt'); fs.writeFileSync(unknown, 'Do not overwrite unrecognized private data');
+    const repairReport = await runner.report(e.id), reprepare = { requestId: 'reprepare-source', expectedRevision: repairReport.item.revision, reportDigest: repairReport.reportDigest, action: 'reprepare' };
+    const sharedBeforeRepair = fs.readFileSync(path.join(repairing, '.tau/attachments.json'));
+    await assert.rejects(runner.resolveSource(e.id, reprepare), { code: 'migration_target_exists' }); assert.deepEqual(fs.readFileSync(path.join(repairing, '.tau/attachments.json')), sharedBeforeRepair); fs.unlinkSync(unknown);
+    let repairCommitFailed = false;
+    fs.renameSync = (from: string, to: string) => { if (to === migration.stateFile && !repairCommitFailed && JSON.parse(fs.readFileSync(from)).items.some((item: any) => item.id === e.id && item.stage === 'inventory' && item.preparedDigest === null)) { repairCommitFailed = true; throw Object.assign(new Error('repair stage commit full'), { code: 'ENOSPC' }); } return rename(from, to); };
+    try { await assert.rejects(runner.resolveSource(e.id, reprepare), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    assert.equal(migration.status().dataState, 'blocked'); await migration.initialize();
+    assert.equal((await new WorkspaceMigrationRunner(migration, gate, python).resolveSource(e.id, reprepare)).state, 'ready');
+    assert.equal(store.readWorkspace(e.workspaceId).manifest.conversations[0].id, e.histories[0].conversationId); assert.equal(fs.existsSync(`${originalRepair.report}.${originalRepair.preparedDigest}.archived`), true, 'old verified conversion report survives reprepare');
+    migration.assertWorkspaceReady(a.workspaceId); migration.assertWorkspaceReady(d.workspaceId);
     for (const [index, file] of nativeFiles.entries()) assert.deepEqual(fs.readFileSync(file), nativeBytes[index], 'conversion never rewrites Native JSONL');
+    const uncertain = path.join(scenario, 'uncertain-single'); fs.mkdirSync(uncertain);
+    write(uncertain, '.tau/workspace-owner.json', { version: 1, workspace: uncertain, parent: scenario }); write(uncertain, '.tau/canvas-contexts.json', [canvas]);
+    const uncertainHistory = path.join(sessions, 'uncertain.jsonl'), opaque = path.join(sessions, 'opaque.jsonl');
+    fs.writeFileSync(uncertainHistory, JSON.stringify({ type: 'session', id: 'native-uncertain', cwd: uncertain, timestamp: at }) + '\n'); fs.writeFileSync(opaque, 'broken unscoped history\n');
+    await migration.initialize(); const uncertainItem = migration.read().items.find((item: any) => item.path === uncertain);
+    const unproven = await runner.convert(uncertainItem.id); assert.equal(unproven.state, 'needs-review', 'an unscoped damaged history prevents inferring sole ownership from a count of one readable history');
+    const unprovenReport = JSON.parse(fs.readFileSync(unproven.report)); assert.equal(unprovenReport.singleHistoryProven, false); assert.equal(unprovenReport.issues.length, 1); migration.assertWorkspaceReady(a.workspaceId);
+    const opaqueItem = migration.read().items.find((item: any) => item.path === opaque), opaqueReport = await runner.report(opaqueItem.id);
+    await runner.resolveSource(opaqueItem.id, { requestId: 'isolate-opaque', expectedRevision: opaqueItem.revision, reportDigest: opaqueReport.reportDigest, action: 'isolate' }); await migration.initialize();
+    assert.equal((await runner.convert(uncertainItem.id)).state, 'needs-review', 'isolating an unknown history never grants ownership of private state');
+    assert.equal((await runner.resolvePrivate(uncertainItem.id, { requestId: 'isolate-unproven-canvas', expectedRevision: unproven.revision, reportDigest: unproven.sourceDigest, action: 'isolate', sourceId: unprovenReport.issues[0].sourceId, conversationId: null })).state, 'ready');
+    assert.equal(fs.readFileSync(opaque, 'utf8'), 'broken unscoped history\n');
     assert.equal(migration.status().dataState, 'ready'); assert.equal(gate.diagnostics(single).phase, 'stopped');
     t.diagnostic('Migration fixtures verify old-source conversion on this host; they do not replace real Pi or Windows/Linux acceptance.');
   }
@@ -193,7 +230,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     const deleted = store.readWorkspace(readyIds[28]), deletionKey = 'deleted-workspace.jsonl';
     fs.writeFileSync(path.join(sessions, deletionKey), JSON.stringify({ type: 'session', id: 'deleted-native', cwd: deleted.directory }) + '\n');
     const catalog = store.readCatalog();
-    await store.editCatalog(catalog.revision, (value: any) => { const entry = value.entries.find((entry: any) => entry.workspaceId === readyIds[28]); entry.state = 'deleted'; entry.deletion = { requestId: 'deleted-fixture', manifestRevision: deleted.manifest.revision, historyKeys: [deletionKey], invocationOwnerKeys: [], stage: 'workspace-cleaned' }; });
+    await store.editCatalog(catalog.revision, (value: any) => { const entry = value.entries.find((entry: any) => entry.workspaceId === readyIds[28]); entry.state = 'deleted'; entry.deletion = { requestId: 'deleted-fixture', manifestRevision: deleted.manifest.revision, historyKeys: [deletionKey], invocationOwnerKeys: [], conversationIds: [], rootIdentity: 'a'.repeat(64), error: null, stage: 'workspace-cleaned' }; });
     const tombstones = await migration.initialize();
     assert.equal(tombstones.items.some((item: any) => item.path === deleted.directory || item.histories.some((history: any) => history.key === deletionKey)), false, 'scope rescans never reimport a deleted workspace or its residual history');
     const catalogBytes = fs.readFileSync(store.catalogFile), badCatalog = JSON.parse(catalogBytes.toString());
@@ -240,11 +277,11 @@ test('Session close, history deletion and process cancellation preserve writer o
     await stopRecordedProcess(reused, python); assert.equal(child.exitCode, null, 'a recycled PID does not authorize termination');
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-runtime-lease-')));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'));
+    const gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'), path.join(root, 'coordination'));
     const workspaceId = 'ws_00000000-0000-4000-8000-000000000001', conversationId = 'conv_00000000-0000-4000-8000-000000000002';
     const lease = gate.take(root, workspaceId, conversationId);
     const tracked = managedRuntimeProcess(root); tracked.started(child); lease.running();
-    assert.throws(() => new WorkspaceRuntimeGate(python, root).take(root, workspaceId, conversationId), { code: 'workspace_busy' });
+    assert.throws(() => new WorkspaceRuntimeGate(python, root, path.join(root, 'coordination')).take(root, workspaceId, conversationId), { code: 'workspace_busy' });
     assert.throws(() => lease.finish(), { code: 'process_stop_unconfirmed' });
     const diagnostic = gate.diagnostics(root);
     assert.equal(diagnostic.processes[0].observation.state, 'running');
@@ -330,7 +367,7 @@ test('Session close, history deletion and process cancellation preserve writer o
         return { args: [path.resolve('node_modules/@earendil-works/pi-coding-agent/dist/cli.js'), '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--session', value.sessionFile], env: { ...process.env, PI_CODING_AGENT_DIR: path.join(root, 'isolated-pi') } };
       },
     });
-    const gate = new WorkspaceRuntimeGate(process.env.TAU_PYTHON_COMMAND || 'python3', path.join(root, 'logs'));
+    const gate = new WorkspaceRuntimeGate(process.env.TAU_PYTHON_COMMAND || 'python3', path.join(root, 'logs'), path.join(root, 'coordination'));
     const lifecycle = new ConversationRuntime({ store, sessions: manager, gate, assertReady: () => {}, verifyPlan: (plan: any) => { if (rejectPlan) throw Object.assign(new Error('Frozen module version unavailable.'), { code: 'module_version_missing' }); return plan; } });
     const beforeActivity = store.readWorkspace(first.manifest.id).manifest;
     try {
@@ -484,7 +521,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     finally { fs.renameSync = rename; }
     assert.deepEqual(fs.readFileSync(path.join(workspaceDirectory, '.tau/workspace.json')), before);
     assert.equal(workspaceCreationDigest({ a: 1, nested: { b: 2, a: 3 } }), workspaceCreationDigest({ nested: { a: 3, b: 2 }, a: 1 }));
-    await store.editWorkspace(id, 1, (value: any) => { value.conversations[0].state = 'deleted'; value.conversations[0].deletion = { requestId: 'deleted-conversation', invocationOwnerKey: null, stage: 'history-cleaned' }; });
+    await store.editWorkspace(id, 1, (value: any) => { value.conversations[0].state = 'deleted'; value.conversations[0].deletion = { requestId: 'deleted-conversation', invocationOwnerKey: null, error: null, stage: 'history-cleaned' }; });
     await assert.rejects(store.editWorkspace(id, 2, (value: any) => { value.conversations = []; }), { code: 'workspace_identity_conflict' });
     const metadata = path.join(workspaceDirectory, '.tau'), held = path.join(workspaceDirectory, '.tau-held');
     fs.renameSync(metadata, held);
@@ -494,7 +531,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     try { if (linked) assert.throws(() => store.readWorkspace(id), { code: 'workspace_identity_conflict' }); }
     finally { if (linked) fs.unlinkSync(metadata); fs.renameSync(held, metadata); }
     const revision = store.readCatalog().revision;
-    await store.editCatalog(revision, (catalog: any) => { catalog.entries[0].state = 'deleted'; catalog.entries[0].deletion = { requestId: 'deleted-workspace', manifestRevision: 2, historyKeys: [record.history.key], invocationOwnerKeys: [], stage: 'workspace-cleaned' }; });
+    await store.editCatalog(revision, (catalog: any) => { catalog.entries[0].state = 'deleted'; catalog.entries[0].deletion = { requestId: 'deleted-workspace', manifestRevision: 2, historyKeys: [record.history.key], invocationOwnerKeys: [], conversationIds: [], rootIdentity: 'a'.repeat(64), error: null, stage: 'workspace-cleaned' }; });
     await assert.rejects(store.editCatalog(revision + 1, (catalog: any) => { catalog.entries = []; }), { code: 'workspace_identity_conflict' });
     fs.writeFileSync(store.catalogFile, '{broken');
     assert.throws(() => store.readCatalog(), { code: 'metadata_corrupt' });
@@ -846,4 +883,82 @@ test('Session close, history deletion and process cancellation preserve writer o
       assert.deepEqual(handler.handle({ type: 'set_session_name', name: 'x'.repeat(121) }, reply), { success: false, error: 'Name cannot exceed 120 characters' });
     }
   }
+  // Deletion commits dependency order and resumes without reconstructing an Owner from its audit key.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+    const { WorkspaceStore, workspaceCreationDigest } = require('../../bin/workspace-store.js'), { WorkspaceRuntimeGate } = require('../../bin/workspace-runtime.js');
+    const { ConversationRuntime } = require('../../bin/conversation-runtime.js'), { WorkspaceDeletion } = require('../../bin/workspace-deletion.js'), { LiveSessionManager } = require('../../bin/sessions.js');
+    const { defaultSessionProfile } = require('../../bin/contracts/session-profile.js');
+    const { executionOwner, executionOwnerKey, removeExecutionMetadata } = require('../../bin/util/execution-owner.js');
+    const { createSessionWorkingDirectory, resolveSessionWorkspaceForDeletion, removeSessionWorkingDirectory } = require('../../bin/session-workspace.js');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-staged-delete-'))), sessions = path.join(root, 'sessions'); fs.mkdirSync(sessions);
+    const store = new WorkspaceStore(path.join(root, 'data'), sessions); await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
+    const scenario = path.join(root, 'scenario'); fs.mkdirSync(scenario);
+    const directory = createSessionWorkingDirectory(scenario, '分阶段删除'), reserved = await store.reserveWorkspace('delete-fixture', workspaceCreationDigest('fixture'), () => directory);
+    const at = '2026-10-25T00:00:00.000Z', plan = { schemaVersion: 3, platform: { name: 'TransportX Agent', version: '3.23.2' }, profile: defaultSessionProfile(), domain: { id: 'com.transportx.workbench', version: '1.4.1' }, modules: [], assets: [], runtime: {}, workspace: directory, createdAt: at };
+    const first = `conv_${crypto.randomUUID()}`, second = `conv_${crypto.randomUUID()}`;
+    const records: any[] = [];
+    for (const [id, key] of [[first, 'first.jsonl'], [second, 'second.jsonl']]) {
+      fs.writeFileSync(path.join(sessions, key), JSON.stringify({ type: 'session', id: `native-${id}`, cwd: directory, timestamp: at }) + '\n');
+      await store.savePlan(directory, id, plan);
+      records.push({ id, creationRequestId: null, creationInputSha256: null, name: id, createdAt: at, updatedAt: at, defaultsRevision: null, modelSpec: null, appendSystemPrompt: '', state: 'ready', history: { key, headerId: `native-${id}` }, plan: { path: `conversations/${id}/plan.json`, source: 'legacy-workspace' }, privateState: 'isolated', lastStartFailure: null, deletion: null });
+    }
+    await store.publishWorkspace(reserved.workspaceId, { schemaVersion: 1, id: reserved.workspaceId, revision: 0, name: 'Delete', createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: { domainId: null, profile: null, modelSpec: null }, citationRegistryId: reserved.workspaceId, conversations: records });
+    const { WorkspaceMigration } = require('../../bin/workspace-migration.js'), { acquireWriteLease } = require('../../bin/util/json-storage.js');
+    const agent = path.join(root, 'agent'); fs.mkdirSync(agent); const releaseWriter = acquireWriteLease(path.join(agent, 'host')); t.after(releaseWriter);
+    const migration = new WorkspaceMigration(store, { agentDir: agent, workspaceRoots: [scenario] }); await migration.initialize();
+    const firstFile = path.join(sessions, 'first.jsonl'), secondFile = path.join(sessions, 'second.jsonl'), business = path.join(directory, 'shared.txt'); fs.writeFileSync(business, 'shared result');
+    const invocationRoots = [path.join(root, 'executions/cad'), path.join(root, 'executions/spatial')];
+    for (const record of records) for (const invocations of invocationRoots) {
+      const owner = executionOwner({ cwd: directory, sessionFile: path.join(sessions, record.history.key), resolvedSessionPlan: plan }, sessions), scoped = path.join(invocations, executionOwnerKey(owner));
+      fs.mkdirSync(scoped, { recursive: true }); fs.writeFileSync(path.join(scoped, 'owned.json'), JSON.stringify({ owner }));
+    }
+    const python = process.env.TAU_PYTHON_COMMAND || 'python3', gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'), path.join(root, 'coordination'));
+    const runtime = new ConversationRuntime({ store, sessions: new LiveSessionManager(), gate, assertReady: () => {}, verifyPlan: (value: any) => value });
+    let cleanupCount = 0;
+    const options = { store, gate, runtime, pythonCommand: python, assertReady: () => {}, assertSystemReady: () => {}, historyDirectories: () => [sessions], verifyWorkspace: resolveSessionWorkspaceForDeletion, removeWorkspace: removeSessionWorkingDirectory, cleanupInvocations: async (context: any) => { cleanupCount++; assert.ok(fs.existsSync(context.sessionFile)); assert.ok(fs.existsSync(path.join(directory, `.tau/conversations/${context.sessionFile === firstFile ? first : second}/plan.json`))); await removeExecutionMetadata(invocationRoots, context, sessions); } };
+    const deletion = new WorkspaceDeletion(options); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const request = { requestId: 'delete-first', expectedRevision: 0, confirm: true };
+    const rename = fs.renameSync; let stageFailed = false;
+    fs.renameSync = (from: string, to: string) => { if (!stageFailed && to === path.join(directory, '.tau/workspace.json') && JSON.parse(fs.readFileSync(from)).conversations[0].deletion?.stage === 'invocations-cleaned') { stageFailed = true; throw Object.assign(new Error('invocation stage commit full'), { code: 'ENOSPC' }); } return rename(from, to); };
+    try { await assert.rejects(deletion.conversation(first, request), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    assert.ok(fs.existsSync(firstFile)); assert.equal(store.findConversation(first).conversation.deletion.stage, 'frozen'); assert.equal(store.findConversation(first).conversation.deletion.error.code, 'ENOSPC');
+    let historyFailed = false;
+    fs.renameSync = (from: string, to: string) => { if (!historyFailed && to === path.join(directory, '.tau/workspace.json') && JSON.parse(fs.readFileSync(from)).conversations[0].deletion?.stage === 'history-cleaned') { historyFailed = true; throw Object.assign(new Error('history stage commit full'), { code: 'ENOSPC' }); } return rename(from, to); };
+    try { await assert.rejects(deletion.conversation(first, request), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    assert.equal(fs.existsSync(firstFile), false); assert.equal(store.findConversation(first).conversation.deletion.stage, 'invocations-cleaned'); assert.ok(fs.existsSync(path.join(directory, `.tau/conversations/${first}/plan.json`)));
+    const cleanedOwners = cleanupCount, completed = await new WorkspaceDeletion(options).conversation(first, request); assert.equal(completed.state, 'deleted'); assert.equal(cleanupCount, cleanedOwners, 'retry does not request Owner after its dependency was removed');
+    assert.equal(fs.existsSync(path.join(directory, `.tau/conversations/${first}`)), false); assert.ok(fs.existsSync(secondFile)); assert.equal(fs.readFileSync(business, 'utf8'), 'shared result');
+    assert.equal((await deletion.conversation(first, request)).state, 'deleted');
+    const workspaceRequest = { requestId: 'delete-workspace', expectedRevision: store.readWorkspace(reserved.workspaceId).manifest.revision, confirm: true };
+    let workspaceStageFailed = false;
+    fs.renameSync = (from: string, to: string) => { if (!workspaceStageFailed && to === store.catalogFile && JSON.parse(fs.readFileSync(from)).entries[0].deletion?.stage === 'history-cleaned') { workspaceStageFailed = true; throw Object.assign(new Error('workspace history stage full'), { code: 'ENOSPC' }); } return rename(from, to); };
+    try { await assert.rejects(deletion.workspace(reserved.workspaceId, workspaceRequest), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    assert.equal(fs.existsSync(secondFile), false); assert.ok(fs.existsSync(directory)); assert.equal(store.readCatalog().entries[0].deletion.stage, 'invocations-cleaned');
+    await migration.initialize(); assert.equal(migration.status().dataState, 'ready'); assert.equal(migration.read().items.length, 0, 'a valid in-progress deletion is not reclassified as a failed migration source');
+    const savedCleanup = cleanupCount; let removalFailed = false;
+    options.removeWorkspace = async (target: string) => { fs.unlinkSync(path.join(target, '.tau/workspace.json')); removalFailed = true; throw Object.assign(new Error('locked business file'), { code: 'EBUSY' }); };
+    await assert.rejects(deletion.workspace(reserved.workspaceId, workspaceRequest), { code: 'EBUSY' }); assert.equal(removalFailed, true); assert.equal(store.readCatalog().entries[0].deletion.stage, 'history-cleaned');
+    options.removeWorkspace = async (target: string) => {
+      await removeSessionWorkingDirectory(target);
+      const recreated = target; fs.mkdirSync(recreated);
+      try {
+        const { spawnSync } = require('node:child_process');
+        const observer = spawnSync(process.execPath, ['-e', "const {WorkspaceRuntimeGate}=require(process.argv[1]+'/bin/workspace-runtime.js');const gate=new WorkspaceRuntimeGate(process.argv[6],process.argv[2],process.argv[2]);try{const lease=gate.take(process.argv[3],process.argv[4],process.argv[5]);lease.finish();process.stdout.write('allowed');}catch(e){process.stdout.write(e.code||e.message);}", process.cwd(), path.join(root, 'coordination'), recreated, reserved.workspaceId, second, python], { encoding: 'utf8' });
+        assert.equal(observer.status, 0, observer.stderr); assert.equal(observer.stdout, 'workspace_busy', 'another Host cannot acquire the deleted directory before catalog completion');
+      } finally { fs.rmSync(recreated, { recursive: true, force: true }); }
+    };
+    let finalCommitFailed = false;
+    fs.renameSync = (from: string, to: string) => { if (!finalCommitFailed && to === store.catalogFile && JSON.parse(fs.readFileSync(from)).entries[0].deletion?.stage === 'workspace-cleaned') { finalCommitFailed = true; throw Object.assign(new Error('final stage full'), { code: 'ENOSPC' }); } return rename(from, to); };
+    try { await assert.rejects(new WorkspaceDeletion(options).workspace(reserved.workspaceId, workspaceRequest), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    assert.equal(fs.existsSync(directory), false); assert.equal(store.readCatalog().entries[0].deletion.stage, 'history-cleaned');
+    const finishingDeletion = new WorkspaceDeletion(options), runtimeFile = path.join(root, 'coordination', fs.readdirSync(path.join(root, 'coordination')).find((name: string) => /^[a-f0-9]{64}\.json$/.test(name)));
+    fs.renameSync = (from: string, to: string) => { if (to === runtimeFile && JSON.parse(fs.readFileSync(from)).phase === 'stopped') throw Object.assign(new Error('runtime finalization full'), { code: 'ENOSPC' }); return rename(from, to); };
+    try { await assert.rejects(finishingDeletion.workspace(reserved.workspaceId, workspaceRequest), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    assert.equal(store.readCatalog().entries[0].state, 'deleted');
+    assert.equal((await finishingDeletion.workspace(reserved.workspaceId, workspaceRequest)).state, 'deleted', 'the recorded request can finish its retained runtime lease after logical deletion'); assert.equal(cleanupCount, savedCleanup);
+    await migration.initialize(); assert.equal(migration.read().items.length, 0); assert.deepEqual(store.readCatalog().entries[0].deletion.conversationIds, [first, second]);
+    assert.equal(gate.diagnostics(directory).phase, 'stopped', 'runtime coordination remains available after the workspace is removed');
+  }
+
 });

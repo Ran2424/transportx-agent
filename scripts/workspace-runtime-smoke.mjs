@@ -20,7 +20,7 @@ async function until(check, label) {
   throw new Error(`Timed out: ${label}`);
 }
 if (process.argv[2] === 'host') {
-  const [directory, agentDir] = process.argv.slice(3), gate = new WorkspaceRuntimeGate(python, path.join(agentDir, 'logs'));
+  const [directory, agentDir] = process.argv.slice(3), gate = new WorkspaceRuntimeGate(python, path.join(agentDir, 'logs'), path.join(path.dirname(agentDir), 'coordination'));
   const processes = [];
   let lease;
   try {
@@ -49,7 +49,7 @@ if (process.argv[2] === 'host') {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-runtime-smoke-')), root = fs.realpathSync(temporary);
   const directory = path.join(root, 'workspace'), alias = path.join(root, 'workspace-alias');
   fs.mkdirSync(directory); fs.symlinkSync(directory, alias, 'junction');
-  const gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs')), actors = [];
+  const gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'), path.join(root, 'coordination')), actors = [];
   const report = { at: new Date().toISOString(), platform: `${process.platform}/${process.arch}`, checks: [] };
   const start = async (target, name) => {
     const child = fork(fileURLToPath(import.meta.url), ['host', target, path.join(root, name)], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });

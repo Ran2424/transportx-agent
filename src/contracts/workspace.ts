@@ -7,6 +7,7 @@ export const WORKSPACE_ID = /^ws_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}
 export const CONVERSATION_ID = /^conv_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
 export type WorkspaceDefaultsV1 = { domainId: string | null; modelSpec: string | null; profile: SessionProfileV1 | null };
+type DeletionError = null | { code: string; message: string };
 export type ConversationRecordV1 = {
   id: string; creationRequestId: string | null; creationInputSha256: string | null;
   name: string; createdAt: string; updatedAt: string;
@@ -16,7 +17,7 @@ export type ConversationRecordV1 = {
   plan: null | { path: string; source: 'created' | 'legacy-workspace' | 'confirmed-current' };
   privateState: 'isolated' | 'needs-review';
   lastStartFailure: null | { code: string; message: string; at: string };
-  deletion: null | { requestId: string; invocationOwnerKey: string | null; stage: 'frozen' | 'invocations-cleaned' | 'history-cleaned' };
+  deletion: null | { requestId: string; invocationOwnerKey: string | null; error: DeletionError; stage: 'frozen' | 'invocations-cleaned' | 'history-cleaned' };
 };
 export type WorkspaceManifestV1 = {
   schemaVersion: 1; id: string; revision: number; name: string; createdAt: string; updatedAt: string;
@@ -26,7 +27,7 @@ export type WorkspaceManifestV1 = {
 export type WorkspaceCatalogEntryV1 = {
   workspaceId: string; path: string; creationRequestId: string | null; creationInputSha256: string | null;
   state: 'creating' | 'ready' | 'deleting' | 'deleted';
-  deletion: null | { requestId: string; manifestRevision: number; historyKeys: string[]; invocationOwnerKeys: string[]; stage: 'frozen' | 'invocations-cleaned' | 'history-cleaned' | 'workspace-cleaned' };
+  deletion: null | { requestId: string; manifestRevision: number; rootIdentity: string; conversationIds: string[]; historyKeys: string[]; invocationOwnerKeys: string[]; error: DeletionError; stage: 'frozen' | 'invocations-cleaned' | 'history-cleaned' | 'workspace-cleaned' };
 };
 export type WorkspaceCatalogV1 = { schemaVersion: 1; revision: number; entries: WorkspaceCatalogEntryV1[] };
 export type CreateConversationInput = {
@@ -56,6 +57,11 @@ function fields(value: unknown, keys: string, path: string, diagnostics: Contrac
 }
 function check(valid: unknown, path: string, diagnostics: ContractDiagnostic[], message = 'Invalid or missing field.') {
   if (!valid) diagnostics.push(diagnostic({ code: 'invalid_type', path, message }));
+}
+function deletionError(value: unknown, path: string, diagnostics: ContractDiagnostic[]) {
+  if (value === null) return;
+  const error = fields(value, 'code message', path, diagnostics);
+  if (error) check(text(error.code) && text(error.message, 4000), path, diagnostics);
 }
 function version(record: Record<string, unknown>, path: string, diagnostics: ContractDiagnostic[]) {
   if (record.schemaVersion !== 1) diagnostics.push(diagnostic({ code: 'unknown_schema_version', path: `${path}.schemaVersion`, message: 'Unsupported workspace schemaVersion.', expected: 1 }));
@@ -97,8 +103,8 @@ function conversation(value: unknown, path: string, diagnostics: ContractDiagnos
     if (failure) check(text(failure.code) && typeof failure.message === 'string' && failure.message.length <= 4000 && timestamp(failure.at), `${path}.lastStartFailure`, diagnostics);
   }
   if (record.deletion !== null) {
-    const deletion = fields(record.deletion, 'requestId invocationOwnerKey stage', `${path}.deletion`, diagnostics);
-    if (deletion) check(text(deletion.requestId) && (deletion.invocationOwnerKey === null || sha(deletion.invocationOwnerKey)) && oneOf(deletion.stage, ['frozen', 'invocations-cleaned', 'history-cleaned']) && oneOf(record.state, ['deleting', 'deleted']), `${path}.deletion`, diagnostics);
+    const deletion = fields(record.deletion, 'requestId invocationOwnerKey error stage', `${path}.deletion`, diagnostics);
+    if (deletion) { check(text(deletion.requestId) && (deletion.invocationOwnerKey === null || sha(deletion.invocationOwnerKey)) && oneOf(deletion.stage, ['frozen', 'invocations-cleaned', 'history-cleaned']) && oneOf(record.state, ['deleting', 'deleted']), `${path}.deletion`, diagnostics); deletionError(deletion.error, `${path}.deletion.error`, diagnostics); }
   } else check(record.state !== 'deleting' && record.state !== 'deleted', `${path}.deletion`, diagnostics);
 }
 
@@ -152,8 +158,9 @@ export function parseWorkspaceCatalogStructured(value: unknown): WorkspaceParseR
         check(!ids.has(entry.workspaceId) && !paths.has(entry.path) && (entry.creationRequestId === null || !requests.has(entry.creationRequestId)), path, diagnostics, 'Catalog identity, path and creation request must be unique.');
         ids.add(entry.workspaceId); paths.add(entry.path); if (entry.creationRequestId !== null) requests.add(entry.creationRequestId);
         if (entry.deletion !== null) {
-          const deletion = fields(entry.deletion, 'requestId manifestRevision historyKeys invocationOwnerKeys stage', `${path}.deletion`, diagnostics);
-          if (deletion) check(text(deletion.requestId) && integer(deletion.manifestRevision) && Array.isArray(deletion.historyKeys) && deletion.historyKeys.every(isWorkspaceHistoryKey) && new Set(deletion.historyKeys).size === deletion.historyKeys.length && Array.isArray(deletion.invocationOwnerKeys) && deletion.invocationOwnerKeys.every(sha) && oneOf(deletion.stage, ['frozen', 'invocations-cleaned', 'history-cleaned', 'workspace-cleaned']) && oneOf(entry.state, ['deleting', 'deleted']), `${path}.deletion`, diagnostics);
+          const deletion = fields(entry.deletion, 'requestId manifestRevision rootIdentity conversationIds historyKeys invocationOwnerKeys error stage', `${path}.deletion`, diagnostics);
+          if (deletion) { check(text(deletion.requestId) && integer(deletion.manifestRevision) && sha(deletion.rootIdentity) && Array.isArray(deletion.historyKeys) && deletion.historyKeys.every(isWorkspaceHistoryKey) && new Set(deletion.historyKeys).size === deletion.historyKeys.length && Array.isArray(deletion.invocationOwnerKeys) && deletion.invocationOwnerKeys.every(sha) && oneOf(deletion.stage, ['frozen', 'invocations-cleaned', 'history-cleaned', 'workspace-cleaned']) && oneOf(entry.state, ['deleting', 'deleted']), `${path}.deletion`, diagnostics); deletionError(deletion.error, `${path}.deletion.error`, diagnostics); }
+          if (deletion) check(Array.isArray(deletion.conversationIds) && deletion.conversationIds.every((id) => typeof id === 'string' && CONVERSATION_ID.test(id)) && new Set(deletion.conversationIds).size === deletion.conversationIds.length, `${path}.deletion.conversationIds`, diagnostics);
         } else check(entry.state !== 'deleting' && entry.state !== 'deleted', `${path}.deletion`, diagnostics);
       });
     }

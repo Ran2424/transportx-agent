@@ -15,6 +15,8 @@ import { toPosixPath, relativePosixPath } from './util/path.js';
 type Journal = Omit<WorkspaceMigrationPlan, 'writes'> & { writes: Array<Omit<MigrationWrite, 'value'> & { staged: string }> };
 const failure = (code: string, message: string) => Object.assign(new Error(message), { code, status: 409 });
 const local = (item: WorkspaceMigrationItemV1, relative: string) => workspaceMetadataPath(item.path, `.tau/migrations/workspace-v1/${relative}`);
+export type MigrationSourceDecision = { requestId: string; expectedRevision: number; reportDigest: string; action: 'isolate' | 'retry' | 'reprepare' };
+const covers = (workspace: WorkspaceMigrationItemV1, source: WorkspaceMigrationItemV1) => source.kind !== 'workspace' && source.sessionsDirectory === workspace.sessionsDirectory && (source.path === workspace.path || workspace.histories.some((history) => toPosixPath(workspaceMetadataPath(workspace.sessionsDirectory, history.key)) === source.path));
 
 /** Target transactions use the runtime mutex; global progress writes remain short. */
 export class WorkspaceMigrationRunner {
@@ -28,18 +30,160 @@ export class WorkspaceMigrationRunner {
     return item;
   }
   private reportPath(item: WorkspaceMigrationItemV1) { return workspaceMetadataPath(this.migration.scope.userData, `migrations/workspace-v1/reports/${item.id}.json`); }
+  private singleHistoryProven(item: WorkspaceMigrationItemV1) {
+    return !this.migration.read().items.some((source) => source.kind !== 'workspace' && source.state !== 'ready' && !(source.decisions.at(-1)?.action === 'retry' && covers(item, source)) && (source.protectedPaths.some((directory) => directory === item.path) || source.kind === 'history' && source.protectedPaths.length === 0));
+  }
+  private plan(item: WorkspaceMigrationItemV1, preparedAt?: string) { return planWorkspaceMigration(item, preparedAt, this.singleHistoryProven(item)); }
   private load(item: WorkspaceMigrationItemV1): Journal {
-    const file = this.reportPath(item);
-    if (item.report !== toPosixPath(file) || !item.preparedDigest || migrationBytesHash(fs.readFileSync(file)) !== item.preparedDigest) throw failure('metadata_corrupt', 'Prepared migration report differs from the committed inventory digest.');
+    const canonical = this.reportPath(item), archived = `${canonical}.${item.preparedDigest}.archived`;
+    const file = item.stage === 'restoring' && !fs.existsSync(canonical) ? archived : canonical;
+    if (item.report !== toPosixPath(canonical) || !item.preparedDigest || migrationBytesHash(fs.readFileSync(file)) !== item.preparedDigest) throw failure('metadata_corrupt', 'Prepared migration report differs from the committed inventory digest.');
     const report = readJsonObject(file) as unknown as Journal;
     if (report.schemaVersion !== 1 || report.itemId !== item.id || report.workspaceId !== item.workspaceId || report.directory !== item.path || report.sessionsDirectory !== item.sessionsDirectory || report.sourceDigest !== item.sourceDigest || !Number.isFinite(Date.parse(report.preparedAt)) || !Array.isArray(report.sources) || !Array.isArray(report.writes) || !Array.isArray(report.issues) || !parseWorkspaceManifestStructured(report.manifest).ok || report.manifest.id !== item.workspaceId) throw failure('metadata_corrupt', 'Prepared migration identity or Manifest is invalid.');
     const ids = new Set(item.histories.map((history) => history.conversationId));
+    if (typeof report.singleHistoryProven !== 'boolean') throw failure('metadata_corrupt', 'Prepared history-scope evidence is missing.');
     for (const [index, write] of report.writes.entries()) {
       const parts = write.relative.split('/'), privateFile = parts.slice(3).join('/');
       const privateAllowed = parts[0] === '.tau' && parts[1] === 'conversations' && ids.has(parts[2]) && /^(?:plan\.json|attachment-message-refs\.json|canvas-contexts\.json|timing-metrics\.v1\.json|geo-interactions\/(?:message-refs\.json|contexts\/geoctx_[A-Za-z0-9_-]{12,64}\/(?:context|provenance)\.json|requests\/georeq_[A-Za-z0-9_-]{12,64}\/(?:request|response)\.json))$/.test(privateFile);
       if (!privateAllowed && !['.tau/attachments.json', '.tau/citations.json'].includes(write.relative) || write.staged !== `.tau/migrations/workspace-v1/staged/${index}.json` || write.backup !== null && write.backup !== `.tau/migrations/workspace-v1/backups/${write.relative}` || !Number.isSafeInteger(write.bytes) || write.bytes < 0 || 'value' in write) throw failure('metadata_corrupt', 'Prepared migration target escaped its fixed metadata scope.');
     }
     return report;
+  }
+  /** Source digests are computed from bytes, including malformed JSON, without returning its contents. */
+  async report(id: string) {
+    const item = this.item(id), files = new Set<string>(), observations: unknown[] = [], sources: Array<{ path: string; bytes: number; sha256: string }> = [];
+    if (item.kind !== 'workspace') files.add(item.path);
+    else {
+      try { for (const relative of legacyMetadataPaths(item.path)) files.add(toPosixPath(workspaceMetadataPath(item.path, relative))); }
+      catch (error) { observations.push({ path: item.path, code: (error as { code?: string }).code || 'metadata_corrupt' }); }
+      for (const history of item.histories) { try { files.add(toPosixPath(workspaceMetadataPath(item.sessionsDirectory, history.key))); } catch { observations.push({ path: history.key, code: 'history_identity_mismatch' }); } }
+      for (const source of historySources(item.sessionsDirectory, (file, code) => observations.push({ path: file, code }))) {
+        try { if (historyHeader(item.sessionsDirectory, source.key).cwd === item.path) files.add(toPosixPath(source.file)); }
+        catch (error) { if ((error as { protectedPaths?: string[] }).protectedPaths?.includes(item.path)) files.add(toPosixPath(source.file)); }
+      }
+    }
+    for (const file of [...files].sort()) {
+      try {
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile() || stat.isSymbolicLink()) observations.push({ path: file, kind: stat.isSymbolicLink() ? 'symlink' : 'directory', mtimeMs: stat.mtimeMs, ino: stat.ino, dev: stat.dev });
+        else sources.push({ path: file, ...await migrationFileVersion(file) });
+      } catch (error) { observations.push({ path: file, code: (error as { code?: string }).code || 'unreadable' }); }
+    }
+    const versions = sources.map((source) => [source.path, source.bytes, source.sha256]).sort(([left], [right]) => String(left).localeCompare(String(right)));
+    const reportDigest = workspaceCreationDigest(observations.length ? { versions, observations } : versions);
+    let prepared: Journal | null = null, reportError: string | null = null;
+    if (item.report && item.kind === 'workspace') { try { prepared = this.load(item); } catch { reportError = 'Prepared report is unavailable or differs from its committed digest.'; } }
+    return { item, reportDigest, sources, observations, prepared, reportError };
+  }
+  async resolveSource(id: string, input: MigrationSourceDecision): Promise<WorkspaceMigrationItemV1> {
+    if (!input || typeof input.requestId !== 'string' || !input.requestId.trim() || input.requestId.length > 8192 || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || !/^[a-f0-9]{64}$/.test(input.reportDigest) || !['isolate', 'retry', 'reprepare'].includes(input.action)) throw failure('invalid_migration_action', 'Migration source decision input is invalid.');
+    const digest = workspaceCreationDigest(input), initial = this.item(id);
+    const existing = initial.decisions.find((decision) => decision.requestId === input.requestId);
+    if (existing && existing.inputSha256 !== digest) throw failure('workspace_revision_conflict', 'Migration request ID was used for different input.');
+    if (existing && initial.decisions.at(-1) !== existing) return initial;
+    const decide = async () => {
+      const current = this.item(id), duplicate = current.decisions.find((decision) => decision.requestId === input.requestId);
+      if (duplicate) { if (duplicate.inputSha256 !== digest) throw failure('workspace_revision_conflict', 'Migration request ID was used for different input.'); return; }
+      const snapshot = await this.report(id);
+      if (snapshot.item.revision !== input.expectedRevision || snapshot.reportDigest !== input.reportDigest) throw failure('workspace_revision_conflict', 'Source revision or report digest changed. Refresh its report before deciding.');
+      if (snapshot.item.state === 'ready' || snapshot.item.stage === 'published') throw failure('invalid_migration_action', 'Published sources use the normal workspace lifecycle.');
+      if (input.action === 'reprepare' && (snapshot.item.kind !== 'workspace' || !['prepared', 'backed-up', 'restoring'].includes(snapshot.item.stage) || !snapshot.prepared || fs.existsSync(workspaceMetadataPath(snapshot.item.path, '.tau/workspace.json')))) throw failure('invalid_migration_action', 'Reprepare requires a verified conversion that has not committed its Manifest. Finish publication of an existing Manifest instead.');
+      if (input.action === 'reprepare' && snapshot.observations.length) throw failure('migration_source_changed', 'Repair cannot freeze unreadable or unknown source versions.');
+      await this.migration.updateItem(id, (current) => {
+        const duplicate = current.decisions.find((decision) => decision.requestId === input.requestId);
+        if (duplicate) { if (duplicate.inputSha256 !== digest) throw failure('workspace_revision_conflict', 'Migration request ID was used for different input.'); return; }
+        if (current.revision !== input.expectedRevision || current.stage !== snapshot.item.stage || current.preparedDigest !== snapshot.item.preparedDigest) throw failure('workspace_revision_conflict', 'Source progress changed before the decision committed.');
+        if (input.action === 'reprepare') writeJsonAtomic(this.repairPath(current, digest), { schemaVersion: 1, itemId: id, inputSha256: digest, sources: snapshot.sources });
+        current.decisions.push({ requestId: input.requestId, inputSha256: digest, reportDigest: input.reportDigest, action: input.action, sourceId: null, conversationId: null });
+        current.revision++; current.error = null;
+        current.state = input.action === 'isolate' ? 'isolated' : 'pending';
+        if (input.action === 'reprepare') current.stage = 'restoring';
+      });
+    };
+    const directories = new Set<string>();
+    for (const target of [initial.path, ...initial.protectedPaths]) { try { if (fs.statSync(target).isDirectory()) directories.add(fs.realpathSync(target)); } catch {} }
+    const targets = [...directories].sort(); if (!targets.length) targets.push(fs.realpathSync(this.migration.scope.userData));
+    const serialize = (index: number): Promise<void> => index === targets.length ? decide() : this.gate.serialize(targets[index], () => serialize(index + 1));
+    await serialize(0);
+    let item = this.item(id);
+    if (input.action === 'isolate' || item.state === 'ready') return this.maintenance.has(id) ? this.convert(id) : item;
+    if (item.stage === 'restoring') await this.gate.serialize(item.path, () => this.restorePrepared(id));
+    await this.migration.initialize(); item = this.item(id);
+    for (const target of this.migration.read().items) if (target.kind === 'workspace' && target.state !== 'ready' && target.state !== 'isolated' && (target.id === id || covers(target, item))) await this.convert(target.id);
+    return this.item(id);
+  }
+  private repairPath(item: WorkspaceMigrationItemV1, digest: string) { return `${this.reportPath(item)}.repair-${digest}`; }
+  /** Undo only the exact outputs in the frozen report; business files and Native history are never rolled back. */
+  private async restorePrepared(id: string) {
+    const item = this.item(id), journal = this.load(item), decision = [...item.decisions].reverse().find((decision) => decision.action === 'reprepare')!;
+    const saved = readJsonObject(this.repairPath(item, decision.inputSha256)) as unknown as { schemaVersion: number; itemId: string; inputSha256: string; sources: Array<{ path: string; bytes: number; sha256: string }> };
+    if (saved.schemaVersion !== 1 || saved.itemId !== id || saved.inputSha256 !== decision.inputSha256 || !Array.isArray(saved.sources) || workspaceCreationDigest(saved.sources.map((source) => [source.path, source.bytes, source.sha256]).sort(([left], [right]) => String(left).localeCompare(String(right)))) !== decision.reportDigest) throw failure('metadata_corrupt', 'Repair source snapshot differs from the confirmed report.');
+    const verify = async () => {
+      const snapshot = await this.report(id);
+      if (snapshot.observations.length || workspaceCreationDigest(snapshot.sources.map((source) => source.path).sort()) !== workspaceCreationDigest(saved.sources.map((source) => source.path).sort())) throw failure('migration_source_changed', 'Repair source membership changed.');
+      for (const source of snapshot.sources) {
+        const original = saved.sources.find((entry) => entry.path === source.path)!;
+        const write = journal.writes.find((entry) => toPosixPath(workspaceMetadataPath(item.path, entry.relative)) === source.path);
+        if (source.sha256 !== original.sha256 && source.sha256 !== write?.previousSha256) throw failure('migration_source_changed', 'An unapproved source version prevents repair.');
+      }
+      for (const record of journal.manifest.conversations) if (historyHeader(item.sessionsDirectory, record.history.key).id !== record.history.headerId) throw failure('history_identity_mismatch', 'Repair cannot replace native history identities.');
+    };
+    let lease = this.maintenance.get(id);
+    if (!lease) { lease = this.gate.takeMaintenance(item.path, item.workspaceId!); this.maintenance.set(id, lease); }
+    try {
+      await assertWorkspaceProcessesStopped(item.path, this.pythonCommand);
+      await verify();
+      if (fs.existsSync(workspaceMetadataPath(item.path, '.tau/workspace.json'))) throw failure('workspace_revision_conflict', 'A committed Manifest must finish publication instead of rolling back.');
+      const allowed = new Set(journal.writes.map((write) => write.relative));
+      const privateRoot = workspaceMetadataPath(item.path, '.tau/conversations');
+      const directories: string[] = [];
+      const inspect = (directory: string) => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+          const file = workspaceMetadataPath(item.path, relativePosixPath(item.path, path.join(directory, entry.name)));
+          if (entry.isDirectory()) inspect(file);
+          else if (!entry.isFile() || !allowed.has(relativePosixPath(item.path, file))) throw failure('migration_target_exists', 'Unknown private data prevents restoring migration outputs.');
+        }
+        directories.push(directory);
+      };
+      if (fs.existsSync(privateRoot)) inspect(privateRoot);
+      for (const write of journal.writes) {
+        const file = workspaceMetadataPath(item.path, write.relative), current = fs.existsSync(file) ? (await migrationFileVersion(file)).sha256 : null;
+        if (current !== write.previousSha256 && current !== write.sha256) throw failure('migration_target_exists', 'Unknown target bytes prevent migration repair.');
+        if (write.backup) {
+          const backup = workspaceMetadataPath(item.path, write.backup);
+          if ((fs.existsSync(backup) || current !== write.previousSha256) && (await migrationFileVersion(backup)).sha256 !== write.previousSha256) throw failure('metadata_corrupt', 'Repair requires the verified original backup.');
+        }
+      }
+      for (const write of journal.writes) {
+        const file = workspaceMetadataPath(item.path, write.relative);
+        if (write.previousSha256 === null) fs.rmSync(file, { force: true });
+        else if ((await migrationFileVersion(file)).sha256 !== write.previousSha256) {
+          const bytes = fs.readFileSync(workspaceMetadataPath(item.path, write.backup!)), temporary = `${file}.${crypto.randomUUID()}.repair`;
+          let descriptor: number | undefined;
+          try { descriptor = fs.openSync(temporary, 'wx', 0o600); fs.writeFileSync(descriptor, bytes); fs.fsyncSync(descriptor); fs.closeSync(descriptor); descriptor = undefined; fs.renameSync(temporary, file); }
+          finally { if (descriptor !== undefined) fs.closeSync(descriptor); fs.rmSync(temporary, { force: true }); }
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      for (const directory of directories) { if (fs.existsSync(directory) && fs.readdirSync(directory).length === 0) fs.rmdirSync(directory); }
+      for (const file of [local(item, 'staged'), local(item, 'backup-manifest.json')]) if (fs.existsSync(file)) {
+        const archive = `${file}.${item.preparedDigest}.archived`;
+        if (fs.existsSync(archive)) throw failure('migration_target_exists', 'A repair archive already exists; preserve both versions for review.');
+        fs.renameSync(file, archive);
+      }
+      await assertWorkspaceProcessesStopped(item.path, this.pythonCommand); await verify();
+      await lease.finishWithCommit(() => this.migration.updateItem(id, (current) => {
+        const report = this.reportPath(item), archive = `${report}.${item.preparedDigest}.archived`;
+        if (fs.existsSync(report)) { if (fs.existsSync(archive)) throw failure('migration_target_exists', 'A report repair archive already exists.'); fs.renameSync(report, archive); }
+        current.stage = 'inventory'; current.state = 'pending'; current.sourceDigest = null; current.preparedDigest = null; current.report = null; current.error = null;
+      }));
+      this.maintenance.delete(id);
+    } catch (error) {
+      try { await this.migration.updateItem(id, (current) => { current.state = 'failed'; current.error = { code: (error as { code?: string }).code || 'migration_failed', message: (error instanceof Error ? error.message : String(error)).slice(0, 4096) }; }); } catch {}
+      throw error;
+    } finally {
+      if (this.maintenance.get(id) === lease) { try { lease.finish(); this.maintenance.delete(id); } catch { try { lease.unconfirmed(); } catch {} } }
+    }
   }
   private async preflight(item: WorkspaceMigrationItemV1, journal: Journal) {
     const manifestFile = workspaceMetadataPath(item.path, '.tau/workspace.json');
@@ -67,6 +211,7 @@ export class WorkspaceMigrationRunner {
     ]));
   }
   private async verifySources(item: WorkspaceMigrationItemV1, journal: Journal) {
+    if (journal.singleHistoryProven && !this.singleHistoryProven(item)) throw failure('migration_source_changed', 'Additional unresolved histories invalidate the single-history ownership proof.');
     const currentMetadata = legacyMetadataPaths(item.path).map((file) => toPosixPath(workspaceMetadataPath(item.path, file))).sort();
     const expectedMetadata = journal.sources.filter((source) => source.kind === 'metadata').map((source) => source.path).sort();
     if (workspaceCreationDigest(currentMetadata) !== workspaceCreationDigest(expectedMetadata)) throw failure('migration_source_changed', 'Legacy metadata membership changed after preparation.');
@@ -96,7 +241,7 @@ export class WorkspaceMigrationRunner {
     const digest = workspaceCreationDigest(input), initial = this.item(id);
     if (input.action === 'isolate' ? input.conversationId !== null : !initial.histories.some((history) => history.conversationId === input.conversationId)) throw failure('invalid_migration_action', 'Migration decision target is invalid.');
     const duplicate = initial.decisions.find((decision) => decision.requestId === input.requestId);
-    if (duplicate) { if (duplicate.inputSha256 !== digest) throw failure('workspace_revision_conflict', 'Migration request ID was used for different input.'); return initial; }
+    if (duplicate) { if (duplicate.inputSha256 !== digest) throw failure('workspace_revision_conflict', 'Migration request ID was used for different input.'); return initial.state === 'ready' && this.maintenance.has(id) ? this.convert(id) : initial; }
     const result = await this.gate.serialize(initial.path, async () => {
       const item = this.item(id), report = this.load(item);
       const duplicate = item.decisions.find((decision) => decision.requestId === input.requestId);
@@ -105,7 +250,7 @@ export class WorkspaceMigrationRunner {
       const lease = this.gate.takeMaintenance(item.path, item.workspaceId!);
       try {
         await assertWorkspaceProcessesStopped(item.path, this.pythonCommand);
-        const fresh = await planWorkspaceMigration(item, report.preparedAt);
+        const fresh = await this.plan(item, report.preparedAt);
         if (fresh.sourceDigest !== input.reportDigest) throw failure('migration_source_changed', 'Migration source changed; old decisions cannot be applied.');
         const issue = fresh.issues.find((issue) => issue.sourceId === input.sourceId), assignment = fresh.assignments.find((assignment) => assignment.sourceId === input.sourceId);
         if (!issue && !assignment || input.action === 'isolate' && input.conversationId !== null || input.action === 'bind' && !(issue?.candidates.length === 1 && issue.candidates[0] === input.conversationId || assignment?.conversationId === input.conversationId)) throw failure('private_state_ambiguous', 'The chosen binding has no unique verified evidence. Explicitly isolate the association instead.');
@@ -120,13 +265,17 @@ export class WorkspaceMigrationRunner {
   }
   private async execute(id: string) {
     let item = this.item(id), lease = this.maintenance.get(id);
-    if (item.state === 'isolated') return item;
+    if (item.state === 'isolated') {
+      if (lease) { await lease.finishWithCommit(async () => item); this.maintenance.delete(id); }
+      return item;
+    }
     if (item.state === 'ready') {
       if (lease) { await lease.finishWithCommit(async () => item); this.maintenance.delete(id); }
       return item;
     }
     if (!item.workspaceId || fs.realpathSync(item.path) !== path.resolve(item.path) || item.sessionsDirectory !== this.migration.scope.sessionsDirectory) throw failure('workspace_identity_conflict', 'Migration target path or sessions scope changed.');
-    const conflict = this.migration.read().items.find((other) => other.id !== id && !['ready', 'isolated'].includes(other.state) && other.protectedPaths.some((target) => target === item.path));
+    if (item.stage === 'restoring') throw failure('workspace_migration_required', 'Resume the recorded repair before conversion.');
+    const conflict = this.migration.read().items.find((other) => other.id !== id && !['ready', 'isolated'].includes(other.state) && !(other.decisions.at(-1)?.action === 'retry' && covers(item, other)) && other.protectedPaths.some((target) => target === item.path));
     if (conflict) throw failure('workspace_migration_required', 'Another unresolved source protects this workspace. Review the related report first.');
     try {
       if (!lease) { lease = this.gate.takeMaintenance(item.path, item.workspaceId); this.maintenance.set(id, lease); }
@@ -139,7 +288,7 @@ export class WorkspaceMigrationRunner {
           const bytes = fs.readFileSync(report); previous = readJsonObject(report);
           if (previous.itemId !== id || previous.workspaceId !== item.workspaceId || typeof previous.preparedAt !== 'string' || !Number.isFinite(Date.parse(previous.preparedAt)) || item.preparedDigest && migrationBytesHash(bytes) !== item.preparedDigest) throw failure('metadata_corrupt', 'Existing target report differs from its committed identity or digest.');
         }
-        prepared = await planWorkspaceMigration(item, previous?.preparedAt as string | undefined);
+        prepared = await this.plan(item, previous?.preparedAt as string | undefined);
         journal = { ...prepared, writes: prepared.writes.map(({ value: _value, ...write }, index) => ({ ...write, staged: `.tau/migrations/workspace-v1/staged/${index}.json` })) };
         const bytes = migrationJsonBytes(journal);
         if (previous && !item.preparedDigest && migrationBytesHash(fs.readFileSync(report)) !== migrationBytesHash(bytes)) throw failure('migration_target_exists', 'An uncommitted report cannot be reproduced from its source; preserve it for repair.');
@@ -157,7 +306,7 @@ export class WorkspaceMigrationRunner {
       if (item.stage === 'prepared') {
         const missing = journal.writes.some((write) => !fs.existsSync(workspaceMetadataPath(item.path, write.staged)));
         if (missing && !prepared) {
-          prepared = await planWorkspaceMigration(item, journal.preparedAt);
+          prepared = await this.plan(item, journal.preparedAt);
           if (prepared.sourceDigest !== journal.sourceDigest || workspaceCreationDigest(prepared.writes.map((write) => [write.relative, write.sha256])) !== workspaceCreationDigest(journal.writes.map((write) => [write.relative, write.sha256]))) throw failure('migration_source_changed', 'Prepared outputs cannot be reproduced from the frozen source.');
         }
         for (const write of journal.writes) {
@@ -197,7 +346,12 @@ export class WorkspaceMigrationRunner {
       await this.verifySources(item, journal);
       await this.migration.store.reserveMigratedWorkspace(item.workspaceId!, item.path);
       await this.migration.store.publishWorkspace(item.workspaceId!, journal.manifest);
-      const result = await lease.finishWithCommit(() => this.migration.updateItem(id, (current) => { current.stage = 'published'; current.state = 'ready'; current.error = null; }));
+      const result = await lease.finishWithCommit(() => this.migration.updateItem(id, (current, state) => {
+        current.stage = 'published'; current.state = 'ready'; current.error = null;
+        for (const source of state.items) if (source.decisions.at(-1)?.action === 'retry' && covers(current, source)) {
+          source.stage = 'published'; source.state = 'ready'; source.error = null; source.report = current.report; source.sourceDigest = current.sourceDigest; source.preparedDigest = current.preparedDigest;
+        }
+      }));
       this.maintenance.delete(id); return result;
     } catch (error) {
       try { item = await this.migration.updateItem(id, (current) => { current.state = (error as { code?: string }).code === 'private_state_ambiguous' ? 'needs-review' : 'failed'; current.error = { code: (error as { code?: string }).code || 'migration_failed', message: (error instanceof Error ? error.message : String(error)).slice(0, 4096) }; }); } catch {}
