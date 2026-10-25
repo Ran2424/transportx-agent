@@ -40,7 +40,6 @@ import { getVisualizationFromToolResult, stripGeoContextPrompt } from '../contra
 import { geoInteractionService } from './geo-interaction-service.js';
 import { restoreCanvasContextMessage } from './canvas-service.js';
 import { stripCanvasContextPrompt } from '../contracts/canvas.js';
-import { migrateSessionCitations } from './citation-migration.js';
 import type { WorkspaceRuntimeLease } from './workspace-runtime.js';
 
 export type PersistentSessionLifecycle = {
@@ -173,7 +172,7 @@ export class PiRpcSession {
     this.autoCompactionEnabled = true;
     this.timingMetrics = new TimingMetricsStore(this.cwd, this.conversationId);
     this.projection = new SessionProjection(this.timingMetrics.enrichEntries((opts.entries || []).map(restoreCanvasContextMessage)), readAttachmentMessageRefs(this.cwd, this.conversationId), geoInteractionService.readMessageRefs(this.cwd, this.conversationId));
-    this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
+    this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || '';
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
     this.thinkingLevel = parsed.level || 'off';

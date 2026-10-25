@@ -1,6 +1,7 @@
 import type { JsonRecord, ModelIdentity } from './types.js';
 import { modelLabel } from './model-utils.js';
 import type { PiMessageQueue } from '../contracts/pi-rpc.js';
+import type { SessionSnapshot } from '../contracts/session.js';
 import fs from 'node:fs';
 
 export type SessionMetadataSource = {
@@ -76,7 +77,7 @@ export function liveSessionMetadata(source: SessionMetadataSource, capabilities:
   };
 }
 
-export function sessionSnapshot(projectionSnapshot: object, source: SessionMetadataSource, capabilities: unknown, pendingExtensionUiRequests: unknown[]) {
+export function sessionSnapshot(projectionSnapshot: SessionSnapshot, source: SessionMetadataSource, capabilities: unknown, pendingExtensionUiRequests: unknown[]) {
   return {
     ...projectionSnapshot,
     session: sessionMetadata(source, capabilities, pendingExtensionUiRequests),

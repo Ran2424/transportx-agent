@@ -23,5 +23,5 @@ export function ConversationStage({ session, loading, onNewSession, onActivate, 
     );
   }
 
-  return <div className="conversation-persistent-stage">{!session.liveSessionId && <div className="conversation-offline-bar"><span>历史预览 · 尚未启动执行{session.record?.lastStartFailure ? ` · ${session.record.lastStartFailure.message}` : ''}</span><Button disabled={activating} onClick={onActivate}>{activating ? '正在激活…' : '激活此会话'}</Button></div>}<ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} /></div>;
+  return <div className="conversation-persistent-stage">{!session.liveSessionId && <div className="conversation-offline-bar"><span>{t('workspaceFlow.historyPreview')}{session.record?.lastStartFailure ? ` · ${session.record.lastStartFailure.message}` : ''}</span><Button disabled={activating} onClick={onActivate}>{activating ? t('workspaceFlow.activating') : t('workspaceFlow.activate')}</Button></div>}{session.record && <div className="conversation-plan-source">{t(`workspaceFlow.planSource.${session.record.plan?.source || 'missing'}`)}</div>}<ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} /></div>;
 }

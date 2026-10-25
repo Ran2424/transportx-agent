@@ -1,11 +1,12 @@
+import { createHostConversation, nativeSnapshot } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export async function activationHostSmoke({ root, json, rpc, until, providerInputs }) {
-  const session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'Activation Host acceptance' })).session;
+  const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: 'Activation Host acceptance' });
   const firstRequestIndex = providerInputs.length;
-  const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  const snapshot = () => nativeSnapshot(json, session.conversationId);
   const results = (state) => state.entries.filter((entry) => entry.message?.role === 'toolResult').map((entry) => entry.message);
   const execute = async (params) => {
     const before = results(await snapshot()).length;
@@ -39,9 +40,9 @@ export async function activationHostSmoke({ root, json, rpc, until, providerInpu
   fs.writeFileSync(path.join(directory, 'SKILL.md'), '---\nname: activation-skill\ndescription: No runtime or placeholder tools, native file processing only.\n---\nRead local files.\n');
   assert.equal((await rpc({ type: 'install_module', sourcePath: directory })).success, true);
   assert.equal((await execute({ action: 'enable', moduleId })).status, 'not_in_session_plan');
-  const next = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'Skill-only assembled task' })).session;
+  const next = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: 'Skill-only assembled task' });
   await rpc({ type: 'prompt', sessionId: next.id, message: 'core:' + JSON.stringify({ tool: 'manage_capabilities', params: { action: 'enable', moduleId } }) });
-  const state = await until(async () => { const value = await json(`/api/live-sessions/${next.id}/snapshot`); return !value.isStreaming && results(value).some((result) => result.details?.moduleId === moduleId) && value; }, 'skill-only module');
+  const state = await until(async () => { const value = await nativeSnapshot(json, next.conversationId); return !value.isStreaming && results(value).some((result) => result.details?.moduleId === moduleId) && value; }, 'skill-only module');
   assert.equal(results(state).at(-1).details.status, 'no_tools');
   assert.equal(providerInputs.at(-1).tools.length, 5);
   // Compare actual Pi-built provider schemas with identical installed modules.

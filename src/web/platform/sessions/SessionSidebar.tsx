@@ -19,6 +19,8 @@ type Props = {
 };
 type Target = { workspace: WorkspaceView; record?: ConversationRecordV1 };
 function savedCollapsed() { try { return JSON.parse(window.localStorage.getItem('tau-collapsed-workspaces') || '[]') as string[]; } catch { return []; } }
+function conversationActivity(item: WorkspaceView['conversations'][number]) { return Date.parse(item.lastConversationAt || '') || (item.hasMessages === false ? Date.parse(item.record.createdAt) || 0 : 0); }
+function workspaceActivity(workspace: WorkspaceView) { return Math.max(0, ...workspace.conversations.map((item) => Date.parse(item.lastConversationAt || '') || 0)) || (workspace.conversations.every((item) => item.hasMessages === false) ? Date.parse(workspace.createdAt || '') || 0 : 0); }
 
 export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSessionId, historyRevision, onClose, onGoHome, onNewSession, onManageModules, onSelect, onDelete, onDefaults, onDiagnostics }: Props) {
   const { t } = useTranslation();
@@ -66,41 +68,41 @@ export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSe
       </div>
       <div className="sidebar-split">
         <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={() => { setCapabilityCollapsed(!capabilityCollapsed); window.localStorage.setItem('tau-capability-collapsed', capabilityCollapsed ? '0' : '1'); }} onManageModules={onManageModules} />
-        <section className={`conversation-section${conversationCollapsed ? ' is-collapsed' : ''}`} aria-label="工作区和会话">
-          <header className="sidebar-section-heading"><strong><Icon name="workspace" />工作区</strong><small>{workspaces.length}</small><button className="sidebar-section-toggle" type="button" aria-expanded={!conversationCollapsed} aria-label={conversationCollapsed ? t('sessions.expandConversations') : t('sessions.collapseConversations')} onClick={() => { setConversationCollapsed(!conversationCollapsed); window.localStorage.setItem('tau-conversation-collapsed', conversationCollapsed ? '0' : '1'); }}><Icon name="chevron" /></button></header>
+        <section className={`conversation-section${conversationCollapsed ? ' is-collapsed' : ''}`} aria-label={t('workspaceFlow.sidebar')}>
+          <header className="sidebar-section-heading"><strong><Icon name="workspace" />{t('workspaceFlow.workspaces')}</strong><small>{workspaces.length}</small><button className="sidebar-section-toggle" type="button" aria-expanded={!conversationCollapsed} aria-label={conversationCollapsed ? t('sessions.expandConversations') : t('sessions.collapseConversations')} onClick={() => { setConversationCollapsed(!conversationCollapsed); window.localStorage.setItem('tau-conversation-collapsed', conversationCollapsed ? '0' : '1'); }}><Icon name="chevron" /></button></header>
           {!conversationCollapsed && <div className="session-scroll">
             {loading && !workspaces.length && <div className="session-empty">{t('sessions.loadingIndex')}</div>}
-            {error && <div className="session-empty is-error">{error}<button type="button" onClick={() => onDiagnostics()}>迁移诊断</button></div>}
-            {[...workspaces].sort((left, right) => Math.max(0, ...right.conversations.map((item) => Date.parse(item.lastConversationAt || '') || 0)) - Math.max(0, ...left.conversations.map((item) => Date.parse(item.lastConversationAt || '') || 0))).map((workspace) => {
-              const rows = [...workspace.conversations].sort((left, right) => (Date.parse(right.lastConversationAt || '') || 0) - (Date.parse(left.lastConversationAt || '') || 0)).filter(({ record }) => !query.trim() || record.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) || searchIds?.has(record.id));
+            {error && <div className="session-empty is-error">{error}<button type="button" onClick={() => onDiagnostics()}>{t('workspaceFlow.migration')}</button></div>}
+            {[...workspaces].sort((left, right) => workspaceActivity(right) - workspaceActivity(left)).map((workspace) => {
+              const rows = [...workspace.conversations].sort((left, right) => conversationActivity(right) - conversationActivity(left)).filter(({ record }) => !query.trim() || record.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) || searchIds?.has(record.id));
               if (query.trim() && !rows.length && !workspace.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return null;
               const expanded = !!query.trim() || !collapsed.includes(workspace.id);
               return <section className="workspace-group" key={workspace.id}>
                 <div className="workspace-group-heading">
                   <button type="button" className="workspace-group-name" aria-expanded={expanded} onClick={() => toggleWorkspace(workspace.id)} title={workspace.path}><Icon name="chevron" /><strong>{workspace.name}</strong><small>{workspace.conversations.length}</small></button>
-                  {workspace.availability === 'ready' && <button className="icon-button" type="button" aria-label={`在 ${workspace.name} 中新建会话`} onClick={() => onNewSession(workspace)}><Icon name="plus" /></button>}
-                  <button className="icon-button" type="button" aria-label={`${workspace.name} 工作区操作`} onClick={(event) => setMenu({ workspace, x: event.clientX, y: event.clientY })}>⋯</button>
+                  {workspace.availability === 'ready' && <button className="icon-button" type="button" aria-label={t('workspaceFlow.newIn', { name: workspace.name })} onClick={() => onNewSession(workspace)}><Icon name="plus" /></button>}
+                  <button className="icon-button" type="button" aria-label={t('workspaceFlow.actions', { name: workspace.name })} onClick={(event) => setMenu({ workspace, x: event.clientX, y: event.clientY })}>⋯</button>
                 </div>
-                {workspace.availability !== 'ready' && <button type="button" className="session-empty is-error" onClick={() => workspace.availability === 'deleting' ? onDelete(workspace) : onDiagnostics(workspace)}>{workspace.availability === 'deleting' ? '删除未完成，点击继续' : `${workspace.availability === 'isolated' ? '已隔离' : '需要迁移处理'} · 查看详情`}</button>}
-                {expanded && rows.map(({ record, runtime, lastConversationAt }) => <button className={`session-row${record.id === activeSessionId ? ' is-active' : ''}`} type="button" key={record.id} aria-disabled={record.state === 'deleting'} onClick={() => record.state === 'deleting' ? onDelete(workspace, record) : onSelect(record.id)} onContextMenu={(event) => { event.preventDefault(); setMenu({ workspace, record, x: event.clientX, y: event.clientY }); }}>
-                  <span className="session-row-main"><strong>{record.name}</strong><small>{record.state === 'deleting' ? '删除未完成' : record.state === 'start-failed' ? '启动失败' : lastConversationAt ? relativeTime(lastConversationAt) : '尚无对话'}</small></span>
+                {workspace.availability !== 'ready' && <button type="button" className="session-empty is-error" onClick={() => workspace.availability === 'deleting' ? onDelete(workspace) : onDiagnostics(workspace)}>{workspace.availability === 'deleting' ? t('workspaceFlow.continueDelete') : `${workspace.availability === 'isolated' ? t('workspaceFlow.isolated') : t('workspaceFlow.needsMigration')} · ${t('workspaceFlow.inspectDetails')}`}</button>}
+                {expanded && rows.map(({ record, runtime, lastConversationAt, hasMessages }) => <button className={`session-row${record.id === activeSessionId ? ' is-active' : ''}`} type="button" key={record.id} aria-disabled={record.state === 'deleting'} onClick={() => record.state === 'deleting' ? onDelete(workspace, record) : onSelect(record.id)} onContextMenu={(event) => { event.preventDefault(); setMenu({ workspace, record, x: event.clientX, y: event.clientY }); }}>
+                  <span className="session-row-main"><strong>{record.name}</strong><small>{record.state === 'deleting' ? t('workspaceFlow.unfinishedDelete') : record.state === 'start-failed' ? t('workspaceFlow.startFailed') : lastConversationAt ? relativeTime(lastConversationAt) : t(hasMessages === false ? 'workspaceFlow.noMessages' : 'workspaceFlow.unknownActivity')}</small></span>
                   {(sessions.find((view) => view.id === record.id)?.isStreaming ?? runtime?.isStreaming) && <span className="session-row-meta"><i className="streaming-beacon" /></span>}
                 </button>)}
               </section>;
             })}
-            {!loading && !error && !workspaces.length && <div className="session-empty">还没有工作区。新建后可在同一目录保留多个会话。</div>}
+            {!loading && !error && !workspaces.length && <div className="session-empty">{t('workspaceFlow.empty')}</div>}
           </div>}
         </section>
       </div>
     </aside>
     {menu && <div className="session-context-menu" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 200) }}>
-      {menu.workspace.availability === 'ready' && menu.record?.state !== 'deleting' && <button type="button" role="menuitem" onClick={() => { setRename(menu); setRenameValue(menu.record?.name || menu.workspace.name); setError(''); setMenu(null); }}>重命名{menu.record ? '会话' : '工作区'}</button>}
-      {!menu.record && menu.workspace.availability === 'ready' && <button type="button" role="menuitem" onClick={() => { onDefaults(menu.workspace); setMenu(null); }}>编辑新会话默认配置</button>}
-      <button type="button" role="menuitem" onClick={() => { onDiagnostics(menu.workspace); setMenu(null); }}>迁移与运行诊断</button>
-      {(menu.workspace.availability === 'ready' || menu.workspace.availability === 'deleting') && <button type="button" role="menuitem" onClick={() => { onDelete(menu.workspace, menu.record); setMenu(null); }}>{menu.record ? '删除此会话' : '删除整个工作区'}</button>}
+      {menu.workspace.availability === 'ready' && menu.record?.state !== 'deleting' && <button type="button" role="menuitem" onClick={() => { setRename(menu); setRenameValue(menu.record?.name || menu.workspace.name); setError(''); setMenu(null); }}>{t(menu.record ? 'workspaceFlow.renameConversation' : 'workspaceFlow.renameWorkspace')}</button>}
+      {!menu.record && menu.workspace.availability === 'ready' && <button type="button" role="menuitem" onClick={() => { onDefaults(menu.workspace); setMenu(null); }}>{t('workspaceFlow.editDefaults')}</button>}
+      <button type="button" role="menuitem" onClick={() => { onDiagnostics(menu.workspace); setMenu(null); }}>{t('workspaceFlow.diagnostics')}</button>
+      {(menu.workspace.availability === 'ready' || menu.workspace.availability === 'deleting') && <button type="button" role="menuitem" onClick={() => { onDelete(menu.workspace, menu.record); setMenu(null); }}>{menu.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')}</button>}
     </div>}
-    <Dialog open={!!rename} onOpenChange={(next) => { if (!next && !saving) setRename(null); }} title={rename?.record ? '重命名会话' : '重命名工作区'} className="confirmation-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={saving}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!renameValue.trim() || saving} onClick={() => void saveName()}>{t('common.save')}</Button></>}>
-      <label className="field-label"><span>名称</span><input value={renameValue} maxLength={120} autoFocus onChange={(event) => setRenameValue(event.target.value)} /></label>{error && <p className="form-error">{error}</p>}
+    <Dialog open={!!rename} onOpenChange={(next) => { if (!next && !saving) setRename(null); }} title={rename?.record ? t('workspaceFlow.renameConversation') : t('workspaceFlow.renameWorkspace')} className="confirmation-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={saving}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!renameValue.trim() || saving} onClick={() => void saveName()}>{t('common.save')}</Button></>}>
+      <label className="field-label"><span>{t('workspaceFlow.fieldName')}</span><input value={renameValue} maxLength={120} autoFocus onChange={(event) => setRenameValue(event.target.value)} /></label>{error && <p className="form-error">{error}</p>}
     </Dialog>
     <button className={`mobile-scrim${open ? ' is-visible' : ''}`} type="button" aria-label={t('sessions.toggleCloseSidebar')} onClick={onClose} />
   </>;

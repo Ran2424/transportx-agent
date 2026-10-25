@@ -1,3 +1,4 @@
+import { createHostConversation, nativeSnapshot, closeHostConversation, protocolHeaders } from './harness/workspace-client.mjs';
 import { modelHostSmoke } from './harness/model-host-smoke.mjs';
 // Real Pi, production Host routes/assembly and isolated, explicitly authorized fixtures.
 import assert from 'node:assert/strict';
@@ -163,13 +164,17 @@ async function until(check, label, timeout = 20000) {
 }
 let endpoint;
 const samples = [];
+const requestPaths = [];
+function trackRequest(url) { const target = new URL(url, endpoint); if (target.origin === endpoint && target.protocol === 'http:') requestPaths.push(target.pathname); }
 try {
   const ready = await until(() => stdout.split('\n').map((line) => { try { return JSON.parse(line); } catch { return null; } }).find((value) => value?.type === 'transportx-agent-host-ready'), 'Host ready');
   endpoint = `http://127.0.0.1:${ready.port}`;
   async function json(url, body) {
-    const response = await fetch(endpoint + url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+    trackRequest(url);
+    const response = await fetch(endpoint + url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify(body) } : {});
     const value = await response.json(); assert.equal(response.ok, true, JSON.stringify(value)); return value;
   }
+  await until(async () => (await json('/api/health')).dataState === 'ready', 'Host data inventory');
   const rpc = (body) => json('/api/rpc', body);
   async function restartHost() {
     const previous = child;
@@ -179,6 +184,7 @@ try {
     stdout = ''; stderr = ''; child = launchHost();
     const ready = await until(() => stdout.split('\n').map((line) => { try { return JSON.parse(line); } catch { return null; } }).find((value) => value?.type === 'transportx-agent-host-ready'), 'restarted production Host');
     endpoint = `http://127.0.0.1:${ready.port}`;
+    await until(async () => (await json('/api/health')).dataState === 'ready', 'restarted Host data inventory');
     return endpoint;
   }
   if (!baseline) {
@@ -191,28 +197,27 @@ try {
   const sessions = [];
   for (let index = 0; index < 5; index++) {
     const begin = performance.now();
-    const created = await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: `P0 ${index}` });
-    const session = created.session; sessions.push(session);
+    const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: `P0 ${index}` }); sessions.push(session);
     fs.rmSync(started, { force: true });
     assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message: 'success' })).success, true);
     await until(() => fs.existsSync(started), 'first Pi tool');
-    await until(async () => !(await json(`/api/live-sessions/${session.id}/snapshot`)).isStreaming, 'first turn settled');
+    await until(async () => !(await nativeSnapshot(json, session.conversationId)).isStreaming, 'first turn settled');
     await rpc({ type: 'get_state', sessionId: session.id });
     if (index === 0) assert.deepEqual(providerInputs[0].tools.map((tool) => tool.function.name).sort(), ['bash', 'edit', 'manage_capabilities', 'read', 'write']);
     const entries = await until(async () => {
-      const response = await json(`/api/live-sessions/${session.id}/snapshot`);
+      const response = await nativeSnapshot(json, session.conversationId);
       return response.entries.some((entry) => entry.customType === 'pi-web-bridge') && response.entries;
     }, 'production Bridge');
     const bridge = entries.filter((entry) => entry.customType === 'pi-web-bridge').at(-1).data;
     assert.ok(bridge.tools.some((tool) => tool.name === 'tau_p0_probe' && tool.active));
     if (modelPhase && index === 0) modelRefresh = await modelHostSmoke({ rpc, json, root, session, providerInputs });
-    samples.push({ startupToFirstToolHistoryAndBridgeMs: Math.round(performance.now() - begin), tools: bridge.tools.length, moduleCount: JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/resolved-session-plan.json'), 'utf8')).modules.length });
+    samples.push({ startupToFirstToolHistoryAndBridgeMs: Math.round(performance.now() - begin), tools: bridge.tools.length, moduleCount: JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/conversations', session.conversationId, 'plan.json'), 'utf8')).modules.length });
     fs.mkdirSync(path.join(session.cwd, '.pi/extensions'), { recursive: true });
     fs.writeFileSync(path.join(session.cwd, '.pi/extensions/untrusted.ts'), autoExtension);
-    if (index < 4) await fetch(`${endpoint}/api/live-sessions/${session.id}`, { method: 'DELETE' });
+    if (index < 4) await closeHostConversation(json, session.conversationId);
   }
   const session = sessions.at(-1);
-  const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  const snapshot = () => nativeSnapshot(json, session.conversationId);
   const activation = activationPhase ? await (await import('./harness/activation-host-smoke.mjs')).activationHostSmoke({ root, json, rpc, until, providerInputs }) : undefined;
   if (!baseline) {
     const settingsPath = path.join(root, 'settings.json');
@@ -224,9 +229,9 @@ try {
   assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message: '/p0_reload' })).success, true);
   await until(() => fs.existsSync(reloaded), 'Pi resource reload');
   if (!baseline) {
-    const extra = await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'P0 package-hook denial' });
-    assert.equal((await rpc({ type: 'get_state', sessionId: extra.session.id })).success, true);
-    await fetch(`${endpoint}/api/live-sessions/${extra.session.id}`, { method: 'DELETE' });
+    const extra = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: 'P0 package-hook denial' });
+    assert.equal((await rpc({ type: 'get_state', sessionId: extra.id })).success, true);
+    await closeHostConversation(json, extra.conversationId);
   }
   for (const mode of ['fail', 'cancel', 'success']) {
     fs.rmSync(started, { force: true });
@@ -253,7 +258,7 @@ try {
   }
   const persisted = fs.readFileSync(final.sessionFile, 'utf8');
   assert.match(persisted, /p0_expected_failure/); assert.match(persisted, /p0_ok/);
-  const canvas = canvasPhase ? await (await import('./harness/canvas-core-smoke.mjs')).canvasCoreSmoke({ root, endpoint, json, rpc, until }) : undefined;
+  const canvas = canvasPhase ? await (await import('./harness/canvas-core-smoke.mjs')).canvasCoreSmoke({ root, endpoint, json, rpc, until, trackRequest }) : undefined;
   if (activationPhase) canvas.accumulatedSchemas = { count: providerInputs.at(-1).tools.length, bytes: Buffer.byteLength(JSON.stringify(providerInputs.at(-1).tools)), source: 'actual final provider request after Canvas/Geo/Citation/Interaction and resume' };
   const spatial = spatialPhase ? await (await import('./harness/spatial-host-smoke.mjs')).spatialHostSmoke({ root, endpoint, json, rpc, until, appRoot, providerInputs }) : undefined;
   const citation = citationPhase ? await (await import('./harness/citation-host-smoke.mjs')).citationHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
@@ -261,8 +266,11 @@ try {
   const lifecycle = lifecyclePhase ? await (await import('./harness/module-lifecycle-smoke.mjs')).moduleLifecycleSmoke({ root, endpoint, json, rpc, until }) : undefined;
   const authoring = lifecyclePhase ? await (await import('./harness/module-package-smoke.mjs')).modulePackageSmoke({ root, json, rpc, until }) : undefined;
   const recovery = recoveryPhase ? await (await import('./harness/spatial-recovery-smoke.mjs')).spatialRecoverySmoke({ root, json, rpc, until, restartHost, endpoint: () => endpoint }) : undefined;
-  const cad = cadPhase ? await (await import('./harness/cad-host-smoke.mjs')).cadHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) : undefined;
+  const cad = cadPhase ? await (await import('./harness/cad-host-smoke.mjs')).cadHostSmoke({ root, endpoint, json, rpc, until, providerInputs, trackRequest }) : undefined;
+  const oldBusinessRequests = requestPaths.filter((url) => /^\/api\/(?:live-sessions|sessions(?:\/|$)|file(?:\/|$)|files(?:\/|$))/.test(url));
+  assert.deepEqual(oldBusinessRequests, [], 'actual Host clients and Canvas/CAD browser requests use only new business routes');
   const report = { modelRefresh, cad, phase: modelPhase ? 'Pi model refresh' : cadPhase ? 'CAD module alignment' : activationPhase ? 'Module activation P1-P3' : canvasPhase ? 'Canvas core migration' : baseline ? 'before P0 trust changes' : citationPhase ? 'P2' : spatialPhase ? 'P1' : 'P0', pi: '0.80.10', node: process.version, platform: `${process.platform}/${process.arch}`, cpu: os.cpus()[0].model, memoryGiB: Math.round(os.totalmem() / 2 ** 30), samples, errorsUsePiChannel: true, executeSignalObserved: true, headerPersistedBeforeFirstTool: true, ...(!baseline ? { rejectedCodeNeverLoaded: true, automaticDiscoveryBlocked: true } : {}), historyVerified: true, canvas, spatial, citation, recovery, lifecycle, authoring, activation, harnessRssBytes: process.memoryUsage().rss };
+  report.network = { requestCount: requestPaths.length, oldBusinessRequests: oldBusinessRequests.length, paths: [...new Set(requestPaths)].sort() };
   if (process.env.TRANSPORTX_ACTIVATION_REPORT) fs.writeFileSync(process.env.TRANSPORTX_ACTIVATION_REPORT, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 } finally {

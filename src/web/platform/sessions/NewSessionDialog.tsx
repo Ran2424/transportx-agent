@@ -88,7 +88,7 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
         await kernel.commands.session.activate(confirmationId, { confirmCurrentConfiguration: { expectedRevision: workspace.revision, domainId, modelSpec: model, profile } });
         await kernel.commands.session.list(); onOpenChange(false); onCreated(confirmationId); return;
       }
-      const input = { workspace: workspace ? { kind: 'existing' as const, workspaceId: workspace.id, expectedRevision: workspace.revision!, defaultsRevision: workspace.defaultsRevision! } : { kind: 'new' as const, name: workspaceName.trim(), ...(parentDirectory.trim() ? { parentDirectory: parentDirectory.trim() } : {}) }, name: name.trim() || t('workspaceFlow.untitled'), model, profile, domainId };
+      const input = { workspace: workspace ? { kind: 'existing' as const, workspaceId: workspace.id, expectedRevision: workspace.revision!, defaultsRevision: workspace.defaultsRevision! } : { kind: 'new' as const, name: workspaceName.trim(), ...(parentDirectory.trim() ? { parentDirectory: parentDirectory.trim() } : {}) }, name: name.trim() || t(workspace ? 'workspaceFlow.untitled' : 'workspaceFlow.initialAnalysis'), model, profile, domainId };
       const digest = JSON.stringify(input), requestId = requestIds.current.get(digest) || crypto.randomUUID(); requestIds.current.set(digest, requestId);
       const session = await kernel.commands.session.create({ ...input, requestId });
       kernel.dispatch({ type: 'session/created', session });

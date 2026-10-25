@@ -14,7 +14,7 @@ for (const file of ['src', 'desktop', 'scripts', 'modules/capabilities', 'module
   const endpoints = [], state = [], dependencies = [];
   source.split('\n').forEach((line, index) => {
     if (/\/api\//.test(line.replaceAll('\\/', '/'))) endpoints.push({ line: index + 1, source: line.trim() });
-    if (/\.tau|resolved-session-plan|attachments\.json|canvas-contexts|geo-interactions|timing-metrics|migrateStoredCitations|acquireWriteLease|sessionFile|sessionId|PiRpcSession|conversationId|workspaceId/.test(line)) state.push(index + 1);
+    if (/\.tau|resolved-session-plan|attachments\.json|canvas-contexts|geo-interactions|timing-metrics|WorkspaceMigration|acquireWriteLease|sessionFile|sessionId|PiRpcSession|conversationId|workspaceId/.test(line)) state.push(index + 1);
     for (const match of line.matchAll(/(?:from\s+|import\s*\(|require\s*\()['"]([^'"]+)/g)) dependencies.push(match[1]);
   });
   if (endpoints.length || state.length) report.sources.push({ file: path.relative(repo, file).replaceAll('\\', '/'), sha256: digest(source), endpoints, stateLines: state, dependencies: [...new Set(dependencies)] });

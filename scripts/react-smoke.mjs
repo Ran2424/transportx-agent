@@ -41,7 +41,7 @@ const port = await freePort();
 let output = '';
 const child = spawn(process.execPath, ['scripts/harness/serve-with-fake-pi.mjs', '--port', String(port)], {
   cwd: process.cwd(),
-  env: { ...process.env, TAU_REACT_STATIC_DIR: 'dist/web' },
+  env: { ...process.env, TAU_REACT_STATIC_DIR: process.env.TAU_REACT_STATIC_DIR || path.resolve('dist/web') },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 child.stdout.on('data', (chunk) => { output += chunk; });
@@ -248,6 +248,7 @@ try {
   const mapBox = await geoMap.boundingBox();
   if (!mapBox) throw new Error('Geo map has no browser layout box');
   const screenshotRequest = page.waitForRequest((request) => request.url().includes('/geo-screenshots'));
+  void screenshotRequest.catch(() => {});
   let screenshotPosted = false;
   const observeScreenshot = (request) => { if (request.url().includes('/geo-screenshots')) screenshotPosted = true; };
   page.on('request', observeScreenshot);
@@ -469,6 +470,10 @@ try {
 
   if (!process.argv.includes('--web')) await softwareUpdateSmoke(browser, baseUrl);
   await workspaceCleanupSmoke(page);
+  const oldBusiness = requestedUrls.filter((value) => /^\/api\/(live-sessions|sessions|session-history|file|files)(?:\/|$)/.test(new URL(value).pathname));
+  assert.deepEqual(oldBusiness, [], 'supported Web flows never request old business endpoints');
+  fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
+  fs.writeFileSync('.plans/workspace-conversations/web-network.json', JSON.stringify({ oldBusinessRequests: oldBusiness.length, requests: requestedUrls.map((value) => new URL(value).pathname) }, null, 2));
   if (pageErrors.length) throw new Error(`Web scenario raised page errors: ${pageErrors.join('\n')}`);
   console.log('Web scenario passed: baseline workflow plus Geo user Context, Agent request, audited result, and refresh recovery.');
 } catch (error) {

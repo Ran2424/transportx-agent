@@ -108,7 +108,7 @@ Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`san
 
 Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一个 Agent Host。
 
-`workspace-host.ts` 与 `workspace-api.ts` 是持久工作区/会话的公开入口。`workspaceId` 标识共享目录，`conversationId` 标识历史、冻结计划和私有状态，Pi 的 `id` 只标识当前运行实例。创建保存记录和计划，不启动 Pi；读取 Snapshot 不要求运行实例。激活先校验目标计划，再经 `ConversationRuntime` 与 `WorkspaceRuntimeGate` 取得排他权；忙碌、压缩、队列或交互不能静默丢弃。实际进程与作业停止、状态提交确认后才释放租约。
+`workspace-host.ts` 与 `workspace-api.ts` 是持久工作区/会话的公开入口。`workspaceId` 标识共享目录，`conversationId` 标识历史、冻结计划和私有状态，Pi 的 `id` 只标识当前运行实例。创建保存记录和计划，不启动 Pi；读取 Snapshot 不要求运行实例。激活先校验目标计划与已知模型是否可用，再经 `ConversationRuntime` 与 `WorkspaceRuntimeGate` 取得排他权；忙碌、压缩、队列或交互不能静默丢弃。实际进程与作业停止、状态提交确认后才释放租约。
 
 公开接口使用 `/api/workspaces`、`/api/conversations` 与 `/api/migration`；文件、附件和领域资源使用 `/api/conversations/:conversationId/...`。旧 live 列表、路径恢复、按路径删除与通用文件路由已移除。内部 Extension token 通道、RPC 与事件仍携带实际 live ID，Host 复核其持久绑定与当前租约。高级服务无法证明当前计划/资产/发布归属时拒绝读取，不能用共享 cwd 或旧 live ID 授权。
 
@@ -119,7 +119,7 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 开发启动 `npm run desktop:dev` 和 `./start.sh` 会读取项目根目录的可选 `.env.local`，其中可设置 `TAU_PYTHON_COMMAND` 为目标环境的解释器绝对路径；已导出的同名环境变量优先，未配置时仍使用 PATH 中的 `python3`。`.env.local` 不入 Git，可参考 `.env.example`，不修改全局 shell PATH。Host 将选定解释器传给 Pi 的同名变量及会话上下文；脚本、依赖探测和 `-m pip` 应使用同一解释器。正式安装包不读取此开发配置，继续使用内置运行时机制。
 
-每个任务以 Pi RPC 进程运行。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
+每个显式激活的会话以 Pi RPC 进程运行；已保存但未激活的会话不占 Pi 实例。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
 发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely、ezdxf。
 
@@ -131,7 +131,7 @@ Canvas 打开后与对话列并排，分隔条可调整对话列宽度；Canvas 
 
 Pi RPC 事件按当前锁定版本逐项归一化：`agent_settled` 结束运行态，`session_info_changed` 更新原生会话投影；管理名称以 Manifest 为准，显式重命名同时镜像到当前 Native 历史。`queue_update` 按完整数组替换会话的 `piQueue.steering / followUp`，Host 去除内部附件、Geo 与 Canvas 提示后，随实时事件、会话列表和 Snapshot 返回；Session Store 按会话隔离，输入框上方分别展示等待处理的引导与后续消息。消费或清空以 Pi 的空数组/缩短数组为准，保留重复文本，`agent_settled` 不自行清队列；切换、刷新及断线重连通过 Host Snapshot 恢复，并沿现有 revision 机制重放 Snapshot 请求期间的新事件。此队列与浏览器本地待发送队列独立，不写入 localStorage、不触发重发；Pi 进程退出后不重建其内存队列。Extension UI 只有 `select / confirm / input / editor` 等待回答并进入重连 Snapshot；`notify` 展示通知，`set_editor_text` 更新所属会话的输入草稿，两者均不回传回答。`setStatus / setWidget / setTitle` 是终端呈现提示，工作台没有对应终端区域，显式忽略；模型同步的专用 `setStatus` 回执仍由 Host 先消费。未知事件及未知 UI 方法保留协议诊断。CLI 仅对需要回答的 UI 请求要求转到桌面，不因单向通知终止任务。
 
-侧栏按工作区分组并保存折叠，工作区内按实际消息活动排序；未知活动显示“尚无对话”，不把恢复/编辑时间当作对话时间。标签、草稿和前端缓存使用 conversationId，关闭运行实例保留历史视图，重新激活替换实际 live ID，迟到事件和 Snapshot 必须匹配当前绑定与 Host/请求代次。侧栏固定工具栏下方按能力区 30% / 会话区 70% 分配空间，两区可收起，移动端默认收起能力区。能力中心按技能、数据、知识、工具、模板分类并支持搜索；数据来自 `platform.getOverview()`，由 [capability-projection.ts](../src/web/platform/capabilities/capability-projection.ts) 按具体模块与资产状态投影。模块是否启用、资产是否就绪和本会话是否装配分别呈现。
+侧栏按工作区分组并保存折叠，工作区内按实际消息活动排序；无消息显示“尚无对话”并只在排序时回退创建时间；已有消息但没有可信时间则显示“活动时间未知”，不把恢复/编辑时间当作对话时间。标签、草稿和前端缓存使用 conversationId，关闭运行实例保留历史视图，重新激活替换实际 live ID，迟到事件和 Snapshot 必须匹配当前绑定与 Host/请求代次。侧栏固定工具栏下方按能力区 30% / 会话区 70% 分配空间，两区可收起，移动端默认收起能力区。能力中心按技能、数据、知识、工具、模板分类并支持搜索；数据来自 `platform.getOverview()`，由 [capability-projection.ts](../src/web/platform/capabilities/capability-projection.ts) 按具体模块与资产状态投影。模块是否启用、资产是否就绪和本会话是否装配分别呈现。
 
 Light / Dark / Sand 的 primitive 与 semantic token 统一声明在 [tokens.css](../src/web/styles/tokens.css)，组件消费 semantic token。界面支持中英与跟随系统语言；主题、语言、执行详情偏好和按会话保存的输入草稿属于客户端状态。执行详情默认折叠为 Working，展开后读取同一组工具、思考与错误投影；耗时由 Host 的事件计时及任务侧计时索引恢复。
 
@@ -164,9 +164,9 @@ Prompt 按顺序装配：`src/server/prompts/PI_SYSTEM.md` 定义通用基础行
 
 基础行为要求按用户当前使用的语言回答；工作状态、计划、进度、阻塞说明和结论写在普通正文中，思考过程不承担用户沟通。
 
-新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module 版本、入口路径、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务沿用该计划中的模块目录与入口，允许用户修改模块清单、Skill、Extension 和 Prompt 内容，不进行这些文件的哈希比对，也不要求当前 manifest 的版本与计划记录相等。新计划不再记录这些内容哈希，旧 v3 计划中的对应字段兼容忽略；模块目录、清单和入口文件缺失仍报错。计划固定选择与路径，不保证可编辑代码的逐字复现。内置模块的代码根目录跟随当前应用位置，恢复时将入口从旧根相对映射到当前可信内置模块根，不再绑定开发 worktree；安装模块和资产保持原路径与校验规则。Native Runtime 与声明了完整性清单的资产继续执行各自的校验。
+新任务必须显式选择模型。`ResolvedSessionPlan v3` 记录实际 Module 版本、入口路径、Asset，以及 Native Runtime 的版本、绝对路径和 SHA-256；恢复任务沿用该计划中的模块目录与入口，同一版本的 Skill、Extension 和 Prompt 内容不进行逐字哈希比对，但磁盘 manifest 的 ID 和版本必须与冻结记录相等；缺失或不同版本明确拒绝，不自动替换。新计划不再记录这些内容哈希，旧 v3 计划中的对应字段兼容忽略；模块目录、清单和入口文件缺失仍报错。计划固定选择与路径，不保证可编辑代码的逐字复现。内置模块的代码根目录跟随当前应用位置，同 ID、同版本核验通过后，将入口从旧根相对映射到当前可信内置模块根；安装模块和资产保持原路径与校验规则。Native Runtime 与声明了完整性清单的资产继续执行各自的校验。
 
-恢复时优先读取 `.tau/resolved-session-plan.v3.json`，否则读取 `.tau/resolved-session-plan.json`。缺少计划或 schemaVersion 2 的旧计划需要用户选择使用当前配置，确认后另存 v3 计划；已有有效 v3 计划不需要这项确认。退役内置 Video 的目录缺失时，仅在新版 Video Capability 已安装并启用后映射到该包；已移除的内置 Timing 条目允许跳过。Citation 注册表升级属于独立的数据迁移，不要求重建会话计划，见第 4.2 节。
+界面展示 created、legacy-workspace、confirmed-current 的配置来源与可信度。日常恢复只读取 Manifest 中该会话的独立 plan 路径，不再扫描共享旧计划或运行旧格式迁移。旧 `.tau/resolved-session-plan*.json` 仅由统一工作区迁移器读取；缺失、schemaVersion 2 或无法核验的原计划保留原件并记为 null。用户确认当前配置后，新建独立 v3 plan 并标 `confirmed-current`，不声称还原了原配置。既有冻结计划缺少精确版本时仍保持历史只读，不自动映射退役 Video 或跳过 Timing 条目。Citation 升级属于同一次工作区转换，见第 4.2 节。
 
 模块的用户展示信息由 `manifest.json` 的可选 `presentation` 提供，不改变 `manifestVersion: 2`。`defaultLocale` 指定默认语言，`locales.zh-CN` / `locales.en-US` 分别包含 `name`、`description` 与可选 `features`。`presentation.skills` 按已声明的 Skill 入口路径覆盖，`presentation.assets` 按已声明的资源 ID 覆盖；各覆盖项沿用相同的 `defaultLocale + locales` 结构，不能引用未声明的入口或资源。
 
@@ -174,7 +174,9 @@ Host 将完整展示元数据投影到能力概览、任务模块选项和 ZIP �
 
 Prompt、steer、abort 与 Extension UI response 先经 HTTP RPC 确认，再更新前端状态。WebSocket 只用于实时 Pi 事件和 Snapshot；断线或刷新后由 Agent Host Snapshot 重新校正。
 
-删除对话默认同时清理工作目录，确认框显示目标路径并可取消目录清理。Node Host 校验任务目录归属，等待 Writer 和分析作业停止，再通过 `fs.promises.rm` 清理目录，成功后才删除历史与注销会话；失败保留删除入口和历史供重试。新建目录在 `.tau/workspace-owner.json` 记录真实目录与父目录；旧目录必须位于当前项目根目录或 scenario 下，并有指向同一目录的 Resolved Session Plan。根目录符号链接、未确认归属的目录及被其他会话引用的目录拒绝清理；目录内的符号链接只删除链接。清理期间拒绝对该目录恢复会话或创建子任务。文件 API 边界使用 `path.toNamespacedPath`，在 Windows 支持命名空间路径，在 macOS / Linux 保持普通路径；目录占用错误使用有限重试。
+关闭只停止运行实例，保留逻辑会话与文件。删除会话和删除整个工作区是两个独立入口：前者保留共享资料与其他会话；后者独立确认固定目录与全部会话集合。`workspace-deletion.ts` 在运行门禁内先停止 Pi 和受管作业，再依次提交 invocation 清理、Native 历史清理、私有状态或目录清理阶段。清理 invocation 时，原 plan、cwd 和 JSONL 必须仍可核验；历史已删并成功提交阶段后，重试不再访问已删依赖。
+
+目录删除保存 catalog 墓碑、history key 集合与 dev/ino/birthtime 身份；目录部分移除后从 catalog 续跑，不重建 Owner 或重新发现删除目标。未知归属、根符号链接、嵌套/其他登记目录、未记录的 cwd 进程和目录被替换均拒绝清理。最终提交和停止状态未确认时保留目录外的运行代次，不允许另一实例接管。文件路径边界统一使用 `isWithin`/`path.relative`，磁盘路径以 POSIX 保存。
 
 ### 3.2 一轮分析的执行闭环
 
@@ -297,21 +299,20 @@ Kernel 通过分页列表和按 Evidence ID 查询详情。列表包含来源元
 - 附件、Geo、Canvas 随 PendingMessage 交付；拒绝 ACK 按命令身份移除，Pi 用户消息按完整富化文本匹配。Pi 0.80.10 的消息事件不携带 RPC ID；外部 input transform 不属于已验证的关联保证。
 - 可靠命令的 pending/unknown 记录不会因 TTL 淘汰。完成记录保留 10 分钟或 200 条容量范围，Host 重启不保证去重；未知结果禁止自动重发，不提供无条件 exactly-once。
 - Snapshot 表示当前分支及 live overlay。每次 Host 启动生成 UUID，WS 事件递增 revision；客户端以请求代次和连接代次拒绝迟到结果，回放快照读取期间更新的事件。缓冲超限拒绝快照并安排后续校正。
-- close、resume、历史 delete 共用 Writer 门禁；删除必须等待 Writer 和受管作业停止，停止失败保留文件。Host 最多 32 会话、4 受管作业/分析进程，每会话最多 2 作业；这些限制不覆盖 Pi bash 自行启动的全部进程。
+- activate、close、迁移和删除共用工作区运行门禁，短元数据 Writer 租约只覆盖读改写提交；静态校验、信任和 RPC 握手期间取消不会在迟到结果后启动 Pi。删除必须等待 Writer 和受管作业停止，停止失败保留文件。Host 最多 32 个运行实例、4 个受管作业/分析进程，每会话最多 2 作业；这些限制不覆盖 Pi bash 自行启动的全部进程。
 - 同一 Agent 目录只允许一个 Host；正常退出通过 IPC 释放租约，异常退出后仅在确认 owner PID 已退出时自动回收。owner 文件按 nonce 分代，回收者只能删除已检查的那一代；兼容旧 owner.json，缺失、损坏或进程状态无法确认时拒绝接管；settings/models/附件索引损坏拒绝覆盖并保全证据。资源策略、恢复步骤与兼容范围见 [整改 ADR](ADR-架构整改边界.md)。
 
 ### 4.2 历史引用迁移与会话恢复
 
-[citation-migration.ts](../src/server/citation-migration.ts) 将 Citation 2.0 / Registry schemaVersion 1 转为 3.0 / schemaVersion 2，启动与恢复流程共用该实现：
+`WorkspaceMigration` 清点所有已知受管目录和 Native header；`WorkspaceMigrationRunner` 在目标维护租约内调用 `workspace-migration-plan.ts` 与只读的 [citation-migration.ts](../src/server/citation-migration.ts) 转换器。HTTP 地址就绪后仍可显示全局 initializing/blocked；全局索引可靠时，异常工作区独立阻塞，不影响其他 ready 工作区。
 
-1. Agent Host 取得 `PI_AGENT_DIR` 的 Writer 租约后、HTTP listen 与 ready 消息之前，扫描默认 `scenario`、配置的项目根目录和历史 Session JSONL 头部指向的任务目录。按任务先备份、后转换，单个失败写入运行诊断，其他任务继续处理。
-2. 恢复指定历史会话时，在计划核验后、Pi 启动前补做迁移。损坏、越权或不支持的注册表返回 `409 citation_migration_failed`，保留原件并阻止该会话启动；有效的 3.0 注册表跳过转换，不重复写入。
-3. 原注册表和原件核验报告保存在 `<user-data>/migrations/citation-v3-<timestamp>-<id>/`。转换保留注册表 sessionId、来源哈希、书目信息与定位，以旧 occurrenceId 作为新 evidenceId，因此历史正文无需改写。未被 occurrence 使用的 locator 以原 locatorId 保留为 Evidence；旧 quote 按 summary 迁移，不提升为已核对摘录。
+Citation 2.0 / Registry schemaVersion 1 转为 3.0 / schemaVersion 2，保留 registry 身份、来源哈希、书目信息和定位；旧 occurrenceId 作为 evidenceId，未使用的 locator 保留为 Evidence，旧 quote 按 summary 转换，不提升为已核对摘录。V2 缺少文件大小时从现存文件补齐；缺失时以 0 占位并记录诊断，不替换历史哈希。
 
-V2 没有记录文件大小，迁移从现存文件补齐；原件缺失时用 0 占位并在报告注明，内容变化或缺失仍保留历史哈希和出处，读取时显示相应错误。迁移只备份注册表，不备份历史源文件；旧来源关系留在原注册表备份中，不作为 V3 的独立来源图继续运行。恢复后的活动会话 ID 可以改变，`citationRegistryId` 沿用磁盘注册表的 sessionId，既有依据与新增依据写入同一注册表。
+工作区报告列明实际改写元数据、源/目标摘要、备份和阶段。原始注册表按原字节备份到 `<workspace>/.tau/migrations/workspace-v1/backups/.tau/citations.json`，保留 provenance；不备份原始业务文件或视频，不改写 Native JSONL。源变化、备份/暂存损坏或空间不足时拒绝继续，并从已提交阶段修复或重新准备；无关工作区的新增记录不回滚。
 
-离线维护入口为 `node scripts/migrate-citations-v3.mjs <data-root> [--apply]`，需先构建 Server；默认只预检，`--apply` 先备份整批原注册表再写入，写入失败回滚该批已修改的注册表。不修改历史消息、会话计划或任务资料，也不删除注册表。
+迁移只从 `/api/migration` 与工作区诊断入口进行。旧批量 Citation 写入器、启动/恢复补迁移分支和独立 `migrate-citations-v3.mjs --apply` 已移除，不提供绕过工作区门禁的第二条转换路径。
 
+历史 Markdown 中已知的本机旧 `file/raw`、`file/preview` 地址，仅在包含可核验的绝对路径、经当前 conversation 的真实目录与普通文件边界检查后，投影到新文件 API。新地址不包含旧 live ID 或鉴权参数；每次读取仍检查边界。相对旧路径、其他工作区、私有元数据和无法证明的高级资源保持不可用。只改变展示投影，Native 原字节不变。
 ## 5. Module 与资产模型
 
 ### 5.1 名词与位置

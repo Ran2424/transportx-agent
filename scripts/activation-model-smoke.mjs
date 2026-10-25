@@ -1,3 +1,4 @@
+import { createHostConversation, nativeSnapshot, closeHostConversation, protocolHeaders } from './harness/workspace-client.mjs';
 // Opt-in real-model acceptance and paired eager/progressive measurements.
 // Copies authorized configuration into an isolated Host; removes credentials on exit.
 import assert from 'node:assert/strict';
@@ -42,16 +43,16 @@ async function until(check, label, timeout = 30000) {
   throw new Error(`Timed out: ${label}`);
 }
 async function json(url, body) {
-  const response = await fetch(endpoint + url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const response = await fetch(endpoint + url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify(body) } : {});
   const value = await response.json(); assert.equal(response.ok, true, JSON.stringify(value)); return value;
 }
 const rpc = (body) => json('/api/rpc', body);
 const report = [];
 async function run(mode, task, message) {
   const begin = performance.now();
-  const session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model, name: `${mode} ${task}` })).session;
+  const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model, name: `${mode} ${task}` });
   fs.writeFileSync(path.join(session.cwd, 'volumes.json'), '[10,20,15,7]');
-  const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  const snapshot = () => nativeSnapshot(json, session.conversationId);
   assert.equal((await rpc({ type: 'get_state', sessionId: session.id })).success, true);
   const initializedMs = Math.round(performance.now() - begin);
   if (mode === 'eager') assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message: '/acceptance_eager' })).success, true);
@@ -74,11 +75,12 @@ async function run(mode, task, message) {
   const usage = assistant.reduce((sum, message) => { for (const key of ['input', 'output', 'cacheRead', 'cacheWrite']) sum[key] += message.usage?.[key] || 0; return sum; }, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
   report.push({ mode, task, model, initializedMs, piInitializedMemory, elapsedMs: Math.round(performance.now() - started), modelRequests: assistant.length, usage, toolCalls: tools.map((tool) => ({ name: tool.toolName, action: tool.details?.action, isError: !!tool.isError })), sessionFile: state.sessionFile, success: true });
   console.log(JSON.stringify(report.at(-1)));
-  await fetch(`${endpoint}/api/live-sessions/${session.id}`, { method: 'DELETE' });
+  await closeHostConversation(json, session.conversationId);
 }
 try {
   const ready = await until(() => stdout.split('\n').map((line) => { try { return JSON.parse(line); } catch {} }).find((line) => line?.type === 'transportx-agent-host-ready'), 'Host ready');
   endpoint = `http://127.0.0.1:${ready.port}`;
+  await until(async () => (await json('/api/health')).dataState === 'ready', 'Host data inventory');
   assert.equal((await rpc({ type: 'install_module', sourcePath: source })).success, true);
   fs.rmSync(source, { recursive: true });
   for (const mode of ['eager', 'progressive']) await run(mode, 'sum', '请使用已装配的 local.activation-sum 模块工具计算 volumes.json 中流量总和与条数。必须调用该模块的业务工具，不用 bash 或自己计算代替。读取 Skill 仅在需要时进行。');

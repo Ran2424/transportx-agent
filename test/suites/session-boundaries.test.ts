@@ -356,7 +356,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     const { WorkspaceRuntimeGate } = require('../../bin/workspace-runtime.js');
     const { LiveSessionManager } = require('../../bin/sessions.js');
     const { spawn } = require('node:child_process');
-    let launchMode = 'ok', launches = 0, releaseLaunch: (() => void) | undefined, rejectPlan = false;
+    let launchMode = 'ok', launches = 0, releaseLaunch: (() => void) | undefined, rejectPlan = false, rejectModel = false, holdPreflight = false, releasePreflight: (() => void) | undefined;
     const assembler = { assemble: () => { throw new Error('Frozen plans must not be reassembled.'); }, save: () => {}, load: () => {} };
     const manager = new LiveSessionManager({ defaultDomainId: 'com.transportx.workbench', assembler, assemblerForProfile: () => assembler, createWorkspace: () => { throw new Error('Activation must not allocate another workspace.'); }, command: process.execPath,
       spawn: (...args: any[]) => { launches++; return spawn(...args); }, endpoints: {},
@@ -368,7 +368,12 @@ test('Session close, history deletion and process cancellation preserve writer o
       },
     });
     const gate = new WorkspaceRuntimeGate(process.env.TAU_PYTHON_COMMAND || 'python3', path.join(root, 'logs'), path.join(root, 'coordination'));
-    const lifecycle = new ConversationRuntime({ store, sessions: manager, gate, assertReady: () => {}, verifyPlan: (plan: any) => { if (rejectPlan) throw Object.assign(new Error('Frozen module version unavailable.'), { code: 'module_version_missing' }); return plan; } });
+    const lifecycle = new ConversationRuntime({ store, sessions: manager, gate, assertReady: () => {}, verifyPlan: async (plan: any) => {
+      if (rejectPlan) throw Object.assign(new Error('Frozen module version unavailable.'), { code: 'module_version_missing' });
+      if (holdPreflight) await new Promise<void>((resolve) => { releasePreflight = resolve; });
+      if (rejectModel) throw Object.assign(new Error('Configured model unavailable.'), { code: 'model_unavailable' });
+      return plan;
+    } });
     const beforeActivity = store.readWorkspace(first.manifest.id).manifest;
     try {
       assert.equal(lifecycle.snapshot(first.conversation.id).runtime, null);
@@ -391,6 +396,17 @@ test('Session close, history deletion and process cancellation preserve writer o
       await assert.rejects(lifecycle.activate(second.conversation.id, true), { code: 'module_version_missing' });
       assert.equal(manager.get(liveA.id), liveA, 'an invalid target never stops the current conversation');
       rejectPlan = false;
+      rejectModel = true;
+      await assert.rejects(lifecycle.activate(second.conversation.id, true), { code: 'model_unavailable' });
+      assert.equal(manager.get(liveA.id), liveA, 'model validation completes before stopping A');
+      rejectModel = false; holdPreflight = true;
+      const checking = lifecycle.activate(second.conversation.id, true), cancelledCheck = assert.rejects(checking, { code: 'activation_cancelled' });
+      const preflightDeadline = Date.now() + 2000;
+      while (!releasePreflight) { assert.ok(Date.now() < preflightDeadline); await new Promise((resolve) => setImmediate(resolve)); }
+      await lifecycle.close(second.conversation.id, true); await cancelledCheck;
+      releasePreflight!(); holdPreflight = false; await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(manager.get(liveA.id), liveA, 'cancelling B during preflight leaves A running');
+      assert.equal(launches, 1, 'a late validation result after close cannot launch Pi');
       const liveB = await lifecycle.activate(second.conversation.id);
       assert.equal(liveB.cwd, liveA.cwd); assert.notEqual(liveB.id, liveA.id); assert.equal(manager.get(liveA.id), undefined);
       assert.equal(gate.diagnostics(first.directory).processes.filter((item: any) => item.state === 'running').length, 1);

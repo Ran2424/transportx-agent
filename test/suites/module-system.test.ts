@@ -135,19 +135,24 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.ok(plan.assets.some((asset: any) => asset.id === 'data:installed-test'));
     assert.ok(plan.assets.some((asset: any) => asset.id === 'template:traffic-analysis-report'));
     assert.ok(plan.modules.some((module: any) => module.id === 'local.installed.test'));
-    const saved = assembler.save(plan);
+    const saved = path.join(workspace, 'plan-fixture.json');
+    fs.writeFileSync(saved, JSON.stringify(plan));
+    const readPlanFixture = () => {
+      const parsed = require('../../bin/contracts/index.js').parseResolvedSessionPlanStructured(JSON.parse(fs.readFileSync(saved, 'utf8')));
+      assert.ok(parsed.ok); return assembler.verify(parsed.value, workspace);
+    };
     const persisted = JSON.parse(fs.readFileSync(saved, 'utf8'));
     assert.equal(persisted.schemaVersion, 3);
     assert.equal(persisted.domain.id, 'com.transportx.workbench');
     assert.equal(persisted.profile.modules.selectionMode, 'compat-default');
     assert.ok(persisted.modules.every((module: any) => !('manifestSha256' in module) && module.entrypoints.every((entry: any) => !('sha256' in entry))));
     assert.ok(persisted.modules.find((module: any) => module.id === 'com.transportx.document').canvasViews.some((view: any) => view.adapterId === 'com.transportx.canvas.document'));
-    assert.deepEqual(assembler.load(workspace), plan);
+    assert.deepEqual(readPlanFixture(), plan);
     assert.doesNotThrow(() => assembler.verify({ ...plan, workspace: fs.realpathSync(workspace) }, workspace), 'canonical aliases resolve to the same workspace during recovery');
 
     persisted.platform.name = 'TransportX Traffic Agent';
     fs.writeFileSync(saved, JSON.stringify(persisted));
-    assert.equal(assembler.load(workspace).platform.name, 'TransportX Agent');
+    assert.equal(readPlanFixture().platform.name, 'TransportX Agent');
 
     // Old plans retain their schema version and may contain now-ignored content hashes.
     for (const module of persisted.modules) {
@@ -159,7 +164,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     const editedManifest = JSON.parse(fs.readFileSync(path.join(installed, 'manifest.json'), 'utf8'));
     editedManifest.name = 'User-edited module';
     fs.writeFileSync(path.join(installed, 'manifest.json'), JSON.stringify(editedManifest));
-    assert.deepEqual(assembler.load(workspace), plan);
+    assert.deepEqual(readPlanFixture(), plan);
     const editableExtension = path.join(installed, 'extension.ts');
     const editablePrompt = path.join(installed, 'prompt.md');
     fs.writeFileSync(editableExtension, 'export default () => {};');
@@ -167,27 +172,29 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     const legacyModule = persisted.modules.find((module: any) => module.id === 'local.installed.test');
     legacyModule.entrypoints.push({ kind: 'extension', path: editableExtension, sha256: '0'.repeat(64) }, { kind: 'prompt', path: editablePrompt, sha256: '0'.repeat(64) });
     fs.writeFileSync(saved, JSON.stringify(persisted));
-    assert.doesNotThrow(() => assembler.load(workspace));
+    assert.doesNotThrow(() => readPlanFixture());
     fs.rmSync(path.join(installed, 'skill', 'SKILL.md'));
-    assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_entrypoint_missing');
+    assert.throws(() => readPlanFixture(), (error: any) => error instanceof SessionPlanError && error.code === 'module_entrypoint_missing');
   }
 
-  // Session Resume permits builtin edits while retaining missing-package checks
+  // Builtin relocation preserves the frozen version; content edits do not authorize version replacement.
   {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-plan-builtin-'));
     t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
-    const geoManifest = path.join(ROOT, 'modules/capabilities/geo/manifest.json');
-    const geoSkill = path.join(ROOT, 'modules/capabilities/geo/skills/SKILL.md');
+    const geoRoot = path.join(workspace, 'geo-module');
+    fs.cpSync(path.join(ROOT, 'modules/capabilities/geo'), geoRoot, { recursive: true });
+    const geoManifest = path.join(geoRoot, 'manifest.json');
+    const geoSkill = path.join(geoRoot, 'skills/SKILL.md');
     const originalManifest = fs.readFileSync(geoManifest, 'utf8');
     const originalSkill = fs.readFileSync(geoSkill, 'utf8');
     const modules = registry();
+    modules.modules.set('com.transportx.geo', { ...modules.get('com.transportx.geo'), manifestPath: geoManifest, packageRoot: geoRoot });
     const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [], version: '0.80.10' }, { command: 'python', args: [], version: '3.10' });
     const plan = assembler.assemble('com.transportx.workbench', workspace);
     const geoPlan = plan.modules.find((module: any) => module.id === 'com.transportx.geo');
     assert.equal(geoPlan.origin, 'builtin');
-    assembler.save(plan);
-    assert.equal(assembler.load(workspace).modules.find((module: any) => module.id === 'com.transportx.geo').version, geoPlan.version);
-    assert.doesNotThrow(() => assembler.verify({
+    assert.equal(assembler.verify(structuredClone(plan)).modules.find((module: any) => module.id === 'com.transportx.geo').version, geoPlan.version);
+    assert.throws(() => assembler.verify({
       ...plan,
       modules: [...plan.modules, {
         ...geoPlan,
@@ -195,7 +202,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
         packageRoot: path.join(workspace, 'retired-timing-module'),
         entrypoints: [],
       }],
-    }));
+    }), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
 
     const movedPlan = JSON.parse(JSON.stringify(plan));
     const moved = movedPlan.modules.find((module: any) => module.id === 'com.transportx.geo');
@@ -208,24 +215,25 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.ok(relocated.entrypoints.every((entry: any) => entry.path.startsWith(originalRoot)));
 
     try {
-      // Builtin modules are replaced in place on platform upgrades: version bumps and
-      // content changes must not make older sessions unloadable.
+      // A platform update cannot silently substitute a different builtin version.
       const bumped = JSON.parse(originalManifest);
       bumped.version = '99.0.0';
       fs.writeFileSync(geoManifest, JSON.stringify(bumped));
       fs.writeFileSync(geoSkill, `${originalSkill}\n\nUpgraded in place.\n`);
-      assert.doesNotThrow(() => assembler.load(workspace));
+      assert.throws(() => assembler.verify(structuredClone(plan)), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
+
+      assert.throws(() => assembler.assemble('com.transportx.workbench', workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
 
       // A missing builtin package is still a hard failure.
       fs.rmSync(geoManifest);
-      assert.throws(() => assembler.load(workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
+      assert.throws(() => assembler.verify(structuredClone(plan)), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
     } finally {
       fs.writeFileSync(geoManifest, originalManifest);
       fs.writeFileSync(geoSkill, originalSkill);
     }
   }
 
-  // Session Resume replaces the retired builtin Video module with an installed version
+  // Retired builtin Video is not automatically replaced by a different installed plan.
   {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-plan-video-migration-'));
     const installed = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-installed-video-'));
@@ -244,6 +252,7 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     const assembler = new SessionAssembler(modules, new AssetResolver(modules), '3.2.0', { command: 'node', args: [] }, { command: 'python', args: [] });
     const plan = assembler.assemble('com.transportx.workbench', workspace);
     const baseModule = plan.modules.find((module: any) => module.id === 'com.transportx.geo');
+    plan.modules = plan.modules.filter((module: any) => module.id !== 'com.transportx.video');
     plan.modules.push({
       ...baseModule,
       id: 'com.transportx.video',
@@ -254,11 +263,8 @@ test('Module assembly and resume resolve explicit capabilities and exact install
       nativeRuntimes: [],
     });
 
-    const resumed = assembler.verify(plan);
-    const video = resumed.modules.find((module: any) => module.id === 'com.transportx.video');
-    assert.equal(video.origin, 'installed');
-    assert.equal(video.version, '1.3.0');
-    assert.equal(video.packageRoot, installed);
+    assert.throws(() => assembler.verify(plan), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
+    assert.equal(plan.modules.find((module: any) => module.id === 'com.transportx.video').version, '1.2.0');
   }
 
   // Session Assembly keeps every active Data and Knowledge asset in one session plan

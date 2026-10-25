@@ -97,13 +97,15 @@ export type ConversationView = Omit<LiveSession, 'id'> & {
   liveSessionId: string | null;
   record?: import('../contracts/workspace.js').ConversationRecordV1;
   workspaceRevision?: number;
+  resourceLinks?: Record<string, string>;
 };
 export type ConversationViewUpdate = Partial<ConversationView> & { id: string };
 export type WorkspaceView = {
   id: string; path: string; name: string;
+  createdAt?: string;
   revision: number | null; defaultsRevision: number | null;
   defaults: import('../contracts/workspace.js').WorkspaceDefaultsV1 | null;
-  conversations: Array<{ record: import('../contracts/workspace.js').ConversationRecordV1; runtime: LiveSession | null; lastConversationAt: string | null }>;
+  conversations: Array<{ record: import('../contracts/workspace.js').ConversationRecordV1; runtime: LiveSession | null; lastConversationAt: string | null; hasMessages?: boolean | null }>;
   availability: 'ready' | 'blocked' | 'isolated' | 'deleting';
   migrationItemId: string | null;
   error: { code: string; message: string } | null;
@@ -188,4 +190,4 @@ export type AppEvent = {
 };
 
 export type ExtensionUIRequest = { sessionId: string; event: AppEvent };
-export type RpcCommand = { type: string; sessionId?: string; filePath?: string; [key: string]: unknown };
+export type RpcCommand = { type: string; sessionId?: string; [key: string]: unknown };

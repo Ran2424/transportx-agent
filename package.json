@@ -71,7 +71,7 @@
     "test:all": "npm run build && npm run test:budget && node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/*.test.ts",
     "test:core": "npm run build && npm run test:budget && node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/desktop-launch.test.ts test/suites/transportx-cli.test.ts",
     "test:pi-smoke": "npm run build:server && npm run test:budget && node scripts/pi-rpc-smoke.mjs",
-    "test:web": "npm run build && npm run test:budget && node scripts/react-smoke.mjs",
+    "test:web": "npm run build && npm run test:budget && node scripts/harness/workspace-conversation-smoke.mjs && node scripts/harness/workspace-upgrade-smoke.mjs && node scripts/harness/workspace-multi-host-smoke.mjs && node scripts/harness/workspace-blocked-smoke.mjs && node scripts/react-smoke.mjs",
     "test:platform:macos": "npm run build && npm run test:budget && node scripts/macos-desktop-smoke.mjs",
     "test:platform:windows": "npm run test:budget && node scripts/windows-platform-smoke.mjs",
     "release:oss": "node desktop/scripts/publish-oss.mjs"

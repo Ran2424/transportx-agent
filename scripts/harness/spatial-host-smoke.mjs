@@ -1,3 +1,4 @@
+import { createHostConversation, nativeSnapshot, protocolHeaders } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,9 +27,8 @@ export default function(pi) {
  }});
 }`);
   assert.equal((await rpc({ type: 'install_module', sourcePath: source })).success, true);
-  const created = await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'P1 Spatial acceptance' });
-  const session = created.session;
-  const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: 'P1 Spatial acceptance' });
+  const snapshot = () => nativeSnapshot(json, session.conversationId);
   const toolResults = (state) => state.entries.filter((entry) => entry.message?.role === 'toolResult').map((entry) => entry.message);
   async function execute(prefix, input) {
     const before = toolResults(await snapshot()).length;
@@ -86,7 +86,7 @@ export default function(pi) {
   assert.equal(invalid.result.isError, true, 'structured failures use Pi error semantics');
   assert.equal(invalid.result.details.error.code, 'spatial_input_invalid');
   assert.deepEqual(fs.readdirSync(manifests).sort(), beforeInvalid);
-  const unauthorized = await fetch(`${endpoint}/api/internal/spatial/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...buffer, sessionId: session.id, token: 'wrong-token' }) });
+  const unauthorized = await fetch(`${endpoint}/api/internal/spatial/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify({ ...buffer, sessionId: session.id, token: 'wrong-token' }) });
   assert.equal(unauthorized.status, 403);
 
   // The relay only alters delivery after the real production route has replied.
@@ -96,7 +96,7 @@ export default function(pi) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     if (req.url.endsWith('/analyze')) lastRequest = JSON.parse(raw);
     if (req.url.endsWith('/analyze')) forwarded++;
-    const response = await fetch(endpoint + req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw });
+    const response = await fetch(endpoint + req.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: raw });
     let body = await response.text();
     if (relayMode === 'drop' && req.url.endsWith('/analyze')) { res.destroy(); return; }
     if (relayMode === 'bad_citations' && req.url.endsWith('/analyze')) body = JSON.stringify({ ...JSON.parse(body), citations: { evidence: [null] } });
@@ -117,12 +117,12 @@ export default function(pi) {
     assert.equal(recovered.result.isError, false);
     assert.equal(recovered.result.details.result.analysisId, existingId);
     const bytes = fs.readFileSync(path.join(session.cwd, recovered.result.details.result.output.relativePath));
-    const replay = await fetch(endpoint + '/api/internal/spatial/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(lastRequest) });
+    const replay = await fetch(endpoint + '/api/internal/spatial/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify(lastRequest) });
     assert.equal(replay.status, 200);
     assert.equal((await replay.json()).reused, true);
     assert.equal(fs.readdirSync(manifests).length, countBeforeQuery);
     assert.deepEqual(fs.readFileSync(path.join(session.cwd, recovered.result.details.result.output.relativePath)), bytes);
-    const conflict = await fetch(endpoint + '/api/internal/spatial/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...lastRequest, distanceMeters: 11 }) });
+    const conflict = await fetch(endpoint + '/api/internal/spatial/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify({ ...lastRequest, distanceMeters: 11 }) });
     assert.equal(conflict.status, 409);
     assert.equal((await conflict.json()).code, 'spatial_operation_conflict');
     relayMode = 'bad_citations';

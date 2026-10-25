@@ -1,3 +1,4 @@
+import { createHostConversation, nativeSnapshot, protocolHeaders } from './harness/workspace-client.mjs';
 // T1/T2 prerequisites. Real Pi and production Host; only model responses are scripted.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -133,17 +134,18 @@ Pi.prototype.handleEvent = function(event) {
   };
   let endpoint = await launchHost();
   const json = async (route, body) => {
-    const response = await fetch(endpoint + route, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+    const response = await fetch(endpoint + route, body ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify(body) } : {});
     const value = await response.json(); assert.equal(response.ok, true, JSON.stringify(value)); return value;
   };
+  await until(async () => (await json('/api/health')).dataState === 'ready', 'Host data inventory');
   const results = (state) => state.entries.filter((entry) => entry.message?.role === 'toolResult').map((entry) => entry.message);
   const execute = async (session, name, args) => {
-    const before = new Set(results(await json(`/api/live-sessions/${session.id}/snapshot`)).map((result) => result.toolCallId));
+    const before = new Set(results(await nativeSnapshot(json, session.conversationId)).map((result) => result.toolCallId));
     const ack = await json('/api/rpc', { type: 'prompt', sessionId: session.id, message: 'probe:' + JSON.stringify({ name, arguments: JSON.stringify(args) }) });
     assert.equal(ack.success, true, JSON.stringify(ack));
     let state;
-    try { state = await until(async () => { const state = await json(`/api/live-sessions/${session.id}/snapshot`); return !state.isStreaming && results(state).some((result) => result.toolName === name && !before.has(result.toolCallId)) && state; }, name, 15000); }
-    catch (error) { report.failedSnapshot = await json(`/api/live-sessions/${session.id}/snapshot`); throw error; }
+    try { state = await until(async () => { const state = await nativeSnapshot(json, session.conversationId); return !state.isStreaming && results(state).some((result) => result.toolName === name && !before.has(result.toolCallId)) && state; }, name, 15000); }
+    catch (error) { report.failedSnapshot = await nativeSnapshot(json, session.conversationId); throw error; }
     const result = results(state).at(-1); assert.equal(result.isError, false, JSON.stringify(result)); return { state, result };
   };
   const saved = [];
@@ -152,7 +154,7 @@ Pi.prototype.handleEvent = function(event) {
     if (domain === 'cad') assert.ok(option?.enabledForNewSessions);
     // Spatial is a required workbench capability, not an optional module choice.
     const profile = defaultSessionProfile(option ? [{ id: option.id, version: option.version }] : []);
-    const session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), name: `T2 first ${domain}`, model: 'probe/smoke', profile })).session;
+    const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), name: `T2 first ${domain}`, model: 'probe/smoke', profile });
     assert.equal(header(session.sessionFile), null, 'T2 must start with an unpersisted session');
     const points = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { kind: 'road' }, geometry: domain === 'cad' ? { type: 'LineString', coordinates: [[121.44, 31.19], [121.441, 31.19]] } : { type: 'Point', coordinates: [121.44, 31.19] } }] };
     fs.writeFileSync(path.join(session.cwd, 'input.geojson'), JSON.stringify(points));
@@ -167,9 +169,10 @@ Pi.prototype.handleEvent = function(event) {
     report.T2.push({ domain, records, operationId: result.details.operationId || result.details.result.analysisId, result: 'succeeded' });
   }
   await stop(host); endpoint = await launchHost();
+  await until(async () => (await json('/api/health')).dataState === 'ready', 'restarted Host data inventory');
   for (const item of saved) {
     const before = sha(item.state.sessionFile);
-    const session = (await json('/api/live-sessions/resume', { filePath: item.state.sessionFile, cwd: item.session.cwd, model: 'probe/smoke' })).session;
+    const session = (await json(`/api/conversations/${item.session.conversationId}/activate`, {})).runtime;
     assert.notEqual(session.id, item.session.id);
     const name = item.domain === 'cad' ? 'cad_execution' : 'tau_spatial_execution';
     const operationId = report.T2.find((entry) => entry.domain === item.domain).operationId;

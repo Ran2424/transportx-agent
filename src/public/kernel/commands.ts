@@ -423,8 +423,8 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
       deps.dispatch({ type: 'session/updated', session: { id: conversationId, sessionName: input.name } });
     },
     async loadSnapshot(id) {
-      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}/snapshot`, undefined, { ...context, sessionId: id }) as { workspace: { id: string; path: string; revision: number }; conversation: ConversationRecordV1; runtime: LiveSession | null; snapshot: SessionSnapshot; hostGeneration: string; revision: number };
-      return { ...data.snapshot, hostGeneration: data.hostGeneration, revision: data.revision, sessionId: id, session: conversationView(data.conversation, data.workspace, data.runtime) };
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}/snapshot`, undefined, { ...context, sessionId: id }) as { workspace: { id: string; path: string; revision: number }; conversation: ConversationRecordV1; runtime: LiveSession | null; snapshot: SessionSnapshot; resourceLinks: Record<string, string>; hostGeneration: string; revision: number };
+      return { ...data.snapshot, hostGeneration: data.hostGeneration, revision: data.revision, sessionId: id, session: { ...conversationView(data.conversation, data.workspace, data.runtime), resourceLinks: data.resourceLinks } };
     },
     async listFiles(sessionId, path) {
       const params = new URLSearchParams();

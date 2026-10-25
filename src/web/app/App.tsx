@@ -296,9 +296,10 @@ export function App({ account }: { account?: ReactNode } = {}) {
     setActivating(true); setNotice('');
     try { await kernel.commands.session.activate(activeSession.id); }
     catch (cause) {
+      if (kernel.stores.session.get().activeSessionId !== activeSession.id) return;
       if ((cause as { code?: string }).code === 'workspace_busy') {
-        if (window.confirm('此工作区中的另一个会话仍在执行或等待交互。确定停止它并切换？取消将返回正在执行的会话。')) {
-          try { await kernel.commands.session.activate(activeSession.id, { stopCurrent: true }); } catch (error) { setNotice((error as Error).message); }
+        if (window.confirm(t('workspaceFlow.stopSwitch'))) {
+          try { await kernel.commands.session.activate(activeSession.id, { stopCurrent: true }); } catch (error) { if (kernel.stores.session.get().activeSessionId === activeSession.id) setNotice((error as Error).message); }
         } else {
           const owner = workspace?.conversations.find((item) => item.runtime && item.record.id !== activeSession.id);
           if (owner) await selectSession(owner.record.id);
@@ -312,7 +313,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
     if (isStreaming && !window.confirm(t('app.confirm.closeStreaming'))) return;
     const request = navigationSequence.current;
     try {
-      try { await kernel.commands.session.close(sessionId, isStreaming); } catch (cause) { if ((cause as { code?: string }).code !== 'workspace_busy' || !window.confirm('此会话仍有任务或待处理交互。停止后关闭？')) throw cause; await kernel.commands.session.close(sessionId, true); }
+      try { await kernel.commands.session.close(sessionId, isStreaming); } catch (cause) { if ((cause as { code?: string }).code !== 'workspace_busy' || !window.confirm(t('workspaceFlow.stopClose'))) throw cause; await kernel.commands.session.close(sessionId, true); }
       geoContextStore.clear(sessionId);
       kernel.dispatch({ type: 'session/closed', sessionId });
       if (request === navigationSequence.current && kernel.stores.session.get().activeSessionId === null) {
@@ -337,7 +338,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
       else { await kernel.commands.session.deleteWorkspace(workspace.id, input); for (const view of kernel.stores.session.get().sessions.filter((item) => item.workspaceId === workspace.id)) kernel.dispatch({ type: 'session/closed', sessionId: view.id }); }
       setDeleteTarget(null); setSessionHistoryRevision((value) => value + 1);
     } catch (cause) {
-      if ((cause as { code?: string }).code === 'workspace_busy') setDeleteError('工作区仍有任务。勾选停止后再次确认。'); else setDeleteError((cause as Error).message);
+      if ((cause as { code?: string }).code === 'workspace_busy') setDeleteError(t('workspaceFlow.deleteBusy')); else setDeleteError((cause as Error).message);
       await kernel.commands.session.list().catch(() => {});
     }
   }
@@ -418,12 +419,12 @@ export function App({ account }: { account?: ReactNode } = {}) {
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
-        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={deleteTarget?.record ? '删除此会话' : '删除整个工作区'} description={deleteTarget?.record ? `删除“${deleteTargetName}”的历史和私有状态。共享文件、附件及其他会话会保留。` : `删除“${deleteTargetName}”的整个目录及全部会话。此操作不可撤销。`} confirmLabel="确认删除" onConfirm={() => void confirmDeleteSession()}>
+        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={deleteTarget?.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')} description={deleteTarget?.record ? t('workspaceFlow.deleteConversationCopy', { name: deleteTargetName }) : t('workspaceFlow.deleteWorkspaceCopy', { name: deleteTargetName })} confirmLabel={t('workspaceFlow.confirmDelete')} onConfirm={() => void confirmDeleteSession()}>
           <p className="confirmation-dialog-copy">{deleteTarget?.workspace.path}</p>
-          <label className="confirmation-dialog-workspace"><input type="checkbox" checked={deleteTarget?.input.stopCurrent === true} onChange={(event) => setDeleteTarget((current) => current ? { ...current, input: { ...current.input, stopCurrent: event.target.checked } } : null)} />停止此工作区的执行和交互后删除</label>
+          <label className="confirmation-dialog-workspace"><input type="checkbox" checked={deleteTarget?.input.stopCurrent === true} onChange={(event) => setDeleteTarget((current) => current ? { ...current, input: { ...current.input, stopCurrent: event.target.checked } } : null)} />{t('workspaceFlow.stopBeforeDelete')}</label>
           {deleteError && <p className="form-error">{deleteError}</p>}
         </ConfirmationDialog>
-        {runtime.health?.dataState && runtime.health.dataState !== 'ready' && <div className="conversation-offline-bar" role="status"><span>{runtime.health.dataState === 'initializing' ? '正在盘点存储索引' : '存储索引需要修复'}</span><button type="button" onClick={() => openDiagnostics()}>打开迁移诊断</button></div>}
+        {runtime.health?.dataState && runtime.health.dataState !== 'ready' && <div className="conversation-offline-bar" role="status"><span>{runtime.health.dataState === 'initializing' ? t('workspaceFlow.inventoryInitializing') : t('workspaceFlow.inventoryBlocked')}</span><button type="button" onClick={() => openDiagnostics()}>{t('workspaceFlow.openMigration')}</button></div>}
         {runtimeNotice ? <div className="runtime-notice" role="status"><span>{runtimeNotice}</span><button type="button" aria-label={t('app.notice.close')} onClick={() => notice ? setNotice('') : setDismissedRuntimeError(runtimeErrorMessage)}>×</button></div> : null}
       </>}
     /></CitationDetailProvider></OpenDocumentContext.Provider>

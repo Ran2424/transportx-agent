@@ -15,7 +15,7 @@ type Options = {
   store: WorkspaceStore;
   sessions: LiveSessionManager;
   gate: WorkspaceRuntimeGate;
-  verifyPlan(plan: ResolvedSessionPlanV3, directory: string): ResolvedSessionPlanV3;
+  verifyPlan(plan: ResolvedSessionPlanV3, directory: string, modelSpec: string | null): ResolvedSessionPlanV3 | Promise<ResolvedSessionPlanV3>;
   assertReady(workspaceId: string): void;
 };
 type Instance = { session: PiRpcSession; lease: WorkspaceRuntimeLease; started: boolean; syncing: Promise<unknown>; failure: ConversationRecordV1['lastStartFailure'] };
@@ -24,7 +24,7 @@ const failure = (code: string, message: string, details: object = {}) => Object.
 /** Logical conversation lifecycle. Browsing never acquires a runtime or sends RPC. */
 export class ConversationRuntime {
   private instances = new Map<string, Instance>();
-  private activations = new Map<string, Promise<PiRpcSession>>();
+  private activations = new Map<string, { promise: Promise<PiRpcSession>; directory: string; cancel: () => void }>();
   private failedStarts = new Map<string, { lease: WorkspaceRuntimeLease; failure: NonNullable<ConversationRecordV1['lastStartFailure']> }>();
   private stopping = false;
   constructor(private options: Options) {}
@@ -82,23 +82,36 @@ export class ConversationRuntime {
     }
   }
   activate(conversationId: string, stopCurrent = false): Promise<PiRpcSession> {
-    const existing = this.activations.get(conversationId); if (existing) return existing;
+    const existing = this.activations.get(conversationId); if (existing) return existing.promise;
     if (this.stopping) return Promise.reject(failure('system_not_ready', 'Host is shutting down.'));
     const target = this.resolve(conversationId);
+    const controller = new AbortController();
     const operation = this.options.gate.serialize(target.directory, async () => {
+      controller.signal.throwIfAborted();
       const current = this.resolve(conversationId);
       if (this.stopping) throw failure('system_not_ready', 'Host is shutting down.');
       const running = [...this.options.sessions.sessions.values()].find((session) => fs.existsSync(session.cwd) && fs.realpathSync(session.cwd) === fs.realpathSync(current.directory));
       if (running?.conversationId === conversationId && !running.terminating) return running;
       if (current.conversation.privateState !== 'isolated') throw failure('private_state_ambiguous', 'Review this conversation private-state migration before activation.');
-      const plan = this.options.verifyPlan(this.options.store.readPlan(current.directory, current.conversation), current.directory);
+      let abortPreflight!: () => void;
+      const cancellation = new Promise<never>((_, reject) => {
+        abortPreflight = () => reject(controller.signal.reason);
+        controller.signal.addEventListener('abort', abortPreflight, { once: true });
+      });
+      let plan: ResolvedSessionPlanV3;
+      try {
+        plan = await Promise.race([Promise.resolve().then(() => this.options.verifyPlan(this.options.store.readPlan(current.directory, current.conversation), current.directory, current.conversation.modelSpec)), cancellation]);
+      } finally { controller.signal.removeEventListener('abort', abortPreflight); }
+      controller.signal.throwIfAborted();
       const history = this.options.store.inspectHistory(current.directory, current.conversation);
       if (running) {
         if (!running.lifecycle) throw failure('workspace_busy', 'An unregistered runtime still owns the workspace; close it before activation.');
         if (running.terminating && !stopCurrent) throw failure('process_stop_unconfirmed', 'A previous close is unconfirmed; retry closing it before switching.', { conversationId: running.conversationId });
         if (!stopCurrent) await this.requireIdle(running);
+        controller.signal.throwIfAborted();
         await this.stop(running, stopCurrent ? 'explicit_switch' : 'idle_switch');
       }
+      controller.signal.throwIfAborted();
       const lease = this.options.gate.take(current.directory, current.manifest.id, conversationId);
       let session: PiRpcSession | undefined;
       try {
@@ -120,8 +133,10 @@ export class ConversationRuntime {
         const instance: Instance = { session, lease, started: false, syncing: Promise.resolve(), failure: null }; this.instances.set(conversationId, instance);
         await this.options.sessions.startInstance(session);
         const state = await session.send({ type: 'get_state' }, { timeoutMs: 10000 });
+        controller.signal.throwIfAborted();
         if (!state.success || session.terminating) throw failure('pi_start_failed', 'Pi did not establish this conversation.');
         instance.started = true; lease.running(); await this.sync(session);
+        controller.signal.throwIfAborted();
         this.options.sessions.broadcast({ type: 'live_session_created', session: session.metadata() });
         return session;
       } catch (error) {
@@ -145,11 +160,12 @@ export class ConversationRuntime {
         throw error;
       }
     });
-    this.activations.set(conversationId, operation);
-    operation.finally(() => { if (this.activations.get(conversationId) === operation) this.activations.delete(conversationId); }).catch(() => {});
+    this.activations.set(conversationId, { promise: operation, directory: target.directory, cancel: () => controller.abort(failure('activation_cancelled', 'Conversation activation was cancelled.')) });
+    operation.finally(() => { if (this.activations.get(conversationId)?.promise === operation) this.activations.delete(conversationId); }).catch(() => {});
     return operation;
   }
   close(conversationId: string, stopRunning = false) {
+    this.activations.get(conversationId)?.cancel();
     const target = this.resolve(conversationId), starting = this.instances.get(conversationId);
     if (starting && !starting.started) starting.session.cancelStart();
     return this.options.gate.serialize(target.directory, async () => {
@@ -168,6 +184,7 @@ export class ConversationRuntime {
   /** Deletion owns the same queue from confirmed shutdown through its final stage commit. */
   withWorkspaceStopped<T>(directory: string, stopRunning: boolean, execute: () => Promise<T>) {
     const matches = (candidate: string) => path.resolve(candidate) === path.resolve(directory);
+    for (const activation of this.activations.values()) if (matches(activation.directory)) activation.cancel();
     for (const instance of this.instances.values()) if (matches(instance.session.cwd) && !instance.started) instance.session.cancelStart();
     return this.options.gate.serialize(directory, async () => {
       for (const instance of this.instances.values()) if (matches(instance.session.cwd)) {
@@ -192,8 +209,9 @@ export class ConversationRuntime {
   }
   async shutdown() {
     this.stopping = true;
+    for (const activation of this.activations.values()) activation.cancel();
     for (const instance of this.instances.values()) if (!instance.started) instance.session.cancelStart();
-    await Promise.allSettled([...this.activations.values()]);
+    await Promise.allSettled([...this.activations.values()].map((activation) => activation.promise));
     const results = await Promise.allSettled([...this.instances.keys(), ...this.failedStarts.keys()].map((id) => this.close(id, true)));
     await this.options.sessions.shutdown();
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map((result) => result.reason);

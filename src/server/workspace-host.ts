@@ -11,6 +11,8 @@ import { ConversationRuntime } from './conversation-runtime.js';
 import type { LiveSessionManager } from './sessions.js';
 import { readSessionSummary, searchSessionFile } from './session-history-reader.js';
 import { isWithin, relativePosixPath } from './util/path.js';
+import { asRecord } from '../contracts/common.js';
+import { historicalResourceLinks } from './historical-resource-links.js';
 
 type Configuration = { domainId: string; modelSpec: string; profile: SessionProfileV1 };
 type Options = {
@@ -56,10 +58,11 @@ export class WorkspaceHost {
     const conversations = await Promise.all(manifest.conversations.filter((record) => record.state !== 'deleted').map(async (record) => {
       const runtime = record.state === 'deleting' ? null : this.boundRuntime(record.id, id);
       let lastConversationAt: string | null = runtime?.lastConversationAt || null;
-      try { const history = this.options.store.inspectHistory(directory, record); if (history.sessionFile) { const summary = await readSessionSummary(history.sessionFile, (cwd) => typeof cwd === 'string' ? cwd : null); if (typeof summary?.lastConversationAt === 'string' && (!lastConversationAt || summary.lastConversationAt > lastConversationAt)) lastConversationAt = summary.lastConversationAt; } } catch {}
-      return { record, runtime: runtime?.metadata() || null, lastConversationAt };
+      let hasMessages: boolean | null = !!runtime?.entries.some((entry) => ['user', 'assistant'].includes(String(asRecord(entry.message)?.role || '')));
+      try { const history = this.options.store.inspectHistory(directory, record); if (history.sessionFile) { const summary = await readSessionSummary(history.sessionFile, (cwd) => typeof cwd === 'string' ? cwd : null); hasMessages = hasMessages || summary?.hasMessages || (summary ? false : null); if (typeof summary?.lastConversationAt === 'string' && summary.lastConversationAt && (!lastConversationAt || summary.lastConversationAt > lastConversationAt)) lastConversationAt = summary.lastConversationAt; } } catch { if (!hasMessages) hasMessages = null; }
+      return { record, runtime: runtime?.metadata() || null, lastConversationAt, hasMessages };
     }));
-    return { id, path: directory, name: manifest.name, revision: manifest.revision, defaultsRevision: manifest.defaultsRevision, defaults: manifest.defaults, conversations, availability: 'ready', migrationItemId: source?.id || null, error: null, deletion: entry!.deletion };
+    return { id, path: directory, name: manifest.name, createdAt: manifest.createdAt, revision: manifest.revision, defaultsRevision: manifest.defaultsRevision, defaults: manifest.defaults, conversations, availability: 'ready', migrationItemId: source?.id || null, error: null, deletion: entry!.deletion };
   }
   async index() {
     this.options.migration.assertSystemReady();
@@ -67,7 +70,7 @@ export class WorkspaceHost {
     const ids = new Set([...catalog.entries.filter((entry) => entry.state !== 'deleted').map((entry) => entry.workspaceId), ...state.items.filter((item) => item.workspaceId && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.state === 'deleted')).map((item) => item.workspaceId!)]);
     return { schemaVersion: 1, workspaces: await Promise.all([...ids].map((id) => this.workspace(id))), migration: this.options.migration.status(), sources: state.items.filter((item) => !item.workspaceId) };
   }
-  snapshot(id: string) { this.target(id); return this.options.runtime.snapshot(id); }
+  snapshot(id: string) { const target = this.target(id), result = this.options.runtime.snapshot(id); return { ...result, resourceLinks: historicalResourceLinks(result.snapshot.entries, id, target.directory, (value) => this.file(id, value)) }; }
   async search(query: string) {
     this.options.migration.assertSystemReady(); if (!query.trim()) return { results: [] };
     const results = [];

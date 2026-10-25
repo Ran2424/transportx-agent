@@ -5,7 +5,6 @@ const path = require('node:path');
 import {
   defaultSessionProfile,
   parseModuleManifestStructured,
-  parseResolvedSessionPlanStructured,
   type ResolvedPlanEntrypoint,
   type ResolvedPlanModule,
   type ResolvedPlanNativeRuntime,
@@ -20,8 +19,6 @@ import { isWithin } from './util/path.js';
 import { readModuleToolContracts } from './tool-contracts.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
-const RETIRED_BUILTIN_MODULE_IDS = new Set(['com.transportx.timing']);
-const INSTALLABLE_REPLACEMENTS_FOR_RETIRED_BUILTINS = new Set(['com.transportx.video']);
 
 export class SessionPlanError extends Error {
   status = 409;
@@ -75,7 +72,21 @@ function resolvedNativeRuntimes(module: RegisteredModule): ResolvedPlanNativeRun
   });
 }
 
+function frozenModuleManifest(module: Pick<ResolvedPlanModule, 'id' | 'version' | 'packageRoot'>) {
+  const manifestPath = path.join(module.packageRoot, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    throw new SessionPlanError('module_version_missing', `Module version is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
+  }
+  let manifest;
+  try { manifest = parseModuleManifestStructured(JSON.parse(fs.readFileSync(manifestPath, 'utf8'))); }
+  catch { throw new SessionPlanError('module_content_mismatch', `Cannot verify Module manifest: ${module.id}@${module.version}`, [{ moduleId: module.id, path: manifestPath }]); }
+  if (!manifest.ok) throw new SessionPlanError('module_content_mismatch', `Cannot verify Module manifest: ${module.id}@${module.version}`, [{ moduleId: module.id, path: manifestPath }]);
+  if (manifest.value.id !== module.id || manifest.value.version !== module.version) throw new SessionPlanError('module_version_missing', `Frozen Module version is unavailable: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version, actual: `${manifest.value.id}@${manifest.value.version}`, path: module.packageRoot }]);
+  return manifest.value;
+}
+
 function resolvedPlanModule(module: RegisteredModule, domainId: string): ResolvedPlanModule {
+  frozenModuleManifest({ id: module.manifest.id, version: module.manifest.version, packageRoot: module.packageRoot });
   readModuleToolContracts(module.packageRoot, module.manifest.id);
   return {
     id: module.manifest.id,
@@ -174,24 +185,6 @@ export class SessionAssembler {
     };
   }
 
-  save(plan: ResolvedSessionPlan, fileName = 'resolved-session-plan.json') {
-    const target = path.join(plan.workspace, '.tau', fileName);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify(plan, null, 2)}\n`);
-    fs.renameSync(temporary, target);
-    return target;
-  }
-
-  load(workspace: string, fileName = 'resolved-session-plan.json') {
-    const target = path.join(path.resolve(workspace), '.tau', fileName);
-    if (!fs.existsSync(target)) throw new SessionPlanError('legacy_plan_requires_confirmation', 'Resolved session plan v3 is missing.', [{ path: target }]);
-    const raw = JSON.parse(fs.readFileSync(target, 'utf8'));
-    const parsed = parseResolvedSessionPlanStructured(raw);
-    if (!parsed.ok) throw new SessionPlanError(raw?.schemaVersion === 2 ? 'legacy_plan_requires_confirmation' : 'invalid_session_plan', parsed.diagnostics.map((item) => item.message).join('; '), [{ path: target }]);
-    return this.verify(parsed.value, workspace);
-  }
-
   verify(plan: ResolvedSessionPlan, workspace = plan.workspace) {
     if (path.relative(fs.realpathSync(plan.workspace), fs.realpathSync(workspace)) !== '') throw new SessionPlanError('workspace_mismatch', 'Resolved session plan belongs to another workspace.', [{ expected: path.resolve(workspace), actual: path.resolve(plan.workspace) }]);
     for (let index = 0; index < plan.modules.length; index++) {
@@ -206,30 +199,14 @@ export class SessionAssembler {
         module = { ...module, packageRoot: builtin.packageRoot, entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: relocate(entry.path) })), nativeRuntimes: module.nativeRuntimes.map((runtime) => ({ ...runtime, ffmpeg: { ...runtime.ffmpeg, path: relocate(runtime.ffmpeg.path) }, ffprobe: { ...runtime.ffprobe, path: relocate(runtime.ffprobe.path) } })) };
         plan.modules[index] = module;
       }
-      const manifestPath = path.join(module.packageRoot, 'manifest.json');
-      if (!fs.existsSync(manifestPath)) {
-        if (module.origin === 'builtin' && INSTALLABLE_REPLACEMENTS_FOR_RETIRED_BUILTINS.has(module.id)) {
-          const replacement = this.registry.get(module.id);
-          if (!replacement?.enabled || replacement.origin !== 'installed') {
-            throw new SessionPlanError('module_version_missing', `Install and enable ${module.id} before resuming this session.`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
-          }
-          module = resolvedPlanModule(replacement, plan.domain.id);
-          plan.modules[index] = module;
-          console.warn(`[Tau] Replaced retired builtin Module ${module.id} with installed version ${module.version} while resuming a session.`);
-        } else {
-        if (module.origin === 'builtin' && RETIRED_BUILTIN_MODULE_IDS.has(module.id)) continue;
-        throw new SessionPlanError('module_version_missing', `Module version is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version, path: module.packageRoot }]);
-        }
-      }
-      const currentManifestPath = path.join(module.packageRoot, 'manifest.json');
+      const manifest = frozenModuleManifest(module);
       for (const entry of module.entrypoints) {
         if (!fs.existsSync(entry.path)) {
           throw new SessionPlanError('module_entrypoint_missing', `Module entrypoint is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, path: entry.path }]);
         }
       }
       for (const runtime of module.nativeRuntimes) {
-        const manifest = parseModuleManifestStructured(JSON.parse(fs.readFileSync(currentManifestPath, 'utf8')));
-        const declared = manifest.ok ? manifest.value.contributes?.nativeRuntimes?.find((candidate) => candidate.id === runtime.id && candidate.platform === runtime.platform && candidate.arch === runtime.arch && candidate.version === runtime.version) : undefined;
+        const declared = manifest.contributes?.nativeRuntimes?.find((candidate) => candidate.id === runtime.id && candidate.platform === runtime.platform && candidate.arch === runtime.arch && candidate.version === runtime.version);
         if (!declared) throw new SessionPlanError('module_content_mismatch', `Native runtime is not declared by Module ${module.id}@${module.version}`, [{ moduleId: module.id, runtimeId: runtime.id }]);
         const expectedFfmpeg = resolvePackagePath(module.packageRoot, declared.executables.ffmpeg.path, 'ffmpeg executable');
         const expectedFfprobe = resolvePackagePath(module.packageRoot, declared.executables.ffprobe.path, 'ffprobe executable');

@@ -44,9 +44,10 @@ test('Citation numbering, references and registry persistence stay consistent', 
   assert.throws(() => store.load(), /Unsupported/); assert.match(fs.readFileSync(store.filePath, 'utf8'), /keep/);
   fs.writeFileSync(store.filePath, Buffer.alloc(8 * 1024 * 1024 + 1));
   assert.throws(() => store.load(), /8 MiB/);
-  const { planCitationMigration, applyCitationMigrations } = await import(require('node:url').pathToFileURL(path.resolve('scripts/migrate-citations-v3.mjs')).href);
-  const migrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'citation-migration-'));
-  t.after(() => fs.rmSync(migrationRoot, { recursive: true, force: true }));
+  const { planCitationMigration } = require('../../bin/citation-migration.js');
+  const migrationRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'citation-migration-')));
+  let releaseMigrationWriter: (() => void) | undefined;
+  t.after(() => { releaseMigrationWriter?.(); fs.rmSync(migrationRoot, { recursive: true, force: true }); });
   const task = path.join(migrationRoot, 'scenario', 'task');
   fs.mkdirSync(path.join(task, '.tau'), { recursive: true });
   fs.writeFileSync(path.join(task, 'original.md'), '# 依据\n历史原文');
@@ -58,8 +59,8 @@ test('Citation numbering, references and registry persistence stay consistent', 
   assert.equal(fs.readFileSync(legacyFile, 'utf8'), legacyBytes, 'planning never modifies historical data');
   assert.deepEqual(migration.files.map((file: any) => file.status), ['verified', 'missing']);
   assert.equal(migration.registry.evidence[0].contentKind, 'summary', 'legacy quotes are not promoted to verified excerpts');
-  const backup = applyCitationMigrations(migrationRoot, [migration]);
-  assert.equal(fs.readFileSync(path.join(backup, 'scenario/task/.tau/citations.json'), 'utf8'), legacyBytes);
+  // Fixture materialization only; production conversion is exercised through the unified runner below.
+  new CitationRegistryStore(task, 'old_session').save(migration.registry);
   assert.equal(planCitationMigration(task), null, 'repeated migration skips V3 registries');
   const migratedStore = new CitationRegistryStore(task, 'old_session');
   assert.equal(compileCitations('历史 [[cite:occurrence_one]]', migratedStore.list()).unavailableIds.length, 0);
@@ -73,14 +74,13 @@ test('Citation numbering, references and registry persistence stay consistent', 
   fs.writeFileSync(legacyFile, JSON.stringify({ ...legacy, resources: [{ ...legacy.resources[0], relativePath: '../outside.md' }] }));
   assert.throws(() => planCitationMigration(task), /invalid/);
   fs.writeFileSync(legacyFile, legacyBytes);
-  const stale = planCitationMigration(task);
-  fs.writeFileSync(legacyFile, legacyBytes + '\n');
-  assert.throws(() => applyCitationMigrations(migrationRoot, [stale]), /rolled back/);
-  assert.equal(fs.readFileSync(legacyFile, 'utf8'), legacyBytes + '\n', 'concurrent changes are preserved');
 
   // Upgrade discovers configured and archived workspaces, isolating damaged records.
   const { writeLegacyCitationFixture } = require('../support/citation-v2.ts');
-  const { migrateStoredCitations } = require('../../bin/citation-migration.js');
+  const { WorkspaceStore } = require('../../bin/workspace-store.js');
+  const { WorkspaceMigration } = require('../../bin/workspace-migration.js');
+  const { WorkspaceMigrationRunner } = require('../../bin/workspace-migration-runner.js');
+  const { WorkspaceRuntimeGate } = require('../../bin/workspace-runtime.js');
   const dataRoot = path.join(migrationRoot, 'upgrade-data');
   const projects = path.join(migrationRoot, 'custom-projects');
   const sessions = path.join(dataRoot, 'sessions');
@@ -89,7 +89,6 @@ test('Citation numbering, references and registry persistence stay consistent', 
   const custom = writeLegacyCitationFixture(path.join(projects, 'custom'));
   const archiveCwd = path.join(migrationRoot, 'archive', 'task');
   const archived = writeLegacyCitationFixture(archiveCwd);
-  fs.writeFileSync(path.join(sessions, 'archived.jsonl'), archived.entries.map(JSON.stringify).join('\n') + '\n');
   const damaged = writeLegacyCitationFixture(path.join(projects, 'damaged'));
   fs.writeFileSync(damaged.file, '{damaged');
   const knowledgeRoot = path.join(migrationRoot, 'knowledge');
@@ -99,36 +98,37 @@ test('Citation numbering, references and registry persistence stay consistent', 
   archived.registry.resources[0].relativePath = 'knowledge:legacy/standard.md';
   fs.writeFileSync(archived.file, JSON.stringify(archived.registry));
   fs.writeFileSync(path.join(archiveCwd, '.tau', 'resolved-session-plan.json'), JSON.stringify({ assets: [{ id: 'knowledge:legacy', kind: 'knowledge', path: knowledgeRoot }] }));
-  const upgrade = migrateStoredCitations(dataRoot, projects, sessions);
-  assert.equal(upgrade.migrated.length, 3);
-  assert.equal(upgrade.failures.length, 1);
+  const nativeFiles = [];
+  for (const [name, fixture] of [['normal', normal], ['custom', custom], ['archived', archived], ['damaged', damaged]]) {
+    const rows = fixture.entries.map((row: any, index: number) => index === 0 ? { ...row, id: `native-${name}` } : row);
+    const file = path.join(sessions, `${name}.jsonl`), bytes = rows.map(JSON.stringify).join('\n') + '\n';
+    fs.writeFileSync(file, bytes); nativeFiles.push({ file, bytes });
+  }
+  const workspaceStore = new WorkspaceStore(dataRoot, sessions);
+  releaseMigrationWriter = require('../../bin/util/json-storage.js').acquireWriteLease(path.join(dataRoot, 'host'));
+  const migrationHost = new WorkspaceMigration(workspaceStore, { agentDir: dataRoot, workspaceRoots: [projects, path.join(dataRoot, 'scenario')] });
+  await migrationHost.initialize();
+  const python = process.env.TAU_PYTHON_COMMAND || 'python3';
+  const runner = new WorkspaceMigrationRunner(migrationHost, new WorkspaceRuntimeGate(python, path.join(migrationRoot, 'logs'), path.join(migrationRoot, 'coordination')), python);
+  await runner.convertPending();
+  const migratedItems = migrationHost.read().items;
+  assert.equal(migratedItems.filter((item: any) => item.state === 'ready').length, 3);
+  assert.equal(migratedItems.filter((item: any) => item.state === 'failed').length, 1);
   assert.equal(fs.readFileSync(damaged.file, 'utf8'), '{damaged', 'a damaged registry is not overwritten');
   assert.equal(JSON.parse(fs.readFileSync(normal.file, 'utf8')).version, '3.0');
   assert.equal(JSON.parse(fs.readFileSync(custom.file, 'utf8')).version, '3.0');
-  const externalBackup = upgrade.migrated.find((item: any) => item.cwd === archiveCwd).backup;
-  const report = JSON.parse(fs.readFileSync(path.join(externalBackup, 'report.json'), 'utf8'))[0];
-  assert.ok(report.backup.startsWith('external/'));
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(externalBackup, report.backup), 'utf8')).provenance, archived.registry.provenance, 'legacy source relationships remain in the original backup');
+  const externalBackup = path.join(archiveCwd, '.tau/migrations/workspace-v1/backups/.tau/citations.json');
+  assert.equal(fs.readFileSync(externalBackup, 'utf8'), JSON.stringify(archived.registry), 'unified migration preserves the complete original registry, including provenance');
   const knowledgeDetail = new CitationService().detail({ id: 'resumed', citationRegistryId: 'legacy_session', cwd: archiveCwd, resolvedSessionPlan: { assets: [{ id: 'knowledge:legacy', kind: 'knowledge', path: knowledgeRoot }] } }, 'occurrence_legacy');
   assert.equal(knowledgeDetail.preview.kind, 'text');
   assert.equal(knowledgeDetail.source.content.assetId, 'knowledge:legacy');
   const migratedBytes = fs.readFileSync(normal.file, 'utf8');
-  assert.equal(migrateStoredCitations(dataRoot, projects, sessions).migrated.length, 0);
+  await migrationHost.initialize(); await runner.convertPending();
   assert.equal(fs.readFileSync(normal.file, 'utf8'), migratedBytes);
+  for (const { file, bytes } of nativeFiles) assert.equal(fs.readFileSync(file, 'utf8'), bytes);
 
-  // A failure after an earlier replacement rolls back the entire explicit batch.
-  const first = writeLegacyCitationFixture(path.join(migrationRoot, 'rollback-first'));
-  const second = writeLegacyCitationFixture(path.join(migrationRoot, 'rollback-second'));
-  const batch = [planCitationMigration(path.dirname(path.dirname(first.file))), planCitationMigration(path.dirname(path.dirname(second.file)))];
-  fs.writeFileSync(second.file, second.bytes + '\n');
-  assert.throws(() => applyCitationMigrations(migrationRoot, batch), /rolled back/);
-  assert.equal(fs.readFileSync(first.file, 'utf8'), first.bytes, 'the first registry is restored after a later failure');
-  assert.equal(fs.readFileSync(second.file, 'utf8'), second.bytes + '\n');
-  const blockedRoot = path.join(migrationRoot, 'blocked-backup');
-  fs.mkdirSync(blockedRoot);
-  fs.writeFileSync(path.join(blockedRoot, 'migrations'), 'not a directory');
-  assert.throws(() => applyCitationMigrations(blockedRoot, [planCitationMigration(path.dirname(path.dirname(first.file)))]));
-  assert.equal(fs.readFileSync(first.file, 'utf8'), first.bytes, 'backup failure cannot change the registry');
+  const first = writeLegacyCitationFixture(path.join(migrationRoot, 'symlink-first'));
+  const second = writeLegacyCitationFixture(path.join(migrationRoot, 'symlink-second'));
   const { testSymlink } = require('../support/symlink.ts');
   fs.unlinkSync(first.file);
   await testSymlink(t, 'citation migration registry', second.file, first.file, () => {

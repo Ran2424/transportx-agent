@@ -158,6 +158,7 @@ export async function composerSmoke(page, baseUrl) {
   await library.locator('summary').click();
   await library.getByRole('button', { name: '查看已上传文件 draft-source.md', exact: true }).waitFor();
   assert.match(await library.innerText(), /attachments\/att_.*draft-source\.md/);
+  await library.getByText(`上传会话：${current.conversation.name}`, { exact: true }).waitFor();
   await page.getByRole('button', { name: '移除附件 draft-source.md', exact: true }).click();
   assert.equal(await library.getByRole('button', { name: '查看已上传文件 draft-source.md', exact: true }).count(), 1, 'deselecting an input does not delete an uploaded source');
   await page.locator('.live-tab-select', { hasText: '草稿B' }).click();

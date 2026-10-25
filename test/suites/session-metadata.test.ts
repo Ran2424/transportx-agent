@@ -24,8 +24,8 @@ test('Session snapshots preserve authoritative metadata and independently config
 
   // combines the projection snapshot with the authoritative session metadata
   {
-    const snapshot = sessionSnapshot({ messages: [{ role: 'user', content: '分析' }] }, source, { ok: true }, []);
-    assert.equal(snapshot.messages.length, 1);
+    const snapshot = sessionSnapshot({ schemaVersion: 1, entries: [{ type: 'message', message: { role: 'user', content: '分析' } }] }, source, { ok: true }, []);
+    assert.equal(snapshot.entries.length, 1);
     assert.equal(snapshot.session.id, source.id);
     assert.equal(snapshot.session.resolvedSessionPlan, source.resolvedSessionPlan);
     assert.equal(snapshot.contextUsage.percent, 23);
@@ -36,7 +36,9 @@ test('Session snapshots preserve authoritative metadata and independently config
     const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
     const manager = new LiveSessionManager();
     const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', id: 'clocked', cwd: '/tmp/clocked' });
+    assert.equal(session.metadata().lastConversationAt, '', 'an empty runtime has no observed conversation activity');
     session.handleEvent({ type: 'agent_start' });
+    assert.equal(session.metadata().lastConversationAt, '', 'activation is not a user or assistant message');
     session.handleEvent({ type: 'message_update', message: { role: 'assistant', content: [{ type: 'text', text: 'current partial' }] } });
     session.handleEvent({ type: 'tool_execution_start', toolCallId: 'call', toolName: 'read', args: { path: 'file' } });
     const snapshot = session.snapshot();

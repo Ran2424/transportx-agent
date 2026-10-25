@@ -27,3 +27,5 @@ export async function createBrowserConversation(page, baseUrl, name) {
   return { id: runtime.conversationId, liveSessionId: runtime.id, cwd: runtime.cwd, workspaceId: runtime.workspaceId, sessionName: name };
 }
 export const closeBrowserConversation = (page, baseUrl, id) => browserJson(page, baseUrl, `/api/conversations/${id}/close`, { stopCurrent: true });
+
+export const listHostRuntimes = async (json) => (await json('/api/workspaces')).workspaces.flatMap((workspace) => workspace.conversations.flatMap(({ runtime }) => runtime ? [runtime] : []));

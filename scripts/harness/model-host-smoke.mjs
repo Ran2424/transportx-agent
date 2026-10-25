@@ -1,9 +1,10 @@
+import { nativeSnapshot } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export async function modelHostSmoke({ rpc, json, root, session, providerInputs }) {
-  const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  const snapshot = () => nativeSnapshot(json, session.conversationId);
   const before = await snapshot();
   const history = (state) => state.entries.filter((entry) => entry.type === 'message');
   const tools = before.entries.filter((entry) => entry.customType === 'pi-web-bridge').at(-1).data.tools;

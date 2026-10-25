@@ -215,15 +215,17 @@ async function runSteps(steps, promptMessage) {
       const directory = path.join(process.cwd(), '.tau', 'geo-resources', step.geoResource.resourceId);
       fs.mkdirSync(directory, { recursive: true });
       fs.writeFileSync(path.join(directory, 'data.geojson'), raw);
-      fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify({
+      const resource = {
         resourceId: step.geoResource.resourceId,
         title: step.geoResource.title || step.geoResource.resourceId,
         bytes: raw.byteLength,
         sha256: crypto.createHash('sha256').update(raw).digest('hex'),
         featureCount: step.geoResource.data.features.length,
         ...(step.geoResource.idField ? { idField: step.geoResource.idField } : {}),
-      }, null, 2));
-      continue;
+      };
+      fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify(resource, null, 2));
+      step.tool = { name: 'publish_geodata', args: {}, result: { content: [{ type: 'text', text: `Published ${resource.resourceId}` }], details: { kind: 'tau-geo-resource', resource } } };
+
     }
 
     if (step.streamText) {
@@ -360,6 +362,8 @@ async function handleCommand(command) {
         model,
         thinkingLevel: 'high',
         isStreaming: !!replaying,
+        isCompacting: false,
+        pendingMessageCount: piQueue.steering.length + piQueue.followUp.length,
         autoCompactionEnabled: true,
         contextUsage: { tokens: { input: 800, output: 120 } },
       });

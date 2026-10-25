@@ -2,11 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { citationRelativePath, parseCitationLocator, parseCitationRegistryStructured, CITATION_REGISTRY_LIMIT, type CitationRegistry, type CitationSourceVersion, type CitationEvidence, type CitationMetadata, type CitationFile } from '../contracts/index.js';
-import { CitationRegistryStore } from './citation-registry.js';
 import { hashCitationFile, locateCitationFile } from './citation-resources.js';
-import { isWithin, relativePosixPath, toPosixPath } from './util/path.js';
-import { listSessionHistoryFiles } from './session-history-files.js';
-import { readSessionHeaderCwd } from './session-history-reader.js';
+import { isWithin } from './util/path.js';
 
 type LegacyRegistry = {
   protocol: string; version: string; schemaVersion: number; sessionId: string; generatedAt: string;
@@ -86,70 +83,4 @@ export function planCitationMigration(cwd: string): CitationMigrationPlan | null
   if (!parsed.ok) throw new Error(`${file}: ${parsed.diagnostics[0].message}`);
   if (Buffer.byteLength(JSON.stringify(parsed.value)) > CITATION_REGISTRY_LIMIT) throw new Error(`Migrated registry exceeds limit: ${file}`);
   return { cwd, file, original, registry: parsed.value, files };
-}
-
-export function applyCitationMigrations(dataRoot: string, plans: CitationMigrationPlan[]) {
-  if (!plans.length) return null;
-  const backup = path.join(dataRoot, 'migrations', `citation-v3-${new Date().toISOString().replaceAll(':', '-')}-${crypto.randomUUID().slice(0, 8)}`);
-  const migrationRoot = path.dirname(backup);
-  if (fs.existsSync(migrationRoot) && fs.lstatSync(migrationRoot).isSymbolicLink()) throw new Error('Migration backup directory cannot be a symlink.');
-  fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
-  const backupPath = (file: string) => isWithin(dataRoot, file) ? relativePosixPath(dataRoot, file) : `external/${hash(path.dirname(path.dirname(file)))}/citations.json`;
-  const report = plans.map(({ file, registry, files }) => ({ file: toPosixPath(file), backup: backupPath(file), sessionId: registry.sessionId, sources: registry.sources.length, evidence: registry.evidence.length, files }));
-  fs.writeFileSync(path.join(backup, 'report.json'), JSON.stringify(report, null, 2), { flag: 'wx', mode: 0o600 });
-  // Back up every original before changing any registry.
-  for (const plan of plans) {
-    const target = path.join(backup, backupPath(plan.file));
-    fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(target, plan.original, { flag: 'wx', mode: 0o600 });
-  }
-  const applied: CitationMigrationPlan[] = [];
-  try {
-    for (const plan of plans) {
-      if (!fs.readFileSync(plan.file).equals(plan.original)) throw new Error(`Registry changed during migration: ${plan.file}`);
-      new CitationRegistryStore(plan.cwd, plan.registry.sessionId).save(plan.registry);
-      applied.push(plan);
-    }
-  } catch (error) {
-    for (const plan of applied.reverse()) {
-      const temporary = `${plan.file}.${crypto.randomUUID()}.tmp`;
-      fs.writeFileSync(temporary, plan.original, { flag: 'wx', mode: 0o600 });
-      fs.renameSync(temporary, plan.file);
-    }
-    throw new Error(`Migration rolled back; backup: ${backup}`, { cause: error });
-  }
-  return backup;
-}
-
-// History headers also find tasks outside the current/default scenario directory.
-export function citationMigrationWorkspaces(dataRoot: string, projectsDir: string, sessionsDir: string) {
-  const workspaces = new Set<string>();
-  for (const root of new Set([path.join(dataRoot, 'scenario'), projectsDir])) {
-    if (!fs.existsSync(root)) continue;
-    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-      if (entry.isDirectory()) workspaces.add(path.join(root, entry.name));
-    }
-  }
-  for (const { filePath } of listSessionHistoryFiles(sessionsDir)) {
-    const cwd = readSessionHeaderCwd(filePath, (value) => typeof value === 'string' && path.isAbsolute(value) ? path.resolve(value) : null);
-    if (cwd) workspaces.add(cwd);
-  }
-  return [...workspaces].filter((cwd) => fs.existsSync(path.join(cwd, '.tau', 'citations.json')));
-}
-
-export function migrateStoredCitations(dataRoot: string, projectsDir: string, sessionsDir: string) {
-  const migrated: Array<{ cwd: string; backup: string }> = [], failures: Array<{ cwd: string; error: unknown }> = [];
-  for (const cwd of citationMigrationWorkspaces(dataRoot, projectsDir, sessionsDir)) {
-    try {
-      const plan = planCitationMigration(cwd);
-      if (plan) migrated.push({ cwd, backup: applyCitationMigrations(dataRoot, [plan])! });
-    } catch (error) { failures.push({ cwd, error }); }
-  }
-  return { migrated, failures };
-}
-
-export function migrateSessionCitations(cwd: string, dataRoot: string) {
-  if (!fs.existsSync(path.join(cwd, '.tau', 'citations.json'))) return null;
-  const plan = planCitationMigration(cwd);
-  return plan ? applyCitationMigrations(dataRoot, [plan]) : null;
 }

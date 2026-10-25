@@ -1,3 +1,4 @@
+import i18n from '../i18n';
 import { createAppKernel } from '../../public/kernel/app-kernel.js';
 import { WebSocketClient } from '../../public/websocket-client.js';
 import { AGENT_HOST_PROTOCOL_VERSION, HOST_PROTOCOL_HEADER, compatibleHostHealth } from '../../contracts/host-protocol.js';
@@ -11,8 +12,9 @@ export const appKernel = createAppKernel({
   transport,
   http: async (path, init) => {
     const health = await refreshHostHealth();
-    const diagnostic = /^\/api\/(?:migration(?:\/|$)|workspaces\/[^/]+\/(?:migration|runtime-diagnostics|runtime-recovery))/.test(path);
-    if (!diagnostic && health.dataState !== 'ready') throw appError({ code: 'host_data_not_ready', category: 'runtime', message: health.dataState === 'blocked' ? '存储索引需要修复，请打开迁移诊断。' : '正在盘点存储索引，请稍候。', retryable: true });
+    const body = init?.body as { type?: unknown } | undefined;
+    const diagnostic = /^\/api\/(?:migration(?:\/|$)|workspaces\/[^/]+\/(?:migration|runtime-diagnostics|runtime-recovery))/.test(path) || path === '/api/rpc' && init?.method === 'POST' && ['get_auth', 'set_auth', 'open_logs_directory'].includes(String(body?.type));
+    if (!diagnostic && health.dataState !== 'ready') throw appError({ code: 'host_data_not_ready', category: 'runtime', message: health.dataState === 'blocked' ? i18n.t('workspaceFlow.indexRepairNotice') : i18n.t('workspaceFlow.indexWaitHelp'), retryable: true });
     return fetch(path, {
     method: init?.method,
     signal: init?.signal,
@@ -26,7 +28,7 @@ export async function refreshHostHealth() {
   const response = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
   if (response.status === 401) projectUi.onUnauthorized?.();
   const health: unknown = await response.json();
-  if (!response.ok || !compatibleHostHealth(health)) throw appError({ code: 'unsupported_host', category: 'protocol', message: 'Agent Host 协议不兼容，请升级或重启。', retryable: false });
+  if (!response.ok || !compatibleHostHealth(health)) throw appError({ code: 'unsupported_host', category: 'protocol', message: i18n.t('workspaceFlow.incompatibleHost'), retryable: false });
   appKernel.dispatch({ type: 'runtime/healthReceived', health });
   return health;
 }

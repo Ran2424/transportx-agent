@@ -1,3 +1,4 @@
+import { createHostConversation, nativeSnapshot, protocolHeaders } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,8 +18,8 @@ export async function citationHostSmoke({ root, endpoint, json, rpc, until, prov
   const inspection = await rpc({ type: 'inspect_module_archive', sourcePath: archive });
   assert.equal(inspection.success, true);
   assert.equal((await rpc({ type: 'install_module_archive', importId: inspection.data.inspection.importId, selections: [{ id: manifest.id, version: '1.0.1' }] })).success, true);
-  const session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'P2 Citation acceptance' })).session;
-  const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+  const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: 'P2 Citation acceptance' });
+  const snapshot = () => nativeSnapshot(json, session.conversationId);
   const diagnostic = async (sessionId) => (await rpc({ type: 'get_platform_overview', ...(sessionId ? { sessionId } : {}) })).data.modules.find((module) => module.id === 'com.transportx.citation').toolDiagnostics[0];
   assert.equal((await diagnostic()).reason, 'no_session');
   assert.equal((await diagnostic(session.id)).state, 'unverified');
@@ -29,7 +30,7 @@ export async function citationHostSmoke({ root, endpoint, json, rpc, until, prov
     const state = await until(async () => { const state = await snapshot(); return !state.isStreaming && results(state).length > before && state; }, 'real Citation result');
     return results(state).at(-1);
   }
-  const plan = JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/resolved-session-plan.json'), 'utf8'));
+  const plan = JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/conversations', session.conversationId, 'plan.json'), 'utf8'));
   assert.equal(plan.modules.find((module) => module.id === manifest.id).version, '1.0.1');
   fs.writeFileSync(path.join(session.cwd, 'volumes.csv'), 'road,hour,volume\nA,08,10\nA,08,20\n');
   await rpc({ type: 'prompt', sessionId: session.id, message: 'traffic:' + JSON.stringify({ inputPath: 'volumes.csv' }) });
@@ -46,7 +47,7 @@ export async function citationHostSmoke({ root, endpoint, json, rpc, until, prov
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableEnded) controller.abort(); });
     try {
-      const response = await fetch(endpoint + req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw, signal: controller.signal });
+      const response = await fetch(endpoint + req.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: raw, signal: controller.signal });
       if (dropResponse) { await response.text(); res.destroy(); return; }
       res.writeHead(response.status, { 'Content-Type': 'application/json' }); res.end(await response.text());
     } catch (error) {
@@ -79,10 +80,10 @@ export async function citationHostSmoke({ root, endpoint, json, rpc, until, prov
     const invalid = await execute({ ...input, webUrls: ['https://example.com/'] });
     assert.equal(invalid.isError, true);
     assert.match(JSON.stringify(invalid.content), /sources and webUrls cannot be combined/);
-    const structural = await fetch(endpoint + '/api/internal/citations/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...captured, sources: [{ ...input.sources[0], unexpected: true }], webUrls: undefined }) });
+    const structural = await fetch(endpoint + '/api/internal/citations/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify({ ...captured, sources: [{ ...input.sources[0], unexpected: true }], webUrls: undefined }) });
     assert.equal(structural.status, 400, 'Host enforces the same structural schema after tool_call mutation');
     assert.equal((await structural.json()).code, 'tool_input_invalid');
-    const incompatible = await fetch(endpoint + '/api/internal/citations/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...captured, ...input, webUrls: undefined, contractVersion: '2.0.0' }) });
+    const incompatible = await fetch(endpoint + '/api/internal/citations/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify({ ...captured, ...input, webUrls: undefined, contractVersion: '2.0.0' }) });
     assert.equal(incompatible.status, 409);
     const web = await execute({ webUrls: ['https://citation.fixture.test/citation-fixture'] });
     assert.equal(web.isError, false);

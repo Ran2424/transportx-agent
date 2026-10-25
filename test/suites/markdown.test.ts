@@ -19,6 +19,11 @@ test('Markdown preserves content structure and localized accessible citations', 
     const { renderMarkdown } = await import('../../src/public/markdown.ts');
     const legacy = renderMarkdown('[旧报告](http://127.0.0.1:3000/api/live-sessions/old/citation-resources/id?token=old-secret) http://localhost:3000/api/file/raw?token=old-secret');
     assert.doesNotMatch(legacy, /href=|old-secret/); assert.match(legacy, /旧资源链接不可用/);
+    const oldFile = 'http://localhost:3000/api/file/raw?path=%2Ftask%2Freport.txt&token=old-secret';
+    const projected = renderMarkdown(`[报告](${oldFile})\n![图像](${oldFile})`, {}, undefined, 'zh-CN', { [oldFile]: 'http://localhost/api/conversations/conv_verified/files/raw?path=report.txt' });
+    assert.match(projected, /href="http:\/\/localhost\/api\/conversations\/conv_verified\/files\/raw/);
+    assert.match(projected, /<img src="http:\/\/localhost\/api\/conversations/);
+    assert.doesNotMatch(projected, /old-secret|\/api\/file\/raw/);
     const english = renderMarkdown('Known [[cite:known]] and missing [[cite:missing]].', { known: 1 }, undefined, 'en-US');
     const chinese = renderMarkdown('已有 [[cite:known]]，缺失 [[cite:missing]]。', { known: 1 }, undefined, 'zh-CN');
 
