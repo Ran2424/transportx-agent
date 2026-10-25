@@ -169,6 +169,18 @@ export const PLATFORM_PROFILES = Object.freeze({
 // keeps its existing Web development behavior; it is not a desktop release.
 const PROCESS_INSPECTION = {
   darwin: {
+    workspaceScript: `import json,os,subprocess
+p=subprocess.run(['/usr/sbin/lsof','-a','-u',str(os.geteuid()),'-d','cwd','-F0pcn'],capture_output=True,timeout=15,env=dict(os.environ,LC_ALL='en_US.UTF-8',LANG='en_US.UTF-8'))
+if p.returncode or p.stderr: raise RuntimeError('Current-user cwd inventory is incomplete')
+records=[];item=None
+for field in p.stdout.decode('utf-8').split('\\0'):
+ field=field.lstrip('\\n')
+ if field.startswith('p'):
+  if item: records.append(item)
+  item={'pid':int(field[1:]),'cwd':None}
+ elif field.startswith('n') and item: item['cwd']=field[1:]
+if item: records.append(item)
+print(json.dumps({'processes':[r for r in records if r['pid']!=os.getpid()]}))`,
     // proc_bsdinfo / PROC_PIDTBSDINFO from the Apple SDK sys/proc_info.h.
     // Kernel microseconds remain stable when Node changes process.title.
     pythonScript: `import ctypes as c,json,sys
@@ -183,12 +195,61 @@ print(json.dumps(dict(state='running',pid=info.prefix[3],parentPid=info.prefix[4
     bootCommand: 'sysctl', bootArgs: ['-n', 'kern.boottime'],
   },
   linux: {
+    workspaceScript: `import json,os
+records=[]
+for name in os.listdir('/proc'):
+ if not name.isdigit() or int(name)==os.getpid(): continue
+ root='/proc/'+name
+ try:
+  if os.stat(root).st_uid!=os.geteuid(): continue
+  records.append({'pid':int(name),'cwd':os.readlink(root+'/cwd')})
+ except FileNotFoundError: pass
+ except PermissionError: records.append({'pid':int(name),'cwd':None})
+print(json.dumps({'processes':records}))`,
     pythonScript: `import json,os,sys
 pid=int(sys.argv[1]);root=f'/proc/{pid}';value=open(root+'/stat').read();parts=value[value.rfind(')')+2:].split()
 print(json.dumps(dict(state='running',pid=pid,parentPid=int(parts[1]),groupId=int(parts[2]),startedAt=parts[19],command=os.readlink(root+'/exe'))))`,
     bootCommand: 'cat', bootArgs: ['/proc/sys/kernel/random/boot_id'],
   },
   win32: {
+    // x64 PEB / RTL_USER_PROCESS_PARAMETERS layouts: winsiderss/phnt
+    // ntpebteb.h and ntrtl.h. Unknown/unsupported reads block migration.
+    workspaceScript: `import ctypes as c,ctypes.wintypes as w,json,os,struct,subprocess,sys
+if c.sizeof(c.c_void_p)!=8: raise RuntimeError('64-bit process inventory is required')
+k=c.WinDLL('kernel32',use_last_error=True);nt=c.WinDLL('ntdll')
+k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
+k.CloseHandle.argtypes=[w.HANDLE]
+k.ReadProcessMemory.argtypes=[w.HANDLE,c.c_void_p,c.c_void_p,c.c_size_t,c.POINTER(c.c_size_t)]
+nt.NtQueryInformationProcess.argtypes=[w.HANDLE,w.ULONG,c.c_void_p,w.ULONG,c.c_void_p]
+session=w.DWORD()
+if not k.ProcessIdToSessionId(int(sys.argv[1]),c.byref(session)): raise RuntimeError('Host session unavailable')
+query='@((Get-CimInstance Win32_Process -Filter "SessionId='+str(session.value)+'" -ErrorAction Stop).ProcessId)|ConvertTo-Json -Compress'
+p=subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',query],capture_output=True,text=True,timeout=15)
+if p.returncode: raise RuntimeError('Session process inventory unavailable')
+pids=json.loads(p.stdout);pids=pids if isinstance(pids,list) else [pids]
+class Basic(c.Structure):
+ _fields_=[('reserved',c.c_void_p),('peb',c.c_void_p),('padding',c.c_void_p*2),('pid',c.c_size_t),('last',c.c_void_p)]
+def read(handle,address,size):
+ data=c.create_string_buffer(size);count=c.c_size_t()
+ if not k.ReadProcessMemory(handle,c.c_void_p(address),data,size,c.byref(count)) or count.value!=size: raise OSError('Process parameters unavailable')
+ return data.raw
+records=[]
+for pid in pids:
+ if pid==os.getpid(): continue
+ handle=k.OpenProcess(0x410,False,pid);cwd=None
+ try:
+  if not handle: raise OSError('Process access unavailable')
+  basic=Basic()
+  if nt.NtQueryInformationProcess(handle,0,c.byref(basic),c.sizeof(basic),None): raise OSError('Process basic information unavailable')
+  parameters=struct.unpack('<Q',read(handle,basic.peb+0x20,8))[0]
+  value=read(handle,parameters+0x38,16);length=struct.unpack_from('<H',value)[0];address=struct.unpack_from('<Q',value,8)[0]
+  if not length or length>32766 or length%2: raise OSError('Current directory unavailable')
+  cwd=read(handle,address,length).decode('utf-16-le')
+ except OSError: pass
+ finally:
+  if handle: k.CloseHandle(handle)
+ records.append({'pid':pid,'cwd':cwd})
+print(json.dumps({'processes':records}))`,
     command: 'powershell',
     args: ['-NoProfile', '-NonInteractive', '-Command', "$p=Get-CimInstance Win32_Process -Filter 'ProcessId={pid}' -ErrorAction Stop;if($null -eq $p){@{state='exited'}|ConvertTo-Json -Compress}else{@{state='running';pid=$p.ProcessId;parentPid=$p.ParentProcessId;startedAt=$p.CreationDate.ToUniversalTime().ToString('o');command=$p.ExecutablePath}|ConvertTo-Json -Compress}"],
     bootCommand: 'powershell', bootArgs: ['-NoProfile', '-NonInteractive', '-Command', "(Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToUniversalTime().ToString('o')"],

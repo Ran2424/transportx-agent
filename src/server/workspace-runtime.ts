@@ -10,7 +10,7 @@ import { currentBootId, inspectProcess, inspectRecordedProcess, stopRecordedProc
 
 type RuntimeProcess = { id: string; kind: 'pi' | 'managed'; state: 'starting' | 'running' | 'stopped'; pid: number | null; identity: ProcessIdentity | null };
 type RuntimeRecord = {
-  schemaVersion: 1; generation: string; workspaceId: string; conversationId: string; directory: string;
+  schemaVersion: 1; generation: string; workspaceId: string; conversationId: string | null; directory: string;
   host: ProcessIdentity; phase: 'starting' | 'running' | 'stopping' | 'stop-unconfirmed' | 'stopped';
   processes: RuntimeProcess[]; createdAt: string; updatedAt: string; logDirectory: string;
 };
@@ -24,7 +24,7 @@ function identity(value: unknown): value is ProcessIdentity {
 function readRuntime(file: string): RuntimeRecord | null {
   if (!fs.existsSync(file)) return null;
   const record = readJsonObject(file) as unknown as RuntimeRecord;
-  if (!Object.keys(record).every((key) => ['schemaVersion', 'generation', 'workspaceId', 'conversationId', 'directory', 'host', 'phase', 'processes', 'createdAt', 'updatedAt', 'logDirectory'].includes(key)) || record.schemaVersion !== 1 || typeof record.generation !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(record.generation) || !WORKSPACE_ID.test(record.workspaceId) || !CONVERSATION_ID.test(record.conversationId) || typeof record.directory !== 'string' || typeof record.logDirectory !== 'string' || typeof record.createdAt !== 'string' || typeof record.updatedAt !== 'string' || !identity(record.host) || !['starting', 'running', 'stopping', 'stop-unconfirmed', 'stopped'].includes(record.phase) || !Array.isArray(record.processes) || new Set(record.processes.map((item) => item?.id)).size !== record.processes.length || !record.processes.every((item) => item && Object.keys(item).every((key) => ['id', 'kind', 'state', 'pid', 'identity'].includes(key)) && typeof item.id === 'string' && !!item.id && ['pi', 'managed'].includes(item.kind) && ['starting', 'running', 'stopped'].includes(item.state) && (item.pid === null || Number.isSafeInteger(item.pid) && item.pid > 0) && (item.identity === null ? item.state !== 'running' : identity(item.identity) && item.identity.pid === item.pid))) throw failure('Workspace runtime record is corrupt; inspect its backup and log.', 'metadata_corrupt');
+  if (!Object.keys(record).every((key) => ['schemaVersion', 'generation', 'workspaceId', 'conversationId', 'directory', 'host', 'phase', 'processes', 'createdAt', 'updatedAt', 'logDirectory'].includes(key)) || record.schemaVersion !== 1 || typeof record.generation !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(record.generation) || !WORKSPACE_ID.test(record.workspaceId) || record.conversationId !== null && !CONVERSATION_ID.test(record.conversationId) || typeof record.directory !== 'string' || typeof record.logDirectory !== 'string' || typeof record.createdAt !== 'string' || typeof record.updatedAt !== 'string' || !identity(record.host) || !['starting', 'running', 'stopping', 'stop-unconfirmed', 'stopped'].includes(record.phase) || !Array.isArray(record.processes) || new Set(record.processes.map((item) => item?.id)).size !== record.processes.length || !record.processes.every((item) => item && Object.keys(item).every((key) => ['id', 'kind', 'state', 'pid', 'identity'].includes(key)) && typeof item.id === 'string' && !!item.id && ['pi', 'managed'].includes(item.kind) && ['starting', 'running', 'stopped'].includes(item.state) && (item.pid === null || Number.isSafeInteger(item.pid) && item.pid > 0) && (item.identity === null ? item.state !== 'running' : identity(item.identity) && item.identity.pid === item.pid))) throw failure('Workspace runtime record is corrupt; inspect its backup and log.', 'metadata_corrupt');
   if (record.phase === 'stopped' && record.processes.some((item) => item.state !== 'stopped')) throw failure('Stopped runtime still contains unconfirmed processes.', 'metadata_corrupt');
   return record;
 }
@@ -35,9 +35,10 @@ function files(directory: string) {
 
 export class WorkspaceRuntimeLease {
   private active = true;
-  constructor(readonly directory: string, private file: string, private record: RuntimeRecord, private release: () => void, private pythonCommand: string) {}
+  constructor(readonly directory: string, private file: string, private record: RuntimeRecord, private release: ReturnType<typeof acquireWriteLease>, private pythonCommand: string) {}
   get generation() { return this.record.generation; }
   private change(update: (record: RuntimeRecord) => void) {
+    this.release.assertOwned();
     if (!this.active || leases.get(this.directory) !== this) throw failure('Runtime generation is no longer active.', 'workspace_revision_conflict');
     const current = readRuntime(this.file);
     if (current?.generation !== this.generation) throw failure('Runtime generation changed.', 'workspace_revision_conflict');
@@ -65,12 +66,18 @@ export class WorkspaceRuntimeLease {
   running() { this.change((record) => { record.phase = 'running'; }); }
   stopping() { this.change((record) => { record.phase = 'stopping'; }); }
   unconfirmed() { this.change((record) => { record.phase = 'stop-unconfirmed'; }); }
-  finish() {
+  private recordStopped() {
     this.change((record) => {
       if (record.processes.some((item) => item.state !== 'stopped')) throw failure('Pi or managed process stop is not confirmed.');
       record.phase = 'stopped';
     });
-    this.active = false; leases.delete(this.directory); this.release();
+  }
+  private releaseStopped() { this.active = false; leases.delete(this.directory); this.release(); }
+  finish() { this.recordStopped(); this.releaseStopped(); }
+  async finishWithCommit<T>(commit: () => Promise<T>) {
+    this.recordStopped();
+    const result = await commit();
+    this.releaseStopped(); return result;
   }
 }
 
@@ -85,10 +92,15 @@ export class WorkspaceRuntimeGate {
     return operation;
   }
   take(directory: string, workspaceId: string, conversationId: string) {
-    if (!WORKSPACE_ID.test(workspaceId) || !CONVERSATION_ID.test(conversationId)) throw failure('Invalid persistent runtime identity.', 'workspace_identity_conflict');
+    if (!CONVERSATION_ID.test(conversationId)) throw failure('Invalid conversation identity.', 'workspace_identity_conflict');
+    return this.acquire(directory, workspaceId, conversationId);
+  }
+  takeMaintenance(directory: string, workspaceId: string) { return this.acquire(directory, workspaceId, null); }
+  private acquire(directory: string, workspaceId: string, conversationId: string | null) {
+    if (!WORKSPACE_ID.test(workspaceId)) throw failure('Invalid workspace identity.', 'workspace_identity_conflict');
     const location = files(directory);
     if (leases.has(location.directory)) throw failure('Another conversation owns this workspace runtime.', 'workspace_busy');
-    let release: () => void;
+    let release: ReturnType<typeof acquireWriteLease>;
     try { release = acquireWriteLease(location.target); }
     catch (error) { throw Object.assign(error as Error, { code: 'workspace_busy' }); }
     try {

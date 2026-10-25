@@ -27,7 +27,7 @@ function location(value: string): string {
 }
 
 type Header = { cwd: string; id: string; sha256: string; size: number; mtimeMs: number };
-function historySources(root: string, issue: (file: string, code: string, reason: string) => void) {
+export function historySources(root: string, issue: (file: string, code: string, reason: string) => void) {
   const sources: Array<{ file: string; key: string }> = [];
   if (!fs.existsSync(root)) return sources;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
@@ -42,7 +42,7 @@ function historySources(root: string, issue: (file: string, code: string, reason
   }
   return sources;
 }
-function historyHeader(root: string, key: string): Header {
+export function historyHeader(root: string, key: string): Header {
   const file = workspaceMetadataPath(root, key), stat = fs.lstatSync(file);
   if (!stat.isFile() || !Number.isSafeInteger(stat.size) || stat.size < 0 || !Number.isFinite(stat.mtimeMs)) throw failure('history_identity_mismatch', 'History is not a regular file with reliable metadata.');
   const descriptor = fs.openSync(file, 'r');
@@ -109,6 +109,39 @@ export class WorkspaceMigration {
     writeJsonAtomic(this.stateFile, parsed.value);
     return parsed.value;
   }
+  private blockFailure(error: unknown, release?: ReturnType<typeof acquireWriteLease>) {
+    this.fault = error instanceof Error ? error : new Error(String(error));
+    if (!release) return false;
+    let trusted: WorkspaceMigrationStateV1 | null = null;
+    try {
+      release.assertOwned();
+      const parsed = parseWorkspaceMigrationStructured(readJsonObject(this.stateFile));
+      if (parsed.ok && parsed.value.scopes.every((scope) => scope.userData === this.scope.userData)) trusted = parsed.value;
+    } catch {}
+    if (trusted) {
+      try { trusted.systemReadiness = 'blocked'; this.save(trusted); }
+      catch { this.heldWriter = release; return true; }
+    }
+    return false;
+  }
+  async updateItem(id: string, update: (item: WorkspaceMigrationItemV1) => void) {
+    this.assertSystemReady();
+    let release: ReturnType<typeof acquireWriteLease> | undefined, retain = false, reading = true, committing = false;
+    try {
+      release = this.writer();
+      const state = this.read();
+      reading = false;
+      if (state.systemReadiness !== 'ready') throw failure('system_not_ready', 'Inventory is not ready for a target update.');
+      const item = state.items.find((item) => item.id === id);
+      if (!item) throw failure('workspace_missing', 'Migration source is unavailable.');
+      const identity = workspaceCreationDigest([item.id, item.workspaceId, item.path, item.sessionsDirectory]);
+      update(item);
+      if (workspaceCreationDigest([item.id, item.workspaceId, item.path, item.sessionsDirectory]) !== identity) throw failure('workspace_identity_conflict', 'Target progress cannot replace source identity.');
+      state.phase = state.items.every((item) => ['ready', 'isolated'].includes(item.state)) ? 'complete' : state.items.some((item) => ['failed', 'needs-review'].includes(item.state)) ? 'needs-attention' : 'converting';
+      committing = true; this.save(state); return structuredClone(item);
+    } catch (error) { if (reading || committing || ['ENOSPC', 'EDQUOT', 'EIO', 'EROFS', 'EACCES', 'EPERM'].includes((error as { code?: string }).code || '')) retain = this.blockFailure(error, release); throw error; }
+    finally { if (!retain) { release?.(); if (this.heldWriter === release) this.heldWriter = null; } }
+  }
   initialize(): Promise<WorkspaceMigrationStateV1> {
     if (this.initializing) return this.initializing;
     const operation = this.inventory(); this.initializing = operation;
@@ -148,7 +181,7 @@ export class WorkspaceMigration {
       const candidate = (kind: WorkspaceMigrationItemV1['kind'], target: string, sessionsDirectory: string) => {
         const found = drafts.find((item) => item.kind === kind && item.path === target && item.sessionsDirectory === sessionsDirectory); if (found) return found;
         const old = previous(kind, target, sessionsDirectory);
-        const item: WorkspaceMigrationItemV1 = old ? structuredClone(old) : { id: `mig_${uuid()}`, kind, path: target, sessionsDirectory, workspaceId: kind === 'workspace' ? `ws_${uuid()}` : null, histories: [], protectedPaths: kind === 'workspace' ? [target] : [], state: 'pending', stage: 'inventory', revision: 0, sourceDigest: null, report: null, error: null, decisions: [] };
+        const item: WorkspaceMigrationItemV1 = old ? structuredClone(old) : { id: `mig_${uuid()}`, kind, path: target, sessionsDirectory, workspaceId: kind === 'workspace' ? `ws_${uuid()}` : null, histories: [], protectedPaths: kind === 'workspace' ? [target] : [], state: 'pending', stage: 'inventory', revision: 0, sourceDigest: null, preparedDigest: null, report: null, error: null, decisions: [] };
         drafts.push(item); return item;
       };
       const issue = (item: WorkspaceMigrationItemV1, code: string, explanation: string, paths: string[] = []) => {
@@ -166,6 +199,12 @@ export class WorkspaceMigration {
       for (const entry of catalog.entries) {
         if (entry.deletion) for (const key of entry.deletion.historyKeys) for (const scope of scopes) registeredKeys.add(`${scope.sessionsDirectory}\n${key}`);
         if (entry.state === 'deleted') continue;
+        const migrating = state.items.find((item) => item.kind === 'workspace' && item.workspaceId === entry.workspaceId && item.path === entry.path);
+        if (migrating && entry.creationRequestId === null) {
+          candidate('workspace', migrating.path, migrating.sessionsDirectory);
+          for (const history of migrating.histories) for (const scope of scopes) registeredKeys.add(`${scope.sessionsDirectory}\n${history.key}`);
+          if (entry.state === 'creating') continue;
+        }
         let workspace: ReturnType<WorkspaceStore['readWorkspace']>;
         try { workspace = this.store.readWorkspace(entry.workspaceId); }
         catch (error) {
@@ -188,9 +227,13 @@ export class WorkspaceMigration {
             const header = historyHeader(root, source.key);
             const registered = catalog.entries.find((entry) => entry.path === header.cwd);
             if (registered) {
-              const item = candidate('history', toPosixPath(source.file), root);
-              issue(item, 'unregistered_history', 'This history is not referenced by the registered workspace. Review it without importing a second legacy workspace.', [header.cwd]);
-              continue;
+              const migrating = drafts.find((item) => item.workspaceId === registered.workspaceId && item.kind === 'workspace' && item.stage !== 'published' && item.sessionsDirectory === root);
+              if (!migrating) {
+                const item = candidate('history', toPosixPath(source.file), root);
+                issue(item, 'unregistered_history', 'This history is not referenced by the registered workspace. Review it without importing a second legacy workspace.', [header.cwd]);
+                continue;
+              }
+              if (migrating.stage !== 'inventory') issue(migrating, 'migration_source_changed', 'A new history appeared after preparation; preserve the prepared target for source review.');
             }
             const item = candidate('workspace', header.cwd, root);
             const known = item.histories.find((history) => history.key === source.key);
@@ -236,22 +279,8 @@ export class WorkspaceMigration {
       release.assertOwned();
       writeJsonAtomic(this.reportFile, { schemaVersion: 1, inventoryRevision: state.revision + 1, items: drafts.map(({ id, workspaceId, kind, path, state, error }) => ({ id, workspaceId, kind, path, state, error })) });
       return this.save(state);
-    } catch (error) {
-      this.fault = error instanceof Error ? error : new Error(String(error));
-      if (release) {
-        let trusted: WorkspaceMigrationStateV1 | null = null;
-        try {
-          release.assertOwned();
-          const parsed = parseWorkspaceMigrationStructured(readJsonObject(this.stateFile));
-          if (parsed.ok && parsed.value.scopes.every((scope) => scope.userData === this.scope.userData)) trusted = parsed.value;
-        } catch {}
-        if (trusted) {
-          try { trusted.systemReadiness = 'blocked'; this.save(trusted); }
-          catch { retainWriter = true; this.heldWriter = release; }
-        }
-      }
-      throw error;
-    } finally { if (!retainWriter) { release?.(); if (this.heldWriter === release) this.heldWriter = null; } }
+    } catch (error) { retainWriter = this.blockFailure(error, release); throw error; }
+    finally { if (!retainWriter) { release?.(); if (this.heldWriter === release) this.heldWriter = null; } }
   }
   status() {
     try {

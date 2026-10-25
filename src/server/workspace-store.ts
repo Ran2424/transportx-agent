@@ -16,7 +16,7 @@ function validated<T>(result: WorkspaceParseResult<T>): T {
   return result.value;
 }
 
-function diskPlan(plan: ResolvedSessionPlanV3): ResolvedSessionPlanV3 {
+export function workspaceDiskPlan(plan: ResolvedSessionPlanV3): ResolvedSessionPlanV3 {
   return {
     ...plan, workspace: toPosixPath(plan.workspace),
     modules: plan.modules.map((module) => ({
@@ -97,6 +97,20 @@ export class WorkspaceStore {
       catalog.entries.push(entry); catalog.revision++;
       writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
       return entry;
+    });
+  }
+  reserveMigratedWorkspace(workspaceId: string, directory: string) {
+    return mutateJson(this.catalogFile, async () => {
+      const catalog = this.readCatalog(), canonical = toPosixPath(fs.realpathSync(directory));
+      const previous = catalog.entries.find((entry) => entry.workspaceId === workspaceId);
+      if (previous) {
+        if (previous.path !== canonical || previous.creationRequestId !== null || !['creating', 'ready'].includes(previous.state)) throw failure('workspace_identity_conflict', 'Migration reservation differs from its inventory identity.');
+        return previous;
+      }
+      if (catalog.entries.some((entry) => isWithin(entry.path, canonical) || isWithin(canonical, entry.path))) throw failure('workspace_identity_conflict', 'Migration overlaps an existing workspace or deletion tombstone.');
+      catalog.entries.push({ workspaceId, path: canonical, creationRequestId: null, creationInputSha256: null, state: 'creating', deletion: null }); catalog.revision++;
+      writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
+      return catalog.entries.at(-1)!;
     });
   }
   private entry(workspaceId: string, allowCreating = false): WorkspaceCatalogEntryV1 {
@@ -233,7 +247,7 @@ export class WorkspaceStore {
     if (!CONVERSATION_ID.test(conversationId)) throw failure('workspace_identity_conflict', 'Invalid conversation ID.');
     const parsed = parseResolvedSessionPlanStructured(plan);
     if (!parsed.ok || fs.realpathSync(plan.workspace) !== fs.realpathSync(directory)) throw failure('history_identity_mismatch', 'Frozen plan does not match this workspace.');
-    const serialized = diskPlan(parsed.value);
+    const serialized = workspaceDiskPlan(parsed.value);
     const file = workspaceMetadataPath(directory, `.tau/${conversationPlanPath(conversationId)}`);
     return mutateJson(file, async () => {
       if (fs.existsSync(file)) {

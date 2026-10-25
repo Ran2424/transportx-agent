@@ -1,6 +1,101 @@
 const { test } = require('node:test') as typeof import('node:test');
 
 test('Session close, history deletion and process cancellation preserve writer ownership', async (t) => {
+  // Legacy conversion preserves Native bytes, stops at unowned processes and resumes verified writes.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const { spawn } = require('node:child_process'), { once } = require('node:events');
+    const { WorkspaceStore } = require('../../bin/workspace-store.js'), { WorkspaceMigration } = require('../../bin/workspace-migration.js');
+    const { WorkspaceRuntimeGate } = require('../../bin/workspace-runtime.js'), { WorkspaceMigrationRunner } = require('../../bin/workspace-migration-runner.js');
+    const { acquireWriteLease } = require('../../bin/util/json-storage.js'), { defaultSessionProfile } = require('../../bin/contracts/session-profile.js');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-conversion-中文 空格-')));
+    const userData = path.join(root, 'data'), agentDir = path.join(root, 'agent'), scenario = path.join(root, 'scenario'), sessions = path.join(root, 'sessions');
+    fs.mkdirSync(agentDir); fs.mkdirSync(scenario); fs.mkdirSync(sessions);
+    const release = acquireWriteLease(path.join(agentDir, 'host'));
+    t.after(() => { release(); fs.rmSync(root, { recursive: true, force: true }); });
+    const write = (directory: string, relative: string, value: unknown) => { const file = path.join(directory, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n'); return file; };
+    const at = '2026-10-25T00:00:00.000Z';
+    const single = path.join(scenario, 'single'), ambiguous = path.join(scenario, 'ambiguous'), corrupt = path.join(scenario, 'corrupt'), empty = path.join(scenario, 'empty');
+    for (const directory of [single, ambiguous, corrupt, empty]) {
+      fs.mkdirSync(directory);
+      write(directory, '.tau/resolved-session-plan.v3.json', { schemaVersion: 3, platform: { name: 'TransportX Agent', version: '3.23.2' }, profile: defaultSessionProfile(), domain: { id: 'com.transportx.workbench', version: '1.4.1' }, modules: [], assets: [], runtime: {}, workspace: directory, createdAt: at });
+    }
+    const unavailablePlan = JSON.parse(fs.readFileSync(path.join(empty, '.tau/resolved-session-plan.v3.json'))); unavailablePlan.workspace = path.join(root, 'missing-old-location');
+    write(empty, '.tau/resolved-session-plan.v3.json', unavailablePlan); write(empty, '.tau/workspace-owner.json', { version: 1, workspace: empty, parent: scenario });
+    const canvas = { protocol: 'pi-canvas-context', version: '1.0', contextId: 'canvas_context_abcdefghijkl', adapterId: 'fixture', viewId: 'view', revision: 1, resources: [], createdAt: at };
+    const attachment = { id: 'att_abcdefghijkl', relativePath: 'attachments/original.txt', sha256: 'a'.repeat(64) };
+    const attachmentIndex = write(single, '.tau/attachments.json', { version: 1, attachments: [attachment], messageRefs: [{ text: '同一问题', timestamp: 1000, attachmentIds: [attachment.id] }] });
+    write(single, '.tau/canvas-contexts.json', [canvas]);
+    const geoId = `geoctx_${'a'.repeat(16)}`, requestId = `georeq_${'b'.repeat(16)}`;
+    write(single, `.tau/geo-interactions/contexts/${geoId}/context.json`, { version: 1, contextId: geoId, visualizationId: 'traffic_map', sceneRevision: 2, mode: 'viewport', createdAt: at, view: { center: [121.45, 31.2], zoom: 12, bounds: [121.4, 31.1, 121.5, 31.3], bearing: 0, pitch: 0 }, visibleLayerIds: ['roads'], summary: '历史视野' });
+    const requestFile = write(single, `.tau/geo-interactions/requests/${requestId}/request.json`, { version: 1, requestId, sessionId: 'expired-live-instance', visualizationId: 'traffic_map', sceneRevision: 2, mode: 'viewport', prompt: '确认视野', required: false, timeoutSeconds: 600, status: 'waiting', createdAt: '2020-01-01T00:00:00.000Z', expiresAt: '2020-01-01T00:10:00.000Z' });
+    write(single, '.tau/timing-metrics.v1.json', { schemaVersion: 1, updatedAt: at, records: { 'tool:same-id': { kind: 'tool', sourceId: 'same-id', startedAt: 1000, endedAt: 1100, durationMs: 100 } } });
+    write(ambiguous, '.tau/attachments.json', { version: 1, attachments: [attachment], messageRefs: [{ text: '同一问题', timestamp: 1000, attachmentIds: [attachment.id] }] });
+    write(ambiguous, '.tau/timing-metrics.v1.json', { schemaVersion: 1, updatedAt: at, records: { 'tool:same-id': { kind: 'tool', sourceId: 'same-id', startedAt: 1000, endedAt: 1100, durationMs: 100 } } });
+    const badIndex = write(corrupt, '.tau/canvas-contexts.json', {}), nativeFiles: string[] = [];
+    for (const [key, directory] of [['single', single], ['ambiguous-a', ambiguous], ['ambiguous-b', ambiguous], ['corrupt', corrupt]]) {
+      const rows = [{ type: 'session', version: 3, id: `native-${key}`, cwd: directory, timestamp: at }, { type: 'message', id: 'm1', parentId: null, message: { role: 'user', content: '同一问题', timestamp: 1000, attachmentIds: [attachment.id] } }, { type: 'message', id: 'm2', parentId: 'm1', message: { role: 'assistant', timestamp: 1000, content: [{ type: 'toolCall', id: 'same-id', name: 'read', arguments: { path: key } }] } }, { type: 'message', id: 'm3', parentId: 'm2', message: { role: 'toolResult', toolCallId: 'same-id', toolName: 'read', timestamp: 1100, content: [{ type: 'text', text: key }] } }];
+      const file = path.join(sessions, `${key}.jsonl`); fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join('\n') + '\n'); nativeFiles.push(file);
+    }
+    const nativeBytes = nativeFiles.map((file) => fs.readFileSync(file)), oldIndex = fs.readFileSync(attachmentIndex), badBytes = fs.readFileSync(badIndex);
+    const resource = path.join(single, '.tau/video-resources/large.bin'); fs.mkdirSync(path.dirname(resource)); fs.closeSync(fs.openSync(resource, 'w')); fs.truncateSync(resource, 32 * 1024 * 1024); const resourceStat = fs.statSync(resource);
+    const store = new WorkspaceStore(userData, sessions); await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
+    const migration = new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] }); await migration.initialize();
+    const items = migration.read().items, a = items.find((item: any) => item.path === single), b = items.find((item: any) => item.path === ambiguous), c = items.find((item: any) => item.path === corrupt), d = items.find((item: any) => item.path === empty);
+    const python = process.env.TAU_PYTHON_COMMAND || 'python3', gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs')), runner = new WorkspaceMigrationRunner(migration, gate, python);
+    assert.equal((await runner.convert(d.id)).state, 'ready'); assert.equal(store.readWorkspace(d.workspaceId).manifest.conversations.length, 0, 'managed zero-history directory becomes a workspace without an invented conversation');
+    assert.ok(JSON.parse(fs.readFileSync(migration.read().items.find((item: any) => item.id === d.id).report)).notes.some((note: any) => note.code === 'invalid_session_plan'), 'unavailable old plan location is diagnosed without substituting the current configuration');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: single, stdio: 'ignore' });
+    t.after(() => { if (child.exitCode === null) child.kill(); }); await once(child, 'spawn');
+    await assert.rejects(runner.convert(a.id), { code: 'process_stop_unconfirmed' });
+    assert.equal(child.exitCode, null, 'cwd discovery grants no authority to kill an unrecorded process'); assert.deepEqual(fs.readFileSync(attachmentIndex), oldIndex);
+    const exited = once(child, 'exit'); child.kill(); await exited;
+    const rename = fs.renameSync; let interrupted = false;
+    fs.renameSync = (from: string, to: string) => { if (!interrupted && to.includes('/conversations/') && to.endsWith('/canvas-contexts.json')) { interrupted = true; throw Object.assign(new Error('target volume full'), { code: 'ENOSPC' }); } return rename(from, to); };
+    try { await assert.rejects(runner.convert(a.id), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
+    assert.equal(migration.read().items.find((item: any) => item.id === a.id).stage, 'backed-up'); migration.assertWorkspaceReady(d.workspaceId);
+    assert.deepEqual(fs.readFileSync(path.join(single, '.tau/migrations/workspace-v1/backups/.tau/attachments.json')), oldIndex);
+    const frozen = migration.read().items.find((item: any) => item.id === a.id), journal = JSON.parse(fs.readFileSync(frozen.report));
+    const staged = path.join(single, journal.writes.find((write: any) => write.relative.endsWith('/canvas-contexts.json')).staged), stagedBytes = fs.readFileSync(staged);
+    fs.appendFileSync(staged, ' '); await assert.rejects(runner.convert(a.id), { code: 'metadata_corrupt' }); fs.writeFileSync(staged, stagedBytes);
+    const publish = store.publishWorkspace.bind(store);
+    store.publishWorkspace = async (...args: any[]) => {
+      fs.renameSync = (from: string, to: string) => { if (to === store.catalogFile) throw Object.assign(new Error('catalog volume full after Manifest commit'), { code: 'ENOSPC' }); return rename(from, to); };
+      try { return await publish(...args); } finally { fs.renameSync = rename; }
+    };
+    try { await assert.rejects(runner.convert(a.id), { code: 'ENOSPC' }); } finally { store.publishWorkspace = publish; }
+    assert.equal(fs.existsSync(path.join(single, '.tau/workspace.json')), true); assert.equal(store.readCatalog().entries.find((entry: any) => entry.workspaceId === a.workspaceId).state, 'creating');
+    await migration.initialize(); migration.assertWorkspaceReady(d.workspaceId);
+    const updateItem = migration.updateItem.bind(migration); let heldAtCommit = false;
+    migration.updateItem = (id: string, update: any) => updateItem(id, (current: any) => { update(current); if (id === a.id && current.stage === 'published') { assert.throws(() => gate.takeMaintenance(single, a.workspaceId), { code: 'workspace_busy' }); heldAtCommit = true; } });
+    const resumedRunner = new WorkspaceMigrationRunner(migration, gate, python);
+    try { assert.equal((await resumedRunner.convert(a.id)).state, 'ready'); } finally { migration.updateItem = updateItem; }
+    assert.equal(heldAtCommit, true, 'runtime mutex remains held through the final global publication');
+    const migrated = store.readWorkspace(a.workspaceId).manifest, conversation = migrated.conversations[0], privateRoot = path.join(single, '.tau/conversations', conversation.id);
+    assert.equal(conversation.id, a.histories[0].conversationId); assert.equal(conversation.history.headerId, 'native-single'); assert.equal(conversation.plan.source, 'legacy-workspace');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(privateRoot, 'attachment-message-refs.json'))).refs.length, 1); assert.equal(JSON.parse(fs.readFileSync(path.join(privateRoot, 'canvas-contexts.json'))).contexts.length, 1);
+    assert.equal(JSON.parse(fs.readFileSync(attachmentIndex)).messageRefs, undefined); assert.equal(JSON.parse(fs.readFileSync(attachmentIndex)).attachments[0].sourceConversationId, null);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(privateRoot, `geo-interactions/contexts/${geoId}/context.json`))).contextId, geoId);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(privateRoot, `geo-interactions/requests/${requestId}/response.json`))).status, 'expired'); assert.equal(JSON.parse(fs.readFileSync(requestFile)).status, 'waiting', 'migration closes old requests only in the new private scope');
+    const ledger = fs.readFileSync(path.join(single, '.tau/migrations/workspace-v1/backup-manifest.json'), 'utf8'); assert.equal(ledger.includes('video-resources'), false); assert.equal(fs.statSync(resource).size, resourceStat.size); assert.equal(fs.statSync(resource).mtimeMs, resourceStat.mtimeMs);
+    const review = await runner.convert(b.id); assert.equal(review.state, 'needs-review'); migration.assertWorkspaceReady(a.workspaceId); assert.equal(fs.existsSync(path.join(ambiguous, '.tau/workspace.json')), false);
+    const report = JSON.parse(fs.readFileSync(review.report)), issue = report.issues[0]; assert.equal(report.issues.length, 2); assert.equal(issue.candidates.length, 2, 'same text, tool ID and time range cannot disambiguate histories with different arguments/results'); assert.equal(report.writes.some((write: any) => 'value' in write), false);
+    const reportBytes = fs.readFileSync(review.report); fs.appendFileSync(review.report, ' '); await assert.rejects(runner.convert(b.id), { code: 'metadata_corrupt' }); assert.deepEqual(fs.readFileSync(review.report), Buffer.concat([reportBytes, Buffer.from(' ')]), 'unknown report bytes are preserved'); fs.writeFileSync(review.report, reportBytes);
+    const changedFile = path.join(ambiguous, '.tau/timing-metrics.v1.json'), beforeChange = fs.readFileSync(changedFile); fs.appendFileSync(changedFile, ' ');
+    await assert.rejects(runner.resolvePrivate(b.id, { requestId: 'stale-source', expectedRevision: review.revision, reportDigest: review.sourceDigest, action: 'isolate', sourceId: issue.sourceId, conversationId: null }), { code: 'migration_source_changed' }); fs.writeFileSync(changedFile, beforeChange);
+    await assert.rejects(runner.resolvePrivate(b.id, { requestId: 'bad-bind', expectedRevision: review.revision, reportDigest: review.sourceDigest, action: 'bind', sourceId: issue.sourceId, conversationId: issue.candidates[0] }), { code: 'private_state_ambiguous' });
+    let resolved = review; let firstInput: any;
+    for (const issue of report.issues) {
+      const input = { requestId: `isolate-${issue.sourceId}`, expectedRevision: resolved.revision, reportDigest: resolved.sourceDigest, action: 'isolate', sourceId: issue.sourceId, conversationId: null };
+      firstInput ||= input; resolved = await runner.resolvePrivate(b.id, input);
+    }
+    assert.equal(resolved.state, 'ready'); assert.equal((await runner.resolvePrivate(b.id, firstInput)).state, 'ready', 'retry deduplication precedes stale expectedRevision');
+    const firstId = b.histories[0].conversationId; assert.deepEqual(JSON.parse(fs.readFileSync(path.join(ambiguous, '.tau/conversations', firstId, 'attachment-message-refs.json'))).refs, []);
+    await assert.rejects(runner.convert(c.id), { code: 'metadata_corrupt' }); migration.assertWorkspaceReady(a.workspaceId); assert.deepEqual(fs.readFileSync(badIndex), badBytes);
+    for (const [index, file] of nativeFiles.entries()) assert.deepEqual(fs.readFileSync(file), nativeBytes[index], 'conversion never rewrites Native JSONL');
+    assert.equal(migration.status().dataState, 'ready'); assert.equal(gate.diagnostics(single).phase, 'stopped');
+    t.diagnostic('Migration fixtures verify old-source conversion on this host; they do not replace real Pi or Windows/Linux acceptance.');
+  }
   // A committed global inventory protects unknown sources without making every workspace unavailable.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');

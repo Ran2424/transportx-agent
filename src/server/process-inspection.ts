@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import { isWithin, toPosixPath } from './util/path.js';
 import type { ChildProcess } from 'node:child_process';
 import { hostPlatform } from './host-platform.js';
 import { signalProcessTree } from './process-tree.js';
@@ -66,4 +68,29 @@ export async function stopRecordedProcess(identity: ProcessIdentity, pythonComma
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw Object.assign(new Error('Recorded process stop could not be confirmed.'), { code: 'process_stop_unconfirmed', status: 503 });
+}
+
+/** Legacy processes have no spawn journal. Observing cwd does not authorize stopping them. */
+export async function workspaceProcessInventory(directory: string, pythonCommand: string) {
+  const target = fs.realpathSync(directory);
+  const output = await new Promise<string>((resolve, reject) => execFile(pythonCommand, ['-c', hostPlatform.processInspection.workspaceScript, String(process.pid)], { encoding: 'utf8', timeout: 20000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', LC_ALL: 'C', LANG: 'C' } }, (error, stdout) => error ? reject(Object.assign(new Error('Workspace process inventory is unavailable.'), { code: 'process_stop_unconfirmed', status: 409 })) : resolve(stdout)));
+  const value = JSON.parse(output);
+  if (!value || !Array.isArray(value.processes) || !value.processes.every((entry: { pid?: unknown; cwd?: unknown }) => entry && Number.isSafeInteger(entry.pid) && Number(entry.pid) > 0 && (entry.cwd === null || typeof entry.cwd === 'string' && !!entry.cwd))) throw Object.assign(new Error('Workspace process inventory is incomplete.'), { code: 'process_stop_unconfirmed', status: 409 });
+  const processes: Array<{ pid: number; cwd: string | null; observation: ProcessObservation }> = [];
+  for (const entry of value.processes as Array<{ pid: number; cwd: string | null }>) {
+    if (entry.pid === process.pid) continue;
+    let cwd: string | null = null;
+    if (entry.cwd) { try { cwd = fs.realpathSync(entry.cwd); } catch {} }
+    if (cwd && !isWithin(target, cwd)) continue;
+    const observation = inspectProcess(entry.pid, pythonCommand);
+    if (observation.state === 'exited') continue;
+    processes.push({ pid: entry.pid, cwd: cwd ? toPosixPath(cwd) : null, observation });
+  }
+  return { directory: toPosixPath(target), processes };
+}
+
+export async function assertWorkspaceProcessesStopped(directory: string, pythonCommand: string) {
+  const inventory = await workspaceProcessInventory(directory, pythonCommand);
+  if (inventory.processes.length) throw Object.assign(new Error('Legacy workspace processes are running or their cwd is unconfirmed. Close them manually and retry; inspection does not grant ownership to stop them.'), { code: 'process_stop_unconfirmed', status: 409, inventory });
+  return inventory;
 }

@@ -28,6 +28,7 @@ export type WorkspaceMigrationItemV1 = {
   stage: 'inventory' | 'prepared' | 'backed-up' | 'published';
   revision: number;
   sourceDigest: string | null;
+  preparedDigest: string | null;
   report: string | null;
   error: null | { code: string; message: string };
   decisions: Array<{ requestId: string; inputSha256: string; reportDigest: string; action: 'bind' | 'isolate'; sourceId: string | null; conversationId: string | null }>;
@@ -63,8 +64,9 @@ export function parseWorkspaceMigrationStructured(value: unknown): WorkspacePars
   const ids = new Set(), workspaceIds = new Set(), conversations = new Set(), historyKeys = new Set();
   for (const value of root.items) {
     const item = asRecord(value);
-    if (!item || !fields(item, 'id kind path sessionsDirectory workspaceId histories protectedPaths state stage revision sourceDigest report error decisions') || typeof item.id !== 'string' || !/^mig_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(item.id) || ids.has(item.id) || !choice(item.kind, ['workspace', 'history', 'path']) || !pathValue(item.path) || !pathValue(item.sessionsDirectory) || !Array.isArray(item.protectedPaths) || !item.protectedPaths.every(pathValue) || !choice(item.state, ['pending', 'converting', 'needs-review', 'failed', 'ready', 'isolated']) || !choice(item.stage, ['inventory', 'prepared', 'backed-up', 'published']) || !integer(item.revision) || item.sourceDigest !== null && !sha(item.sourceDigest) || item.report !== null && !pathValue(item.report) || !Array.isArray(item.histories) || !Array.isArray(item.decisions) || item.state === 'ready' && item.stage !== 'published') return invalid();
+    if (!item || !fields(item, 'id kind path sessionsDirectory workspaceId histories protectedPaths state stage revision sourceDigest preparedDigest report error decisions') || typeof item.id !== 'string' || !/^mig_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(item.id) || ids.has(item.id) || !choice(item.kind, ['workspace', 'history', 'path']) || !pathValue(item.path) || !pathValue(item.sessionsDirectory) || !Array.isArray(item.protectedPaths) || !item.protectedPaths.every(pathValue) || !choice(item.state, ['pending', 'converting', 'needs-review', 'failed', 'ready', 'isolated']) || !choice(item.stage, ['inventory', 'prepared', 'backed-up', 'published']) || !integer(item.revision) || item.sourceDigest !== null && !sha(item.sourceDigest) || item.preparedDigest !== null && !sha(item.preparedDigest) || item.report !== null && !pathValue(item.report) || !Array.isArray(item.histories) || !Array.isArray(item.decisions) || item.state === 'ready' && item.stage !== 'published') return invalid();
     ids.add(item.id);
+    if (item.stage !== 'inventory' && (!sha(item.sourceDigest) || !sha(item.preparedDigest) || !pathValue(item.report))) return invalid();
     if (item.workspaceId !== null) {
       if (typeof item.workspaceId !== 'string' || !WORKSPACE_ID.test(item.workspaceId) || workspaceIds.has(item.workspaceId)) return invalid();
       workspaceIds.add(item.workspaceId);
