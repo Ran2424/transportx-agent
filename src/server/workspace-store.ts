@@ -8,12 +8,23 @@ import {
   type ResolvedSessionPlanV3,
 } from '../contracts/index.js';
 import { readJsonObject, writeJsonAtomic, mutateJson } from './util/json-storage.js';
-import { isWithin } from './util/path.js';
+import { isWithin, toPosixPath } from './util/path.js';
 
 const failure = (code: string, message: string, status = 409) => Object.assign(new Error(message), { code, status });
 function validated<T>(result: WorkspaceParseResult<T>): T {
   if (!result.ok) throw Object.assign(failure('metadata_corrupt', result.diagnostics.map((item) => `${item.path}: ${item.message}`).join('; ')), { diagnostics: result.diagnostics });
   return result.value;
+}
+
+function diskPlan(plan: ResolvedSessionPlanV3): ResolvedSessionPlanV3 {
+  return {
+    ...plan, workspace: toPosixPath(plan.workspace),
+    modules: plan.modules.map((module) => ({
+      ...module, packageRoot: toPosixPath(module.packageRoot), entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })),
+      nativeRuntimes: module.nativeRuntimes.map((runtime) => ({ ...runtime, ffmpeg: { ...runtime.ffmpeg, path: toPosixPath(runtime.ffmpeg.path) }, ffprobe: { ...runtime.ffprobe, path: toPosixPath(runtime.ffprobe.path) } })),
+    })),
+    assets: plan.assets.map((asset) => ({ ...asset, path: toPosixPath(asset.path), ...(asset.integrityFile ? { integrityFile: toPosixPath(asset.integrityFile) } : {}) })),
+  };
 }
 
 /** Metadata never follows symlinks, including an existing intermediate .tau. */
@@ -66,6 +77,20 @@ export class WorkspaceStore {
       }
       writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
       return catalog;
+    });
+  }
+  reserveWorkspace(requestId: string, inputSha256: string, allocate: (catalog: WorkspaceCatalogV1) => string) {
+    return mutateJson(this.catalogFile, async () => {
+      const catalog = this.readCatalog();
+      const previous = catalog.entries.find((entry) => entry.creationRequestId === requestId);
+      if (previous) {
+        if (previous.creationInputSha256 !== inputSha256) throw failure('workspace_revision_conflict', 'Creation request ID was already used for different input.');
+        return previous;
+      }
+      const entry: WorkspaceCatalogEntryV1 = { workspaceId: `ws_${crypto.randomUUID()}`, path: toPosixPath(allocate(catalog)), creationRequestId: requestId, creationInputSha256: inputSha256, state: 'creating', deletion: null };
+      catalog.entries.push(entry); catalog.revision++;
+      writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
+      return entry;
     });
   }
   private entry(workspaceId: string, allowCreating = false): WorkspaceCatalogEntryV1 {
@@ -134,6 +159,25 @@ export class WorkspaceStore {
       return manifest;
     });
   }
+  commitConversation(workspaceId: string, requestId: string, inputSha256: string, expectedRevision: number, defaultsRevision: number, prepare: (manifest: WorkspaceManifestV1, directory: string) => Promise<ConversationRecordV1>) {
+    const { directory } = this.readWorkspace(workspaceId);
+    const file = workspaceMetadataPath(directory, '.tau/workspace.json');
+    return mutateJson(file, async () => {
+      const { manifest } = this.readWorkspace(workspaceId);
+      const existing = manifest.conversations.find((record) => record.creationRequestId === requestId);
+      if (existing) {
+        if (existing.creationInputSha256 !== inputSha256) throw failure('workspace_revision_conflict', 'Creation request ID was already used for different input.');
+        return { directory, manifest, conversation: existing };
+      }
+      if (manifest.revision !== expectedRevision || manifest.defaultsRevision !== defaultsRevision) throw failure('workspace_revision_conflict', 'Workspace or defaults changed; reload before creating a conversation.');
+      const record = await prepare(manifest, directory);
+      if (record.creationRequestId !== requestId || record.creationInputSha256 !== inputSha256) throw failure('workspace_identity_conflict', 'Prepared conversation does not match its creation request.');
+      this.readPlan(directory, record);
+      manifest.conversations.push(record); manifest.revision++; manifest.updatedAt = new Date().toISOString();
+      writeJsonAtomic(file, validated(parseWorkspaceManifestStructured(manifest)));
+      return { directory, manifest, conversation: record };
+    });
+  }
   updateDefaults(workspaceId: string, expectedDefaultsRevision: number, defaults: WorkspaceDefaultsV1) {
     const { directory } = this.readWorkspace(workspaceId);
     const file = workspaceMetadataPath(directory, '.tau/workspace.json');
@@ -165,13 +209,14 @@ export class WorkspaceStore {
     if (!CONVERSATION_ID.test(conversationId)) throw failure('workspace_identity_conflict', 'Invalid conversation ID.');
     const parsed = parseResolvedSessionPlanStructured(plan);
     if (!parsed.ok || fs.realpathSync(plan.workspace) !== fs.realpathSync(directory)) throw failure('history_identity_mismatch', 'Frozen plan does not match this workspace.');
+    const serialized = diskPlan(parsed.value);
     const file = workspaceMetadataPath(directory, `.tau/${conversationPlanPath(conversationId)}`);
     return mutateJson(file, async () => {
       if (fs.existsSync(file)) {
-        if (workspaceCreationDigest(readJsonObject(file)) !== workspaceCreationDigest(parsed.value)) throw failure('workspace_revision_conflict', 'A different frozen plan already exists.');
+        if (workspaceCreationDigest(readJsonObject(file)) !== workspaceCreationDigest(serialized)) throw failure('workspace_revision_conflict', 'A different frozen plan already exists.');
         return;
       }
-      writeJsonAtomic(file, parsed.value);
+      writeJsonAtomic(file, serialized);
     });
   }
   readPlan(directory: string, record: ConversationRecordV1): ResolvedSessionPlanV3 {

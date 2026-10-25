@@ -640,6 +640,11 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.equal(generated.darwin.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.linux.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.win32.systemPrompt, 'PI_SYSTEM_WINDOWS.md');
+    assert.match(generated.darwin.processInspection.pythonScript, /proc_pidinfo/);
+    assert.match(generated.darwin.processInspection.pythonScript, /usec/);
+    assert.match(generated.linux.processInspection.pythonScript, /\/proc\//);
+    assert.match(generated.win32.processInspection.args.join(' '), /CreationDate/);
+    assert.match(generated.win32.processInspection.args.join(' '), /ExecutablePath/);
     const { toPosixPath } = require('../../bin/util/path.js');
     assert.equal(toPosixPath('C:\\tasks\\report'), 'C:/tasks/report');
     assert.equal(toPosixPath('\\\\server\\share\\tasks\\report'), '//server/share/tasks/report');

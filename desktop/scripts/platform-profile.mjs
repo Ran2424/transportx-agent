@@ -167,10 +167,37 @@ export const PLATFORM_PROFILES = Object.freeze({
 
 // Runtime operations are also generated into bin/host-platform.json. Linux
 // keeps its existing Web development behavior; it is not a desktop release.
+const PROCESS_INSPECTION = {
+  darwin: {
+    // proc_bsdinfo / PROC_PIDTBSDINFO from the Apple SDK sys/proc_info.h.
+    // Kernel microseconds remain stable when Node changes process.title.
+    pythonScript: `import ctypes as c,json,sys
+class Info(c.Structure):
+ _fields_=[('prefix',c.c_uint32*12),('comm',c.c_char*16),('name',c.c_char*32),('suffix',c.c_uint32*6),('sec',c.c_uint64),('usec',c.c_uint64)]
+lib=c.CDLL('/usr/lib/libproc.dylib',use_errno=True)
+lib.proc_pidinfo.argtypes=[c.c_int,c.c_int,c.c_uint64,c.c_void_p,c.c_int]
+lib.proc_pidpath.argtypes=[c.c_int,c.c_void_p,c.c_uint32]
+pid=int(sys.argv[1]);info=Info();name=c.create_string_buffer(4096)
+if lib.proc_pidinfo(pid,3,0,c.byref(info),c.sizeof(info))!=c.sizeof(info) or lib.proc_pidpath(pid,name,len(name))<=0: raise OSError(c.get_errno(),'Process identity unavailable')
+print(json.dumps(dict(state='running',pid=info.prefix[3],parentPid=info.prefix[4],groupId=info.suffix[1],startedAt=f'{info.sec}.{info.usec:06d}',command=name.value.decode())))`,
+    bootCommand: 'sysctl', bootArgs: ['-n', 'kern.boottime'],
+  },
+  linux: {
+    pythonScript: `import json,os,sys
+pid=int(sys.argv[1]);root=f'/proc/{pid}';value=open(root+'/stat').read();parts=value[value.rfind(')')+2:].split()
+print(json.dumps(dict(state='running',pid=pid,parentPid=int(parts[1]),groupId=int(parts[2]),startedAt=parts[19],command=os.readlink(root+'/exe'))))`,
+    bootCommand: 'cat', bootArgs: ['/proc/sys/kernel/random/boot_id'],
+  },
+  win32: {
+    command: 'powershell',
+    args: ['-NoProfile', '-NonInteractive', '-Command', "$p=Get-CimInstance Win32_Process -Filter 'ProcessId={pid}' -ErrorAction Stop;if($null -eq $p){@{state='exited'}|ConvertTo-Json -Compress}else{@{state='running';pid=$p.ProcessId;parentPid=$p.ParentProcessId;startedAt=$p.CreationDate.ToUniversalTime().ToString('o');command=$p.ExecutablePath}|ConvertTo-Json -Compress}"],
+    bootCommand: 'powershell', bootArgs: ['-NoProfile', '-NonInteractive', '-Command', "(Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToUniversalTime().ToString('o')"],
+  },
+};
 export const HOST_PLATFORM_OPERATIONS = Object.freeze({
-  darwin: { systemPrompt: 'PI_SYSTEM_POSIX.md', updateInstallerPattern: PLATFORM_PROFILES.darwin.update.websiteInstallerPattern, posixPermissions: true, detached: true, tree: 'process-group', openCommand: 'open', detachedOpen: false, utilityHost: true, insetTitleBar: true, dataRoot: { env: null, fallback: [], parts: ['.transportx', 'traffic-agent'] }, packaged: { executableParts: ['Contents', 'MacOS', RELEASE_PROFILE.darwin.productExeBasename], resourcesParts: ['Contents', 'Resources'], executableExtension: '' } },
-  win32: { systemPrompt: 'PI_SYSTEM_WINDOWS.md', updateInstallerPattern: PLATFORM_PROFILES.win.update.websiteInstallerPattern, posixPermissions: false, detached: false, tree: 'taskkill', treeCommand: 'taskkill', treeArgs: ['/pid', '/T'], treeForceArg: '/F', openCommand: 'explorer.exe', detachedOpen: true, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'APPDATA', fallback: ['AppData', 'Roaming'], parts: ['TransportX', 'traffic-agent'] }, packaged: { executableParts: [RELEASE_PROFILE.win.productExeName], resourcesParts: ['resources'], executableExtension: RELEASE_PROFILE.win.productExeSuffix } },
-  linux: { systemPrompt: 'PI_SYSTEM_POSIX.md', posixPermissions: true, desktopDataRoot: 'electron', detached: true, tree: 'process-group', openCommand: 'xdg-open', detachedOpen: false, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'XDG_CONFIG_HOME', fallback: ['.config'], parts: ['transportx-traffic-agent'] }, packaged: null },
+  darwin: { processInspection: PROCESS_INSPECTION.darwin, systemPrompt: 'PI_SYSTEM_POSIX.md', updateInstallerPattern: PLATFORM_PROFILES.darwin.update.websiteInstallerPattern, posixPermissions: true, detached: true, tree: 'process-group', openCommand: 'open', detachedOpen: false, utilityHost: true, insetTitleBar: true, dataRoot: { env: null, fallback: [], parts: ['.transportx', 'traffic-agent'] }, packaged: { executableParts: ['Contents', 'MacOS', RELEASE_PROFILE.darwin.productExeBasename], resourcesParts: ['Contents', 'Resources'], executableExtension: '' } },
+  win32: { processInspection: PROCESS_INSPECTION.win32, systemPrompt: 'PI_SYSTEM_WINDOWS.md', updateInstallerPattern: PLATFORM_PROFILES.win.update.websiteInstallerPattern, posixPermissions: false, detached: false, tree: 'taskkill', treeCommand: 'taskkill', treeArgs: ['/pid', '/T'], treeForceArg: '/F', openCommand: 'explorer.exe', detachedOpen: true, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'APPDATA', fallback: ['AppData', 'Roaming'], parts: ['TransportX', 'traffic-agent'] }, packaged: { executableParts: [RELEASE_PROFILE.win.productExeName], resourcesParts: ['resources'], executableExtension: RELEASE_PROFILE.win.productExeSuffix } },
+  linux: { processInspection: PROCESS_INSPECTION.linux, systemPrompt: 'PI_SYSTEM_POSIX.md', posixPermissions: true, desktopDataRoot: 'electron', detached: true, tree: 'process-group', openCommand: 'xdg-open', detachedOpen: false, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'XDG_CONFIG_HOME', fallback: ['.config'], parts: ['transportx-traffic-agent'] }, packaged: null },
 });
 
 export function hostPlatformOperations(platform = process.platform) {

@@ -38,6 +38,11 @@ function safeDirectoryName(name: unknown) {
   return cleaned || 'untitled';
 }
 
+export function workspaceDirectoryPrefix(name?: string | null) {
+  const timestamp = timestampForDirectory();
+  return name ? `${timestamp}-${safeDirectoryName(name)}` : timestamp;
+}
+
 export function createSessionWorkingDirectory(parentCwd?: string, sessionName?: string | null) {
   const { APP_PATHS, TAU_SETTINGS, expandHome } = require('./config.js');
   const explicitParent = Boolean(parentCwd);
@@ -50,8 +55,7 @@ export function createSessionWorkingDirectory(parentCwd?: string, sessionName?: 
     fs.mkdirSync(parent, { recursive: true });
   }
 
-  const timestamp = timestampForDirectory();
-  const prefix = sessionName ? `${timestamp}-${safeDirectoryName(sessionName)}` : timestamp;
+  const prefix = workspaceDirectoryPrefix(sessionName);
   for (let i = 1; i <= 999; i++) {
     const name = i === 1 ? prefix : `${prefix}-${i}`;
     const candidate = path.join(parent, name);

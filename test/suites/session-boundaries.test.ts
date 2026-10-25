@@ -1,6 +1,120 @@
 const { test } = require('node:test') as typeof import('node:test');
 
 test('Session close, history deletion and process cancellation preserve writer ownership', async (t) => {
+  // Kernel identities survive process.title changes; stale PID identities never authorize a stop.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const { spawn } = require('node:child_process');
+    const { inspectProcess, inspectRecordedProcess, stopRecordedProcess } = require('../../bin/process-inspection.js');
+    const { WorkspaceRuntimeGate, managedRuntimeProcess } = require('../../bin/workspace-runtime.js');
+    const python = process.env.TAU_PYTHON_COMMAND || 'python3';
+    const original = inspectProcess(process.pid, python); assert.equal(original.state, 'running', JSON.stringify(original));
+    const title = process.title;
+    try { process.title = 'transportx-process-title-test'; assert.deepEqual(inspectProcess(process.pid, python).identity, original.identity); }
+    finally { process.title = title; }
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+    t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+    const observed = inspectProcess(child.pid, python); assert.equal(observed.state, 'running', JSON.stringify(observed));
+    const reused = { ...observed.identity, startedAt: 'different-kernel-start' };
+    assert.equal(inspectRecordedProcess(reused, python).state, 'replaced');
+    await stopRecordedProcess(reused, python); assert.equal(child.exitCode, null, 'a recycled PID does not authorize termination');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-runtime-lease-')));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'));
+    const workspaceId = 'ws_00000000-0000-4000-8000-000000000001', conversationId = 'conv_00000000-0000-4000-8000-000000000002';
+    const lease = gate.take(root, workspaceId, conversationId);
+    const tracked = managedRuntimeProcess(root); tracked.started(child); lease.running();
+    assert.throws(() => new WorkspaceRuntimeGate(python, root).take(root, workspaceId, conversationId), { code: 'workspace_busy' });
+    assert.throws(() => lease.finish(), { code: 'process_stop_unconfirmed' });
+    const diagnostic = gate.diagnostics(root);
+    assert.equal(diagnostic.processes[0].observation.state, 'running');
+    assert.equal(JSON.stringify(diagnostic).includes('token'), false);
+    await stopRecordedProcess(observed.identity, python); tracked.stopped(); lease.stopping(); lease.finish();
+    assert.equal(gate.diagnostics(root).phase, 'stopped');
+    const next = gate.take(root, workspaceId, 'conv_00000000-0000-4000-8000-000000000003');
+    assert.notEqual(next.generation, lease.generation);
+    const { ProcessRunner } = require('../../bin/process-runner.js');
+    const output = await new ProcessRunner().run({ command: process.execPath, args: [] }, ['-e', "setTimeout(()=>console.log('tracked-native'),150)"], { cwd: root, timeoutMs: 2000, maxBuffer: 1024 });
+    assert.match(output.stdout, /tracked-native/);
+    assert.equal(gate.diagnostics(root).processes[0].kind, 'managed');
+    assert.equal(gate.diagnostics(root).processes[0].state, 'stopped', 'domain subprocess completion commits its runtime stop before returning');
+    next.finish();
+  }
+  // New tasks and existing workspaces share a durable creation commit, including response-loss recovery.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const { WorkspaceStore } = require('../../bin/workspace-store.js');
+    const { WorkspaceService } = require('../../bin/workspace-service.js');
+    const { defaultSessionProfile } = require('../../bin/contracts/session-profile.js');
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-workspace-create-'));
+    t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+    const root = fs.realpathSync(temporary), parent = path.join(root, 'scenario'); fs.mkdirSync(parent);
+    const store = new WorkspaceStore(root, path.join(root, 'sessions'));
+    await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
+    let validations = 0;
+    const options = {
+      store, defaultParentDirectory: parent, expandHome: (value: string) => value, assertReady: () => {}, assertAllocationAllowed: () => {},
+      validateModel: async (model: string) => { validations++; if (model === 'missing') throw new Error('model missing'); },
+      assemble: (configuration: any, directory: string) => {
+        if (configuration.profile.modules.selected.some((module: any) => module.id === 'missing')) throw new Error('module missing');
+        return { schemaVersion: 3, platform: { name: 'TransportX Agent', version: '3.23.2' }, profile: configuration.profile, domain: { id: configuration.domainId, version: '1.0.0' }, modules: [], assets: [], runtime: {}, workspace: directory, createdAt: new Date().toISOString() };
+      },
+    };
+    const service = new WorkspaceService(options), profile = defaultSessionProfile();
+    const input = { requestId: 'first', workspace: { kind: 'new', name: '共享交通资料' }, name: '首次分析', model: 'probe/first', domainId: 'com.transportx.workbench', profile };
+    assert.deepEqual(fs.readdirSync(parent), [], 'opening/cancelling a form has no storage effect');
+    await assert.rejects(service.create({ ...input, model: 'missing' }), /model missing/);
+    await assert.rejects(service.create({ ...input, profile: defaultSessionProfile([{ id: 'missing', version: '1.0.0' }]) }), /module missing/);
+    assert.deepEqual(fs.readdirSync(parent), []); assert.equal(store.readCatalog().entries.length, 0);
+    const first = await service.create(input);
+    assert.equal(first.conversation.state, 'created');
+    assert.equal(first.manifest.defaults.profile.modules.selectionMode, 'explicit');
+    assert.equal(fs.existsSync(path.join(store.sessionsDirectory, first.conversation.history.key)), false);
+    assert.equal(fs.statSync(path.join(store.sessionsDirectory, 'transportx')).isDirectory(), true);
+    assert.equal(first.conversation.plan.path, `conversations/${first.conversation.id}/plan.json`);
+    fs.writeFileSync(path.join(first.directory, 'shared.csv'), 'road,count\nA,42\n');
+    const validationCount = validations;
+    await store.editWorkspace(first.manifest.id, first.manifest.revision, (manifest: any) => { manifest.name = '改过的展示名'; manifest.conversations[0].name = '改过的标题'; });
+    const restarted = new WorkspaceService(options), retry = await restarted.create(input);
+    assert.equal(retry.conversation.id, first.conversation.id); assert.equal(validations, validationCount, 'committed retries do not re-resolve mutable configuration');
+    assert.equal(retry.manifest.name, '改过的展示名'); assert.equal(fs.readdirSync(parent).length, 1);
+    await assert.rejects(service.create({ ...input, name: 'different input' }), { code: 'workspace_revision_conflict' });
+    const next = { requestId: 'second', workspace: { kind: 'existing', workspaceId: first.manifest.id, expectedRevision: retry.manifest.revision, defaultsRevision: retry.manifest.defaultsRevision }, name: '独立分析', model: 'probe/second' };
+    const [second, duplicate] = await Promise.all([service.create(next), service.create(next)]);
+    assert.equal(second.conversation.id, duplicate.conversation.id); assert.equal(second.directory, first.directory);
+    assert.notEqual(second.conversation.history.key, first.conversation.history.key);
+    assert.equal(second.conversation.privateState, 'isolated'); assert.equal(second.manifest.conversations.length, 2);
+    assert.equal(second.manifest.defaults.modelSpec, 'probe/first', 'overrides do not edit workspace defaults');
+    assert.equal(store.readPlan(first.directory, first.conversation).profile.modules.selectionMode, 'explicit');
+    assert.equal(fs.readFileSync(path.join(first.directory, 'shared.csv'), 'utf8'), 'road,count\nA,42\n');
+    await assert.rejects(service.create({ ...next, requestId: 'stale-management' }), { code: 'workspace_revision_conflict' });
+    await store.updateDefaults(first.manifest.id, 0, { ...first.manifest.defaults, modelSpec: 'probe/new-default' });
+    await assert.rejects(service.create({ ...next, requestId: 'stale-defaults', workspace: { ...next.workspace, expectedRevision: second.manifest.revision } }), { code: 'workspace_revision_conflict' });
+    const third = await service.create({ requestId: 'third', workspace: { ...next.workspace, expectedRevision: second.manifest.revision, defaultsRevision: 1 }, name: '使用新默认' });
+    assert.equal(third.conversation.modelSpec, 'probe/new-default');
+    assert.equal(store.readWorkspace(first.manifest.id).manifest.conversations[0].modelSpec, 'probe/first');
+
+    // Manifest commits before catalog publication. A failed catalog write must recover the same logical conversation.
+    const rename = fs.renameSync;
+    let failPublication = true;
+    fs.renameSync = (source: string, target: string) => {
+      if (failPublication && target === store.catalogFile && fs.existsSync(source)) {
+        const catalog = JSON.parse(fs.readFileSync(source, 'utf8'));
+        if (catalog.entries.some((entry: any) => entry.creationRequestId === 'response-loss' && entry.state === 'ready')) throw Object.assign(new Error('full catalog volume'), { code: 'ENOSPC' });
+      }
+      return rename(source, target);
+    };
+    const lostInput = { ...input, requestId: 'response-loss', workspace: { kind: 'new', name: '响应丢失' } };
+    try { await assert.rejects(service.create(lostInput), { code: 'ENOSPC' }); }
+    finally { failPublication = false; fs.renameSync = rename; }
+    const reservation = store.readCatalog().entries.find((entry: any) => entry.creationRequestId === 'response-loss');
+    assert.equal(reservation.state, 'creating');
+    const committed = JSON.parse(fs.readFileSync(path.join(reservation.path, '.tau/workspace.json'), 'utf8'));
+    const restored = await restarted.create(lostInput);
+    assert.equal(restored.conversation.id, committed.conversations[0].id);
+    assert.equal(store.readCatalog().entries.length, 2); assert.equal(fs.readdirSync(parent).length, 2);
+    assert.equal(store.readCatalog().entries.find((entry: any) => entry.workspaceId === reservation.workspaceId).state, 'ready');
+  }
   // Workspace RMW transactions preserve independent revisions and failed writes leave committed data intact.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
@@ -18,6 +132,10 @@ test('Session close, history deletion and process cancellation preserve writer o
     await store.editCatalog(0, (catalog: any) => catalog.entries.push({ workspaceId: id, path: toPosixPath(workspaceDirectory), creationRequestId: 'new-workspace', creationInputSha256: 'a'.repeat(64), state: 'creating', deletion: null }));
     const plan = { schemaVersion: 3, platform: { name: 'TransportX Agent', version: '3.23.2' }, profile, domain: { id: 'com.transportx.workbench', version: '1.4.1' }, modules: [], assets: [], runtime: {}, workspace: workspaceDirectory, createdAt: at };
     await store.savePlan(workspaceDirectory, conversationId, plan);
+    const windowsPlanId = 'conv_00000000-0000-4000-8000-000000000004';
+    await store.savePlan(workspaceDirectory, windowsPlanId, { ...plan, modules: [{ id: 'fixture', version: '1.0.0', type: 'module', origin: 'installed', packageRoot: 'C:\\fixture', entrypoints: [{ kind: 'skill', path: 'C:\\fixture\\SKILL.md' }], nativeRuntimes: [], canvasViews: [] }] });
+    const disk = JSON.parse(fs.readFileSync(path.join(workspaceDirectory, `.tau/conversations/${windowsPlanId}/plan.json`), 'utf8'));
+    assert.deepEqual([disk.modules[0].packageRoot, disk.modules[0].entrypoints[0].path], ['C:/fixture', 'C:/fixture/SKILL.md']);
     await assert.rejects(store.savePlan(workspaceDirectory, conversationId, { ...plan, createdAt: '2026-10-26T00:00:00.000Z' }), { code: 'workspace_revision_conflict' });
     const record = { id: conversationId, creationRequestId: 'new-conversation', creationInputSha256: 'b'.repeat(64), name: '首次分析', createdAt: at, updatedAt: at, defaultsRevision: 0, modelSpec: 'probe/first', appendSystemPrompt: '', state: 'created', history: { key: store.newHistoryKey(conversationId), headerId: null }, plan: { path: `conversations/${conversationId}/plan.json`, source: 'created' }, privateState: 'isolated', lastStartFailure: null, deletion: null };
     const manifest = { schemaVersion: 1, id, revision: 0, name: '工作区', createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: { domainId: 'com.transportx.workbench', modelSpec: 'probe/first', profile }, citationRegistryId: id, conversations: [record] };
