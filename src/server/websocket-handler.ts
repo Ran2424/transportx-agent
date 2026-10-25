@@ -4,6 +4,7 @@ import type { Server } from 'node:http';
 import type { Socket } from 'node:net';
 import type { WebSocket as WsType } from 'ws';
 import type { LiveSessionManager } from './sessions.js';
+import { AGENT_HOST_PROTOCOL_VERSION } from '../contracts/host-protocol.js';
 
 type TauWs = WsType & { isAlive?: boolean };
 
@@ -42,14 +43,21 @@ export function attachWebSocketHandler(options: WebSocketHandlerOptions) {
 
   wss.on('connection', (ws: TauWs, request: import('node:http').IncomingMessage) => {
     if (options.recheckAuthentication) authenticatedRequests.set(ws, request);
-    options.sessions.addClient(ws);
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
-    ws.send(JSON.stringify({ type: 'state', liveSessions: options.sessions.list(), ...options.sessions.clock() }));
-    ws.on('message', () => {
+    let negotiated = false;
+    const timeout = setTimeout(() => { if (!negotiated) ws.close(4006, 'unsupported_client'); }, 5000); timeout.unref();
+    ws.on('message', (raw: Buffer) => {
+      if (!negotiated) {
+        let hello: { type?: string; protocolVersion?: number } = {};
+        try { const value = JSON.parse(raw.toString()); if (value && typeof value === 'object' && !Array.isArray(value)) hello = value; } catch {}
+        if (hello.type !== 'hello' || hello.protocolVersion !== AGENT_HOST_PROTOCOL_VERSION) { ws.send(JSON.stringify({ type: 'error', code: 'unsupported_client', message: 'Upgrade or restart the client.' })); ws.close(4006, 'unsupported_client'); return; }
+        negotiated = true; clearTimeout(timeout); options.sessions.addClient(ws);
+        ws.send(JSON.stringify({ type: 'state', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessions: options.sessions.list(), ...options.sessions.clock() })); return;
+      }
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', code: 'websocket_event_only', message: 'Use HTTP /api/rpc for commands.' }));
     });
-    ws.on('close', () => { authenticatedRequests.delete(ws); options.sessions.removeClient(ws); });
+    ws.on('close', () => { clearTimeout(timeout); authenticatedRequests.delete(ws); options.sessions.removeClient(ws); });
     ws.on('error', () => { authenticatedRequests.delete(ws); options.sessions.removeClient(ws); });
   });
 

@@ -173,7 +173,7 @@ export class WorkspaceStore {
       return parsed;
     });
   }
-  editWorkspace(workspaceId: string, expectedRevision: number, update: (manifest: WorkspaceManifestV1) => void) {
+  editWorkspace(workspaceId: string, expectedRevision: number, update: (manifest: WorkspaceManifestV1) => void | Promise<void>) {
     const { directory } = this.readWorkspace(workspaceId);
     const file = workspaceMetadataPath(directory, '.tau/workspace.json');
     return mutateJson(file, async () => {
@@ -181,7 +181,7 @@ export class WorkspaceStore {
       if (manifest.revision !== expectedRevision) throw failure('workspace_revision_conflict', 'Workspace changed; reload before retrying.');
       const defaultsBefore = workspaceCreationDigest([manifest.defaultsRevision, manifest.defaults]);
       const tombstones = manifest.conversations.filter((record) => record.state === 'deleted').map((record) => ({ id: record.id, key: record.history.key, requestId: record.deletion!.requestId }));
-      update(manifest);
+      await update(manifest);
       if (manifest.id !== workspaceId) throw failure('workspace_identity_conflict', 'Workspace identity cannot be changed.');
       if (workspaceCreationDigest([manifest.defaultsRevision, manifest.defaults]) !== defaultsBefore) throw failure('workspace_revision_conflict', 'Defaults must be edited with their own revision.');
       for (const tombstone of tombstones) {

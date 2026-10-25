@@ -1,3 +1,4 @@
+import { browserJson, protocolHeaders } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 
@@ -55,7 +56,7 @@ export async function localModelSmoke(page, baseUrl) {
     await dialog.getByRole('status').filter({ hasText: '发现 1 个模型' }).waitFor();
     await save.click();
     await dialog.waitFor({ state: 'hidden' });
-    const models = await page.request.post(`${baseUrl}/api/rpc`, { data: { type: 'get_available_models' } });
+    const models = await page.request.post(`${baseUrl}/api/rpc`, { headers: protocolHeaders, data: { type: 'get_available_models' } });
     const added = (await models.json()).data.models.find((model) => model.id === 'smoke-local');
     assert.ok(added, 'the saved local model is available to new sessions');
     provider = added.provider;
@@ -79,7 +80,7 @@ export async function localModelSmoke(page, baseUrl) {
     await page.getByRole('button', { name: '常规', exact: true }).click();
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '新建交通任务', exact: true }).first().click();
-    const newTask = page.getByRole('dialog', { name: '新建交通任务', exact: true });
+    const newTask = page.getByRole('dialog', { name: '新建会话', exact: true });
     await newTask.locator('.menu-select-trigger').first().click();
     await page.getByRole('option').filter({ hasText: 'smoke-local' }).waitFor();
     await page.keyboard.press('Escape');
@@ -100,13 +101,13 @@ export async function localModelSmoke(page, baseUrl) {
     await picker.getByRole('button', { name: '保存', exact: true }).click();
     await picker.waitFor({ state: 'hidden' });
     // Restore the fixture model for the remaining smoke scenarios.
-    const live = await (await page.request.get(`${baseUrl}/api/live-sessions`)).json();
-    const active = live.sessions.find((item) => item.model?.id === 'smoke-local');
+    const id = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
+    const { runtime: active } = await browserJson(page, baseUrl, `/api/conversations/${id}/snapshot`);
     assert.ok(active, 'saving synchronizes the current session');
-    await page.request.post(`${baseUrl}/api/rpc`, { data: { type: 'set_model', sessionId: active.id, provider: 'kimi-coding', modelId: 'k2p7' } });
+    await page.request.post(`${baseUrl}/api/rpc`, { headers: protocolHeaders, data: { type: 'set_model', sessionId: active.id, provider: 'kimi-coding', modelId: 'k2p7' } });
     console.log('Local model smoke: discovery, refresh in settings/picker, partial/Host errors, selection retention and current-session save passed.');
   } finally {
-    if (provider) await page.request.post(`${baseUrl}/api/rpc`, { data: { type: 'delete_model_provider', provider } });
+    if (provider) await page.request.post(`${baseUrl}/api/rpc`, { headers: protocolHeaders, data: { type: 'delete_model_provider', provider } });
     await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); });
   }
 }

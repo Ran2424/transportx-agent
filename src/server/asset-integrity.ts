@@ -14,7 +14,16 @@ import { isWithin } from './util/path.js';
  * and non-existent targets keep their own parent/symlink checks.
  */
 export function sha256File(filePath: string) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  const hash = crypto.createHash('sha256');
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    for (;;) {
+      const count = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (!count) return hash.digest('hex');
+      hash.update(chunk.subarray(0, count));
+    }
+  } finally { fs.closeSync(fd); }
 }
 
 export function verifyChecksumFile(assetRoot: string, integrityFile: string) {

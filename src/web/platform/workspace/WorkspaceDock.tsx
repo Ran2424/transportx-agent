@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
 import { useSessionState } from '../../app/store-hooks';
@@ -33,7 +33,7 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
 }
 
 /** The resource dock intentionally exposes only session files. */
-export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: LiveSession | null; onClose(): void }) {
+export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: ConversationView | null; onClose(): void }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const openDocument = useOpenDocument();

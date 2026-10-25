@@ -63,8 +63,8 @@ try {
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('[data-testid="agent-status"]:is([data-state="connected"], [data-state="streaming"])').waitFor();
 
-  await page.getByRole('button', { name: '新建交通任务' }).first().click();
-  const dialog = page.getByRole('dialog', { name: '新建交通任务' });
+  await page.getByRole('button', { name: '新建工作区和会话' }).first().click();
+  const dialog = page.getByRole('dialog', { name: '新建会话' });
   await dialog.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
   const moduleDetails = dialog.locator('details', { has: page.locator('summary', { hasText: '任务 Module 与版本' }) });
   assert.equal(await moduleDetails.count(), 1, 'module options use a disclosure');
@@ -80,16 +80,19 @@ try {
   await betaModule.uncheck();
   await alphaVersion.selectOption('1.0.0');
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await page.getByRole('button', { name: '新建交通任务' }).first().click();
+  await page.getByRole('button', { name: '新建工作区和会话' }).first().click();
   await dialog.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
   assert.equal(await moduleDetails.getAttribute('open'), null, 'reopening resets the disclosure');
   assert.equal(await alphaModule.isVisible(), false);
-  const createRequest = page.waitForRequest((request) => request.url().endsWith('/api/live-sessions') && request.method() === 'POST');
-  await dialog.getByRole('button', { name: '创建任务' }).click();
+  const createRequest = page.waitForRequest((request) => request.url().endsWith('/api/conversations') && request.method() === 'POST');
+  await dialog.getByLabel('工作区名称', { exact: true }).fill('Web 综合冒烟');
+  await dialog.getByRole('button', { name: '创建会话' }).click();
   assert.deepEqual((await createRequest).postDataJSON().profile.modules, {
     selectionMode: 'explicit', selected: [{ id: 'smoke.alpha', version: '2.0.0' }, { id: 'smoke.beta', version: '1.0.0' }],
   }, 'default module selection is submitted without changing the presentation');
 
+  await page.getByRole('button', { name: '激活此会话', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.conversation-offline-bar'));
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
   await capabilitySmoke(page);
@@ -109,12 +112,12 @@ try {
   await composer.fill('资源-svg-policy');
   await composer.press('Enter');
   await page.locator('.assistant-message', { hasText: 'SVG 策略测试文件已生成' }).waitFor();
-  const svgSessionId = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
+  const svgSessionId = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
   for (const route of ['preview', 'raw']) {
     const svgPage = await browser.newPage();
     const requests = [];
     svgPage.on('request', (request) => requests.push(request.url()));
-    const response = await svgPage.goto(`${baseUrl}/api/file/${route}?sessionId=${svgSessionId}&path=active.svg`);
+    const response = await svgPage.goto(`${baseUrl}/api/conversations/${svgSessionId}/files/${route}?path=active.svg`);
     assert.match(response.headers()['content-security-policy'], /sandbox/);
     assert.equal(await svgPage.evaluate(() => globalThis.svgExecuted === true), false);
     assert.equal(requests.some((url) => url.includes('svg-executed=1')), false);
@@ -205,9 +208,9 @@ try {
   assert.equal(await page.getByRole('dialog').count(), 0, 'one-way UI requests never open a question dialog');
   assert.doesNotMatch(await page.locator('.runtime-notice').allTextContents().then((items) => items.join('\n')), /Unknown RPC|Unknown Pi|不支持/);
   assert.equal(oneWayReplies.length, 0, 'one-way notifications never send an answer');
-  const rpcSessionId = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
-  const rpcSnapshot = await page.evaluate(async (id) => (await fetch(`/api/live-sessions/${id}/snapshot`)).json(), rpcSessionId);
-  assert.equal(rpcSnapshot.session.sessionName, 'RPC 事件核对');
+  const rpcSessionId = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
+  const rpcSnapshot = await page.evaluate(async (id) => (await (await fetch(`/api/conversations/${id}/snapshot`)).json()).snapshot, rpcSessionId);
+  assert.equal(typeof rpcSnapshot.session.conversationId, 'string');
   assert.deepEqual(rpcSnapshot.pendingExtensionUiRequests, []);
   await page.reload();
   await composer.waitFor();
@@ -281,8 +284,8 @@ try {
   const screenshotFilename = (await screenshotNotice.textContent())?.match(/map-screenshot-[\d-]+\.png/)?.[0];
   assert.ok(screenshotFilename);
   const screenshotSaved = await page.evaluate(async (filename) => {
-    const sessions = await (await fetch('/api/live-sessions')).json();
-    const files = await (await fetch(`/api/files?sessionId=${encodeURIComponent(sessions.sessions[0].id)}`)).json();
+    const selected = localStorage.getItem('tau-active-conversation-id');
+    const files = await (await fetch(`/api/conversations/${encodeURIComponent(selected)}/files`)).json();
     return files.items.some((item) => item.name === filename && item.size > 0);
   }, screenshotFilename);
   assert.equal(screenshotSaved, true);
@@ -292,8 +295,8 @@ try {
   await composer.press('Enter');
   await page.locator('.assistant-message', { hasText: '地图截图已自动保存，可插入报告。' }).waitFor({ timeout: 10_000 });
   const agentScreenshotSaved = await page.evaluate(async () => {
-    const sessions = await (await fetch('/api/live-sessions')).json();
-    const files = await (await fetch(`/api/files?sessionId=${encodeURIComponent(sessions.sessions[0].id)}`)).json();
+    const selected = localStorage.getItem('tau-active-conversation-id');
+    const files = await (await fetch(`/api/conversations/${encodeURIComponent(selected)}/files`)).json();
     return files.items.filter((item) => /^map-screenshot-[\d-]+\.png$/.test(item.name) && item.size > 0).length >= 2;
   });
   assert.equal(agentScreenshotSaved, true);
@@ -345,19 +348,19 @@ try {
   assert.equal(await updatedOption.textContent(), 'Geo 双向交互分析结果');
 
   const audit = await page.evaluate(async () => {
-    const sessions = await (await fetch('/api/live-sessions')).json();
-    const sessionId = sessions.sessions[0].id;
-    const snapshot = await (await fetch(`/api/live-sessions/${encodeURIComponent(sessionId)}/snapshot`)).json();
+    const selected = localStorage.getItem('tau-active-conversation-id');
+    const sessionId = selected;
+    const snapshot = await (await (await fetch(`/api/conversations/${encodeURIComponent(sessionId)}/snapshot`)).json()).snapshot;
     const user = snapshot.entries.map((entry) => entry.message).find((message) => message?.role === 'user' && JSON.stringify(message.content).includes('geo-main-context'));
     const inspect = snapshot.entries.map((entry) => entry.message).find((message) => message?.role === 'toolResult' && message.toolName === 'inspect_map_context');
     const contextId = user?.geoContextIds?.[0];
-    const contextResponse = contextId ? await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/geo-contexts/${encodeURIComponent(contextId)}`) : null;
+    const contextResponse = contextId ? await fetch(`/api/conversations/${encodeURIComponent(sessionId)}/geo-contexts/${encodeURIComponent(contextId)}`) : null;
     return { contextIds: user?.geoContextIds, inspectText: JSON.stringify(inspect), contextOk: contextResponse?.ok, context: contextResponse?.ok ? await contextResponse.json() : null };
   });
   assert.equal(audit.contextIds?.length, 1);
   const delivered = await page.evaluate(async () => {
-    const sessions = await (await fetch('/api/live-sessions')).json();
-    const snapshot = await (await fetch(`/api/live-sessions/${sessions.sessions[0].id}/snapshot`)).json();
+    const selected = localStorage.getItem('tau-active-conversation-id');
+    const snapshot = await (await (await fetch(`/api/conversations/${selected}/snapshot`)).json()).snapshot;
     return snapshot.entries.map((entry) => entry.message).find((message) => message?.role === 'user' && JSON.stringify(message.content).includes('geo-main-context'));
   });
   assert.equal(delivered.attachmentIds.length, 5);
@@ -375,8 +378,8 @@ try {
   assert.equal(await restoredInput.count(), 1, 'mixed input has one restored user message');
   assert.doesNotMatch(await restoredInput.innerText(), /transportx-attachment-context|本轮用户消息包含/);
   const restoredDelivery = await page.evaluate(async () => {
-    const sessionId = localStorage.getItem('tau-active-live-session-id');
-    const snapshot = await (await fetch(`/api/live-sessions/${sessionId}/snapshot`)).json();
+    const sessionId = localStorage.getItem('tau-active-conversation-id');
+    const snapshot = await (await (await fetch(`/api/conversations/${sessionId}/snapshot`)).json()).snapshot;
     return snapshot.entries.map((entry) => entry.message).find((message) => message?.role === 'user' && JSON.stringify(message.content).includes('geo-main-context'));
   });
   assert.deepEqual(restoredDelivery.attachmentIds, delivered.attachmentIds);
@@ -440,8 +443,8 @@ try {
   await page.locator('.geo-request-banner', { hasText: '刷新恢复验收' }).waitFor({ timeout: 10_000 });
   console.log('Geo smoke: refresh request is waiting.');
   const requestBeforeReload = await page.evaluate(async () => {
-    const sessions = await (await fetch('/api/live-sessions')).json();
-    const snapshot = await (await fetch(`/api/live-sessions/${sessions.sessions[0].id}/snapshot`)).json();
+    const selected = localStorage.getItem('tau-active-conversation-id');
+    const snapshot = await (await (await fetch(`/api/conversations/${selected}/snapshot`)).json()).snapshot;
     return snapshot.geoInteraction.waitingRequest.requestId;
   });
   await page.reload({ waitUntil: 'networkidle' });
@@ -452,8 +455,8 @@ try {
   const restoredBanner = page.locator('.geo-request-banner', { hasText: '刷新恢复验收' });
   await restoredBanner.waitFor({ timeout: 10_000 });
   const requestAfterReload = await page.evaluate(async () => {
-    const sessions = await (await fetch('/api/live-sessions')).json();
-    const snapshot = await (await fetch(`/api/live-sessions/${sessions.sessions[0].id}/snapshot`)).json();
+    const selected = localStorage.getItem('tau-active-conversation-id');
+    const snapshot = await (await (await fetch(`/api/conversations/${selected}/snapshot`)).json()).snapshot;
     return snapshot.geoInteraction.waitingRequest.requestId;
   });
   assert.equal(requestAfterReload, requestBeforeReload);

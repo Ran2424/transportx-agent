@@ -63,7 +63,7 @@ try {
   }
   const healthUrl = `${new URL(window.url()).origin}/api/health`;
   const health = await (await fetch(healthUrl)).json();
-  if (health.product !== 'TransportX Agent' || health.protocolVersion !== 1) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
+  if (health.product !== 'TransportX Agent' || health.protocolVersion !== 2) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
   // Exercise the production Host -> Supervisor -> Electron dialog channel. Only
   // this test-owned fixture is accepted; the native decision itself is stubbed.
   const trustSource = path.join(temporaryHome, 'trust-probe');

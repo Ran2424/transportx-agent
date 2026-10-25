@@ -7,7 +7,8 @@ export function parseRpcCommand(value: unknown): RpcCommand {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('command');
   const command = value as Record<string, unknown>;
   if (typeof command.type !== 'string' || !command.type.trim()) invalid('type');
-  for (const field of ['id', 'clientCommandId', 'sessionId', 'filePath', 'outputPath', 'cwd', 'model', 'provider', 'modelId', 'api', 'baseUrl', 'apiKey', 'level', 'name', 'sourcePath', 'importId', 'kind', 'moduleId', 'message']) {
+  for (const field of ['filePath', 'outputPath', 'cwd']) if (command[field] !== undefined) invalid(field);
+  for (const field of ['id', 'clientCommandId', 'sessionId', 'model', 'provider', 'modelId', 'api', 'baseUrl', 'apiKey', 'level', 'name', 'sourcePath', 'importId', 'kind', 'moduleId', 'message']) {
     if (command[field] !== undefined && typeof command[field] !== 'string') invalid(field);
   }
   for (const field of ['enabled', 'reasoning']) if (command[field] !== undefined && typeof command[field] !== 'boolean') invalid(field);

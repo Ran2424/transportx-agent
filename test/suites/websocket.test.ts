@@ -56,10 +56,12 @@ test('WebSocket rejects unsafe origins and commands, bounds buffering and preser
   }
 
   function connect(opts: any = {}) {
+    const { protocolVersion, ...connectionOptions } = opts;
     const headers = opts.headers || {};
     if (opts.origin !== null) headers.Origin = opts.origin ?? base;
     headers.Host = new URL(base).host;
-    const ws = new WebSocket(wsUrl, { headers, ...opts });
+    const ws = new WebSocket(wsUrl, { headers, ...connectionOptions });
+    if (protocolVersion !== null) ws.once('open', () => ws.send(JSON.stringify({ type: 'hello', protocolVersion: protocolVersion ?? 2 })));
     return ws;
   }
 
@@ -87,6 +89,15 @@ test('WebSocket rejects unsafe origins and commands, bounds buffering and preser
       resolve();
     });
   });
+
+  for (const hello of [null, [], { type: 'hello', protocolVersion: 1 }]) {
+    const client = connect({ protocolVersion: null });
+    const closed = new Promise<number>((resolve) => client.once('close', resolve));
+    await new Promise<void>((resolve) => client.once('open', resolve));
+    client.send(JSON.stringify(hello));
+    assert.equal(await closed, 4006, 'unsupported or malformed handshakes fail before state delivery');
+    assert.equal((await fetch(base + '/api/health')).status, 200, 'malformed clients cannot crash the Host');
+  }
 
   // slow WebSocket clients are removed before adding more buffered data
   {
@@ -119,6 +130,7 @@ test('WebSocket rejects unsafe origins and commands, bounds buffering and preser
     });
     await new Promise<void>((resolve) => authServer.listen(0, '127.0.0.1', resolve));
     const client = new WebSocket(`ws://127.0.0.1:${authServer.address().port}/ws`);
+    client.once('open', () => client.send(JSON.stringify({ type: 'hello', protocolVersion: 2 })));
     try {
       await nextMessage(client);
       const closed = new Promise<number>((resolve, reject) => {

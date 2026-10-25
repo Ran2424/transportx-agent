@@ -1,4 +1,4 @@
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
 import type { ConnectionState } from '../../../public/kernel/stores/runtime-store.js';
 import { BrandMark } from '../BrandMark';
@@ -10,7 +10,7 @@ import { projectUi } from '../../app/project-ui';
 type HeaderProps = {
   account?: ReactNode;
   connection: ConnectionState;
-  activeSession: LiveSession | null;
+  activeSession: ConversationView | null;
   streaming: boolean;
   sidebarOpen: boolean;
   fileOpen: boolean;
@@ -58,7 +58,7 @@ export function Header({
         <button
           className="model-trigger"
           type="button"
-          disabled={!activeSession}
+          disabled={!activeSession?.liveSessionId}
           onClick={onOpenModel}
           aria-label={t('header.modelAndThinking')}
         >
@@ -72,7 +72,7 @@ export function Header({
         {activeSession ? (
           <button className="workspace-task" type="button" aria-label={t('header.goHome')} title={sessionTitle(activeSession)} onClick={onGoHome}>
             <span className="workspace-task-name">{sessionTitle(activeSession)}</span>
-            <span className={`workspace-task-status${streaming ? ' is-streaming' : ''}`}>{streaming ? t('header.status.streaming') : t('header.status.ready')}</span>
+            <span className={`workspace-task-status${streaming ? ' is-streaming' : ''}`}>{!activeSession.liveSessionId ? t('workspace.conversationPreview') : streaming ? t('header.status.streaming') : t('header.status.ready')}</span>
           </button>
         ) : (
           <button className="workspace-brand" type="button" aria-label={t('header.goHome')} onClick={onGoHome}>

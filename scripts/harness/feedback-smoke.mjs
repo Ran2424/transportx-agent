@@ -1,3 +1,4 @@
+import { browserJson, createBrowserConversation, closeBrowserConversation } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -30,17 +31,15 @@ export async function feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryC
   await page.locator('.model-feedback', { hasText: '已取消' }).waitFor();
   await page.reload({ waitUntil: 'networkidle' });
   await page.locator('.model-feedback', { hasText: '供应商认证失败' }).waitFor();
-  const sessions = await (await page.request.get(`${baseUrl}/api/live-sessions`)).json();
-  const a = sessions.sessions[0];
-  const created = await (await page.request.post(`${baseUrl}/api/live-sessions`, { data: { name: '导航B', model: 'kimi-coding/k2p7' } })).json();
-  const b = created.session;
-  await page.locator('.live-tab-select', { hasText: '导航B' }).waitFor();
+  const a = { id: await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')) };
+  const b = await createBrowserConversation(page, baseUrl, '导航B');
+  await page.locator('.live-tab-select', { hasText: '导航B' }).click();
   let release;
   const held = new Promise((resolve) => { release = resolve; });
   let arrived;
   const started = new Promise((resolve) => { arrived = resolve; });
   const route = async (request) => { arrived(); await held; await request.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'late A failure' }) }); };
-  const pattern = `**/api/live-sessions/${a.id}/snapshot`;
+  const pattern = `**/api/conversations/${a.id}/snapshot`;
   await page.route(pattern, route);
   await page.locator('.live-tab-select').first().click();
   await started;
@@ -51,18 +50,17 @@ export async function feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryC
   assert.equal(await page.locator('.live-tab.is-active').innerText(), (await page.locator('.live-tab', { hasText: '导航B' }).innerText()));
   assert.equal(await page.getByText('late A failure', { exact: true }).count(), 0);
   await page.unroute(pattern, route);
-  await page.request.delete(`${baseUrl}/api/live-sessions/${b.id}`);
+  await closeBrowserConversation(page, baseUrl, b.id);
   await page.locator('.live-tab-select').first().click();
   await composer.waitFor();
-  const resumed = await (await page.request.post(`${baseUrl}/api/live-sessions/resume`, { data: { filePath: longHistoryFile, cwd: longHistoryCwd, useCurrentConfiguration: true } })).json();
-  assert.ok(resumed.session, JSON.stringify(resumed));
-  const longTab = page.locator('.live-tab-select', { hasText: resumed.session.sessionName || 'long-history-task' });
-  await longTab.waitFor();
+  const index = await browserJson(page, baseUrl, '/api/workspaces');
+  const historical = index.workspaces.find((workspace) => workspace.path === fs.realpathSync(longHistoryCwd));
+  assert.ok(historical, 'the first inventory registered the long history');
+  const longRecord = historical.conversations[0].record;
   const start = performance.now();
-  await longTab.click();
+  await page.locator('.session-row').filter({ hasText: longRecord.name }).click();
   await page.waitForFunction(() => document.querySelectorAll('.user-message').length === 100 && document.querySelectorAll('.assistant-message').length === 100);
-  console.log(`Conversation baseline: 200 messages visible in ${Math.round(performance.now() - start)} ms; DOM nodes ${await page.locator('.conversation-thread *').count()}.`);
-  await page.request.delete(`${baseUrl}/api/live-sessions/${resumed.session.id}`);
+  console.log(`Conversation baseline: 200 messages visible in ${Math.round(performance.now() - start)} ms; history browsing starts no Pi.`);
   await page.locator('.live-tab-select').first().click();
   await composer.waitFor();
   console.log('Feedback smoke: empty/partial errors, safe feedback, retry success, history recovery and late navigation failure passed.');
@@ -70,7 +68,9 @@ export async function feedbackSmoke(page, baseUrl, longHistoryFile, longHistoryC
 
 export async function composerSmoke(page, baseUrl) {
   const composer = page.getByLabel('消息输入');
-  const a = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
+  const a = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
+  const current = await browserJson(page, baseUrl, `/api/conversations/${a}/snapshot`);
+  const wireId = current.runtime.id;
   const sends = [];
   const rejectSend = async (route) => {
     const command = route.request().postDataJSON();
@@ -93,7 +93,7 @@ export async function composerSmoke(page, baseUrl) {
   const rejectUpload = async (route) => route.request().method() === 'POST'
     ? route.fulfill({ status: 400, json: { error: 'upload boundary smoke' } })
     : route.continue();
-  const failedUploadPattern = `**/api/live-sessions/${a}/attachments*`;
+  const failedUploadPattern = `**/api/conversations/${a}/attachments*`;
   await page.route(failedUploadPattern, rejectUpload);
   await page.locator('.composer-file-input').setInputFiles({ name: 'failed.txt', mimeType: 'text/plain', buffer: Buffer.from('failed source') });
   await page.locator('.pending-attachment.is-error').waitFor();
@@ -112,11 +112,10 @@ export async function composerSmoke(page, baseUrl) {
   await composer.fill('');
   await page.unroute(failedUploadPattern, rejectUpload);
   await page.unroute('**/api/rpc', rejectSend);
-  const created = await (await page.request.post(`${baseUrl}/api/live-sessions`, { data: { name: '草稿B', model: 'kimi-coding/k2p7' } })).json();
-  const b = created.session;
+  const b = await createBrowserConversation(page, baseUrl, '草稿B');
   let releaseUpload;
   const heldUpload = new Promise((resolve) => { releaseUpload = resolve; });
-  const uploadPattern = `**/api/live-sessions/${a}/attachments*`;
+  const uploadPattern = `**/api/conversations/${a}/attachments*`;
   let uploadCount = 0;
   const holdUpload = async (route) => {
     if (route.request().method() !== 'POST') return route.continue();
@@ -180,7 +179,7 @@ export async function composerSmoke(page, baseUrl) {
   await page.getByRole('button', { name: '关闭视图：draft-source.md', exact: true }).click();
   const rejectPrompt = async (route) => {
     const command = route.request().postDataJSON();
-    if (command.type !== 'prompt' || command.sessionId !== a) return route.continue();
+    if (command.type !== 'prompt' || command.sessionId !== wireId) return route.continue();
     await route.fulfill({ json: { success: false, error: 'smoke prompt rejected' } });
   };
   await page.route('**/api/rpc', rejectPrompt);
@@ -194,8 +193,8 @@ export async function composerSmoke(page, baseUrl) {
   await page.waitForFunction(() => document.querySelector('.conversation-composer textarea')?.value === '');
   assert.equal(await page.evaluate((sessionId) => localStorage.getItem(`tau-composer-draft:${sessionId}`), a), null);
   await page.waitForFunction(async (sessionId) => {
-    const response = await fetch(`/api/live-sessions/${sessionId}/snapshot`);
-    const snapshot = await response.json();
+    const response = await fetch(`/api/conversations/${sessionId}/snapshot`);
+    const { snapshot } = await response.json();
     return snapshot.entries?.some((entry) => entry.message?.role === 'user' && entry.message?.attachmentIds?.length);
   }, a);
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
@@ -205,7 +204,7 @@ export async function composerSmoke(page, baseUrl) {
   const ackFinished = new Promise((resolve) => { ackSent = resolve; });
   const delayPromptAck = async (route) => {
     const command = route.request().postDataJSON();
-    if (command.type !== 'prompt' || command.sessionId !== a) return route.continue();
+    if (command.type !== 'prompt' || command.sessionId !== wireId) return route.continue();
     const response = await route.fetch();
     ackArrived(); await heldAck;
     await route.fulfill({ response }); ackSent();
@@ -224,7 +223,7 @@ export async function composerSmoke(page, baseUrl) {
   assert.equal(await composer.inputValue(), 'A 新草稿', 'late acknowledgement preserves text edited after submission');
   await composer.fill('');
   await page.unroute(uploadPattern, holdUpload);
-  await page.request.delete(`${baseUrl}/api/live-sessions/${b.id}`);
+  await closeBrowserConversation(page, baseUrl, b.id);
   await page.reload({ waitUntil: 'networkidle' });
   await composer.waitFor();
   assert.equal(await composer.inputValue(), '', 'successfully sent drafts stay cleared after refresh');

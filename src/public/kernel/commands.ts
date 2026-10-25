@@ -6,7 +6,9 @@ import type { ModelRefreshError } from '../../contracts/model.js';
  * thrown; the kernel stores never see raw Error instances.
  */
 
-import type { LiveSession, ModelRecord, SessionAttachment, SessionAttachmentSource, SessionSnapshot } from '../app-types.js';
+import type { LiveSession, ConversationView, WorkspaceIndex, ModelRecord, SessionAttachment, SessionAttachmentSource, SessionSnapshot } from '../app-types.js';
+import { conversationView } from '../app-types.js';
+import type { CreateConversationInput, ConversationRecordV1, WorkspaceManifestV1 } from '../../contracts/workspace.js';
 import type { AppAction } from './actions.js';
 import { appError, toAppError, type AppError, type AppErrorCategory } from '../../contracts/errors.ts';
 import type { SessionProfileV1 } from '../../contracts/session-profile.ts';
@@ -33,6 +35,7 @@ export type HttpClient = (path: string, init?: HttpInit) => Promise<HttpResponse
 
 export type CommandDeps = {
   http: HttpClient;
+  liveSessionId(conversationId: string): string | null;
   dispatch: (action: AppAction) => void;
   isStreaming: (sessionId: string) => boolean;
   isCompacting: (sessionId: string) => boolean;
@@ -77,37 +80,12 @@ export type ModelProviderAccess = {
   authSource?: string;
   modelCount: number;
 };
-export type CreateSessionInput = { cwd?: string; name?: string; model?: string; profile?: SessionProfileV1 };
-export type ResumeSessionInput = { filePath: string; model?: string; cwd?: string; useCurrentConfiguration?: boolean };
-export type RenameSessionInput = { name: string; sessionId?: string; filePath?: string };
+export type RenameSessionInput = { conversationId: string; name: string; expectedRevision: number };
+export type DeletionRequest = { requestId: string; expectedRevision: number; confirm: true; stopCurrent?: boolean };
 export type ExtensionUiResponseInput = {
   sessionId: string | null;
   id?: string;
   response?: Record<string, unknown>;
-};
-
-export type HistorySession = {
-  filePath?: string;
-  cwd?: string | null;
-  name?: string | null;
-  firstMessage?: string | null;
-  timestamp?: string;
-  mtime?: number;
-  lastConversationAt?: string;
-  sessionName?: string | null;
-  sessionTimestamp?: string;
-  live?: boolean;
-};
-
-export type HistoryProject = {
-  path?: string;
-  dirName?: string;
-  sessions?: HistorySession[];
-};
-
-export type HistorySearchResult = HistorySession & {
-  project?: string;
-  matches?: Array<{ snippet?: string }>;
 };
 
 export type WorkspaceFile = {
@@ -181,23 +159,23 @@ export type AgentCommands = {
 };
 
 export type SessionCommands = {
-  list(): Promise<LiveSession[]>;
-  listHistory(): Promise<HistoryProject[]>;
-  searchHistory(query: string): Promise<HistorySearchResult[]>;
-  create(input: CreateSessionInput): Promise<LiveSession>;
-  resume(input: ResumeSessionInput): Promise<LiveSession>;
-  rename(input: RenameSessionInput): Promise<{ name: string }>;
-  loadSnapshot(sessionId: string): Promise<SessionSnapshot>;
-  loadHistory(filePath: string): Promise<SessionSnapshot>;
-  listFiles(sessionId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
-  openInSystem(sessionId: string, path: string): Promise<void>;
-  readFileContent(sessionId: string, path: string): Promise<WorkspaceFileContent>;
-  listAttachments(sessionId: string): Promise<SessionAttachment[]>;
+  list(): Promise<WorkspaceIndex>;
+  searchHistory(query: string): Promise<Array<{ workspaceId: string; conversationId: string; name: string; matches: Array<{ snippet?: string }> }>>;
+  create(input: CreateConversationInput): Promise<ConversationView>;
+  activate(conversationId: string, input?: { stopCurrent?: boolean; confirmCurrentConfiguration?: { expectedRevision: number; domainId: string; modelSpec: string; profile: SessionProfileV1 } }): Promise<ConversationView>;
+  rename(input: RenameSessionInput): Promise<void>;
+  loadSnapshot(conversationId: string): Promise<SessionSnapshot>;
+  listFiles(conversationId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
+  openInSystem(conversationId: string, path: string): Promise<void>;
+  readFileContent(conversationId: string, path: string): Promise<WorkspaceFileContent>;
+  listAttachments(conversationId: string): Promise<SessionAttachment[]>;
   uploadAttachment(input: UploadAttachmentInput): Promise<SessionAttachment>;
-  deleteAttachment(sessionId: string, attachmentId: string): Promise<void>;
-  close(sessionId: string): Promise<void>;
-  deleteHistory(filePath: string, deleteWorkspace?: boolean): Promise<void>;
-  deleteLive(sessionId: string, deleteWorkspace?: boolean): Promise<void>;
+  deleteAttachment(conversationId: string, attachmentId: string): Promise<void>;
+  close(conversationId: string, stopCurrent?: boolean): Promise<void>;
+  deleteConversation(conversationId: string, input: DeletionRequest): Promise<void>;
+  updateWorkspace(workspaceId: string, input: Record<string, unknown>): Promise<void>;
+  deleteWorkspace(workspaceId: string, input: DeletionRequest): Promise<void>;
+  migration(path?: string, input?: Record<string, unknown>): Promise<unknown>;
 };
 
 export type PlatformCommands = {
@@ -284,7 +262,7 @@ async function httpJson(
     // Non-JSON body; status decides success below.
   }
   if (!response.ok) {
-    const errorPayload = data as { error?: string; code?: string } | null;
+    const errorPayload = data as { error?: string; code?: string; report?: string; itemId?: string; conversationId?: string } | null;
     const message = errorPayload?.error ?? `HTTP ${response.status}`;
     throw appError({
       code: errorPayload?.code || 'http_error',
@@ -292,7 +270,7 @@ async function httpJson(
       message,
       sessionId: context.sessionId,
       retryable: response.status >= 500,
-      diagnostics: { status: response.status, path },
+      diagnostics: { status: response.status, path, ...(errorPayload?.report ? { report: errorPayload.report } : {}), ...(errorPayload?.itemId ? { itemId: errorPayload.itemId } : {}), ...(errorPayload?.conversationId ? { conversationId: errorPayload.conversationId } : {}) },
     });
   }
   // RPC envelopes carry both `success` and `error`; those are interpreted by
@@ -324,9 +302,14 @@ async function httpText(http: HttpClient, path: string, context: { category: App
   return { content: await response.text(), stale: response.headers?.get('X-Citation-Resource-Stale') === '1' };
 }
 
-async function rpcCommand(http: HttpClient, command: Record<string, unknown>): Promise<unknown> {
+async function rpcCommand(deps: CommandDeps, command: Record<string, unknown>): Promise<unknown> {
   const sessionId = command.sessionId as string | undefined;
-  const data = await httpJson(http, '/api/rpc', { method: 'POST', body: command }, { category: 'session', sessionId });
+  if (sessionId) {
+    const liveSessionId = deps.liveSessionId(sessionId);
+    if (!liveSessionId && !['get_available_models', 'refresh_models'].includes(String(command.type))) throw appError({ code: 'conversation_not_active', category: 'session', message: '请先激活此会话。', sessionId, retryable: false });
+    command = { ...command, sessionId: liveSessionId || undefined };
+  }
+  const data = await httpJson(deps.http, '/api/rpc', { method: 'POST', body: command }, { category: 'session', sessionId });
   if (data && typeof data === 'object' && (data as { success?: unknown }).success === false) {
     const message = String((data as { error?: unknown }).error ?? 'RPC command failed');
     const deliveryUnknown = (data as { delivery?: string }).delivery === 'unknown' || message.startsWith('RPC command timed out:');
@@ -360,7 +343,7 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
         return;
       }
       try {
-        await rpcCommand(deps.http, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
+        await rpcCommand(deps, { type: 'prompt', sessionId, message, clientCommandId: commandId, ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
       } catch (error) {
         const code = (error as { code?: string }).code;
         if (code !== 'delivery_unknown' && code !== 'http_network_error') pendingPromptIds.delete(promptKey);
@@ -371,36 +354,36 @@ export function createAgentCommands(deps: CommandDeps): AgentCommands {
     },
 
     async abort(sessionId) {
-      await rpcCommand(deps.http, { type: 'abort', sessionId, clientCommandId: clientCommandId() });
+      await rpcCommand(deps, { type: 'abort', sessionId, clientCommandId: clientCommandId() });
     },
 
     async steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }) {
-      await rpcCommand(deps.http, { type: 'steer', sessionId, message, clientCommandId: clientCommandId(), ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
+      await rpcCommand(deps, { type: 'steer', sessionId, message, clientCommandId: clientCommandId(), ...(attachmentIds?.length ? { attachmentIds } : {}), ...(geoContextIds?.length ? { geoContextIds } : {}), ...(canvasContextIds?.length ? { canvasContextIds } : {}) });
     },
 
     async followUp({ sessionId, message }) {
-      await rpcCommand(deps.http, { type: 'follow_up', sessionId, message, clientCommandId: clientCommandId() });
+      await rpcCommand(deps, { type: 'follow_up', sessionId, message, clientCommandId: clientCommandId() });
     },
 
     async compact(sessionId) {
-      await rpcCommand(deps.http, { type: 'compact', sessionId });
+      await rpcCommand(deps, { type: 'compact', sessionId });
     },
 
     async setAutoCompaction(sessionId, enabled) {
-      await rpcCommand(deps.http, { type: 'set_auto_compaction', sessionId, enabled });
+      await rpcCommand(deps, { type: 'set_auto_compaction', sessionId, enabled });
     },
 
     async getState(sessionId) {
-      const data = await rpcCommand(deps.http, { type: 'get_state', sessionId });
+      const data = await rpcCommand(deps, { type: 'get_state', sessionId });
       return ((data as { data?: AgentState }).data ?? {}) as AgentState;
     },
 
     async setModel({ sessionId, model }) {
-      await rpcCommand(deps.http, { type: 'set_model', sessionId, model });
+      await rpcCommand(deps, { type: 'set_model', sessionId, model });
     },
 
     async setThinkingLevel({ sessionId, level }) {
-      await rpcCommand(deps.http, { type: 'set_thinking_level', sessionId, level });
+      await rpcCommand(deps, { type: 'set_thinking_level', sessionId, level });
     },
   };
 }
@@ -413,71 +396,56 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     attachmentGenerations.set(sessionId, generation);
     return generation;
   };
-  return {
+  const commands: SessionCommands = {
     async list() {
-      const data = await httpJson(deps.http, '/api/live-sessions', undefined, context);
-      return ((data as { sessions?: LiveSession[] })?.sessions ?? []) as LiveSession[];
+      const index = await httpJson(deps.http, '/api/workspaces', undefined, context) as WorkspaceIndex;
+      deps.dispatch({ type: 'session/indexReceived', index });
+      return index;
     },
-
-    async listHistory() {
-      const data = await httpJson(deps.http, '/api/sessions', undefined, context);
-      return ((data as { projects?: HistoryProject[] })?.projects ?? []) as HistoryProject[];
-    },
-
     async searchHistory(query) {
       if (query.trim().length < 2) return [];
-      const data = await httpJson(deps.http, `/api/search?q=${encodeURIComponent(query.trim())}`, undefined, context);
-      return ((data as { results?: HistorySearchResult[] })?.results ?? []) as HistorySearchResult[];
+      const data = await httpJson(deps.http, `/api/conversations/search?q=${encodeURIComponent(query.trim())}`, undefined, context);
+      return (data as { results: Array<{ workspaceId: string; conversationId: string; name: string; matches: Array<{ snippet?: string }> }> }).results;
     },
-
     async create(input) {
-      const data = await httpJson(deps.http, '/api/live-sessions', { method: 'POST', body: input }, context);
-      return (data as { session: LiveSession }).session;
+      const result = await httpJson(deps.http, '/api/conversations', { method: 'POST', body: input }, context) as { directory: string; manifest: WorkspaceManifestV1; conversation: ConversationRecordV1 };
+      return conversationView(result.conversation, { ...result.manifest, path: result.directory }, null);
     },
-
-    async resume(input) {
-      const data = await httpJson(deps.http, '/api/live-sessions/resume', { method: 'POST', body: input }, context);
-      return (data as { session: LiveSession }).session;
+    async activate(id, input = {}) {
+      const result = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}/activate`, { method: 'POST', body: input }, { ...context, sessionId: id }) as { runtime: LiveSession };
+      deps.dispatch({ type: 'session/runtimeReceived', runtime: result.runtime });
+      const snapshot = await commands.loadSnapshot(id);
+      deps.dispatch({ type: 'session/snapshotReceived', sessionId: id, snapshot });
+      return snapshot.session!;
     },
-
-    async rename(input) {
-      const data = await rpcCommand(deps.http, { type: 'set_session_name', ...input });
-      const name = String((data as { data?: { name?: unknown } })?.data?.name || '');
-      if (!name) throw appError({ code: 'session_rename_invalid_response', category: 'session', message: '会话重命名响应无效', sessionId: input.sessionId, retryable: false });
-      if (input.sessionId) deps.dispatch({ type: 'session/updated', session: { id: input.sessionId, sessionName: name } });
-      return { name };
+    async rename({ conversationId, ...input }) {
+      await httpJson(deps.http, `/api/conversations/${encodeURIComponent(conversationId)}`, { method: 'PATCH', body: input }, { ...context, sessionId: conversationId });
+      deps.dispatch({ type: 'session/updated', session: { id: conversationId, sessionName: input.name } });
     },
-
-    async loadSnapshot(sessionId) {
-      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/snapshot`, undefined, { ...context, sessionId });
-      return data as SessionSnapshot;
+    async loadSnapshot(id) {
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}/snapshot`, undefined, { ...context, sessionId: id }) as { workspace: { id: string; path: string; revision: number }; conversation: ConversationRecordV1; runtime: LiveSession | null; snapshot: SessionSnapshot; hostGeneration: string; revision: number };
+      return { ...data.snapshot, hostGeneration: data.hostGeneration, revision: data.revision, sessionId: id, session: conversationView(data.conversation, data.workspace, data.runtime) };
     },
-
-    async loadHistory(filePath) {
-      const data = await httpJson(deps.http, `/api/session-history?filePath=${encodeURIComponent(filePath)}`, undefined, context);
-      return data as SessionSnapshot;
-    },
-
     async listFiles(sessionId, path) {
-      const params = new URLSearchParams({ sessionId });
+      const params = new URLSearchParams();
       if (path) params.set('path', path);
-      const data = await httpJson(deps.http, `/api/files?${params}`, undefined, { ...context, sessionId });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/files?${params}`, undefined, { ...context, sessionId });
       return data as { path: string; items: WorkspaceFile[] };
     },
 
     async readFileContent(sessionId, path) {
-      const params = new URLSearchParams({ sessionId, path });
-      const data = await httpJson(deps.http, `/api/file/content?${params}`, undefined, { ...context, sessionId });
+      const params = new URLSearchParams({ path });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/files/content?${params}`, undefined, { ...context, sessionId });
       return data as WorkspaceFileContent;
     },
 
     async openInSystem(sessionId, path) {
-      await httpJson(deps.http, '/api/open', { method: 'POST', body: { filePath: path, sessionId } }, { ...context, sessionId });
+      await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/open`, { method: 'POST', body: { path } }, { ...context, sessionId });
     },
 
     async listAttachments(sessionId) {
       const generation = advanceAttachments(sessionId);
-      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments`, undefined, { ...context, sessionId });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/attachments`, undefined, { ...context, sessionId });
       const attachments = (data as { attachments?: SessionAttachment[] }).attachments ?? [];
       if (attachmentGenerations.get(sessionId) === generation) deps.dispatch({ type: 'session/attachmentsReceived', sessionId, attachments });
       return attachments;
@@ -486,7 +454,7 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     async uploadAttachment({ sessionId, file, source }) {
       const form = new FormData();
       form.append('file', file, file.name);
-      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments?source=${encodeURIComponent(source)}`, { method: 'POST', body: form }, { ...context, sessionId });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/attachments?source=${encodeURIComponent(source)}`, { method: 'POST', body: form }, { ...context, sessionId });
       const attachment = (data as { attachments?: SessionAttachment[] }).attachments?.[0];
       if (!attachment) throw appError({ code: 'attachment_upload_invalid_response', category: 'transport', message: '附件上传响应无效', sessionId, retryable: false });
       advanceAttachments(sessionId);
@@ -495,22 +463,21 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     },
 
     async deleteAttachment(sessionId, attachmentId) {
-      await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }, { ...context, sessionId });
+      await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }, { ...context, sessionId });
       advanceAttachments(sessionId);
       deps.dispatch({ type: 'session/attachmentRemoved', sessionId, attachmentId });
     },
 
-    async close(sessionId) {
-      await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, { ...context, sessionId });
+    async close(sessionId, stopCurrent = false) {
+      await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/close`, { method: 'POST', body: { stopCurrent } }, { ...context, sessionId });
+      const liveSessionId = deps.liveSessionId(sessionId); if (liveSessionId) deps.dispatch({ type: 'session/runtimeClosed', liveSessionId });
     },
-
-    async deleteHistory(filePath, deleteWorkspace = true) {
-      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { filePath, deleteWorkspace } }, context);
-    },
-    async deleteLive(sessionId, deleteWorkspace = true) {
-      await httpJson(deps.http, '/api/sessions/delete', { method: 'POST', body: { sessionId, deleteWorkspace } }, context);
-    },
+    async deleteConversation(id, input) { await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE', body: input }, context); },
+    async updateWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}`, { method: 'PATCH', body: input }, context); },
+    async deleteWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}/delete`, { method: 'POST', body: input }, context); },
+    async migration(path = '/api/migration', input) { return httpJson(deps.http, path, input ? { method: 'POST', body: input } : undefined, context); },
   };
+  return commands;
 }
 
 export function createCitationCommands(deps: CommandDeps): CitationCommands {
@@ -523,11 +490,11 @@ export function createCitationCommands(deps: CommandDeps): CitationCommands {
     async list(sessionId, options = {}) {
       const query = new URLSearchParams({ offset: String(options.offset || 0) });
       if (options.ids) query.set('ids', options.ids.join(','));
-      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations?${query}`, { signal: options.signal }, { category: 'session', sessionId });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/citations?${query}`, { signal: options.signal }, { category: 'session', sessionId });
       return readEnvelope(data, sessionId);
     },
     async detail(sessionId, evidenceId, signal) {
-      const data = await httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/citations/evidence/${encodeURIComponent(evidenceId)}`, { signal }, { category: 'session', sessionId });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/citations/evidence/${encodeURIComponent(evidenceId)}`, { signal }, { category: 'session', sessionId });
       const detail = parseCitationDetail(data);
       if (!detail) throw appError({ code: 'citation_invalid_response', category: 'session', message: '引用详情响应无效', sessionId, retryable: false });
       return detail;
@@ -538,7 +505,7 @@ export function createCitationCommands(deps: CommandDeps): CitationCommands {
 export function createVideoCommands(deps: CommandDeps): VideoCommands {
   return {
     getMetrics(sessionId, resourceId) {
-      return httpJson(deps.http, `/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(resourceId)}/metrics`, undefined, { category: 'session', sessionId });
+      return httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(resourceId)}/metrics`, undefined, { category: 'session', sessionId });
     },
   };
 }
@@ -547,21 +514,21 @@ export function createGeoCommands(deps: CommandDeps): GeoCommands {
   const context = (sessionId: string) => ({ category: 'session' as const, sessionId });
   return {
     async createContext(sessionId, geoContext) {
-      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-contexts`, { method: 'POST', body: geoContext }, context(sessionId));
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/geo-contexts`, { method: 'POST', body: geoContext }, context(sessionId));
       return (data as { reference: GeoContextReferenceV1 }).reference;
     },
     async getContext(sessionId, contextId) {
-      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-contexts/${encodeURIComponent(contextId)}`, undefined, context(sessionId));
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/geo-contexts/${encodeURIComponent(contextId)}`, undefined, context(sessionId));
       return (data as { context: GeoClientContextV1 }).context;
     },
     async saveScreenshot(sessionId, input) {
-      return await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-screenshots`, { method: 'POST', body: input }, context(sessionId)) as { filename: string; path: string; bytes: number };
+      return await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/geo-screenshots`, { method: 'POST', body: input }, context(sessionId)) as { filename: string; path: string; bytes: number };
     },
     async respondScreenshot(sessionId, requestId, response) {
-      return await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-screenshots/${encodeURIComponent(requestId)}/respond`, { method: 'POST', body: response }, context(sessionId));
+      return await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/geo-screenshots/${encodeURIComponent(requestId)}/respond`, { method: 'POST', body: response }, context(sessionId));
     },
     async respond(sessionId, requestId, response) {
-      return await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/geo-interactions/${encodeURIComponent(requestId)}/respond`, { method: 'POST', body: response }, context(sessionId)) as { response: GeoInteractionResponseV1; context?: GeoClientContextV1 };
+      return await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/geo-interactions/${encodeURIComponent(requestId)}/respond`, { method: 'POST', body: response }, context(sessionId)) as { response: GeoInteractionResponseV1; context?: GeoClientContextV1 };
     },
   };
 }
@@ -569,11 +536,11 @@ export function createGeoCommands(deps: CommandDeps): GeoCommands {
 export function createCanvasCommands(deps: CommandDeps): CanvasCommands {
   return {
     async present(sessionId, input) {
-      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/canvas-presentations`, { method: 'POST', body: input }, { category: 'session', sessionId });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/canvas-presentations`, { method: 'POST', body: input }, { category: 'session', sessionId });
       return (data as { canvas: CanvasPresentationV1 }).canvas;
     },
     async createContext(sessionId, input) {
-      const data = await httpJson(deps.http, `/api/sessions/${encodeURIComponent(sessionId)}/canvas-contexts`, { method: 'POST', body: input }, { category: 'session', sessionId });
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/canvas-contexts`, { method: 'POST', body: input }, { category: 'session', sessionId });
       return (data as { context: CanvasContextV1 }).context;
     },
   };
@@ -598,7 +565,7 @@ export function createReportCommands(deps: CommandDeps): ReportCommands {
 export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
   return {
     async getAvailableModels(sessionId) {
-      const data = await rpcCommand(deps.http, {
+      const data = await rpcCommand(deps, {
         type: 'get_available_models',
         ...(sessionId ? { sessionId } : {}),
       });
@@ -606,7 +573,7 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     },
 
     async refreshModels(sessionId) {
-      const response = await rpcCommand(deps.http, { type: 'refresh_models', ...(sessionId ? { sessionId } : {}) });
+      const response = await rpcCommand(deps, { type: 'refresh_models', ...(sessionId ? { sessionId } : {}) });
       return (response as { data: { models: Array<ModelRecord | string>; errors: ModelRefreshError[] } }).data;
     },
 
@@ -616,94 +583,95 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     },
 
     async getModelProviders() {
-      const data = await rpcCommand(deps.http, { type: 'get_model_providers' });
+      const data = await rpcCommand(deps, { type: 'get_model_providers' });
       return ((data as { data?: { providers?: ModelProviderAccess[] } }).data?.providers ?? []);
     },
 
     async connectModelProvider(provider, apiKey) {
-      const data = await rpcCommand(deps.http, { type: 'connect_model_provider', provider, apiKey });
+      const data = await rpcCommand(deps, { type: 'connect_model_provider', provider, apiKey });
       return (data as { data: { provider: ModelProviderAccess } }).data.provider;
     },
 
     async disconnectModelProvider(provider) {
-      await rpcCommand(deps.http, { type: 'disconnect_model_provider', provider });
+      await rpcCommand(deps, { type: 'disconnect_model_provider', provider });
     },
 
     async addModel(input) {
-      const data = await rpcCommand(deps.http, { type: 'add_model', ...input });
+      const data = await rpcCommand(deps, { type: 'add_model', ...input });
       return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
     },
 
     async discoverLocalModels(input) {
-      const data = await rpcCommand(deps.http, { type: 'discover_local_models', ...input });
+      const data = await rpcCommand(deps, { type: 'discover_local_models', ...input });
       return (data as { data: LocalModelConnection }).data;
     },
 
     async addLocalModel(input) {
-      const data = await rpcCommand(deps.http, { type: 'add_local_model', ...input });
+      const data = await rpcCommand(deps, { type: 'add_local_model', ...input });
       return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
     },
 
     async updateModel(input) {
-      const data = await rpcCommand(deps.http, { type: 'update_model', ...input });
+      const data = await rpcCommand(deps, { type: 'update_model', ...input });
       return (data as { data: { model: { provider: string; modelId: string; reference: string } } }).data.model;
     },
 
     async deleteModel(provider, modelId) {
-      await rpcCommand(deps.http, { type: 'delete_model', provider, modelId });
+      await rpcCommand(deps, { type: 'delete_model', provider, modelId });
     },
 
     async deleteModelProvider(provider) {
-      await rpcCommand(deps.http, { type: 'delete_model_provider', provider });
+      await rpcCommand(deps, { type: 'delete_model_provider', provider });
     },
 
     async getOverview(sessionId) {
-      const data = await rpcCommand(deps.http, { type: 'get_platform_overview', ...(sessionId ? { sessionId } : {}) });
+      if (sessionId) return await httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/overview`, undefined, { category: 'session', sessionId }) as PlatformOverview;
+      const data = await rpcCommand(deps, { type: 'get_platform_overview' });
       return ((data as { data?: PlatformOverview }).data ?? { storage: { root: '', scenario: '', models: '', settings: '', modules: '', logs: '' }, modules: [], errors: [] });
     },
     async openLogsDirectory() {
-      await rpcCommand(deps.http, { type: 'open_logs_directory' });
+      await rpcCommand(deps, { type: 'open_logs_directory' });
     },
     async openModuleDirectory(moduleId) {
-      await rpcCommand(deps.http, { type: 'open_module_directory', moduleId });
+      await rpcCommand(deps, { type: 'open_module_directory', moduleId });
     },
 
     async installModule(sourcePath) {
-      const data = await rpcCommand(deps.http, { type: 'install_module', sourcePath });
+      const data = await rpcCommand(deps, { type: 'install_module', sourcePath });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 
     async inspectModuleArchive(sourcePath) {
-      const data = await rpcCommand(deps.http, { type: 'inspect_module_archive', sourcePath });
+      const data = await rpcCommand(deps, { type: 'inspect_module_archive', sourcePath });
       return (data as { data: { inspection: ModuleArchiveInspection } }).data.inspection;
     },
 
     async installModuleArchive(importId, selections) {
-      const data = await rpcCommand(deps.http, { type: 'install_module_archive', importId, selections });
+      const data = await rpcCommand(deps, { type: 'install_module_archive', importId, selections });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 
     async discardModuleArchive(importId) {
-      await rpcCommand(deps.http, { type: 'discard_module_archive', importId });
+      await rpcCommand(deps, { type: 'discard_module_archive', importId });
     },
 
     async uninstallModule(moduleId) {
-      const data = await rpcCommand(deps.http, { type: 'uninstall_module', moduleId });
+      const data = await rpcCommand(deps, { type: 'uninstall_module', moduleId });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 
     async setModuleEnabled(moduleId, enabled) {
-      const data = await rpcCommand(deps.http, { type: 'set_module_enabled', moduleId, enabled });
+      const data = await rpcCommand(deps, { type: 'set_module_enabled', moduleId, enabled });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 
     async migrateLegacyModules() {
-      const data = await rpcCommand(deps.http, { type: 'migrate_legacy_modules' });
+      const data = await rpcCommand(deps, { type: 'migrate_legacy_modules' });
       return (data as { data: { overview: PlatformOverview } }).data.overview;
     },
 
     async getAuth() {
-      const data = await rpcCommand(deps.http, { type: 'get_auth' });
+      const data = await rpcCommand(deps, { type: 'get_auth' });
       return ((data as { data?: { configured?: boolean; enabled?: boolean } }).data ?? {
         configured: false,
         enabled: false,
@@ -711,7 +679,7 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     },
 
     async setAuth(enabled) {
-      const data = await rpcCommand(deps.http, { type: 'set_auth', enabled });
+      const data = await rpcCommand(deps, { type: 'set_auth', enabled });
       return ((data as { data?: { enabled?: boolean } }).data ?? { enabled }) as { enabled: boolean };
     },
   };
@@ -724,7 +692,7 @@ export function createExtensionUiCommands(deps: CommandDeps): ExtensionUiCommand
       // to acknowledge it while continuing the run, so keep the dialog from
       // blocking the workbench after the user has made a choice.
       deps.dispatch({ type: 'extensionUi/resolved', sessionId, requestId: id });
-      await rpcCommand(deps.http, {
+      await rpcCommand(deps, {
         type: 'extension_ui_response',
         id,
         clientCommandId: clientCommandId(),

@@ -1,4 +1,5 @@
 import { SessionModelSync } from './model-session-sync.js';
+import { rememberPublishedGeoResource } from './geo-resource-access.js';
 import { isPiExtensionDialogRequest, parsePiMessageQueue, type PiMessageQueue } from '../contracts/pi-rpc.js';
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
 import { hostPlatform } from './host-platform.js';
@@ -17,14 +18,10 @@ import { TimingMetricsStore } from './timing-metrics.js';
 import { PiRpcTransport } from './pi-rpc-transport.js';
 import { retryState, classifyFailure, messageOutcome, type RunOutcome, type RetryState } from '../contracts/run-feedback.js';
 import { signalProcessTree, terminateProcessTree } from './process-tree.js';
-import type { ResolvedSessionPlan, SessionAssembler } from './session-assembly.js';
+import type { ResolvedSessionPlan } from './session-assembly.js';
 import type { SessionPiLaunchInput } from './session-pi-launch.js';
-import { makeSessionId, removeSessionWorkingDirectory, resolveSessionWorkspaceForDeletion } from './session-workspace.js';
-import { readSessionHeaderCwd } from './session-history-reader.js';
-import { listSessionHistoryFiles } from './session-history-files.js';
-import { containedFile } from './util/resource-path.js';
+import { makeSessionId } from './session-workspace.js';
 import { logHostEvent, logHostError } from './diagnostic-log.js';
-import { isWithin } from './util/path.js';
 import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
@@ -35,10 +32,8 @@ import {
   PI_RUNTIME_MINIMUM,
   appError,
   protocolError,
-  parseCitationRegistry,
   type CapabilityMismatchReason,
   type ContractDiagnostic,
-  type SessionProfileV1,
 } from '../contracts/index.js';
 import { stripAttachmentContext } from '../contracts/attachments.js';
 import { getVisualizationFromToolResult, stripGeoContextPrompt } from '../contracts/geo.js';
@@ -199,7 +194,7 @@ export class PiRpcSession {
     this.activeGeoContextIds = [];
     this.activeCanvasContextIds = [];
     this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID(), canvas: crypto.randomUUID(), moduleAuthoring: crypto.randomUUID(), cad: crypto.randomUUID() };
-    this.citationRegistryId = opts.citationRegistryId || existingCitationRegistryId(this.cwd) || this.workspaceId || this.id;
+    this.citationRegistryId = opts.citationRegistryId || this.workspaceId || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.eventTiming = new SessionEventTiming(this.timingMetrics);
     this.applyLatestBridgeEnvelope();
@@ -430,6 +425,7 @@ export class PiRpcSession {
       if (partial?.role === 'assistant') this.streamingMessage = partial;
     }
     if (type === 'message_end' && event.message?.role === 'assistant') this.streamingMessage = null;
+    rememberPublishedGeoResource(this, event);
     if (typeof event.toolCallId === 'string') {
       if (type === 'tool_execution_start') this.activeTools.set(event.toolCallId, event);
       if (type === 'tool_execution_update') {
@@ -685,16 +681,7 @@ export class PiRpcSession {
   }
 }
 
-function existingCitationRegistryId(cwd: string) {
-  try { return parseCitationRegistry(JSON.parse(fs.readFileSync(path.join(cwd, '.tau', 'citations.json'), 'utf8')))?.sessionId || null; }
-  catch { return null; }
-}
-
 export type SessionManagerDependencies = {
-  defaultDomainId: string;
-  assembler: Pick<SessionAssembler, 'assemble' | 'save' | 'load'>;
-  assemblerForProfile(profile: SessionProfileV1): Pick<SessionAssembler, 'assemble' | 'save' | 'load'>;
-  createWorkspace(cwd?: string, name?: string | null): string;
   command: string;
   spawn: SpawnFn;
   endpoints: Record<SessionService, string>;
@@ -704,14 +691,9 @@ export type SessionManagerDependencies = {
 export class LiveSessionManager {
   sessions: Map<string, PiRpcSession>;
   clients: Set<LiveClient>;
-  pendingResumes: Map<string, Promise<PiRpcSession>>;
-  terminatingResumes: Map<string, Promise<void>>;
   piVersion: string;
   liveMetadataSignatures: Map<string, string>;
   private closingSessions = new Map<string, Promise<boolean>>();
-  private historyDeletes = new Map<string, Promise<void>>();
-  private deletingWorkspaces = new Set<string>();
-  private startingWorkspaces = new Set<string>();
   private jobs = new Map<string, Set<{ id: string; controller: AbortController; completion: Promise<unknown> }>>();
   private readonly diagnose = boundedDiagnostics();
   private startingSessions = 0;
@@ -727,8 +709,6 @@ export class LiveSessionManager {
   constructor(private readonly dependencies?: SessionManagerDependencies) {
     this.sessions = new Map();
     this.clients = new Set();
-    this.pendingResumes = new Map();
-    this.terminatingResumes = new Map();
     this.piVersion = PI_RUNTIME_MINIMUM;
     this.liveMetadataSignatures = new Map();
   }
@@ -795,12 +775,6 @@ export class LiveSessionManager {
       return session;
     } finally { this.startingSessions--; }
   }
-  findBySessionFile(sessionFile: string) {
-    const resolved = path.resolve(sessionFile);
-    return Array.from(this.sessions.values()).find((s) => s.sessionFile && path.resolve(s.sessionFile) === resolved);
-  }
-  hasPendingResume(sessionFile: string) { return this.pendingResumes.has(path.resolve(sessionFile)); }
-  hasTerminatingResume(sessionFile: string) { return this.terminatingResumes.has(path.resolve(sessionFile)); }
   runJob<T>(id: string, execute: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, onJob?: (jobId: string) => void): Promise<T> {
     const session = this.sessions.get(id);
     if (!session || session.terminating) return Promise.reject(Object.assign(new Error('Session is closing or unavailable'), { status: 409 }));
@@ -847,87 +821,11 @@ export class LiveSessionManager {
       }
     } finally { clearTimeout(timer); }
   }
-  async create({ cwd, model, sessionName, profile, domainId = this.runtime.defaultDomainId, appendSystemPrompt = '' }: { cwd?: string; model?: string; sessionName?: string | null; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string }) {
-    if (!model?.trim()) throw new Error('请先添加并选择模型');
-    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
-    this.startingSessions++;
-    let workspace: string | undefined;
-    try {
-    if (cwd) this.assertWorkspaceAvailable(cwd);
-    const resolved = this.runtime.createWorkspace(cwd, sessionName);
-    this.assertWorkspaceAvailable(resolved);
-    workspace = resolved;
-    this.startingWorkspaces.add(resolved);
-    const assembler = profile ? this.runtime.assemblerForProfile(profile) : this.runtime.assembler;
-    const resolvedSessionPlan = assembler.assemble(domainId, resolved, profile);
-    assembler.save(resolvedSessionPlan);
-    const session = new PiRpcSession(this, { cwd: resolved, conversationId: `conv_${crypto.randomUUID()}`, modelSpec: (model || '').trim(), appendSystemPrompt, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
-    await session.start();
-    this.sessions.set(session.id, session);
-    this.broadcast({ type: 'live_session_created', session: session.metadata() });
-    return session;
-    } finally { this.startingSessions--; if (workspace) this.startingWorkspaces.delete(workspace); }
-  }
-  async resume({ sessionFile, cwd, model, entries, sessionName, useCurrentConfiguration = false }: { sessionFile: string; cwd: string; model?: string; entries?: JsonRecord[]; sessionName?: string | null; useCurrentConfiguration?: boolean }) {
-    const resolved = path.resolve(sessionFile);
-    this.assertWorkspaceAvailable(cwd);
-    if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
-    const closing = this.terminatingResumes.get(resolved);
-    if (closing) await closing;
-    if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
-    const existing = this.findBySessionFile(resolved);
-    if (existing?.terminating) throw Object.assign(new Error('Session Writer has not stopped'), { status: 409 });
-    if (existing) return existing;
-    const pending = this.pendingResumes.get(resolved);
-    if (pending) return pending;
-    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
-    this.startingSessions++;
-    const resumePromise = (async () => {
-      try {
-        await Promise.resolve();
-        if (this.historyDeletes.has(resolved)) throw Object.assign(new Error('Session history is being deleted'), { status: 409 });
-        this.assertWorkspaceAvailable(cwd);
-        const terminating = this.terminatingResumes.get(resolved);
-        if (terminating) await terminating;
-        if (!fs.existsSync(resolved)) throw new Error('Session not found');
-        const afterTerminationExisting = this.findBySessionFile(resolved);
-        if (afterTerminationExisting) return afterTerminationExisting;
-        const migratedPlanPath = path.join(cwd, '.tau', 'resolved-session-plan.v3.json');
-        let resolvedSessionPlan: ResolvedSessionPlan;
-        try {
-          resolvedSessionPlan = this.runtime.assembler.load(cwd, fs.existsSync(migratedPlanPath) ? 'resolved-session-plan.v3.json' : 'resolved-session-plan.json');
-        } catch (error) {
-          if (!useCurrentConfiguration || !(error instanceof Error) || !('code' in error) || error.code !== 'legacy_plan_requires_confirmation') throw error;
-          resolvedSessionPlan = this.runtime.assembler.assemble(this.runtime.defaultDomainId, cwd);
-          this.runtime.assembler.save(resolvedSessionPlan, 'resolved-session-plan.v3.json');
-        }
-        try {
-          const { APP_PATHS } = require('./config.js');
-          const backup = migrateSessionCitations(cwd, APP_PATHS.userDataDir);
-          if (backup) logHostEvent('info', 'citation_registry_migrated', { cwd, backup });
-        } catch (cause) {
-          logHostError('citation_migration_failed', cause, { cwd });
-          throw Object.assign(new Error('Historical citations could not be migrated; original files are unchanged. See runtime logs.', { cause }), { code: 'citation_migration_failed', status: 409 });
-        }
-        const session = new PiRpcSession(this, { cwd, conversationId: `conv_${crypto.randomUUID()}`, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
-        await session.start();
-        this.sessions.set(session.id, session);
-        this.broadcast({ type: 'live_session_created', session: session.metadata() });
-        return session;
-      } finally {
-        this.startingSessions--;
-        this.pendingResumes.delete(resolved);
-      }
-    })();
-    this.pendingResumes.set(resolved, resumePromise);
-    return resumePromise;
-  }
-  async delete(id: string, reason = 'closed_by_user', cleanup?: () => Promise<void>) {
+  async delete(id: string, reason = 'closed_by_user') {
     const closing = this.closingSessions.get(id);
     if (closing) return closing;
     const session = this.sessions.get(id);
     if (!session) return false;
-    const resolvedFile = session.sessionFile ? path.resolve(session.sessionFile) : null;
     session.terminating = true;
     const termination = (async () => {
       await Promise.resolve();
@@ -936,88 +834,16 @@ export class LiveSessionManager {
       session.isStreaming = false;
       session.isCompacting = false;
       await session.lifecycle?.closed(session);
-      if (cleanup) await cleanup();
       const registered = this.sessions.delete(id);
       this.liveMetadataSignatures.delete(id);
       if (registered) this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
       return true;
     })();
     this.closingSessions.set(id, termination);
-    const writer = termination.then(() => undefined);
-    // Observers awaiting close/resume receive the rejection; avoid an orphan
-    // rejection when no resume is currently waiting on this gate.
-    writer.catch(() => {});
-    if (resolvedFile) this.terminatingResumes.set(resolvedFile, writer);
     try { return await termination; }
-    finally {
-      this.closingSessions.delete(id);
-      if (resolvedFile && this.terminatingResumes.get(resolvedFile) === writer) this.terminatingResumes.delete(resolvedFile);
-    }
+    finally { this.closingSessions.delete(id); }
   }
-  private assertWorkspaceAvailable(cwd: string) {
-    const resolved = fs.existsSync(cwd) ? fs.realpathSync(cwd) : path.resolve(cwd);
-    if ([...this.deletingWorkspaces].some((workspace) => isWithin(workspace, resolved) || isWithin(resolved, workspace))) throw Object.assign(new Error('Task directory is being deleted'), { status: 409 });
-  }
-  deleteHistory(sessionFile: string, deleteWorkspace = true) {
-    return this.deleteConversation({ sessionFile, deleteWorkspace });
-  }
-  deleteConversation({ sessionFile, sessionId, deleteWorkspace = true }: { sessionFile?: string; sessionId?: string; deleteWorkspace?: boolean }) {
-    const requestedSession = sessionId ? this.get(sessionId) : undefined;
-    const file = sessionFile || requestedSession?.sessionFile;
-    let resolved = file ? path.resolve(file) : null;
-    const key = resolved || `live:${sessionId}`;
-    const existing = this.historyDeletes.get(key);
-    if (existing) return existing;
-    const deletion = (async () => {
-      await Promise.resolve();
-      if (resolved) await this.pendingResumes.get(resolved)?.catch(() => {});
-      const session = requestedSession || (resolved ? this.findBySessionFile(resolved) : undefined);
-      const { SESSIONS_DIR, expandHome } = require('./config.js');
-      const normalize = (value: unknown) => typeof value === 'string' && value.trim() ? path.resolve(expandHome(value)) : null;
-      const cwd = resolved ? readSessionHeaderCwd(resolved, normalize) : normalize(session?.cwd);
-      let workspace: string | null = null;
-      if (deleteWorkspace) {
-        if (!cwd) throw Object.assign(new Error('Task directory is missing from session metadata. Disable workspace deletion to delete only the history.'), { status: 409 });
-        if (session?.cwd) {
-          const paths = [cwd, session.cwd].map((value) => fs.existsSync(value) ? fs.realpathSync(value) : path.resolve(value));
-          if (path.relative(paths[0], paths[1]) !== '') throw Object.assign(new Error('History task directory does not match the live session. Workspace deletion refused.'), { status: 409 });
-        }
-        workspace = resolveSessionWorkspaceForDeletion(cwd, resolved || undefined);
-      }
-      const cleanup = async () => {
-        if (!resolved && session?.sessionFile) {
-          resolved = containedFile(SESSIONS_DIR, session.sessionFile);
-          this.historyDeletes.set(resolved, operation);
-        }
-        if (workspace) {
-          const real = fs.realpathSync(workspace);
-          this.assertWorkspaceAvailable(real);
-          this.deletingWorkspaces.add(real);
-          try {
-            const overlaps = (other: string) => {
-              const canonical = fs.existsSync(other) ? fs.realpathSync(other) : path.resolve(other);
-              return isWithin(real, canonical) || isWithin(canonical, real);
-            };
-            const historyCwds = listSessionHistoryFiles(SESSIONS_DIR)
-              .filter(({ filePath }) => !resolved || path.relative(resolved, filePath) !== '')
-              .map(({ filePath }) => readSessionHeaderCwd(filePath, normalize));
-            const shared = [...this.sessions.values()].some((other) => other !== session && other.cwd && overlaps(other.cwd)) || [...this.startingWorkspaces].some(overlaps) || historyCwds.some((other) => other && overlaps(other));
-            if (shared) throw Object.assign(new Error(`Task directory is used by another session: ${workspace}. Disable workspace deletion to keep it.`), { status: 409 });
-            // Revalidate after stopping the Writer, before any filesystem mutation.
-            resolveSessionWorkspaceForDeletion(workspace, resolved || undefined);
-            await removeSessionWorkingDirectory(workspace);
-          } finally { this.deletingWorkspaces.delete(real); }
-        }
-        if (resolved) await fs.promises.rm(path.toNamespacedPath(resolved), { force: true });
-      };
-      if (session) await this.closingSessions.get(session.id);
-      if (session && this.sessions.has(session.id)) await this.delete(session.id, 'history_deleted', cleanup);
-      else { if (resolved) await this.terminatingResumes.get(resolved); await cleanup(); }
-    });
-    const operation = deletion().finally(() => { this.historyDeletes.delete(key); if (resolved) this.historyDeletes.delete(resolved); });
-    this.historyDeletes.set(key, operation);
-    return operation;
-  }
+
   removeExited(id: string, reason: string) {
     if (!this.sessions.has(id)) return;
     if (this.closingSessions.has(id)) return;

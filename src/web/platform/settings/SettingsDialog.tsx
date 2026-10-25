@@ -1,7 +1,7 @@
 import { ModelAccessPanel } from '../model/ModelAccessPanel';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
+import type { ConversationView, ModelRecord } from '../../../public/app-types.js';
 import type { ModelProviderAccess, PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
 import { Icon, type IconName } from '../../components/icons';
@@ -59,7 +59,7 @@ type SettingsPageProps = {
   onShowThinkingChange(value: boolean): void;
   expandThinking: boolean;
   onExpandThinkingChange(value: boolean): void;
-  session: LiveSession | null;
+  session: ConversationView | null;
   onAddModel(): void;
   section: SettingsSectionId;
   onSectionChange(section: SettingsSectionId): void;

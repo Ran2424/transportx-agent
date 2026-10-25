@@ -115,6 +115,7 @@ const longHistoryFile = writeSeededSession('long-history', buildLongHistory(long
 
 // ---- 启动 server 并注入 fake-pi ----
 const tau = require(path.join(REPO_ROOT, 'bin', 'tau.js'));
+tau._setRuntimeCoordinationForTest(path.join(tempRoot, 'runtime-guards'));
 const children = new Set();
 tau._setSpawnPiForTest((cmd, args, opts) => {
   const child = spawn(process.execPath, [FAKE_PI, ...args], {
@@ -132,7 +133,7 @@ let cleanedUp = false;
 async function shutdown(exitCode) {
   if (cleanedUp) return;
   cleanedUp = true;
-  try { await tau.liveManager.shutdown(); } catch {}
+  try { await tau.conversationRuntime.shutdown(); } catch {}
   for (const child of children) { try { child.kill('SIGKILL'); } catch {} }
   try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch {}
   process.exit(exitCode);
@@ -147,7 +148,7 @@ const deadline = Date.now() + 10000;
 for (;;) {
   try {
     const response = await fetch(`${baseUrl}/api/health`);
-    if (response.ok) break;
+    if (response.ok && (await response.json()).dataState === 'ready') break;
   } catch {}
   if (Date.now() > deadline) {
     process.stderr.write('[serve-with-fake-pi] health check timed out\n');

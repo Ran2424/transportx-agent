@@ -1,7 +1,7 @@
 import { ModelRefreshButton } from './ModelRefreshButton';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession, ModelRecord } from '../../../public/app-types.js';
+import type { ConversationView, ModelRecord } from '../../../public/app-types.js';
 import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
@@ -17,7 +17,7 @@ const thinkingLevels = [
   ['xhigh', 'model.thinking.xhigh'],
 ] as const;
 
-export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: { open: boolean; onOpenChange(open: boolean): void; session: LiveSession | null; onAddModel(): void }) {
+export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: { open: boolean; onOpenChange(open: boolean): void; session: ConversationView | null; onAddModel(): void }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);

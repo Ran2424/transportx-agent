@@ -13,7 +13,8 @@ import type { UtilityProcess } from 'electron';
 import type { DesktopPaths } from './app-paths.js';
 
 export const AGENT_HOST_READY_TYPE = 'transportx-agent-host-ready';
-export const AGENT_HOST_PROTOCOL_VERSION = 1;
+export const { AGENT_HOST_PROTOCOL_VERSION } = require('../bin/contracts/host-protocol.js');
+const { compatibleHostHealth } = require('../bin/contracts/host-protocol.js');
 
 export type AgentHostReady = {
   type: typeof AGENT_HOST_READY_TYPE;
@@ -67,7 +68,7 @@ function checkHealth(url: string, timeoutMs = 3000): Promise<void> {
       response.on('end', () => {
         try {
           const health = JSON.parse(body);
-          if (response.statusCode !== 200 || health.status !== 'ok' || health.protocolVersion !== AGENT_HOST_PROTOCOL_VERSION) throw new Error('invalid health response');
+          if (response.statusCode !== 200 || health.status !== 'ok' || !compatibleHostHealth(health)) throw new Error('Agent Host is incompatible; upgrade or restart it.');
           resolve();
         } catch (error) { reject(error); }
       });

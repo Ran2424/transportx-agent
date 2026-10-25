@@ -25,6 +25,7 @@ export async function removeExecutionMetadata(roots: string[], session: OwnerSes
 export function executionOwner(session: OwnerSession, sessionsDir: string) {
   if (!session.sessionFile || path.extname(session.sessionFile) !== '.jsonl') throw new Error('Execution owner requires a persisted Pi session');
   const file = fs.realpathSync(containedFile(sessionsDir, session.sessionFile));
+  const root = fs.realpathSync(sessionsDir);
   const descriptor = fs.openSync(file, 'r');
   let line: string;
   try {
@@ -39,5 +40,5 @@ export function executionOwner(session: OwnerSession, sessionsDir: string) {
   if (header.type !== 'session' || typeof header.id !== 'string' || !header.id.trim() || typeof header.cwd !== 'string') throw new Error('Invalid Pi session owner header');
   const cwd = fs.realpathSync(session.cwd);
   if (!session.resolvedSessionPlan || fs.realpathSync(header.cwd) !== cwd || fs.realpathSync(session.resolvedSessionPlan.workspace) !== cwd) throw new Error('Pi session owner workspace mismatch');
-  return { historyKey: relativePosixPath(fs.realpathSync(sessionsDir), file), piSessionId: header.id };
+  return { historyKey: relativePosixPath(root, file), piSessionId: header.id };
 }

@@ -53,6 +53,10 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
       PI_CODING_AGENT_DIR: '',
     };
     for (const directory of [homeDir, sessionsDir, projectsDir]) fs.mkdirSync(directory, { recursive: true });
+    const agentDir = defaultUserDataDir(process.platform, cliEnv);
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { fake: { api: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'model', contextWindow: 4096, maxTokens: 1024 }] } } }));
+    fs.writeFileSync(path.join(agentDir, 'auth.json'), JSON.stringify({ fake: { type: 'api_key', key: 'fake-cli-key' } }));
     fs.writeFileSync(systemPromptFile, '# Evaluation policy\nAnswer exactly.\n');
     fs.writeFileSync(scenarioFile, JSON.stringify({ fallback: { steps: [
       { event: { type: 'extension_ui_request', id: 'cli_notify', method: 'notify', message: '开始分析' } },
@@ -103,7 +107,10 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
     assert.match(launch.argv[appendPromptIndex + 1], /\n\n# Evaluation policy\nAnswer exactly\.$/);
     assert.equal(launch.piAgentDir, defaultUserDataDir(process.platform, cliEnv));
     const taskDirectory = path.join(projectsDir, fs.readdirSync(projectsDir)[0]);
-    const plan = JSON.parse(fs.readFileSync(path.join(taskDirectory, '.tau', 'resolved-session-plan.json'), 'utf8'));
+    const manifest = JSON.parse(fs.readFileSync(path.join(taskDirectory, '.tau', 'workspace.json'), 'utf8'));
+    assert.equal(manifest.conversations.length, 1);
+    const plan = JSON.parse(fs.readFileSync(path.join(taskDirectory, '.tau', manifest.conversations[0].plan.path), 'utf8'));
+    assert.equal(fs.readdirSync(projectsDir).length, 1, '--cwd is an allocation parent');
     assert.equal(plan.domain.id, 'com.transportx.cli');
     assert.deepEqual(plan.modules.map((module: any) => module.id), ['com.transportx.cli']);
     assert.equal(plan.modules.some((module: any) => module.id === 'com.transportx.geo'), false);

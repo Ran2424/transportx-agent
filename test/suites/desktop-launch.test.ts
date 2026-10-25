@@ -17,6 +17,9 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       const legacy = writeLegacyCitationFixture(task);
       const damaged = writeLegacyCitationFixture(path.join(userData, 'scenario', 'damaged-task'));
       fs.writeFileSync(damaged.file, '{damaged');
+      const histories = path.join(userData, 'sessions'); fs.mkdirSync(histories, { recursive: true });
+      for (const [label, fixture] of [['old', legacy], ['damaged', damaged]] as const) fs.writeFileSync(path.join(histories, `${label}.jsonl`), fixture.entries.map((entry: any) => JSON.stringify(entry.type === 'session' ? { ...entry, id: `native-${label}` } : entry)).join('\n') + '\n');
+
       const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
         cwd: process.cwd(),
         env: {
@@ -25,7 +28,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
           TAU_RESOURCES_DIR: process.cwd(),
           TAU_USER_DATA_DIR: userData, PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'),
           TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
-          TAU_PYTHON_COMMAND: process.execPath,
+          TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
         },
         stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       });
@@ -54,19 +57,24 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.ok(ready.port > 0);
       const health = await (await fetch(`http://127.0.0.1:${ready.port}/api/health`)).json();
       assert.equal(health.product, 'TransportX Agent');
-      assert.equal(health.protocolVersion, 1);
+      assert.equal(health.protocolVersion, 2);
+      let migration: any;
+      const deadline = Date.now() + 15000;
+      do { migration = await (await fetch(`http://127.0.0.1:${ready.port}/api/migration`)).json(); if (migration.dataState === 'ready' && migration.pending === 0) break; await new Promise((resolve) => setTimeout(resolve, 50)); } while (Date.now() < deadline);
+      assert.equal(migration.dataState, 'ready'); assert.equal(migration.pending, 0);
+      assert.ok(migration.inventory.items.some((item: any) => item.path === fs.realpathSync(task) && item.state === 'ready'));
+      assert.ok(migration.inventory.items.some((item: any) => item.path === fs.realpathSync(path.dirname(path.dirname(damaged.file))) && item.state === 'failed'));
       const migrated = JSON.parse(fs.readFileSync(legacy.file, 'utf8'));
-      assert.equal(migrated.version, '3.0', 'upgrade migration finishes before Host readiness');
+      assert.equal(migrated.version, '3.0', 'target conversion finishes independently after Host begins serving diagnostics');
       assert.equal(migrated.sessionId, 'legacy_session');
       assert.equal(migrated.evidence[0].evidenceId, 'occurrence_legacy');
       assert.equal(fs.readFileSync(damaged.file, 'utf8'), '{damaged', 'a damaged task does not prevent Host startup');
-      const backup = path.join(userData, 'migrations', fs.readdirSync(path.join(userData, 'migrations'))[0]);
-      assert.equal(fs.readFileSync(path.join(backup, 'scenario', 'old-task', '.tau', 'citations.json'), 'utf8'), legacy.bytes);
+      assert.equal(fs.readFileSync(path.join(task, '.tau/migrations/workspace-v1/backups/.tau/citations.json'), 'utf8'), legacy.bytes);
       const moduleSource = path.join(userData, 'install-source');
       fs.mkdirSync(path.join(moduleSource, 'skill'), { recursive: true });
       fs.writeFileSync(path.join(moduleSource, 'skill', 'SKILL.md'), '# Local test skill');
       fs.writeFileSync(path.join(moduleSource, 'manifest.json'), JSON.stringify({ manifestVersion: 2, id: 'local.test-skill', name: 'Local test skill', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { skills: ['skill/SKILL.md'] } }));
-      const rpc = async (command: Record<string, unknown>) => (await (await fetch(`http://127.0.0.1:${ready.port}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command) })).json()) as any;
+      const rpc = async (command: Record<string, unknown>) => (await (await fetch(`http://127.0.0.1:${ready.port}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' }, body: JSON.stringify(command) })).json()) as any;
       let acceptTrust = false;
       const trustRequests: any[] = [];
       child.on('message', (message: any) => {
@@ -131,8 +139,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.equal(fs.existsSync(path.join(userData, 'host.transportx-lock')), false);
       const records = fs.readFileSync(path.join(userData, 'logs', 'runtime.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
       assert.ok(records.some((entry: any) => entry.event === 'host_ready'), 'Host startup logs remain in user data after exit');
-      assert.ok(records.some((entry: any) => entry.event === 'citation_registry_migrated'));
-      assert.ok(records.some((entry: any) => entry.event === 'citation_migration_failed'));
+      assert.equal(fs.readFileSync(damaged.file, 'utf8'), '{damaged');
     }
 
     // Force-kill leaves a dead lease; the next Host recovers it and normal IPC stop removes it.
@@ -145,7 +152,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       const start = async () => {
         const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
           cwd: process.cwd(),
-          env: { ...process.env, TAU_APP_ROOT: process.cwd(), TAU_RESOURCES_DIR: process.cwd(), TAU_USER_DATA_DIR: userData, PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'), TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'), TAU_PYTHON_COMMAND: process.execPath },
+          env: { ...process.env, TAU_APP_ROOT: process.cwd(), TAU_RESOURCES_DIR: process.cwd(), TAU_USER_DATA_DIR: userData, PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'), TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'), TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3' },
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
         });
         t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
@@ -169,13 +176,12 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       };
       const first = await start();
       const migratedBytes = fs.readFileSync(legacy.file, 'utf8');
-      const backups = fs.readdirSync(path.join(userData, 'migrations'));
       const crashed = new Promise<void>((resolve) => first.once('exit', resolve));
       first.kill('SIGKILL'); await crashed;
       assert.equal(fs.existsSync(lock), true);
       const second = await start();
       assert.equal(fs.readFileSync(legacy.file, 'utf8'), migratedBytes, 'restart does not rewrite migrated registries');
-      assert.deepEqual(fs.readdirSync(path.join(userData, 'migrations')), backups);
+      assert.ok(fs.existsSync(path.join(userData, 'migrations')), 'restart retains the migration authority');
       const ownerFile = path.join(lock, fs.readdirSync(lock)[0]);
       assert.equal(JSON.parse(fs.readFileSync(ownerFile, 'utf8')).pid, second.pid);
       const stopped = new Promise<number>((resolve) => second.once('exit', resolve));
@@ -189,7 +195,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.equal(fs.existsSync(lock), false);
     }
 
-    // desktop startup refuses an occupied Host lease with a failure exit code
+    // An occupied writer serves blocked diagnostics and cannot mutate its authority
     {
       const { acquireWriteLease } = require('../../bin/util/json-storage.js');
       const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-host-busy-'));
@@ -209,7 +215,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
           TAU_RESOURCES_DIR: process.cwd(),
           TAU_USER_DATA_DIR: userData, PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'),
           TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
-          TAU_PYTHON_COMMAND: process.execPath,
+          TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -217,13 +223,16 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       let stderr = '';
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk: string) => { stderr += chunk; });
-      const code = await new Promise<number | null>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Occupied Host startup did not exit')), 10_000);
-        child.once('error', (error: Error) => { clearTimeout(timer); reject(error); });
-        child.once('close', (code: number | null) => { clearTimeout(timer); resolve(code); });
+      const ready = await new Promise<any>((resolve, reject) => {
+        let buffer = ''; const timer = setTimeout(() => reject(new Error(`Blocked Host did not serve diagnostics: ${stderr}`)), 10000);
+        child.stdout.on('data', (chunk: Buffer) => { buffer += chunk; for (const line of buffer.split(/\r?\n/)) { try { const value = JSON.parse(line); if (value.type === 'transportx-agent-host-ready') { clearTimeout(timer); resolve(value); } } catch {} } });
+        child.once('error', reject);
       });
-      assert.equal(code, 1);
-      assert.match(stderr, /Another writer owns/);
+      const base = `http://127.0.0.1:${ready.port}`;
+      const health = await (await fetch(`${base}/api/health`)).json();
+      assert.equal(health.protocolVersion, 2); assert.equal(health.dataState, 'blocked');
+      const write = await fetch(`${base}/api/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' }, body: '{}' }); assert.equal(write.status, 503);
+      const stopped = new Promise<void>((resolve) => child.once('exit', resolve)); child.kill('SIGTERM'); await stopped;
       assert.equal(fs.readFileSync(ownerPath, 'utf8'), owner);
       assert.equal(fs.readFileSync(legacy.file, 'utf8'), legacy.bytes, 'a second writer cannot migrate user data');
       assert.equal(fs.existsSync(path.join(userData, 'migrations')), false);

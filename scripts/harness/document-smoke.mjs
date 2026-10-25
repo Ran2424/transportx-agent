@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 export async function documentSmoke(page, browser) {
-  const session = await page.evaluate(async () => (await (await fetch('/api/live-sessions')).json()).sessions[0]);
+  const session = await page.evaluate(async () => (await (await fetch(`/api/conversations/${localStorage.getItem('tau-active-conversation-id')}/snapshot`)).json()).runtime);
   const cwd = session.cwd;
   const composer = page.getByLabel('消息输入');
   const canvas = page.locator('[data-testid=agent-canvas]');
@@ -43,7 +43,7 @@ export async function documentSmoke(page, browser) {
     { evidenceId: 'canvas:pdf:3', sourceVersionId: 'canvas:pdf', locator: { kind: 'document', page: 3 }, contentKind: 'source-only' },
     { evidenceId: 'canvas:counts:rows', sourceVersionId: 'canvas:counts', locator: { kind: 'table', rowStart: 2, rowEnd: 3, columns: ['数量'] }, contentKind: 'result' },
   ];
-  const registry = { protocol: 'pi-citation', version: '3.0', schemaVersion: 2, sessionId: session.citationRegistryId || session.id, sources, evidence };
+  const registry = { protocol: 'pi-citation', version: '3.0', schemaVersion: 2, sessionId: JSON.parse(fs.readFileSync(path.join(cwd, '.tau/workspace.json'), 'utf8')).citationRegistryId, sources, evidence };
   fs.mkdirSync(path.join(cwd, '.tau'), { recursive: true });
   fs.writeFileSync(path.join(cwd, '.tau', 'citations.json'), JSON.stringify(registry));
 
@@ -90,7 +90,7 @@ export async function documentSmoke(page, browser) {
   const slowGate = new Promise((resolve) => { releaseSlow = resolve; });
   let receivedSlow;
   const slowStarted = new Promise((resolve) => { receivedSlow = resolve; });
-  const slowPattern = '**/api/file/content?*canvas-slow.md*';
+  const slowPattern = '**/api/conversations/*/files/content?*canvas-slow.md*';
   await page.route(slowPattern, async (route) => {
     receivedSlow();
     await slowGate;
@@ -100,7 +100,7 @@ export async function documentSmoke(page, browser) {
   await slowStarted;
   await page.getByRole('button', { name: '关闭视图：canvas-slow.md', exact: true }).click();
   await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).click();
-  const slowResponse = page.waitForResponse((response) => response.url().includes('/api/file/content?') && response.url().includes('canvas-slow.md'));
+  const slowResponse = page.waitForResponse((response) => response.url().includes('/files/content?') && response.url().includes('canvas-slow.md'));
   releaseSlow();
   await slowResponse;
   await page.unroute(slowPattern);
@@ -237,7 +237,7 @@ export async function documentSmoke(page, browser) {
   await present('markdown', 'update');
   await reader.getByRole('heading', { name: '自动刷新 B', exact: true }).waitFor();
   let reads = 0;
-  const countRead = (request) => { if (request.url().includes('/api/file/content?') && request.url().includes('canvas-auto.md')) reads++; };
+  const countRead = (request) => { if (request.url().includes('/files/content?') && request.url().includes('canvas-auto.md')) reads++; };
   page.on('request', countRead);
   await present('markdown', 'focus');
   assert.equal(reads, 0, 'focus does not reload the current Markdown');
@@ -296,7 +296,7 @@ export async function documentSmoke(page, browser) {
 
 export async function officeRefreshSmoke(page) {
   const { ZipFile } = await import('yazl');
-  const session = await page.evaluate(async () => (await (await fetch('/api/live-sessions')).json()).sessions[0]);
+  const session = await page.evaluate(async () => (await (await fetch(`/api/conversations/${localStorage.getItem('tau-active-conversation-id')}/snapshot`)).json()).runtime);
   const makeDocx = (text) => new Promise((resolve, reject) => {
     const zip = new ZipFile(), chunks = [];
     zip.addBuffer(Buffer.from('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'), '[Content_Types].xml');
@@ -321,13 +321,13 @@ export async function officeRefreshSmoke(page) {
   await page.waitForFunction(() => !document.querySelector('.canvas-panel:not([hidden]) .office-actions button')?.disabled);
   const revised = await makeDocx('Office revision B');
   fs.writeFileSync(file, revised);
-  const loaded = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/file/raw?') && response.url().includes('canvas-auto.docx'));
+  const loaded = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/files/raw?') && response.url().includes('canvas-auto.docx'));
   await present('update');
   assert.deepEqual(await (await loaded).body(), revised);
   await page.waitForFunction(() => !document.querySelector('.canvas-panel:not([hidden]) .office-actions button')?.disabled);
   assert.equal(await office.getByRole('alert').count(), 0);
   let reads = 0;
-  const countRead = (request) => { if (request.url().includes('canvas-auto.docx') && request.url().includes('/api/file/raw?')) reads++; };
+  const countRead = (request) => { if (request.url().includes('canvas-auto.docx') && request.url().includes('/files/raw?')) reads++; };
   page.on('request', countRead);
   await present('focus');
   assert.equal(reads, 0, 'focus does not reload Office bytes');

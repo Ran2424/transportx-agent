@@ -7,10 +7,10 @@ import { isWithin } from './util/path.js';
 import { writeJson as sendJson } from './http/response.js';
 
 type VideoResourceSession = { cwd: string };
-type VideoResourceRouteDeps = { getSession(sessionId: string): VideoResourceSession | null | undefined };
+type VideoResourceRouteDeps = { getSession(sessionId: string): VideoResourceSession | null | undefined; authorize(sessionId: string, resourceId: string): void };
 
 const RESOURCE_ID_RE = /^video_[a-f0-9]{16}$/;
-const VIDEO_RESOURCE_ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/video-resources\/([^/]+)\/data$/;
+const VIDEO_RESOURCE_ROUTE_RE = /^\/api\/conversations\/([^/]+)\/video-resources\/([^/]+)\/data$/;
 const RANGE_RE = /^bytes=(\d*)-(\d*)$/;
 
 export function handleVideoResourceRoute(
@@ -39,6 +39,8 @@ export function handleVideoResourceRoute(
     sendJson(res, 404, { error: 'Live session not found' });
     return true;
   }
+  if (!RESOURCE_ID_RE.test(resourceId)) { sendJson(res, 400, { error: 'Invalid video resource id' }); return true; }
+  deps.authorize(sessionId, resourceId);
   serveVideoResource(req, res, session, resourceId);
   return true;
 }

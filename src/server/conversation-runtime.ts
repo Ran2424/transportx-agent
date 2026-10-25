@@ -188,7 +188,7 @@ export class ConversationRuntime {
     const active = instance?.started && this.options.sessions.get(instance.session.id) === instance.session ? instance.session : null;
     const rows = history.sessionFile ? readSessionFileEntries(history.sessionFile).map(restoreCanvasContextMessage) : [];
     const snapshot = active ? active.snapshot() : new SessionProjection(new TimingMetricsStore(target.directory, conversationId).enrichEntries(rows), readAttachmentMessageRefs(target.directory, conversationId), geoInteractionService.readMessageRefs(target.directory, conversationId)).snapshot();
-    return { workspace: { id: target.manifest.id, name: target.manifest.name, revision: target.manifest.revision, defaultsRevision: target.manifest.defaultsRevision }, conversation: target.conversation, snapshot, runtime: active?.metadata() ?? null, ...this.options.sessions.clock() };
+    return { workspace: { id: target.manifest.id, path: target.directory, name: target.manifest.name, revision: target.manifest.revision, defaultsRevision: target.manifest.defaultsRevision }, conversation: target.conversation, snapshot, runtime: active?.metadata() ?? null, ...this.options.sessions.clock() };
   }
   async shutdown() {
     this.stopping = true;

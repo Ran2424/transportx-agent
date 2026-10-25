@@ -89,15 +89,15 @@ test('Session snapshots preserve authoritative metadata and independently config
         assert.equal(require.cache[require.resolve('./bin/config.js')], undefined);
         assert.equal(require.cache[require.resolve('./bin/platform-composition.js')], undefined);
         const calls = [];
-        const assembler = { assemble: (domain, cwd) => { calls.push(domain); return { modules: [], assets: [], workingDirectory: cwd }; }, save: () => {}, load: () => {} };
         PiRpcSession.prototype.start = async function () { calls.push(this.manager.runtime.command); };
-        const dependencies = (domain) => ({ defaultDomainId: domain, assembler, assemblerForProfile: () => assembler, createWorkspace: () => process.env.PI_CODING_AGENT_DIR, command: domain + '-pi', spawn: () => {}, endpoints: {}, launch: () => ({ args: [], env: {} }) });
+        const dependencies = (domain) => ({ command: domain + '-pi', spawn: () => {}, endpoints: {}, launch: () => ({ args: [], env: {} }) });
         (async () => {
           const a = new LiveSessionManager(dependencies('a'));
           const b = new LiveSessionManager(dependencies('b'));
-          const sa = await a.create({ model: 'provider/model' });
-          const sb = await b.create({ model: 'provider/model' });
-          assert.deepEqual(calls, ['a','a-pi','b','b-pi']);
+          const options = { cwd: process.env.PI_CODING_AGENT_DIR, workspaceId: 'test-workspace', conversationId: 'conv_00000000-0000-4000-8000-000000000001', lifecycle: {} };
+          const sa = await a.startInstance(new PiRpcSession(a, options));
+          const sb = await b.startInstance(new PiRpcSession(b, options));
+          assert.deepEqual(calls, ['a-pi','b-pi']);
           assert.equal(a.get(sb.id), undefined);
           assert.equal(b.get(sa.id), undefined);
           process.stdout.write('isolated');

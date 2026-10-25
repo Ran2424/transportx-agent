@@ -27,6 +27,7 @@ import {
 import { stripAttachmentContext } from '../contracts/attachments.js';
 import { stripCanvasContextPrompt } from '../contracts/canvas.js';
 import type { JsonRecord } from './types.js';
+import { assertGeoResourceAccess } from './geo-resource-access.js';
 import { readVerifiedGeoResource } from './geo-resource-storage.js';
 import { isWithin } from './util/path.js';
 import { conversationStatePath } from './workspace-store.js';
@@ -140,6 +141,7 @@ function requireVisualization(session: GeoInteractionSession, visualizationId: s
 
 function parseResource(session: GeoInteractionSession, resourceId: string) {
   const { manifest, buffer } = readVerifiedGeoResource(session.cwd, resourceId);
+  assertGeoResourceAccess(session, resourceId, manifest.sha256);
   const data = JSON.parse(buffer.toString('utf8')) as { type?: unknown; features?: unknown };
   if (data.type !== 'FeatureCollection' || !Array.isArray(data.features)) throw serviceError('Geo resource is not a FeatureCollection.', 409);
   return { manifest, features: data.features as GeoJsonFeature[] };

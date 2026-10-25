@@ -569,7 +569,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
       manifestVersion: 1,
       product: { name: 'TransportX Agent', version: '3.0.3' },
-      agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 1 },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 2 },
       pi: entry('runtimes/pi/cli.js', '0.80.10'),
       python: entry('runtimes/python/python', '3.10.0'),
     }));
@@ -603,7 +603,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
       manifestVersion: 1,
       product: { name: 'TransportX Agent', version: '3.0.9' },
-      agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 1 },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 2 },
       pi: entry('runtimes/pi/cli.js', '0.80.10'),
       python: entry('runtimes/python/python', '3.10.20'),
       ffmpeg: { ...entry('runtimes/ffmpeg/ffmpeg', '8.0'), arch: 'arm64' },

@@ -9,6 +9,9 @@ import type {
   AppEvent,
   AppMessage,
   LiveSession,
+  ConversationView,
+  ConversationViewUpdate,
+  WorkspaceIndex,
   SessionAttachment,
   SessionEntry,
   SessionSnapshot,
@@ -37,10 +40,15 @@ export type AppAction =
   | { type: 'runtime/connecting' }
   | { type: 'runtime/connected' }
   | { type: 'runtime/disconnected'; reason?: string }
+  | { type: 'runtime/healthReceived'; health: import('../../contracts/host-protocol.js').HostHealth }
   // session
-  | { type: 'session/listReceived'; sessions: LiveSession[] }
-  | { type: 'session/created'; session: LiveSession }
-  | { type: 'session/updated'; session: LiveSession }
+  | { type: 'session/indexReceived'; index: WorkspaceIndex }
+  | { type: 'session/runtimesReceived'; runtimes: LiveSession[] }
+  | { type: 'session/runtimeReceived'; runtime: LiveSession }
+  | { type: 'session/runtimeClosed'; liveSessionId: string }
+  | { type: 'session/listReceived'; sessions: ConversationView[] }
+  | { type: 'session/created'; session: ConversationView }
+  | { type: 'session/updated'; session: ConversationViewUpdate }
   | { type: 'session/closed'; sessionId: string }
   | { type: 'session/activated'; sessionId: string | null }
   | { type: 'session/snapshotReceived'; sessionId: string; snapshot: SessionSnapshot }

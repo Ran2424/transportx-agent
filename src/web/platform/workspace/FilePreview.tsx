@@ -99,7 +99,7 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
   const [size, setSize] = useState(previewSize);
   const drag = useRef<{ id: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const resize = useRef<{ id: number; corner: PreviewCorner; x: number; y: number; originX: number; originY: number; width: number; height: number } | null>(null);
-  const previewUrl = useMemo(() => externalSource?.url || `/api/file/preview?${new URLSearchParams({ sessionId, path: item.path })}`, [externalSource?.url, item.path, presentation.preview, sessionId]);
+  const previewUrl = useMemo(() => externalSource?.url || `/api/conversations/${encodeURIComponent(sessionId)}/files/preview?${new URLSearchParams({ path: item.path })}`, [externalSource?.url, item.path, presentation.preview, sessionId]);
   const originalDownloadUrl = useMemo(() => externalSource ? withDownload(externalSource.url) : sessionFileUrl(sessionId, item.path, true), [externalSource, item.path, sessionId]);
 
   useEffect(() => {

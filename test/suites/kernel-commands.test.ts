@@ -7,6 +7,9 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
   const { ConversationStore } = require('../../public/kernel/stores/conversation-store.js');
   const { SessionStore } = require('../../public/kernel/stores/session-store.js');
   const { ToolExecutionStore } = require('../../public/kernel/stores/tool-execution-store.js');
+  const native = (id: string, fields: Record<string, unknown> = {}) => ({ ...fields, id: `live-${id}`, conversationId: id, workspaceId: `ws-${id}` });
+  const seedRuntime = (kernel: any, id: string, fields: Record<string, unknown> = {}) => kernel.dispatch({ type: 'session/runtimeReceived', runtime: native(id, fields) });
+  const wireSnapshot = (snapshot: any, id = 'a') => ({ workspace: { id: `ws-${id}`, path: '/fixture', revision: 1 }, conversation: { id, name: id, createdAt: '2026-10-25T00:00:00.000Z', modelSpec: null }, snapshot, runtime: native(id, snapshot.session || {}), hostGeneration: snapshot.hostGeneration, revision: snapshot.revision });
   const clock = new ConversationStore();
   clock.streamStarted('clock', 'first');
   const startedAt = clock.get().bySession.clock.live.runStartedAt;
@@ -31,6 +34,7 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
       paths,
       actions,
       value: {
+        liveSessionId: (id: string) => id === 'current' ? 'current' : `live-${id}`,
         http: async (_path: string, init?: { body?: unknown }) => {
           paths.push(_path);
           commands.push(init?.body as Record<string, unknown>);
@@ -97,6 +101,7 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
       }
     });
     try {
+      kernel.dispatch({ type: 'session/runtimeReceived', runtime: { id: 'live-one', conversationId: 'one', workspaceId: 'workspace-one' } });
       kernel.dispatch({ type: 'conversation/promptQueued', sessionId: 'one', message: 'queued', clientCommandId: 'original-id' });
       await new Promise((resolve) => setImmediate(resolve));
       assert.equal(calls, 1);
@@ -121,9 +126,9 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     await session.deleteAttachment('session-1', attachment.id);
     assert.deepEqual(fixture.actions.map((action) => action.type), ['session/attachmentsReceived', 'session/attachmentAdded', 'session/attachmentRemoved']);
     assert.deepEqual(fixture.paths, [
-      '/api/live-sessions/session-1/attachments',
-      '/api/live-sessions/session-1/attachments?source=file',
-      '/api/live-sessions/session-1/attachments/att-1',
+      '/api/conversations/session-1/attachments',
+      '/api/conversations/session-1/attachments?source=file',
+      '/api/conversations/session-1/attachments/att-1',
     ]);
 
     const store = new SessionStore();
@@ -209,7 +214,8 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
       },
       http: async () => ({ ok: true, status: 200, async json() { return {}; } }),
     });
-    const emit = (event: Record<string, unknown>) => listener?.({ kind: 'message', message: { type: 'event', sessionId: 'session-1', event } });
+    seedRuntime(kernel, 'session-1');
+    const emit = (event: Record<string, unknown>) => listener?.({ kind: 'message', message: { type: 'event', sessionId: 'live-session-1', event } });
     try {
       emit({ type: 'agent_start' });
       emit({ type: 'message_start', message: { role: 'assistant', content: [] } });
@@ -257,7 +263,8 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
       },
       http: async () => ({ ok: true, status: 200, async json() { return {}; } }),
     });
-    const emit = (event: Record<string, unknown>) => listener?.({ kind: 'message', message: { type: 'event', sessionId: 'session-1', event } });
+    seedRuntime(kernel, 'session-1');
+    const emit = (event: Record<string, unknown>) => listener?.({ kind: 'message', message: { type: 'event', sessionId: 'live-session-1', event } });
     const partial = (args: Record<string, unknown>) => ({ role: 'assistant', content: [{ type: 'toolCall', id: 'write-1', name: 'write', arguments: args }] });
     try {
       emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 0, partial: partial({}) } });
@@ -304,19 +311,19 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     let emit!: (signal: any) => void;
     const kernel = createAppKernel({ transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => { }; } }, http: async () => { throw new Error('Pi queues must never trigger a resend'); } });
     const queue = (id: string) => kernel.stores.session.get().sessions.find((session: any) => session.id === id)?.piQueue;
-    const update = (sessionId: string, steering: string[], followUp: string[]) => emit({ kind: 'message', message: { type: 'event', sessionId, event: { type: 'queue_update', steering, followUp } } });
-    kernel.dispatch({ type: 'session/created', session: { id: 'a', isStreaming: true } });
+    const update = (sessionId: string, steering: string[], followUp: string[]) => emit({ kind: 'message', message: { type: 'event', sessionId: `live-${sessionId}`, event: { type: 'queue_update', steering, followUp } } });
+    seedRuntime(kernel, 'a', { isStreaming: true });
     kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
     kernel.dispatch({ type: 'conversation/promptQueued', sessionId: 'a', message: '本地待发送', clientCommandId: 'local-queue' });
     update('a', ['相同引导', '相同引导'], ['生成报告']);
-    kernel.dispatch({ type: 'session/created', session: { id: 'b', isStreaming: true } });
+    seedRuntime(kernel, 'b', { isStreaming: true });
     kernel.dispatch({ type: 'session/activated', sessionId: 'b' });
     update('b', ['另一会话'], []);
     update('a', ['相同引导'], ['生成报告']);
     assert.deepEqual(queue('a'), { steering: ['相同引导'], followUp: ['生成报告'] });
     assert.deepEqual(queue('b'), { steering: ['另一会话'], followUp: [] });
     kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
-    kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: { schemaVersion: 1, entries: [], isStreaming: true, session: { id: 'a', piQueue: { steering: [], followUp: ['生成报告'] } } } });
+    kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: { schemaVersion: 1, entries: [], isStreaming: true, session: { id: 'a', liveSessionId: 'live-a', piQueue: { steering: [], followUp: ['生成报告'] } } } });
     assert.deepEqual(queue('a'), { steering: [], followUp: ['生成报告'] });
     assert.equal(kernel.stores.conversation.get().bySession.a.live.queued[0].message, '本地待发送');
     update('a', [], []);
@@ -333,16 +340,16 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     const pending: Array<(data: any) => void> = [];
     const kernel = createAppKernel({
       transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => { }; } },
-      http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => pending.push(resolve)), text: async () => '' }),
+      http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => pending.push((value) => resolve(wireSnapshot(value)))), text: async () => '' }),
     });
     const tick = () => new Promise((resolve) => setImmediate(resolve));
     const snapshot = (generation: string, revision: number, text: string) => ({ schemaVersion: 1, hostGeneration: generation, revision, entries: [{ message: { role: 'assistant', content: text } }], isStreaming: false, isCompacting: false });
     emit({ kind: 'connected' });
-    emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 1, liveSessions: [{ id: 'a', isStreaming: true }] } });
+    emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 1, liveSessions: [native('a', { isStreaming: true })] } });
     kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
     emit({ kind: 'disconnected' });
     emit({ kind: 'connected' });
-    emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 5, liveSessions: [{ id: 'a', isStreaming: false }] } });
+    emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-1', revision: 5, liveSessions: [native('a', { isStreaming: false })] } });
     await tick();
     assert.equal(pending.length, 1);
     pending.shift()!(snapshot('host-1', 5, 'finished while disconnected'));
@@ -350,7 +357,7 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries[0].message.content, 'finished while disconnected');
     const delayed = kernel.commands.session.loadSnapshot('a');
     await tick();
-    emit({ kind: 'message', message: { type: 'event', sessionId: 'a', hostGeneration: 'host-1', revision: 6, event: { type: 'message_end', message: { role: 'assistant', content: 'new event' } } } });
+    emit({ kind: 'message', message: { type: 'event', sessionId: 'live-a', hostGeneration: 'host-1', revision: 6, event: { type: 'message_end', message: { role: 'assistant', content: 'new event' } } } });
     pending.shift()!(snapshot('host-1', 5, 'stale response'));
     kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await delayed });
     assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries.at(-1).message.content, 'new event');
@@ -365,7 +372,14 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries[0].message.content, 'latest request');
     emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host-2', revision: 0, liveSessions: [] } });
     kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: snapshot('host-1', 99, 'old Host') });
-    assert.equal(kernel.stores.conversation.get().bySession.a, undefined);
+    assert.equal(kernel.stores.session.get().sessions[0].liveSessionId, null, 'Host restart preserves the conversation and removes its stale runtime');
+    assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries[0].message.content, 'latest request');
+    emit({ kind: 'message', message: { type: 'live_session_created', hostGeneration: 'host-2', revision: 1, session: { ...native('a'), id: 'replacement-live-a' } } });
+    emit({ kind: 'message', message: { type: 'event', sessionId: 'live-a', hostGeneration: 'host-2', revision: 100, event: { type: 'message_end', message: { role: 'assistant', content: 'late old runtime' } } } });
+    emit({ kind: 'message', message: { type: 'event', sessionId: 'replacement-live-a', hostGeneration: 'host-2', revision: 2, event: { type: 'message_end', message: { role: 'assistant', content: 'replacement runtime' } } } });
+    assert.deepEqual(kernel.stores.session.get().sessions.map((item: any) => item.id), ['a'], 'reactivation keeps the logical tab identity');
+    assert.equal(kernel.stores.session.get().sessions[0].liveSessionId, 'replacement-live-a');
+    assert.equal(kernel.stores.conversation.get().bySession.a.snapshotEntries.at(-1).message.content, 'replacement runtime', 'a late old-live event cannot poison the new runtime revision');
     kernel.dispose();
   }
 
@@ -375,25 +389,25 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     let respond!: (data: any) => void;
     const kernel = createAppKernel({
       transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => { }; } },
-      http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = resolve; }), text: async () => '' }),
+      http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = (value) => resolve(wireSnapshot(value)); }), text: async () => '' }),
     });
-    emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host', revision: 1, liveSessions: [{ id: 'a', isStreaming: true }] } });
+    emit({ kind: 'message', message: { type: 'state', hostGeneration: 'host', revision: 1, liveSessions: [native('a', { isStreaming: true })] } });
     kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
     const loading = kernel.commands.session.loadSnapshot('a');
     await new Promise((resolve) => setImmediate(resolve));
-    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 3, sessionId: 'a', event: { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' newer' } } } });
-    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 4, sessionId: 'a', event: { type: 'queue_update', steering: ['未消费'], followUp: [] } } });
-    respond({ schemaVersion: 1, hostGeneration: 'host', revision: 2, entries: [], session: { id: 'a', piQueue: { steering: ['已消费', '未消费'], followUp: [] } }, isStreaming: true, streamingMessage: { role: 'assistant', content: 'authoritative partial' } });
+    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 3, sessionId: 'live-a', event: { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' newer' } } } });
+    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 4, sessionId: 'live-a', event: { type: 'queue_update', steering: ['未消费'], followUp: [] } } });
+    respond({ schemaVersion: 1, hostGeneration: 'host', revision: 2, entries: [], session: { id: 'a', liveSessionId: 'live-a', piQueue: { steering: ['已消费', '未消费'], followUp: [] } }, isStreaming: true, streamingMessage: { role: 'assistant', content: 'authoritative partial' } });
     kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await loading });
     assert.equal(kernel.stores.conversation.get().bySession.a.live.streamingText, 'authoritative partial newer');
     assert.deepEqual(kernel.stores.session.get().sessions[0].piQueue, { steering: ['未消费'], followUp: [] }, 'snapshot replays newer queue consumption');
-    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 5, sessionId: 'a', event: { type: 'agent_settled' } } });
+    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 5, sessionId: 'live-a', event: { type: 'agent_settled' } } });
     assert.equal(kernel.stores.session.isStreaming('a'), false);
     assert.deepEqual(kernel.stores.session.get().sessions[0].piQueue.steering, ['未消费'], 'settled does not erase Pi-owned pending messages');
     const clearing = kernel.commands.session.loadSnapshot('a');
     await new Promise((resolve) => setImmediate(resolve));
-    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 6, sessionId: 'a', event: { type: 'queue_update', steering: [], followUp: [] } } });
-    respond({ schemaVersion: 1, hostGeneration: 'host', revision: 5, entries: [], session: { id: 'a', piQueue: { steering: ['未消费'], followUp: [] } } });
+    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 6, sessionId: 'live-a', event: { type: 'queue_update', steering: [], followUp: [] } } });
+    respond({ schemaVersion: 1, hostGeneration: 'host', revision: 5, entries: [], session: { id: 'a', liveSessionId: 'live-a', piQueue: { steering: ['未消费'], followUp: [] } } });
     kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await clearing });
     assert.deepEqual(kernel.stores.session.get().sessions[0].piQueue, { steering: [], followUp: [] }, 'empty update also wins over an in-flight snapshot');
     kernel.dispose();
@@ -403,7 +417,8 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
   {
     let emit!: (signal: any) => void;
     const kernel = createAppKernel({ transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => { }; } }, http: async () => { throw new Error('unused'); } });
-    const event = (sessionId: string, value: any) => emit({ kind: 'message', message: { type: 'event', sessionId, event: value } });
+    seedRuntime(kernel, 'a'); seedRuntime(kernel, 'b');
+    const event = (sessionId: string, value: any) => emit({ kind: 'message', message: { type: 'event', sessionId: `live-${sessionId}`, event: value } });
     event('a', { type: 'agent_start' });
     event('a', { type: 'message_end', message: { role: 'assistant', content: '', stopReason: 'error', errorMessage: '401 Bearer secret-token request-body-sensitive' } });
     event('a', { type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: '401 Bearer secret-token' });
@@ -443,8 +458,8 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
   // closing a session prevents a late snapshot from resurrecting its stores
   {
     let respond!: (data: any) => void;
-    const kernel = createAppKernel({ transport: { subscribe: () => () => { } }, http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = resolve; }), text: async () => '' }) });
-    kernel.dispatch({ type: 'session/created', session: { id: 'a' } });
+    const kernel = createAppKernel({ transport: { subscribe: () => () => { } }, http: async () => ({ ok: true, status: 200, json: () => new Promise((resolve) => { respond = (value) => resolve(wireSnapshot(value)); }), text: async () => '' }) });
+    seedRuntime(kernel, 'a');
     const pending = kernel.commands.session.loadSnapshot('a');
     await new Promise((resolve) => setImmediate(resolve));
     kernel.dispatch({ type: 'session/closed', sessionId: 'a' });

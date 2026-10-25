@@ -1,10 +1,10 @@
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
 import { BrandMark } from '../../components/BrandMark';
 import { Button } from '../../components/ui/button';
 import { ConversationWorkspace } from './ConversationWorkspace';
 
-export function ConversationStage({ session, loading, onNewSession, showThinking, expandThinking }: { session: LiveSession | null; loading: boolean; onNewSession(): void; showThinking: boolean; expandThinking: boolean }) {
+export function ConversationStage({ session, loading, onNewSession, onActivate, activating, showThinking, expandThinking }: { session: ConversationView | null; loading: boolean; onNewSession(): void; onActivate(): void; activating: boolean; showThinking: boolean; expandThinking: boolean }) {
   const { t } = useTranslation();
   if (loading) {
     return <main className="conversation-stage" aria-busy="true"><div className="stage-loader"><span /><strong>{t('welcome.syncing')}</strong><small>{t('welcome.syncingDetail')}</small></div></main>;
@@ -23,5 +23,5 @@ export function ConversationStage({ session, loading, onNewSession, showThinking
     );
   }
 
-  return <ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} />;
+  return <div className="conversation-persistent-stage">{!session.liveSessionId && <div className="conversation-offline-bar"><span>历史预览 · 尚未启动执行{session.record?.lastStartFailure ? ` · ${session.record.lastStartFailure.message}` : ''}</span><Button disabled={activating} onClick={onActivate}>{activating ? '正在激活…' : '激活此会话'}</Button></div>}<ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} /></div>;
 }

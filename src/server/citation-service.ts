@@ -11,7 +11,7 @@ import type { ResolvedSessionPlan } from './session-assembly.js';
 import { isWithin } from './util/path.js';
 import { CitationRegistryStore } from './citation-registry.js';
 import { citationResourceFailure, hashCitationFile, locateCitationFile, verifyCitationFile } from './citation-resources.js';
-export type CitationServiceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: ResolvedSessionPlan | null };
+export type CitationServiceSession = { id: string; cwd: string; citationRegistryId?: string; entries?: unknown[]; resolvedSessionPlan?: ResolvedSessionPlan | null };
 export type CitationInput = { path: string; assetId?: string; title?: string; locator: CitationLocator; contentKind: CitationEvidence['contentKind']; text?: string; metadata?: CitationMetadata; deliverable?: boolean };
 function hash(value: string | Buffer) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function mimeFor(file: string) {
@@ -51,7 +51,27 @@ function previewFile(file: string, mime: string, locator?: CitationLocator): Cit
   return { kind: 'text', text: lines.slice(start, start + CITATION_PREVIEW_ROWS).join('\n'), truncated: start > 0 || lines.length > CITATION_PREVIEW_ROWS };
 }
 export class CitationService {
+  private inlinePublications = new WeakMap<object, Set<string>>();
   registry(session: CitationServiceSession) { return new CitationRegistryStore(session.cwd, session.citationRegistryId || session.id); }
+  private authorizeSource(session: CitationServiceSession, source: CitationSourceVersion) {
+    if (source.content.kind === 'file' && source.content.scope === 'asset') verifyCitationFile(session, source);
+    if (source.content.kind === 'inline') {
+      const ownHistory = session.entries?.some((row) => {
+        const message = (row as { message?: { role?: string; toolName?: string; isError?: boolean; details?: { kind?: string; citations?: CitationEnvelope } } })?.message;
+        return message?.role === 'toolResult' && message.toolName === 'tau_spatial_analyze' && !message.isError && message.details?.kind === 'tau-spatial-analysis' && message.details.citations?.sources?.some((item) => item.sourceVersionId === source.sourceVersionId && item.content.sha256 === source.content.sha256);
+      });
+      if (!this.inlinePublications.get(session)?.has(source.sourceVersionId) && !ownHistory) throw Object.assign(new Error('This conversation has no verified publication of this inline result.'), { status: 403 });
+    }
+  }
+  list(session: CitationServiceSession, offset = 0, limit = 200, ids?: string[]): CitationEnvelope {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('Invalid citation pagination.');
+    const registry = this.registry(session).load();
+    const sources = registry.sources.filter((source) => { try { this.authorizeSource(session, source); return true; } catch { return false; } });
+    const allowed = new Set(sources.map((source) => source.sourceVersionId));
+    const all = registry.evidence.filter((item) => allowed.has(item.sourceVersionId) && (!ids || ids.includes(item.evidenceId))), evidence = all.slice(offset, offset + limit);
+    const selected = new Set(evidence.map((item) => item.sourceVersionId));
+    return { protocol: 'pi-citation', version: '3.0', sources: sources.filter((source) => selected.has(source.sourceVersionId)).map(publicCitationSource), evidence, ...(offset + limit < all.length ? { nextOffset: offset + limit } : {}) };
+  }
   private evidence(source: CitationSourceVersion, input: Pick<CitationInput, 'locator' | 'contentKind' | 'text'>): CitationEvidence {
     const locator = parseCitationLocator(input.locator);
     if (!locator) throw new Error('Citation locator is invalid.');
@@ -99,7 +119,9 @@ export class CitationService {
     const value: CitationInline = typeof input.value === 'string' ? input.value : { columns: input.value.columns, rows: input.value.rows };
     const sha256 = hash(JSON.stringify(value)), sourceVersionId = `sv_${hash(JSON.stringify([input.sourceKey, sha256]))}`;
     const source: CitationSourceVersion = { sourceVersionId, sourceKey: input.sourceKey, title: input.title, acquiredAt: new Date().toISOString(), content: { kind: 'inline', sha256, value }, executionRef: input.executionRef };
-    return this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources: [source], evidence: [this.evidence(source, { locator: input.locator, contentKind: 'result' })] });
+    const registered = this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources: [source], evidence: [this.evidence(source, { locator: input.locator, contentKind: 'result' })] });
+    const own = this.inlinePublications.get(session) || new Set<string>(); own.add(sourceVersionId); this.inlinePublications.set(session, own);
+    return registered;
   }
   registerSpatialResult(session: CitationServiceSession, result: import('../contracts/spatial.js').SpatialAnalysisResultV1) {
     const output = locateCitationFile(session, { scope: 'session', path: result.output.relativePath });
@@ -112,6 +134,7 @@ export class CitationService {
     const registry = this.registry(session).load(), evidence = registry.evidence.find((item) => item.evidenceId === evidenceId);
     const source = evidence && registry.sources.find((item) => item.sourceVersionId === evidence.sourceVersionId);
     if (!evidence || !source) throw Object.assign(new Error('Evidence not found in this session.'), { code: 'ENOENT' });
+    this.authorizeSource(session, source);
     let preview: CitationPreview;
     try {
       preview = source.content.kind === 'inline' && source.content.value !== undefined ? previewValue(source.content.value) : previewFile(verifyCitationFile(session, source).resolved, source.content.kind === 'file' ? source.content.mimeType : 'text/plain', evidence.locator);

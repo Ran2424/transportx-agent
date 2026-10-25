@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface, type Interface } from 'node:readline/promises';
 import WebSocket from 'ws';
 import { defaultUserDataDir } from './app-paths.js';
+import { AGENT_HOST_PROTOCOL_VERSION, HOST_PROTOCOL_HEADER, compatibleHostHealth } from '../contracts/host-protocol.js';
 import { isPiExtensionDialogRequest } from '../contracts/pi-rpc.js';
 
 type CliOptions = {
@@ -98,7 +99,7 @@ Default Modules:
   ${DEFAULT_MODULES.join('\n  ') || '(none)'}`;
 }
 
-type HostHandle = { child: ChildProcess; baseUrl: string; authorization: string };
+type HostHandle = { conversationId?: string; cancelled?: boolean; child: ChildProcess; baseUrl: string; authorization: string };
 
 async function startHost(): Promise<HostHandle> {
   const appRoot = path.resolve(__dirname, '..');
@@ -151,14 +152,23 @@ function loadAppendSystemPrompt(filePath: string) {
 }
 
 async function jsonRequest(host: HostHandle, pathname: string, init: RequestInit = {}) {
+  while (true) {
+    const response = await fetch(`${host.baseUrl}/api/health`, { headers: { Authorization: host.authorization }, signal: AbortSignal.timeout(5000) });
+    const health = await response.json();
+    if (!response.ok || !compatibleHostHealth(health)) throw new CliError('Agent Host is incompatible. Upgrade or restart it.', 3);
+    if (health.dataState === 'blocked') throw new CliError(`Agent Host storage is blocked. ${String((health.migration as JsonObject)?.message || 'Open migration diagnostics.')} Report: ${String((health.migration as JsonObject)?.report || '/api/migration')}`, 3);
+    if (host.cancelled || host.child.exitCode !== null) throw new CliError('Agent Host initialization was cancelled.', 130);
+    if (health.dataState === 'ready') break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   const response = await fetch(`${host.baseUrl}${pathname}`, {
     ...init,
-    headers: { Authorization: host.authorization, 'Content-Type': 'application/json', ...(init.headers || {}) },
+    headers: { Authorization: host.authorization, 'Content-Type': 'application/json', [HOST_PROTOCOL_HEADER]: String(AGENT_HOST_PROTOCOL_VERSION), ...(init.headers || {}) },
   });
   const text = await response.text();
   let payload: JsonObject = {};
   try { payload = JSON.parse(text); } catch {}
-  if (!response.ok) throw new CliError(payload.error || `HTTP ${response.status} ${pathname}`, response.status === 401 ? 3 : 1);
+  if (!response.ok) throw new CliError(`${payload.error || `HTTP ${response.status} ${pathname}`}${payload.report ? `\nReport: ${payload.report}` : ''}${payload.itemId ? `\nMigration item: ${payload.itemId}` : ''}`, response.status === 401 ? 3 : 1);
   return payload;
 }
 
@@ -218,7 +228,8 @@ function messageText(message: JsonObject) {
 }
 
 async function finalAnswer(host: HostHandle, sessionId: string) {
-  const snapshot = await jsonRequest(host, `/api/live-sessions/${encodeURIComponent(sessionId)}/snapshot`);
+  const view = await jsonRequest(host, `/api/conversations/${encodeURIComponent(host.conversationId || '')}/snapshot`);
+  const snapshot = view.snapshot;
   return (snapshot.entries || []).filter((entry: JsonObject) => entry.type === 'message' && entry.message?.role === 'assistant').map((entry: JsonObject) => messageText(entry.message)).filter(Boolean).at(-1) || '';
 }
 
@@ -285,7 +296,7 @@ async function runPrompt(host: HostHandle, socket: WebSocket, sessionId: string,
 async function openSocket(host: HostHandle) {
   const socket = new WebSocket(host.baseUrl.replace('http', 'ws') + '/ws', { headers: { Authorization: host.authorization } });
   await new Promise<void>((resolve, reject) => {
-    socket.once('open', resolve);
+    socket.once('open', () => { socket.send(JSON.stringify({ type: 'hello', protocolVersion: AGENT_HOST_PROTOCOL_VERSION })); resolve(); });
     socket.once('error', reject);
   });
   return socket;
@@ -308,7 +319,7 @@ async function chooseModel(host: HostHandle, requested: string) {
 }
 
 async function stopHost(host: HostHandle, sessionId = '') {
-  if (sessionId) try { await jsonRequest(host, `/api/live-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }); } catch {}
+  if (host.conversationId) try { await jsonRequest(host, `/api/conversations/${encodeURIComponent(host.conversationId)}/close`, { method: 'POST', body: JSON.stringify({ stopCurrent: true }) }); } catch {}
   if (host.child.exitCode === null) host.child.kill('SIGTERM');
 }
 
@@ -328,7 +339,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   const interrupt = () => {
     if (running && sessionId) void rpc(host, { type: 'abort', sessionId }).catch(() => {});
     else {
-      interrupted = true;
+      interrupted = true; host.cancelled = true;
       process.exitCode = 130;
       input?.close();
     }
@@ -339,10 +350,11 @@ export async function runCli(argv = process.argv.slice(2)) {
     const selected = await resolveModules(host, options);
     const model = await chooseModel(host, options.model);
     socket = await openSocket(host);
-    const created = await jsonRequest(host, '/api/live-sessions', {
+    const created = await jsonRequest(host, '/api/conversations', {
       method: 'POST',
       body: JSON.stringify({
-        cwd: options.cwd,
+        requestId: crypto.randomUUID(),
+        workspace: { kind: 'new', name: options.name || 'TransportX CLI', ...(options.cwd ? { parentDirectory: options.cwd } : {}) },
         name: options.name || 'TransportX CLI',
         model,
         domainId: CLI_DOMAIN_ID,
@@ -350,9 +362,11 @@ export async function runCli(argv = process.argv.slice(2)) {
         profile: { schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected } },
       }),
     });
-    sessionId = created.session.id;
+    host.conversationId = created.conversation.id;
+    const activated = await jsonRequest(host, `/api/conversations/${encodeURIComponent(host.conversationId!)}/activate`, { method: 'POST', body: '{}' });
+    sessionId = activated.runtime.id;
     if (!options.json && !options.jsonl) {
-      process.stderr.write(`TransportX ${VERSION}\nModel: ${model}\nModules: ${selected.map((item) => `${item.id}@${item.version}`).join(', ') || '(none)'}\nWorkspace: ${created.session.cwd}\n\n`);
+      process.stderr.write(`TransportX ${VERSION}\nModel: ${model}\nModules: ${selected.map((item) => `${item.id}@${item.version}`).join(', ') || '(none)'}\nWorkspace: ${created.directory}\n\n`);
     }
     if (options.prompt) { running = true; await runPrompt(host, socket, sessionId, options.prompt, options); running = false; }
     if (options.print) return;
@@ -365,7 +379,7 @@ export async function runCli(argv = process.argv.slice(2)) {
       if (prompt === '/exit') break;
       if (prompt === '/abort') { await rpc(host, { type: 'abort', sessionId }); continue; }
       if (prompt === '/modules') { process.stdout.write(`${selected.map((item) => `${item.id}@${item.version}`).join('\n') || '(none)'}\n`); continue; }
-      if (prompt === '/status') { process.stdout.write(`Model: ${model}\nWorkspace: ${created.session.cwd}\n`); continue; }
+      if (prompt === '/status') { process.stdout.write(`Model: ${model}\nWorkspace: ${created.directory}\n`); continue; }
       running = true;
       try { await runPrompt(host, socket, sessionId, prompt, options); }
       catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); }

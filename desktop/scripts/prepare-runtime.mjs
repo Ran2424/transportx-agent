@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { createRequire } from 'node:module';
+const { AGENT_HOST_PROTOCOL_VERSION } = createRequire(import.meta.url)('../../bin/contracts/host-protocol.js');
 
 import { getPlatformProfile } from './platform-profile.mjs';
 
@@ -82,7 +84,7 @@ const manifest = {
   },
   agentHost: {
     version: pkg.version,
-    protocolVersion: 1,
+    protocolVersion: AGENT_HOST_PROTOCOL_VERSION,
     path: 'app.asar/bin/tau.js',
     sha256: sha256(agentHostSource),
   },

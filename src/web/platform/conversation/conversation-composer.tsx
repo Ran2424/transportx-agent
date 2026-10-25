@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession, SessionAttachment } from '../../../public/app-types.js';
+import type { ConversationView, SessionAttachment } from '../../../public/app-types.js';
 import type { CitationEnvelope } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
@@ -14,7 +14,7 @@ import { ComposerCitationPicker, useComposerCitationPicker } from './composer-ci
 import { geoContextStore } from '../../features/geo/geo-context-store';
 import { canvasContextStore } from '../canvas/canvas-context-store';
 
-export function ConversationComposer({ retryDraft, sessionId, session, streaming, compacting, queued, attachments, attachmentError, onReloadAttachments, onCitationEnvelope, onOpenCitationManager }: { retryDraft?: { message: string }; sessionId: string; session: LiveSession | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; attachments: Record<string, SessionAttachment>; attachmentError?: string; onReloadAttachments(): void; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
+export function ConversationComposer({ retryDraft, sessionId, session, streaming, compacting, queued, attachments, attachmentError, onReloadAttachments, onCitationEnvelope, onOpenCitationManager }: { retryDraft?: { message: string }; sessionId: string; session: ConversationView | undefined; streaming: boolean; compacting: boolean; queued: Array<{ message: string; attachmentIds?: string[] }>; attachments: Record<string, SessionAttachment>; attachmentError?: string; onReloadAttachments(): void; onCitationEnvelope(citations: CitationEnvelope): void; onOpenCitationManager(): void; }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const value = useSyncExternalStore(composerDraftStore.subscribe, () => composerDraftStore.getMessage(sessionId));
@@ -30,7 +30,7 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const uploading = pending.some((item) => item.status === 'uploading');
-  const canSubmit = !compacting && !uploading && (!!value.trim() || pending.some((item) => item.status === 'ready' && item.attachment) || geoContexts.length > 0 || canvasContexts.length > 0);
+  const canSubmit = !!session?.liveSessionId && !compacting && !uploading && (!!value.trim() || pending.some((item) => item.status === 'ready' && item.attachment) || geoContexts.length > 0 || canvasContexts.length > 0);
   const { citeOpen, citeLoading, citeCandidates, setCiteOpen, openCitePicker, insertCitation } = useComposerCitationPicker({ sessionId, onCitationEnvelope, onInsert: (marker) => setValue((current) => current.replace('/cite', marker)), onError: setError, onFocus: () => inputRef.current?.focus() });
   useEffect(() => { if (retryDraft) { setValue(retryDraft.message); inputRef.current?.focus(); } }, [retryDraft]);
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };

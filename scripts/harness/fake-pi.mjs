@@ -111,7 +111,8 @@ function chunkText(text, chunks) {
 }
 
 function registerFakeCitations(envelope) {
-  const sessionId = process.env.TAU_CITATION_SESSION_ID;
+  const manifestFile = path.join(process.cwd(), '.tau/workspace.json');
+  const sessionId = fs.existsSync(manifestFile) ? JSON.parse(fs.readFileSync(manifestFile, 'utf8')).citationRegistryId : process.env.TAU_CITATION_SESSION_ID;
   if (!sessionId || !envelope) return;
   const registryPath = path.join(process.cwd(), '.tau', 'citations.json');
   const registry = fs.existsSync(registryPath)

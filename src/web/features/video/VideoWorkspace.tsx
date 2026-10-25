@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { formatVideoTimestamp, parseVideoTimestamp, type VideoSceneItemV1 } from '../../../contracts/video.js';
 import { appKernel } from '../../app/composition-root';
 
@@ -39,7 +39,7 @@ function formatDuration(seconds: number) {
  * (camera, recording range, current absolute recording time, source/derived)
  * lives in the toolbar. Player transient state never leaves this component.
  */
-export function VideoWorkspace({ session, active, item: selected, compareItem, revision, onContextChange }: { session: LiveSession; active: boolean; item: VideoSceneItemV1; compareItem?: VideoSceneItemV1; revision: number; onContextChange?(target: unknown): void }) {
+export function VideoWorkspace({ session, active, item: selected, compareItem, revision, onContextChange }: { session: ConversationView; active: boolean; item: VideoSceneItemV1; compareItem?: VideoSceneItemV1; revision: number; onContextChange?(target: unknown): void }) {
   const { t } = useTranslation();
   const [dismissedCompareKey, setDismissedCompareKey] = useState('');
   const compareKey = compareItem ? `${revision}:${compareItem.id}` : '';
@@ -133,7 +133,7 @@ function VideoPlayer({ sessionId, item, active, compact = false, trailingAction,
     onContextChange?.({ kind: 'timestamp', at });
   };
 
-  const src = `/api/live-sessions/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(item.resourceId)}/data`;
+  const src = `/api/conversations/${encodeURIComponent(sessionId)}/video-resources/${encodeURIComponent(item.resourceId)}/data`;
 
   return (
     <div className="video-player">

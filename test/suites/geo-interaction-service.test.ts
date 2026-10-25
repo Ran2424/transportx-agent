@@ -47,6 +47,10 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
       activeGeoContextIds: [],
       envelope,
     };
+    if (!options.inline) {
+      const resourceFile = path.join(cwd, '.tau/geo-resources/geo_aaaaaaaaaaaaaaaaaaaaaaaa/manifest.json');
+      if (fs.existsSync(resourceFile)) session.entries.push({ type: 'message', message: { role: 'toolResult', toolName: 'publish_geodata', details: { kind: 'tau-geo-resource', resource: JSON.parse(fs.readFileSync(resourceFile, 'utf8')) } } });
+    }
     return session;
   }
 

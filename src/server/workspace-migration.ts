@@ -332,6 +332,6 @@ export class WorkspaceMigration {
     this.assertSystemReady();
     const canonical = location(directory);
     const source = this.read().items.find((item) => item.protectedPaths.some((target) => overlap(canonical, target) || overlap(canonical, location(target))));
-    if (source) throw failure('workspace_migration_required', 'New workspace allocation overlaps an inventoried source.', { itemId: source.id });
+    if (source) throw failure('workspace_migration_required', 'New workspace allocation overlaps an inventoried source.', { itemId: source.id, report: source.report || toPosixPath(this.reportFile) });
   }
 }

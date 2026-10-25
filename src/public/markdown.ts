@@ -268,10 +268,11 @@ function renderInline(text: string, citationNumbers?: Record<string, number>, im
   text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
   // Links
-  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => safeUrl(url) ? `<a href="${url}" target="_blank" rel="noopener">${label}</a>` : label);
+  const unavailable = locale.startsWith('zh') ? '旧资源链接不可用' : 'Legacy resource unavailable';
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => legacyHostResource(url) ? `${label} (${unavailable})` : safeUrl(url) ? `<a href="${url}" target="_blank" rel="noopener">${label}</a>` : label);
 
   // Auto-link bare URLs
-  text = text.replace(/(^|[^"'])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  text = text.replace(/(^|[^"'])(https?:\/\/[^\s<]+)/g, (_match, prefix: string, url: string) => legacyHostResource(url) ? `${prefix}${unavailable}` : `${prefix}<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
 
   // Restore inline code
   text = text.replace(/%%ICODE(\d+)%%/g, (_, idx: string) => codeSpans[parseInt(idx)]);
@@ -290,5 +291,13 @@ function escapeHtml(text: string) {
 
 function safeUrl(value: string, image = false) {
   const url = value.trim();
-  return image ? /^(https?:|data:image\/)/i.test(url) : /^(https?:|mailto:)/i.test(url);
+  return !legacyHostResource(url) && (image ? /^(https?:|data:image\/)/i.test(url) : /^(https?:|mailto:)/i.test(url));
+}
+
+function legacyHostResource(value: string) {
+  try {
+    const url = new URL(value, value.startsWith('/api/') ? 'http://localhost' : undefined);
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || (typeof location !== 'undefined' && url.origin === location.origin);
+    return local && /^\/api\/(?:live-sessions|sessions|session-history|file|files|file-content|file-preview|export)(?:\/|$)/.test(url.pathname);
+  } catch { return false; }
 }

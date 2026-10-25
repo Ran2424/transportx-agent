@@ -106,7 +106,7 @@ export class WorkspaceDeletion {
     for (const root of new Set(this.options.historyDirectories())) for (const source of historySources(root, () => {})) {
       try {
         const header = historyHeader(root, source.key);
-        if (overlap(header.cwd) && (path.resolve(root) !== path.resolve(this.options.store.sessionsDirectory) || !keys.includes(source.key))) throw failure('workspace_busy', 'Another Native history references the deletion root.');
+        if (overlap(header.cwd) && (fs.realpathSync(root) !== fs.realpathSync(this.options.store.sessionsDirectory) || !keys.includes(source.key))) throw failure('workspace_busy', 'Another Native history references the deletion root.');
       } catch (error) {
         if ((error as { code?: string }).code === 'workspace_busy' || (error as { protectedPaths?: string[] }).protectedPaths?.some(overlap)) throw error;
       }
