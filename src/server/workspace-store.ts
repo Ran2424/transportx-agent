@@ -99,6 +99,22 @@ export class WorkspaceStore {
       return entry;
     });
   }
+  /** A reserved standalone workspace is never shown as an ordinary workspace. */
+  reserveStandaloneWorkspace(workspaceId: string, directory: string) {
+    return mutateJson(this.catalogFile, async () => {
+      const catalog = this.readCatalog(), canonical = toPosixPath(directory);
+      const previous = catalog.entries.find((entry) => entry.workspaceId === workspaceId);
+      if (previous) {
+        if (previous.kind !== 'standalone' || previous.path !== canonical) throw failure('workspace_identity_conflict', 'Standalone reservation differs from its identity.');
+        return previous;
+      }
+      if (catalog.entries.some((entry) => isWithin(entry.path, canonical) || isWithin(canonical, entry.path))) throw failure('workspace_identity_conflict', 'Standalone workspace overlaps an existing workspace or deletion tombstone.');
+      const entry: WorkspaceCatalogEntryV1 = { workspaceId, path: canonical, creationRequestId: null, creationInputSha256: null, state: 'creating', kind: 'standalone', deletion: null };
+      catalog.entries.push(entry); catalog.revision++;
+      writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
+      return entry;
+    });
+  }
   reserveMigratedWorkspace(workspaceId: string, directory: string) {
     return mutateJson(this.catalogFile, async () => {
       const catalog = this.readCatalog(), canonical = toPosixPath(fs.realpathSync(directory));
@@ -277,6 +293,72 @@ export class WorkspaceStore {
     const parsed = parseResolvedSessionPlanStructured(readJsonObject(file));
     if (!parsed.ok || fs.realpathSync(parsed.value.workspace) !== fs.realpathSync(directory)) throw failure('history_identity_mismatch', 'Frozen plan is invalid or belongs to another workspace.');
     return parsed.value;
+  }
+  /** Rewrites only plan.workspace; every other frozen plan field must stay identical. */
+  relocatePlan(sourceDirectory: string, record: ConversationRecordV1, targetDirectory: string) {
+    if (!record.plan) return null;
+    const source = this.readPlan(sourceDirectory, record);
+    const target = toPosixPath(fs.realpathSync(targetDirectory));
+    const relocated = { ...source, workspace: target };
+    const parsed = parseResolvedSessionPlanStructured(relocated);
+    if (!parsed.ok) throw failure('invalid_session_plan', 'Relocated session plan is invalid.');
+    const withoutWorkspace = (plan: ResolvedSessionPlanV3) => ({ ...plan, workspace: '' });
+    const file = workspaceMetadataPath(targetDirectory, `.tau/${record.plan.path}`);
+    return mutateJson(file, async () => {
+      if (fs.existsSync(file)) {
+        const current = parseResolvedSessionPlanStructured(readJsonObject(file));
+        if (!current.ok) throw failure('metadata_corrupt', 'Relocated session plan is invalid.');
+        const currentWorkspace = fs.realpathSync(current.value.workspace);
+        if (currentWorkspace !== fs.realpathSync(targetDirectory) && currentWorkspace !== fs.realpathSync(sourceDirectory)) throw failure('workspace_identity_conflict', 'Existing plan belongs to an unrelated workspace.');
+        if (workspaceCreationDigest(withoutWorkspace(current.value)) !== workspaceCreationDigest(withoutWorkspace(parsed.value))) throw failure('workspace_revision_conflict', 'A different frozen plan already exists in the target conversation.');
+      }
+      writeJsonAtomic(file, workspaceDiskPlan(parsed.value));
+      return parsed.value;
+    });
+  }
+  /** Pi history keeps its reserved key; only the verified header cwd moves with the conversation. */
+  relocateHistory(record: ConversationRecordV1, sourceDirectory: string, targetDirectory: string) {
+    const root = fs.existsSync(this.sessionsDirectory) ? fs.realpathSync(this.sessionsDirectory) : path.resolve(this.sessionsDirectory);
+    const file = workspaceMetadataPath(root, record.history.key);
+    if (!fs.existsSync(file)) {
+      if (record.history.headerId !== null) throw failure('history_missing', 'Previously bound Pi history is missing; the conversation cannot be moved safely.');
+      return null;
+    }
+    if (!fs.lstatSync(file).isFile()) throw failure('history_identity_mismatch', 'Pi history is not a regular file.');
+    const target = fs.realpathSync(targetDirectory);
+    let header: { type?: unknown; id?: unknown; cwd?: unknown } = {}, end = -1;
+    const descriptor = fs.openSync(file, 'r');
+    try {
+      const buffer = Buffer.alloc(64 * 1024), count = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+      end = buffer.subarray(0, count).indexOf(10);
+      if (end < 0) throw failure('history_identity_mismatch', 'Pi history has no complete header.');
+      try { header = JSON.parse(buffer.subarray(0, end).toString('utf8')); }
+      catch { throw failure('history_identity_mismatch', 'Pi history header JSON is invalid.'); }
+    } finally { fs.closeSync(descriptor); }
+    if (!header || header.type !== 'session' || typeof header.id !== 'string' || record.history.headerId !== null && record.history.headerId !== header.id) throw failure('history_identity_mismatch', 'Pi history header does not match this conversation.');
+    if (typeof header.cwd !== 'string' || !path.isAbsolute(header.cwd)) throw failure('history_identity_mismatch', 'Pi history header workspace is invalid.');
+    let current: string;
+    try { current = fs.realpathSync(header.cwd); }
+    catch { throw failure('history_identity_mismatch', 'Pi history workspace no longer exists.'); }
+    if (current === target) return header.id;
+    if (current !== fs.realpathSync(sourceDirectory)) throw failure('history_identity_mismatch', 'Pi history belongs to another workspace.');
+    header.cwd = toPosixPath(target);
+    const temp = `${file}.${crypto.randomUUID()}.tmp`;
+    const output = fs.openSync(temp, 'wx', 0o600), input = fs.openSync(file, 'r');
+    try {
+      fs.writeSync(output, Buffer.from(`${JSON.stringify(header)}\n`));
+      const chunk = Buffer.alloc(1024 * 1024);
+      let position = end + 1;
+      while (true) {
+        const read = fs.readSync(input, chunk, 0, chunk.length, position);
+        if (!read) break;
+        fs.writeSync(output, chunk, 0, read);
+        position += read;
+      }
+      fs.fsyncSync(output);
+    } finally { fs.closeSync(input); fs.closeSync(output); }
+    try { fs.renameSync(temp, file); } finally { fs.rmSync(temp, { force: true }); }
+    return header.id;
   }
   newHistoryKey(conversationId: string) {
     if (!CONVERSATION_ID.test(conversationId)) throw failure('workspace_identity_conflict', 'Invalid conversation ID.');

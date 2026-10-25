@@ -27,6 +27,8 @@ export type WorkspaceManifestV1 = {
 export type WorkspaceCatalogEntryV1 = {
   workspaceId: string; path: string; creationRequestId: string | null; creationInputSha256: string | null;
   state: 'creating' | 'ready' | 'deleting' | 'deleted';
+  /** Reserved system workspace that only holds conversations moved out of ordinary workspaces. */
+  kind?: 'standalone';
   deletion: null | { requestId: string; manifestRevision: number; rootIdentity: string; conversationIds: string[]; historyKeys: string[]; invocationOwnerKeys: string[]; error: DeletionError; stage: 'frozen' | 'invocations-cleaned' | 'history-cleaned' | 'workspace-cleaned' };
 };
 export type WorkspaceCatalogV1 = { schemaVersion: 1; revision: number; entries: WorkspaceCatalogEntryV1[] };
@@ -149,12 +151,13 @@ export function parseWorkspaceCatalogStructured(value: unknown): WorkspaceParseR
       const ids = new Set(), paths = new Set(), requests = new Set();
       root.entries.forEach((value, index) => {
         const path = `catalog.entries[${index}]`;
-        const entry = fields(value, 'workspaceId path creationRequestId creationInputSha256 state deletion', path, diagnostics);
+        const entry = fields(value, 'workspaceId path creationRequestId creationInputSha256 state deletion kind', path, diagnostics);
         if (!entry) return;
         check(typeof entry.workspaceId === 'string' && WORKSPACE_ID.test(entry.workspaceId), `${path}.workspaceId`, diagnostics);
         check(text(entry.path, 4096) && /^(?:\/|[A-Za-z]:\/)/.test(String(entry.path)) && !String(entry.path).includes('\\') && !String(entry.path).split('/').some((part) => part === '.' || part === '..'), `${path}.path`, diagnostics);
         creation(entry, path, diagnostics);
         check(oneOf(entry.state, ['creating', 'ready', 'deleting', 'deleted']), `${path}.state`, diagnostics);
+        check(entry.kind === undefined || entry.kind === 'standalone', `${path}.kind`, diagnostics);
         check(!ids.has(entry.workspaceId) && !paths.has(entry.path) && (entry.creationRequestId === null || !requests.has(entry.creationRequestId)), path, diagnostics, 'Catalog identity, path and creation request must be unique.');
         ids.add(entry.workspaceId); paths.add(entry.path); if (entry.creationRequestId !== null) requests.add(entry.creationRequestId);
         if (entry.deletion !== null) {

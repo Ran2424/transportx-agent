@@ -7,6 +7,7 @@ import { WorkspaceMigrationRunner } from './workspace-migration-runner.js';
 import { WorkspaceRuntimeGate } from './workspace-runtime.js';
 import { WorkspaceService } from './workspace-service.js';
 import { WorkspaceDeletion } from './workspace-deletion.js';
+import { WorkspaceTransfer } from './workspace-transfer.js';
 import { ConversationRuntime } from './conversation-runtime.js';
 import type { LiveSessionManager } from './sessions.js';
 import { readSessionSummary, searchSessionFile } from './session-history-reader.js';
@@ -17,7 +18,7 @@ import { historicalResourceLinks } from './historical-resource-links.js';
 type Configuration = { domainId: string; modelSpec: string; profile: SessionProfileV1 };
 type Options = {
   store: WorkspaceStore; migration: WorkspaceMigration; runner: WorkspaceMigrationRunner; gate: WorkspaceRuntimeGate;
-  runtime: ConversationRuntime; creation: WorkspaceService; deletion: WorkspaceDeletion; sessions: LiveSessionManager;
+  runtime: ConversationRuntime; creation: WorkspaceService; deletion: WorkspaceDeletion; transfer?: WorkspaceTransfer; sessions: LiveSessionManager;
   assemble(configuration: Configuration, directory: string): ResolvedSessionPlanV3;
   validateModel(model: string): Promise<void>;
   beginOperation(): () => void;
@@ -52,7 +53,7 @@ export class WorkspaceHost {
   private async projectWorkspace(id: string, state: ReturnType<WorkspaceMigration['read']>, catalog: ReturnType<WorkspaceStore['readCatalog']>) {
     const source = state.items.find((item) => item.workspaceId === id);
     const entry = catalog.entries.find((entry) => entry.workspaceId === id);
-    const unavailable = (code: string, message: string, itemId?: string) => ({ id, path: entry?.path || source?.path || '', name: path.basename(entry?.path || source?.path || '') || id, revision: source?.revision ?? null, defaultsRevision: null, defaults: null, conversations: [], availability: source?.state === 'isolated' ? 'isolated' : entry?.state === 'deleting' ? 'deleting' : 'blocked', migrationItemId: itemId || source?.id || null, error: { code, message }, deletion: entry?.deletion || null });
+    const unavailable = (code: string, message: string, itemId?: string) => ({ id, path: entry?.path || source?.path || '', name: path.basename(entry?.path || source?.path || '') || id, revision: source?.revision ?? null, defaultsRevision: null, defaults: null, conversations: [], availability: source?.state === 'isolated' ? 'isolated' : entry?.state === 'deleting' ? 'deleting' : 'blocked', kind: entry?.kind === 'standalone' ? 'standalone' : 'workspace', migrationItemId: itemId || source?.id || null, error: { code, message }, deletion: entry?.deletion || null });
     if (!entry && !source) throw problem('workspace_missing', 'Workspace is not registered.', 404);
     if (entry?.state === 'deleted') throw problem('workspace_missing', 'Workspace was deleted.', 404);
     if (source && source.state !== 'ready') return unavailable('workspace_migration_required', 'Workspace migration is incomplete.', source.id);
@@ -66,16 +67,20 @@ export class WorkspaceHost {
       try { const history = this.options.store.inspectHistory(directory, record); if (history.sessionFile) { const summary = await readSessionSummary(history.sessionFile, (cwd) => typeof cwd === 'string' ? cwd : null); hasMessages = hasMessages || summary?.hasMessages || (summary ? false : null); if (typeof summary?.lastConversationAt === 'string' && summary.lastConversationAt && (!lastConversationAt || summary.lastConversationAt > lastConversationAt)) lastConversationAt = summary.lastConversationAt; } } catch { if (!hasMessages) hasMessages = null; }
       return { record, runtime: runtime?.metadata() || null, lastConversationAt, hasMessages };
     }));
-    return { id, path: directory, name: manifest.name, createdAt: manifest.createdAt, revision: manifest.revision, defaultsRevision: manifest.defaultsRevision, defaults: manifest.defaults, conversations, availability: 'ready', migrationItemId: source?.id || null, error: null, deletion: entry!.deletion };
+    return { id, path: directory, name: manifest.name, createdAt: manifest.createdAt, revision: manifest.revision, defaultsRevision: manifest.defaultsRevision, defaults: manifest.defaults, conversations, availability: 'ready', kind: entry!.kind === 'standalone' ? 'standalone' : 'workspace', migrationItemId: source?.id || null, error: null, deletion: entry!.deletion };
   }
   async index() {
     this.options.migration.assertSystemReady();
+    await this.options.transfer?.settled();
+    await this.options.transfer?.recover();
     const catalog = this.options.store.readCatalog(), state = this.options.migration.read();
-    const ids = new Set([...catalog.entries.filter((entry) => entry.state !== 'deleted' && (entry.creationRequestId !== null || this.options.migration.includesWorkspace(entry.path, state.scopes))).map((entry) => entry.workspaceId), ...state.items.filter((item) => item.workspaceId && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.state === 'deleted')).map((item) => item.workspaceId!)]);
+    const ids = new Set([...catalog.entries.filter((entry) => entry.state !== 'deleted' && (entry.kind === 'standalone' || entry.creationRequestId !== null || this.options.migration.includesWorkspace(entry.path, state.scopes))).map((entry) => entry.workspaceId), ...state.items.filter((item) => item.workspaceId && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.state === 'deleted')).map((item) => item.workspaceId!)]);
     const workspaces = [];
     for (const id of ids) {
       await new Promise<void>((resolve) => setImmediate(resolve));
-      workspaces.push(await this.projectWorkspace(id, state, catalog));
+      const workspace = await this.projectWorkspace(id, state, catalog);
+      // Empty standalone reservations are storage details, not visible groups.
+      if (workspace.kind !== 'standalone' || workspace.conversations.length) workspaces.push(workspace);
     }
     return { schemaVersion: 1, workspaces, migration: this.options.migration.status(), sources: state.items.filter((item) => !item.workspaceId) };
   }
@@ -153,4 +158,10 @@ export class WorkspaceHost {
     return { runtime: (await this.options.runtime.activate(id, input.stopCurrent === true)).metadata() };
   }
   create(input: CreateConversationInput) { return this.options.creation.create(input); }
+  async moveConversation(id: string, input: Record<string, unknown>) {
+    if (typeof input.target !== 'string') throw problem('invalid_move_input', 'Choose a registered workspace or the standalone destination.', 400);
+    if (!this.options.transfer) throw problem('system_not_ready', 'Conversation transfer is unavailable in this Host.', 503);
+    const result = await this.options.transfer.move(id, { target: input.target, stopCurrent: input.stopCurrent === true });
+    return { workspace: { id: result.manifest.id, path: result.directory, revision: result.manifest.revision }, conversation: result.conversation, runtime: null, standalone: result.standalone };
+  }
 }

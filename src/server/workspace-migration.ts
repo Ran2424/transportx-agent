@@ -330,7 +330,7 @@ export class WorkspaceMigration {
     this.assertSystemReady();
     const state = this.read();
     const entry = this.store.readCatalog().entries.find((entry) => entry.workspaceId === workspaceId);
-    if (entry?.creationRequestId === null && !withinWorkspaceRoots(entry.path, state.scopes)) throw failure('workspace_out_of_scope', 'This legacy directory is outside the configured application workspace roots.');
+    if (entry?.creationRequestId === null && entry.kind !== 'standalone' && !withinWorkspaceRoots(entry.path, state.scopes)) throw failure('workspace_out_of_scope', 'This legacy directory is outside the configured application workspace roots.');
     const own = state.items.find((item) => item.workspaceId === workspaceId);
     if (own && own.state !== 'ready') throw failure('workspace_migration_required', 'Workspace migration is incomplete.', { itemId: own.id, report: own.report || state.report });
     const { directory, manifest } = this.store.readWorkspace(workspaceId);

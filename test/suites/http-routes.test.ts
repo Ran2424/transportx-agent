@@ -206,6 +206,55 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
   }
 
+  // A conversation can move between workspaces and continue standalone with its history identity intact
+  {
+    liveManager.sessions.clear();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-http-move-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const firstCwd = path.join(root, 'first'), secondCwd = path.join(root, 'second');
+    fs.mkdirSync(firstCwd); fs.mkdirSync(secondCwd);
+    const first = fakeSession('tau_move_first'), second = fakeSession('tau_move_second');
+    first.cwd = firstCwd; second.cwd = secondCwd;
+    registerSession(first); registerSession(second);
+    const entry = (cwd: string) => workspaceHost.options.store.readCatalog().entries.find((item: any) => item.path === toPosixPath(fs.realpathSync(cwd))).workspaceId;
+    const firstWorkspace = entry(firstCwd), secondWorkspace = entry(secondCwd);
+    const attachmentId = 'att_abcdefghijkl', attachmentBytes = Buffer.from('moved attachment');
+    const attachmentDir = path.join(firstCwd, 'attachments', attachmentId); fs.mkdirSync(attachmentDir, { recursive: true });
+    fs.writeFileSync(path.join(attachmentDir, 'note.txt'), attachmentBytes);
+    writeJsonAtomic(path.join(firstCwd, '.tau/attachments.json'), { version: 1, attachments: [{ id: attachmentId, name: 'note.txt', relativePath: `attachments/${attachmentId}/note.txt`, mimeType: 'text/plain', size: attachmentBytes.length, sha256: crypto.createHash('sha256').update(attachmentBytes).digest('hex'), kind: 'document', source: 'picker', status: 'ready', sourceConversationId: first.conversationId }] });
+    writeJsonAtomic(path.join(firstCwd, '.tau/conversations', first.conversationId, 'attachment-message-refs.json'), { version: 1, refs: [{ text: 'moved', attachmentIds: [attachmentId] }] });
+    liveManager.sessions.delete(first.id); liveManager.sessions.delete(second.id);
+    const move = (target: string, stopCurrent = false) => request(`${base}/api/conversations/${first.conversationId}/move`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, ...(stopCurrent ? { stopCurrent } : {}) }) });
+    let response = await move(secondWorkspace);
+    if (response.status !== 200) assert.fail(await response.text());
+    let moved = await jsonBody(response);
+    assert.equal(moved.workspace.id, secondWorkspace);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, `http/${first.conversationId}.jsonl`), 'utf8').split('\n')[0]).cwd, toPosixPath(fs.realpathSync(secondCwd)));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(secondCwd, '.tau/conversations', first.conversationId, 'plan.json'), 'utf8')).workspace, toPosixPath(fs.realpathSync(secondCwd)));
+    assert.equal(fs.existsSync(path.join(secondCwd, 'attachments', attachmentId, 'note.txt')), true);
+    assert.equal(workspaceHost.options.store.readWorkspace(firstWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), false);
+    assert.equal(workspaceHost.options.store.readWorkspace(secondWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), true);
+    const sourceState = workspaceHost.options.store.readWorkspace(firstWorkspace);
+    await workspaceHost.options.store.editWorkspace(firstWorkspace, sourceState.manifest.revision, (manifest: any) => manifest.conversations.push(structuredClone(moved.conversation)));
+    (workspaceHost.options.transfer as any).recovered = false;
+    const recovered = await jsonBody(await request(`${base}/api/workspaces`));
+    assert.equal(recovered.workspaces.flatMap((workspace: any) => workspace.conversations).filter((item: any) => item.record.id === first.conversationId).length, 1, 'a crash window duplicate is reclaimed using the verified history owner');
+    assert.equal(workspaceHost.options.store.readWorkspace(firstWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), false);
+    response = await move('standalone');
+    assert.equal(response.status, 200);
+    moved = await jsonBody(response);
+    assert.equal(moved.standalone, true);
+    const standalone = workspaceHost.options.store.readCatalog().entries.find((item: any) => item.kind === 'standalone' && item.workspaceId === moved.workspace.id);
+    assert.ok(standalone);
+    const index = await jsonBody(await request(`${base}/api/workspaces`));
+    assert.equal(index.workspaces.some((workspace: any) => workspace.kind === 'standalone' && workspace.conversations.some((item: any) => item.record.id === first.conversationId)), true);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, `http/${first.conversationId}.jsonl`), 'utf8').split('\n')[0]).cwd, standalone.path);
+    response = await move(firstWorkspace);
+    assert.equal(response.status, 200);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, `http/${first.conversationId}.jsonl`), 'utf8').split('\n')[0]).cwd, toPosixPath(fs.realpathSync(firstCwd)));
+    assert.equal(workspaceHost.options.store.readWorkspace(firstWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), true);
+  }
+
   // Internal service tokens authenticate independently of user credentials and require scope
   {
     liveManager.sessions.clear();

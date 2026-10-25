@@ -164,6 +164,7 @@ export type SessionCommands = {
   create(input: CreateConversationInput): Promise<ConversationView>;
   activate(conversationId: string, input?: { stopCurrent?: boolean; confirmCurrentConfiguration?: { expectedRevision: number; domainId: string; modelSpec: string; profile: SessionProfileV1 } }): Promise<ConversationView>;
   rename(input: RenameSessionInput): Promise<void>;
+  moveConversation(conversationId: string, input: { target: 'standalone' | string; stopCurrent?: boolean }): Promise<ConversationView>;
   loadSnapshot(conversationId: string): Promise<SessionSnapshot>;
   listFiles(conversationId: string, path?: string): Promise<{ path: string; items: WorkspaceFile[] }>;
   openInSystem(conversationId: string, path: string): Promise<void>;
@@ -422,6 +423,14 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     async rename({ conversationId, ...input }) {
       await httpJson(deps.http, `/api/conversations/${encodeURIComponent(conversationId)}`, { method: 'PATCH', body: input }, { ...context, sessionId: conversationId });
       deps.dispatch({ type: 'session/updated', session: { id: conversationId, sessionName: input.name } });
+    },
+    async moveConversation(conversationId, input) {
+      const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(conversationId)}/move`, { method: 'POST', body: input }, { ...context, sessionId: conversationId }) as { workspace: { id: string; path: string; revision: number }; conversation: ConversationRecordV1; runtime: LiveSession | null };
+      const liveSessionId = deps.liveSessionId(conversationId);
+      if (liveSessionId) deps.dispatch({ type: 'session/runtimeClosed', liveSessionId });
+      const view = conversationView(data.conversation, data.workspace, data.runtime);
+      deps.dispatch({ type: 'session/updated', session: view });
+      return view;
     },
     async loadSnapshot(id) {
       const data = await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}/snapshot`, undefined, { ...context, sessionId: id }) as { workspace: { id: string; path: string; revision: number }; conversation: ConversationRecordV1; runtime: LiveSession | null; snapshot: SessionSnapshot; resourceLinks: Record<string, string>; hostGeneration: string; revision: number };
