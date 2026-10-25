@@ -111,6 +111,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 系统边界、依赖方向与模块职责（架构权威）
 - [docs/CHANGELOG.md](docs/CHANGELOG.md) — 按 Keep a Changelog 维护的发布历史
+- [工作台视觉优化 PLAN](<docs/工作台视觉优化 PLAN.md>) — Light / Dark / Sand 三主题视觉规则、实施阶段与验收标准（待实施）
 
 ## 给 Agent 的日常工作流建议
 

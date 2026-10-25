@@ -11,6 +11,8 @@ TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员
 
 阅读顺序：第 2 节看进程与技术栈，第 3 节看执行闭环与功能位置，第 5 节看模块装配和依赖，第 4、6、7 节看状态与资源边界。
 
+待实施方案：[工作区与会话机制整改 PLAN](<工作区与会话机制整改 PLAN.md>)。该方案拟调整工作区归属、持久会话和共享目录机制；下文仍描述当前实现，不表示整改已完成。
+
 ## 1. 项目目录速览
 
 ```text
@@ -119,6 +121,8 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 Canvas 打开后与对话列并排，分隔条可调整对话列宽度；Canvas 顶部的具名标签承载当前任务的地图、视频和文档。`pi-canvas` 1.0 Presentation Envelope 统一 `present / focus / update / clear` 生命周期、受控资源引用、`viewId`、`revision` 与每次呈现意图的 `presentationId`；Projection Core 兼容旧 Geo / Video Tool Result。受信任的 Adapter Registry 负责领域 payload、target、延迟 Renderer 和显式 Context，Canvas Shell 只管理标签与生命周期，不动态加载 Module 提供的前端代码。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。
 
 `src/public/` 提供浏览器端的 Kernel、Markdown/工具结果处理和 Geo runtime；`src/web/` 负责 React 应用、功能面板、i18n 与样式。React 通过 Kernel 消费 Snapshot/事件并发送命令，不解析原始 Pi RPC，也不直接访问本机文件。
+
+Pi RPC 事件按当前锁定版本逐项归一化：`agent_settled` 结束运行态，`session_info_changed` 同步 Host 与客户端会话名称。`queue_update` 按完整数组替换会话的 `piQueue.steering / followUp`，Host 去除内部附件、Geo 与 Canvas 提示后，随实时事件、会话列表和 Snapshot 返回；Session Store 按会话隔离，输入框上方分别展示等待处理的引导与后续消息。消费或清空以 Pi 的空数组/缩短数组为准，保留重复文本，`agent_settled` 不自行清队列；切换、刷新及断线重连通过 Host Snapshot 恢复，并沿现有 revision 机制重放 Snapshot 请求期间的新事件。此队列与浏览器本地待发送队列独立，不写入 localStorage、不触发重发；Pi 进程退出后不重建其内存队列。Extension UI 只有 `select / confirm / input / editor` 等待回答并进入重连 Snapshot；`notify` 展示通知，`set_editor_text` 更新所属会话的输入草稿，两者均不回传回答。`setStatus / setWidget / setTitle` 是终端呈现提示，工作台没有对应终端区域，显式忽略；模型同步的专用 `setStatus` 回执仍由 Host 先消费。未知事件及未知 UI 方法保留协议诊断。CLI 仅对需要回答的 UI 请求要求转到桌面，不因单向通知终止任务。
 
 侧栏固定工具栏下方按能力区 30% / 会话区 70% 分配空间，两区可收起，移动端默认收起能力区。能力中心按技能、数据、知识、工具、模板分类并支持搜索；数据来自 `platform.getOverview()`，由 [capability-projection.ts](../src/web/platform/capabilities/capability-projection.ts) 按具体模块与资产状态投影。模块是否启用、资产是否就绪和本会话是否装配分别呈现。
 

@@ -74,6 +74,8 @@ test/baselines/screenshots/*.png
 !/docs/Tool 与插件架构优化 P4 记录.md
 !/docs/交通仿真与优化能力升级 PLAN.md
 !/docs/Agent 主动启用工具与动态加载 PLAN.md
+!/docs/工作区与会话机制整改 PLAN.md
+!/docs/工作台视觉优化 PLAN.md
 !/docs/guide/
 !/docs/images/
 /docs/images/*
