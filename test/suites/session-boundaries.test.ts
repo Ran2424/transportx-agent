@@ -258,6 +258,32 @@ test('Session close, history deletion and process cancellation preserve writer o
     await assert.rejects(new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] }).initialize(), { code: 'metadata_corrupt' });
     assert.equal(fs.existsSync(store.catalogFile), false, 'a prior inventory never recreates a missing catalog from surviving histories');
   }
+  // A production-sized legacy inventory keeps health checks and list projection responsive.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const { WorkspaceStore } = require('../../bin/workspace-store.js'), { WorkspaceMigration } = require('../../bin/workspace-migration.js');
+    const { WorkspaceHost } = require('../../bin/workspace-host.js'), { acquireWriteLease } = require('../../bin/util/json-storage.js');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-large-inventory-'))), scenario = path.join(root, 'scenario'), agentDir = path.join(root, 'agent');
+    fs.mkdirSync(scenario); fs.mkdirSync(agentDir);
+    const release = acquireWriteLease(path.join(agentDir, 'host'));
+    t.after(() => { release(); fs.rmSync(root, { recursive: true, force: true }); });
+    for (let index = 0; index < 1200; index++) fs.mkdirSync(path.join(scenario, `legacy-workspace-${index}`));
+    const store = new WorkspaceStore(path.join(root, 'data'), path.join(root, 'sessions')), migration = new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] });
+    let last = performance.now(), longestGap = 0, beats = 0;
+    const heartbeat = setInterval(() => { const now = performance.now(); longestGap = Math.max(longestGap, now - last); last = now; beats++; migration.status(); }, 20);
+    try {
+      await migration.initialize();
+      const host = new WorkspaceHost({ store, migration });
+      const beforeList = performance.now(), index = await host.index();
+      assert.equal(index.workspaces.length, 1200);
+      assert.ok(index.workspaces.every((workspace: any) => workspace.availability === 'blocked'));
+      assert.ok(performance.now() - beforeList < 3000, 'pending rows reuse one inventory instead of parsing it for every workspace');
+      longestGap = Math.max(longestGap, performance.now() - last);
+      assert.ok(beats > 2, 'health status runs during inventory instead of waiting for its completion');
+      assert.ok(longestGap < 1000, `inventory/list blocked the Host for ${longestGap.toFixed(0)}ms`);
+      t.diagnostic(`1200 legacy workspaces: longest health heartbeat gap ${longestGap.toFixed(0)}ms`);
+    } finally { clearInterval(heartbeat); }
+  }
   // Kernel identities survive process.title changes; stale PID identities never authorize a stop.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');

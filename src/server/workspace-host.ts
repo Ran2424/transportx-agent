@@ -47,11 +47,15 @@ export class WorkspaceHost {
   private boundRuntime(id: string, workspaceId: string) { return [...this.options.sessions.sessions.values()].find((session) => session.conversationId === id && session.workspaceId === workspaceId && !session.terminating && session.lifecycle?.isReady(session)); }
   async workspace(id: string) {
     this.options.migration.assertSystemReady();
-    const source = this.options.migration.read().items.find((item) => item.workspaceId === id);
-    const entry = this.options.store.readCatalog().entries.find((entry) => entry.workspaceId === id);
+    return this.projectWorkspace(id, this.options.migration.read(), this.options.store.readCatalog());
+  }
+  private async projectWorkspace(id: string, state: ReturnType<WorkspaceMigration['read']>, catalog: ReturnType<WorkspaceStore['readCatalog']>) {
+    const source = state.items.find((item) => item.workspaceId === id);
+    const entry = catalog.entries.find((entry) => entry.workspaceId === id);
     const unavailable = (code: string, message: string, itemId?: string) => ({ id, path: entry?.path || source?.path || '', name: path.basename(entry?.path || source?.path || '') || id, revision: null, defaultsRevision: null, defaults: null, conversations: [], availability: source?.state === 'isolated' ? 'isolated' : entry?.state === 'deleting' ? 'deleting' : 'blocked', migrationItemId: itemId || source?.id || null, error: { code, message }, deletion: entry?.deletion || null });
     if (!entry && !source) throw problem('workspace_missing', 'Workspace is not registered.', 404);
     if (entry?.state === 'deleted') throw problem('workspace_missing', 'Workspace was deleted.', 404);
+    if (source && source.state !== 'ready') return unavailable('workspace_migration_required', 'Workspace migration is incomplete.', source.id);
     try { this.options.migration.assertWorkspaceReady(id); }
     catch (error) { return unavailable((error as { code?: string }).code || 'workspace_migration_required', (error as Error).message, (error as { itemId?: string }).itemId); }
     const { directory, manifest } = this.options.store.readWorkspace(id);
@@ -68,7 +72,12 @@ export class WorkspaceHost {
     this.options.migration.assertSystemReady();
     const catalog = this.options.store.readCatalog(), state = this.options.migration.read();
     const ids = new Set([...catalog.entries.filter((entry) => entry.state !== 'deleted').map((entry) => entry.workspaceId), ...state.items.filter((item) => item.workspaceId && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.state === 'deleted')).map((item) => item.workspaceId!)]);
-    return { schemaVersion: 1, workspaces: await Promise.all([...ids].map((id) => this.workspace(id))), migration: this.options.migration.status(), sources: state.items.filter((item) => !item.workspaceId) };
+    const workspaces = [];
+    for (const id of ids) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      workspaces.push(await this.projectWorkspace(id, state, catalog));
+    }
+    return { schemaVersion: 1, workspaces, migration: this.options.migration.status(), sources: state.items.filter((item) => !item.workspaceId) };
   }
   snapshot(id: string) { const target = this.target(id), result = this.options.runtime.snapshot(id); return { ...result, resourceLinks: historicalResourceLinks(result.snapshot.entries, id, target.directory, (value) => this.file(id, value)) }; }
   async search(query: string) {

@@ -276,6 +276,9 @@ export class WorkspaceMigration {
       // Preserve diagnostics and committed identities even after a source disappears.
       for (const item of state.items) if (!drafts.some((candidate) => candidate.id === item.id)) drafts.push(item);
       for (const item of drafts) {
+        // Large legacy inventories must keep health and migration diagnostics
+        // responsive while checking each workspace against protected paths.
+        await new Promise<void>((resolve) => setImmediate(resolve));
         if (item.kind === 'workspace' && !fs.existsSync(item.path) && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.deletion)) issue(item, 'workspace_missing', 'Inventory workspace is no longer available.');
         for (const other of drafts) {
           if (other.id === item.id || other.state === 'isolated') continue;
