@@ -71,7 +71,7 @@ export class WorkspaceHost {
   async index() {
     this.options.migration.assertSystemReady();
     const catalog = this.options.store.readCatalog(), state = this.options.migration.read();
-    const ids = new Set([...catalog.entries.filter((entry) => entry.state !== 'deleted').map((entry) => entry.workspaceId), ...state.items.filter((item) => item.workspaceId && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.state === 'deleted')).map((item) => item.workspaceId!)]);
+    const ids = new Set([...catalog.entries.filter((entry) => entry.state !== 'deleted' && (entry.creationRequestId !== null || this.options.migration.includesWorkspace(entry.path, state.scopes))).map((entry) => entry.workspaceId), ...state.items.filter((item) => item.workspaceId && !catalog.entries.some((entry) => entry.workspaceId === item.workspaceId && entry.state === 'deleted')).map((item) => item.workspaceId!)]);
     const workspaces = [];
     for (const id of ids) {
       await new Promise<void>((resolve) => setImmediate(resolve));

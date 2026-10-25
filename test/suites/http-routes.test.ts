@@ -36,7 +36,7 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     let manifest: any;
     if (entry) manifest = store.readWorkspace(entry.workspaceId).manifest;
     else {
-      entry = { workspaceId: `ws_${crypto.randomUUID()}`, path: session.cwd, creationRequestId: null, creationInputSha256: null, state: 'ready', deletion: null }; catalog.entries.push(entry); catalog.revision++;
+      entry = { workspaceId: `ws_${crypto.randomUUID()}`, path: session.cwd, creationRequestId: session.id, creationInputSha256: crypto.createHash('sha256').update(session.cwd).digest('hex'), state: 'ready', deletion: null }; catalog.entries.push(entry); catalog.revision++;
       manifest = { schemaVersion: 1, id: entry.workspaceId, revision: 0, name: session.id, createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: { domainId: null, modelSpec: null, profile: null }, citationRegistryId: session.id, conversations: [] };
     }
     session.workspaceId = entry.workspaceId;

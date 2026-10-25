@@ -304,7 +304,7 @@ Kernel 通过分页列表和按 Evidence ID 查询详情。列表包含来源元
 
 ### 4.2 历史引用迁移与会话恢复
 
-`WorkspaceMigration` 清点所有已知受管目录和 Native header；`WorkspaceMigrationRunner` 在目标维护租约内调用 `workspace-migration-plan.ts` 与只读的 [citation-migration.ts](../src/server/citation-migration.ts) 转换器。HTTP 地址就绪后仍可显示全局 initializing/blocked；全局索引可靠时，异常工作区独立阻塞，不影响其他 ready 工作区。
+`WorkspaceMigration` 仅自动发现软件默认/显式配置根目录内的工作区，Native header.cwd 只用于关联范围内的历史，不能把其他 Pi 项目登记进来。软件内主动创建的自定义父目录工作区仍按 catalog 管理；旧版本误收录的外部来源退出活动清单，元数据归入 `migrations/workspace-v1/excluded-sources.json`，原文件及 catalog 的身份/删除保护保留。`WorkspaceMigrationRunner` 在目标维护租约内调用 `workspace-migration-plan.ts` 与只读的 [citation-migration.ts](../src/server/citation-migration.ts) 转换器。HTTP 地址就绪后仍可显示全局 initializing/blocked；全局索引可靠时，异常工作区独立阻塞，不影响其他 ready 工作区。
 
 Citation 2.0 / Registry schemaVersion 1 转为 3.0 / schemaVersion 2，保留 registry 身份、来源哈希、书目信息和定位；旧 occurrenceId 作为 evidenceId，未使用的 locator 保留为 Evidence，旧 quote 按 summary 转换，不提升为已核对摘录。V2 缺少文件大小时从现存文件补齐；缺失时以 0 占位并记录诊断，不替换历史哈希。
 

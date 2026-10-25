@@ -13,6 +13,8 @@ const failure = (code: string, message: string, details: object = {}) => Object.
 const uuid = () => crypto.randomUUID();
 const overlap = (left: string, right: string) => isWithin(left, right) || isWithin(right, left);
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 4096);
+const withinWorkspaceRoots = (directory: string, scopes: WorkspaceMigrationScopeV1[]) => scopes.some((scope) => scope.workspaceRoots.some((root) => isWithin(root, directory)));
+const scopedItem = (item: WorkspaceMigrationItemV1, scopes: WorkspaceMigrationScopeV1[]) => item.kind === 'workspace' ? withinWorkspaceRoots(item.path, scopes) : item.protectedPaths.length === 0 || item.protectedPaths.some((directory) => withinWorkspaceRoots(directory, scopes));
 
 /** Canonicalize an existing prefix without creating missing scope directories. */
 function location(value: string): string {
@@ -84,8 +86,9 @@ export class WorkspaceMigration {
     if (!parsed.ok) throw failure('metadata_corrupt', parsed.diagnostics[0].message);
     if (parsed.value.report !== toPosixPath(this.reportFile)) throw failure('metadata_corrupt', 'Migration report path differs from this inventory.');
     if (!parsed.value.scopes.some((scope) => workspaceCreationDigest(scope) === workspaceCreationDigest(this.scope))) throw failure('system_not_ready', 'This configured scope has not been inventoried.');
-    return parsed.value;
+    return { ...parsed.value, items: parsed.value.items.filter((item) => scopedItem(item, parsed.value.scopes)) };
   }
+  includesWorkspace(directory: string, scopes = this.read().scopes) { return withinWorkspaceRoots(directory, scopes); }
   private assertWriter() {
     const lock = path.join(this.scope.agentDir, 'host.transportx-lock');
     if (!fs.existsSync(lock)) throw failure('writer_busy', 'Agent Host Writer ownership is required before workspace inventory.');
@@ -159,13 +162,26 @@ export class WorkspaceMigration {
         if (!parsed.ok) throw failure('metadata_corrupt', parsed.diagnostics[0].message);
         prior = parsed.value;
         if (!prior.scopes.every((scope) => scope.userData === this.scope.userData)) throw failure('metadata_corrupt', 'Migration inventory belongs to another user-data directory.');
+        const discoveryScopes = [...prior.scopes, this.scope];
+        const excluded = prior.items.filter((item) => !scopedItem(item, discoveryScopes));
+        if (excluded.length) {
+          // Keep the old discovery evidence without continuing conversion or
+          // presenting unrelated Pi projects as application workspaces.
+          const archive = path.join(this.directory, 'excluded-sources.json');
+          const existing = readJsonObject(archive, { schemaVersion: 1, items: [] });
+          if (existing.schemaVersion !== 1 || !Array.isArray(existing.items)) throw failure('metadata_corrupt', 'Excluded-source audit is invalid.');
+          const items = new Map((existing.items as WorkspaceMigrationItemV1[]).map((item) => [item.id, item]));
+          for (const item of excluded) items.set(item.id, item);
+          writeJsonAtomic(archive, { schemaVersion: 1, items: [...items.values()] });
+          prior = { ...prior, items: prior.items.filter((item) => scopedItem(item, discoveryScopes)) };
+        }
       }
       if (!fs.existsSync(this.store.catalogFile)) {
         if (prior || fs.existsSync(this.reportFile) || fs.existsSync(`${this.store.catalogFile}.bak`)) throw failure('metadata_corrupt', 'Workspace catalog is missing after prior migration. Inventory cannot recreate deletion tombstones.');
         const candidates = new Set<string>();
         for (const root of this.scope.workspaceRoots) if (fs.existsSync(root)) for (const entry of fs.readdirSync(root, { withFileTypes: true })) if (entry.isDirectory()) candidates.add(toPosixPath(path.join(root, entry.name)));
         for (const source of historySources(this.scope.sessionsDirectory, () => {})) {
-          try { candidates.add(historyHeader(this.scope.sessionsDirectory, source.key).cwd); } catch {}
+          try { const cwd = historyHeader(this.scope.sessionsDirectory, source.key).cwd; if (withinWorkspaceRoots(cwd, [this.scope])) candidates.add(cwd); } catch {}
         }
         const unindexed = [...candidates].filter((directory) => fs.existsSync(path.join(directory, '.tau/workspace.json')));
         if (unindexed.length) throw failure('metadata_corrupt', 'New-format workspace markers exist without a catalog. Recover the catalog explicitly; first-install import cannot prove deletion tombstones.', { paths: unindexed });
@@ -204,6 +220,7 @@ export class WorkspaceMigration {
       for (const entry of catalog.entries) {
         if (entry.deletion) for (const key of entry.deletion.historyKeys) for (const scope of scopes) registeredKeys.add(`${scope.sessionsDirectory}\n${key}`);
         if (entry.state === 'deleted' || entry.state === 'deleting') continue;
+        if (entry.creationRequestId === null && !withinWorkspaceRoots(entry.path, scopes)) continue;
         const migrating = state.items.find((item) => item.kind === 'workspace' && item.workspaceId === entry.workspaceId && item.path === entry.path);
         if (migrating && entry.creationRequestId === null) {
           candidate('workspace', migrating.path, migrating.sessionsDirectory);
@@ -232,6 +249,7 @@ export class WorkspaceMigration {
           try {
             const header = historyHeader(root, source.key);
             const registered = catalog.entries.find((entry) => entry.path === header.cwd);
+            if (!withinWorkspaceRoots(header.cwd, scopes) && !registered?.creationRequestId) continue;
             if (registered) {
               const migrating = drafts.find((item) => item.workspaceId === registered.workspaceId && item.kind === 'workspace' && item.stage !== 'published' && item.sessionsDirectory === root);
               if (!migrating) {
@@ -251,6 +269,7 @@ export class WorkspaceMigration {
             if (!fs.existsSync(header.cwd)) issue(item, 'workspace_missing', 'History points to a missing workspace directory.');
           } catch (error) {
             const protectedPaths = (error as { protectedPaths?: string[] }).protectedPaths || [];
+            if (protectedPaths.length && !protectedPaths.some((directory) => withinWorkspaceRoots(directory, scopes))) continue;
             issue(candidate('history', toPosixPath(source.file), root), 'history_header_invalid', message(error), protectedPaths);
           }
         }
@@ -274,7 +293,7 @@ export class WorkspaceMigration {
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
       // Preserve diagnostics and committed identities even after a source disappears.
-      for (const item of state.items) if (!drafts.some((candidate) => candidate.id === item.id)) drafts.push(item);
+      for (const item of state.items) if (scopedItem(item, scopes) && !drafts.some((candidate) => candidate.id === item.id)) drafts.push(item);
       for (const item of drafts) {
         // Large legacy inventories must keep health and migration diagnostics
         // responsive while checking each workspace against protected paths.
@@ -310,6 +329,8 @@ export class WorkspaceMigration {
   assertWorkspaceReady(workspaceId: string) {
     this.assertSystemReady();
     const state = this.read();
+    const entry = this.store.readCatalog().entries.find((entry) => entry.workspaceId === workspaceId);
+    if (entry?.creationRequestId === null && !withinWorkspaceRoots(entry.path, state.scopes)) throw failure('workspace_out_of_scope', 'This legacy directory is outside the configured application workspace roots.');
     const own = state.items.find((item) => item.workspaceId === workspaceId);
     if (own && own.state !== 'ready') throw failure('workspace_migration_required', 'Workspace migration is incomplete.', { itemId: own.id, report: own.report || state.report });
     const { directory, manifest } = this.store.readWorkspace(workspaceId);

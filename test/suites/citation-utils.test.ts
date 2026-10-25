@@ -106,7 +106,7 @@ test('Citation numbering, references and registry persistence stay consistent', 
   }
   const workspaceStore = new WorkspaceStore(dataRoot, sessions);
   releaseMigrationWriter = require('../../bin/util/json-storage.js').acquireWriteLease(path.join(dataRoot, 'host'));
-  const migrationHost = new WorkspaceMigration(workspaceStore, { agentDir: dataRoot, workspaceRoots: [projects, path.join(dataRoot, 'scenario')] });
+  const migrationHost = new WorkspaceMigration(workspaceStore, { agentDir: dataRoot, workspaceRoots: [projects, path.join(dataRoot, 'scenario'), path.dirname(archiveCwd)] });
   await migrationHost.initialize();
   const python = process.env.TAU_PYTHON_COMMAND || 'python3';
   const runner = new WorkspaceMigrationRunner(migrationHost, new WorkspaceRuntimeGate(python, path.join(migrationRoot, 'logs'), path.join(migrationRoot, 'coordination')), python);

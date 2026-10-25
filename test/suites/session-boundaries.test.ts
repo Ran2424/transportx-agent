@@ -258,6 +258,41 @@ test('Session close, history deletion and process cancellation preserve writer o
     await assert.rejects(new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] }).initialize(), { code: 'metadata_corrupt' });
     assert.equal(fs.existsSync(store.catalogFile), false, 'a prior inventory never recreates a missing catalog from surviving histories');
   }
+  // Pi history locations do not grant discovery authority over unrelated project directories.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+    const { WorkspaceStore } = require('../../bin/workspace-store.js'), { WorkspaceMigration } = require('../../bin/workspace-migration.js');
+    const { WorkspaceHost } = require('../../bin/workspace-host.js'), { acquireWriteLease, writeJsonAtomic } = require('../../bin/util/json-storage.js');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-discovery-scope-'))), scenario = path.join(root, 'scenario'), agentDir = path.join(root, 'agent'), sessions = path.join(root, 'sessions');
+    const local = path.join(scenario, 'owned'), external = path.join(root, 'other-pi-project'), prefix = path.join(root, 'scenario-unrelated'), explicit = path.join(root, 'explicit-application-workspace');
+    for (const directory of [local, external, prefix, explicit, agentDir, sessions]) fs.mkdirSync(directory, { recursive: true });
+    const release = acquireWriteLease(path.join(agentDir, 'host')); t.after(() => { release(); fs.rmSync(root, { recursive: true, force: true }); });
+    for (const [key, cwd] of [['local', local], ['external', external], ['prefix', prefix]]) fs.writeFileSync(path.join(sessions, `${key}.jsonl`), JSON.stringify({ type: 'session', id: key, cwd }) + '\n');
+    const externalHistory = fs.readFileSync(path.join(sessions, 'external.jsonl'));
+    const store = new WorkspaceStore(path.join(root, 'data'), sessions), migration = new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] });
+    await migration.initialize(); assert.deepEqual(migration.read().items.map((item: any) => item.path), [local]);
+    const legacyId = `ws_${crypto.randomUUID()}`;
+    await store.reserveMigratedWorkspace(legacyId, external);
+    const manifest = (id: string) => ({ schemaVersion: 1, id, revision: 0, name: 'Scope fixture', createdAt: '2026-10-25T00:00:00.000Z', updatedAt: '2026-10-25T00:00:00.000Z', defaultsRevision: 0, defaults: { domainId: null, profile: null, modelSpec: null }, citationRegistryId: id, conversations: [] });
+    await store.publishWorkspace(legacyId, manifest(legacyId));
+    const marker = fs.readFileSync(path.join(external, '.tau/workspace.json'));
+    const created = await store.reserveWorkspace('explicit-custom-parent', 'a'.repeat(64), () => explicit);
+    await store.publishWorkspace(created.workspaceId, manifest(created.workspaceId));
+    const prior = migration.read(), excluded = { ...structuredClone(prior.items[0]), id: `mig_${crypto.randomUUID()}`, workspaceId: legacyId, path: external, histories: [], protectedPaths: [external] };
+    prior.items.push(excluded); writeJsonAtomic(migration.stateFile, prior);
+    assert.ok(!migration.read().items.some((item: any) => item.path === external), 'old out-of-scope discoveries cannot resume before re-inventory');
+    await migration.initialize();
+    const host = new WorkspaceHost({ store, migration, sessions: { sessions: new Map() } });
+    const index = await host.index();
+    assert.deepEqual(index.workspaces.map((item: any) => item.path).sort(), [local, explicit].sort());
+    assert.throws(() => migration.assertWorkspaceReady(legacyId), { code: 'workspace_out_of_scope' });
+    migration.assertWorkspaceReady(created.workspaceId);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(migration.directory, 'excluded-sources.json'))).items[0].id, excluded.id);
+    await migration.initialize(); assert.equal(migration.read().items.length, 1, 'excluded sources are not rediscovered on restart');
+    assert.deepEqual(fs.readFileSync(path.join(sessions, 'external.jsonl')), externalHistory);
+    assert.deepEqual(fs.readFileSync(path.join(external, '.tau/workspace.json')), marker);
+    assert.ok(store.readCatalog().entries.some((entry: any) => entry.workspaceId === legacyId), 'catalog provenance and deletion protection remain intact');
+  }
   // A production-sized legacy inventory keeps health checks and list projection responsive.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
