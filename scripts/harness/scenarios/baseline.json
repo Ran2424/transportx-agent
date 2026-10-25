@@ -1,6 +1,34 @@
 {
   "description": "React smoke 场景：按 prompt 子串匹配回放协议一致的事件序列。provenance：协议一致的合成事件，形状与 test/fixtures 一致并经 server 实际消费验证。",
   "rules": [
+    {
+      "match": "Pi-queue-lifecycle",
+      "steps": [
+        { "streamText": { "text": "Pi 队列测试已就绪。", "chunks": 1, "delayMs": 10 } },
+        { "waitForFile": ".tau/queue-release-1" },
+        { "consumeQueue": "steering" },
+        { "streamText": { "text": "一条引导已处理。", "chunks": 1, "delayMs": 10 } },
+        { "waitForFile": ".tau/queue-release-2" },
+        { "consumeQueue": "steering" },
+        { "consumeQueue": "followUp" },
+        { "streamText": { "text": "Pi 队列消费完成。", "chunks": 1, "delayMs": 10 } }
+      ]
+    },
+    {
+      "match": "RPC-event-coverage",
+      "steps": [
+        { "event": { "type": "queue_update", "steering": ["补充条件"], "followUp": [] } },
+        { "event": { "type": "queue_update", "steering": [], "followUp": [] } },
+        { "entryAppended": { "type": "session_info", "name": "RPC 事件核对" } },
+        { "event": { "type": "session_info_changed", "name": "RPC 事件核对" } },
+        { "event": { "type": "extension_ui_request", "id": "rpc_status", "method": "setStatus", "statusKey": "progress", "statusText": "核对中" } },
+        { "event": { "type": "extension_ui_request", "id": "rpc_widget", "method": "setWidget", "widgetKey": "progress", "widgetLines": ["核对中"] } },
+        { "event": { "type": "extension_ui_request", "id": "rpc_title", "method": "setTitle", "title": "终端标题" } },
+        { "ui": { "method": "notify", "id": "rpc_notify", "message": "RPC 通知已收到。", "notifyType": "info" } },
+        { "event": { "type": "extension_ui_request", "id": "rpc_editor", "method": "set_editor_text", "text": "Pi 提供的后续问题草稿" } },
+        { "streamText": { "text": "RPC 事件核对完成。", "chunks": 2, "delayMs": 10 } }
+      ]
+    },
     {"match":"交付成果-长标题","steps":[{"tool":{"name":"tau_resolve_citation","args":{},"result":{"content":"交付成果已登记","details":{"deliverableEvidenceIds":["canvas:report","canvas:chart","canvas:counts:rows"]}}}},{"streamText":{"text":"长标题交付验收完成。[[cite:canvas:report,canvas:chart,canvas:counts:rows]]","chunks":1,"delayMs":10}}]},
     {"match":"canvas-refresh-markdown-clear","steps":[{"tool":{"name":"canvas_present","args":{"operation":"clear"},"result":{"content":[{"type":"text","text":"Canvas cleared"}],"details":{"canvas":{"protocol":"pi-canvas","version":"1.0","presentationId":"canvas-refresh-markdown-clear","adapterId":"com.transportx.canvas.document","kind":"document","viewId":"document:auto:markdown","revision":3,"operation":"clear","title":"canvas-auto.md","resources":[{"scope":"session-file","path":"canvas-auto.md"}],"payload":{"format":"markdown"},"generatedAt":"2026-10-18T00:00:00Z"}}}}},{"streamText":{"text":"canvas-refresh-markdown-clear 完成","chunks":1,"delayMs":10}}]},
     {"match":"canvas-refresh-pdf-clear","steps":[{"tool":{"name":"canvas_present","args":{"operation":"clear"},"result":{"content":[{"type":"text","text":"Canvas cleared"}],"details":{"canvas":{"protocol":"pi-canvas","version":"1.0","presentationId":"canvas-refresh-pdf-clear","adapterId":"com.transportx.canvas.document","kind":"document","viewId":"document:auto:pdf","revision":3,"operation":"clear","title":"canvas-auto.pdf","resources":[{"scope":"session-file","path":"canvas-auto.pdf"}],"payload":{"format":"pdf"},"generatedAt":"2026-10-18T00:00:00Z"}}}}},{"streamText":{"text":"canvas-refresh-pdf-clear 完成","chunks":1,"delayMs":10}}]},

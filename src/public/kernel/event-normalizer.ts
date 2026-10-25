@@ -11,6 +11,7 @@ import type { AppAction } from './actions.js';
 import { appError, type AppError } from '../../contracts/errors.ts';
 import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured, parseGeoScreenshotRequestStructured } from '../../contracts/geo.ts';
 import { retryState, classifyFailure } from '../../contracts/run-feedback.ts';
+import { isPiExtensionDialogRequest, parsePiMessageQueue } from '../../contracts/pi-rpc.ts';
 import type { TransportSignal } from './transport.js';
 
 type RawMessage = { type?: unknown; [key: string]: unknown };
@@ -52,7 +53,14 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
     // extension_ui_request may legitimately arrive without a session.
     if (eventType === 'extension_ui_request') {
       const sessionId = typeof rawSessionId === 'string' && rawSessionId ? rawSessionId : null;
-      return [{ type: 'extensionUi/requested', sessionId, request: event }];
+      if (isPiExtensionDialogRequest(event) || event.method === 'notify' || event.method === 'set_editor_text') {
+        return [{ type: 'extensionUi/requested', sessionId, request: event }];
+      }
+      if (['setStatus', 'setWidget', 'setTitle'].includes(String(event.method))) {
+        // Terminal presentation hints have no workbench surface or reply.
+        return [];
+      }
+      return [protocolError('unknown_extension_ui_method', `Unknown Pi extension UI method "${event.method}"`, sessionId ?? undefined)];
     }
 
     const sessionId = resolveSessionId(rawSessionId);
@@ -166,6 +174,12 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         // thinking level changes are reflected by live_session_updated.
         // agent_settled remains the authoritative streaming boundary.
         return [];
+      case 'queue_update': {
+        const piQueue = parsePiMessageQueue(event);
+        return piQueue
+          ? [{ type: 'session/updated', session: { id: sessionId, piQueue } }]
+          : [protocolError('malformed_pi_queue', 'Pi queue_update must contain steering and followUp string arrays', sessionId)];
+      }
       case 'entry_appended': {
         const entry = (event as { entry?: SessionEntry }).entry;
         return entry ? [{ type: 'conversation/messageAppended', sessionId, entry }] : [];
@@ -185,6 +199,8 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         return event.name
           ? [{ type: 'session/updated', session: { id: sessionId, sessionName: event.name } }]
           : [];
+      case 'session_info_changed':
+        return [{ type: 'session/updated', session: { id: sessionId, sessionName: typeof event.name === 'string' ? event.name.trim() || null : null } }];
       default:
         return [protocolError('unknown_event_type', `Unknown RPC event type "${eventType}"`, sessionId, { eventType })];
     }

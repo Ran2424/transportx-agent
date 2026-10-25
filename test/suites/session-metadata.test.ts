@@ -49,6 +49,31 @@ test('Session snapshots preserve authoritative metadata and independently config
     assert.equal(session.snapshot().streamingMessage, null);
     assert.equal(session.snapshot().activeToolEvents.length, 0);
     assert.notEqual(new LiveSessionManager().clock().hostGeneration, manager.clock().hostGeneration);
+    const { buildAttachmentContext } = require('../../bin/contracts/attachments.js');
+    session.handleEvent({ type: 'queue_update', steering: [`只分析早高峰${buildAttachmentContext([{ name: 'private.csv', relativePath: 'private.csv', size: 20 }])}`, '只分析早高峰'], followUp: ['然后生成报告'] });
+    const waitingQueue = { steering: ['只分析早高峰', '只分析早高峰'], followUp: ['然后生成报告'] };
+    assert.deepEqual(session.snapshot().session.piQueue, waitingQueue, 'snapshot retains duplicate queued texts without internal attachment context');
+    assert.deepEqual(session.liveMetadata().piQueue, waitingQueue, 'session list restores background queues');
+    session.handleEvent({ type: 'queue_update', steering: ['只分析早高峰'], followUp: ['然后生成报告'] });
+    assert.equal(session.snapshot().session.piQueue.steering.length, 1, 'consumption removes one occurrence');
+    session.handleEvent({ type: 'queue_update', steering: [1], followUp: [] });
+    assert.equal(session.snapshot().session.piQueue.steering.length, 1, 'malformed queue does not replace the last valid state');
+    session.handleEvent({ type: 'agent_settled' });
+    assert.equal(session.snapshot().session.piQueue.steering.length, 1, 'settling alone does not claim pending Pi messages were consumed');
+    session.handleEvent({ type: 'queue_update', steering: [], followUp: [] });
+    assert.deepEqual(session.snapshot().session.piQueue, { steering: [], followUp: [] });
+    for (const method of ['select', 'confirm', 'input', 'editor', 'notify', 'setStatus', 'setWidget', 'setTitle', 'set_editor_text']) {
+      session.handleEvent({ type: 'extension_ui_request', id: method, method });
+    }
+    assert.deepEqual([...session.pendingExtensionUiRequests.keys()], ['select', 'confirm', 'input', 'editor']);
+    assert.deepEqual(session.snapshot().pendingExtensionUiRequests.map((request: any) => request.method), ['select', 'confirm', 'input', 'editor'], 'reconnect restores only questions awaiting a response');
+    session.pendingSessionNamePersistence = '旧名称';
+    session.handleEvent({ type: 'session_info_changed', name: ' Pi 新名称 ' });
+    assert.equal(session.snapshot().session.sessionName, 'Pi 新名称');
+    assert.equal(session.titleSet, true);
+    assert.equal(session.pendingSessionNamePersistence, null, 'a pending old title cannot overwrite a Pi rename');
+    session.handleEvent({ type: 'session_info_changed' });
+    assert.equal(session.snapshot().session.sessionName, null);
   }
 
   // core managers import without reading configuration and accept independent runtime dependencies

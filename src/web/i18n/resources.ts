@@ -799,6 +799,9 @@ export const zhCN = {
   'conversation.removeCanvasContext': '移除 Canvas 上下文',
   'conversation.sendFailed': '发送失败',
   'conversation.queued': '排队中',
+  'conversation.agentQueue': '等待 Agent 处理',
+  'conversation.queuedSteering': '引导',
+  'conversation.queuedFollowUp': '后续',
   'conversation.cancelQueued': '取消排队消息',
   'conversation.uploading': '上传中…',
   'conversation.ready': '就绪',
@@ -825,6 +828,9 @@ export const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 export const enUS: Record<TranslationKey, string> = {
+  'conversation.agentQueue': 'Waiting for Agent',
+  'conversation.queuedSteering': 'Guidance',
+  'conversation.queuedFollowUp': 'Follow-up',
   'model.setup.local': 'Local model',
   'model.local.service': 'Address preset',
   'model.local.other': 'Custom address',

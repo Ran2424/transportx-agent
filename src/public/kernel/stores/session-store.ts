@@ -8,6 +8,7 @@
 import type { LiveSession, SessionAttachment, SessionSnapshot } from '../../app-types.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
 import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../../contracts/geo.js';
+import { parsePiMessageQueue } from '../../../contracts/pi-rpc.js';
 
 export type SessionStoreState = {
   sessions: LiveSession[];
@@ -143,7 +144,8 @@ export class SessionStore {
   }
 
   applySnapshot(sessionId: string, snapshot: SessionSnapshot) {
-    if (snapshot.session) this.upsert({ ...snapshot.session, id: snapshot.session.id ?? sessionId });
+    if (snapshot.session) this.upsert({ ...snapshot.session, id: snapshot.session.id ?? sessionId, piQueue: parsePiMessageQueue(snapshot.session.piQueue) ?? { steering: [], followUp: [] } });
+    else if (this.store.get().sessions.some((session) => session.id === sessionId)) this.upsert({ id: sessionId, piQueue: { steering: [], followUp: [] } });
     if (snapshot.isStreaming !== undefined) this.setStreaming(sessionId, !!snapshot.isStreaming);
     if (snapshot.isCompacting !== undefined) this.setCompacting(sessionId, !!snapshot.isCompacting);
     this.store.set((prev) => {

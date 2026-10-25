@@ -299,6 +299,34 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     kernel.dispose();
   }
 
+  // Pi queues are session scoped and never enter the browser's prompt queue.
+  {
+    let emit!: (signal: any) => void;
+    const kernel = createAppKernel({ transport: { subscribe(listener: (signal: any) => void) { emit = listener; return () => { }; } }, http: async () => { throw new Error('Pi queues must never trigger a resend'); } });
+    const queue = (id: string) => kernel.stores.session.get().sessions.find((session: any) => session.id === id)?.piQueue;
+    const update = (sessionId: string, steering: string[], followUp: string[]) => emit({ kind: 'message', message: { type: 'event', sessionId, event: { type: 'queue_update', steering, followUp } } });
+    kernel.dispatch({ type: 'session/created', session: { id: 'a', isStreaming: true } });
+    kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+    kernel.dispatch({ type: 'conversation/promptQueued', sessionId: 'a', message: '本地待发送', clientCommandId: 'local-queue' });
+    update('a', ['相同引导', '相同引导'], ['生成报告']);
+    kernel.dispatch({ type: 'session/created', session: { id: 'b', isStreaming: true } });
+    kernel.dispatch({ type: 'session/activated', sessionId: 'b' });
+    update('b', ['另一会话'], []);
+    update('a', ['相同引导'], ['生成报告']);
+    assert.deepEqual(queue('a'), { steering: ['相同引导'], followUp: ['生成报告'] });
+    assert.deepEqual(queue('b'), { steering: ['另一会话'], followUp: [] });
+    kernel.dispatch({ type: 'session/activated', sessionId: 'a' });
+    kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: { schemaVersion: 1, entries: [], isStreaming: true, session: { id: 'a', piQueue: { steering: [], followUp: ['生成报告'] } } } });
+    assert.deepEqual(queue('a'), { steering: [], followUp: ['生成报告'] });
+    assert.equal(kernel.stores.conversation.get().bySession.a.live.queued[0].message, '本地待发送');
+    update('a', [], []);
+    assert.deepEqual(queue('a'), { steering: [], followUp: [] });
+    kernel.dispatch({ type: 'session/closed', sessionId: 'a' });
+    assert.equal(queue('a'), undefined);
+    assert.deepEqual(queue('b'), { steering: ['另一会话'], followUp: [] });
+    kernel.dispose();
+  }
+
   // reconnect recovers missed completion and rejects late revision, request and Host generation
   {
     let emit!: (signal: any) => void;
@@ -354,11 +382,20 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     const loading = kernel.commands.session.loadSnapshot('a');
     await new Promise((resolve) => setImmediate(resolve));
     emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 3, sessionId: 'a', event: { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' newer' } } } });
-    respond({ schemaVersion: 1, hostGeneration: 'host', revision: 2, entries: [], isStreaming: true, streamingMessage: { role: 'assistant', content: 'authoritative partial' } });
+    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 4, sessionId: 'a', event: { type: 'queue_update', steering: ['未消费'], followUp: [] } } });
+    respond({ schemaVersion: 1, hostGeneration: 'host', revision: 2, entries: [], session: { id: 'a', piQueue: { steering: ['已消费', '未消费'], followUp: [] } }, isStreaming: true, streamingMessage: { role: 'assistant', content: 'authoritative partial' } });
     kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await loading });
     assert.equal(kernel.stores.conversation.get().bySession.a.live.streamingText, 'authoritative partial newer');
-    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 4, sessionId: 'a', event: { type: 'agent_settled' } } });
+    assert.deepEqual(kernel.stores.session.get().sessions[0].piQueue, { steering: ['未消费'], followUp: [] }, 'snapshot replays newer queue consumption');
+    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 5, sessionId: 'a', event: { type: 'agent_settled' } } });
     assert.equal(kernel.stores.session.isStreaming('a'), false);
+    assert.deepEqual(kernel.stores.session.get().sessions[0].piQueue.steering, ['未消费'], 'settled does not erase Pi-owned pending messages');
+    const clearing = kernel.commands.session.loadSnapshot('a');
+    await new Promise((resolve) => setImmediate(resolve));
+    emit({ kind: 'message', message: { type: 'event', hostGeneration: 'host', revision: 6, sessionId: 'a', event: { type: 'queue_update', steering: [], followUp: [] } } });
+    respond({ schemaVersion: 1, hostGeneration: 'host', revision: 5, entries: [], session: { id: 'a', piQueue: { steering: ['未消费'], followUp: [] } } });
+    kernel.dispatch({ type: 'session/snapshotReceived', sessionId: 'a', snapshot: await clearing });
+    assert.deepEqual(kernel.stores.session.get().sessions[0].piQueue, { steering: [], followUp: [] }, 'empty update also wins over an in-flight snapshot');
     kernel.dispose();
   }
 

@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface, type Interface } from 'node:readline/promises';
 import WebSocket from 'ws';
 import { defaultUserDataDir } from './app-paths.js';
+import { isPiExtensionDialogRequest } from '../contracts/pi-rpc.js';
 
 type CliOptions = {
   command: 'chat' | 'modules' | 'help' | 'version';
@@ -252,10 +253,10 @@ async function runPrompt(host: HostHandle, socket: WebSocket, sessionId: string,
       } else if (event?.type === 'tool_execution_start' && !options.json && !options.jsonl) {
         const detail = options.verbose ? ` ${JSON.stringify(event.args || {})}` : '';
         process.stderr.write(`[tool] ${event.toolName || 'unknown'}${detail}\n`);
-      } else if (event?.type === 'extension_ui_request' || envelope.type === 'geo_interaction_updated' || envelope.type === 'geo_screenshot_updated') {
+      } else if (isPiExtensionDialogRequest(event || {}) || envelope.type === 'geo_interaction_updated' || envelope.type === 'geo_screenshot_updated') {
         void rpc(host, { type: 'abort', sessionId }).catch(() => {});
         finish(new CliError('This request requires interaction in the desktop workbench.'));
-      } else if (event?.type === 'agent_end' || event?.type === 'agent_settled') finish();
+      } else if (event?.type === 'agent_settled') finish();
     };
     cancelWait = () => finish();
     socket.on('message', receive);

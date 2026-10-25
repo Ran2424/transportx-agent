@@ -128,6 +128,8 @@ function registerFakeCitations(envelope) {
 // ---- 回放引擎 ----
 let aborted = false;
 let replaying = null;
+const piQueue = { steering: [], followUp: [] };
+function emitQueueUpdate() { emit({ type: 'queue_update', steering: [...piQueue.steering], followUp: [...piQueue.followUp] }); }
 const pendingUi = new Map();
 
 async function runSteps(steps, promptMessage) {
@@ -171,6 +173,24 @@ async function runSteps(steps, promptMessage) {
     if (step.delay) { await sleep(step.delay); continue; }
 
     if (step.event) { emit(step.event); continue; }
+
+    if (step.waitForFile) {
+      while (!fs.existsSync(path.resolve(process.cwd(), step.waitForFile)) && !aborted) await sleep(20);
+      if (aborted) { finalizeAborted(); return; }
+      continue;
+    }
+
+    if (step.consumeQueue) {
+      const text = piQueue[step.consumeQueue].shift();
+      emitQueueUpdate();
+      if (text !== undefined) {
+        const message = { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() };
+        emit({ type: 'message_start', message });
+        appendSessionEntry({ type: 'message', message });
+        emit({ type: 'message_end', message });
+      }
+      continue;
+    }
 
     if (step.entryAppended) {
       const entry = appendSessionEntry(step.entryAppended);
@@ -311,6 +331,7 @@ async function runSteps(steps, promptMessage) {
       if (step.ui.notifyType) request.notifyType = step.ui.notifyType;
       if (step.ui.timeout) request.timeout = step.ui.timeout;
       emit(request);
+      if (!['select', 'confirm', 'input', 'editor'].includes(request.method)) continue;
       const response = await new Promise((resolve) => pendingUi.set(requestId, resolve));
       pendingUi.delete(requestId);
       diag(`ui ${requestId} responded: ${JSON.stringify(response)}`);
@@ -388,6 +409,12 @@ async function handleCommand(command) {
     case 'steer':
     case 'follow_up': {
       const message = String(command.message || '');
+      if (command.type !== 'prompt' && replaying) {
+        piQueue[command.type === 'steer' ? 'steering' : 'followUp'].push(message);
+        emitQueueUpdate();
+        respond(id, true, {});
+        return;
+      }
       if (message.startsWith('/transportx_reload_models ')) {
         emit({ type: 'extension_ui_request', id: crypto.randomUUID(), method: 'setStatus', statusKey: 'transportx:model-sync', statusText: JSON.stringify({ token: message.split(' ')[1] }) });
         respond(id, true, {});

@@ -18,6 +18,10 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
   const { t } = useTranslation();
   const kernel = appKernel;
   const value = useSyncExternalStore(composerDraftStore.subscribe, () => composerDraftStore.getMessage(sessionId));
+  const piQueued = [
+    ...(session?.piQueue?.steering ?? []).map((message) => ({ kind: 'steering' as const, message })),
+    ...(session?.piQueue?.followUp ?? []).map((message) => ({ kind: 'followUp' as const, message })),
+  ];
   const setValue = (update: string | ((current: string) => string)) => composerDraftStore.setMessage(sessionId, typeof update === 'function' ? update(composerDraftStore.getMessage(sessionId)) : update);
   const [error, setError] = useState('');
   const { pending, setPending, addAttachments, removeAttachment, reuseAttachment } = useComposerAttachments(sessionId, setError);
@@ -42,6 +46,10 @@ export function ConversationComposer({ retryDraft, sessionId, session, streaming
     try { if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); if (composerDraftStore.getMessage(sessionId) === value) setValue(''); setPending((current) => current.filter((item) => !item.attachment || !attachmentIds.includes(item.attachment.id))); geoContextIds.forEach((id) => geoContextStore.remove(sessionId, id)); canvasContextIds.forEach((id) => canvasContextStore.remove(sessionId, id)); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
   }
   return <footer className="conversation-composer">
+    {piQueued.length ? <section className="pi-message-queue" aria-label={t('conversation.agentQueue')}>
+      <header role="status"><strong>{t('conversation.agentQueue')}</strong><span>{t('common.itemCount', { count: piQueued.length })}</span></header>
+      <ol>{piQueued.map((item, index) => <li key={`${item.kind}-${index}`} data-queue-kind={item.kind}><span>{t(item.kind === 'steering' ? 'conversation.queuedSteering' : 'conversation.queuedFollowUp')}</span><p title={item.message}>{item.message}</p></li>)}</ol>
+    </section> : null}
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
     <SessionAttachmentLibrary sessionId={sessionId} attachments={attachments} selectedIds={pending.flatMap((item) => item.attachment ? [item.attachment.id] : [])} error={attachmentError} onReload={onReloadAttachments} onReuse={reuseAttachment} />
     <div className="composer-row">

@@ -864,6 +864,13 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .queued-prompts span { color: var(--status-warning); font-size: 11px; letter-spacing: .06em; }
 .queued-prompts p { overflow: hidden; margin: 0; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .queued-prompts button { top: 7px; right: 8px; position: absolute; }
+.pi-message-queue { margin-bottom: 7px; padding: 8px 10px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); background: var(--surface-raised); }
+.pi-message-queue header { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 11px; }
+.pi-message-queue header strong { font-weight: 550; }
+.pi-message-queue ol { display: grid; gap: 6px; max-height: 160px; overflow: auto; list-style: none; margin: 7px 0 0; padding: 0; }
+.pi-message-queue li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.pi-message-queue li > span { flex: none; padding: 2px 5px; border-radius: var(--tx-radius-sm); color: var(--text-secondary); background: var(--surface-hover); font-size: 11px; }
+.pi-message-queue p { min-width: 0; margin: 0; color: var(--text-primary); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer-error { margin: 6px 3px 0; color: var(--status-danger); font-size: 11px; }
 
 /* ============================================================

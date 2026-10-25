@@ -6,6 +6,7 @@ import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog } from '../../components/ui/dialog';
 import { isComposingInput } from '../../lib/input-composition';
+import { composerDraftStore } from '../conversation/composer-draft-store';
 
 type Request = AppEvent & {
   title?: string;
@@ -135,12 +136,14 @@ export function ExtensionDialogLayer({ pending }: { pending: ExtensionUiPending 
   const request = pending?.request as Request | undefined;
 
   useEffect(() => {
-    if (!pending || request?.method !== 'notify') return;
+    if (!pending || !request || !['notify', 'set_editor_text'].includes(request.method || '')) return;
     const key = `${pending.sessionId || ''}:${request.id || ''}`;
     if (notificationKey.current === key) return;
     notificationKey.current = key;
-    setNotification(request);
-    void kernel.commands.extensionUi.respond({ sessionId: pending.sessionId, id: request.id, response: {} });
+    if (request.method === 'notify') setNotification(request);
+    if (request.method === 'set_editor_text' && pending.sessionId && typeof request.text === 'string') composerDraftStore.setMessage(pending.sessionId, request.text);
+    // Pi's one-way notifications do not accept extension_ui_response.
+    kernel.dispatch({ type: 'extensionUi/resolved', sessionId: pending.sessionId, requestId: request.id });
   }, [kernel, pending, request]);
 
   useEffect(() => {
@@ -151,7 +154,7 @@ export function ExtensionDialogLayer({ pending }: { pending: ExtensionUiPending 
 
   return (
     <>
-      {pending && request?.method !== 'notify' ? <ExtensionDialog key={`${pending.sessionId || ''}:${request?.id || ''}`} pending={pending} /> : null}
+      {pending && !['notify', 'set_editor_text'].includes(request?.method || '') ? <ExtensionDialog key={`${pending.sessionId || ''}:${request?.id || ''}`} pending={pending} /> : null}
       {notification ? <div className={`extension-toast is-${notification.notifyType || 'info'}`} role="status"><strong>{notification.notifyType === 'error' ? t('extension.notificationFailed') : t('extension.notification')}</strong><span>{notification.message}</span><button type="button" aria-label={t('extension.closeNotification')} onClick={() => setNotification(null)}>×</button></div> : null}
     </>
   );

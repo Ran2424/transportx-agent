@@ -64,6 +64,7 @@ export type ModelRecord = {
 
 export type LiveSession = {
   id: string;
+  piQueue?: import('../contracts/pi-rpc.js').PiMessageQueue;
   pendingExtensionUiRequests?: AppEvent[];
   cwd?: string;
   sessionFile?: string | null;

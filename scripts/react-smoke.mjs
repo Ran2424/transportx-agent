@@ -13,6 +13,7 @@ import { conversationLayoutSmoke, toolStateSmoke, streamingScrollSmoke, workingD
 import { prepareComposerContextSmoke, composerSelectionSmoke } from './harness/composer-selection-smoke.mjs';
 import { capabilitySmoke } from './harness/capability-smoke.mjs';
 import { moduleLanguageSmoke } from './harness/module-language-smoke.mjs';
+import { piQueueSmoke } from './harness/pi-queue-smoke.mjs';
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -188,6 +189,34 @@ try {
   await roadInput.press('Enter');
   await page.locator('.assistant-message', { hasText: '已收到路段名称。' }).waitFor();
   assert.match(output, /ui ui_react_input responded: .*"value":"漕溪北路"/);
+
+  const oneWayReplies = [];
+  const captureUiReply = (request) => {
+    if (!request.url().endsWith('/api/rpc') || request.method() !== 'POST') return;
+    const command = request.postDataJSON();
+    if (command.type === 'extension_ui_response' && String(command.id).startsWith('rpc_')) oneWayReplies.push(command);
+  };
+  page.on('request', captureUiReply);
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
+  await composer.fill('RPC-event-coverage'); await composer.press('Enter');
+  await page.locator('.assistant-message', { hasText: 'RPC 事件核对完成。' }).waitFor();
+  await page.locator('.extension-toast', { hasText: 'RPC 通知已收到。' }).waitFor();
+  await page.waitForFunction(() => document.querySelector('.conversation-composer textarea')?.value === 'Pi 提供的后续问题草稿');
+  assert.equal(await page.getByRole('dialog').count(), 0, 'one-way UI requests never open a question dialog');
+  assert.doesNotMatch(await page.locator('.runtime-notice').allTextContents().then((items) => items.join('\n')), /Unknown RPC|Unknown Pi|不支持/);
+  assert.equal(oneWayReplies.length, 0, 'one-way notifications never send an answer');
+  const rpcSessionId = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
+  const rpcSnapshot = await page.evaluate(async (id) => (await fetch(`/api/live-sessions/${id}/snapshot`)).json(), rpcSessionId);
+  assert.equal(rpcSnapshot.session.sessionName, 'RPC 事件核对');
+  assert.deepEqual(rpcSnapshot.pendingExtensionUiRequests, []);
+  await page.reload();
+  await composer.waitFor();
+  assert.equal(await composer.inputValue(), 'Pi 提供的后续问题草稿', 'Pi editor text persists as a session draft');
+  assert.equal(await page.getByRole('dialog').count(), 0, 'reconnect does not restore one-way requests as dialogs');
+  page.off('request', captureUiReply);
+  await composer.fill('');
+  console.log('RPC event smoke: queue/name updates, one-way UI classification, notification, persistent editor draft and reconnect passed.');
+  await piQueueSmoke(page);
 
   await prepareComposerContextSmoke(page);
   await composer.fill('基线-geo');

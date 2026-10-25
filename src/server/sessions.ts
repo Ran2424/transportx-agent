@@ -1,4 +1,5 @@
 import { SessionModelSync } from './model-session-sync.js';
+import { isPiExtensionDialogRequest, parsePiMessageQueue, type PiMessageQueue } from '../contracts/pi-rpc.js';
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
 import { hostPlatform } from './host-platform.js';
 const fs = require('node:fs');
@@ -131,6 +132,7 @@ export class PiRpcSession {
   serviceTokens: Record<SessionService, string>;
   citationRegistryId: string;
   pendingExtensionUiRequests: Map<string, PiRpcMessage>;
+  piQueue: PiMessageQueue = { steering: [], followUp: [] };
   timingMetrics: TimingMetricsStore;
   eventTiming: SessionEventTiming;
   readonly modelSync = new SessionModelSync();
@@ -353,6 +355,16 @@ export class PiRpcSession {
     if (this.modelSync.consume(event)) return;
     this.touch(false);
     const type = event.type;
+    if (type === 'queue_update') {
+      const queue = parsePiMessageQueue(event);
+      if (queue) {
+        this.piQueue = {
+          steering: queue.steering.map((text) => this.messageText({ content: text })),
+          followUp: queue.followUp.map((text) => this.messageText({ content: text })),
+        };
+        event = { ...event, ...this.piQueue };
+      }
+    }
     if (type === 'session_tree' || type === 'session_switch') this.capabilityTracker.invalidateObservation();
     const now = Date.now();
     if (type === 'thinking_level_changed') {
@@ -386,7 +398,7 @@ export class PiRpcSession {
       }
       if (type === 'tool_execution_end') this.activeTools.delete(event.toolCallId);
     }
-    if (type === 'extension_ui_request' && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
+    if (isPiExtensionDialogRequest(event) && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
     if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
     if (type === 'compaction_start' || type === 'auto_compaction_start') this.isCompacting = true;
     if (type === 'compaction_end' || type === 'auto_compaction_end') {
@@ -408,6 +420,11 @@ export class PiRpcSession {
     if (event.sessionFile) {
       this.sessionFile = event.sessionFile;
       this.persistPendingSessionName();
+    }
+    if (type === 'session_info_changed') {
+      this.sessionName = typeof event.name === 'string' ? event.name.trim() || null : null;
+      this.titleSet = !!this.sessionName;
+      this.pendingSessionNamePersistence = null;
     }
     if (type === 'session_name' && event.name) {
       if (!this.setSessionName(event.name)) return;

@@ -1,5 +1,6 @@
 import type { JsonRecord, ModelIdentity } from './types.js';
 import { modelLabel } from './model-utils.js';
+import type { PiMessageQueue } from '../contracts/pi-rpc.js';
 
 export type SessionMetadataSource = {
   id: string;
@@ -18,6 +19,7 @@ export type SessionMetadataSource = {
   lastConversationAt: string;
   contextUsage: JsonRecord | null;
   resolvedSessionPlan: unknown;
+  piQueue?: PiMessageQueue;
 };
 
 export function sessionMetadata(source: SessionMetadataSource, capabilities: unknown, pendingExtensionUiRequests: unknown[]) {
@@ -31,6 +33,7 @@ export function sessionMetadata(source: SessionMetadataSource, capabilities: unk
     thinkingLevel: source.thinkingLevel,
     sessionFile: source.sessionFile,
     sessionName: source.sessionName,
+    piQueue: source.piQueue ?? { steering: [], followUp: [] },
     isStreaming: source.isStreaming,
     isCompacting: source.isCompacting,
     autoCompactionEnabled: source.autoCompactionEnabled,
@@ -52,6 +55,7 @@ export function liveSessionMetadata(source: SessionMetadataSource, capabilities:
     thinkingLevel: source.thinkingLevel,
     sessionFile: source.sessionFile,
     sessionName: source.sessionName,
+    piQueue: source.piQueue ?? { steering: [], followUp: [] },
     isStreaming: source.isStreaming,
     isCompacting: source.isCompacting,
     autoCompactionEnabled: source.autoCompactionEnabled,

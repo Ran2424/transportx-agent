@@ -42,6 +42,7 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
     const projectsDir = path.join(root, 'projects');
     const systemPromptFile = path.join(root, 'eval-system-prompt.md');
     const launchFile = path.join(root, 'fake-pi-launch.json');
+    const scenarioFile = path.join(root, 'rpc-events.json');
     const cliEnv = {
       ...process.env,
       HOME: homeDir,
@@ -53,6 +54,20 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
     };
     for (const directory of [homeDir, sessionsDir, projectsDir]) fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(systemPromptFile, '# Evaluation policy\nAnswer exactly.\n');
+    fs.writeFileSync(scenarioFile, JSON.stringify({ fallback: { steps: [
+      { event: { type: 'extension_ui_request', id: 'cli_notify', method: 'notify', message: '开始分析' } },
+      { event: { type: 'extension_ui_request', id: 'cli_status', method: 'setStatus', statusKey: 'progress', statusText: '分析中' } },
+      { event: { type: 'extension_ui_request', id: 'cli_widget', method: 'setWidget', widgetKey: 'progress', widgetLines: ['分析中'] } },
+      { event: { type: 'extension_ui_request', id: 'cli_title', method: 'setTitle', title: '分析任务' } },
+      { event: { type: 'extension_ui_request', id: 'cli_editor', method: 'set_editor_text', text: '后续问题' } },
+      { event: { type: 'queue_update', steering: [], followUp: [] } },
+      { event: { type: 'agent_end', willRetry: true } },
+      { event: { type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 50, errorMessage: '429' } },
+      { delay: 100 },
+      { event: { type: 'auto_retry_end', success: true } },
+      { event: { type: 'agent_start' } },
+      { streamText: { text: 'fake-pi 重试完成后输出', chunks: 1 } },
+    ] } }));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
     const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -74,13 +89,14 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
           TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'scripts', 'harness', 'fake-pi.mjs'),
           TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
           FAKE_PI_LAUNCH_FILE: launchFile,
+          FAKE_PI_SCENARIO: scenarioFile,
         },
       }, (error: Error | null, stdout: string, stderr: string) => error ? reject(new Error(`${error.message}\n${stderr}`)) : resolve({ stdout, stderr }));
     });
 
     const output = JSON.parse(result.stdout.trim());
     assert.equal(output.type, 'result');
-    assert.match(output.answer, /fake-pi/);
+    assert.equal(output.answer, 'fake-pi 重试完成后输出', 'one-way events and retry agent_end do not terminate a CLI prompt');
     const launch = JSON.parse(fs.readFileSync(launchFile, 'utf8'));
     const appendPromptIndex = launch.argv.indexOf('--append-system-prompt');
     assert.match(launch.argv[appendPromptIndex + 1], /^# TransportX Agent 命令行会话上下文/);
