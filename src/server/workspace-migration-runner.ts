@@ -16,6 +16,7 @@ type Journal = Omit<WorkspaceMigrationPlan, 'writes'> & { writes: Array<Omit<Mig
 const failure = (code: string, message: string) => Object.assign(new Error(message), { code, status: 409 });
 const local = (item: WorkspaceMigrationItemV1, relative: string) => workspaceMetadataPath(item.path, `.tau/migrations/workspace-v1/${relative}`);
 export type MigrationSourceDecision = { requestId: string; expectedRevision: number; reportDigest: string; action: 'isolate' | 'retry' | 'reprepare' };
+export type IsolatedMigrationDeletion = { requestId: string; expectedRevision: number; confirm: true };
 const covers = (workspace: WorkspaceMigrationItemV1, source: WorkspaceMigrationItemV1) => source.kind !== 'workspace' && source.sessionsDirectory === workspace.sessionsDirectory && (source.path === workspace.path || workspace.histories.some((history) => toPosixPath(workspaceMetadataPath(workspace.sessionsDirectory, history.key)) === source.path));
 
 /** Target transactions use the runtime mutex; global progress writes remain short. */
@@ -111,6 +112,48 @@ export class WorkspaceMigrationRunner {
     await this.migration.initialize(); item = this.item(id);
     for (const target of this.migration.read().items) if (target.kind === 'workspace' && target.state !== 'ready' && target.state !== 'isolated' && (target.id === id || covers(target, item))) await this.convert(target.id);
     return this.item(id);
+  }
+  /** Permanently remove a source that the user explicitly isolated from migration. */
+  async deleteIsolated(id: string, input: IsolatedMigrationDeletion) {
+    if (!input || input.confirm !== true || typeof input.requestId !== 'string' || !input.requestId.trim() || input.requestId.length > 200 || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) throw failure('invalid_deletion_confirmation', 'Deleting an isolated source requires explicit confirmation, requestId and revision.');
+    const initial = this.item(id);
+    if (initial.state !== 'isolated') throw failure('invalid_migration_action', 'Only an isolated migration source can be deleted here.');
+    if (initial.workspaceId === null) throw failure('workspace_missing', 'The isolated source has no workspace identity.');
+    const directories = new Set<string>();
+    for (const target of [initial.path, ...initial.protectedPaths]) {
+      try { if (fs.lstatSync(target).isDirectory() && !fs.lstatSync(target).isSymbolicLink()) directories.add(fs.realpathSync(target)); } catch {}
+    }
+    const targets = [...directories].sort();
+    const execute = async () => {
+      const current = this.item(id);
+      if (current.state !== 'isolated') throw failure('invalid_migration_action', 'Only an isolated migration source can be deleted here.');
+      if (current.revision !== input.expectedRevision) throw failure('workspace_revision_conflict', 'The isolated source changed. Refresh migration diagnostics before deleting it.');
+      const catalogEntry = this.migration.store.readCatalog().entries.find((entry) => entry.workspaceId === current.workspaceId);
+      if (catalogEntry) throw failure('invalid_migration_action', 'Published workspaces use the normal deletion lifecycle.');
+      if (fs.existsSync(current.path) && fs.lstatSync(current.path).isDirectory()) await assertWorkspaceProcessesStopped(current.path, this.pythonCommand);
+      if (current.kind === 'workspace') {
+        if (fs.existsSync(current.path)) {
+          const stat = fs.lstatSync(current.path);
+          if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(current.path) !== path.resolve(current.path)) throw failure('workspace_identity_conflict', 'The isolated workspace path is no longer its original canonical directory.');
+          await fs.promises.rm(current.path, { recursive: true, force: true });
+        }
+      } else {
+        if (fs.existsSync(current.path)) {
+          const stat = fs.lstatSync(current.path);
+          if (!stat.isFile() || stat.isSymbolicLink()) throw failure('workspace_identity_conflict', 'The isolated source is no longer its original regular file.');
+          await fs.promises.rm(current.path, { force: true });
+        }
+      }
+      for (const history of current.histories) {
+        const file = workspaceMetadataPath(current.sessionsDirectory, history.key);
+        try { if (fs.lstatSync(file).isFile() && !fs.lstatSync(file).isSymbolicLink()) await fs.promises.rm(file, { force: true }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      }
+      await this.migration.updateItem(id, (_item, state) => { state.items = state.items.filter((candidate) => candidate.id !== id); });
+      try { await fs.promises.rm(this.reportPath(current), { force: true }); } catch {}
+      return { deleted: true as const, id };
+    };
+    const serialize = (index: number): Promise<{ deleted: true; id: string }> => index === targets.length ? execute() : this.gate.serialize(targets[index], () => serialize(index + 1));
+    return serialize(0);
   }
   private repairPath(item: WorkspaceMigrationItemV1, digest: string) { return `${this.reportPath(item)}.repair-${digest}`; }
   /** Undo only the exact outputs in the frozen report; business files and Native history are never rolled back. */

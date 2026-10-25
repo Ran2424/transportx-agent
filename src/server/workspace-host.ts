@@ -52,7 +52,7 @@ export class WorkspaceHost {
   private async projectWorkspace(id: string, state: ReturnType<WorkspaceMigration['read']>, catalog: ReturnType<WorkspaceStore['readCatalog']>) {
     const source = state.items.find((item) => item.workspaceId === id);
     const entry = catalog.entries.find((entry) => entry.workspaceId === id);
-    const unavailable = (code: string, message: string, itemId?: string) => ({ id, path: entry?.path || source?.path || '', name: path.basename(entry?.path || source?.path || '') || id, revision: null, defaultsRevision: null, defaults: null, conversations: [], availability: source?.state === 'isolated' ? 'isolated' : entry?.state === 'deleting' ? 'deleting' : 'blocked', migrationItemId: itemId || source?.id || null, error: { code, message }, deletion: entry?.deletion || null });
+    const unavailable = (code: string, message: string, itemId?: string) => ({ id, path: entry?.path || source?.path || '', name: path.basename(entry?.path || source?.path || '') || id, revision: source?.revision ?? null, defaultsRevision: null, defaults: null, conversations: [], availability: source?.state === 'isolated' ? 'isolated' : entry?.state === 'deleting' ? 'deleting' : 'blocked', migrationItemId: itemId || source?.id || null, error: { code, message }, deletion: entry?.deletion || null });
     if (!entry && !source) throw problem('workspace_missing', 'Workspace is not registered.', 404);
     if (entry?.state === 'deleted') throw problem('workspace_missing', 'Workspace was deleted.', 404);
     if (source && source.state !== 'ready') return unavailable('workspace_migration_required', 'Workspace migration is incomplete.', source.id);

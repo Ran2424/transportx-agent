@@ -104,7 +104,7 @@ const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (re
 const updatePreparation = new UpdatePreparation();
 const workspaceStore = new WorkspaceStore(APP_PATHS.userDataDir, SESSIONS_DIR);
 const workspaceMigration = new WorkspaceMigration(workspaceStore, { agentDir: PI_AGENT_DIR, workspaceRoots: [...new Set([APP_PATHS.scenarioDir, TAU_SETTINGS.projectsDir].filter((value): value is string => !!value))] });
-const workspaceGate = new WorkspaceRuntimeGate(PYTHON_EXECUTABLE.command, APP_PATHS.logsDir);
+const workspaceGate = new WorkspaceRuntimeGate(PYTHON_EXECUTABLE.command, APP_PATHS.logsDir, process.env.TAU_RUNTIME_COORDINATION_DIR ? path.resolve(process.env.TAU_RUNTIME_COORDINATION_DIR) : undefined);
 const migrationRunner = new WorkspaceMigrationRunner(workspaceMigration, workspaceGate, PYTHON_EXECUTABLE.command);
 const assembleWorkspacePlan = (configuration: { domainId: string; profile: import('../contracts/index.js').SessionProfileV1 }, directory: string) => sessionAssemblerForProfile(configuration.profile).assemble(configuration.domainId, directory, configuration.profile);
 const validateWorkspaceModel = async (spec: string) => {

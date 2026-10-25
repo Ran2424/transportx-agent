@@ -643,6 +643,8 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.match(generated.darwin.processInspection.pythonScript, /proc_pidinfo/);
     assert.match(generated.darwin.processInspection.pythonScript, /usec/);
     assert.match(generated.linux.processInspection.pythonScript, /\/proc\//);
+    assert.match(generated.win32.processInspection.workspaceScript, /OpenProcessToken/);
+    assert.match(generated.win32.processInspection.workspaceScript, /CreateToolhelp32Snapshot/);
     assert.match(generated.win32.processInspection.args.join(' '), /CreationDate/);
     assert.match(generated.win32.processInspection.args.join(' '), /ExecutablePath/);
     const { toPosixPath } = require('../../bin/util/path.js');

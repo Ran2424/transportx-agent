@@ -90,7 +90,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<{ workspace: WorkspaceView; record?: ConversationRecordV1; input: DeletionRequest } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ workspace: WorkspaceView; record?: ConversationRecordV1; isolated?: boolean; input: DeletionRequest } | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [creationWorkspace, setCreationWorkspace] = useState<WorkspaceView | null>(null);
   const [creationMode, setCreationMode] = useState<'create' | 'defaults' | 'confirmation'>('create');
@@ -328,13 +328,14 @@ export function App({ account }: { account?: ReactNode } = {}) {
 
   function requestDeletion(workspace: WorkspaceView, record?: ConversationRecordV1) {
     setDeleteError('');
-    setDeleteTarget({ workspace, record, input: { requestId: record?.deletion?.requestId || (!record ? workspace.deletion?.requestId : null) || crypto.randomUUID(), expectedRevision: workspace.revision ?? workspace.deletion?.manifestRevision ?? 0, confirm: true } });
+    setDeleteTarget({ workspace, record, isolated: !record && workspace.availability === 'isolated', input: { requestId: record?.deletion?.requestId || (!record ? workspace.deletion?.requestId : null) || crypto.randomUUID(), expectedRevision: workspace.revision ?? workspace.deletion?.manifestRevision ?? 0, confirm: true } });
   }
   async function confirmDeleteSession() {
     if (!deleteTarget) return;
     const { workspace, record, input } = deleteTarget;
     try {
       if (record) { await kernel.commands.session.deleteConversation(record.id, input); kernel.dispatch({ type: 'session/closed', sessionId: record.id }); }
+      else if (deleteTarget.isolated) { await kernel.commands.session.deleteIsolatedWorkspace(workspace.id, input); for (const view of kernel.stores.session.get().sessions.filter((item) => item.workspaceId === workspace.id)) kernel.dispatch({ type: 'session/closed', sessionId: view.id }); }
       else { await kernel.commands.session.deleteWorkspace(workspace.id, input); for (const view of kernel.stores.session.get().sessions.filter((item) => item.workspaceId === workspace.id)) kernel.dispatch({ type: 'session/closed', sessionId: view.id }); }
       setDeleteTarget(null); setSessionHistoryRevision((value) => value + 1);
     } catch (cause) {
@@ -419,7 +420,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
-        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={deleteTarget?.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')} description={deleteTarget?.record ? t('workspaceFlow.deleteConversationCopy', { name: deleteTargetName }) : t('workspaceFlow.deleteWorkspaceCopy', { name: deleteTargetName })} confirmLabel={t('workspaceFlow.confirmDelete')} onConfirm={() => void confirmDeleteSession()}>
+        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolated') : deleteTarget?.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')} description={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolatedCopy', { name: deleteTargetName }) : deleteTarget?.record ? t('workspaceFlow.deleteConversationCopy', { name: deleteTargetName }) : t('workspaceFlow.deleteWorkspaceCopy', { name: deleteTargetName })} confirmLabel={t('workspaceFlow.confirmDelete')} onConfirm={() => void confirmDeleteSession()}>
           <p className="confirmation-dialog-copy">{deleteTarget?.workspace.path}</p>
           <label className="confirmation-dialog-workspace"><input type="checkbox" checked={deleteTarget?.input.stopCurrent === true} onChange={(event) => setDeleteTarget((current) => current ? { ...current, input: { ...current.input, stopCurrent: event.target.checked } } : null)} />{t('workspaceFlow.stopBeforeDelete')}</label>
           {deleteError && <p className="form-error">{deleteError}</p>}

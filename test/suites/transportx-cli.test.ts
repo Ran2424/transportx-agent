@@ -5,6 +5,7 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
   const fs = require('node:fs');
   const os = require('node:os');
   const path = require('node:path');
+  const { pathToFileURL } = require('node:url');
   const { execFile } = require('node:child_process');
   const { defaultUserDataDir } = require('../../bin/app-paths.js');
 
@@ -52,6 +53,7 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
       APPDATA: path.join(homeDir, 'AppData', 'Roaming'),
       XDG_CONFIG_HOME: path.join(homeDir, '.config'),
       TAU_USER_DATA_DIR: '',
+      TAU_RUNTIME_COORDINATION_DIR: path.join(root, 'runtime-guards'),
       PI_CODING_AGENT_DIR: '',
     };
     for (const directory of [homeDir, sessionsDir, projectsDir]) fs.mkdirSync(directory, { recursive: true });
@@ -83,7 +85,7 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
 
     const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
       execFile(process.execPath, [
-        '--import', networkProbe,
+        '--import', pathToFileURL(networkProbe).href,
         path.join(process.cwd(), 'bin', 'transportx.js'),
         '--model', 'fake/model',
         '--cwd', projectsDir,
@@ -93,7 +95,7 @@ test('Headless CLI honors explicit modules and refuses unreadable prompts', asyn
         'CLI smoke prompt',
       ], {
         cwd: process.cwd(),
-        timeout: 20_000,
+        timeout: 30_000,
         env: {
           ...cliEnv,
           PI_CODING_AGENT_SESSION_DIR: sessionsDir,

@@ -153,7 +153,7 @@ function loadAppendSystemPrompt(filePath: string) {
 
 async function jsonRequest(host: HostHandle, pathname: string, init: RequestInit = {}) {
   while (true) {
-    const response = await fetch(`${host.baseUrl}/api/health`, { headers: { Authorization: host.authorization }, signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${host.baseUrl}/api/health`, { headers: { Authorization: host.authorization }, signal: AbortSignal.timeout(15_000) });
     const health = await response.json();
     if (!response.ok || !compatibleHostHealth(health)) throw new CliError('Agent Host is incompatible. Upgrade or restart it.', 3);
     if (health.dataState === 'blocked') throw new CliError(`Agent Host storage is blocked. ${String((health.migration as JsonObject)?.message || 'Open migration diagnostics.')} Report: ${String((health.migration as JsonObject)?.report || '/api/migration')}`, 3);

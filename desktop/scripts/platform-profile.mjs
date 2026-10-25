@@ -213,20 +213,54 @@ print(json.dumps(dict(state='running',pid=pid,parentPid=int(parts[1]),groupId=in
   },
   win32: {
     // x64 PEB / RTL_USER_PROCESS_PARAMETERS layouts: winsiderss/phnt
-    // ntpebteb.h and ntrtl.h. Unknown/unsupported reads block migration.
-    workspaceScript: `import ctypes as c,ctypes.wintypes as w,json,os,struct,subprocess,sys
+    // ntpebteb.h and ntrtl.h. Only same-user processes with a confirmed cwd
+    // can establish workspace membership; protected desktop components are omitted.
+    workspaceScript: `import ctypes as c,ctypes.wintypes as w,json,os,struct,sys
 if c.sizeof(c.c_void_p)!=8: raise RuntimeError('64-bit process inventory is required')
-k=c.WinDLL('kernel32',use_last_error=True);nt=c.WinDLL('ntdll')
+k=c.WinDLL('kernel32',use_last_error=True);a=c.WinDLL('advapi32',use_last_error=True);nt=c.WinDLL('ntdll')
 k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
 k.CloseHandle.argtypes=[w.HANDLE]
 k.ReadProcessMemory.argtypes=[w.HANDLE,c.c_void_p,c.c_void_p,c.c_size_t,c.POINTER(c.c_size_t)]
+k.GetCurrentProcess.restype=w.HANDLE
+a.OpenProcessToken.argtypes=[w.HANDLE,w.DWORD,c.POINTER(w.HANDLE)]
+a.GetTokenInformation.argtypes=[w.HANDLE,w.DWORD,c.c_void_p,w.DWORD,c.POINTER(w.DWORD)]
+a.GetLengthSid.argtypes=[c.c_void_p];a.GetLengthSid.restype=w.DWORD
 nt.NtQueryInformationProcess.argtypes=[w.HANDLE,w.ULONG,c.c_void_p,w.ULONG,c.c_void_p]
 session=w.DWORD()
 if not k.ProcessIdToSessionId(int(sys.argv[1]),c.byref(session)): raise RuntimeError('Host session unavailable')
-query='@((Get-CimInstance Win32_Process -Filter "SessionId='+str(session.value)+'" -ErrorAction Stop).ProcessId)|ConvertTo-Json -Compress'
-p=subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',query],capture_output=True,text=True,timeout=15)
-if p.returncode: raise RuntimeError('Session process inventory unavailable')
-pids=json.loads(p.stdout);pids=pids if isinstance(pids,list) else [pids]
+class ProcessEntry(c.Structure):
+ _fields_=[('size',w.DWORD),('usage',w.DWORD),('pid',w.DWORD),('heap',c.c_size_t),('module',w.DWORD),('threads',w.DWORD),('parent',w.DWORD),('priority',w.LONG),('flags',w.DWORD),('exe',w.WCHAR*260)]
+class SidAndAttributes(c.Structure): _fields_=[('sid',c.c_void_p),('attributes',w.DWORD)]
+class TokenUser(c.Structure): _fields_=[('user',SidAndAttributes)]
+def user_sid(handle):
+ token=w.HANDLE();size=w.DWORD()
+ if not a.OpenProcessToken(handle,0x8,c.byref(token)): return None
+ try:
+  a.GetTokenInformation(token,1,None,0,c.byref(size))
+  if not size.value: return None
+  data=c.create_string_buffer(size.value)
+  if not a.GetTokenInformation(token,1,data,size,c.byref(size)): return None
+  sid=c.cast(data,c.POINTER(TokenUser)).contents.user.sid
+  length=a.GetLengthSid(sid)
+  return c.string_at(sid,length) if length else None
+ finally: k.CloseHandle(token)
+owner=user_sid(k.GetCurrentProcess())
+if not owner: raise RuntimeError('Current user identity unavailable')
+snapshot=k.CreateToolhelp32Snapshot(2,0)
+if snapshot==w.HANDLE(-1).value: raise OSError('Process snapshot unavailable')
+pids=[];entry=ProcessEntry();entry.size=c.sizeof(entry)
+try:
+ more=k.Process32FirstW(snapshot,c.byref(entry))
+ while more:
+  candidate=int(entry.pid);candidate_session=w.DWORD()
+  if candidate and k.ProcessIdToSessionId(candidate,c.byref(candidate_session)) and candidate_session.value==session.value:
+   identity=k.OpenProcess(0x1000,False,candidate)
+   try:
+    if identity and user_sid(identity)==owner: pids.append(candidate)
+   finally:
+    if identity: k.CloseHandle(identity)
+  more=k.Process32NextW(snapshot,c.byref(entry))
+finally: k.CloseHandle(snapshot)
 class Basic(c.Structure):
  _fields_=[('reserved',c.c_void_p),('peb',c.c_void_p),('padding',c.c_void_p*2),('pid',c.c_size_t),('last',c.c_void_p)]
 def read(handle,address,size):
@@ -248,7 +282,7 @@ for pid in pids:
  except OSError: pass
  finally:
   if handle: k.CloseHandle(handle)
- records.append({'pid':pid,'cwd':cwd})
+ if cwd is not None: records.append({'pid':pid,'cwd':cwd})
 print(json.dumps({'processes':records}))`,
     command: 'powershell',
     args: ['-NoProfile', '-NonInteractive', '-Command', "$p=Get-CimInstance Win32_Process -Filter 'ProcessId={pid}' -ErrorAction Stop;if($null -eq $p){@{state='exited'}|ConvertTo-Json -Compress}else{@{state='running';pid=$p.ProcessId;parentPid=$p.ParentProcessId;startedAt=$p.CreationDate.ToUniversalTime().ToString('o');command=$p.ExecutablePath}|ConvertTo-Json -Compress}"],

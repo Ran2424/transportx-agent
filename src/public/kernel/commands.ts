@@ -175,6 +175,7 @@ export type SessionCommands = {
   deleteConversation(conversationId: string, input: DeletionRequest): Promise<void>;
   updateWorkspace(workspaceId: string, input: Record<string, unknown>): Promise<void>;
   deleteWorkspace(workspaceId: string, input: DeletionRequest): Promise<void>;
+  deleteIsolatedWorkspace(workspaceId: string, input: DeletionRequest): Promise<void>;
   migration(path?: string, input?: Record<string, unknown>): Promise<unknown>;
 };
 
@@ -475,6 +476,7 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     async deleteConversation(id, input) { await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE', body: input }, context); },
     async updateWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}`, { method: 'PATCH', body: input }, context); },
     async deleteWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}/delete`, { method: 'POST', body: input }, context); },
+    async deleteIsolatedWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}/migration/delete`, { method: 'POST', body: input }, context); },
     async migration(path = '/api/migration', input) { return httpJson(deps.http, path, input ? { method: 'POST', body: input } : undefined, context); },
   };
   return commands;

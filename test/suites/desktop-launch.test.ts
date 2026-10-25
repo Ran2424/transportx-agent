@@ -7,6 +7,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
     const os = require('node:os');
     const path = require('node:path');
     const { spawn } = require('node:child_process');
+    const { toPosixPath } = require('../../bin/util/path.js');
 
     // desktop Agent Host binds a random loopback port and publishes ready/health
     {
@@ -26,7 +27,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
           ...process.env,
           TAU_APP_ROOT: process.cwd(),
           TAU_RESOURCES_DIR: process.cwd(),
-          TAU_USER_DATA_DIR: userData, PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'),
+          TAU_USER_DATA_DIR: userData, TAU_RUNTIME_COORDINATION_DIR: path.join(userData, 'runtime-guards'), PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'),
           TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
           TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
         },
@@ -62,8 +63,8 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       const deadline = Date.now() + 15000;
       do { migration = await (await fetch(`http://127.0.0.1:${ready.port}/api/migration`)).json(); if (migration.dataState === 'ready' && migration.pending === 0) break; await new Promise((resolve) => setTimeout(resolve, 50)); } while (Date.now() < deadline);
       assert.equal(migration.dataState, 'ready'); assert.equal(migration.pending, 0);
-      assert.ok(migration.inventory.items.some((item: any) => item.path === fs.realpathSync(task) && item.state === 'ready'));
-      assert.ok(migration.inventory.items.some((item: any) => item.path === fs.realpathSync(path.dirname(path.dirname(damaged.file))) && item.state === 'failed'));
+      assert.ok(migration.inventory.items.some((item: any) => item.path === toPosixPath(fs.realpathSync(task)) && item.state === 'ready'), JSON.stringify(migration.inventory.items, null, 2));
+      assert.ok(migration.inventory.items.some((item: any) => item.path === toPosixPath(fs.realpathSync(path.dirname(path.dirname(damaged.file)))) && item.state === 'failed'));
       const migrated = JSON.parse(fs.readFileSync(legacy.file, 'utf8'));
       assert.equal(migrated.version, '3.0', 'target conversion finishes independently after Host begins serving diagnostics');
       assert.equal(migrated.sessionId, 'legacy_session');
@@ -152,7 +153,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       const start = async () => {
         const child = spawn(process.execPath, [path.join(process.cwd(), 'bin', 'tau.js'), '--desktop', '--parent-pid', String(process.pid)], {
           cwd: process.cwd(),
-          env: { ...process.env, TAU_APP_ROOT: process.cwd(), TAU_RESOURCES_DIR: process.cwd(), TAU_USER_DATA_DIR: userData, PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'), TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'), TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3' },
+          env: { ...process.env, TAU_APP_ROOT: process.cwd(), TAU_RESOURCES_DIR: process.cwd(), TAU_USER_DATA_DIR: userData, TAU_RUNTIME_COORDINATION_DIR: path.join(userData, 'runtime-guards'), PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'), TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'), TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3' },
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
         });
         t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
@@ -213,7 +214,7 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
           ...process.env,
           TAU_APP_ROOT: process.cwd(),
           TAU_RESOURCES_DIR: process.cwd(),
-          TAU_USER_DATA_DIR: userData, PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'),
+          TAU_USER_DATA_DIR: userData, TAU_RUNTIME_COORDINATION_DIR: path.join(userData, 'runtime-guards'), PI_CODING_AGENT_DIR: userData, PI_CODING_AGENT_SESSION_DIR: path.join(userData, 'sessions'),
           TAU_PI_ENTRYPOINT: path.join(process.cwd(), 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),
           TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
         },

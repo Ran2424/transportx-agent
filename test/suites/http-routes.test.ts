@@ -6,14 +6,17 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
   const path = require('node:path');
   const os = require('node:os');
   const crypto = require('node:crypto');
+  const http = require('node:http');
   const { EventEmitter } = require('node:events');
   const { PassThrough } = require('node:stream');
+  const { toPosixPath } = require('../../bin/util/path.js');
   const { testSymlink } = require('../support/symlink.ts');
 
   process.env.TAU_HOST = '127.0.0.1';
 
   process.env.PI_CODING_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-http-'));
   process.env.TAU_USER_DATA_DIR = process.env.PI_CODING_AGENT_DIR;
+  process.env.TAU_RUNTIME_COORDINATION_DIR = path.join(process.env.TAU_USER_DATA_DIR, 'runtime-guards');
   require('../../bin/diagnostic-log.js').initializeHostLogging(path.join(process.env.TAU_USER_DATA_DIR, 'logs'));
 
   process.env.PI_CODING_AGENT_SESSION_DIR = path.join(process.env.PI_CODING_AGENT_DIR, 'sessions');
@@ -31,7 +34,7 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
   function registerSession(session: any) {
     const store = workspaceHost.options.store, at = '2026-10-25T00:00:00.000Z';
     if (session.cwd === '/tmp/proj') session.cwd = path.join(PROJECTS_DIR, session.id);
-    fs.mkdirSync(session.cwd, { recursive: true }); session.cwd = fs.realpathSync(session.cwd);
+    fs.mkdirSync(session.cwd, { recursive: true }); session.cwd = toPosixPath(fs.realpathSync(session.cwd));
     const catalog = store.readCatalog(); let entry = catalog.entries.find((item: any) => item.path === session.cwd);
     let manifest: any;
     if (entry) manifest = store.readWorkspace(entry.workspaceId).manifest;
@@ -172,9 +175,15 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     await rejected;
     for (let index = 0; index < 100; index++) over.write(Buffer.alloc(1024));
     over.end();
-    const response = await request(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'prompt', message: 'x'.repeat(1024 * 1024) }) });
+    const oversizedBody = JSON.stringify({ type: 'prompt', message: 'x'.repeat(1024 * 1024) });
+    const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const client = http.request(`${base}/api/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(oversizedBody), 'X-TransportX-Protocol': '2' } }, (incoming: any) => {
+        let body = ''; incoming.setEncoding('utf8'); incoming.on('data', (chunk: string) => { body += chunk; }); incoming.on('end', () => resolve({ status: incoming.statusCode || 0, body }));
+      });
+      client.on('error', reject); client.end(oversizedBody);
+    });
     assert.equal(response.status, 413);
-    assert.match((await jsonBody(response)).error, /too large/);
+    assert.match(JSON.parse(response.body).error, /too large/);
     await request(`${base}/api/session-history?filePath=invalid&api_key=private-query-secret`);
     const log = fs.readFileSync(path.join(process.env.TAU_USER_DATA_DIR, 'logs', 'runtime.jsonl'), 'utf8');
     assert.ok(log.includes('host_logging_started'));

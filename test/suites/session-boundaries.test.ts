@@ -1,6 +1,7 @@
 const { test } = require('node:test') as typeof import('node:test');
 
 test('Session close, history deletion and process cancellation preserve writer ownership', async (t) => {
+  const { toPosixPath } = require('../../bin/util/path.js');
   // Legacy conversion preserves Native bytes, stops at unowned processes and resumes verified writes.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
@@ -42,7 +43,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     const resource = path.join(single, '.tau/video-resources/large.bin'); fs.mkdirSync(path.dirname(resource)); fs.closeSync(fs.openSync(resource, 'w')); fs.truncateSync(resource, 32 * 1024 * 1024); const resourceStat = fs.statSync(resource);
     const store = new WorkspaceStore(userData, sessions); await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
     const migration = new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] }); await migration.initialize();
-    const items = migration.read().items, a = items.find((item: any) => item.path === single), b = items.find((item: any) => item.path === ambiguous), c = items.find((item: any) => item.path === corrupt), d = items.find((item: any) => item.path === empty), e = items.find((item: any) => item.path === repairing);
+    const items = migration.read().items, a = items.find((item: any) => item.path === toPosixPath(single)), b = items.find((item: any) => item.path === toPosixPath(ambiguous)), c = items.find((item: any) => item.path === toPosixPath(corrupt)), d = items.find((item: any) => item.path === toPosixPath(empty)), e = items.find((item: any) => item.path === toPosixPath(repairing));
     const python = process.env.TAU_PYTHON_COMMAND || 'python3', gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'), path.join(root, 'coordination')), runner = new WorkspaceMigrationRunner(migration, gate, python);
     assert.equal((await runner.convert(d.id)).state, 'ready'); assert.equal(store.readWorkspace(d.workspaceId).manifest.conversations.length, 0, 'managed zero-history directory becomes a workspace without an invented conversation');
     assert.ok(JSON.parse(fs.readFileSync(migration.read().items.find((item: any) => item.id === d.id).report)).notes.some((note: any) => note.code === 'invalid_session_plan'), 'unavailable old plan location is diagnosed without substituting the current configuration');
@@ -52,7 +53,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(child.exitCode, null, 'cwd discovery grants no authority to kill an unrecorded process'); assert.deepEqual(fs.readFileSync(attachmentIndex), oldIndex);
     const exited = once(child, 'exit'); child.kill(); await exited;
     const rename = fs.renameSync; let interrupted = false;
-    fs.renameSync = (from: string, to: string) => { if (!interrupted && to.includes('/conversations/') && to.endsWith('/canvas-contexts.json')) { interrupted = true; throw Object.assign(new Error('target volume full'), { code: 'ENOSPC' }); } return rename(from, to); };
+    fs.renameSync = (from: string, to: string) => { const normalized = toPosixPath(to); if (!interrupted && normalized.includes('/conversations/') && normalized.endsWith('/canvas-contexts.json')) { interrupted = true; throw Object.assign(new Error('target volume full'), { code: 'ENOSPC' }); } return rename(from, to); };
     try { await assert.rejects(runner.convert(a.id), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
     assert.equal(migration.read().items.find((item: any) => item.id === a.id).stage, 'backed-up'); migration.assertWorkspaceReady(d.workspaceId);
     assert.deepEqual(fs.readFileSync(path.join(single, '.tau/migrations/workspace-v1/backups/.tau/attachments.json')), oldIndex);
@@ -101,7 +102,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     await assert.rejects(runner.resolveSource(c.id, { requestId: 'stale-whole-source', expectedRevision: repairedReport.item.revision, reportDigest: sourceReport.reportDigest, action: 'retry' }), { code: 'workspace_revision_conflict' });
     assert.equal((await runner.resolveSource(c.id, { requestId: 'retry-repaired-source', expectedRevision: repairedReport.item.revision, reportDigest: repairedReport.reportDigest, action: 'retry' })).state, 'ready');
     let failedRepair = false;
-    fs.renameSync = (from: string, to: string) => { if (!failedRepair && to.startsWith(path.join(repairing, '.tau/conversations')) && to.endsWith('/plan.json')) { failedRepair = true; throw Object.assign(new Error('repair fixture interruption'), { code: 'ENOSPC' }); } return rename(from, to); };
+    fs.renameSync = (from: string, to: string) => { const normalized = toPosixPath(to); if (!failedRepair && normalized.startsWith(toPosixPath(path.join(repairing, '.tau/conversations'))) && normalized.endsWith('/plan.json')) { failedRepair = true; throw Object.assign(new Error('repair fixture interruption'), { code: 'ENOSPC' }); } return rename(from, to); };
     try { await assert.rejects(runner.convert(e.id), { code: 'ENOSPC' }); } finally { fs.renameSync = rename; }
     const originalRepair = migration.read().items.find((item: any) => item.id === e.id), repairNative = path.join(sessions, 'repairing.jsonl');
     fs.appendFileSync(repairNative, JSON.stringify({ type: 'message', id: 'm4', parentId: 'm3', message: { role: 'user', content: '新增的真实源消息', timestamp: 1200 } }) + '\n'); nativeBytes[4] = fs.readFileSync(repairNative);
@@ -122,10 +123,10 @@ test('Session close, history deletion and process cancellation preserve writer o
     write(uncertain, '.tau/workspace-owner.json', { version: 1, workspace: uncertain, parent: scenario }); write(uncertain, '.tau/canvas-contexts.json', [canvas]);
     const uncertainHistory = path.join(sessions, 'uncertain.jsonl'), opaque = path.join(sessions, 'opaque.jsonl');
     fs.writeFileSync(uncertainHistory, JSON.stringify({ type: 'session', id: 'native-uncertain', cwd: uncertain, timestamp: at }) + '\n'); fs.writeFileSync(opaque, 'broken unscoped history\n');
-    await migration.initialize(); const uncertainItem = migration.read().items.find((item: any) => item.path === uncertain);
+    await migration.initialize(); const uncertainItem = migration.read().items.find((item: any) => item.path === toPosixPath(uncertain));
     const unproven = await runner.convert(uncertainItem.id); assert.equal(unproven.state, 'needs-review', 'an unscoped damaged history prevents inferring sole ownership from a count of one readable history');
     const unprovenReport = JSON.parse(fs.readFileSync(unproven.report)); assert.equal(unprovenReport.singleHistoryProven, false); assert.equal(unprovenReport.issues.length, 1); migration.assertWorkspaceReady(a.workspaceId);
-    const opaqueItem = migration.read().items.find((item: any) => item.path === opaque), opaqueReport = await runner.report(opaqueItem.id);
+    const opaqueItem = migration.read().items.find((item: any) => item.path === toPosixPath(opaque)), opaqueReport = await runner.report(opaqueItem.id);
     await runner.resolveSource(opaqueItem.id, { requestId: 'isolate-opaque', expectedRevision: opaqueItem.revision, reportDigest: opaqueReport.reportDigest, action: 'isolate' }); await migration.initialize();
     assert.equal((await runner.convert(uncertainItem.id)).state, 'needs-review', 'isolating an unknown history never grants ownership of private state');
     assert.equal((await runner.resolvePrivate(uncertainItem.id, { requestId: 'isolate-unproven-canvas', expectedRevision: unproven.revision, reportDigest: unproven.sourceDigest, action: 'isolate', sourceId: unprovenReport.issues[0].sourceId, conversationId: null })).state, 'ready');
@@ -174,7 +175,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(inventoried.systemReadiness, 'ready'); assert.equal(inventoried.phase, 'needs-attention');
     assert.ok(migration.status().blocked > 0); assert.ok(migration.status().pending > 0);
     for (const id of readyIds) migration.assertWorkspaceReady(id);
-    const item = inventoried.items.find((value: any) => value.path === legacy);
+    const item = inventoried.items.find((value: any) => value.path === toPosixPath(legacy));
     assert.equal(item.histories.length, 2); assert.ok(item.histories.every((history: any) => history.headerId === 'native-empty'));
     assert.notEqual(item.histories[0].conversationId, item.histories[1].conversationId, 'repeated native header IDs do not merge different source files');
     assert.throws(() => migration.assertWorkspaceReady(item.workspaceId), { code: 'workspace_migration_required' });
@@ -232,7 +233,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     const catalog = store.readCatalog();
     await store.editCatalog(catalog.revision, (value: any) => { const entry = value.entries.find((entry: any) => entry.workspaceId === readyIds[28]); entry.state = 'deleted'; entry.deletion = { requestId: 'deleted-fixture', manifestRevision: deleted.manifest.revision, historyKeys: [deletionKey], invocationOwnerKeys: [], conversationIds: [], rootIdentity: 'a'.repeat(64), error: null, stage: 'workspace-cleaned' }; });
     const tombstones = await migration.initialize();
-    assert.equal(tombstones.items.some((item: any) => item.path === deleted.directory || item.histories.some((history: any) => history.key === deletionKey)), false, 'scope rescans never reimport a deleted workspace or its residual history');
+    assert.equal(tombstones.items.some((item: any) => item.path === toPosixPath(deleted.directory) || item.histories.some((history: any) => history.key === deletionKey)), false, 'scope rescans never reimport a deleted workspace or its residual history');
     const catalogBytes = fs.readFileSync(store.catalogFile), badCatalog = JSON.parse(catalogBytes.toString());
     badCatalog.entries.find((entry: any) => entry.workspaceId === readyIds[28]).deletion.historyKeys.push(key);
     fs.writeFileSync(store.catalogFile, JSON.stringify(badCatalog));
@@ -270,7 +271,7 @@ test('Session close, history deletion and process cancellation preserve writer o
     for (const [key, cwd] of [['local', local], ['external', external], ['prefix', prefix]]) fs.writeFileSync(path.join(sessions, `${key}.jsonl`), JSON.stringify({ type: 'session', id: key, cwd }) + '\n');
     const externalHistory = fs.readFileSync(path.join(sessions, 'external.jsonl'));
     const store = new WorkspaceStore(path.join(root, 'data'), sessions), migration = new WorkspaceMigration(store, { agentDir, workspaceRoots: [scenario] });
-    await migration.initialize(); assert.deepEqual(migration.read().items.map((item: any) => item.path), [local]);
+    await migration.initialize(); assert.deepEqual(migration.read().items.map((item: any) => item.path), [toPosixPath(local)]);
     const legacyId = `ws_${crypto.randomUUID()}`;
     await store.reserveMigratedWorkspace(legacyId, external);
     const manifest = (id: string) => ({ schemaVersion: 1, id, revision: 0, name: 'Scope fixture', createdAt: '2026-10-25T00:00:00.000Z', updatedAt: '2026-10-25T00:00:00.000Z', defaultsRevision: 0, defaults: { domainId: null, profile: null, modelSpec: null }, citationRegistryId: id, conversations: [] });
@@ -278,13 +279,13 @@ test('Session close, history deletion and process cancellation preserve writer o
     const marker = fs.readFileSync(path.join(external, '.tau/workspace.json'));
     const created = await store.reserveWorkspace('explicit-custom-parent', 'a'.repeat(64), () => explicit);
     await store.publishWorkspace(created.workspaceId, manifest(created.workspaceId));
-    const prior = migration.read(), excluded = { ...structuredClone(prior.items[0]), id: `mig_${crypto.randomUUID()}`, workspaceId: legacyId, path: external, histories: [], protectedPaths: [external] };
+    const prior = migration.read(), excluded = { ...structuredClone(prior.items[0]), id: `mig_${crypto.randomUUID()}`, workspaceId: legacyId, path: toPosixPath(external), histories: [], protectedPaths: [toPosixPath(external)] };
     prior.items.push(excluded); writeJsonAtomic(migration.stateFile, prior);
-    assert.ok(!migration.read().items.some((item: any) => item.path === external), 'old out-of-scope discoveries cannot resume before re-inventory');
+    assert.ok(!migration.read().items.some((item: any) => item.path === toPosixPath(external)), 'old out-of-scope discoveries cannot resume before re-inventory');
     await migration.initialize();
     const host = new WorkspaceHost({ store, migration, sessions: { sessions: new Map() } });
     const index = await host.index();
-    assert.deepEqual(index.workspaces.map((item: any) => item.path).sort(), [local, explicit].sort());
+    assert.deepEqual(index.workspaces.map((item: any) => item.path).sort(), [toPosixPath(local), toPosixPath(explicit)].sort());
     assert.throws(() => migration.assertWorkspaceReady(legacyId), { code: 'workspace_out_of_scope' });
     migration.assertWorkspaceReady(created.workspaceId);
     assert.equal(JSON.parse(fs.readFileSync(path.join(migration.directory, 'excluded-sources.json'))).items[0].id, excluded.id);

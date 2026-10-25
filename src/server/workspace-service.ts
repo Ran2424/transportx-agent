@@ -133,7 +133,7 @@ export class WorkspaceService {
       const conversation = manifest.conversations.find((record) => record.creationRequestId === input.requestId && record.creationInputSha256 === inputSha256);
       if (!conversation) throw failure('workspace_identity_conflict', 'Incomplete manifest does not match this creation request.');
       await store.publishWorkspace(entry.workspaceId, manifest);
-      return { directory, manifest, conversation };
+      return { directory: toPosixPath(directory), manifest, conversation };
     });
   }
 }

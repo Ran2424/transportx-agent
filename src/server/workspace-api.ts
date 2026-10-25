@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { ServerRouter, RouteContext } from './router.js';
-import type { MigrationSourceDecision } from './workspace-migration-runner.js';
+import type { MigrationSourceDecision, IsolatedMigrationDeletion } from './workspace-migration-runner.js';
 
 type Services = {
   workspaces: WorkspaceHost;
@@ -41,6 +41,7 @@ export function registerWorkspaceApi<T extends Services>(router: ServerRouter<T>
     .patch(/^\/api\/conversations\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.renameConversation(id(context), await readInput(context.req, context.deps))))
     .delete(/^\/api\/conversations\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.options.deletion.conversation(id(context), await readInput(context.req, context.deps) as never)))
     .post(/^\/api\/workspaces\/([^/]+)\/delete$/, endpoint(async (context) => context.deps.workspaces.options.deletion.workspace(id(context), await readInput(context.req, context.deps) as never)))
+    .post(/^\/api\/workspaces\/([^/]+)\/migration\/delete$/, endpoint(async (context) => context.deps.workspaces.options.runner.deleteIsolated(source(context), await readInput(context.req, context.deps) as unknown as IsolatedMigrationDeletion)))
     .get('/api/migration', endpoint(({ deps }) => deps.workspaces.migrationStatus()))
     .get(/^\/api\/migration\/items\/([^/]+)$/, endpoint((context) => context.deps.workspaces.options.runner.report(id(context))))
     .post('/api/migration/resume', endpoint(async ({ deps }) => { await deps.workspaces.options.migration.initialize(); void deps.workspaces.startConversions().catch(() => {}); return { accepted: true, migration: deps.workspaces.options.migration.status() }; }))
