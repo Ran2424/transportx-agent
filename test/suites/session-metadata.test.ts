@@ -35,7 +35,7 @@ test('Session snapshots preserve authoritative metadata and independently config
   {
     const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
     const manager = new LiveSessionManager();
-    const session = new PiRpcSession(manager, { id: 'clocked', cwd: '/tmp/clocked' });
+    const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', id: 'clocked', cwd: '/tmp/clocked' });
     session.handleEvent({ type: 'agent_start' });
     session.handleEvent({ type: 'message_update', message: { role: 'assistant', content: [{ type: 'text', text: 'current partial' }] } });
     session.handleEvent({ type: 'tool_execution_start', toolCallId: 'call', toolName: 'read', args: { path: 'file' } });

@@ -1,9 +1,12 @@
 import type { JsonRecord, ModelIdentity } from './types.js';
 import { modelLabel } from './model-utils.js';
 import type { PiMessageQueue } from '../contracts/pi-rpc.js';
+import fs from 'node:fs';
 
 export type SessionMetadataSource = {
   id: string;
+  workspaceId?: string | null;
+  conversationId?: string;
   pid: number | null;
   cwd: string;
   modelSpec: string;
@@ -22,16 +25,22 @@ export type SessionMetadataSource = {
   piQueue?: PiMessageQueue;
 };
 
+function persistedFile(source: SessionMetadataSource) {
+  return source.sessionFile && fs.existsSync(source.sessionFile) ? source.sessionFile : null;
+}
+
 export function sessionMetadata(source: SessionMetadataSource, capabilities: unknown, pendingExtensionUiRequests: unknown[]) {
   return {
     id: source.id,
+    workspaceId: source.workspaceId ?? null,
+    conversationId: source.conversationId ?? null,
     pid: source.pid,
     cwd: source.cwd,
     modelSpec: source.modelSpec,
     model: source.model,
     modelLabel: modelLabel(source.model, source.modelSpec),
     thinkingLevel: source.thinkingLevel,
-    sessionFile: source.sessionFile,
+    sessionFile: persistedFile(source),
     sessionName: source.sessionName,
     piQueue: source.piQueue ?? { steering: [], followUp: [] },
     isStreaming: source.isStreaming,
@@ -50,10 +59,12 @@ export function sessionMetadata(source: SessionMetadataSource, capabilities: unk
 export function liveSessionMetadata(source: SessionMetadataSource, capabilities: unknown) {
   return {
     id: source.id,
+    workspaceId: source.workspaceId ?? null,
+    conversationId: source.conversationId ?? null,
     modelSpec: source.modelSpec,
     model: source.model,
     thinkingLevel: source.thinkingLevel,
-    sessionFile: source.sessionFile,
+    sessionFile: persistedFile(source),
     sessionName: source.sessionName,
     piQueue: source.piQueue ?? { steering: [], followUp: [] },
     isStreaming: source.isStreaming,
@@ -73,7 +84,7 @@ export function sessionSnapshot(projectionSnapshot: object, source: SessionMetad
     thinkingLevel: source.thinkingLevel,
     isStreaming: source.isStreaming,
     isCompacting: source.isCompacting,
-    sessionFile: source.sessionFile,
+    sessionFile: persistedFile(source),
     sessionName: source.sessionName,
     contextUsage: source.contextUsage,
   };

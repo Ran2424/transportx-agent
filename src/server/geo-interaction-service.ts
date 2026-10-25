@@ -29,6 +29,8 @@ import { stripCanvasContextPrompt } from '../contracts/canvas.js';
 import type { JsonRecord } from './types.js';
 import { readVerifiedGeoResource } from './geo-resource-storage.js';
 import { isWithin } from './util/path.js';
+import { conversationStatePath } from './workspace-store.js';
+import { readJsonObject, writeJsonAtomic as writeMetadata } from './util/json-storage.js';
 
 const GEO_MODULE_ID = 'com.transportx.geo';
 const MAX_GEO_SCREENSHOT_BYTES = 10 * 1024 * 1024;
@@ -36,6 +38,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 
 export type GeoInteractionSession = {
   id: string;
+  conversationId: string;
   cwd: string;
   entries: JsonRecord[];
   resolvedSessionPlan?: { modules?: Array<{ id?: string }> } | null;
@@ -60,10 +63,11 @@ function serviceError(message: string, status = 400, code?: string) {
   return error;
 }
 
-function interactionRoot(cwd: string) { return path.join(cwd, '.tau', 'geo-interactions'); }
-function contextDir(cwd: string, contextId: string) { return path.join(interactionRoot(cwd), 'contexts', contextId); }
-function requestDir(cwd: string, requestId: string) { return path.join(interactionRoot(cwd), 'requests', requestId); }
-function refsPath(cwd: string) { return path.join(interactionRoot(cwd), 'message-refs.json'); }
+type GeoScope = Pick<GeoInteractionSession, 'cwd' | 'conversationId'>;
+function interactionRoot(scope: GeoScope) { return conversationStatePath(scope, 'geo-interactions'); }
+function contextDir(scope: GeoScope, contextId: string) { return path.join(interactionRoot(scope), 'contexts', contextId); }
+function requestDir(scope: GeoScope, requestId: string) { return path.join(interactionRoot(scope), 'requests', requestId); }
+function refsPath(scope: GeoScope) { return path.join(interactionRoot(scope), 'message-refs.json'); }
 
 function assertNoSymlink(target: string) {
   try { if (fs.lstatSync(target).isSymbolicLink()) throw serviceError('Geo interaction storage cannot use symbolic links.', 403); }
@@ -75,18 +79,14 @@ function ensureStoragePath(cwd: string, target: string) {
   const resolved = path.resolve(target);
   if (!isWithin(sessionRoot, resolved)) throw serviceError('Geo interaction path escapes the session.', 403);
   assertNoSymlink(path.join(cwd, '.tau'));
-  assertNoSymlink(interactionRoot(cwd));
+  assertNoSymlink(resolved);
   for (let cursor = path.dirname(resolved); cursor !== sessionRoot && isWithin(sessionRoot, cursor); cursor = path.dirname(cursor)) assertNoSymlink(cursor);
   return resolved;
 }
 
 function writeJsonAtomic(cwd: string, target: string, value: unknown) {
   const resolved = ensureStoragePath(cwd, target);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true, mode: 0o700 });
-  assertNoSymlink(resolved);
-  const temp = `${resolved}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
-  fs.renameSync(temp, resolved);
+  writeMetadata(resolved, value);
 }
 
 function readJson<T>(cwd: string, target: string): T | null {
@@ -217,7 +217,7 @@ export class GeoInteractionService {
     if (!parsed.ok) throw serviceError(parsed.diagnostics.map((item) => item.message).join('; '));
     const context = parsed.value;
     const envelope = requireVisualization(session, context.visualizationId, context.sceneRevision);
-    const dir = contextDir(session.cwd, context.contextId);
+    const dir = contextDir(session, context.contextId);
     if (fs.existsSync(dir)) throw serviceError('Geo Context already exists and is immutable.', 409);
     const sceneLayerIds = new Set(envelope.scene!.layers.map((layer) => layer.id));
     if (context.visibleLayerIds.some((id) => !sceneLayerIds.has(id))) throw serviceError('visibleLayerIds contains a layer outside this scene.', 409);
@@ -231,10 +231,10 @@ export class GeoInteractionService {
   getContext(session: GeoInteractionSession, contextId: string): StoredContext {
     requireGeo(session);
     if (!/^geoctx_[A-Za-z0-9_-]{12,64}$/.test(contextId)) throw serviceError('Invalid Geo Context id.', 400);
-    const raw = readJson<unknown>(session.cwd, path.join(contextDir(session.cwd, contextId), 'context.json'));
+    const raw = readJson<unknown>(session.cwd, path.join(contextDir(session, contextId), 'context.json'));
     const parsed = parseGeoClientContextStructured(raw);
     if (!parsed.ok) throw serviceError(raw ? 'Stored Geo Context is invalid.' : 'Geo Context not found.', raw ? 409 : 404);
-    const provenance = readJson<GeoContextProvenanceV1>(session.cwd, path.join(contextDir(session.cwd, contextId), 'provenance.json')) || undefined;
+    const provenance = readJson<GeoContextProvenanceV1>(session.cwd, path.join(contextDir(session, contextId), 'provenance.json')) || undefined;
     return { context: parsed.value, ...(provenance ? { provenance } : {}) };
   }
 
@@ -319,17 +319,18 @@ export class GeoInteractionService {
 
   recordMessageRefs(session: GeoInteractionSession, ref: GeoMessageRef) {
     if (!ref.contextIds.length) return;
-    const refs = this.readMessageRefs(session.cwd);
+    const refs = this.readMessageRefs(session.cwd, session.conversationId);
     const key = `${ref.timestamp ?? ''}\n${ref.text}`;
     const index = refs.findIndex((item) => `${item.timestamp ?? ''}\n${item.text}` === key);
     if (index >= 0) refs[index] = ref; else refs.push(ref);
-    writeJsonAtomic(session.cwd, refsPath(session.cwd), { version: 1, refs });
+    writeJsonAtomic(session.cwd, refsPath(session), { version: 1, refs });
   }
 
-  readMessageRefs(cwd: string): GeoMessageRef[] {
-    const value = readJson<{ version?: unknown; refs?: unknown }>(cwd, refsPath(cwd));
-    if (!value || value.version !== 1 || !Array.isArray(value.refs)) return [];
-    return value.refs.filter((item): item is GeoMessageRef => !!item && typeof item === 'object' && typeof item.text === 'string' && Array.isArray(item.contextIds));
+  readMessageRefs(cwd: string, conversationId: string): GeoMessageRef[] {
+    const value = readJsonObject(ensureStoragePath(cwd, refsPath({ cwd, conversationId })), { version: 1, refs: [] });
+    if (value.version !== 1 || !Array.isArray(value.refs)) throw serviceError('Geo message reference metadata is corrupt.', 409, 'metadata_corrupt');
+    if (!value.refs.every((item) => !!item && typeof item === 'object' && typeof item.text === 'string' && Array.isArray(item.contextIds) && item.contextIds.every((id: unknown) => typeof id === 'string' && /^geoctx_[A-Za-z0-9_-]{12,64}$/.test(id)))) throw serviceError('Geo message reference metadata is corrupt.', 409, 'metadata_corrupt');
+    return value.refs as GeoMessageRef[];
   }
 
   async request(session: GeoInteractionSession, value: JsonRecord, signal?: AbortSignal) {
@@ -371,7 +372,7 @@ export class GeoInteractionService {
     const parsed = parseGeoInteractionRequestStructured(candidate);
     if (!parsed.ok) throw serviceError(parsed.diagnostics.map((item) => item.message).join('; '));
     const request = parsed.value;
-    writeJsonAtomic(session.cwd, path.join(requestDir(session.cwd, request.requestId), 'request.json'), request);
+    writeJsonAtomic(session.cwd, path.join(requestDir(session, request.requestId), 'request.json'), request);
     session.manager?.broadcast({ type: 'geo_interaction_updated', sessionId: session.id, request });
     return new Promise<{ response: GeoInteractionResponseV1; context?: GeoClientContextV1 }>((resolve) => {
       const timer = setTimeout(() => { void this.finish(session, request, responseFor(request.requestId, 'expired', { reason: 'timeout' })); }, request.timeoutSeconds * 1000);
@@ -384,7 +385,7 @@ export class GeoInteractionService {
 
   waitingRequest(session: GeoInteractionSession): GeoInteractionRequestV1 | null {
     if (!hasGeo(session)) return null;
-    const root = path.join(interactionRoot(session.cwd), 'requests');
+    const root = path.join(interactionRoot(session), 'requests');
     if (!fs.existsSync(root)) return null;
     let waiting: GeoInteractionRequestV1 | null = null;
     for (const name of fs.readdirSync(root)) {
@@ -402,7 +403,7 @@ export class GeoInteractionService {
 
   async respond(session: GeoInteractionSession, requestId: string, value: JsonRecord) {
     requireGeo(session);
-    const dir = requestDir(session.cwd, requestId);
+    const dir = requestDir(session, requestId);
     const existing = readJson<unknown>(session.cwd, path.join(dir, 'response.json'));
     if (existing) {
       const parsed = parseGeoInteractionResponseStructured(existing);
@@ -477,7 +478,7 @@ export class GeoInteractionService {
     if (!hasGeo(session)) return undefined;
     const waitingRequest = this.waitingRequest(session);
     const waitingScreenshotRequest = this.screenshotRequests.get(session.id);
-    const contextsRoot = path.join(interactionRoot(session.cwd), 'contexts');
+    const contextsRoot = path.join(interactionRoot(session), 'contexts');
     const contextCount = fs.existsSync(contextsRoot) ? fs.readdirSync(contextsRoot).length : 0;
     return waitingRequest || waitingScreenshotRequest || contextCount ? { contextCount, ...(waitingRequest ? { waitingRequest } : {}), ...(waitingScreenshotRequest ? { waitingScreenshotRequest } : {}) } : undefined;
   }
@@ -515,7 +516,7 @@ export class GeoInteractionService {
   }
 
   private finish(session: GeoInteractionSession, request: GeoInteractionRequestV1, response: GeoInteractionResponseV1, context?: GeoClientContextV1) {
-    const target = path.join(requestDir(session.cwd, request.requestId), 'response.json');
+    const target = path.join(requestDir(session, request.requestId), 'response.json');
     const existing = readJson<unknown>(session.cwd, target);
     if (existing) {
       const parsed = parseGeoInteractionResponseStructured(existing);

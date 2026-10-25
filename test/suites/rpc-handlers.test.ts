@@ -111,7 +111,7 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
       const { PiRpcSession, LiveSessionManager } = require('../../bin/sessions.js');
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-pending-message-'));
       t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-      const session = new PiRpcSession(new LiveSessionManager(), { cwd });
+      const session = new PiRpcSession(new LiveSessionManager(), { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd });
       const pending = (commandId: string, text: string, canvasContextIds: string[]) => ({ commandId, text, attachmentIds: [], geoContextIds: [], canvasContextIds });
       session.registerPendingMessage(pending('first', 'first text', ['canvas-a']));
       session.registerPendingMessage(pending('second', 'second text', ['canvas-b']));

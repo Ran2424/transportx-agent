@@ -52,7 +52,7 @@ type ApiRouteServices = {
   renderReportPdf(title: string, html: string): Promise<Buffer>;
   serveSessionFile(res: ServerResponse, dirName: string, fileName: string): void;
   listAttachments(cwd: string): unknown[];
-  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource): Promise<unknown[]>;
+  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource, conversationId: string): Promise<unknown[]>;
   deleteAttachment(cwd: string, id: string): void;
   citation: CitationService;
   spatial: SpatialAnalysisService;
@@ -182,7 +182,7 @@ export function createApiRouter(services: ApiRouteServices) {
       if (!session) return;
       const source = url.searchParams.get('source');
       if (source !== 'picker' && source !== 'drop' && source !== 'clipboard') return deps.json(res, 400, { error: 'Invalid attachment source' });
-      try { deps.json(res, 200, { attachments: await deps.uploadAttachments(session.cwd, req, source) }); }
+      try { deps.json(res, 200, { attachments: await deps.uploadAttachments(session.cwd, req, source, session.conversationId) }); }
       catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
     })
     .delete(/^\/api\/live-sessions\/([^/]+)\/attachments\/([^/]+)$/, ({ res, params, deps }) => {

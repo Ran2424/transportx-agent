@@ -39,6 +39,7 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
   function fakeSession(id: string) {
     return {
       id,
+      conversationId: 'conv_00000000-0000-4000-8000-000000000001',
       cwd: '/tmp/proj',
       model: 'openai/gpt-5.5',
       modelSpec: '',
@@ -444,7 +445,7 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
       body: JSON.stringify({ sessionId: session.id, token: 'geo-token', visualizationId: 'route_map', sceneRevision: 1, mode: 'viewport', prompt: '请确认当前视野' }),
     });
     let requestId = '';
-    const requestsRoot = path.join(cwd, '.tau', 'geo-interactions', 'requests');
+    const requestsRoot = path.join(cwd, '.tau', 'conversations', session.conversationId, 'geo-interactions', 'requests');
     for (let attempt = 0; attempt < 50 && !requestId; attempt += 1) {
       if (fs.existsSync(requestsRoot)) requestId = fs.readdirSync(requestsRoot)[0] || '';
       if (!requestId) await new Promise((resolve) => setTimeout(resolve, 10));
@@ -717,7 +718,7 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
   {
     liveManager.sessions.clear();
     const manager = new (require('../../bin/sessions.js').LiveSessionManager)();
-    const session = new PiRpcSession(manager, { cwd: '/tmp/pi-extension-ui' });
+    const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd: '/tmp/pi-extension-ui' });
     const child = makeFakeChild();
     const received: string[] = [];
     child.stdin.on('data', (chunk: Buffer) => received.push(chunk.toString()));

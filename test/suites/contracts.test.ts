@@ -368,7 +368,7 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
   // Server refreshes context usage after Pi settles without losing a compaction estimate
   {
     const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
-    const session = new PiRpcSession(new LiveSessionManager(), { cwd: process.cwd() });
+    const session = new PiRpcSession(new LiveSessionManager(), { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd: process.cwd() });
     const commands: Array<{ type: string }> = [];
     session.contextUsage = { tokens: 23000, contextWindow: 100000, percent: 23 };
     session.send = async (command: { type: string }) => { commands.push(command); return { success: true }; };

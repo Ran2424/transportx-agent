@@ -46,6 +46,15 @@ import { geoInteractionService } from './geo-interaction-service.js';
 import { restoreCanvasContextMessage } from './canvas-service.js';
 import { stripCanvasContextPrompt } from '../contracts/canvas.js';
 import { migrateSessionCitations } from './citation-migration.js';
+import type { WorkspaceRuntimeLease } from './workspace-runtime.js';
+
+export type PersistentSessionLifecycle = {
+  lease: WorkspaceRuntimeLease;
+  isCurrent(session: PiRpcSession): boolean;
+  isReady(session: PiRpcSession): boolean;
+  sync(session: PiRpcSession): void;
+  closed(session: PiRpcSession): Promise<void>;
+};
 
 type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
 type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
@@ -96,6 +105,14 @@ function latestConversationTimestamp(entries: JsonRecord[]) {
 
 
 export class PiRpcSession {
+  readonly conversationId: string;
+  readonly workspaceId: string | null;
+  readonly lifecycle?: PersistentSessionLifecycle;
+  private readonly startupAbort = new AbortController();
+  private runtimeProcess: ReturnType<WorkspaceRuntimeLease['processIntent']> | null = null;
+  private historyIdentityError: Error | null = null;
+  private exited = false;
+  private readonly reservedSessionFile: string | null;
   manager: LiveSessionManager;
   id: string;
   cwd: string;
@@ -142,10 +159,14 @@ export class PiRpcSession {
   private streamingMessage: PiMessage | null = null;
   private activeTools = new Map<string, PiRpcMessage>();
 
-  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
+  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; conversationId: string; workspaceId?: string; lifecycle?: PersistentSessionLifecycle; citationRegistryId?: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
     this.id = opts.id || makeSessionId();
     this.cwd = opts.cwd;
+    this.conversationId = opts.conversationId;
+    this.workspaceId = opts.workspaceId || null;
+    this.lifecycle = opts.lifecycle;
+    this.reservedSessionFile = opts.workspaceId ? opts.sessionFile || null : null;
     this.modelSpec = opts.modelSpec || '';
     this.appendSystemPrompt = opts.appendSystemPrompt || '';
     this.child = null;
@@ -155,8 +176,8 @@ export class PiRpcSession {
     this.isStreaming = false;
     this.isCompacting = false;
     this.autoCompactionEnabled = true;
-    this.timingMetrics = new TimingMetricsStore(this.cwd);
-    this.projection = new SessionProjection(this.timingMetrics.enrichEntries((opts.entries || []).map(restoreCanvasContextMessage)), readAttachmentMessageRefs(this.cwd), geoInteractionService.readMessageRefs(this.cwd));
+    this.timingMetrics = new TimingMetricsStore(this.cwd, this.conversationId);
+    this.projection = new SessionProjection(this.timingMetrics.enrichEntries((opts.entries || []).map(restoreCanvasContextMessage)), readAttachmentMessageRefs(this.cwd, this.conversationId), geoInteractionService.readMessageRefs(this.cwd, this.conversationId));
     this.lastConversationAt = latestConversationTimestamp(this.projection.entries) || this.createdAt;
     const parsed = parseModelSpecToModel(this.modelSpec);
     this.model = parsed.model;
@@ -169,7 +190,7 @@ export class PiRpcSession {
     this.terminating = false;
     this.exitCode = null;
     this.titleSet = !!this.sessionName;
-    this.pendingSessionNamePersistence = !opts.sessionFile && this.sessionName ? this.sessionName : null;
+    this.pendingSessionNamePersistence = (this.workspaceId || !opts.sessionFile) && this.sessionName ? this.sessionName : null;
     this.userMessages = [];
     this.piVersion = opts.piVersion || PI_RUNTIME_MINIMUM;
     this.capabilityTracker = new SessionCapabilityTracker(this.piVersion);
@@ -178,7 +199,7 @@ export class PiRpcSession {
     this.activeGeoContextIds = [];
     this.activeCanvasContextIds = [];
     this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID(), canvas: crypto.randomUUID(), moduleAuthoring: crypto.randomUUID(), cad: crypto.randomUUID() };
-    this.citationRegistryId = existingCitationRegistryId(this.cwd) || this.id;
+    this.citationRegistryId = opts.citationRegistryId || existingCitationRegistryId(this.cwd) || this.workspaceId || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.eventTiming = new SessionEventTiming(this.timingMetrics);
     this.applyLatestBridgeEnvelope();
@@ -209,7 +230,9 @@ export class PiRpcSession {
       throw new Error(`Directory not found: ${this.cwd}`);
     }
     if (!this.resolvedSessionPlan) throw new Error('A resolved Module session plan is required to start Pi.');
-    const launch = await this.manager.runtime.launch({
+    if (this.workspaceId && !this.reservedSessionFile) throw new Error('A persistent conversation requires its reserved history path.');
+    const input: SessionPiLaunchInput = {
+      signal: this.startupAbort.signal,
       cwd: this.cwd,
       sessionId: this.id,
       sessionFile: this.sessionFile,
@@ -218,8 +241,17 @@ export class PiRpcSession {
       resolvedSessionPlan: this.resolvedSessionPlan,
       serviceTokens: this.serviceTokens,
       endpoints: this.manager.runtime.endpoints,
-    });
+    };
+    const cancelled = () => Object.assign(new Error('Conversation activation was cancelled.'), { code: 'activation_cancelled', status: 409 });
+    if (this.startupAbort.signal.aborted) throw cancelled();
+    let onAbort!: () => void;
+    const cancellation = new Promise<never>((_, reject) => { onAbort = () => reject(cancelled()); this.startupAbort.signal.addEventListener('abort', onAbort, { once: true }); });
+    let launch: { args: string[]; env: NodeJS.ProcessEnv };
+    try { launch = await Promise.race([Promise.resolve().then(() => this.manager.runtime.launch(input)), cancellation]); }
+    finally { this.startupAbort.signal.removeEventListener('abort', onAbort); }
+    if (this.terminating || this.startupAbort.signal.aborted) throw cancelled();
     const spawnFn = this.manager.runtime.spawn;
+    this.runtimeProcess = this.lifecycle?.lease.processIntent('pi') || null;
     const child = spawnFn(this.manager.runtime.command, launch.args, {
       cwd: this.cwd,
       env: launch.env,
@@ -247,6 +279,7 @@ export class PiRpcSession {
     });
     child.on('error', (err: Error) => this.handleExit(null, null, err));
     child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => this.handleExit(code, signal));
+    this.runtimeProcess?.started(child);
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -275,6 +308,9 @@ export class PiRpcSession {
         resolve();
       }, 100);
     });
+    if (this.historyIdentityError) throw this.historyIdentityError;
+    if (this.terminating || this.startupAbort.signal.aborted) throw cancelled();
+    if (this.workspaceId) return; // Persistent activation awaits its explicit RPC handshake.
 
     // Give Pi a moment to enter RPC mode, then establish its canonical startup
     // state once. This discovers the session file so the projection can ingest
@@ -295,6 +331,7 @@ export class PiRpcSession {
   }
 
   handleStdout(chunk: string) {
+    if (this.lifecycle && !this.lifecycle.isCurrent(this)) return;
     if (Buffer.byteLength(this.stdoutBuffer) + Buffer.byteLength(chunk) > 16 * 1024 * 1024) {
       this.stdoutBuffer = '';
       void this.terminate('rpc_frame_too_large').catch((error) => console.error(`[Pi ${this.id}] ${error.message}`));
@@ -328,12 +365,13 @@ export class PiRpcSession {
     const data: PiRpcPayload = resp.data || resp.result || resp;
     const command = resp.command || data.command;
     if (data.sessionFile) {
+      if (!this.acceptSessionFile(data.sessionFile)) return;
       if (this.sessionFile && path.resolve(this.sessionFile) !== path.resolve(data.sessionFile)) this.capabilityTracker.invalidateObservation(true);
       this.sessionFile = data.sessionFile;
       this.persistPendingSessionName();
       this.reconcileProjection();
     }
-    if (data.sessionName) this.setSessionName(data.sessionName);
+    if (data.sessionName && !this.workspaceId) this.setSessionName(data.sessionName);
     if (data.contextUsage) {
       this.contextUsage = mergeContextUsage(this.contextUsage, data.contextUsage);
     }
@@ -349,12 +387,14 @@ export class PiRpcSession {
       else if (data.provider && data.id) this.model = normalizeModel(data);
     }
     this.touch(true);
+    this.lifecycle?.sync(this);
   }
 
   handleEvent(event: PiRpcMessage) {
     if (this.modelSync.consume(event)) return;
     this.touch(false);
     const type = event.type;
+    if (this.workspaceId && type === 'session_info_changed') event = { ...event, name: this.sessionName || undefined };
     if (type === 'queue_update') {
       const queue = parsePiMessageQueue(event);
       if (queue) {
@@ -408,6 +448,7 @@ export class PiRpcSession {
       this.reconcileProjection();
     }
     if (type === 'agent_settled') {
+      this.lifecycle?.sync(this);
       this.isStreaming = false;
       this.streamingMessage = null;
       this.activeTools.clear();
@@ -418,16 +459,17 @@ export class PiRpcSession {
     }
     if (event.contextUsage) this.contextUsage = event.contextUsage;
     if (event.sessionFile) {
+      if (!this.acceptSessionFile(event.sessionFile)) return;
       this.sessionFile = event.sessionFile;
       this.persistPendingSessionName();
     }
-    if (type === 'session_info_changed') {
+    if (type === 'session_info_changed' && !this.workspaceId) {
       this.sessionName = typeof event.name === 'string' ? event.name.trim() || null : null;
       this.titleSet = !!this.sessionName;
       this.pendingSessionNamePersistence = null;
     }
     if (type === 'session_name' && event.name) {
-      if (!this.setSessionName(event.name)) return;
+      if (!this.workspaceId && !this.setSessionName(event.name)) return;
       event.name = this.sessionName || event.name;
     }
 
@@ -509,10 +551,10 @@ export class PiRpcSession {
       const enriched = attachmentIds.length || geoContextIds.length || canvasContextIds.length
         ? { ...message, ...(attachmentIds.length ? { attachmentIds } : {}), ...(geoContextIds.length ? { geoContextIds } : {}), ...(canvasContextIds.length ? { canvasContextIds } : {}), content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
         : (typeof message.content === 'string' && message.content !== text ? { ...message, content: text } : message);
-      if (attachmentIds.length) recordAttachmentMessageRefs(this.cwd, { text, timestamp: typeof message.timestamp === 'number' ? message.timestamp : undefined, attachmentIds });
+      if (attachmentIds.length) recordAttachmentMessageRefs(this.cwd, this.conversationId, { text, timestamp: typeof message.timestamp === 'number' ? message.timestamp : undefined, attachmentIds });
       if (geoContextIds.length) geoInteractionService.recordMessageRefs(this, { text, timestamp: typeof message.timestamp === 'number' || typeof message.timestamp === 'string' ? message.timestamp : undefined, contextIds: geoContextIds });
-      this.projection.setMessageRefs(readAttachmentMessageRefs(this.cwd));
-      this.projection.setGeoMessageRefs(geoInteractionService.readMessageRefs(this.cwd));
+      this.projection.setMessageRefs(readAttachmentMessageRefs(this.cwd, this.conversationId));
+      this.projection.setGeoMessageRefs(geoInteractionService.readMessageRefs(this.cwd, this.conversationId));
       this.projection.appendMessage(enriched as JsonRecord);
       this.maybeTitle();
     } else if (message.role !== 'user' && eventType === 'message_end') {
@@ -600,21 +642,46 @@ export class PiRpcSession {
   async terminate(reason = 'closed') {
     if (this.termination) return this.termination;
     this.terminating = true;
+    this.startupAbort.abort();
     geoInteractionService.abortSession(this, reason === 'aborted_by_user' ? 'agent_aborted' : 'session_closed');
     this.transport.rejectAll(new Error(`Session terminated: ${reason}`));
-    this.termination = (this.child ? terminateProcessTree(this.child) : Promise.resolve()).then(() => { this.pendingMessages = []; }).catch((error) => { this.termination = null; throw error; });
+    this.termination = (this.child ? terminateProcessTree(this.child) : Promise.resolve()).then(() => {
+      this.pendingMessages = [];
+      this.runtimeProcess?.stopped();
+    }).catch((error) => { this.termination = null; throw error; });
     return this.termination;
   }
 
   handleExit(code: number | null, signal: string | null, err?: { message?: string }) {
-    if (this.exitCode !== null) return;
+    if (this.exited) return;
+    if (err && this.child?.pid && this.child.exitCode === null && this.child.signalCode === null) {
+      logHostError('pi_process_error', err, { sessionId: this.id }); return;
+    }
+    this.exited = true;
     if (this.stderrBuffer.trim()) logHostEvent('warn', 'pi_stderr', { sessionId: this.id, message: this.stderrBuffer });
     this.stderrBuffer = '';
     logHostEvent(err || (!this.terminating && code !== 0) ? 'error' : 'info', 'pi_exited', { sessionId: this.id, exitCode: code, signal, message: err?.message });
     this.exitCode = code;
+    this.terminating = true;
+    try { this.runtimeProcess?.stopped(); }
+    catch (error) { logHostError('pi_stop_record_failed', error, { sessionId: this.id }); }
     geoInteractionService.abortSession(this, 'agent_aborted');
     this.transport.rejectAll(err || new Error(`Pi process exited (${signal || code})`));
     this.manager.removeExited(this.id, err?.message || `process_exit:${signal || code}`);
+  }
+
+  cancelStart() {
+    this.terminating = true; this.startupAbort.abort();
+    this.transport.rejectAll(Object.assign(new Error('Conversation activation was cancelled.'), { code: 'activation_cancelled', status: 409 }));
+  }
+
+  private acceptSessionFile(file: string) {
+    if (!this.reservedSessionFile || path.resolve(file) === path.resolve(this.reservedSessionFile)) return true;
+    this.historyIdentityError = Object.assign(new Error('Pi changed its reserved conversation history path.'), { code: 'history_identity_mismatch', status: 409 });
+    logHostError('history_identity_mismatch', this.historyIdentityError, { sessionId: this.id, conversationId: this.conversationId });
+    const stop = this.manager.get(this.id) === this ? this.manager.delete(this.id, 'history_identity_mismatch') : this.terminate('history_identity_mismatch');
+    void stop.catch((error) => logHostError('persistent_session_stop_failed', error, { sessionId: this.id }));
+    return false;
   }
 }
 
@@ -684,6 +751,7 @@ export class LiveSessionManager {
   broadcastUpdated(id: string) {
     const s = this.sessions.get(id);
     if (!s) return;
+    if (s.lifecycle && !s.lifecycle.isReady(s)) return;
     const session = s.liveMetadata();
     const signature = JSON.stringify(session);
     if (this.liveMetadataSignatures.get(id) === signature) return;
@@ -716,6 +784,17 @@ export class LiveSessionManager {
   }
   list() { return Array.from(this.sessions.values()).map((s) => s.metadata()); }
   get(id: string) { return this.sessions.get(id); }
+  hasJobs(id: string) { return !!this.jobs.get(id)?.size; }
+  async startInstance(session: PiRpcSession) {
+    if (!session.lifecycle || !session.workspaceId) throw new Error('Persistent runtime ownership is required.');
+    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
+    this.startingSessions++;
+    try {
+      await session.start();
+      this.sessions.set(session.id, session);
+      return session;
+    } finally { this.startingSessions--; }
+  }
   findBySessionFile(sessionFile: string) {
     const resolved = path.resolve(sessionFile);
     return Array.from(this.sessions.values()).find((s) => s.sessionFile && path.resolve(s.sessionFile) === resolved);
@@ -782,7 +861,7 @@ export class LiveSessionManager {
     const assembler = profile ? this.runtime.assemblerForProfile(profile) : this.runtime.assembler;
     const resolvedSessionPlan = assembler.assemble(domainId, resolved, profile);
     assembler.save(resolvedSessionPlan);
-    const session = new PiRpcSession(this, { cwd: resolved, modelSpec: (model || '').trim(), appendSystemPrompt, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
+    const session = new PiRpcSession(this, { cwd: resolved, conversationId: `conv_${crypto.randomUUID()}`, modelSpec: (model || '').trim(), appendSystemPrompt, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
     await session.start();
     this.sessions.set(session.id, session);
     this.broadcast({ type: 'live_session_created', session: session.metadata() });
@@ -830,7 +909,7 @@ export class LiveSessionManager {
           logHostError('citation_migration_failed', cause, { cwd });
           throw Object.assign(new Error('Historical citations could not be migrated; original files are unchanged. See runtime logs.', { cause }), { code: 'citation_migration_failed', status: 409 });
         }
-        const session = new PiRpcSession(this, { cwd, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
+        const session = new PiRpcSession(this, { cwd, conversationId: `conv_${crypto.randomUUID()}`, modelSpec: (model || '').trim(), sessionFile: resolved, entries, sessionName, piVersion: this.piVersion, resolvedSessionPlan });
         await session.start();
         this.sessions.set(session.id, session);
         this.broadcast({ type: 'live_session_created', session: session.metadata() });
@@ -856,6 +935,7 @@ export class LiveSessionManager {
       await session.terminate(reason);
       session.isStreaming = false;
       session.isCompacting = false;
+      await session.lifecycle?.closed(session);
       if (cleanup) await cleanup();
       const registered = this.sessions.delete(id);
       this.liveMetadataSignatures.delete(id);
@@ -944,6 +1024,8 @@ export class LiveSessionManager {
     this.delete(id, reason).catch((error) => console.error(`[Pi ${id}] Cleanup failed:`, error));
   }
   async shutdown() {
-    await Promise.all([...this.sessions.keys()].map((id) => this.delete(id, 'server_shutdown')));
+    const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.delete(id, 'server_shutdown')));
+    const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map((result) => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'Some session stops could not be confirmed.');
   }
 }

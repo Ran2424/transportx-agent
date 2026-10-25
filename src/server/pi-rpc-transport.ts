@@ -62,9 +62,10 @@ export class PiRpcTransport {
   }
 
   rejectAll(error: unknown) {
+    const source = error && typeof error === 'object' ? error as { code?: unknown; status?: unknown } : {};
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
-      pending.reject(Object.assign(new Error(error instanceof Error ? error.message : String(error)), { delivery: 'unknown' }));
+      pending.reject(Object.assign(new Error(error instanceof Error ? error.message : String(error)), { delivery: 'unknown', ...(typeof source.code === 'string' ? { code: source.code } : {}), ...(typeof source.status === 'number' ? { status: source.status } : {}) }));
     }
     this.pending.clear();
     this.late.clear();

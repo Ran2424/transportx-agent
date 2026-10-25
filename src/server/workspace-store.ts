@@ -40,6 +40,12 @@ export function workspaceMetadataPath(workspace: string, relative: string) {
   return target;
 }
 
+export function conversationStatePath(scope: { cwd: string; conversationId: string }, relative = '') {
+  if (!CONVERSATION_ID.test(scope.conversationId)) throw failure('workspace_identity_conflict', 'A persistent conversation identity is required for private state.');
+  const directory = workspaceMetadataPath(path.resolve(scope.cwd), `.tau/conversations/${scope.conversationId}`);
+  return relative ? workspaceMetadataPath(directory, relative) : directory;
+}
+
 export function workspaceCreationDigest(value: unknown): string {
   const canonical = (input: unknown): unknown => Array.isArray(input) ? input.map(canonical) : input && typeof input === 'object'
     ? Object.fromEntries(Object.entries(input).filter(([, item]) => item !== undefined).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, item]) => [key, canonical(item)])) : input;
@@ -113,6 +119,20 @@ export class WorkspaceStore {
     const manifest = validated(parseWorkspaceManifestStructured(readJsonObject(file)));
     if (manifest.id !== workspaceId) throw failure('workspace_identity_conflict', 'Workspace manifest ID differs from its catalog entry.');
     return { directory: entry.path, manifest };
+  }
+  findConversation(conversationId: string) {
+    if (!CONVERSATION_ID.test(conversationId)) throw failure('conversation_missing', 'Conversation is not registered.', 404);
+    const matches: Array<{ directory: string; manifest: WorkspaceManifestV1; conversation: ConversationRecordV1 }> = [];
+    for (const entry of this.readCatalog().entries) {
+      if (entry.state !== 'ready') continue;
+      let workspace: ReturnType<WorkspaceStore['readWorkspace']>;
+      try { workspace = this.readWorkspace(entry.workspaceId); } catch { continue; }
+      const conversation = workspace.manifest.conversations.find((record) => record.id === conversationId);
+      if (conversation) matches.push({ ...workspace, conversation });
+    }
+    if (matches.length > 1) throw failure('workspace_identity_conflict', 'Conversation identity appears in more than one workspace.');
+    if (!matches.length) throw failure('conversation_missing', 'Conversation is unavailable; inspect the workspace list and migration report.', 404);
+    return matches[0];
   }
   /** Publishes metadata for an already reserved creating entry; caller holds no catalog lease. */
   publishWorkspace(workspaceId: string, manifest: WorkspaceManifestV1) {
@@ -189,16 +209,20 @@ export class WorkspaceStore {
       return manifest;
     });
   }
-  updateRuntime(workspaceId: string, conversationId: string, update: Pick<ConversationRecordV1, 'state' | 'lastStartFailure' | 'modelSpec' | 'history'>) {
+  updateRuntime(workspaceId: string, conversationId: string, update: Pick<ConversationRecordV1, 'state' | 'lastStartFailure' | 'modelSpec' | 'history'>, isCurrent?: () => boolean) {
+    if (isCurrent && !isCurrent()) return Promise.resolve(null);
     const { directory } = this.readWorkspace(workspaceId);
     const file = workspaceMetadataPath(directory, '.tau/workspace.json');
     return mutateJson(file, async () => {
+      if (isCurrent && !isCurrent()) return null;
       const { manifest } = this.readWorkspace(workspaceId);
       const record = manifest.conversations.find((item) => item.id === conversationId);
       if (!record || ['deleting', 'deleted'].includes(record.state)) throw failure('conversation_missing', 'Conversation is unavailable.', 404);
       if (!['created', 'ready', 'start-failed'].includes(update.state) || update.history.key !== record.history.key || record.history.headerId !== null && record.history.headerId !== update.history.headerId) throw failure('history_identity_mismatch', 'Runtime cannot replace a conversation history binding.');
-      const history = this.inspectHistory(directory, record);
-      if (history.headerId !== update.history.headerId) throw failure('history_identity_mismatch', 'Runtime history binding differs from the persisted Pi header.');
+      if (update.state !== 'start-failed' || update.history.headerId !== record.history.headerId) {
+        const history = this.inspectHistory(directory, record);
+        if (history.headerId !== update.history.headerId) throw failure('history_identity_mismatch', 'Runtime history binding differs from the persisted Pi header.');
+      }
       record.state = update.state; record.lastStartFailure = update.lastStartFailure;
       record.modelSpec = update.modelSpec; record.history = update.history;
       writeJsonAtomic(file, validated(parseWorkspaceManifestStructured(manifest)));

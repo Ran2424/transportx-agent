@@ -94,6 +94,98 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(third.conversation.modelSpec, 'probe/new-default');
     assert.equal(store.readWorkspace(first.manifest.id).manifest.conversations[0].modelSpec, 'probe/first');
 
+    // Persistent lifecycle uses real Pi RPC, isolated configuration and no model/network requests.
+    const { ConversationRuntime } = require('../../bin/conversation-runtime.js');
+    const { WorkspaceRuntimeGate } = require('../../bin/workspace-runtime.js');
+    const { LiveSessionManager } = require('../../bin/sessions.js');
+    const { spawn } = require('node:child_process');
+    let launchMode = 'ok', launches = 0, releaseLaunch: (() => void) | undefined, rejectPlan = false;
+    const assembler = { assemble: () => { throw new Error('Frozen plans must not be reassembled.'); }, save: () => {}, load: () => {} };
+    const manager = new LiveSessionManager({ defaultDomainId: 'com.transportx.workbench', assembler, assemblerForProfile: () => assembler, createWorkspace: () => { throw new Error('Activation must not allocate another workspace.'); }, command: process.execPath,
+      spawn: (...args: any[]) => { launches++; return spawn(...args); }, endpoints: {},
+      launch: async (value: any) => {
+        if (launchMode === 'refuse') throw Object.assign(new Error('Module trust was declined.'), { code: 'module_trust_declined' });
+        if (launchMode === 'hold') await new Promise<void>((resolve) => { releaseLaunch = resolve; });
+        if (launchMode === 'no-handshake' || launchMode === 'exits-during-handshake') return { args: ['-e', `process.stdin.resume(); ${launchMode === 'exits-during-handshake' ? "process.stdin.once('data',()=>process.exit(7));" : ''} setInterval(()=>{},1000);`], env: { ...process.env } };
+        return { args: [path.resolve('node_modules/@earendil-works/pi-coding-agent/dist/cli.js'), '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--session', value.sessionFile], env: { ...process.env, PI_CODING_AGENT_DIR: path.join(root, 'isolated-pi') } };
+      },
+    });
+    const gate = new WorkspaceRuntimeGate(process.env.TAU_PYTHON_COMMAND || 'python3', path.join(root, 'logs'));
+    const lifecycle = new ConversationRuntime({ store, sessions: manager, gate, assertReady: () => {}, verifyPlan: (plan: any) => { if (rejectPlan) throw Object.assign(new Error('Frozen module version unavailable.'), { code: 'module_version_missing' }); return plan; } });
+    const beforeActivity = store.readWorkspace(first.manifest.id).manifest;
+    try {
+      assert.equal(lifecycle.snapshot(first.conversation.id).runtime, null);
+      assert.deepEqual(lifecycle.snapshot(first.conversation.id).snapshot.entries, []);
+      const opening = lifecycle.activate(first.conversation.id);
+      assert.equal(lifecycle.activate(first.conversation.id), opening, 'simultaneous activation joins the existing start');
+      const liveA = await opening;
+      assert.equal(launches, 1); assert.equal(liveA.conversationId, first.conversation.id);
+      assert.equal(fs.existsSync(liveA.sessionFile), false, 'a real empty Pi keeps its reserved JSONL absent');
+      assert.equal(liveA.metadata().sessionFile, null, 'the reserved path is not advertised as a persisted file');
+      assert.equal(liveA.metadata().workspaceId, first.manifest.id);
+      assert.equal(liveA.sessionName, '改过的标题');
+      assert.equal(lifecycle.snapshot(second.conversation.id).runtime, null, 'browsing B does not activate it or close A');
+      assert.equal(manager.get(liveA.id), liveA);
+      liveA.isCompacting = true;
+      await assert.rejects(lifecycle.activate(second.conversation.id), { code: 'workspace_busy' });
+      await assert.rejects(lifecycle.close(first.conversation.id), { code: 'workspace_busy' });
+      liveA.isCompacting = false;
+      rejectPlan = true;
+      await assert.rejects(lifecycle.activate(second.conversation.id, true), { code: 'module_version_missing' });
+      assert.equal(manager.get(liveA.id), liveA, 'an invalid target never stops the current conversation');
+      rejectPlan = false;
+      const liveB = await lifecycle.activate(second.conversation.id);
+      assert.equal(liveB.cwd, liveA.cwd); assert.notEqual(liveB.id, liveA.id); assert.equal(manager.get(liveA.id), undefined);
+      assert.equal(gate.diagnostics(first.directory).processes.filter((item: any) => item.state === 'running').length, 1);
+      await lifecycle.close(second.conversation.id); await lifecycle.close(second.conversation.id);
+      assert.equal(gate.diagnostics(first.directory).phase, 'stopped');
+      launchMode = 'refuse';
+      await assert.rejects(lifecycle.activate(third.conversation.id), { code: 'module_trust_declined' });
+      assert.equal(store.findConversation(third.conversation.id).conversation.state, 'start-failed');
+      assert.equal(gate.diagnostics(first.directory).phase, 'stopped');
+      launchMode = 'hold';
+      const pending = lifecycle.activate(third.conversation.id), rejected = assert.rejects(pending, { code: 'activation_cancelled' });
+      const deadline = Date.now() + 2000;
+      while (!releaseLaunch) { assert.ok(Date.now() < deadline, 'activation reaches its pending trust decision'); await new Promise((resolve) => setImmediate(resolve)); }
+      await lifecycle.close(third.conversation.id, true); await rejected;
+      releaseLaunch!(); await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(launches, 2, 'a late trust decision after close cannot launch Pi');
+      launchMode = 'no-handshake';
+      const handshake = lifecycle.activate(third.conversation.id), cancelledHandshake = assert.rejects(handshake, { code: 'activation_cancelled' });
+      const handshakeDeadline = Date.now() + 3000;
+      while (![...manager.sessions.values()].some((session: any) => session.conversationId === third.conversation.id && session.transport.pendingCount)) { assert.ok(Date.now() < handshakeDeadline, 'runtime reaches the pending RPC handshake'); await new Promise((resolve) => setTimeout(resolve, 10)); }
+      await lifecycle.close(third.conversation.id, true); await cancelledHandshake;
+      assert.equal(gate.diagnostics(first.directory).phase, 'stopped');
+      launchMode = 'exits-during-handshake';
+      await assert.rejects(lifecycle.activate(third.conversation.id), /exited|stopped/);
+      assert.equal(store.findConversation(third.conversation.id).conversation.state, 'start-failed');
+      assert.equal(gate.diagnostics(first.directory).phase, 'stopped', 'an exit during the handshake releases only its own generation');
+      launchMode = 'ok';
+      const invalidRefs = path.join(first.directory, '.tau/conversations', third.conversation.id, 'attachment-message-refs.json');
+      fs.writeFileSync(invalidRefs, 'null');
+      await assert.rejects(lifecycle.activate(third.conversation.id), { code: 'metadata_corrupt' });
+      assert.equal(fs.readFileSync(invalidRefs, 'utf8'), 'null');
+      assert.equal(gate.diagnostics(first.directory).phase, 'stopped', 'a private-state constructor failure starts no Pi and retains the record');
+      fs.rmSync(invalidRefs);
+      const restored = await lifecycle.activate(first.conversation.id);
+      assert.notEqual(restored.id, liveA.id); assert.equal(restored.conversationId, liveA.conversationId);
+      const launchesBeforeClose = launches;
+      const cancellations = manager.cancelJobs.bind(manager);
+      manager.cancelJobs = async () => { throw new Error('Stop confirmation unavailable.'); };
+      await assert.rejects(lifecycle.close(first.conversation.id, true), { code: 'process_stop_unconfirmed' });
+      assert.equal(gate.diagnostics(first.directory).phase, 'stop-unconfirmed');
+      await assert.rejects(lifecycle.activate(second.conversation.id), { code: 'process_stop_unconfirmed' });
+      assert.equal(launches, launchesBeforeClose, 'an unconfirmed stop keeps the workspace unavailable to the next Pi');
+      manager.cancelJobs = cancellations;
+      await lifecycle.close(first.conversation.id);
+      const saved = fs.readFileSync(path.join(first.directory, '.tau/workspace.json'), 'utf8');
+      restored.handleStdout(JSON.stringify({ type: 'agent_settled' }) + '\n');
+      assert.equal(fs.readFileSync(path.join(first.directory, '.tau/workspace.json'), 'utf8'), saved, 'an old runtime tail cannot mutate the new logical record');
+      const afterActivity = store.readWorkspace(first.manifest.id).manifest;
+      assert.equal(afterActivity.revision, beforeActivity.revision); assert.equal(afterActivity.updatedAt, beforeActivity.updatedAt);
+      assert.equal(afterActivity.defaultsRevision, beforeActivity.defaultsRevision);
+    } finally { releaseLaunch?.(); await lifecycle.shutdown(); }
+
     // Manifest commits before catalog publication. A failed catalog write must recover the same logical conversation.
     const rename = fs.renameSync;
     let failPublication = true;

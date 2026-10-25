@@ -8,7 +8,9 @@ import type {
   SessionAttachmentKind,
   SessionAttachmentSource,
 } from '../contracts/attachments.js';
-import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
+import { acquireWriteLease, readJsonObject, writeJsonAtomic } from './util/json-storage.js';
+import { CONVERSATION_ID } from '../contracts/workspace.js';
+import { conversationStatePath, workspaceMetadataPath } from './workspace-store.js';
 import { isWithin } from './util/path.js';
 import { relativePosixPath } from './util/path.js';
 
@@ -24,7 +26,6 @@ const ARCHIVE_EXTENSIONS = new Set(['zip', 'tar', 'gz', '7z', 'rar']);
 type AttachmentIndex = {
   version: 1;
   attachments: SessionAttachment[];
-  messageRefs?: AttachmentMessageRef[];
 };
 
 export type AttachmentMessageRef = {
@@ -43,7 +44,7 @@ type MultipartFile = {
 
 function sessionAttachmentsDir(cwd: string) { return path.join(cwd, 'attachments'); }
 function tauDir(cwd: string) { return path.join(cwd, '.tau'); }
-function indexPath(cwd: string) { return path.join(tauDir(cwd), 'attachments.json'); }
+function indexPath(cwd: string) { return workspaceMetadataPath(cwd, '.tau/attachments.json'); }
 
 function assertNotSymlink(target: string) {
   try { if (fs.lstatSync(target).isSymbolicLink()) throw error('Attachment storage symlinks are not allowed', 403); } catch (cause) { if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause; }
@@ -75,9 +76,10 @@ function kindFor(name: string, mimeType: string): SessionAttachmentKind {
 function readIndex(cwd: string): AttachmentIndex {
   assertNotSymlink(tauDir(cwd));
   assertNotSymlink(indexPath(cwd));
-  const parsed = readJsonObject(indexPath(cwd), { version: INDEX_VERSION, attachments: [], messageRefs: [] }) as Partial<AttachmentIndex>;
-  if (parsed.version !== INDEX_VERSION || !Array.isArray(parsed.attachments) || (parsed.messageRefs !== undefined && !Array.isArray(parsed.messageRefs))) throw error('Unsupported or corrupt attachment index', 409);
-  return { version: INDEX_VERSION, attachments: parsed.attachments, messageRefs: parsed.messageRefs || [] };
+  const parsed = readJsonObject(indexPath(cwd), { version: INDEX_VERSION, attachments: [] });
+  if ('messageRefs' in parsed) throw Object.assign(error('Attachment associations require workspace migration.', 409), { code: 'workspace_migration_required' });
+  if (parsed.version !== INDEX_VERSION || !Array.isArray(parsed.attachments)) throw error('Unsupported or corrupt attachment index', 409);
+  return { version: INDEX_VERSION, attachments: parsed.attachments as SessionAttachment[] };
 }
 
 function writeIndex(cwd: string, index: AttachmentIndex) {
@@ -229,7 +231,8 @@ async function parseMultipart(req: IncomingMessage, tempDir: string): Promise<Mu
   }
 }
 
-export async function saveUploadedAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource) {
+export async function saveUploadedAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource, conversationId: string) {
+  conversationStatePath({ cwd, conversationId });
   assertNotSymlink(tauDir(cwd));
   assertNotSymlink(sessionAttachmentsDir(cwd));
   fs.mkdirSync(sessionAttachmentsDir(cwd), { recursive: true, mode: 0o700 });
@@ -239,9 +242,11 @@ export async function saveUploadedAttachments(cwd: string, req: IncomingMessage,
   const tempDir = fs.mkdtempSync(path.join(tempRoot, 'request-'));
   const created: SessionAttachment[] = [];
   const createdDirs: string[] = [];
+  let release: (() => void) | undefined;
   try {
     const files = await parseMultipart(req, tempDir);
     if (!files.length) throw error('No file was provided', 400);
+    release = acquireWriteLease(indexPath(cwd));
     // Commit the fresh index in one synchronous segment after parsing finishes.
     const index = readIndex(cwd);
     for (const file of files) {
@@ -252,7 +257,7 @@ export async function saveUploadedAttachments(cwd: string, req: IncomingMessage,
       createdDirs.push(dir);
       ensureWithin(sessionAttachmentsDir(cwd), dir);
       fs.renameSync(file.tempPath, target);
-      const attachment: SessionAttachment = { id, name: file.name, relativePath: relativePosixPath(cwd, target), mimeType: file.mimeType, size: file.size, sha256: file.sha256, kind: kindFor(file.name, file.mimeType), source, status: 'ready', createdAt: new Date().toISOString() };
+      const attachment: SessionAttachment = { id, name: file.name, relativePath: relativePosixPath(cwd, target), mimeType: file.mimeType, size: file.size, sha256: file.sha256, kind: kindFor(file.name, file.mimeType), source, sourceConversationId: conversationId, status: 'ready', createdAt: new Date().toISOString() };
       index.attachments.push(attachment); created.push(attachment);
     }
     writeIndex(cwd, index);
@@ -261,33 +266,49 @@ export async function saveUploadedAttachments(cwd: string, req: IncomingMessage,
     for (const dir of createdDirs) fs.rmSync(dir, { recursive: true, force: true });
     throw cause;
   } finally {
+    release?.();
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
 export function deleteSessionAttachment(cwd: string, id: string) {
   assertNotSymlink(sessionAttachmentsDir(cwd));
-  const index = readIndex(cwd);
-  const attachment = index.attachments.find((item) => item.id === id);
-  if (!attachment) throw error('Attachment not found', 404);
-  if ((index.messageRefs || []).some((ref) => ref.attachmentIds.includes(id))) throw error('Attachment is already used by a message', 409);
-  const dir = path.resolve(cwd, path.dirname(attachment.relativePath));
-  ensureWithin(sessionAttachmentsDir(cwd), dir);
-  assertNotSymlink(dir);
-  fs.rmSync(dir, { recursive: true, force: true });
-  index.attachments = index.attachments.filter((item) => item.id !== id);
-  writeIndex(cwd, index);
+  const release = acquireWriteLease(indexPath(cwd));
+  try {
+    const index = readIndex(cwd);
+    const attachment = index.attachments.find((item) => item.id === id);
+    if (!attachment) throw error('Attachment not found', 404);
+    const privateRoot = path.join(tauDir(cwd), 'conversations');
+    assertNotSymlink(privateRoot);
+    if (fs.existsSync(privateRoot)) for (const entry of fs.readdirSync(privateRoot, { withFileTypes: true })) {
+      if (!CONVERSATION_ID.test(entry.name)) continue;
+      if (readAttachmentMessageRefs(cwd, entry.name).some((ref) => ref.attachmentIds.includes(id))) throw error('Attachment is already used by a conversation message', 409);
+    }
+    const dir = path.resolve(cwd, path.dirname(attachment.relativePath));
+    ensureWithin(sessionAttachmentsDir(cwd), dir);
+    assertNotSymlink(dir);
+    fs.rmSync(dir, { recursive: true, force: true });
+    index.attachments = index.attachments.filter((item) => item.id !== id);
+    writeIndex(cwd, index);
+  } finally { release(); }
 }
 
-export function readAttachmentMessageRefs(cwd: string) { return readIndex(cwd).messageRefs || []; }
+export function readAttachmentMessageRefs(cwd: string, conversationId: string): AttachmentMessageRef[] {
+  const file = conversationStatePath({ cwd, conversationId }, 'attachment-message-refs.json');
+  const value = readJsonObject(file, { version: 1, refs: [] });
+  if (value.version !== 1 || !Array.isArray(value.refs) || !value.refs.every((ref) => ref && typeof ref === 'object' && typeof ref.text === 'string' && Array.isArray(ref.attachmentIds) && ref.attachmentIds.every((id: unknown) => typeof id === 'string' && ATTACHMENT_ID_RE.test(id)))) throw Object.assign(error('Attachment message reference metadata is corrupt.', 409), { code: 'metadata_corrupt' });
+  return value.refs;
+}
 
-export function recordAttachmentMessageRefs(cwd: string, ref: AttachmentMessageRef) {
-  const index = readIndex(cwd);
-  const refs = index.messageRefs || [];
-  const key = `${ref.timestamp || ''}\n${ref.text}`;
-  const existing = refs.findIndex((item) => `${item.timestamp || ''}\n${item.text}` === key);
-  if (existing >= 0) refs[existing] = ref; else refs.push(ref);
-  index.messageRefs = refs; writeIndex(cwd, index);
+export function recordAttachmentMessageRefs(cwd: string, conversationId: string, ref: AttachmentMessageRef) {
+  const release = acquireWriteLease(indexPath(cwd));
+  try {
+    const refs = readAttachmentMessageRefs(cwd, conversationId);
+    const key = `${ref.timestamp || ''}\n${ref.text}`;
+    const existing = refs.findIndex((item) => `${item.timestamp || ''}\n${item.text}` === key);
+    if (existing >= 0) refs[existing] = ref; else refs.push(ref);
+    writeJsonAtomic(conversationStatePath({ cwd, conversationId }, 'attachment-message-refs.json'), { version: 1, refs });
+  } finally { release(); }
 }
 
 export function applyAttachmentMessageRefs(entries: JsonRecordLike[], refs: AttachmentMessageRef[]) {

@@ -2,6 +2,7 @@ const { test } = require('node:test') as typeof import('node:test');
 
 test('Uploads preserve concurrent requests and message references while enforcing byte and index limits', async (t) => {
   const assert = require('node:assert/strict');
+  const conversationId = 'conv_00000000-0000-4000-8000-000000000001';
   const fs = require('node:fs');
   const path = require('node:path');
   const os = require('node:os');
@@ -36,7 +37,7 @@ test('Uploads preserve concurrent requests and message references while enforcin
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
     const payload = multipart([{ name: 'owner.txt', type: 'text/plain', body: 'a'.repeat(1024) }]);
     const active = request(payload.boundary);
-    const completion = saveUploadedAttachments(cwd, active, 'picker');
+    const completion = saveUploadedAttachments(cwd, active, 'picker', conversationId);
     completion.catch(() => { });
     const suffix = Buffer.from(`\r\n--${payload.boundary}--\r\n`);
     active.write(payload.body.subarray(0, payload.body.length - suffix.length));
@@ -49,7 +50,7 @@ test('Uploads preserve concurrent requests and message references while enforcin
     const failed = new PassThrough() as any;
     failed.headers = {};
     failed.end('bad');
-    await assert.rejects(saveUploadedAttachments(cwd, failed, 'picker'));
+    await assert.rejects(saveUploadedAttachments(cwd, failed, 'picker', conversationId));
     active.end(suffix);
     const [attachment] = await completion;
     assert.equal(fs.readFileSync(path.join(cwd, attachment.relativePath), 'utf8'), 'a'.repeat(1024));
@@ -63,7 +64,7 @@ test('Uploads preserve concurrent requests and message references while enforcin
     const uploads = ['first', 'second'].map((name) => {
       const payload = multipart([{ name: `${name}.txt`, type: 'text/plain', body: name }]);
       const req = request(payload.boundary);
-      const result = saveUploadedAttachments(cwd, req, 'picker');
+      const result = saveUploadedAttachments(cwd, req, 'picker', conversationId);
       req.end(payload.body);
       return result;
     });
@@ -78,14 +79,14 @@ test('Uploads preserve concurrent requests and message references while enforcin
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
     const payload = multipart([{ name: 'split.txt', type: 'text/plain', body: 'split body' }]);
     const split = request(payload.boundary);
-    const success = saveUploadedAttachments(cwd, split, 'picker');
+    const success = saveUploadedAttachments(cwd, split, 'picker', conversationId);
     success.catch(() => { });
     for (const byte of payload.body) { split.write(Buffer.from([byte])); await new Promise((resolve) => setImmediate(resolve)); }
     split.end();
     assert.equal((await success).length, 1);
     for (const abort of [false, true]) {
       const req = request(payload.boundary);
-      const result = saveUploadedAttachments(cwd, req, 'picker');
+      const result = saveUploadedAttachments(cwd, req, 'picker', conversationId);
       const rejection = assert.rejects(result);
       req.write(payload.body.subarray(0, payload.body.length - 20));
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -101,7 +102,7 @@ test('Uploads preserve concurrent requests and message references while enforcin
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
     const payload = multipart(Array.from({ length: 21 }, (_, index) => ({ name: `${index}.txt`, type: 'text/plain', body: 'x' })));
     const req = request(payload.boundary);
-    const result = saveUploadedAttachments(cwd, req, 'picker');
+    const result = saveUploadedAttachments(cwd, req, 'picker', conversationId);
     req.end(payload.body);
     await assert.rejects(result, (error: any) => error.status === 413);
     assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
@@ -119,7 +120,7 @@ test('Uploads preserve concurrent requests and message references while enforcin
       yield Buffer.from(`\r\n--${boundary}--\r\n`);
     })());
     req.headers = { 'content-type': `multipart/form-data; boundary=${boundary}` };
-    await assert.rejects(saveUploadedAttachments(cwd, req, 'picker'), (error: any) => error.status === 413 && /100 MB/.test(error.message));
+    await assert.rejects(saveUploadedAttachments(cwd, req, 'picker', conversationId), (error: any) => error.status === 413 && /100 MB/.test(error.message));
     assert.deepEqual(fs.readdirSync(path.join(cwd, '.tau', 'attachment-tmp')), []);
   }
 
@@ -133,7 +134,7 @@ test('Uploads preserve concurrent requests and message references while enforcin
     ]);
     const req = new PassThrough() as any;
     req.headers = { 'content-type': `multipart/form-data; boundary=${payload.boundary}` };
-    const promise = saveUploadedAttachments(cwd, req, 'picker');
+    const promise = saveUploadedAttachments(cwd, req, 'picker', conversationId);
     req.end(payload.body);
     const attachments = await promise;
     assert.equal(attachments.length, 2);
@@ -156,7 +157,7 @@ test('Uploads preserve concurrent requests and message references while enforcin
     const payload = multipart([{ name: 'large.bin', type: 'application/octet-stream', body: 'x'.repeat(50 * 1024 * 1024 + 1) }]);
     const req = new PassThrough() as any;
     req.headers = { 'content-type': `multipart/form-data; boundary=${payload.boundary}` };
-    const promise = saveUploadedAttachments(cwd, req, 'picker');
+    const promise = saveUploadedAttachments(cwd, req, 'picker', conversationId);
     req.end(payload.body);
     await assert.rejects(promise, (error: any) => error.status === 413 && /Please provide the file's path/.test(error.message));
     assert.equal(req.readableEnded, true);
@@ -170,14 +171,25 @@ test('Uploads preserve concurrent requests and message references while enforcin
     const payload = multipart([{ name: 'notes.txt', type: 'text/plain', body: 'notes' }]);
     const req = new PassThrough() as any;
     req.headers = { 'content-type': `multipart/form-data; boundary=${payload.boundary}` };
-    const promise = saveUploadedAttachments(cwd, req, 'picker');
+    const promise = saveUploadedAttachments(cwd, req, 'picker', conversationId);
     req.end(payload.body);
     const [attachment] = await promise;
-    recordAttachmentMessageRefs(cwd, { text: '检查附件', timestamp: 123, attachmentIds: [attachment.id] });
-    assert.deepEqual(readAttachmentMessageRefs(cwd)[0].attachmentIds, [attachment.id]);
-    const entries = applyAttachmentMessageRefs([{ type: 'message', message: { role: 'user', content: '检查附件', timestamp: 123 } }], readAttachmentMessageRefs(cwd));
+    recordAttachmentMessageRefs(cwd, conversationId, { text: '检查附件', timestamp: 123, attachmentIds: [attachment.id] });
+    assert.deepEqual(readAttachmentMessageRefs(cwd, conversationId)[0].attachmentIds, [attachment.id]);
+    const entries = applyAttachmentMessageRefs([{ type: 'message', message: { role: 'user', content: '检查附件', timestamp: 123 } }], readAttachmentMessageRefs(cwd, conversationId));
     assert.deepEqual(entries[0].message.attachmentIds, [attachment.id]);
+    const other = 'conv_00000000-0000-4000-8000-000000000002';
+    assert.deepEqual(readAttachmentMessageRefs(cwd, other), []);
+    assert.equal(applyAttachmentMessageRefs([{ message: { role: 'user', content: '检查附件', timestamp: 123 } }], readAttachmentMessageRefs(cwd, other))[0].message.attachmentIds, undefined);
+    assert.equal(listSessionAttachments(cwd)[0].sourceConversationId, conversationId, 'original files are shared with their provenance retained');
+    recordAttachmentMessageRefs(cwd, other, { text: '检查附件', timestamp: 123, attachmentIds: [attachment.id] });
+    fs.rmSync(path.join(cwd, '.tau', 'conversations', conversationId), { recursive: true });
     assert.throws(() => deleteSessionAttachment(cwd, attachment.id), /already used/);
+    assert.deepEqual(readAttachmentMessageRefs(cwd, other)[0].attachmentIds, [attachment.id], 'a surviving conversation reference protects the shared original');
+    const refsFile = path.join(cwd, '.tau/conversations', other, 'attachment-message-refs.json');
+    fs.writeFileSync(refsFile, 'null');
+    assert.throws(() => recordAttachmentMessageRefs(cwd, other, { text: '检查附件', attachmentIds: [attachment.id] }), { code: 'metadata_corrupt' });
+    assert.equal(fs.readFileSync(refsFile, 'utf8'), 'null', 'corrupt private metadata is never replaced with empty defaults');
   }
 
   // corrupt and unsupported attachment indexes are preserved and refused

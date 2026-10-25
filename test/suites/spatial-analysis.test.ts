@@ -80,7 +80,7 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     const histories = path.join(root, 'sessions'); fs.mkdirSync(histories);
     const history = path.join(histories, 'owner.jsonl');
     fs.writeFileSync(history, JSON.stringify({ type: 'session', id: 'cad-owner', cwd: root }) + '\n');
-    const owner = { cwd: root, sessionFile: history, resolvedSessionPlan: { workspace: root }, activeCanvasContextIds: [] as string[] };
+    const owner = { cwd: root, conversationId: 'conv_00000000-0000-4000-8000-000000000001', sessionFile: history, resolvedSessionPlan: { workspace: root }, activeCanvasContextIds: [] as string[] };
     const records = path.join(root, 'executions');
     const { CanvasService } = require('../../bin/canvas-service.js');
     const canvas = new CanvasService(null, (session: any, relative: string) => path.join(session.cwd, relative));
@@ -129,10 +129,12 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     const contextId = 'canvas_context_00000000-0000-4000-8000-000000000001';
     const context = { protocol: 'pi-canvas-context', version: '1.0', contextId, adapterId: 'com.transportx.canvas.cad', viewId: 'cad:plan', revision: 1, resources: [{ scope: 'session-file', path: 'cad/plan/r1.dxf' }], selection: { kind: 'cad-selection', handles: [handle], layers: ['SIGNAL'], count: 501, truncated: true, drawingSha256: edit.expectedSha256 }, createdAt: new Date().toISOString() };
     owner.activeCanvasContextIds = [contextId];
-    fs.writeFileSync(path.join(root, '.tau/canvas-contexts.json'), JSON.stringify([context]));
+    const contextsFile = path.join(root, '.tau/conversations', owner.conversationId, 'canvas-contexts.json');
+    fs.mkdirSync(path.dirname(contextsFile), { recursive: true });
+    fs.writeFileSync(contextsFile, JSON.stringify({ version: 1, contexts: [context] }));
     assert.equal((await cad.draw(owner, { ...edit, contextId, dryRun: true })).ok, true, 'truncated reference selection does not restrict editing');
     context.selection.count = 1; context.selection.truncated = false;
-    fs.writeFileSync(path.join(root, '.tau/canvas-contexts.json'), JSON.stringify([context]));
+    fs.writeFileSync(contextsFile, JSON.stringify({ version: 1, contexts: [context] }));
     const widerQuery = await cad.inspect(owner, { ...base, contextId, include: ['entities'], selector: { kind: 'layer', layer: 'SIGNAL' } });
     assert.equal(widerQuery.entities.length, 2, 'explicit queries can inspect outside the reference selection');
     assert.equal((await cad.draw(owner, { ...edit, dryRun: true })).ok, true, 'attached context does not require contextId on explicit versioned edits');

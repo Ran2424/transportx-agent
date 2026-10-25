@@ -3,6 +3,8 @@ import path = require('node:path');
 import crypto = require('node:crypto');
 
 import type { JsonRecord } from './types.js';
+import { conversationStatePath } from './workspace-store.js';
+import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -30,8 +32,7 @@ type TimingMessage = {
   [key: string]: unknown;
 };
 
-function tauDir(cwd: string) { return path.join(cwd, '.tau'); }
-function indexPath(cwd: string) { return path.join(tauDir(cwd), 'timing-metrics.v1.json'); }
+function indexPath(directory: string) { return path.join(directory, 'timing-metrics.v1.json'); }
 
 function messageKey(message: TimingMessage): string {
   if (typeof message.responseId === 'string' && message.responseId) return `thinking:response:${message.responseId}`;
@@ -45,25 +46,18 @@ function emptyIndex(): TimingIndex {
   return { schemaVersion: SCHEMA_VERSION, updatedAt: new Date(0).toISOString(), records: {} };
 }
 
-function readIndex(cwd: string): TimingIndex {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(indexPath(cwd), 'utf8')) as Partial<TimingIndex>;
-    if (parsed.schemaVersion === SCHEMA_VERSION && parsed.records && typeof parsed.records === 'object') {
-      return { schemaVersion: SCHEMA_VERSION, updatedAt: String(parsed.updatedAt || ''), records: parsed.records };
-    }
-  } catch { /* first run or an interrupted legacy file */ }
-  return emptyIndex();
+function readIndex(directory: string): TimingIndex {
+  const parsed = readJsonObject(indexPath(directory), emptyIndex()) as Partial<TimingIndex>;
+  if (parsed.schemaVersion !== SCHEMA_VERSION || !parsed.records || typeof parsed.records !== 'object' || Array.isArray(parsed.records)) throw Object.assign(new Error('Timing metadata is corrupt.'), { code: 'metadata_corrupt', status: 409 });
+  if (!Object.values(parsed.records).every((record) => record && ['thinking', 'tool'].includes(record.kind) && typeof record.sourceId === 'string' && !!record.sourceId && [record.startedAt, record.endedAt, record.durationMs].every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0))) throw Object.assign(new Error('Timing metadata record is corrupt.'), { code: 'metadata_corrupt', status: 409 });
+  return { schemaVersion: SCHEMA_VERSION, updatedAt: String(parsed.updatedAt || ''), records: parsed.records };
 }
 
-function writeIndex(cwd: string, index: TimingIndex) {
-  const directory = tauDir(cwd);
-  const target = indexPath(cwd);
+function writeIndex(directory: string, index: TimingIndex) {
+  const target = indexPath(directory);
   if (fs.existsSync(directory) && fs.lstatSync(directory).isSymbolicLink()) throw new Error('Timing metadata directory cannot be a symbolic link');
   if (fs.existsSync(target) && fs.lstatSync(target).isSymbolicLink()) throw new Error('Timing metadata file cannot be a symbolic link');
-  fs.mkdirSync(directory, { recursive: true });
-  const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temp, target);
+  writeJsonAtomic(target, index);
 }
 
 function attachThinking(message: TimingMessage, startedAt: number, durationMs: number): TimingMessage {
@@ -83,9 +77,11 @@ function attachTool(message: TimingMessage, startedAt: number, durationMs: numbe
 
 export class TimingMetricsStore {
   private index: TimingIndex;
+  private directory: string;
 
-  constructor(readonly cwd: string) {
-    this.index = readIndex(cwd);
+  constructor(readonly cwd: string, readonly conversationId: string) {
+    this.directory = conversationStatePath({ cwd, conversationId });
+    this.index = readIndex(this.directory);
   }
 
   recordThinking<T extends TimingMessage>(message: T, startedAt: number, endedAt: number, durationMs: number): T {
@@ -130,6 +126,6 @@ export class TimingMetricsStore {
 
   private persist() {
     this.index.updatedAt = new Date().toISOString();
-    writeIndex(this.cwd, this.index);
+    writeIndex(conversationStatePath(this), this.index);
   }
 }

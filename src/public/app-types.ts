@@ -63,6 +63,8 @@ export type ModelRecord = {
 };
 
 export type LiveSession = {
+  workspaceId?: string | null;
+  conversationId?: string | null;
   id: string;
   piQueue?: import('../contracts/pi-rpc.js').PiMessageQueue;
   pendingExtensionUiRequests?: AppEvent[];
