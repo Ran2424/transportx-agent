@@ -9,7 +9,8 @@ import { TimingMetricsStore } from './timing-metrics.js';
 import { readAttachmentMessageRefs } from './session-attachments.js';
 import { geoInteractionService } from './geo-interaction-service.js';
 import { restoreCanvasContextMessage } from './canvas-service.js';
-import { logHostError } from './diagnostic-log.js';
+import { logHostError, logHostEvent } from './diagnostic-log.js';
+import { repairLegacySessionNameTail } from './session-title.js';
 
 type Options = {
   store: WorkspaceStore;
@@ -115,6 +116,7 @@ export class ConversationRuntime {
       const lease = this.options.gate.take(current.directory, current.manifest.id, conversationId);
       let session: PiRpcSession | undefined;
       try {
+        if (history.sessionFile && repairLegacySessionNameTail(history.sessionFile, current.conversation.name)) logHostEvent('info', 'legacy_session_name_tail_recovered', { conversationId, workspaceId: current.manifest.id });
         fs.mkdirSync(this.options.store.sessionsDirectory, { recursive: true, mode: 0o700 });
         fs.mkdirSync(path.dirname(workspaceMetadataPath(fs.realpathSync(this.options.store.sessionsDirectory), current.conversation.history.key)), { recursive: true, mode: 0o700 });
         const lifecycle: PersistentSessionLifecycle = {

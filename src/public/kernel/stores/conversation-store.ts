@@ -84,15 +84,16 @@ export function messageThinkingDurationMs(message: AppMessage | undefined): numb
 
 /**
  * Dedup key shared by live-appended and snapshot-hydrated entries. Message
- * entries key on responseId first (identical across live event and JSONL
- * projection), then toolCallId, then role/timestamp/text. Non-message
- * entries fall back to entry id, then full content.
+ * entries scope responseId by role and timestamp (shared by live events and
+ * JSONL); compatible providers may reuse IDs across turns. Other messages key
+ * on toolCallId, then role/timestamp/text. Non-message entries fall back to
+ * entry id, then full content.
  */
 function entryKey(entry: SessionEntry): string {
   const message = entry.message;
   if (message) {
     const responseId = (message as Record<string, unknown>).responseId;
-    if (typeof responseId === 'string' && responseId) return `resp:${responseId}`;
+    if (typeof responseId === 'string' && responseId) return `resp:${JSON.stringify([message.role ?? '', message.timestamp ?? messageText(message), responseId])}`;
     if (message.toolCallId) return `tool:${message.toolCallId}:${message.role ?? ''}`;
     return `msg:${message.role ?? ''}:${message.timestamp ?? ''}:${messageText(message)}`;
   }

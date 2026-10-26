@@ -115,7 +115,7 @@ export class WorkspaceHost {
     return this.options.gate.serialize(target.directory, async () => {
       this.target(id);
       const manifest = await this.options.store.editWorkspace(target.manifest.id, expected, (value) => { value.conversations.find((record) => record.id === id)!.name = next; });
-      const session = this.live(id, false); if (session) { session.setSessionName(next); session.pendingSessionNamePersistence = next; this.options.sessions.broadcastUpdated(session.id); }
+      const session = this.live(id, false); if (session) { session.setSessionName(next); session.pendingSessionNamePersistence = next; session.persistPendingSessionName(); this.options.sessions.broadcastUpdated(session.id); }
       return { conversation: manifest.conversations.find((record) => record.id === id), revision: manifest.revision };
     });
   }

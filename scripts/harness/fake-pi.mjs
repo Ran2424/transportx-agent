@@ -69,7 +69,7 @@ if (fs.existsSync(sessionFile)) {
 function appendSessionEntry(entry) {
   // 追加到会话文件的条目总是接续当前链尾：忽略 fixture 自带的 id/parentId，
   // 否则 selectCurrentSessionBranch 回溯时会把链尾之前的条目误判为放弃分支。
-  const id = `fx${(++entryCounter).toString(16).padStart(6, '0')}`;
+  const id = crypto.randomUUID();
   const row = { ...entry, id, parentId: lastEntryId, timestamp: entry.timestamp || new Date().toISOString() };
   lastEntryId = id;
   fs.appendFileSync(sessionFile, JSON.stringify(row) + '\n');
@@ -390,6 +390,10 @@ async function handleCommand(command) {
       respond(id, true, { model });
       return;
     }
+    case 'set_session_name':
+      appendSessionEntry({ type: 'session_info', name: command.name });
+      respond(id, true, {});
+      return;
     case 'set_thinking_level':
     case 'cycle_thinking_level':
     case 'cycle_model':
