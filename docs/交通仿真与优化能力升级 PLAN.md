@@ -2,7 +2,7 @@
 
 > 状态：按当前 Tool / Module 实现修订接入方案，待实施；本轮只核查源码与执行记录，未安装、启动或验证第三方服务及 SUMO 仿真。
 >
-> 初稿：2026-10-22；本次修订：2026-10-23。TransportX 当前工作区版本：3.23.2（未发布）。
+> 初稿：2026-10-22；本次修订：2026-10-23。TransportX 当前工作区版本：3.24.0（未发布）。
 >
 > 输入：GIS / SUMO / OR-Tools 讨论、无头仿真修订意见、AgentSUMO 评审材料，以及两个参考项目的固定提交源码。
 >
@@ -133,7 +133,7 @@ Host 的交通实验服务采用平台批准的静态接入点；业务脚本与
 - 最小仿真/地图模块依赖 Geo 与 Citation，Canvas 由 Geo 的依赖闭包获得。完整 P2 还要求显式依赖 `com.transportx.document`，由 Document 声明文档 Adapter，再经 `canvas_present` 呈现报告；不能只因 Workbench 默认带 Document 就省略可安装包自己的依赖。空间分析按实际调用增加，不强制依赖本地运筹模块。
 - Skill 与 Pi Extension 使用现有 `entrypoints`；成果类型可声明在 `contributes.artifactTypes`，样例/数据资源用已有 `contributes.assets`。**当前 Manifest 没有 `contributes.tools`、Host 服务入口或通用 MCP 配置字段**，本计划不预填这些未实现字段。
 - Session Assembly 冻结所选版本、目录、入口与资产；新旧任务沿各自计划执行。代码信任不锁定可编辑脚本的每个字节，实验另记实际脚本/依赖哈希；Native Runtime 与资产完整性仍按现有规则检查。
-- 最低 `platformVersion` 必须对应实际具有交通 Host 操作与契约支持的发行版本；不能因当前源码为 3.23.2，就宣称当前 3.23.2 已支持模块。修改模块内容时独立升版；本轮只有文档修订，不创建或升版模块。
+- 最低 `platformVersion` 必须对应实际具有交通 Host 操作与契约支持的发行版本；不能因当前源码为 3.24.0，就宣称当前 3.24.0 已支持模块。修改模块内容时独立升版；本轮只有文档修订，不创建或升版模块。
 
 拟议包布局遵循现有安装模型，非新增清单规范：
 
