@@ -320,6 +320,47 @@ test('Session close, history deletion and process cancellation preserve writer o
       t.diagnostic(`1200 legacy workspaces: longest health heartbeat gap ${longestGap.toFixed(0)}ms`);
     } finally { clearInterval(heartbeat); }
   }
+  // Isolation grants no authority over nested workspaces or unowned directories.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const { WorkspaceStore } = require('../../bin/workspace-store.js'), { WorkspaceMigration } = require('../../bin/workspace-migration.js');
+    const { WorkspaceMigrationRunner } = require('../../bin/workspace-migration-runner.js'), { WorkspaceRuntimeGate } = require('../../bin/workspace-runtime.js');
+    const { acquireWriteLease, writeJsonAtomic } = require('../../bin/util/json-storage.js');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-isolated-delete-'))), data = path.join(root, 'data'), scenario = path.join(root, 'scenario');
+    fs.mkdirSync(data); fs.mkdirSync(scenario);
+    const release = acquireWriteLease(path.join(data, 'host'));
+    t.after(() => { release(); fs.rmSync(root, { recursive: true, force: true }); });
+    const store = new WorkspaceStore(data, path.join(data, 'sessions')); await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
+    const migration = new WorkspaceMigration(store, { agentDir: data, workspaceRoots: [scenario] });
+    const python = process.env.TAU_PYTHON_COMMAND || 'python3', coordination = path.join(root, 'guards'), gate = new WorkspaceRuntimeGate(python, path.join(root, 'logs'), coordination), runner = new WorkspaceMigrationRunner(migration, gate, python);
+    const parent = path.join(scenario, 'owned-parent'), child = path.join(parent, 'registered-child'); fs.mkdirSync(child, { recursive: true });
+    writeJsonAtomic(path.join(parent, '.tau/workspace-owner.json'), { version: 1, workspace: toPosixPath(parent), parent: toPosixPath(scenario) });
+    const entry = await store.reserveWorkspace('nested-child', 'a'.repeat(64), () => child), at = '2026-10-26T00:00:00.000Z';
+    await store.publishWorkspace(entry.workspaceId, { schemaVersion: 1, id: entry.workspaceId, revision: 0, name: 'Keep child', createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: { domainId: null, profile: null, modelSpec: null }, citationRegistryId: entry.workspaceId, conversations: [] });
+    const sentinel = path.join(child, 'user-report.txt'); fs.writeFileSync(sentinel, 'keep this registered workspace');
+    const isolate = async (directory: string) => { await migration.initialize(); const item = migration.read().items.find((item: any) => item.path === toPosixPath(directory)), report = await runner.report(item.id); return runner.resolveSource(item.id, { requestId: `isolate-${item.id}`, expectedRevision: item.revision, reportDigest: report.reportDigest, action: 'isolate' }); };
+    const remove = (item: any) => runner.deleteIsolated(item.id, { requestId: `delete-${item.id}`, expectedRevision: item.revision, confirm: true });
+    await assert.rejects(remove(await isolate(parent)), { code: 'workspace_busy' });
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'keep this registered workspace');
+    assert.equal(store.readWorkspace(entry.workspaceId).manifest.name, 'Keep child');
+    const unowned = path.join(scenario, 'unowned'); fs.mkdirSync(unowned); fs.writeFileSync(path.join(unowned, 'report.txt'), 'unowned data');
+    await assert.rejects(remove(await isolate(unowned)), { code: 'workspace_ownership_unproven' });
+    assert.equal(fs.readFileSync(path.join(unowned, 'report.txt'), 'utf8'), 'unowned data');
+    const plain = path.join(scenario, 'owned-empty'); fs.mkdirSync(plain);
+    writeJsonAtomic(path.join(plain, '.tau/workspace-owner.json'), { version: 1, workspace: toPosixPath(plain), parent: toPosixPath(scenario) });
+    fs.mkdirSync(store.sessionsDirectory, { recursive: true });
+    const native = path.join(store.sessionsDirectory, 'owned.jsonl'), nativeBytes = JSON.stringify({ type: 'session', id: 'owned-native', cwd: plain }) + '\n'; fs.writeFileSync(native, nativeBytes);
+    const owned = await isolate(plain), otherGate = new WorkspaceRuntimeGate(python, path.join(root, 'other-logs'), coordination), lease = otherGate.takeMaintenance(plain, owned.workspaceId);
+    try { await assert.rejects(remove(owned), { code: 'workspace_busy' }); assert.equal(fs.existsSync(plain), true); } finally { lease.finish(); }
+    const nested = path.join(plain, 'unindexed'); writeJsonAtomic(path.join(nested, '.tau/workspace-owner.json'), { version: 1, workspace: toPosixPath(nested), parent: toPosixPath(plain) });
+    await assert.rejects(remove(owned), { code: 'workspace_busy' }); fs.rmSync(nested, { recursive: true });
+    const foreign = path.join(store.sessionsDirectory, 'another.jsonl'); fs.writeFileSync(foreign, JSON.stringify({ type: 'session', id: 'another-native', cwd: plain }) + '\n');
+    await assert.rejects(remove(owned), { code: 'workspace_busy' }); assert.equal(fs.readFileSync(native, 'utf8'), nativeBytes); fs.unlinkSync(foreign);
+    fs.writeFileSync(native, nativeBytes.replace('owned-native', 'replaced-native')); await assert.rejects(remove(owned), { code: 'history_identity_mismatch' }); fs.writeFileSync(native, nativeBytes);
+    assert.equal((await remove(owned)).deleted, true); assert.equal(fs.existsSync(plain), false);
+    assert.equal(fs.existsSync(native), false);
+    await migration.initialize(); assert.equal(migration.read().items.some((item: any) => item.id === owned.id), false);
+  }
   // Kernel identities survive process.title changes; stale PID identities never authorize a stop.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
