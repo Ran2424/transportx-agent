@@ -136,8 +136,8 @@ try {
     assert.equal(legacyRequests.filter((url) => /^\/api\/(live-sessions|sessions|session-history|file|files)(?:\/|$)/.test(url)).length, 0);
     assert.deepEqual(fs.readFileSync(ready.resumeFile), nativeBytes);
     assert.equal((await req('/api/health')).data.liveSessionCount, 1, 'historical links do not start the offline conversation or stop C');
-    fs.writeFileSync('.plans/workspace-conversations/historical-network.json', JSON.stringify({ verifiedFile: true, renderedImage: true, privateAndForeignAndUnboundRejected: true, nativeBytesPreserved: true, offlineDidNotStartPi: true, oldBusinessRequests: 0, paths: [...new Set(legacyRequests)].sort() }, null, 2));
     fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
+    fs.writeFileSync('.plans/workspace-conversations/historical-network.json', JSON.stringify({ verifiedFile: true, renderedImage: true, privateAndForeignAndUnboundRejected: true, nativeBytesPreserved: true, offlineDidNotStartPi: true, oldBusinessRequests: 0, paths: [...new Set(legacyRequests)].sort() }, null, 2));
     await page.screenshot({ path: '.plans/workspace-conversations/new-api-smoke.png', fullPage: true });
     const index = (await req('/api/workspaces')).data;
     const workspace = index.workspaces.find(v => v.id === ws);

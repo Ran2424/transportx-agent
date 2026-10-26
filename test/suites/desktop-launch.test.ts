@@ -126,15 +126,24 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.equal(removed.data.overview.modules.some((module: any) => module.id === 'local.test-skill'), false);
       assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData, 'settings/module-trust.json'), 'utf8')), {}, 'uninstall revokes the removed package scopes');
       const stopped = new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Agent Host did not exit after SIGTERM')), 5000);
+        const timer = setTimeout(() => reject(new Error('Agent Host did not exit after update preparation')), 30000);
         child.once('exit', (code: number) => { clearTimeout(timer); if (code === 0) resolve(); else reject(new Error(`Host exited ${code}`)); });
       });
-      const acknowledgement = new Promise<any>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Host did not acknowledge update preparation')), 5000);
-        child.on('message', (message: any) => { if (message.type === 'transportx-update-stopped') { clearTimeout(timer); resolve(message); } });
+      const requestStop = () => new Promise<any>((resolve, reject) => {
+        const timer = setTimeout(() => { child.removeListener('message', receive); reject(new Error('Host did not acknowledge update preparation')); }, 5000);
+        const receive = (message: any) => { if (message.type === 'transportx-update-stopped') { clearTimeout(timer); child.removeListener('message', receive); resolve(message); } };
+        child.on('message', receive); child.send({ type: 'transportx-update-stop', id: 'desktop-test-update' });
       });
-      child.send({ type: 'transportx-update-stop', id: 'desktop-test-update' });
-      assert.deepEqual(await acknowledgement, { type: 'transportx-update-stopped', id: 'desktop-test-update', ok: true });
+      // An HTTP response can precede background conversion releasing its update gate.
+      // Busy must remain observable and healthy; retry only that explicit refusal.
+      let acknowledgement: any; const stopDeadline = Date.now() + 15000;
+      do {
+        acknowledgement = await requestStop(); if (acknowledgement.ok) break;
+        assert.deepEqual(acknowledgement, { type: 'transportx-update-stopped', id: 'desktop-test-update', ok: false, code: 'host_busy' });
+        assert.equal((await fetch(`http://127.0.0.1:${ready.port}/api/health`)).status, 200);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      } while (Date.now() < stopDeadline);
+      assert.deepEqual(acknowledgement, { type: 'transportx-update-stopped', id: 'desktop-test-update', ok: true });
       await stopped;
       assert.equal(fs.existsSync(userData), true);
       assert.equal(fs.existsSync(path.join(userData, 'host.transportx-lock')), false);
