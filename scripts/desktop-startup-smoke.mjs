@@ -39,7 +39,7 @@ async function stop(healthUrl) {
     } catch (error) {
       console.error('[desktop-startup] lease owner unreadable', error);
     }
-    for (const file of ['desktop.log', 'agent-host.log']) {
+    for (const file of ['desktop.log', 'agent-host.log', 'runtime.jsonl']) {
       try { console.error(`[desktop-startup] ${file}\n${fs.readFileSync(path.join(dataRoot, 'logs', file), 'utf8').slice(-4000)}`); } catch {}
     }
   }
@@ -75,6 +75,8 @@ try {
   await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
   await creation.getByRole('button', { name: /^(更换|Change)$/ }).click();
   assert.equal(await creation.locator('.workspace-location-path').getAttribute('title'), expectedDirectory, 'cancel keeps the previous folder');
+  // The normal-exit scenario waits for configuration reads to finish, not just the native picker.
+  await creation.locator('.menu-select-trigger:not([disabled])').waitFor();
   await creation.getByRole('button', { name: /^(取消|Cancel)$/ }).click();
   console.log('[desktop-startup] real directory chooser bridge and cancellation passed');
   await stop(fresh.healthUrl);
