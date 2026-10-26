@@ -205,6 +205,26 @@ export async function documentSmoke(page, browser) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
   await expectPdfPage(2, [201, 221, 249]);
+  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.getByRole('tab', { name: 'canvas-evidence.pdf', exact: true }).first().click();
+  await expectPdfPage(2, [201, 221, 249]);
+  assert.ok(await pdfView.locator('.page[data-page-number="2"]').evaluate((node) => node.getBoundingClientRect().width > 100));
+  let releasePdf;
+  const heldPdf = new Promise((resolve) => { releasePdf = resolve; });
+  const pdfPattern = '**/citation-resources/canvas%3Apdf/content?*';
+  const holdPdf = async (route) => { await heldPdf; await route.continue(); };
+  await page.route(pdfPattern, holdPdf);
+  try {
+    const requested = page.waitForRequest(pdfPattern);
+    await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
+    await requested;
+    await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
+    releasePdf();
+    await page.waitForFunction(() => !!document.querySelector('.canvas-panel[hidden] .document-pdf input:not([disabled])'));
+  } finally { releasePdf(); await page.unroute(pdfPattern, holdPdf); }
+  await page.getByRole('tab', { name: 'canvas-evidence.pdf', exact: true }).first().click();
+  await expectPdfPage(2, [201, 221, 249]);
   const downloadPromise = page.waitForEvent('download');
   await reader.getByRole('button', { name: '下载原文件', exact: true }).click();
   assert.equal(fs.readFileSync(await (await downloadPromise).path()).equals(pdf), true);

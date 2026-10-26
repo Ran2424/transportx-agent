@@ -31,16 +31,20 @@ export default function PdfDocument(props: Props) {
 
   useEffect(() => {
     let active = true;
+    let pendingScale: string | null = null;
+    const lifecycle = new AbortController();
     const eventBus = new EventBus();
     const linkService = new PDFLinkService({ eventBus, externalLinkTarget: 2, externalLinkRel: 'noopener noreferrer' });
-    const reader = new PDFViewer({ container: container.current!, viewer: pages.current!, eventBus, linkService, annotationMode: AnnotationMode.ENABLE, removePageBorders: true });
+    // PDF.js 6.4 supports abortSignal but omits it from its options declaration.
+    const viewerOptions = { container: container.current!, viewer: pages.current!, eventBus, linkService, annotationMode: AnnotationMode.ENABLE, removePageBorders: true, abortSignal: lifecycle.signal };
+    const reader = new PDFViewer(viewerOptions);
     viewer.current = reader;
     linkService.setViewer(reader);
     setCount(0); setError(false);
     const remember = () => {
       if (!active || !reader.pagesCount) return;
       setPage(reader.currentPageNumber); setScale(reader.currentScale);
-      latest.current.onPosition?.({ scrollTop: container.current!.scrollTop, navigationId: latest.current.navigationId ?? 0, pdfPage: reader.currentPageNumber, pdfScale: reader.currentScaleValue });
+      latest.current.onPosition?.({ scrollTop: container.current!.scrollTop, navigationId: latest.current.navigationId ?? 0, pdfPage: reader.currentPageNumber, pdfScale: pendingScale || reader.currentScaleValue });
     };
     eventBus.on('pagechanging', remember);
     eventBus.on('scalechanging', remember);
@@ -48,7 +52,9 @@ export default function PdfDocument(props: Props) {
       if (!active) return;
       const { position, page: target = 1, navigationId } = latest.current;
       const saved = position?.navigationId === navigationId ? position : undefined;
-      reader.currentScaleValue = saved?.pdfScale || 'page-width';
+      pendingScale = saved?.pdfScale || 'page-width';
+      reader.currentScaleValue = container.current!.clientWidth ? pendingScale : '1';
+      if (container.current!.clientWidth) pendingScale = null;
       reader.currentPageNumber = Math.max(1, Math.min(reader.pagesCount, saved?.pdfPage || target));
       setCount(reader.pagesCount); remember();
     });
@@ -60,12 +66,19 @@ export default function PdfDocument(props: Props) {
       reader.setDocument(document);
     }).catch((cause) => { if (active) { console.warn('PDF preview failed:', cause); setError(true); } });
     const resize = new ResizeObserver(() => {
-      if (reader.pagesCount && reader.currentScaleValue === 'page-width') reader.currentScaleValue = 'page-width';
+      if (!reader.pagesCount || !container.current!.clientWidth) return;
+      const deferred = pendingScale;
+      if (deferred || reader.currentScaleValue === 'page-width') {
+        const pageNumber = reader.currentPageNumber;
+        reader.currentScaleValue = deferred || 'page-width';
+        pendingScale = null;
+        if (deferred) reader.scrollPageIntoView({ pageNumber });
+      }
     });
     resize.observe(container.current!);
     return () => {
       active = false; resize.disconnect(); viewer.current = null;
-      reader.setDocument(null); linkService.setDocument(null);
+      reader.setDocument(null); linkService.setDocument(null); lifecycle.abort();
       void task.destroy();
     };
   }, [props.url]);
