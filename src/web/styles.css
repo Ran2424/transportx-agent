@@ -138,29 +138,30 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 /* --- Session list --- */
 .conversation-section { min-height: 200px; flex: 7 1 70%; display: flex; flex-direction: column; overflow: hidden; }
 .conversation-section.is-collapsed { min-height: 36px; flex: 0 0 36px; }
-.sidebar-section-heading { margin: 0; }
+.sidebar-section-heading { margin: 0; height: 36px; min-height: 36px; }
+.sidebar-section-heading strong { font-size: 17px; font-weight: 650; }
 .sidebar-section-heading small { position: absolute; right: 42px; min-width: 18px; padding: 2px 5px; border-radius: 10px; color: var(--text-tertiary); background: var(--surface-hover); font: 10px/1 var(--tx-font-mono); text-align: center; }
 .sidebar-section-toggle { position: absolute; right: 9px; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--tx-radius-sm); color: var(--text-tertiary); background: transparent; cursor: pointer; }
 .sidebar-section-toggle:hover, .sidebar-section-toggle:focus-visible { color: var(--text-primary); background: var(--surface-hover); outline: 0; }
 .sidebar-section-toggle svg { width: 14px; height: 14px; transition: transform 180ms ease; }
 .conversation-section.is-collapsed .sidebar-section-toggle svg { transform: rotate(180deg); }
-.session-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: 4px 10px 8px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.session-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: 6px 10px 8px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .session-group { display: block; margin: 4px 0 12px; }
 .session-group-title { min-height: 27px; padding: 5px 7px; color: var(--selection-fg); display: flex; align-items: center; gap: 8px; list-style: none; font-size: 11px; font-weight: 600; letter-spacing: .04em; }
 .session-group-title::-webkit-details-marker { display: none; }
 .session-group-title svg { width: 11px; transition: transform 160ms; }
 .session-group:not([open]) .session-group-title svg { transform: rotate(-90deg); }
 .session-group-title small { margin-left: auto; color: var(--text-tertiary); }
-.session-row { width: 100%; min-height: 56px; padding: 9px 10px; margin: 3px 0; border: 0; border-radius: var(--tx-radius-sm); background: transparent; color: var(--text-primary); display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; transition: background 140ms ease; }
+.session-row { width: 100%; min-height: 34px; padding: 6px 10px; margin: 2px 0; border: 0; border-radius: var(--tx-radius-sm); background: transparent; color: var(--text-primary); display: flex; align-items: center; gap: 6px; text-align: left; cursor: pointer; transition: background 140ms ease; }
 .session-row:hover { background: var(--surface-hover); }
 .session-row.is-active { background: var(--selection-bg); color: var(--text-primary); }
-.session-row-main { min-width: 0; flex: 1; }
+.session-row-main { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; }
 .session-row-main strong, .session-row-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-row-main strong { font-size: 12.5px; font-weight: 650; }
-.session-row-main small { margin-top: 4px; color: var(--text-secondary); font-size: 11px; }
+.session-row-main strong { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 650; }
+.session-row-main small { flex: 0 0 auto; margin-top: 0; color: var(--text-secondary); font-size: 13px; }
 .session-row-meta { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
 .session-live-tag { color: var(--selection-fg); font-size: 10px; letter-spacing: .08em; }
-.session-empty { padding: 20px 12px; color: var(--text-tertiary); font-size: 11px; line-height: 1.7; text-align: center; }
+.session-empty { padding: 16px 12px; color: var(--text-tertiary); font-size: 11px; line-height: 1.7; text-align: center; }
 .session-empty.is-error { color: var(--status-danger); }
 .session-context-menu { position: fixed; z-index: 100; width: 168px; padding: 4px; border: 1px solid var(--border-strong); border-radius: var(--tx-radius-sm); background: var(--surface-raised); box-shadow: var(--shadow-menu); }
 .session-context-menu button { width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 4px; color: var(--status-danger); background: transparent; cursor: pointer; font-size: 12px; text-align: left; }
@@ -1430,10 +1431,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .model-refresh .inline-error { white-space: pre-line; max-width: 480px; }
 
 /* Durable workspace and conversation navigation. */
-.workspace-group { padding: 3px 0 8px; }
-.workspace-group-heading { display: flex; align-items: center; gap: 2px; min-height: 32px; }
-.workspace-group-name { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 6px 8px; background: transparent; border: 0; color: var(--text-secondary); text-align: left; font-size: 12px; }
-.workspace-group-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-group { padding: 3px 0 6px; }
+.workspace-group-heading { display: flex; align-items: center; gap: 2px; min-height: 30px; }
+.workspace-group-name { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 4px 8px; background: transparent; border: 0; color: var(--text-secondary); text-align: left; font-size: 12px; }
+.workspace-group-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16.5px; font-weight: 700; }
 .workspace-group-name small { margin-left: auto; font-size: 11px; }
 .workspace-group-name svg { width: 12px; height: 12px; flex-shrink: 0; }
 .workspace-group-name[aria-expanded="false"] svg { transform: rotate(-90deg); }
