@@ -405,13 +405,14 @@ test('Session close, history deletion and process cancellation preserve writer o
       assert.equal(fs.readFileSync(f.privateFile(owner), 'utf8'), '{"keep":true}'); assert.deepEqual(pendingWorkspaceTransfers(f.data), []);
       if (!f.empty) { const bytes = fs.readFileSync(f.history, 'utf8'), end = bytes.indexOf('\n'); assert.equal(bytes.slice(end + 1), f.body); assert.equal(toPosixPath(JSON.parse(bytes.slice(0, end)).cwd), toPosixPath(owner)); }
     };
-    for (const point of ['before-target', 'before-header', 'before-source', 'after-source', 'cleanup', 'clear-intent']) {
+    for (const point of ['before-target', 'before-header', 'before-source', 'after-source', 'cleanup', 'partial-cleanup', 'clear-intent']) {
       const f = await fixture(), edit = f.store.editWorkspace.bind(f.store), relocate = f.store.relocateHistory.bind(f.store), rm = fs.rmSync;
       f.store.editWorkspace = async (id: string, ...args: any[]) => { if (point === 'before-target' && id === f.targetId || point === 'before-source' && id === f.sourceId) throw Object.assign(new Error(point), { code: 'EIO' }); const result = await edit(id, ...args); if (point === 'after-source' && id === f.sourceId) throw Object.assign(new Error(point), { code: 'EIO' }); return result; };
       f.store.relocateHistory = (...args: any[]) => { if (point === 'before-header') throw Object.assign(new Error(point), { code: 'EIO' }); return relocate(...args); };
-      fs.rmSync = (file: string, ...args: any[]) => { if (point === 'cleanup' && path.resolve(file) === path.dirname(f.privateFile(f.source)) || point === 'clear-intent' && file === path.join(f.data, 'transfers', `${f.id}.json`)) throw Object.assign(new Error(point), { code: 'EIO' }); return rm(file, ...args); };
+      fs.rmSync = (file: string, ...args: any[]) => { if (point === 'partial-cleanup' && path.resolve(file) === path.dirname(f.privateFile(f.source))) { rm(f.privateFile(f.source)); throw Object.assign(new Error(point), { code: 'EIO' }); } if (point === 'cleanup' && path.resolve(file) === path.dirname(f.privateFile(f.source)) || point === 'clear-intent' && file === path.join(f.data, 'transfers', `${f.id}.json`)) throw Object.assign(new Error(point), { code: 'EIO' }); return rm(file, ...args); };
       try { await assert.rejects(f.transfer.move(f.id, { target: f.targetId }), { code: 'EIO' }); } finally { f.store.editWorkspace = edit; f.store.relocateHistory = relocate; fs.rmSync = rm; }
       assert.equal(f.migration.status().dataState, 'initializing'); assert.equal(pendingWorkspaceTransfers(f.data).length, 1);
+      if (point === 'partial-cleanup') { const foreign = path.join(path.dirname(f.privateFile(f.source)), 'foreign.txt'); fs.writeFileSync(foreign, 'must survive'); await assert.rejects(f.start(), { code: 'workspace_revision_conflict' }); assert.equal(fs.readFileSync(foreign, 'utf8'), 'must survive'); fs.rmSync(foreign); }
       const restarted = await f.start(); assert.equal(restarted.migration.status().dataState, 'ready'); verify(f, ['before-target', 'before-header'].includes(point) ? f.source : f.target);
     }
     // Empty histories must resolve even when both management timestamps are identical.
@@ -458,7 +459,7 @@ test('Session close, history deletion and process cancellation preserve writer o
       const file = path.join(f.data, 'transfers', `${f.id}.json`), journal = fs.readFileSync(file); fs.writeFileSync(file, '{}'); await assert.rejects(f.start(), { code: 'metadata_corrupt' }); fs.writeFileSync(file, journal);
       await f.start(); verify(f, f.target);
     }
-    t.diagnostic('Move regression covers persisted intents, equal-time empty sessions, six interrupted stages, foreign-process leases and two SIGKILL Host restarts.');
+    t.diagnostic('Move regression covers persisted intents, equal-time empty sessions, seven interrupted stages including partial cleanup, foreign-process leases and two SIGKILL Host restarts.');
   }
   // Kernel identities survive process.title changes; stale PID identities never authorize a stop.
   {

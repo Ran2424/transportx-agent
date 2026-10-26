@@ -121,7 +121,7 @@ export class WorkspaceTransfer {
               manifest.conversations.splice(index, 1);
             });
           }
-          this.removePrivate(discarded.directory, journal.conversationId, discarded.privateFiles);
+          this.removePrivate(discarded.directory, journal.conversationId, discarded.privateFiles, true);
           this.clearJournal(file, leases);
         });
       }
@@ -146,9 +146,14 @@ export class WorkspaceTransfer {
   private verifyPrivate(directory: string, id: string, expected: Record<string, string> | null) {
     if (workspaceCreationDigest(this.privateFiles(directory, id)) !== workspaceCreationDigest(expected)) throw failure('workspace_revision_conflict', 'Conversation private state changed after the move intent.');
   }
-  private removePrivate(directory: string, id: string, expected: Record<string, string> | null) {
-    if (this.privateFiles(directory, id) === null) return;
-    this.verifyPrivate(directory, id, expected);
+  private removePrivate(directory: string, id: string, expected: Record<string, string> | null, resumeCleanup = false) {
+    const actual = this.privateFiles(directory, id);
+    if (actual === null) return;
+    // A terminated recursive removal can leave a subset of the recorded files.
+    // The kept copy was verified; new or changed remaining files still block.
+    if (resumeCleanup) {
+      if (expected === null || Object.entries(actual).some(([name, hash]) => expected[name] !== hash)) throw failure('workspace_revision_conflict', 'Conversation cleanup contains unverified private files.');
+    } else this.verifyPrivate(directory, id, expected);
     fs.rmSync(workspaceMetadataPath(directory, `.tau/conversations/${id}`), { recursive: true, force: true });
   }
   private clearJournal(file: string, leases: WorkspaceRuntimeLease[]) {
@@ -356,6 +361,7 @@ export class WorkspaceTransfer {
           if (workspaceCreationDigest(manifest.conversations[index]) !== workspaceCreationDigest(journal.source.record)) throw failure('workspace_revision_conflict', 'The source conversation changed before the move committed.');
           manifest.conversations.splice(index, 1);
         });
+        this.verifyPrivate(target.directory, conversationId, journal.target.privateFiles);
         this.removePrivate(source.directory, conversationId, sourceFiles);
         this.clearJournal(file, leases);
         const current = this.options.store.readWorkspace(target.manifest.id);
