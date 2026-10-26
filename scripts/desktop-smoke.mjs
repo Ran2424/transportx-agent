@@ -183,7 +183,7 @@ try {
     await newTask.locator('.workspace-advanced > summary').click();
     await newTask.getByLabel('工作区名称', { exact: true }).fill('Desktop workspace');
     await newTask.getByLabel('会话名称（可选）', { exact: true }).fill('Desktop durable conversation');
-    await newTask.getByRole('button', { name: '创建会话', exact: true }).click();
+    await newTask.getByRole('button', { name: '进入工作区', exact: true }).click();
     await window.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
     const conversationId = await window.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
     if ((await (await fetch(healthUrl)).json()).liveSessionCount !== 0) throw new Error('Desktop creation unexpectedly started Pi');

@@ -162,7 +162,7 @@ try {
     await createDialog.getByText('已有项目 空格', { exact: true }).waitFor();
     assert.equal(await createDialog.getByLabel('项目文件夹路径', { exact: true }).count(), 0, 'confirmed paths render as cards, not text inputs');
     fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
-    await page.screenshot({ path: '.plans/workspace-conversations/open-folder-dialog.png', animations: 'disabled' });
+    await createDialog.screenshot({ path: '.plans/workspace-conversations/open-folder-dialog.png', animations: 'disabled' });
     await createDialog.getByRole('button', { name: '取消', exact: true }).click();
     assert.deepEqual(fs.readdirSync(projectDirectory), ['source.csv'], 'cancelling does not register or modify the folder');
     await page.getByRole('button', { name: '打开工作区', exact: true }).first().click();
