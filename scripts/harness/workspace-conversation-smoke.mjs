@@ -146,7 +146,7 @@ try {
     await createDialog.getByLabel('项目文件夹路径', { exact: true }).fill(projectDirectory);
     assert.equal(await createDialog.getByLabel('工作区名称', { exact: true }).inputValue(), '已有项目 空格');
     fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
-    await page.screenshot({ path: '.plans/workspace-conversations/open-folder-dialog.png' });
+    await page.screenshot({ path: '.plans/workspace-conversations/open-folder-dialog.png', animations: 'disabled' });
     await createDialog.getByRole('button', { name: '取消', exact: true }).click();
     assert.deepEqual(fs.readdirSync(projectDirectory), ['source.csv'], 'cancelling does not register or modify the folder');
     await page.getByRole('button', { name: '新建工作区和会话', exact: true }).first().click();
@@ -170,9 +170,10 @@ try {
     assert.equal(deleteFolder.data.code, 'workspace_directory_external');
     assert.deepEqual(fs.readFileSync(path.join(projectDirectory, 'source.csv')), sourceBytes);
     await page.getByRole('button', { name: '新建工作区和会话', exact: true }).first().click();
+    // Native selection returns canonical paths; raw aliases were already verified on initial creation.
     await createDialog.getByLabel('工作区', { exact: true }).selectOption('');
     await createDialog.getByLabel('工作区位置', { exact: true }).selectOption('folder');
-    await createDialog.getByLabel('项目文件夹路径', { exact: true }).fill(projectDirectory);
+    await createDialog.getByLabel('项目文件夹路径', { exact: true }).fill(openedFolder.directory);
     await page.waitForFunction(() => !document.querySelector('input[placeholder="输入此机器上已有文件夹的绝对路径"]'));
     assert.equal(await createDialog.getByLabel('工作区', { exact: true }).inputValue(), folderWorkspace, 'a registered folder selects its existing workspace');
     await createDialog.getByRole('button', { name: '取消', exact: true }).click();
