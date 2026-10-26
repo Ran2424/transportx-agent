@@ -90,10 +90,10 @@ export async function moduleLanguageSmoke(page) {
       await search.fill('');
       if (process.env.TAU_CAPABILITY_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.TAU_CAPABILITY_SCREENSHOT_DIR, `legacy-data-${language}.png`), animations: 'disabled' });
       await center.getByRole('button', { name: english ? 'Close' : '关闭', exact: true }).click();
-      await page.getByRole('button', { name: english ? 'New workspace and conversation' : '新建工作区和会话', exact: true }).first().click();
-      const task = page.getByRole('dialog', { name: english ? 'New conversation' : '新建会话', exact: true });
-      const disclosure = task.locator('details').filter({ has: page.locator('summary', { hasText: english ? 'Task Modules and versions' : '任务 Module 与版本' }) });
-      if (await disclosure.count()) await disclosure.locator('summary').click();
+      await page.getByRole('button', { name: english ? 'Open workspace' : '打开工作区', exact: true }).first().click();
+      const task = page.getByRole('dialog', { name: english ? 'Open workspace' : '打开工作区', exact: true });
+      const disclosure = task.locator('.workspace-advanced');
+      if (await disclosure.count()) await disclosure.locator(':scope > summary').click();
       const row = task.locator('.session-module-row').filter({ has: page.locator('[title="smoke.alpha"]') });
       await row.getByText(text.name, { exact: true }).waitFor();
       assert.ok((await row.innerText()).includes(text.description));

@@ -80,7 +80,7 @@ export async function localModelSmoke(page, baseUrl) {
     await page.getByRole('button', { name: '常规', exact: true }).click();
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '新建交通任务', exact: true }).first().click();
-    const newTask = page.getByRole('dialog', { name: '新建会话', exact: true });
+    const newTask = page.getByRole('dialog', { name: '打开工作区', exact: true });
     await newTask.locator('.menu-select-trigger').first().click();
     await page.getByRole('option').filter({ hasText: 'smoke-local' }).waitFor();
     await page.keyboard.press('Escape');

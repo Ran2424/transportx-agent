@@ -139,22 +139,38 @@ try {
     // The existing-folder form uses the exact project root and leaves all original files intact.
     const projectDirectory = path.join(root, '已有项目 空格'); fs.mkdirSync(projectDirectory);
     const sourceBytes = Buffer.from('road,flow\n既有路段,88\n'); fs.writeFileSync(path.join(projectDirectory, 'source.csv'), sourceBytes);
-    await page.getByRole('button', { name: '新建工作区和会话', exact: true }).first().click();
-    const createDialog = page.getByRole('dialog', { name: '新建会话', exact: true });
-    await createDialog.getByLabel('工作区', { exact: true }).selectOption('');
-    await createDialog.getByLabel('工作区位置', { exact: true }).selectOption('folder');
+    await page.getByRole('button', { name: '打开工作区', exact: true }).first().click();
+    const createDialog = page.getByRole('dialog', { name: '打开工作区', exact: true });
+    const compact = await createDialog.boundingBox(); assert.ok(compact.height <= 450, `base dialog height ${compact.height}`);
+    assert.equal(await createDialog.locator('.workspace-advanced').getAttribute('open'), null);
+    await createDialog.locator('.menu-select-trigger').click();
+    const modelMenu = createDialog.getByRole('listbox'); await modelMenu.waitFor();
+    const popup = await modelMenu.boundingBox();
+    assert.equal(await page.evaluate(({ x, y, width, height }) => !!document.elementFromPoint(x + width / 2, y + Math.min(height - 2, 20))?.closest('[role=listbox]'), popup), true, 'compact model menu is not clipped by the dialog scroll area');
+    await page.keyboard.press('Escape');
+    assert.equal(await createDialog.isVisible(), true, 'Escape closes the model menu before the dialog');
+
+    for (const theme of ['light', 'dark', 'sand']) {
+      await page.evaluate(value => document.documentElement.setAttribute('data-theme', value), theme);
+      fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
+      await page.screenshot({ path: `.plans/workspace-conversations/create-${theme}.png`, animations: 'disabled' });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    }
+    await createDialog.getByRole('button', { name: '打开已有文件夹', exact: true }).click();
     await createDialog.getByLabel('项目文件夹路径', { exact: true }).fill(projectDirectory);
-    assert.equal(await createDialog.getByLabel('工作区名称', { exact: true }).inputValue(), '已有项目 空格');
+    await createDialog.getByRole('button', { name: '使用此目录', exact: true }).click();
+    await createDialog.getByText('已有项目 空格', { exact: true }).waitFor();
+    assert.equal(await createDialog.getByLabel('项目文件夹路径', { exact: true }).count(), 0, 'confirmed paths render as cards, not text inputs');
     fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
     await page.screenshot({ path: '.plans/workspace-conversations/open-folder-dialog.png', animations: 'disabled' });
     await createDialog.getByRole('button', { name: '取消', exact: true }).click();
     assert.deepEqual(fs.readdirSync(projectDirectory), ['source.csv'], 'cancelling does not register or modify the folder');
-    await page.getByRole('button', { name: '新建工作区和会话', exact: true }).first().click();
-    await createDialog.getByLabel('工作区', { exact: true }).selectOption('');
-    await createDialog.getByLabel('工作区位置', { exact: true }).selectOption('folder');
+    await page.getByRole('button', { name: '打开工作区', exact: true }).first().click();
+    await createDialog.getByRole('button', { name: '打开已有文件夹', exact: true }).click();
     await createDialog.getByLabel('项目文件夹路径', { exact: true }).fill(projectDirectory);
+    await createDialog.getByRole('button', { name: '使用此目录', exact: true }).click();
     const opening = page.waitForResponse(response => new URL(response.url()).pathname === '/api/conversations' && response.request().method() === 'POST');
-    await createDialog.getByRole('button', { name: '创建会话', exact: true }).click();
+    await createDialog.getByRole('button', { name: '进入工作区', exact: true }).click();
     const folderResponse = await opening, openedFolder = await folderResponse.json();
     assert.equal(folderResponse.status(), 200, JSON.stringify(openedFolder));
     assert.equal(openedFolder.directory, fs.realpathSync(projectDirectory));
@@ -169,14 +185,66 @@ try {
     assert.equal(deleteFolder.status, 409);
     assert.equal(deleteFolder.data.code, 'workspace_directory_external');
     assert.deepEqual(fs.readFileSync(path.join(projectDirectory, 'source.csv')), sourceBytes);
-    await page.getByRole('button', { name: '新建工作区和会话', exact: true }).first().click();
+    await page.getByRole('button', { name: '打开工作区', exact: true }).first().click();
     // Native selection returns canonical paths; raw aliases were already verified on initial creation.
-    await createDialog.getByLabel('工作区', { exact: true }).selectOption('');
-    await createDialog.getByLabel('工作区位置', { exact: true }).selectOption('folder');
+    await createDialog.getByRole('button', { name: '打开已有文件夹', exact: true }).click();
     await createDialog.getByLabel('项目文件夹路径', { exact: true }).fill(openedFolder.directory);
-    await page.waitForFunction(() => !document.querySelector('input[placeholder="输入此机器上已有文件夹的绝对路径"]'));
-    assert.equal(await createDialog.getByLabel('工作区', { exact: true }).inputValue(), folderWorkspace, 'a registered folder selects its existing workspace');
-    await createDialog.getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('dialog', { name: '新建会话', exact: true }).getByText('已有项目 空格', { exact: true }).waitFor();
+    await page.getByRole('dialog', { name: '新建会话', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
+    // Contextual + creates once with inherited configuration and does not open a modal or Pi.
+    let folderView = (await req(`/api/workspaces/${folderWorkspace}`)).data;
+    const defaults = { ...folderView.defaults, profile: { ...folderView.defaults.profile, task: { ...folderView.defaults.profile.task, spatialScope: { label: '原项目范围' }, timeRange: { start: '2026-10-26T09:00', end: '2026-10-26T10:00', timezone: 'Europe/London' } } } };
+    assert.equal((await req(`/api/workspaces/${folderWorkspace}`, { expectedDefaultsRevision: folderView.defaultsRevision, defaults }, 'PATCH')).status, 200);
+    await page.reload({ waitUntil: 'networkidle' });
+    let releaseQuick, quickBody, quickResponse, quickRequests = 0;
+    const holdQuick = new Promise(resolve => { releaseQuick = resolve; });
+    const quickRoute = async route => { quickRequests++; quickBody = route.request().postDataJSON(); const response = await route.fetch(); quickResponse = await response.json(); await holdQuick; await route.fulfill({ response }); };
+    await page.route('**/api/conversations', quickRoute);
+    const quickButton = page.getByRole('button', { name: '在 已有项目 空格 中新建会话', exact: true });
+    await quickButton.click();
+    await page.waitForFunction(() => document.body.textContent.includes('正在新建会话'));
+    await quickButton.click();
+    assert.equal(await page.getByRole('dialog').count(), 0, 'complete defaults create without a form');
+    await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
+    releaseQuick();
+    await page.waitForFunction(() => !document.body.textContent.includes('正在新建会话'));
+    assert.equal(quickRequests, 1, 'repeated clicks during creation share the pending operation');
+    await page.unroute('**/api/conversations', quickRoute);
+    assert.equal(quickBody.workspace.expectedRevision, folderView.revision); assert.equal(quickBody.workspace.defaultsRevision, folderView.defaultsRevision + 1);
+    assert.deepEqual(quickBody.profile, defaults.profile, 'quick creation preserves the exact scope, timezone and module versions');
+    assert.equal((await req('/api/health')).data.liveSessionCount, 1, 'quick creation saves without starting another Pi');
+    assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')), a, 'a late quick-create response cannot replace a newer user selection');
+    await page.locator('.workspace-group').filter({ has: page.locator('.workspace-group-heading', { hasText: '已有项目 空格' }) }).locator('.session-row').filter({ hasText: quickResponse.conversation.name }).click();
+    await page.getByRole('button', { name: '探索项目数据', exact: true }).click();
+    assert.match(await page.getByLabel('消息输入').inputValue(), /交通分析/);
+    assert.equal((await req(`/api/conversations/${quickResponse.conversation.id}/snapshot`)).data.snapshot.entries.length, 0, 'analysis suggestions only fill the draft');
+
+    // A committed request whose response is lost retries the identical request ID.
+    const beforeLoss = (await req(`/api/workspaces/${folderWorkspace}`)).data;
+    const lostRequests = [];
+    const lostRoute = async route => { lostRequests.push(route.request().postDataJSON()); const response = await route.fetch(); if (lostRequests.length === 1) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'test response lost' }) }); else await route.fulfill({ response }); };
+    await page.route('**/api/conversations', lostRoute);
+    await quickButton.click();
+    const recoveryDialog = page.getByRole('dialog', { name: '新建会话', exact: true });
+    await recoveryDialog.getByRole('alert').filter({ hasText: 'test response lost' }).waitFor();
+    assert.equal(await recoveryDialog.locator('.workspace-advanced').getAttribute('open'), '');
+    await recoveryDialog.getByRole('button', { name: '创建会话', exact: true }).click();
+    await recoveryDialog.waitFor({ state: 'hidden' });
+    await page.unroute('**/api/conversations', lostRoute);
+    assert.equal(lostRequests.length, 2); assert.deepEqual(lostRequests[0], lostRequests[1]);
+    folderView = (await req(`/api/workspaces/${folderWorkspace}`)).data;
+    assert.equal(folderView.conversations.length, beforeLoss.conversations.length + 1, 'response loss does not create a duplicate conversation');
+
+    // Missing selected versions remain visible and block the quick path.
+    const selectedId = folderView.defaults.profile.modules.selected[0].id;
+    const missingOptions = async route => { const response = await route.fetch(); const options = await response.json(); options.modules = options.modules.filter(item => item.id !== selectedId); await route.fulfill({ json: options }); };
+    await page.route('**/api/platform/session-options', missingOptions);
+    await quickButton.click();
+    await recoveryDialog.getByRole('alert').filter({ hasText: selectedId }).waitFor();
+    assert.equal(await recoveryDialog.getByRole('button', { name: '创建会话', exact: true }).isDisabled(), true);
+    await recoveryDialog.getByRole('button', { name: '取消', exact: true }).click();
+    await page.unroute('**/api/platform/session-options', missingOptions);
+    assert.equal((await req(`/api/workspaces/${folderWorkspace}`)).data.conversations.length, folderView.conversations.length);
     fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
     fs.writeFileSync('.plans/workspace-conversations/historical-network.json', JSON.stringify({ verifiedFile: true, renderedImage: true, privateAndForeignAndUnboundRejected: true, nativeBytesPreserved: true, offlineDidNotStartPi: true, oldBusinessRequests: 0, paths: [...new Set(legacyRequests)].sort() }, null, 2));
     await page.screenshot({ path: '.plans/workspace-conversations/new-api-smoke.png', fullPage: true });

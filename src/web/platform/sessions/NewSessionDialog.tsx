@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
 import { formatModelOption } from '../../lib/formatting';
-import { projectUi } from '../../app/project-ui';
+import { WorkspaceLocation } from './WorkspaceLocation';
 import { moduleDisplayMetadata, modulePresentation } from '../../lib/module-presentation';
 
 type NewSessionDialogProps = {
@@ -19,11 +19,13 @@ type NewSessionDialogProps = {
   confirmationId?: string;
   onWorkspaceChange(workspace: WorkspaceView | null): void;
   onOpenChange(open: boolean): void;
-  onCreated(sessionId: string): void;
+  onCreated(sessionId: string, fromQuickCreate?: boolean): void;
   onAddModel(): void;
+  quickCreate?: boolean;
+  onQuickCreateFinished(): void;
 };
 
-export function NewSessionDialog({ open, workspace, workspaces, mode, confirmationId, onWorkspaceChange, onOpenChange, onCreated, onAddModel }: NewSessionDialogProps) {
+export function NewSessionDialog({ open, workspace, workspaces, mode, confirmationId, onWorkspaceChange, onOpenChange, onCreated, onAddModel, quickCreate = false, onQuickCreateFinished }: NewSessionDialogProps) {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage || i18n.language;
   const kernel = appKernel;
@@ -31,7 +33,7 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
   const [name, setName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
   const [parentDirectory, setParentDirectory] = useState('');
-  const [locationMode, setLocationMode] = useState<'new' | 'folder'>('new');
+  const [locationMode, setLocationMode] = useState<'new' | 'folder'>('folder');
   const [directory, setDirectory] = useState('');
   const [choosingDirectory, setChoosingDirectory] = useState(false);
   const desktop = (window as Window & { transportxDesktop?: { selectWorkspaceDirectory?(): Promise<string | null> } }).transportxDesktop;
@@ -44,37 +46,51 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
   const [spatialScope, setSpatialScope] = useState('');
   const [timeStart, setTimeStart] = useState('');
   const [timeEnd, setTimeEnd] = useState('');
-  const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(true);
+  const [quickCreating, setQuickCreating] = useState(quickCreate);
+  const quickAttempted = useRef(false);
+  const [advanced, setAdvanced] = useState(mode !== 'create');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [revisionConflict, setRevisionConflict] = useState(false);
+  const [reload, setReload] = useState(0);
+  const configurationOwner = useRef('');
 
   useEffect(() => {
     if (!open) return;
     let current = true;
-    setError(''); requestIds.current.clear();
-    const task = workspace?.defaults?.profile?.task;
-    setCity(task?.city || ''); setProject(task?.project || ''); setSpatialScope(task?.spatialScope?.label || ''); setTimeStart(task?.timeRange?.start || ''); setTimeEnd(task?.timeRange?.end || '');
-    setLoadingModels(true);
+    setError('');
+    const owner = workspace ? `${workspace.id}:${workspace.defaultsRevision}` : 'new';
+    const initialize = configurationOwner.current !== owner;
+    setLoadingModels(true); setLoadFailed(false);
     Promise.all([
-      kernel.commands.platform.getAvailableModels(kernel.stores.session.get().activeSessionId).catch(() => []),
-      kernel.commands.platform.getSessionOptions().catch(() => ({ schemaVersion: 1 as const, modules: [] })),
+      kernel.commands.platform.getAvailableModels(),
+      kernel.commands.platform.getSessionOptions(),
     ])
       .then(([items, options]) => {
         if (!current) return;
         setModels(items);
-        setModel(workspace?.defaults?.modelSpec || items.map(formatModelOption).find((item) => item.reference)?.reference || '');
+        setModel(current => (!initialize && current) || workspace?.defaults?.modelSpec || items.map(formatModelOption).find((item) => item.reference)?.reference || '');
         setModuleOptions(options.modules);
-        setSelectedModules(workspace?.defaults?.profile ? Object.fromEntries(workspace.defaults.profile.modules.selected.map((item) => [item.id, item.version])) : Object.fromEntries(options.modules.filter((item) => item.selectedByDefault).map((item) => [item.id, item.version])));
+        if (initialize) {
+          const task = workspace?.defaults?.profile?.task;
+          setCity(task?.city || ''); setProject(task?.project || ''); setSpatialScope(task?.spatialScope?.label || ''); setTimeStart(task?.timeRange?.start || ''); setTimeEnd(task?.timeRange?.end || '');
+          setSelectedModules(workspace?.defaults?.profile ? Object.fromEntries(workspace.defaults.profile.modules.selected.map((item) => [item.id, item.version])) : Object.fromEntries(options.modules.filter((item) => item.selectedByDefault).map((item) => [item.id, item.version])));
+          configurationOwner.current = owner;
+        }
       })
+      .catch(cause => { if (current) { setError((cause as Error).message); setAdvanced(true); setLoadFailed(true); } })
       .finally(() => { if (current) setLoadingModels(false); });
     return () => { current = false; };
-  }, [kernel, open, workspace]);
+  }, [kernel, open, workspace, reload]);
 
   function selectFolder(value: string) {
     setDirectory(value);
     const canonical = value.replaceAll('\\', '/').replace(/\/$/, '');
     const registered = workspaces.find((item) => item.availability === 'ready' && item.kind !== 'standalone' && item.path === canonical);
     if (registered) { onWorkspaceChange(registered); return; }
+    if (workspace) onWorkspaceChange(null);
     if (!workspaceName.trim() || workspaceName === directory.replaceAll('\\', '/').replace(/\/$/, '').split('/').at(-1)) setWorkspaceName(canonical.split('/').at(-1) || '');
   }
 
@@ -82,20 +98,20 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
     setChoosingDirectory(true); setError('');
     try {
       const selected = await desktop?.selectWorkspaceDirectory?.();
-      if (selected) selectFolder(selected);
+      if (selected) { setLocationMode('folder'); selectFolder(selected); }
     } catch (cause) { setError((cause as Error).message); }
     finally { setChoosingDirectory(false); }
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function submit(event?: FormEvent) {
+    event?.preventDefault();
     setSubmitting(true);
     setError('');
     try {
       const selected = Object.entries(selectedModules).map(([id, version]) => ({ id, version }));
       const profile: SessionProfileV1 = {
         schemaVersion: 1,
-        task: { ...(workspace?.defaults?.profile?.task || { kind: 'data-query', expectedOutputs: ['answer'] }), city: city.trim() || undefined, project: project.trim() || undefined, spatialScope: spatialScope.trim() ? { label: spatialScope.trim() } : undefined, timeRange: timeStart && timeEnd ? { start: timeStart, end: timeEnd, timezone: 'Asia/Shanghai' } : undefined },
+        task: { ...(workspace?.defaults?.profile?.task || { kind: 'data-query', expectedOutputs: ['answer'] }), city: city.trim() || undefined, project: project.trim() || undefined, spatialScope: spatialScope === (workspace?.defaults?.profile?.task.spatialScope?.label || '') ? workspace?.defaults?.profile?.task.spatialScope : spatialScope.trim() ? { label: spatialScope.trim() } : undefined, timeRange: timeStart === (workspace?.defaults?.profile?.task.timeRange?.start || '') && timeEnd === (workspace?.defaults?.profile?.task.timeRange?.end || '') ? workspace?.defaults?.profile?.task.timeRange : timeStart && timeEnd ? { start: timeStart, end: timeEnd, timezone: workspace?.defaults?.profile?.task.timeRange?.timezone || 'Asia/Shanghai' } : undefined },
         modules: { selectionMode: 'explicit', selected },
       };
       const domainId = workspace?.defaults?.domainId || 'com.transportx.workbench';
@@ -117,15 +133,18 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
       setModel('');
       setName('');
       onOpenChange(false);
-      onCreated(session.id);
+      onCreated(session.id, quickCreating);
     } catch (cause) {
       setError((cause as { message?: string })?.message || t('sessions.createFailed'));
+      setAdvanced(true);
+      setRevisionConflict((cause as { code?: string }).code === 'workspace_revision_conflict');
     } finally {
       setSubmitting(false);
+      if (quickCreating) { setQuickCreating(false); onQuickCreateFinished(); }
     }
   }
 
-  const modelOptions = models.map(formatModelOption).filter((item) => item.reference).map((item) => ({ value: item.reference, label: item.label, metadata: item.metadata }));
+  const modelOptions = models.map(formatModelOption).filter((item) => item.reference).map((item) => ({ value: item.reference, label: item.label, metadata: item.metadata })).concat([{ value: '__add_model__', label: t('sessions.addModel'), metadata: '' }]);
   const moduleGroups = useMemo(() => {
     const groups = new Map<string, SessionModuleOption[]>();
     for (const option of moduleOptions.filter((item) => item.enabledForNewSessions)) groups.set(option.id, [...(groups.get(option.id) || []), option]);
@@ -138,9 +157,22 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
     return !asset.configured ? [`${name}: ${assetName} ${t('sessions.assetMissing')}`] : asset.integrity === 'missing' ? [`${name}: ${assetName} ${t('sessions.integrityMissing')}`] : [];
   }));
 
+  const unavailableModules = Object.entries(selectedModules).filter(([id, version]) => !moduleOptions.some(item => item.id === id && item.version === version && item.enabledForNewSessions));
+  const modelUnavailable = !!model && !modelOptions.some(item => item.value === model);
+  const blocked = moduleBlockers.length > 0 || unavailableModules.length > 0 || modelUnavailable;
+  useEffect(() => { if (blocked) setAdvanced(true); }, [blocked]);
+  useEffect(() => {
+    if (!open || !quickCreating || loadingModels || quickAttempted.current) return;
+    quickAttempted.current = true;
+    if (mode !== 'create' || !workspace?.defaults?.profile || !workspace.defaults.domainId || !workspace.defaults.modelSpec || !model || blocked || error) {
+      setQuickCreating(false); setAdvanced(true); onQuickCreateFinished(); return;
+    }
+    void submit();
+  }, [open, quickCreating, loadingModels, workspace, model, blocked, error]);
+
   const moduleFields = (
           <fieldset className="session-module-fieldset" aria-label={t('sessions.modules')}>
-            {!projectUi.moduleOptionsCollapsed ? <legend>{t('sessions.modules')}</legend> : null}
+            <legend>{t('sessions.modules')}</legend>
             {moduleGroups.map(([id, versions]) => {
               const selected = versions.find((item) => item.version === selectedModules[id]) || versions.find((item) => item.selectedByDefault) || versions.at(-1)!;
               const display = modulePresentation(selected, language);
@@ -176,28 +208,24 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
 
   return (
     <Dialog
-      open={open}
+      open={open && !quickCreating}
       onOpenChange={onOpenChange}
-      title={mode === 'defaults' ? t('workspaceFlow.defaults') : mode === 'confirmation' ? t('workspaceFlow.confirmation') : t('workspaceFlow.newConversation')}
+      onEscapeKeyDown={event => { if (event.target instanceof Element && (event.target.closest('[role=listbox]') || event.target.closest('[aria-haspopup=listbox][aria-expanded=true]'))) event.preventDefault(); }}
+      title={mode === 'defaults' ? t('workspaceFlow.defaults') : mode === 'confirmation' ? t('workspaceFlow.confirmation') : workspace ? t('workspaceFlow.newConversation') : t('workspaceFlow.openWorkspace')}
       className="new-session-dialog"
       footer={null}
     >
       <form className="form-stack" onSubmit={submit}>
-        {mode === 'create' && <label className="field-label"><span>{t('workspaceFlow.workspace')}</span><select aria-label={t('workspaceFlow.workspace')} value={workspace?.id || ''} onChange={(event) => onWorkspaceChange(workspaces.find((item) => item.id === event.target.value) || null)}><option value="">{t('workspaceFlow.newWorkspace')}</option>{workspaces.filter((item) => item.availability === 'ready' && item.kind !== 'standalone').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-        {mode === 'create' && !workspace && <>
-          <label className="field-label"><span>{t('workspaceFlow.locationMode')}</span><select aria-label={t('workspaceFlow.locationMode')} value={locationMode} onChange={(event) => setLocationMode(event.target.value as 'new' | 'folder')}><option value="new">{t('workspaceFlow.createDirectory')}</option><option value="folder">{t('workspaceFlow.openFolder')}</option></select></label>
-          {locationMode === 'folder' ? <>
-            <div className="field-with-action"><label className="field-label"><span>{t('workspaceFlow.directory')}</span><input value={directory} required placeholder={t('workspaceFlow.directoryPlaceholder')} onChange={(event) => selectFolder(event.target.value)} /></label>{desktop?.selectWorkspaceDirectory && <Button type="button" variant="outline" disabled={choosingDirectory || submitting} onClick={() => void chooseDirectory()}>{t('workspaceFlow.chooseFolder')}</Button>}</div>
-            <p className="field-help">{t('workspaceFlow.folderHelp')}</p>
-          </> : <label className="field-label"><span>{t('workspaceFlow.parent')}</span><input value={parentDirectory} placeholder={t('workspaceFlow.defaultParent')} onChange={(event) => setParentDirectory(event.target.value)} /></label>}
-          <label className="field-label"><span>{t('workspaceFlow.name')}</span><input value={workspaceName} maxLength={120} required onChange={(event) => setWorkspaceName(event.target.value)} /></label>
-        </>}
-        {workspace && <p className="confirmation-dialog-copy">{workspace.name} · {workspace.path}<br />{mode === 'confirmation' ? t('workspaceFlow.missingPlan') : t('workspaceFlow.futureOnly')}</p>}
-        {mode === 'create' && <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} maxLength={120} autoFocus placeholder={t('sessions.taskNamePlaceholder')} onChange={(event) => setName(event.target.value)} /></label>}
-        {moduleGroups.length ? (
-          projectUi.moduleOptionsCollapsed ? <details className="session-profile-details"><summary>{t('sessions.modules')}</summary>{moduleFields}</details> : moduleFields
-        ) : null}
+        {mode === 'create' ? <WorkspaceLocation workspace={workspace} workspaces={workspaces} locationMode={locationMode} directory={directory} parentDirectory={parentDirectory} name={workspaceName} nativePicker={!!desktop?.selectWorkspaceDirectory} busy={choosingDirectory || submitting} onWorkspaceChange={onWorkspaceChange} onLocationModeChange={setLocationMode} onDirectoryChange={selectFolder} onParentChange={setParentDirectory} onNameChange={setWorkspaceName} onChooseDirectory={() => void chooseDirectory()} /> : <p className="confirmation-dialog-copy">{workspace?.name}<br />{mode === 'confirmation' ? t('workspaceFlow.missingPlan') : t('workspaceFlow.futureOnly')}</p>}
+        <div className="workspace-model-row"><MenuSelect compact portal label={t('sessions.model')} value={model} options={modelOptions} placeholder={loadingModels ? t('sessions.loadingModels') : t('sessions.noModels')} disabled={loadingModels || submitting} onChange={value => value === '__add_model__' ? onAddModel() : setModel(value)} /><small>{workspace?.defaults?.modelSpec === model ? t('workspaceFlow.defaultModel') : t('workspaceFlow.sessionModel')}</small></div>
+        {!loadingModels && modelUnavailable && <div className="inline-error" role="alert">{t('workspaceFlow.modelUnavailable')}</div>}
         {moduleBlockers.length ? <div className="inline-error" role="alert">{moduleBlockers.join('；')}</div> : null}
+        {unavailableModules.length ? <div className="inline-error" role="alert">{t('workspaceFlow.unavailableModules', { modules: unavailableModules.map(([id, version]) => `${id}@${version}`).join(', ') })}{unavailableModules.map(([id]) => <Button type="button" variant="quiet" key={id} onClick={() => setSelectedModules(current => { const next = { ...current }; delete next[id]; return next; })}>{t('workspaceFlow.removeSelection', { name: id })}</Button>)}</div> : null}
+        <details className="workspace-advanced" open={advanced} onToggle={event => setAdvanced(event.currentTarget.open)}>
+          <summary><span>{t('workspaceFlow.advanced')}</span><small>{t('workspaceFlow.configurationSummary', { count: Object.keys(selectedModules).length })}{city || spatialScope || timeStart ? ` · ${t('sessions.taskContext')}` : ''}</small></summary>
+          <div className="workspace-advanced-body">
+            {mode === 'create' && <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} maxLength={120} placeholder={t('sessions.taskNamePlaceholder')} onChange={event => setName(event.target.value)} /></label>}
+            {moduleGroups.length ? moduleFields : null}
         <details className="session-profile-details">
           <summary>{t('sessions.taskContext')}</summary>
           <div className="form-stack">
@@ -207,27 +235,17 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
             </div>
             <label className="field-label"><span>{t('sessions.spatialScope')}</span><input value={spatialScope} onChange={(event) => setSpatialScope(event.target.value)} /></label>
             <div className="form-grid-two">
-              <label className="field-label"><span>{t('sessions.timeStart')}</span><input type="datetime-local" value={timeStart} onChange={(event) => setTimeStart(event.target.value)} /></label>
-              <label className="field-label"><span>{t('sessions.timeEnd')}</span><input type="datetime-local" min={timeStart} value={timeEnd} onChange={(event) => setTimeEnd(event.target.value)} /></label>
+              <label className="field-label"><span>{t('workspaceFlow.timeStart', { timezone: workspace?.defaults?.profile?.task.timeRange?.timezone || 'Asia/Shanghai' })}</span><input type="datetime-local" value={timeStart} onChange={(event) => setTimeStart(event.target.value)} /></label>
+              <label className="field-label"><span>{t('workspaceFlow.timeEnd', { timezone: workspace?.defaults?.profile?.task.timeRange?.timezone || 'Asia/Shanghai' })}</span><input type="datetime-local" min={timeStart} value={timeEnd} onChange={(event) => setTimeEnd(event.target.value)} /></label>
             </div>
           </div>
         </details>
-        <div className="field-with-action">
-          <MenuSelect
-            label={t('sessions.model')}
-            value={model}
-            options={modelOptions}
-            placeholder={loadingModels ? t('sessions.loadingModels') : t('sessions.noModels')}
-            disabled={loadingModels || modelOptions.length === 0}
-            onChange={setModel}
-          />
-          <Button type="button" variant="outline" onClick={onAddModel}>{t('sessions.addModel')}</Button>
-        </div>
-        <p className="field-help">{t('sessions.workspaceHelp')}</p>
-        {error ? <div className="inline-error" role="alert">{error}</div> : null}
+          </div>
+        </details>
+        {error ? <div className="inline-error" role="alert">{error}{revisionConflict && workspace && <Button type="button" variant="quiet" onClick={async () => { try { await kernel.commands.session.list(); const current = kernel.stores.session.get().workspaces.find(item => item.id === workspace.id); if (current) { onWorkspaceChange(current); setRevisionConflict(false); setError(''); } } catch (cause) { setError((cause as Error).message); } }}>{t('workspaceFlow.reloadConfiguration')}</Button>}{loadFailed && <Button type="button" variant="quiet" onClick={() => setReload(value => value + 1)}>{t('common.retry')}</Button>}</div> : null}
         <div className="form-actions">
           <DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose>
-          <Button type="submit" disabled={submitting || choosingDirectory || !model || moduleBlockers.length > 0}>{submitting ? t('common.saving') : mode === 'defaults' ? t('workspaceFlow.saveDefaults') : mode === 'confirmation' ? t('workspaceFlow.confirmActivate') : t('workspaceFlow.create')}</Button>
+          <Button type="submit" disabled={submitting || choosingDirectory || loadingModels || loadFailed || revisionConflict || !model || blocked || mode === 'create' && !workspace && (!workspaceName.trim() || locationMode === 'folder' && !directory.trim())}>{submitting ? t('common.saving') : mode === 'defaults' ? t('workspaceFlow.saveDefaults') : mode === 'confirmation' ? t('workspaceFlow.confirmActivate') : workspace ? t('workspaceFlow.create') : t('workspaceFlow.enterWorkspace')}</Button>
         </div>
       </form>
     </Dialog>

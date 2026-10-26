@@ -6,6 +6,5 @@ export const projectUi: ProjectUi = {
   windowControls: <WindowControls />,
   softwareUpdate: <SoftwareUpdate />,
   UpdateNotice: SoftwareUpdateNotice,
-  moduleOptionsCollapsed: true,
   nativeActions: true,
 };

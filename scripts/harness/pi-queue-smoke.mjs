@@ -29,11 +29,13 @@ export async function piQueueSmoke(page) {
   const before = await snapshot(conversationId);
   assert.deepEqual(before.session.piQueue, { steering: [guidance, guidance], followUp: ['完成后生成报告。'] });
 
-  await page.getByRole('button', { name: '新建工作区和会话', exact: true }).first().click();
-  const dialog = page.getByRole('dialog', { name: '新建会话' });
+  await page.getByRole('button', { name: '打开工作区', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: '打开工作区' });
+  await dialog.getByRole('button', { name: '创建新文件夹', exact: true }).click();
+  await dialog.locator('.workspace-advanced > summary').click();
   await dialog.getByLabel('工作区名称', { exact: true }).fill('队列隔离工作区');
   await dialog.getByLabel('会话名称（可选）', { exact: true }).fill('队列隔离会话 B');
-  await dialog.getByRole('button', { name: '创建会话', exact: true }).click();
+  await dialog.getByRole('button', { name: '进入工作区', exact: true }).click();
   await page.waitForFunction((id) => localStorage.getItem('tau-active-conversation-id') !== id, conversationId);
   assert.equal(await queue.count(), 0, 'another session does not display this queue');
   await page.locator('.live-tab-select', { hasText: before.session.sessionName }).click();

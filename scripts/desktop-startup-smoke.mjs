@@ -64,6 +64,18 @@ try {
   assert.equal(await chooserWindow.evaluate(() => window.transportxDesktop.selectWorkspaceDirectory()), fs.realpathSync(dataRoot).replaceAll('\\', '/'));
   await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
   assert.equal(await chooserWindow.evaluate(() => window.transportxDesktop.selectWorkspaceDirectory()), null);
+  await chooserWindow.getByRole('button', { name: /^(打开工作区|Open workspace)$/ }).first().click();
+  const creation = chooserWindow.locator('.new-session-dialog');
+  await app.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, dataRoot);
+  await creation.getByRole('button', { name: /^(打开已有文件夹|Open an existing folder)$/ }).click();
+  const expectedDirectory = fs.realpathSync(dataRoot).replaceAll('\\', '/');
+  await creation.locator('.workspace-location-path').filter({ hasText: path.basename(dataRoot) }).waitFor();
+  assert.equal(await creation.locator('.workspace-location-path').getAttribute('title'), expectedDirectory);
+  assert.equal(await creation.locator('input[aria-label]').count(), 0, 'native folder selection renders a path card');
+  await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
+  await creation.getByRole('button', { name: /^(更换|Change)$/ }).click();
+  assert.equal(await creation.locator('.workspace-location-path').getAttribute('title'), expectedDirectory, 'cancel keeps the previous folder');
+  await creation.getByRole('button', { name: /^(取消|Cancel)$/ }).click();
   console.log('[desktop-startup] real directory chooser bridge and cancellation passed');
   await stop(fresh.healthUrl);
   console.log('[desktop-startup] fresh startup and normal IPC exit passed');

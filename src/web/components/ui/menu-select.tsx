@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../icons';
 
 export type MenuSelectOption = {
@@ -15,6 +16,7 @@ export function MenuSelect({
   disabled = false,
   autoFocus = false,
   compact = false,
+  portal = false,
   onChange,
 }: {
   label: string;
@@ -24,6 +26,7 @@ export function MenuSelect({
   disabled?: boolean;
   autoFocus?: boolean;
   compact?: boolean;
+  portal?: boolean;
   onChange(value: string): void;
 }) {
   const [open, setOpen] = useState(false);
@@ -50,12 +53,15 @@ export function MenuSelect({
     const closeOnResize = () => setOpen(false);
     document.addEventListener('pointerdown', closeOutside);
     window.addEventListener('resize', closeOnResize);
+    const scroller = portal ? rootRef.current?.closest('.dialog-body') : null;
+    scroller?.addEventListener('scroll', closeOnResize);
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener('pointerdown', closeOutside);
       window.removeEventListener('resize', closeOnResize);
+      scroller?.removeEventListener('scroll', closeOnResize);
     };
-  }, [open, selectedIndex]);
+  }, [open, selectedIndex, portal]);
 
   function toggleMenu() {
     if (open) {
@@ -68,6 +74,12 @@ export function MenuSelect({
     const spaceAbove = rect.top - 12;
     const opensAbove = spaceBelow < 240 && spaceAbove > spaceBelow;
     const maxHeight = Math.min(272, Math.max(160, opensAbove ? spaceAbove : spaceBelow));
+    const dialog = portal ? rootRef.current?.closest<HTMLElement>('[role=dialog]') : null;
+    if (dialog) {
+      const bounds = dialog.getBoundingClientRect();
+      setPopoverStyle({ left: rect.left - bounds.left, ...(opensAbove ? { bottom: bounds.bottom - rect.top + 6 } : { top: rect.bottom - bounds.top + 6 }), width: rect.width, maxHeight });
+      setOpen(true); return;
+    }
     setPopoverStyle(opensAbove
       ? { left: 0, bottom: rect.height + 6, width: '100%', maxHeight }
       : { left: 0, top: rect.height + 6, width: '100%', maxHeight });
@@ -94,47 +106,14 @@ export function MenuSelect({
       focusOption(options.length - 1);
     } else if (event.key === 'Escape') {
       event.preventDefault();
+      if (portal) event.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
     }
   }
 
-  return (
-    <div className="field-label">
-      <span>{label}</span>
-      <div
-        className={`menu-select${compact ? ' is-compact' : ''}`}
-        ref={rootRef}
-        onBlur={(event) => {
-          const next = event.relatedTarget as Node | null;
-          if (!event.currentTarget.contains(next) && !popoverRef.current?.contains(next)) setOpen(false);
-        }}
-      >
-        <button
-          className="menu-select-trigger"
-          type="button"
-          ref={triggerRef}
-          autoFocus={autoFocus}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          disabled={disabled}
-          onClick={toggleMenu}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              if (!open) toggleMenu();
-            } else if (event.key === 'Escape') {
-              setOpen(false);
-            }
-          }}
-        >
-          <span className="menu-select-value">
-            <strong>{selected?.label || placeholder}</strong>
-            {selected?.metadata ? <small>{selected.metadata}</small> : null}
-          </span>
-          <Icon name="chevron" />
-        </button>
-        {open ? (
+  const portalTarget = portal ? rootRef.current?.closest<HTMLElement>('[role=dialog]') : null;
+  const menu = (
           <div
             className={`menu-select-popover${compact ? ' is-compact' : ''}`}
             role="listbox"
@@ -166,7 +145,45 @@ export function MenuSelect({
               </button>
             ))}
           </div>
-        ) : null}
+  );
+
+  return (
+    <div className="field-label">
+      <span>{label}</span>
+      <div
+        className={`menu-select${compact ? ' is-compact' : ''}`}
+        ref={rootRef}
+        onBlur={(event) => {
+          const next = event.relatedTarget as Node | null;
+          if (!event.currentTarget.contains(next) && !popoverRef.current?.contains(next)) setOpen(false);
+        }}
+      >
+        <button
+          className="menu-select-trigger"
+          type="button"
+          ref={triggerRef}
+          autoFocus={autoFocus}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          disabled={disabled}
+          onClick={toggleMenu}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              if (!open) toggleMenu();
+            } else if (event.key === 'Escape') {
+              if (portal && open) { event.preventDefault(); event.stopPropagation(); }
+              setOpen(false);
+            }
+          }}
+        >
+          <span className="menu-select-value">
+            <strong>{selected?.label || placeholder}</strong>
+            {selected?.metadata ? <small>{selected.metadata}</small> : null}
+          </span>
+          <Icon name="chevron" />
+        </button>
+        {open ? portalTarget ? createPortal(menu, portalTarget) : menu : null}
       </div>
     </div>
   );
