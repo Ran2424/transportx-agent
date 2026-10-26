@@ -682,6 +682,68 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(restored.conversation.id, committed.conversations[0].id);
     assert.equal(store.readCatalog().entries.length, 2); assert.equal(fs.readdirSync(parent).length, 2);
     assert.equal(store.readCatalog().entries.find((entry: any) => entry.workspaceId === reservation.workspaceId).state, 'ready');
+
+    // Existing project folders keep their exact root and original bytes; retries never allocate a child.
+    const project = path.join(parent, '20261026-130000-已有项目'); fs.mkdirSync(project);
+    const original = Buffer.from('road,count\n已有路段,42\n'); fs.writeFileSync(path.join(project, 'data.csv'), original);
+    fs.mkdirSync(path.join(project, '.git')); fs.writeFileSync(path.join(project, '.git/config'), 'original repository config');
+    const folderInput = { ...input, requestId: 'open-project', workspace: { kind: 'folder', name: '已有项目', directory: project } };
+    await assert.rejects(service.create({ ...folderInput, workspace: { ...folderInput.workspace, parentDirectory: parent } }), { code: 'invalid_conversation_input' });
+    await assert.rejects(service.create({ ...folderInput, model: 'missing' }), /model missing/);
+    assert.equal(fs.existsSync(path.join(project, '.tau')), false);
+    await assert.rejects(service.create({ ...folderInput, workspace: { ...folderInput.workspace, directory: path.join(parent, 'not-created') } }), { code: 'workspace_missing' });
+    assert.equal(fs.existsSync(path.join(parent, 'not-created')), false);
+    await assert.rejects(service.create({ ...folderInput, workspace: { ...folderInput.workspace, directory: root } }), { code: 'workspace_identity_conflict' });
+    const [opened, repeated] = await Promise.all([service.create(folderInput), service.create(folderInput)]);
+    assert.equal(opened.directory, require('../../bin/util/path.js').toPosixPath(project));
+    assert.equal(opened.conversation.id, repeated.conversation.id);
+    assert.equal(store.readPlan(project, opened.conversation).workspace, opened.directory);
+    assert.equal(store.readCatalog().entries.find((entry: any) => entry.workspaceId === opened.manifest.id).directoryOwnership, 'external');
+    assert.deepEqual(fs.readdirSync(project).sort(), ['.git', '.tau', 'data.csv']);
+    assert.deepEqual(fs.readFileSync(path.join(project, 'data.csv')), original);
+    assert.equal(fs.readFileSync(path.join(project, '.git/config'), 'utf8'), 'original repository config');
+    assert.equal(fs.existsSync(path.join(store.sessionsDirectory, opened.conversation.history.key)), false);
+    assert.equal((await restarted.create(folderInput)).conversation.id, opened.conversation.id);
+    await assert.rejects(service.create({ ...folderInput, requestId: 'open-again' }), { code: 'workspace_identity_conflict' });
+    const nested = path.join(project, 'nested'); fs.mkdirSync(nested);
+    await assert.rejects(service.create({ ...folderInput, requestId: 'nested-project', workspace: { ...folderInput.workspace, directory: nested } }), { code: 'workspace_identity_conflict' });
+    const oldProject = path.join(parent, 'old-project'); fs.mkdirSync(path.join(oldProject, '.tau'), { recursive: true });
+    fs.writeFileSync(path.join(oldProject, '.tau/original.json'), 'original metadata');
+    const catalogBefore = fs.readFileSync(store.catalogFile);
+    await assert.rejects(service.create({ ...folderInput, requestId: 'old-project', workspace: { ...folderInput.workspace, directory: oldProject } }), { code: 'workspace_migration_required' });
+    assert.deepEqual(fs.readFileSync(store.catalogFile), catalogBefore);
+    assert.equal(fs.readFileSync(path.join(oldProject, '.tau/original.json'), 'utf8'), 'original metadata');
+    const alias = path.join(parent, 'alias'); let linked = false;
+    try { fs.symlinkSync(project, alias, 'dir'); linked = true; }
+    catch (error) { t.diagnostic(`Project alias assertion unavailable: ${(error as Error).message}`); }
+    if (linked) await assert.rejects(service.create({ ...folderInput, requestId: 'alias-project', workspace: { ...folderInput.workspace, directory: alias } }), { code: 'workspace_identity_conflict' });
+    if (linked) {
+      const privateHistory = path.join(parent, 'private-history'), historyAlias = path.join(root, 'history-alias'); fs.mkdirSync(privateHistory); fs.symlinkSync(privateHistory, historyAlias, 'dir');
+      const aliasService = new WorkspaceService({ ...options, store: new WorkspaceStore(root, historyAlias) });
+      await assert.rejects(aliasService.create({ ...folderInput, requestId: 'private-history-project', workspace: { ...folderInput.workspace, directory: privateHistory } }), { code: 'workspace_identity_conflict' });
+      assert.deepEqual(fs.readdirSync(privateHistory), [], 'canonical Native history roots cannot become public projects');
+      const projectsAlias = path.join(root, 'projects-alias'), aliasProject = path.join(parent, 'alias-root-project'); fs.symlinkSync(parent, projectsAlias, 'dir'); fs.mkdirSync(aliasProject);
+      const aliasRootService = new WorkspaceService({ ...options, defaultParentDirectory: projectsAlias });
+      assert.equal((await aliasRootService.create({ ...folderInput, requestId: 'canonical-project-root', workspace: { ...folderInput.workspace, directory: aliasProject } })).directory, require('../../bin/util/path.js').toPosixPath(aliasProject));
+    }
+    const { WorkspaceDeletion } = require('../../bin/workspace-deletion.js');
+    const protectedDeletion = new WorkspaceDeletion({ store, assertSystemReady: () => {}, runtime: { withWorkspaceStopped: () => { throw new Error('must not stop external project'); } } });
+    assert.throws(() => protectedDeletion.workspace(opened.manifest.id, { requestId: 'delete-project', expectedRevision: opened.manifest.revision, confirm: true }), { code: 'workspace_directory_external' });
+    assert.throws(() => require('../../bin/session-workspace.js').resolveSessionWorkspaceForDeletion(project), /Cannot verify task directory ownership/);
+    assert.deepEqual(fs.readFileSync(path.join(project, 'data.csv')), original);
+
+    const recoveryProject = path.join(parent, 'recovery-project'); fs.mkdirSync(recoveryProject);
+    const recoveryInput = { ...folderInput, requestId: 'folder-response-loss', workspace: { ...folderInput.workspace, directory: recoveryProject } };
+    fs.renameSync = (source: string, target: string) => {
+      if (target === store.catalogFile && JSON.parse(fs.readFileSync(source, 'utf8')).entries.some((entry: any) => entry.creationRequestId === recoveryInput.requestId && entry.state === 'ready')) throw Object.assign(new Error('catalog unavailable'), { code: 'ENOSPC' });
+      return rename(source, target);
+    };
+    try { await assert.rejects(service.create(recoveryInput), { code: 'ENOSPC' }); }
+    finally { fs.renameSync = rename; }
+    const savedFolderManifest = JSON.parse(fs.readFileSync(path.join(recoveryProject, '.tau/workspace.json'), 'utf8'));
+    const recoveredFolder = await restarted.create(recoveryInput);
+    assert.equal(recoveredFolder.conversation.id, savedFolderManifest.conversations[0].id);
+    assert.equal(recoveredFolder.directory, require('../../bin/util/path.js').toPosixPath(recoveryProject));
   }
   // Workspace RMW transactions preserve independent revisions and failed writes leave committed data intact.
   {

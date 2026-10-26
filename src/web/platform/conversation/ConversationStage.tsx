@@ -4,7 +4,7 @@ import { BrandMark } from '../../components/BrandMark';
 import { Button } from '../../components/ui/button';
 import { ConversationWorkspace } from './ConversationWorkspace';
 
-export function ConversationStage({ session, loading, onNewSession, onActivate, activating, showThinking, expandThinking }: { session: ConversationView | null; loading: boolean; onNewSession(): void; onActivate(): void; activating: boolean; showThinking: boolean; expandThinking: boolean }) {
+export function ConversationStage({ session, loading, onNewSession, onActivate, showThinking, expandThinking }: { session: ConversationView | null; loading: boolean; onNewSession(): void; onActivate(id: string): Promise<void>; showThinking: boolean; expandThinking: boolean }) {
   const { t } = useTranslation();
   if (loading) {
     return <main className="conversation-stage" aria-busy="true"><div className="stage-loader"><span /><strong>{t('welcome.syncing')}</strong><small>{t('welcome.syncingDetail')}</small></div></main>;
@@ -23,5 +23,5 @@ export function ConversationStage({ session, loading, onNewSession, onActivate, 
     );
   }
 
-  return <div className="conversation-persistent-stage">{!session.liveSessionId && <div className="conversation-offline-bar"><span>{t('workspaceFlow.historyPreview')}{session.record?.lastStartFailure ? ` · ${session.record.lastStartFailure.message}` : ''}</span><Button disabled={activating} onClick={onActivate}>{activating ? t('workspaceFlow.activating') : t('workspaceFlow.activate')}</Button></div>}{session.record && <div className="conversation-plan-source">{t(`workspaceFlow.planSource.${session.record.plan?.source || 'missing'}`)}</div>}<ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} /></div>;
+  return <div className="conversation-persistent-stage"><ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} onActivate={onActivate} /></div>;
 }

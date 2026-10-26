@@ -17,7 +17,7 @@ import { projectTools } from './tool-projection';
 import { hostExecutionState } from './tool-card-utils';
 import { projectCitationText, projectMessageCitations } from '../../features/citation/citation-projection';
 
-export function ConversationWorkspace({ sessionId, showThinking, expandThinking }: { sessionId: string; showThinking: boolean; expandThinking: boolean }) {
+export function ConversationWorkspace({ sessionId, showThinking, expandThinking, onActivate }: { sessionId: string; showThinking: boolean; expandThinking: boolean; onActivate(id: string): Promise<void> }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const data = useConversation(sessionId);
@@ -116,7 +116,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
         {compacting ? <div className="compaction-status" role="status"><i className="streaming-beacon" />{t('conversation.compacting')}</div> : null}
       </div>
     </div>
-    <ConversationComposer retryDraft={retryDraft} sessionId={sessionId} session={session} streaming={!!data?.live.active} compacting={compacting} queued={data?.live.queued || []} attachments={attachments} attachmentError={attachmentError} onReloadAttachments={reloadAttachments} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />
+    <ConversationComposer onActivate={onActivate} retryDraft={retryDraft} sessionId={sessionId} session={session} streaming={!!data?.live.active} compacting={compacting} queued={data?.live.queued || []} attachments={attachments} attachmentError={attachmentError} onReloadAttachments={reloadAttachments} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />
     {citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}
   </main>;
 }

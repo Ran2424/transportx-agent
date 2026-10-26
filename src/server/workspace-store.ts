@@ -85,7 +85,7 @@ export class WorkspaceStore {
       return catalog;
     });
   }
-  reserveWorkspace(requestId: string, inputSha256: string, allocate: (catalog: WorkspaceCatalogV1) => string) {
+  reserveWorkspace(requestId: string, inputSha256: string, allocate: (catalog: WorkspaceCatalogV1) => string, directoryOwnership?: 'external') {
     return mutateJson(this.catalogFile, async () => {
       const catalog = this.readCatalog();
       const previous = catalog.entries.find((entry) => entry.creationRequestId === requestId);
@@ -93,7 +93,7 @@ export class WorkspaceStore {
         if (previous.creationInputSha256 !== inputSha256) throw failure('workspace_revision_conflict', 'Creation request ID was already used for different input.');
         return previous;
       }
-      const entry: WorkspaceCatalogEntryV1 = { workspaceId: `ws_${crypto.randomUUID()}`, path: toPosixPath(allocate(catalog)), creationRequestId: requestId, creationInputSha256: inputSha256, state: 'creating', deletion: null };
+      const entry: WorkspaceCatalogEntryV1 = { workspaceId: `ws_${crypto.randomUUID()}`, path: toPosixPath(allocate(catalog)), creationRequestId: requestId, creationInputSha256: inputSha256, state: 'creating', deletion: null, ...(directoryOwnership ? { directoryOwnership } : {}) };
       catalog.entries.push(entry); catalog.revision++;
       writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
       return entry;

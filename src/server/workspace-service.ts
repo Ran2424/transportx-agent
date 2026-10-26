@@ -75,6 +75,21 @@ export class WorkspaceService {
     }
     const configuration = this.configuration(input, { domainId: null, modelSpec: null, profile: null });
     await this.options.validateModel(configuration.modelSpec);
+    if (target.kind === 'folder') {
+      const requested = this.options.expandHome(target.directory);
+      if (!path.isAbsolute(requested) || !fs.existsSync(requested) || !fs.statSync(requested).isDirectory()) throw failure('workspace_missing', 'Choose an existing absolute project directory.', 404);
+      const directory = fs.realpathSync(requested);
+      const data = fs.realpathSync(store.userDataDirectory), sessions = fs.existsSync(store.sessionsDirectory) ? fs.realpathSync(store.sessionsDirectory) : path.resolve(store.sessionsDirectory), projects = fs.existsSync(this.options.defaultParentDirectory) ? fs.realpathSync(this.options.defaultParentDirectory) : path.resolve(this.options.defaultParentDirectory);
+      if (isWithin(directory, data) || isWithin(directory, sessions) || isWithin(sessions, directory) || isWithin(data, directory) && !isWithin(projects, directory)) throw failure('workspace_identity_conflict', 'Project directory overlaps private application data.');
+      this.options.assertAllocationAllowed(directory);
+      const plan = this.options.assemble(configuration, directory);
+      const entry = await store.reserveWorkspace(input.requestId, inputSha256, (catalog) => {
+        if (catalog.entries.some((item) => isWithin(item.path, directory) || isWithin(directory, item.path))) throw failure('workspace_identity_conflict', 'This folder overlaps a registered workspace; select that workspace instead.');
+        if (fs.existsSync(workspaceMetadataPath(directory, '.tau'))) throw failure('workspace_migration_required', 'This folder already has .tau metadata; use its registered workspace or migration report.');
+        return directory;
+      }, 'external');
+      return this.completeNew(entry, input, inputSha256, plan);
+    }
     const requestedParent = this.options.expandHome(target.parentDirectory || this.options.defaultParentDirectory);
     if (!target.parentDirectory) fs.mkdirSync(requestedParent, { recursive: true });
     if (!fs.statSync(requestedParent).isDirectory()) throw failure('workspace_missing', 'Parent directory is unavailable.', 404);
@@ -103,18 +118,23 @@ export class WorkspaceService {
     }
     // The reservation's parent is canonical even before the workspace exists.
     // This bootstrap lease never waits for a Pi process or holds a catalog lease.
-    return mutateJson(path.join(path.dirname(entry.path), `.transportx-create-${entry.workspaceId}`), async () => {
+    return mutateJson(path.join(path.dirname(entry.path), entry.directoryOwnership === 'external' ? `.transportx-register-${crypto.createHash('sha256').update(entry.path).digest('hex')}` : `.transportx-create-${entry.workspaceId}`), async () => {
       this.options.assertReady(); this.options.assertAllocationAllowed(entry.path);
+      const external = entry.directoryOwnership === 'external';
       let created = false;
-      try { fs.mkdirSync(entry.path, { mode: 0o700 }); created = true; }
+      try { if (!external) { fs.mkdirSync(entry.path, { mode: 0o700 }); created = true; } }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
       const directory = fs.realpathSync(entry.path);
       if (path.relative(directory, entry.path) !== '' || fs.lstatSync(entry.path).isSymbolicLink() || !fs.statSync(directory).isDirectory()) throw failure('workspace_identity_conflict', 'Reserved workspace path changed.');
+      if (external) {
+        try { fs.mkdirSync(workspaceMetadataPath(directory, '.tau'), { mode: 0o700 }); created = true; }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      }
       const marker = workspaceMetadataPath(directory, '.tau/workspace-owner.json');
-      if (created) writeJsonAtomic(marker, { version: 1, workspace: toPosixPath(directory), parent: toPosixPath(fs.realpathSync(path.dirname(directory))), workspaceId: entry.workspaceId, creationRequestId: input.requestId, creationInputSha256: inputSha256 });
+      if (created) writeJsonAtomic(marker, { version: 1, workspace: toPosixPath(directory), parent: toPosixPath(fs.realpathSync(path.dirname(directory))), workspaceId: entry.workspaceId, creationRequestId: input.requestId, creationInputSha256: inputSha256, ...(external ? { directoryOwnership: 'external' } : {}) });
       else {
         const owner = readJsonObject(marker);
-        if (owner.version !== 1 || owner.workspace !== toPosixPath(directory) || owner.workspaceId !== entry.workspaceId || owner.creationRequestId !== input.requestId || owner.creationInputSha256 !== inputSha256) throw failure('workspace_creation_incomplete', 'Workspace creation is incomplete or its directory ownership is unconfirmed; inspect its recovery report.');
+        if (owner.version !== 1 || owner.workspace !== toPosixPath(directory) || owner.workspaceId !== entry.workspaceId || owner.creationRequestId !== input.requestId || owner.creationInputSha256 !== inputSha256 || external && owner.directoryOwnership !== 'external') throw failure('workspace_creation_incomplete', 'Workspace creation is incomplete or its directory ownership is unconfirmed; inspect its recovery report.');
       }
       const file = workspaceMetadataPath(directory, '.tau/workspace.json');
       let manifest: WorkspaceManifestV1;
@@ -127,7 +147,7 @@ export class WorkspaceService {
         const plan = draft || this.options.assemble(configuration, directory);
         const record = await this.prepare(input, inputSha256, directory, 0, configuration, plan);
         const at = new Date().toISOString();
-        if (input.workspace.kind !== 'new') throw failure('invalid_conversation_input', 'New workspace input is required.');
+        if (input.workspace.kind === 'existing') throw failure('invalid_conversation_input', 'New workspace input is required.');
         manifest = { schemaVersion: 1, id: entry.workspaceId, revision: 1, name: input.workspace.name, createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: configuration, citationRegistryId: entry.workspaceId, conversations: [record] };
       }
       const conversation = manifest.conversations.find((record) => record.creationRequestId === input.requestId && record.creationInputSha256 === inputSha256);

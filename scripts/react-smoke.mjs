@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { browserJson } from './harness/workspace-client.mjs';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -64,36 +65,44 @@ try {
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('[data-testid="agent-status"]:is([data-state="connected"], [data-state="streaming"])').waitFor();
 
-  await page.getByRole('button', { name: '新建工作区和会话' }).first().click();
-  const dialog = page.getByRole('dialog', { name: '新建会话' });
+  await page.getByRole('button', { name: '打开工作区' }).first().click();
+  const dialog = page.getByRole('dialog', { name: '打开工作区' });
   await dialog.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
-  const moduleDetails = dialog.locator('details', { has: page.locator('summary', { hasText: '任务 Module 与版本' }) });
+  const moduleDetails = dialog.locator('.workspace-advanced');
   assert.equal(await moduleDetails.count(), 1, 'module options use a disclosure');
   const alphaModule = dialog.getByRole('checkbox', { name: /^smoke\.alpha\b/ });
   const betaModule = dialog.getByRole('checkbox', { name: /^smoke\.beta\b/ });
   assert.equal(await moduleDetails.getAttribute('open'), null, 'module options start collapsed');
   assert.equal(await alphaModule.isVisible(), false);
-  await moduleDetails.locator('summary').click();
+  await moduleDetails.locator(':scope > summary').click();
   for (const checkbox of [alphaModule, betaModule]) assert.equal(await checkbox.isChecked(), true, 'enabled modules are selected');
   const alphaVersion = dialog.getByLabel('smoke.alpha 版本');
   assert.equal(await alphaVersion.inputValue(), '2.0.0');
   assert.equal(await dialog.getByRole('checkbox', { name: /^smoke\.disabled\b/ }).count(), 0);
   await betaModule.uncheck();
   await alphaVersion.selectOption('1.0.0');
+  await dialog.locator('.menu-select-trigger').click();
+  await dialog.getByRole('option', { name: '添加模型', exact: true }).click();
+  await page.locator('.model-setup-dialog').getByRole('button', { name: '取消', exact: true }).click();
+  await dialog.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
+  assert.equal(await alphaVersion.inputValue(), '1.0.0', 'returning from model setup keeps selected module versions');
+  assert.equal(await betaModule.isChecked(), false, 'returning from model setup keeps explicit deselection');
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await page.getByRole('button', { name: '新建工作区和会话' }).first().click();
+  await page.getByRole('button', { name: '打开工作区' }).first().click();
   await dialog.locator('.menu-select-trigger', { hasText: 'kimi-coding/k2p7' }).waitFor();
   assert.equal(await moduleDetails.getAttribute('open'), null, 'reopening resets the disclosure');
   assert.equal(await alphaModule.isVisible(), false);
   const createRequest = page.waitForRequest((request) => request.url().endsWith('/api/conversations') && request.method() === 'POST');
+  await dialog.getByRole('button', { name: '创建新文件夹', exact: true }).click();
   await dialog.getByLabel('工作区名称', { exact: true }).fill('Web 综合冒烟');
-  await dialog.getByRole('button', { name: '创建会话' }).click();
+  await dialog.getByRole('button', { name: '进入工作区' }).click();
   assert.deepEqual((await createRequest).postDataJSON().profile.modules, {
     selectionMode: 'explicit', selected: [{ id: 'smoke.alpha', version: '2.0.0' }, { id: 'smoke.beta', version: '1.0.0' }],
   }, 'default module selection is submitted without changing the presentation');
 
-  await page.getByRole('button', { name: '激活此会话', exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector('.conversation-offline-bar'));
+  await dialog.waitFor({ state: 'hidden' });
+  const createdId = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
+  await browserJson(page, baseUrl, `/api/conversations/${createdId}/activate`, {});
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
   await capabilitySmoke(page);

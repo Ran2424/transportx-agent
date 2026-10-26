@@ -8,6 +8,7 @@ type DialogProps = ComponentProps<typeof DialogPrimitive.Root> & {
   footer?: ReactNode;
   className?: string;
   onCloseAutoFocus?: ComponentProps<typeof DialogPrimitive.Content>['onCloseAutoFocus'];
+  onEscapeKeyDown?: ComponentProps<typeof DialogPrimitive.Content>['onEscapeKeyDown'];
 };
 
 export function Dialog({
@@ -16,6 +17,7 @@ export function Dialog({
   footer,
   className = '',
   onCloseAutoFocus,
+  onEscapeKeyDown,
   ...rootProps
 }: DialogProps) {
   const { t } = useTranslation();
@@ -33,6 +35,7 @@ export function Dialog({
         <DialogPrimitive.Overlay className="dialog-overlay" />
         <DialogPrimitive.Content
           className={`dialog-surface ${className}`.trim()}
+          onEscapeKeyDown={onEscapeKeyDown}
           onCloseAutoFocus={(event) => {
             onCloseAutoFocus?.(event);
             if (event.defaultPrevented) return;
