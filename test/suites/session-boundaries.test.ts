@@ -403,7 +403,7 @@ test('Session close, history deletion and process cancellation preserve writer o
       const matches = f.store.readCatalog().entries.flatMap((entry: any) => f.store.readWorkspace(entry.workspaceId).manifest.conversations.map((record: any) => ({ cwd: entry.path, record }))).filter((item: any) => item.record.id === f.id);
       assert.equal(matches.length, 1); assert.equal(matches[0].cwd, toPosixPath(owner)); assert.equal(matches[0].record.name, 'Keep this conversation');
       assert.equal(fs.readFileSync(f.privateFile(owner), 'utf8'), '{"keep":true}'); assert.deepEqual(pendingWorkspaceTransfers(f.data), []);
-      if (!f.empty) { const bytes = fs.readFileSync(f.history, 'utf8'), end = bytes.indexOf('\n'); assert.equal(bytes.slice(end + 1), f.body); assert.equal(JSON.parse(bytes.slice(0, end)).cwd, toPosixPath(owner)); }
+      if (!f.empty) { const bytes = fs.readFileSync(f.history, 'utf8'), end = bytes.indexOf('\n'); assert.equal(bytes.slice(end + 1), f.body); assert.equal(toPosixPath(JSON.parse(bytes.slice(0, end)).cwd), toPosixPath(owner)); }
     };
     for (const point of ['before-target', 'before-header', 'before-source', 'after-source', 'cleanup', 'clear-intent']) {
       const f = await fixture(), edit = f.store.editWorkspace.bind(f.store), relocate = f.store.relocateHistory.bind(f.store), rm = fs.rmSync;
