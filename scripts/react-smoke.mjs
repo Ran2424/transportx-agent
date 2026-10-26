@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import net from 'node:net';
 import fs from 'node:fs';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
