@@ -311,6 +311,42 @@ export function recordAttachmentMessageRefs(cwd: string, conversationId: string,
   } finally { release(); }
 }
 
+export function conversationAttachmentIds(cwd: string, conversationId: string) {
+  const ids = new Set(readIndex(cwd).attachments.filter((attachment) => attachment.sourceConversationId === conversationId).map((attachment) => attachment.id));
+  for (const ref of readAttachmentMessageRefs(cwd, conversationId)) for (const id of ref.attachmentIds) ids.add(id);
+  return [...ids];
+}
+
+/** Copies only the attachment versions that belong to the moved conversation. */
+export function copySessionAttachments(sourceCwd: string, targetCwd: string, ids: string[]) {
+  if (!ids.length) return;
+  const source = readIndex(sourceCwd), target = readIndex(targetCwd);
+  fs.mkdirSync(sessionAttachmentsDir(targetCwd), { recursive: true, mode: 0o700 });
+  let changed = false;
+  for (const id of new Set(ids)) {
+    const attachment = source.attachments.find((item) => item.id === id);
+    if (!attachment) continue;
+    const existing = target.attachments.find((item) => item.id === id);
+    if (existing) {
+      if (existing.sha256 !== attachment.sha256 || existing.relativePath !== attachment.relativePath) throw error('Attachment identity conflicts with the target workspace.', 409);
+      continue;
+    }
+    const file = resolveReadyAttachment(sourceCwd, attachment);
+    const destination = path.resolve(targetCwd, attachment.relativePath);
+    ensureWithin(sessionAttachmentsDir(targetCwd), destination);
+    fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
+    try { fs.copyFileSync(file, destination, fs.constants.COPYFILE_EXCL); }
+    catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
+      const hash = crypto.createHash('sha256').update(fs.readFileSync(destination)).digest('hex');
+      if (hash !== attachment.sha256) throw error('Attachment target file conflicts with the moved conversation.', 409);
+    }
+    target.attachments.push({ ...attachment, sourceConversationId: attachment.sourceConversationId ?? null });
+    changed = true;
+  }
+  if (changed) writeIndex(targetCwd, target);
+}
+
 export function applyAttachmentMessageRefs(entries: JsonRecordLike[], refs: AttachmentMessageRef[]) {
   const byTimestamp = new Map(refs.filter((ref) => ref.timestamp !== undefined).map((ref) => [String(ref.timestamp), ref.attachmentIds]));
   return entries.map((entry) => {

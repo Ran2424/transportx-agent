@@ -108,7 +108,7 @@ Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`san
 
 Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一个 Agent Host。
 
-`workspace-host.ts` 与 `workspace-api.ts` 是持久工作区/会话的公开入口。`workspaceId` 标识共享目录，`conversationId` 标识历史、冻结计划和私有状态，Pi 的 `id` 只标识当前运行实例。创建保存记录和计划，不启动 Pi；读取 Snapshot 不要求运行实例。激活先校验目标计划与已知模型是否可用，再经 `ConversationRuntime` 与 `WorkspaceRuntimeGate` 取得排他权；忙碌、压缩、队列或交互不能静默丢弃。实际进程与作业停止、状态提交确认后才释放租约。
+`workspace-host.ts` 与 `workspace-api.ts` 是持久工作区/会话的公开入口。`workspaceId` 标识共享目录，`conversationId` 标识历史、冻结计划和私有状态，Pi 的 `id` 只标识当前运行实例。创建保存记录和计划，不启动 Pi；读取 Snapshot 不要求运行实例。激活先校验目标计划与已知模型是否可用，再经 `ConversationRuntime` 与 `WorkspaceRuntimeGate` 取得排他权；忙碌、压缩、队列或交互不能静默丢弃。实际进程与作业停止、状态提交确认后才释放租约。`workspace-transfer.ts` 只负责会话跨工作区移动：standalone catalog 条目及其独立目录不出现在工作区分组中；Pi 历史保留原 history key，仅重写核验过的 header cwd，冻结计划只改 `workspace`，目标记录先提交、来源后移除，异常中断按 header 归属回收重复记录。
 
 公开接口使用 `/api/workspaces`、`/api/conversations` 与 `/api/migration`；文件、附件和领域资源使用 `/api/conversations/:conversationId/...`。旧 live 列表、路径恢复、按路径删除与通用文件路由已移除。内部 Extension token 通道、RPC 与事件仍携带实际 live ID，Host 复核其持久绑定与当前租约。高级服务无法证明当前计划/资产/发布归属时拒绝读取，不能用共享 cwd 或旧 live ID 授权。
 

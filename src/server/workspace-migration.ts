@@ -8,6 +8,7 @@ import {
 import { WorkspaceStore, workspaceMetadataPath, workspaceCreationDigest } from './workspace-store.js';
 import { acquireWriteLease, assertHostWriter, readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 import { isWithin, relativePosixPath, toPosixPath } from './util/path.js';
+import { pendingWorkspaceTransfers } from './workspace-transfer.js';
 
 const failure = (code: string, message: string, details: object = {}) => Object.assign(new Error(message), { code, status: 409, ...details });
 const uuid = () => crypto.randomUUID();
@@ -73,7 +74,9 @@ export class WorkspaceMigration {
   private fault: Error | null = null;
   private initializing: Promise<WorkspaceMigrationStateV1> | null = null;
   private heldWriter: ReturnType<typeof acquireWriteLease> | null = null;
-  constructor(readonly store: WorkspaceStore, input: { agentDir: string; workspaceRoots: string[] }) {
+  private recoverTransfers?: () => Promise<void>;
+  constructor(readonly store: WorkspaceStore, input: { agentDir: string; workspaceRoots: string[]; recoverTransfers?: () => Promise<void> }) {
+    this.recoverTransfers = input.recoverTransfers;
     this.scope = { userData: location(store.userDataDirectory), agentDir: location(input.agentDir), sessionsDirectory: location(store.sessionsDirectory), workspaceRoots: [...new Set(input.workspaceRoots.map(location))].sort() };
     this.directory = path.join(this.scope.userData, 'migrations/workspace-v1');
     this.stateFile = path.join(this.directory, 'state.json');
@@ -155,6 +158,9 @@ export class WorkspaceMigration {
     let release: ReturnType<typeof acquireWriteLease> | undefined, retainWriter = false;
     try {
       release = this.writer(); this.fault = null;
+      // Reconcile durable move intents before catalog uniqueness checks. A
+      // crash may legitimately leave one conversation in both manifests.
+      await this.recoverTransfers?.();
       if (!fs.existsSync(this.stateFile) && fs.existsSync(`${this.stateFile}.bak`)) throw failure('metadata_corrupt', 'Migration inventory is missing but its backup exists. Explicit verified recovery is required.');
       let prior: WorkspaceMigrationStateV1 | null = null;
       if (fs.existsSync(this.stateFile)) {
@@ -316,6 +322,7 @@ export class WorkspaceMigration {
     try {
       if (this.fault) throw this.fault;
       this.assertWriter();
+      if (pendingWorkspaceTransfers(this.scope.userData).length) return { dataState: 'initializing' as const, phase: 'inventory' as const, pending: null, blocked: null, report: toPosixPath(this.reportFile), code: 'workspace_transfer_pending', message: 'A conversation move must finish recovery before business writes.' };
       const state = this.read(); this.store.readCatalog();
       const inventoryWriter = fs.existsSync(path.join(this.directory, 'coordinator.transportx-lock'));
       if (inventoryWriter && state.systemReadiness === 'ready') return { dataState: 'initializing' as const, phase: 'inventory' as const, pending: null, blocked: null, report: state.report, code: 'writer_busy', message: 'Global inventory Writer has not confirmed its release. Retry inventory after its owner finishes or resolves the write failure.' };
@@ -330,7 +337,7 @@ export class WorkspaceMigration {
     this.assertSystemReady();
     const state = this.read();
     const entry = this.store.readCatalog().entries.find((entry) => entry.workspaceId === workspaceId);
-    if (entry?.creationRequestId === null && !withinWorkspaceRoots(entry.path, state.scopes)) throw failure('workspace_out_of_scope', 'This legacy directory is outside the configured application workspace roots.');
+    if (entry?.creationRequestId === null && entry.kind !== 'standalone' && !withinWorkspaceRoots(entry.path, state.scopes)) throw failure('workspace_out_of_scope', 'This legacy directory is outside the configured application workspace roots.');
     const own = state.items.find((item) => item.workspaceId === workspaceId);
     if (own && own.state !== 'ready') throw failure('workspace_migration_required', 'Workspace migration is incomplete.', { itemId: own.id, report: own.report || state.report });
     const { directory, manifest } = this.store.readWorkspace(workspaceId);

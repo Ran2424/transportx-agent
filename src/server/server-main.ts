@@ -56,6 +56,7 @@ import { WorkspaceRuntimeGate } from './workspace-runtime.js';
 import { WorkspaceService } from './workspace-service.js';
 import { ConversationRuntime } from './conversation-runtime.js';
 import { WorkspaceDeletion } from './workspace-deletion.js';
+import { WorkspaceTransfer } from './workspace-transfer.js';
 import { WorkspaceHost } from './workspace-host.js';
 import { removeExecutionMetadata } from './util/execution-owner.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
@@ -103,7 +104,7 @@ const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (response) => response.delivery === 'unknown');
 const updatePreparation = new UpdatePreparation();
 const workspaceStore = new WorkspaceStore(APP_PATHS.userDataDir, SESSIONS_DIR);
-const workspaceMigration = new WorkspaceMigration(workspaceStore, { agentDir: PI_AGENT_DIR, workspaceRoots: [...new Set([APP_PATHS.scenarioDir, TAU_SETTINGS.projectsDir].filter((value): value is string => !!value))] });
+const workspaceMigration = new WorkspaceMigration(workspaceStore, { agentDir: PI_AGENT_DIR, workspaceRoots: [...new Set([APP_PATHS.scenarioDir, TAU_SETTINGS.projectsDir].filter((value): value is string => !!value))], recoverTransfers: () => workspaceTransfer.recover() });
 const workspaceGate = new WorkspaceRuntimeGate(PYTHON_EXECUTABLE.command, APP_PATHS.logsDir, process.env.TAU_RUNTIME_COORDINATION_DIR ? path.resolve(process.env.TAU_RUNTIME_COORDINATION_DIR) : undefined);
 const migrationRunner = new WorkspaceMigrationRunner(workspaceMigration, workspaceGate, PYTHON_EXECUTABLE.command);
 const assembleWorkspacePlan = (configuration: { domainId: string; profile: import('../contracts/index.js').SessionProfileV1 }, directory: string) => sessionAssemblerForProfile(configuration.profile).assemble(configuration.domainId, directory, configuration.profile);
@@ -114,7 +115,8 @@ const validateWorkspaceModel = async (spec: string) => {
 const conversationRuntime = new ConversationRuntime({ store: workspaceStore, sessions: liveManager, gate: workspaceGate, assertReady: (id) => workspaceMigration.assertWorkspaceReady(id), verifyPlan: async (plan, directory, modelSpec) => { const verified = SESSION_ASSEMBLER.verify(plan, directory); if (modelSpec) await validateWorkspaceModel(modelSpec); return verified; } });
 const workspaceCreation = new WorkspaceService({ store: workspaceStore, defaultParentDirectory: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir, expandHome, assemble: assembleWorkspacePlan, validateModel: validateWorkspaceModel, assertReady: (id) => id ? workspaceMigration.assertWorkspaceReady(id) : workspaceMigration.assertSystemReady(), assertAllocationAllowed: (directory) => workspaceMigration.assertAllocationAllowed(directory) });
 const workspaceDeletion = new WorkspaceDeletion({ store: workspaceStore, gate: workspaceGate, runtime: conversationRuntime, pythonCommand: PYTHON_EXECUTABLE.command, assertReady: (id) => workspaceMigration.assertWorkspaceReady(id), assertSystemReady: () => workspaceMigration.assertSystemReady(), historyDirectories: () => workspaceMigration.read().scopes.map((scope) => scope.sessionsDirectory), cleanupInvocations: (context) => removeExecutionMetadata(['cad', 'spatial'].map((kind) => path.join(PI_AGENT_DIR, 'executions', kind)), context, SESSIONS_DIR), verifyWorkspace: resolveSessionWorkspaceForDeletion, removeWorkspace: removeSessionWorkingDirectory });
-const workspaceHost = new WorkspaceHost({ store: workspaceStore, migration: workspaceMigration, runner: migrationRunner, gate: workspaceGate, runtime: conversationRuntime, creation: workspaceCreation, deletion: workspaceDeletion, sessions: liveManager, assemble: assembleWorkspacePlan, validateModel: validateWorkspaceModel, beginOperation: () => updatePreparation.beginOperation() });
+const workspaceTransfer = new WorkspaceTransfer({ store: workspaceStore, runtime: conversationRuntime, gate: workspaceGate, assertSystemReady: () => workspaceMigration.assertSystemReady(), assertWorkspaceReady: (id) => workspaceMigration.assertWorkspaceReady(id) });
+const workspaceHost = new WorkspaceHost({ store: workspaceStore, migration: workspaceMigration, runner: migrationRunner, gate: workspaceGate, runtime: conversationRuntime, creation: workspaceCreation, deletion: workspaceDeletion, transfer: workspaceTransfer, sessions: liveManager, assemble: assembleWorkspacePlan, validateModel: validateWorkspaceModel, beginOperation: () => updatePreparation.beginOperation() });
 const rpcHandlers: RpcHandlerRegistry = {
   ...createPlatformRpcHandlers(currentPlatformOverview, async () => { fs.mkdirSync(APP_PATHS.logsDir, { recursive: true }); await openNativeTarget(APP_PATHS.logsDir); }, async (moduleId) => {
     if (PROJECT_AUTH || !isLoopbackHost(HOST)) throw new Error('Module folders can only be opened on the local workstation');

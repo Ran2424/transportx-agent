@@ -125,6 +125,7 @@ export class WorkspaceDeletion {
   workspace(id: string, input: Input) {
     this.input(input); this.options.assertSystemReady();
     const initial = this.entry(id);
+    if (initial.kind === 'standalone') throw failure('workspace_system_managed', 'Standalone conversation storage is managed by conversation moves, not workspace deletion.');
     if (initial.deletion && initial.deletion.requestId !== input.requestId) throw failure('workspace_revision_conflict', 'A different request owns this workspace deletion.');
     if (initial.state === 'deleted') return this.leases.has(id) ? this.options.runtime.withWorkspaceStopped(initial.path, true, () => this.withLease(initial.path, id, async () => initial)) : Promise.resolve(initial);
     if (!initial.deletion) this.options.assertReady(id);

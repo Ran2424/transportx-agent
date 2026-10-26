@@ -77,6 +77,8 @@ export class WorkspaceRuntimeLease {
     });
   }
   private releaseStopped() { this.active = false; leases.delete(this.directory); this.release(); }
+  /** Persist stop while retaining exclusion until a move's final intent removal. */
+  checkpointStopped() { this.recordStopped(); }
   finish() { this.recordStopped(); this.releaseStopped(); }
   async finishWithCommit<T>(commit: () => Promise<T>) {
     this.change((record) => { if (record.processes.some((item) => item.state !== 'stopped')) throw failure('Pi or managed process stop is not confirmed.'); record.phase = 'stopping'; });

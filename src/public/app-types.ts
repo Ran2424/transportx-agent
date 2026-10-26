@@ -107,6 +107,8 @@ export type WorkspaceView = {
   defaults: import('../contracts/workspace.js').WorkspaceDefaultsV1 | null;
   conversations: Array<{ record: import('../contracts/workspace.js').ConversationRecordV1; runtime: LiveSession | null; lastConversationAt: string | null; hasMessages?: boolean | null }>;
   availability: 'ready' | 'blocked' | 'isolated' | 'deleting';
+  /** Standalone workspaces hold conversations that were moved out of ordinary workspaces. */
+  kind?: 'workspace' | 'standalone';
   migrationItemId: string | null;
   error: { code: string; message: string } | null;
   deletion?: import('../contracts/workspace.js').WorkspaceCatalogEntryV1['deletion'];

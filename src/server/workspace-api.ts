@@ -38,6 +38,7 @@ export function registerWorkspaceApi<T extends Services>(router: ServerRouter<T>
     .get(/^\/api\/conversations\/([^/]+)\/(?:snapshot|history)$/, endpoint((context) => context.deps.workspaces.snapshot(id(context))))
     .post(/^\/api\/conversations\/([^/]+)\/activate$/, endpoint(async (context) => context.deps.workspaces.activate(id(context), await readInput(context.req, context.deps))))
     .post(/^\/api\/conversations\/([^/]+)\/close$/, endpoint(async (context) => { const body = await readInput(context.req, context.deps); return context.deps.workspaces.options.runtime.close(id(context), body.stopCurrent === true); }))
+    .post(/^\/api\/conversations\/([^/]+)\/move$/, endpoint(async (context) => context.deps.workspaces.moveConversation(id(context), await readInput(context.req, context.deps))))
     .patch(/^\/api\/conversations\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.renameConversation(id(context), await readInput(context.req, context.deps))))
     .delete(/^\/api\/conversations\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.options.deletion.conversation(id(context), await readInput(context.req, context.deps) as never)))
     .post(/^\/api\/workspaces\/([^/]+)\/delete$/, endpoint(async (context) => context.deps.workspaces.options.deletion.workspace(id(context), await readInput(context.req, context.deps) as never)))
