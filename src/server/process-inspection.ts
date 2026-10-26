@@ -70,7 +70,7 @@ export async function stopRecordedProcess(identity: ProcessIdentity, pythonComma
   throw Object.assign(new Error('Recorded process stop could not be confirmed.'), { code: 'process_stop_unconfirmed', status: 503 });
 }
 
-/** Legacy processes have no spawn journal. Observing cwd does not authorize stopping them. */
+/** Legacy processes have no spawn journal. Only a confirmed workspace cwd blocks migration/deletion. */
 export async function workspaceProcessInventory(directory: string, pythonCommand: string) {
   const target = fs.realpathSync(directory);
   const output = await new Promise<string>((resolve, reject) => execFile(pythonCommand, ['-c', hostPlatform.processInspection.workspaceScript, String(process.pid)], { encoding: 'utf8', timeout: 20000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', LC_ALL: 'C', LANG: 'C' } }, (error, stdout) => error ? reject(Object.assign(new Error('Workspace process inventory is unavailable.'), { code: 'process_stop_unconfirmed', status: 409 })) : resolve(stdout)));
@@ -81,7 +81,11 @@ export async function workspaceProcessInventory(directory: string, pythonCommand
     if (entry.pid === process.pid) continue;
     let cwd: string | null = null;
     if (entry.cwd) { try { cwd = fs.realpathSync(entry.cwd); } catch {} }
-    if (cwd && !isWithin(target, cwd)) continue;
+    // Only a confirmed cwd inside the workspace establishes legacy membership. Linux also
+    // reports unrelated same-user processes that hide or lose their cwd; treating those as
+    // members blocks every workspace operation on the host. App-owned processes remain covered
+    // by their recorded runtime identity instead of this legacy inventory.
+    if (!cwd || !isWithin(target, cwd)) continue;
     const observation = inspectProcess(entry.pid, pythonCommand);
     if (observation.state === 'exited') continue;
     processes.push({ pid: entry.pid, cwd: cwd ? toPosixPath(cwd) : null, observation });
