@@ -787,8 +787,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .tool-read-open { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 5px 8px; border: 1px solid var(--border-default); border-radius: 5px; color: var(--text-secondary); background: var(--surface-default); cursor: pointer; font-size: 11px; }
 .tool-read-open:hover, .tool-read-open:focus-visible { border-color: var(--selection-border); color: var(--selection-fg); background: var(--selection-bg); outline: 0; }
 .tool-read-unavailable { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 11px; }
-.conversation-empty { padding: 15vh 20px; text-align: center; }
-.conversation-empty-mark { width: 64px; height: 64px; color: var(--selection-fg); }
+.conversation-empty { padding: clamp(40px, 10vh, 100px) 24px; text-align: center; }
+.conversation-empty-mark { width: 52px; height: 52px; color: var(--selection-fg); }
 .conversation-empty h1 { margin: 16px 0 8px; font: 400 30px/1.1 var(--tx-font-display); }
 .conversation-empty p { max-width: 350px; margin: auto; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
 .conversation-composer { width: calc(100% - 44px); max-width: var(--conversation-content-max-width); margin: 0 auto; padding: 14px 0 16px; }
@@ -1430,12 +1430,9 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .conversation-persistent-stage { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .conversation-persistent-stage > .conversation-workspace { flex: 1; min-height: 0; }
 .conversation-offline-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: 12px; }
-.conversation-plan-source { padding: 4px 16px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
 .migration-dialog { width: min(860px, 94vw); }
 .migration-source-list article, .migration-report article { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border-default); font-size: 12px; overflow-wrap: anywhere; }
 .migration-report pre { max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 11px; }
 
-.conversation-start-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; max-width: 520px; margin-top: 18px; }
-.conversation-start-actions button { padding: 8px 12px; border: 1px solid var(--border-default); border-radius: var(--tx-radius-md); color: var(--text-secondary); background: var(--surface-default); font-size: 12px; cursor: pointer; }
-.conversation-start-actions button:hover { color: var(--text-primary); background: var(--surface-hover); }
-.conversation-start-actions button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.composer-plan-source { color: var(--text-tertiary); font-size: 11px; cursor: help; }
+.composer-start-status { color: var(--text-secondary); font-size: 11px; }

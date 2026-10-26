@@ -244,7 +244,7 @@ Pi.prototype.handleEvent = function(event) {
   const restored = await json(`${route}/snapshot`); assert.equal(restored.conversation.name, '离线改名'); assert.equal(restored.runtime, null); assert.equal(restored.conversation.history.key, original.conversation.history.key); assert.deepEqual(fs.readFileSync(file), bytes);
   assert.equal(rows(restored.snapshot, 'user').length, 2); assert.equal(rows(restored.snapshot, 'assistant').length, 2);
   await page.goto(endpoint, { waitUntil: 'networkidle' }); await page.evaluate((id) => localStorage.setItem('tau-active-conversation-id', id), id); await page.reload({ waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: '激活此会话', exact: true }).click(); await composer.waitFor();
+  await composer.waitFor();
   await composer.fill('你好'); await page.getByRole('button', { name: '发送消息', exact: true }).click(); await settled(3);
   assert.equal(header(file).id, nativeId); await page.reload({ waitUntil: 'networkidle' }); await until(async () => await page.getByText('你好', { exact: true }).count() === 3, 'three identical greetings survive restart and reload'); assert.deepEqual(uiErrors, []);
   assert.deepEqual(fs.readFileSync(file).subarray(0, bytes.length), bytes, 'legacy recovery and the third turn retain every prior Native byte');

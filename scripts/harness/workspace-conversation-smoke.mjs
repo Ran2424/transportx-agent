@@ -56,33 +56,48 @@ try {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.locator('.workspace-group-heading').filter({ hasText: '整改冒烟工作区' }).waitFor();
     await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
-    await page.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
+    await page.getByLabel('消息输入').waitFor();
     assert.equal((await req('/api/health')).data.liveSessionCount, 0, 'history browsing never spawns Pi');
-    await page.getByRole('button', { name: '激活此会话', exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('.conversation-offline-bar'));
-    const activeA = (await req(`/api/conversations/${a}/snapshot`)).data.runtime.id;
     assert.equal((await req(`/api/workspaces/${ws}`)).data.conversations.find(item => item.record.id === a).lastConversationAt, null, 'activation does not manufacture message activity');
     assert.equal((await req(`/api/conversations/${a}/close`, { filePath: 'old-session.jsonl' })).status, 400, 'legacy path input is rejected even with a current protocol header');
     const composer = page.getByLabel('消息输入');
+    let activationCalls = 0, releaseActivation;
+    const activationHold = new Promise(resolve => { releaseActivation = resolve; });
+    const firstActivation = async route => { activationCalls++; const response = await route.fetch(); await activationHold; await route.fulfill({ response }); };
+    await page.route(`**/api/conversations/${a}/activate`, firstActivation);
     await composer.fill('工作区会话测试');
+    assert.equal(await page.getByRole('button', { name: '激活此会话', exact: true }).count(), 0);
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    await page.locator('.composer-start-status').waitFor();
+    await composer.fill('保留后续草稿'); await composer.press('Enter');
+    releaseActivation();
+    await page.waitForFunction(() => !document.querySelector('.composer-start-status'));
+    await page.unroute(`**/api/conversations/${a}/activate`, firstActivation);
+    assert.equal(activationCalls, 1); assert.equal(await composer.inputValue(), '保留后续草稿');
+    const activeA = (await req(`/api/conversations/${a}/snapshot`)).data.runtime.id;
     await page.waitForTimeout(100);
     await page.locator('.session-row').filter({ hasText: '会话 B' }).click();
-    await page.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
+    await page.getByLabel('消息输入').waitFor();
+    page.once('dialog', dialog => dialog.dismiss());
+    await composer.fill('占用时保留草稿'); await composer.press('Enter');
+    await page.locator('.composer-error').waitFor();
+    assert.equal(await composer.inputValue(), '占用时保留草稿');
+    assert.equal((await req(`/api/conversations/${a}/snapshot`)).data.runtime.id, activeA, 'cancelled switching does not stop the running conversation');
     const occupied = await req(`/api/conversations/${b}/activate`, {});
     assert.equal(occupied.status, 409, JSON.stringify(occupied));
     assert.equal(occupied.data.code, 'workspace_busy');
     assert.equal((await req(`/api/conversations/${a}/snapshot`)).data.runtime.id, activeA);
     assert.equal((await req(`/api/conversations/${a}/close`, { stopCurrent: true })).status, 200);
-    await page.getByRole('button', { name: '激活此会话', exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('.conversation-offline-bar'));
+    await composer.fill('会话 B 自动启动');
+    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.composer-start-status'));
     const activeB = (await req(`/api/conversations/${b}/snapshot`)).data.runtime.id;
     assert.notEqual(activeB, activeA);
     assert.equal((await req(`/api/conversations/${b}/close`, { stopCurrent: true })).status, 200);
     assert.equal((await req('/api/health')).data.liveSessionCount, 0);
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
-    await page.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
+    await page.getByLabel('消息输入').waitFor();
     assert.equal((await req('/api/health')).data.liveSessionCount, 0);
     const independent = await req('/api/conversations', { ...input, requestId: crypto.randomUUID(), workspace: { kind: 'new', name: '独立运行工作区' }, name: '会话 C' });
     const c = independent.data.conversation.id;
@@ -129,13 +144,27 @@ try {
     await page.reload({ waitUntil: 'networkidle' });
     const restoredLink = page.getByRole('link', { name: '历史报告', exact: true });
     await restoredLink.waitFor();
-    await page.getByText('原计划缺失；激活前需确认当前配置', { exact: true }).waitFor();
+    await page.getByTitle('原计划缺失；发送前需确认当前配置', { exact: true }).waitFor();
     assert.ok((await restoredLink.getAttribute('href')).includes(`/api/conversations/${legacyRecord.id}/files/raw?`));
     await page.waitForFunction(() => { const image = document.querySelector('img[alt="历史图像"]'); return image?.complete && image.naturalWidth === 8; });
     assert.ok((await page.getByText('外部工作区 (旧资源链接不可用)', { exact: false }).count()) > 0);
     assert.equal(legacyRequests.filter((url) => /^\/api\/(live-sessions|sessions|session-history|file|files)(?:\/|$)/.test(url)).length, 0);
     assert.deepEqual(fs.readFileSync(ready.resumeFile), nativeBytes);
     assert.equal((await req('/api/health')).data.liveSessionCount, 1, 'historical links do not start the offline conversation or stop C');
+    // Missing plans require explicit confirmation on first send; cancelling keeps history and draft intact.
+    await composer.fill('取消配置确认后保留的草稿'); await composer.press('Enter');
+    const configuration = page.getByRole('dialog', { name: '确认历史会话配置', exact: true });
+    await configuration.getByRole('button', { name: '取消', exact: true }).click();
+    await page.locator('.composer-error').waitFor();
+    assert.equal(await composer.inputValue(), '取消配置确认后保留的草稿');
+    assert.deepEqual(fs.readFileSync(ready.resumeFile), nativeBytes);
+    await composer.fill('确认配置后只发送一次'); await composer.press('Enter');
+    await configuration.getByRole('button', { name: '确认并发送', exact: true }).click();
+    await configuration.waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => !document.querySelector('.composer-start-status'));
+    const confirmed = (await req(`/api/conversations/${legacyRecord.id}/snapshot`)).data;
+    assert.equal(confirmed.snapshot.entries.filter(entry => entry.message?.role === 'user' && entry.message.content?.some?.(part => part.text === '确认配置后只发送一次')).length, 1);
+    await req(`/api/conversations/${legacyRecord.id}/close`, { stopCurrent: true });
     // The existing-folder form uses the exact project root and leaves all original files intact.
     const projectDirectory = path.join(root, '已有项目 空格'); fs.mkdirSync(projectDirectory);
     const sourceBytes = Buffer.from('road,flow\n既有路段,88\n'); fs.writeFileSync(path.join(projectDirectory, 'source.csv'), sourceBytes);
@@ -172,6 +201,7 @@ try {
     const opening = page.waitForResponse(response => new URL(response.url()).pathname === '/api/conversations' && response.request().method() === 'POST');
     await createDialog.getByRole('button', { name: '进入工作区', exact: true }).click();
     const folderResponse = await opening, openedFolder = await folderResponse.json();
+    await createDialog.waitFor({ state: 'hidden' });
     assert.equal(folderResponse.status(), 200, JSON.stringify(openedFolder));
     assert.equal(openedFolder.directory, fs.realpathSync(projectDirectory));
     const folderConversation = openedFolder.conversation.id, folderWorkspace = openedFolder.manifest.id;
@@ -181,6 +211,12 @@ try {
     assert.equal((await req('/api/workspaces/' + folderWorkspace)).data.directoryOwnership, 'external');
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('.workspace-group-heading').filter({ hasText: '已有项目 空格' }).waitFor();
+    await page.locator('.conversation-empty').waitFor();
+    assert.equal(await page.locator('.conversation-start-actions').count(), 0, 'empty state has no introduction/navigation cards');
+    for (const theme of ['light', 'dark', 'sand']) {
+      await page.evaluate(value => document.documentElement.setAttribute('data-theme', value), theme);
+      await page.screenshot({ path: `.plans/workspace-conversations/conversation-start-${theme}.png`, animations: 'disabled' });
+    }
     const deleteFolder = await req(`/api/workspaces/${folderWorkspace}/delete`, { requestId: crypto.randomUUID(), expectedRevision: openedFolder.manifest.revision, confirm: true });
     assert.equal(deleteFolder.status, 409);
     assert.equal(deleteFolder.data.code, 'workspace_directory_external');
@@ -191,6 +227,29 @@ try {
     await createDialog.getByLabel('项目文件夹路径', { exact: true }).fill(openedFolder.directory);
     await page.getByRole('dialog', { name: '新建会话', exact: true }).getByText('已有项目 空格', { exact: true }).waitFor();
     await page.getByRole('dialog', { name: '新建会话', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
+    // Startup errors and a late activation response never consume or misroute the draft.
+    let startupCalls = 0, releaseLate, activationFetched, activationFinished, abandonedActivation = false;
+    const fetchedActivation = new Promise(resolve => { activationFetched = resolve; });
+    const finishedActivation = new Promise(resolve => { activationFinished = resolve; });
+    const lateHold = new Promise(resolve => { releaseLate = resolve; });
+    const startupRoute = async route => { startupCalls++; if (startupCalls === 1) { await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'test activation failed' }) }); return; } const response = await route.fetch(); activationFetched(); await lateHold; try { await route.fulfill({ response }); } catch (error) { if (!abandonedActivation || !/already handled|aborted|closed/i.test(error.message)) throw error; } finally { activationFinished(); } };
+    await page.route(`**/api/conversations/${folderConversation}/activate`, startupRoute);
+    const folderRow = page.locator('.workspace-group').filter({ has: page.locator('.workspace-group-heading', { hasText: '已有项目 空格' }) }).locator('.session-row').first();
+    await folderRow.click(); await composer.fill('首次发送自动启动'); await composer.press('Enter');
+    await page.locator('.composer-error').filter({ hasText: 'test activation failed' }).waitFor();
+    assert.equal(await composer.inputValue(), '首次发送自动启动');
+    await composer.press('Enter'); await page.locator('.composer-start-status').waitFor();
+    await fetchedActivation; abandonedActivation = true;
+    await page.locator('.session-row').filter({ hasText: '会话 A' }).click(); releaseLate();
+    await finishedActivation;
+    assert.equal((await req(`/api/conversations/${folderConversation}/snapshot`)).data.snapshot.entries.filter(entry => entry.message?.role === 'user').length, 0);
+    assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')), a);
+    await page.unroute(`**/api/conversations/${folderConversation}/activate`, startupRoute);
+    await folderRow.click(); assert.equal(await composer.inputValue(), '首次发送自动启动'); await composer.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.composer-start-status'));
+    assert.equal(startupCalls, 2);
+    assert.equal((await req(`/api/conversations/${folderConversation}/snapshot`)).data.snapshot.entries.filter(entry => entry.message?.role === 'user').length, 1);
+    await req(`/api/conversations/${folderConversation}/close`, { stopCurrent: true });
     // Contextual + creates once with inherited configuration and does not open a modal or Pi.
     let folderView = (await req(`/api/workspaces/${folderWorkspace}`)).data;
     const defaults = { ...folderView.defaults, profile: { ...folderView.defaults.profile, task: { ...folderView.defaults.profile.task, spatialScope: { label: '原项目范围' }, timeRange: { start: '2026-10-26T09:00', end: '2026-10-26T10:00', timezone: 'Europe/London' } } } };
@@ -215,9 +274,7 @@ try {
     assert.equal((await req('/api/health')).data.liveSessionCount, 1, 'quick creation saves without starting another Pi');
     assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')), a, 'a late quick-create response cannot replace a newer user selection');
     await page.locator('.workspace-group').filter({ has: page.locator('.workspace-group-heading', { hasText: '已有项目 空格' }) }).locator('.session-row').filter({ hasText: quickResponse.conversation.name }).click();
-    await page.getByRole('button', { name: '探索项目数据', exact: true }).click();
-    assert.match(await page.getByLabel('消息输入').inputValue(), /交通分析/);
-    assert.equal((await req(`/api/conversations/${quickResponse.conversation.id}/snapshot`)).data.snapshot.entries.length, 0, 'analysis suggestions only fill the draft');
+    assert.equal((await req(`/api/conversations/${quickResponse.conversation.id}/snapshot`)).data.snapshot.entries.length, 0, 'opening an empty conversation does not activate it or send a message');
 
     // A committed request whose response is lost retries the identical request ID.
     const beforeLoss = (await req(`/api/workspaces/${folderWorkspace}`)).data;

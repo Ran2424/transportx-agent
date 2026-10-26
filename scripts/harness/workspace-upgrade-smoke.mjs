@@ -38,11 +38,9 @@ try {
   await form.getByLabel('工作区名称', { exact: true }).fill('异常源并存的新工作区');
   await form.getByLabel('会话名称（可选）', { exact: true }).fill('仍可工作的新会话');
   await form.getByRole('button', { name: '进入工作区', exact: true }).click();
-  await page.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
+  await page.getByLabel('消息输入').waitFor();
   const conversationId = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
   assert.ok(conversationId); assert.equal((await json('/api/health')).liveSessionCount, 0);
-  await page.getByRole('button', { name: '激活此会话', exact: true }).click();
-  await until(async () => (await json(`/api/conversations/${conversationId}/snapshot`)).runtime, 'new conversation activation beside a bad source');
   await page.getByLabel('消息输入').fill('基线-happy'); await page.getByRole('button', { name: '发送消息', exact: true }).click();
   await page.locator('.assistant-message', { hasText: '上海早高峰分析结果' }).waitFor();
   const saved = await json(`/api/conversations/${conversationId}/snapshot`);

@@ -7,8 +7,7 @@ import { messageText, messageThinking, messageThinkingDurationMs } from '../../.
 import type { CitationEnvelope } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
 import { useConversation, useSession, useSessionAttachments, useSessionCompacting, useToolExecutions } from '../../app/store-hooks';
-import { ConversationStart } from './ConversationStart';
-import { composerDraftStore } from './composer-draft-store';
+import { BrandMark } from '../../components/BrandMark';
 import { ConversationComposer } from './conversation-composer';
 import { CitationManager } from './citation-manager';
 import { AssistantMessage, UserMessage } from './message-cards';
@@ -18,7 +17,7 @@ import { projectTools } from './tool-projection';
 import { hostExecutionState } from './tool-card-utils';
 import { projectCitationText, projectMessageCitations } from '../../features/citation/citation-projection';
 
-export function ConversationWorkspace({ sessionId, showThinking, expandThinking }: { sessionId: string; showThinking: boolean; expandThinking: boolean }) {
+export function ConversationWorkspace({ sessionId, showThinking, expandThinking, onActivate }: { sessionId: string; showThinking: boolean; expandThinking: boolean; onActivate(id: string): Promise<void> }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const data = useConversation(sessionId);
@@ -112,12 +111,12 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking 
           if (message.role === 'user') return <UserMessage key={row.entry.id || `user-${row.index}`} message={message} sessionId={sessionId} attachments={attachments} projection={projection} resourceLinks={session?.resourceLinks} />;
           return <AssistantMessage resourceLinks={session?.resourceLinks} key={row.streaming ? 'live-assistant' : row.entry.id || row.index} message={message} streaming={row.streaming} showThinking={false} expandThinking={expandThinking} projection={projection} sessionId={sessionId} unconfirmedTool={unconfirmedRows.has(row.index)} onRetry={!data?.live.active && !unconfirmedRows.has(row.index) ? () => { if (messageOutcome(message)?.reason === 'output_limit') { setRetryDraft({ message: t('conversation.continueDraft') }); return; } const previous = entries.slice(0, row.index).reverse().find((entry) => entry.message?.role === 'user')?.message; if (previous) setRetryDraft({ message: messageText(previous) }); } : undefined} />;
         })}
-        {!entries.length && !rows.length ? <ConversationStart sessionId={sessionId} onDraft={message => { const current = composerDraftStore.getMessage(sessionId); setRetryDraft({ message: current ? `${current}\n\n${message}` : message }); }} /> : null}
+        {!entries.length && !rows.length ? <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div> : null}
         {data?.live.retry ? <div className="compaction-status" role="status">{t('conversation.retrying', { attempt: data.live.retry.attempt, max: data.live.retry.maxAttempts, seconds: Math.ceil(data.live.retry.delayMs / 1000) })}</div> : data?.live.outcome ? <div className="compaction-status" role="status">{t(`conversation.${data.live.outcome.status}`)}</div> : showThinking && pending && waitingVisible && !showLiveAssistant && toolProjection.liveOnly.length === 0 ? <ExecutionGroup activities={[]} sessionId={sessionId} running pending startedAt={data.live.runStartedAt} showThinking={false} expandThinking={false} /> : null}
         {compacting ? <div className="compaction-status" role="status"><i className="streaming-beacon" />{t('conversation.compacting')}</div> : null}
       </div>
     </div>
-    <ConversationComposer retryDraft={retryDraft} sessionId={sessionId} session={session} streaming={!!data?.live.active} compacting={compacting} queued={data?.live.queued || []} attachments={attachments} attachmentError={attachmentError} onReloadAttachments={reloadAttachments} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />
+    <ConversationComposer onActivate={onActivate} retryDraft={retryDraft} sessionId={sessionId} session={session} streaming={!!data?.live.active} compacting={compacting} queued={data?.live.queued || []} attachments={attachments} attachmentError={attachmentError} onReloadAttachments={reloadAttachments} onCitationEnvelope={setCitationEnvelope} onOpenCitationManager={() => setCitationManagerOpen(true)} />
     {citationManagerOpen ? <CitationManager sessionId={sessionId} onClose={() => setCitationManagerOpen(false)} /> : null}
   </main>;
 }

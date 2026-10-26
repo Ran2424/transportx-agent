@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { browserJson } from './harness/workspace-client.mjs';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -99,8 +100,9 @@ try {
     selectionMode: 'explicit', selected: [{ id: 'smoke.alpha', version: '2.0.0' }, { id: 'smoke.beta', version: '1.0.0' }],
   }, 'default module selection is submitted without changing the presentation');
 
-  await page.getByRole('button', { name: '激活此会话', exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector('.conversation-offline-bar'));
+  await dialog.waitFor({ state: 'hidden' });
+  const createdId = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
+  await browserJson(page, baseUrl, `/api/conversations/${createdId}/activate`, {});
   const composer = page.getByLabel('消息输入');
   await composer.waitFor();
   await capabilitySmoke(page);
