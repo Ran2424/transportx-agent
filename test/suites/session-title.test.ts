@@ -29,6 +29,10 @@ test('Titles are inferred and persisted once after Pi flushes its session header
       const manager = new LiveSessionManager();
       const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd: directory, sessionName: '课程设计' });
       manager.sessions.set(session.id, session);
+      assert.equal(session.setSessionName('Untitled'), false, 'legacy inferred placeholder names remain filtered');
+      const managed = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000002', workspaceId: 'ws_00000000-0000-4000-8000-000000000001', cwd: directory, sessionName: '用户原名' });
+      assert.equal(managed.setSessionName('Untitled'), true, 'a managed conversation accepts the explicit Manifest title');
+      assert.equal(managed.liveMetadata().sessionName, 'Untitled');
       // Pi revealed the session file but has not flushed yet: the name write must
       // not pre-create the file (Pi's first flush uses exclusive create).
       session.updateStateFromResponse({ data: { sessionFile: filePath } });

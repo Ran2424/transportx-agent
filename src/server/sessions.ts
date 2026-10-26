@@ -580,7 +580,8 @@ export class PiRpcSession {
 
   setSessionName(name: unknown) {
     const trimmed = String(name || '').trim();
-    if (!trimmed || isGenericSessionName(trimmed)) return false;
+    // Managed conversations use the user's Manifest title, including placeholders.
+    if (!trimmed || (!this.workspaceId && isGenericSessionName(trimmed))) return false;
     this.sessionName = trimmed;
     return true;
   }
