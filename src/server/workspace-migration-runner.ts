@@ -10,7 +10,7 @@ import { writeJsonAtomic, readJsonObject } from './util/json-storage.js';
 import { assertWorkspaceProcessesStopped } from './process-inspection.js';
 import { migrationSpaceRequirements, assertMigrationSpace } from './workspace-migration-space.js';
 import { planWorkspaceMigration, migrationFileVersion, migrationJsonBytes, migrationBytesHash, legacyMetadataPaths, type WorkspaceMigrationPlan, type MigrationWrite } from './workspace-migration-plan.js';
-import { toPosixPath, relativePosixPath } from './util/path.js';
+import { isWithin, toPosixPath, relativePosixPath } from './util/path.js';
 
 type Journal = Omit<WorkspaceMigrationPlan, 'writes'> & { writes: Array<Omit<MigrationWrite, 'value'> & { staged: string }> };
 const failure = (code: string, message: string) => Object.assign(new Error(message), { code, status: 409 });
@@ -130,30 +130,66 @@ export class WorkspaceMigrationRunner {
       if (current.revision !== input.expectedRevision) throw failure('workspace_revision_conflict', 'The isolated source changed. Refresh migration diagnostics before deleting it.');
       const catalogEntry = this.migration.store.readCatalog().entries.find((entry) => entry.workspaceId === current.workspaceId);
       if (catalogEntry) throw failure('invalid_migration_action', 'Published workspaces use the normal deletion lifecycle.');
-      if (fs.existsSync(current.path) && fs.lstatSync(current.path).isDirectory()) await assertWorkspaceProcessesStopped(current.path, this.pythonCommand);
-      if (current.kind === 'workspace') {
-        if (fs.existsSync(current.path)) {
-          const stat = fs.lstatSync(current.path);
-          if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(current.path) !== path.resolve(current.path)) throw failure('workspace_identity_conflict', 'The isolated workspace path is no longer its original canonical directory.');
-          await fs.promises.rm(current.path, { recursive: true, force: true });
+      const lease = this.gate.takeDeletion(current.path, current.workspaceId!);
+      try {
+        if (current.kind === 'workspace') {
+          if (fs.existsSync(current.path)) {
+            const stat = fs.lstatSync(current.path);
+            if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(current.path) !== path.resolve(current.path)) throw failure('workspace_identity_conflict', 'The isolated workspace path is no longer its original canonical directory.');
+            this.isolatedDeletionBoundary(current);
+            await assertWorkspaceProcessesStopped(current.path, this.pythonCommand);
+            // Recheck after the asynchronous process inspection, while still
+            // holding the same cross-Host deletion lease.
+            const fresh = fs.lstatSync(current.path);
+            if (fresh.dev !== stat.dev || fresh.ino !== stat.ino || fresh.birthtimeMs !== stat.birthtimeMs) throw failure('workspace_identity_conflict', 'The isolated directory was replaced before deletion.');
+            this.isolatedDeletionBoundary(current);
+            await fs.promises.rm(current.path, { recursive: true, force: true });
+          }
+        } else {
+          if (fs.existsSync(current.path)) {
+            const stat = fs.lstatSync(current.path);
+            if (!stat.isFile() || stat.isSymbolicLink()) throw failure('workspace_identity_conflict', 'The isolated source is no longer its original regular file.');
+            await fs.promises.rm(current.path, { force: true });
+          }
         }
-      } else {
-        if (fs.existsSync(current.path)) {
-          const stat = fs.lstatSync(current.path);
-          if (!stat.isFile() || stat.isSymbolicLink()) throw failure('workspace_identity_conflict', 'The isolated source is no longer its original regular file.');
-          await fs.promises.rm(current.path, { force: true });
+        for (const history of current.histories) {
+          const file = workspaceMetadataPath(current.sessionsDirectory, history.key);
+          try { if (fs.lstatSync(file).isFile() && !fs.lstatSync(file).isSymbolicLink()) await fs.promises.rm(file, { force: true }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
         }
-      }
-      for (const history of current.histories) {
-        const file = workspaceMetadataPath(current.sessionsDirectory, history.key);
-        try { if (fs.lstatSync(file).isFile() && !fs.lstatSync(file).isSymbolicLink()) await fs.promises.rm(file, { force: true }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-      }
-      await this.migration.updateItem(id, (_item, state) => { state.items = state.items.filter((candidate) => candidate.id !== id); });
-      try { await fs.promises.rm(this.reportPath(current), { force: true }); } catch {}
-      return { deleted: true as const, id };
+        await this.migration.updateItem(id, (_item, state) => { state.items = state.items.filter((candidate) => candidate.id !== id); });
+        try { await fs.promises.rm(this.reportPath(current), { force: true }); } catch {}
+        return { deleted: true as const, id };
+      } finally { lease.finish(); }
     };
     const serialize = (index: number): Promise<{ deleted: true; id: string }> => index === targets.length ? execute() : this.gate.serialize(targets[index], () => serialize(index + 1));
     return serialize(0);
+  }
+  private isolatedDeletionBoundary(item: WorkspaceMigrationItemV1) {
+    const overlap = (directory: string) => isWithin(item.path, directory) || isWithin(directory, item.path);
+    const catalog = this.migration.store.readCatalog();
+    if (catalog.entries.some((entry) => overlap(fs.existsSync(entry.path) ? fs.realpathSync(entry.path) : entry.path))) throw failure('workspace_busy', 'A registered workspace or deletion record overlaps the isolated source.');
+    const state = this.migration.read();
+    if (state.items.some((other) => other.id !== item.id && other.kind === 'workspace' && overlap(other.path))) throw failure('workspace_busy', 'Another migration workspace overlaps the isolated source.');
+    const visit = (directory: string) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        const child = path.join(directory, entry.name);
+        if (fs.existsSync(path.join(child, '.tau/workspace.json')) || fs.existsSync(path.join(child, '.tau/workspace-owner.json'))) throw failure('workspace_busy', 'A nested workspace prevents recursive deletion.');
+        visit(child);
+      }
+    };
+    visit(item.path);
+    const owner = readJsonObject(workspaceMetadataPath(item.path, '.tau/workspace-owner.json'));
+    if (owner.version !== 1 || owner.workspace !== toPosixPath(item.path) || owner.parent !== toPosixPath(fs.realpathSync(path.dirname(item.path)))) throw failure('workspace_ownership_unproven', 'Isolation does not prove physical directory ownership.');
+    for (const root of new Set(state.scopes.map((scope) => scope.sessionsDirectory))) for (const source of historySources(root, () => {})) {
+      const own = root === item.sessionsDirectory && item.histories.find((history) => history.key === source.key);
+      try {
+        const header = historyHeader(root, source.key);
+        if (own && (header.cwd !== item.path || header.id !== own.headerId || header.sha256 !== own.headerSha256)) throw failure('history_identity_mismatch', 'An isolated Native history changed ownership.');
+        if (!own && overlap(header.cwd)) throw failure('workspace_busy', 'Another Native history references the isolated directory.');
+      } catch (error) {
+        if (own || (error as { code?: string }).code === 'workspace_busy' || (error as { protectedPaths?: string[] }).protectedPaths?.some(overlap)) throw error;
+      }
+    }
   }
   private repairPath(item: WorkspaceMigrationItemV1, digest: string) { return `${this.reportPath(item)}.repair-${digest}`; }
   /** Undo only the exact outputs in the frozen report; business files and Native history are never rolled back. */
