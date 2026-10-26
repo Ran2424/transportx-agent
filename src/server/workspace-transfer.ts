@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {
-  CITATION_REGISTRY_LIMIT, WORKSPACE_ID, parseCitationRegistryStructured, parseWorkspaceManifestStructured,
+  CITATION_REGISTRY_LIMIT, CONVERSATION_ID, WORKSPACE_ID, parseCitationRegistryStructured, parseWorkspaceManifestStructured,
   type CitationRegistry, type CitationSourceVersion, type ConversationRecordV1, type WorkspaceManifestV1,
 } from '../contracts/index.js';
-import { WorkspaceStore, workspaceMetadataPath } from './workspace-store.js';
-import { WorkspaceRuntimeGate } from './workspace-runtime.js';
+import { WorkspaceStore, workspaceMetadataPath, workspaceCreationDigest } from './workspace-store.js';
+import { WorkspaceRuntimeGate, type WorkspaceRuntimeLease } from './workspace-runtime.js';
 import { ConversationRuntime } from './conversation-runtime.js';
 import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
-import { isWithin, toPosixPath } from './util/path.js';
+import { isWithin, toPosixPath, relativePosixPath } from './util/path.js';
 import { conversationAttachmentIds, copySessionAttachments } from './session-attachments.js';
 
 export const STANDALONE_NAME = 'Standalone';
@@ -23,9 +23,24 @@ type Options = {
 };
 type Located = { directory: string; manifest: WorkspaceManifestV1; conversation: ConversationRecordV1; kind: 'standalone' | 'workspace' };
 type MoveInput = { target: 'standalone' | string; stopCurrent?: boolean };
+type MoveSide = { workspaceId: string; directory: string; rootIdentity: string; generation: string; record: ConversationRecordV1; privateFiles: Record<string, string> | null };
+type MoveJournal = { schemaVersion: 1; conversationId: string; source: MoveSide; target: MoveSide; historyExists: boolean };
 
 const failure = (code: string, message: string, status = 409) => Object.assign(new Error(message), { code, status });
 const hashFile = (file: string) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const rootIdentity = (directory: string) => { const stat = fs.lstatSync(directory); if (!stat.isDirectory() || stat.isSymbolicLink()) throw failure('workspace_identity_conflict', 'Move directory is no longer a plain directory.'); return workspaceCreationDigest([stat.dev, stat.ino, stat.birthtimeMs]); };
+
+/** Current intents block business until startup recovery has made the manifests unique. */
+export function pendingWorkspaceTransfers(userDataDirectory: string) {
+  const directory = workspaceMetadataPath(userDataDirectory, 'transfers');
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory).filter((name) => {
+    if (name.endsWith('.json.bak') && CONVERSATION_ID.test(name.slice(0, -9))) return false;
+    if (/\.json(?:\.bak)?\.[a-f0-9-]{36}\.tmp$/.test(name) && CONVERSATION_ID.test(name.split('.json')[0])) return false;
+    if (!name.endsWith('.json') || !CONVERSATION_ID.test(name.slice(0, -5))) throw failure('metadata_corrupt', 'Unknown conversation transfer metadata.');
+    return true;
+  }).map((name) => workspaceMetadataPath(directory, name));
+}
 
 /**
  * Moves one durable conversation between workspaces. The Pi history keeps its reserved key;
@@ -33,7 +48,7 @@ const hashFile = (file: string) => crypto.createHash('sha256').update(fs.readFil
  */
 export class WorkspaceTransfer {
   private chain: Promise<unknown> = Promise.resolve();
-  private recovered = false;
+  private recovery: Promise<void> | null = null;
   constructor(private options: Options) {}
 
   private run<T>(execute: () => Promise<T>): Promise<T> {
@@ -57,51 +72,102 @@ export class WorkspaceTransfer {
     return matches;
   }
 
-  /**
-   * A move commits the target record before it removes the source record. A process crash can
-   * therefore leave the same conversation in both manifests. The verified history header cwd is
-   * the authoritative owner; recycle the non-owning record before any business projection runs.
-   */
-  async recover() {
-    if (this.recovered) return;
-    this.options.assertSystemReady();
-    const byId = new Map<string, Located[]>();
-    for (const entry of this.options.store.readCatalog().entries) {
-      if (entry.state !== 'ready') continue;
-      let workspace: { directory: string; manifest: WorkspaceManifestV1 };
-      try { workspace = this.options.store.readWorkspace(entry.workspaceId); } catch { continue; }
-      for (const conversation of workspace.manifest.conversations) {
-        byId.set(conversation.id, [...(byId.get(conversation.id) || []), { ...workspace, conversation, kind: entry.kind === 'standalone' ? 'standalone' : 'workspace' }]);
-      }
-    }
-    for (const [conversationId, matches] of byId) {
-      if (matches.length < 2 || matches.some((match) => ['deleting', 'deleted'].includes(match.conversation.state))) continue;
-      let owners: Located[];
-      try {
-        const headerCwd = fs.realpathSync(this.historyHeaderCwd(matches[0].conversation));
-        owners = matches.filter((match) => fs.realpathSync(match.directory) === headerCwd);
-      } catch {
-        // A conversation that never wrote Pi history has no header owner. The target commit
-        // stamps updatedAt, so the newest record is the committed side of the crash window.
-        if (matches.some((match) => match.conversation.history.headerId !== null)) continue;
-        const root = fs.existsSync(this.options.store.sessionsDirectory) ? fs.realpathSync(this.options.store.sessionsDirectory) : path.resolve(this.options.store.sessionsDirectory);
-        if (fs.existsSync(workspaceMetadataPath(root, matches[0].conversation.history.key))) continue;
-        const ordered = [...matches].sort((left, right) => Date.parse(right.conversation.updatedAt) - Date.parse(left.conversation.updatedAt));
-        if (!(Date.parse(ordered[0].conversation.updatedAt) > Date.parse(ordered[1].conversation.updatedAt))) continue;
-        owners = [ordered[0]];
-      }
-      if (owners.length !== 1) continue;
-      for (const match of matches.filter((candidate) => candidate !== owners[0])) {
-        await this.options.gate.serialize(match.directory, async () => {
-          await this.edit(match.manifest.id, (manifest) => {
-            const index = manifest.conversations.findIndex((record) => record.id === conversationId);
-            if (index >= 0) manifest.conversations.splice(index, 1);
-          });
-          try { fs.rmSync(workspaceMetadataPath(match.directory, `.tau/conversations/${conversationId}`), { recursive: true, force: true }); } catch {}
+  /** Called by inventory before duplicate-identity checks, without requiring global ready. */
+  recover(): Promise<void> {
+    if (this.recovery) return this.recovery;
+    const task = (async () => {
+      for (const file of pendingWorkspaceTransfers(this.options.store.userDataDirectory)) {
+        const journal = readJsonObject(file) as unknown as MoveJournal;
+        const invalid = () => failure('metadata_corrupt', 'Conversation move intent cannot be verified.');
+        if (journal.schemaVersion !== 1 || !CONVERSATION_ID.test(journal.conversationId) || path.basename(file) !== `${journal.conversationId}.json` || typeof journal.historyExists !== 'boolean') throw invalid();
+        const sides = [journal.source, journal.target];
+        for (const side of sides) {
+          if (!side || !WORKSPACE_ID.test(side.workspaceId) || typeof side.directory !== 'string' || typeof side.generation !== 'string' || !/^[a-f0-9-]{36}$/.test(side.generation) || side.rootIdentity !== rootIdentity(side.directory)) throw invalid();
+          const current = this.options.store.readWorkspace(side.workspaceId);
+          if (current.directory !== side.directory || side.record?.id !== journal.conversationId || !parseWorkspaceManifestStructured({ ...current.manifest, conversations: [side.record] }).ok) throw invalid();
+          if (side.privateFiles !== null && (!side.privateFiles || typeof side.privateFiles !== 'object' || Array.isArray(side.privateFiles) || !Object.values(side.privateFiles).every((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash)))) throw invalid();
+        }
+        if (journal.source.workspaceId === journal.target.workspaceId || journal.source.record.history.key !== journal.target.record.history.key) throw invalid();
+        for (const side of sides) {
+          const runtime = this.options.gate.diagnostics(side.directory);
+          if (runtime.phase !== 'stopped') {
+            if (!('generation' in runtime) || runtime.generation !== side.generation) throw failure('workspace_busy', 'Another runtime generation owns a pending move directory.');
+            // Only the exact maintenance generation recorded in this intent
+            // may be rechecked. This never signals or adopts a running Host.
+            await this.options.gate.recover(side.directory, side.generation, 'recheck');
+          }
+        }
+        await this.locked(sides, false, async (leases) => {
+          const source = this.options.store.readWorkspace(journal.source.workspaceId), target = this.options.store.readWorkspace(journal.target.workspaceId);
+          const before = source.manifest.conversations.find((record) => record.id === journal.conversationId), after = target.manifest.conversations.find((record) => record.id === journal.conversationId);
+          if (before && workspaceCreationDigest(before) !== workspaceCreationDigest(journal.source.record) || after && workspaceCreationDigest(after) !== workspaceCreationDigest(journal.target.record)) throw invalid();
+          const history = workspaceMetadataPath(this.options.store.sessionsDirectory, journal.target.record.history.key);
+          if (fs.existsSync(history) !== journal.historyExists) throw failure('history_identity_mismatch', 'Move history presence changed before recovery.');
+          const cwd = journal.historyExists ? toPosixPath(fs.realpathSync(this.historyHeaderCwd(journal.target.record))) : null;
+          if (cwd !== null && cwd !== journal.source.directory && cwd !== journal.target.directory) throw invalid();
+          // Native header replacement is the commit point. Empty histories use
+          // the exact target record in the persisted intent, never timestamps.
+          const committed = cwd === journal.target.directory || cwd === null && !!after;
+          const kept = committed ? journal.target : journal.source, discarded = committed ? journal.source : journal.target;
+          if (committed ? !after : !before) throw invalid();
+          this.verifyPrivate(kept.directory, journal.conversationId, kept.privateFiles);
+          const discardedRecord = committed ? before : after;
+          if (discardedRecord) {
+            this.verifyPrivate(discarded.directory, journal.conversationId, discarded.privateFiles);
+            await this.edit(discarded.workspaceId, (manifest) => {
+              const index = manifest.conversations.findIndex((record) => record.id === journal.conversationId);
+              if (index < 0) return;
+              if (workspaceCreationDigest(manifest.conversations[index]) !== workspaceCreationDigest(discarded.record)) throw invalid();
+              manifest.conversations.splice(index, 1);
+            });
+          }
+          this.removePrivate(discarded.directory, journal.conversationId, discarded.privateFiles);
+          this.clearJournal(file, leases);
         });
       }
-    }
-    this.recovered = true;
+    })();
+    this.recovery = task;
+    task.finally(() => { if (this.recovery === task) this.recovery = null; }).catch(() => {});
+    return task;
+  }
+
+  private privateFiles(directory: string, id: string): Record<string, string> | null {
+    const root = workspaceMetadataPath(directory, `.tau/conversations/${id}`);
+    if (!fs.existsSync(root)) return null;
+    const files: Record<string, string> = {};
+    const visit = (folder: string) => { for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+      const file = workspaceMetadataPath(root, relativePosixPath(root, path.join(folder, entry.name)));
+      if (entry.isDirectory()) visit(file);
+      else if (entry.isFile()) files[relativePosixPath(root, file)] = hashFile(file);
+      else throw failure('workspace_identity_conflict', 'Conversation private state contains an unsafe file.');
+    } };
+    visit(root); return files;
+  }
+  private verifyPrivate(directory: string, id: string, expected: Record<string, string> | null) {
+    if (workspaceCreationDigest(this.privateFiles(directory, id)) !== workspaceCreationDigest(expected)) throw failure('workspace_revision_conflict', 'Conversation private state changed after the move intent.');
+  }
+  private removePrivate(directory: string, id: string, expected: Record<string, string> | null) {
+    if (this.privateFiles(directory, id) === null) return;
+    this.verifyPrivate(directory, id, expected);
+    fs.rmSync(workspaceMetadataPath(directory, `.tau/conversations/${id}`), { recursive: true, force: true });
+  }
+  private clearJournal(file: string, leases: WorkspaceRuntimeLease[]) {
+    // A crash after the intent disappears must not leave an unconfirmed
+    // runtime. The locks still exclude every other Host until finish().
+    for (const lease of leases) lease.checkpointStopped();
+    fs.rmSync(`${file}.bak`, { force: true }); fs.rmSync(file, { force: true });
+  }
+  private locked<T>(sides: Array<{ directory: string; workspaceId: string }>, stop: boolean, execute: (leases: WorkspaceRuntimeLease[]) => Promise<T>, closeRuntimes = false): Promise<T> {
+    const ordered = [...sides].sort((left, right) => left.directory < right.directory ? -1 : 1);
+    const serialize = (index: number): Promise<T> => index === ordered.length ? take() : closeRuntimes
+      ? this.options.runtime.withWorkspaceStopped(ordered[index].directory, stop, () => serialize(index + 1))
+      : this.options.gate.serialize(ordered[index].directory, () => serialize(index + 1));
+    const take = async () => {
+      const leases: WorkspaceRuntimeLease[] = [];
+      try { for (const side of ordered) leases.push(this.options.gate.takeMaintenance(side.directory, side.workspaceId)); return await execute(leases); }
+      finally { const failures = []; for (const lease of leases.reverse()) { try { lease.finish(); } catch (error) { failures.push(error); } } if (failures.length) throw new AggregateError(failures, 'Move runtime leases could not be released safely.'); }
+    };
+    return serialize(0);
   }
 
   private historyHeaderCwd(record: ConversationRecordV1) {
@@ -112,7 +178,7 @@ export class WorkspaceTransfer {
       const buffer = Buffer.alloc(64 * 1024), count = fs.readSync(descriptor, buffer, 0, buffer.length, 0), end = buffer.subarray(0, count).indexOf(10);
       if (end < 0) throw failure('history_identity_mismatch', 'Pi history has no complete header.');
       const header = JSON.parse(buffer.subarray(0, end).toString('utf8'));
-      if (header?.type !== 'session' || typeof header.cwd !== 'string' || !path.isAbsolute(header.cwd)) throw failure('history_identity_mismatch', 'Pi history header is invalid.');
+      if (header?.type !== 'session' || typeof header.cwd !== 'string' || !path.isAbsolute(header.cwd) || record.history.headerId === null || header.id !== record.history.headerId) throw failure('history_identity_mismatch', 'Pi history header is invalid or has changed identity.');
       return header.cwd;
     } finally { fs.closeSync(descriptor); }
   }
@@ -187,7 +253,16 @@ export class WorkspaceTransfer {
   private preparePrivateState(source: Located, target: Located) {
     const relative = `.tau/conversations/${source.conversation.id}`;
     const from = workspaceMetadataPath(source.directory, relative), to = workspaceMetadataPath(target.directory, relative);
-    if (fs.existsSync(to)) fs.rmSync(to, { recursive: true, force: true });
+    if (fs.existsSync(to)) {
+      const original = this.privateFiles(source.directory, source.conversation.id), existing = this.privateFiles(target.directory, source.conversation.id);
+      const withoutPlan = (files: Record<string, string> | null) => { if (!files) return files; const copy = { ...files }; if (source.conversation.plan) delete copy['plan.json']; return copy; };
+      if (workspaceCreationDigest(withoutPlan(original)) !== workspaceCreationDigest(withoutPlan(existing))) throw failure('workspace_revision_conflict', 'An unrelated private-state version already occupies the move target.');
+      if (source.conversation.plan) {
+        const fromPlan = readJsonObject(path.join(from, 'plan.json')), toPlan = readJsonObject(path.join(to, 'plan.json'));
+        if (workspaceCreationDigest({ ...fromPlan, workspace: '' }) !== workspaceCreationDigest({ ...toPlan, workspace: '' })) throw failure('workspace_revision_conflict', 'A different frozen plan occupies the move target.');
+      }
+      return;
+    }
     if (!fs.existsSync(from)) return;
     fs.mkdirSync(path.dirname(to), { recursive: true, mode: 0o700 });
     fs.cpSync(from, to, { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true });
@@ -240,49 +315,54 @@ export class WorkspaceTransfer {
   async move(conversationId: string, input: MoveInput) {
     if (!input || (input.target !== 'standalone' && (typeof input.target !== 'string' || !WORKSPACE_ID.test(input.target))) || input.stopCurrent !== undefined && typeof input.stopCurrent !== 'boolean') throw failure('invalid_move_input', 'Choose a registered workspace or the standalone destination.', 400);
     return this.run(async () => {
-      this.options.assertSystemReady();
       await this.recover();
+      this.options.assertSystemReady();
       const matches = this.locate(conversationId);
       if (!matches.length) throw failure('conversation_missing', 'Conversation is unavailable.', 404);
       if (matches.length > 1) throw failure('workspace_identity_conflict', 'Conversation appears in more than one workspace; run the index diagnostics before moving it.');
-      const source = matches[0];
+      let source = matches[0];
       if (['deleting', 'deleted'].includes(source.conversation.state)) throw failure('conversation_missing', 'Conversation is being deleted.', 404);
       this.options.assertWorkspaceReady(source.manifest.id);
-      const target = await this.target(input, source);
+      let target = await this.target(input, source);
       if (target.manifest.id === source.manifest.id) return { ...target, conversation: source.conversation, standalone: target.kind === 'standalone' };
-      await this.options.runtime.close(conversationId, input.stopCurrent === true);
-      const commit = async () => {
-        try {
-          this.options.store.inspectHistory(source.directory, source.conversation);
-          this.preparePrivateState(source, target);
-          if (source.conversation.plan) await this.options.store.relocatePlan(source.directory, source.conversation, target.directory);
-          copySessionAttachments(source.directory, target.directory, conversationAttachmentIds(source.directory, conversationId));
-          await this.prepareCitations(source, target);
-          await this.edit(target.manifest.id, (manifest) => {
-            if (manifest.conversations.some((record) => record.id === conversationId)) return;
-            if (manifest.conversations.some((record) => record.history.key === source.conversation.history.key)) throw failure('workspace_identity_conflict', 'Target workspace already reserves this conversation history.');
-            manifest.conversations.push(structuredClone({ ...source.conversation, updatedAt: new Date().toISOString() }));
-          });
-          this.options.store.relocateHistory(source.conversation, source.directory, target.directory);
-          await this.edit(source.manifest.id, (manifest) => {
-            const index = manifest.conversations.findIndex((record) => record.id === conversationId);
-            if (index < 0) return;
-            if (manifest.conversations[index].state === 'deleting') throw failure('conversation_missing', 'Conversation deletion started before the move completed.', 409);
-            manifest.conversations.splice(index, 1);
-          });
-          const relative = `.tau/conversations/${conversationId}`;
-          // The manifest is already authoritative; leftover private bytes are harmless and retried on the next move.
-          if (target.directory !== source.directory) try { fs.rmSync(workspaceMetadataPath(source.directory, relative), { recursive: true, force: true }); } catch {}
-          const current = this.options.store.readWorkspace(target.manifest.id);
-          const conversation = current.manifest.conversations.find((record) => record.id === conversationId)!;
-          return { ...current, conversation, kind: target.kind, standalone: target.kind === 'standalone' };
-        } catch (error) {
-          this.recovered = false;
-          throw error;
-        }
+      const commit = async (leases: WorkspaceRuntimeLease[]) => {
+        const fresh = this.locate(conversationId);
+        if (fresh.length !== 1 || fresh[0].manifest.id !== source.manifest.id) throw failure('workspace_revision_conflict', 'Conversation ownership changed before the move acquired its leases.');
+        source = fresh[0];
+        target = { ...target, ...this.options.store.readWorkspace(target.manifest.id) };
+        this.options.assertWorkspaceReady(source.manifest.id); this.options.assertWorkspaceReady(target.manifest.id);
+        const history = this.options.store.inspectHistory(source.directory, source.conversation), sourceFiles = this.privateFiles(source.directory, conversationId);
+        this.preparePrivateState(source, target);
+        if (source.conversation.plan) await this.options.store.relocatePlan(source.directory, source.conversation, target.directory);
+        copySessionAttachments(source.directory, target.directory, conversationAttachmentIds(source.directory, conversationId));
+        await this.prepareCitations(source, target);
+        const record = structuredClone({ ...source.conversation, history: { ...source.conversation.history, headerId: history.headerId }, updatedAt: new Date().toISOString() });
+        const journal: MoveJournal = {
+          schemaVersion: 1, conversationId, historyExists: history.sessionFile !== null,
+          source: { workspaceId: source.manifest.id, directory: source.directory, rootIdentity: rootIdentity(source.directory), generation: leases.find((lease) => path.resolve(lease.directory) === path.resolve(source.directory))!.generation, record: structuredClone(source.conversation), privateFiles: sourceFiles },
+          target: { workspaceId: target.manifest.id, directory: target.directory, rootIdentity: rootIdentity(target.directory), generation: leases.find((lease) => path.resolve(lease.directory) === path.resolve(target.directory))!.generation, record, privateFiles: this.privateFiles(target.directory, conversationId) },
+        };
+        const file = workspaceMetadataPath(this.options.store.userDataDirectory, `transfers/${conversationId}.json`);
+        writeJsonAtomic(file, journal);
+        await this.edit(target.manifest.id, (manifest) => {
+          if (manifest.conversations.some((record) => record.id === conversationId)) throw failure('workspace_identity_conflict', 'The move target already owns this conversation.');
+          if (manifest.conversations.some((record) => record.history.key === source.conversation.history.key)) throw failure('workspace_identity_conflict', 'Target workspace already reserves this conversation history.');
+          manifest.conversations.push(record);
+        });
+        this.options.store.relocateHistory(record, source.directory, target.directory);
+        await this.edit(source.manifest.id, (manifest) => {
+          const index = manifest.conversations.findIndex((record) => record.id === conversationId);
+          if (index < 0) return;
+          if (workspaceCreationDigest(manifest.conversations[index]) !== workspaceCreationDigest(journal.source.record)) throw failure('workspace_revision_conflict', 'The source conversation changed before the move committed.');
+          manifest.conversations.splice(index, 1);
+        });
+        this.removePrivate(source.directory, conversationId, sourceFiles);
+        this.clearJournal(file, leases);
+        const current = this.options.store.readWorkspace(target.manifest.id);
+        const conversation = current.manifest.conversations.find((record) => record.id === conversationId)!;
+        return { ...current, conversation, kind: target.kind, standalone: target.kind === 'standalone' };
       };
-      if (source.directory === target.directory) return commit();
-      return this.options.gate.serialize(source.directory, () => this.options.gate.serialize(target.directory, commit));
+      return this.locked([{ directory: source.directory, workspaceId: source.manifest.id }, { directory: target.directory, workspaceId: target.manifest.id }], input.stopCurrent === true, commit, true);
     });
   }
 }

@@ -234,12 +234,16 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.equal(fs.existsSync(path.join(secondCwd, 'attachments', attachmentId, 'note.txt')), true);
     assert.equal(workspaceHost.options.store.readWorkspace(firstWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), false);
     assert.equal(workspaceHost.options.store.readWorkspace(secondWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), true);
-    const sourceState = workspaceHost.options.store.readWorkspace(firstWorkspace);
-    await workspaceHost.options.store.editWorkspace(firstWorkspace, sourceState.manifest.revision, (manifest: any) => manifest.conversations.push(structuredClone(moved.conversation)));
-    (workspaceHost.options.transfer as any).recovered = false;
+    const store = workspaceHost.options.store, edit = store.editWorkspace.bind(store);
+    store.editWorkspace = async (id: string, ...args: any[]) => { if (id === secondWorkspace) throw Object.assign(new Error('Interrupted after header commit'), { code: 'EIO' }); return edit(id, ...args); };
+    try { response = await move(firstWorkspace); assert.equal(response.status, 409); assert.equal((await jsonBody(response)).code, 'EIO'); } finally { store.editWorkspace = edit; }
+    assert.equal((await jsonBody(await request(`${base}/api/health`))).dataState, 'initializing');
+    assert.equal((await request(`${base}/api/workspaces`)).status, 503, 'pending moves cannot expose a duplicate business projection');
+    assert.equal((await request(`${base}/api/migration/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 200);
     const recovered = await jsonBody(await request(`${base}/api/workspaces`));
-    assert.equal(recovered.workspaces.flatMap((workspace: any) => workspace.conversations).filter((item: any) => item.record.id === first.conversationId).length, 1, 'a crash window duplicate is reclaimed using the verified history owner');
-    assert.equal(workspaceHost.options.store.readWorkspace(firstWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), false);
+    assert.equal(recovered.workspaces.flatMap((workspace: any) => workspace.conversations).filter((item: any) => item.record.id === first.conversationId).length, 1, 'inventory recovers the durable move before checking identity uniqueness');
+    assert.equal(store.readWorkspace(firstWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), true);
+    assert.equal(store.readWorkspace(secondWorkspace).manifest.conversations.some((record: any) => record.id === first.conversationId), false);
     response = await move('standalone');
     assert.equal(response.status, 200);
     moved = await jsonBody(response);

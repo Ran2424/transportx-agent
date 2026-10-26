@@ -361,6 +361,105 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(fs.existsSync(native), false);
     await migration.initialize(); assert.equal(migration.read().items.some((item: any) => item.id === owned.id), false);
   }
+  // Move intents recover before inventory and exclude both local and foreign runtimes.
+  {
+    const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+    const { spawn } = require('node:child_process'), { once } = require('node:events');
+    const { WorkspaceStore } = require('../../bin/workspace-store.js'), { WorkspaceMigration } = require('../../bin/workspace-migration.js');
+    const { WorkspaceTransfer, pendingWorkspaceTransfers } = require('../../bin/workspace-transfer.js'), { WorkspaceRuntimeGate } = require('../../bin/workspace-runtime.js'), { ConversationRuntime } = require('../../bin/conversation-runtime.js');
+    const { acquireWriteLease } = require('../../bin/util/json-storage.js');
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tau-move-recovery-'))), python = process.env.TAU_PYTHON_COMMAND || 'python3', at = '2026-10-26T00:00:00.000Z';
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    let serial = 0;
+    const ready = (child: any) => new Promise<void>((resolve, reject) => {
+      let stderr = ''; child.stderr.on('data', (chunk: Buffer) => { stderr = (stderr + chunk).slice(-2000); });
+      const done = (error?: Error) => { clearTimeout(timer); child.removeListener('message', message); child.removeListener('exit', exit); child.removeListener('error', fail); error ? reject(error) : resolve(); };
+      const message = () => done(), exit = () => done(new Error(`Fixture child exited before its barrier: ${stderr}`)), fail = (error: Error) => done(error);
+      const timer = setTimeout(() => done(new Error(`Fixture child did not reach its barrier: ${stderr}`)), 30000);
+      child.once('message', message); child.once('exit', exit); child.once('error', fail);
+    });
+    const fixture = async (empty = false) => {
+      const directory = path.join(root, String(serial++)), data = path.join(directory, 'data'), scenario = path.join(directory, 'scenario'), guards = path.join(directory, 'guards'); fs.mkdirSync(data, { recursive: true }); fs.mkdirSync(scenario);
+      let release = acquireWriteLease(path.join(data, 'host')); t.after(() => release?.());
+      const store = new WorkspaceStore(data, path.join(data, 'sessions')); await store.initializeCatalog({ schemaVersion: 1, revision: 0, entries: [] });
+      const source = path.join(scenario, 'a-source'), target = path.join(scenario, 'b-target'), id = `conv_${crypto.randomUUID()}`;
+      const record = { id, creationRequestId: null, creationInputSha256: null, name: 'Keep this conversation', createdAt: at, updatedAt: at, defaultsRevision: null, modelSpec: null, appendSystemPrompt: '', state: empty ? 'created' : 'ready', history: { key: `transportx/${id}.jsonl`, headerId: empty ? null : `native-${id}` }, plan: null, privateState: 'isolated', lastStartFailure: null, deletion: null };
+      const workspace = async (cwd: string, records: any[]) => { fs.mkdirSync(cwd); const entry = await store.reserveWorkspace(crypto.randomUUID(), 'a'.repeat(64), () => cwd); await store.publishWorkspace(entry.workspaceId, { schemaVersion: 1, id: entry.workspaceId, revision: 0, name: path.basename(cwd), createdAt: at, updatedAt: at, defaultsRevision: 0, defaults: { domainId: null, profile: null, modelSpec: null }, citationRegistryId: entry.workspaceId, conversations: records }); return entry.workspaceId; };
+      const sourceId = await workspace(source, [record]), targetId = await workspace(target, []), history = path.join(store.sessionsDirectory, record.history.key);
+      fs.mkdirSync(path.dirname(history), { recursive: true });
+      const body = JSON.stringify({ type: 'message', id: 'user-one', parentId: null, message: { role: 'user', content: 'Preserve these Native bytes', timestamp: 1 } }) + '\n';
+      if (!empty) fs.writeFileSync(history, JSON.stringify({ type: 'session', id: record.history.headerId, cwd: source }) + '\n' + body);
+      const privateFile = (cwd: string) => path.join(cwd, '.tau/conversations', id, 'state.json'); fs.mkdirSync(path.dirname(privateFile(source)), { recursive: true }); fs.writeFileSync(privateFile(source), '{"keep":true}');
+      const start = async () => {
+        let transfer: any;
+        const migration = new WorkspaceMigration(store, { agentDir: data, workspaceRoots: [scenario], recoverTransfers: () => transfer.recover() }), gate = new WorkspaceRuntimeGate(python, path.join(directory, 'logs'), guards);
+        const runtime = new ConversationRuntime({ store, gate, sessions: { sessions: new Map() }, assertReady: (id: string) => migration.assertWorkspaceReady(id), verifyPlan: (plan: any) => plan });
+        transfer = new WorkspaceTransfer({ store, gate, runtime, assertSystemReady: () => migration.assertSystemReady(), assertWorkspaceReady: (id: string) => migration.assertWorkspaceReady(id) });
+        await migration.initialize(); return { transfer, migration, gate };
+      };
+      return { ...(await start()), start, directory, data, scenario, guards, store, source, target, sourceId, targetId, id, history, body, empty, privateFile, unlock: () => { release(); release = null; }, relock: () => { release = acquireWriteLease(path.join(data, 'host')); } };
+    };
+    const verify = (f: any, owner: string) => {
+      const matches = f.store.readCatalog().entries.flatMap((entry: any) => f.store.readWorkspace(entry.workspaceId).manifest.conversations.map((record: any) => ({ cwd: entry.path, record }))).filter((item: any) => item.record.id === f.id);
+      assert.equal(matches.length, 1); assert.equal(matches[0].cwd, toPosixPath(owner)); assert.equal(matches[0].record.name, 'Keep this conversation');
+      assert.equal(fs.readFileSync(f.privateFile(owner), 'utf8'), '{"keep":true}'); assert.deepEqual(pendingWorkspaceTransfers(f.data), []);
+      if (!f.empty) { const bytes = fs.readFileSync(f.history, 'utf8'), end = bytes.indexOf('\n'); assert.equal(bytes.slice(end + 1), f.body); assert.equal(JSON.parse(bytes.slice(0, end)).cwd, toPosixPath(owner)); }
+    };
+    for (const point of ['before-target', 'before-header', 'before-source', 'after-source', 'cleanup', 'clear-intent']) {
+      const f = await fixture(), edit = f.store.editWorkspace.bind(f.store), relocate = f.store.relocateHistory.bind(f.store), rm = fs.rmSync;
+      f.store.editWorkspace = async (id: string, ...args: any[]) => { if (point === 'before-target' && id === f.targetId || point === 'before-source' && id === f.sourceId) throw Object.assign(new Error(point), { code: 'EIO' }); const result = await edit(id, ...args); if (point === 'after-source' && id === f.sourceId) throw Object.assign(new Error(point), { code: 'EIO' }); return result; };
+      f.store.relocateHistory = (...args: any[]) => { if (point === 'before-header') throw Object.assign(new Error(point), { code: 'EIO' }); return relocate(...args); };
+      fs.rmSync = (file: string, ...args: any[]) => { if (point === 'cleanup' && path.resolve(file) === path.dirname(f.privateFile(f.source)) || point === 'clear-intent' && file === path.join(f.data, 'transfers', `${f.id}.json`)) throw Object.assign(new Error(point), { code: 'EIO' }); return rm(file, ...args); };
+      try { await assert.rejects(f.transfer.move(f.id, { target: f.targetId }), { code: 'EIO' }); } finally { f.store.editWorkspace = edit; f.store.relocateHistory = relocate; fs.rmSync = rm; }
+      assert.equal(f.migration.status().dataState, 'initializing'); assert.equal(pendingWorkspaceTransfers(f.data).length, 1);
+      const restarted = await f.start(); assert.equal(restarted.migration.status().dataState, 'ready'); verify(f, ['before-target', 'before-header'].includes(point) ? f.source : f.target);
+    }
+    // Empty histories must resolve even when both management timestamps are identical.
+    {
+      const OriginalDate = Date;
+      (globalThis as any).Date = class extends OriginalDate { constructor(value?: any) { super(value === undefined ? at : value); } static now() { return OriginalDate.parse(at); } };
+      try {
+        const f = await fixture(true), edit = f.store.editWorkspace.bind(f.store);
+        f.store.editWorkspace = async (id: string, ...args: any[]) => { if (id === f.sourceId) throw Object.assign(new Error('empty crash'), { code: 'EIO' }); return edit(id, ...args); };
+        try { await assert.rejects(f.transfer.move(f.id, { target: f.targetId }), { code: 'EIO' }); } finally { f.store.editWorkspace = edit; }
+        const journal = JSON.parse(fs.readFileSync(path.join(f.data, 'transfers', `${f.id}.json`))); assert.equal(journal.source.record.updatedAt, journal.target.record.updatedAt);
+        await f.start(); verify(f, f.target); assert.equal(fs.existsSync(f.history), false);
+      } finally { (globalThis as any).Date = OriginalDate; }
+    }
+    // A different process owns the disk runtime lease; neither source nor target may be moved.
+    for (const side of ['source', 'target']) {
+      const f = await fixture(), cwd = side === 'source' ? f.source : f.target, workspaceId = side === 'source' ? f.sourceId : f.targetId;
+      const code = `const {WorkspaceRuntimeGate}=require(process.argv[1]);const value=JSON.parse(process.argv[2]);const gate=new WorkspaceRuntimeGate(value.python,value.logs,value.guards);const lease=gate.takeMaintenance(value.cwd,value.workspaceId);process.send({ready:true});process.on('message',()=>{lease.finish();process.exit(0)});setInterval(()=>{},1000);`;
+      const child = spawn(process.execPath, ['-e', code, path.resolve('bin/workspace-runtime.js'), JSON.stringify({ cwd, workspaceId, python, guards: f.guards, logs: path.join(f.directory, 'foreign-logs') })], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+      t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+      try { await ready(child); await assert.rejects(f.transfer.move(f.id, { target: f.targetId, stopCurrent: true }), { code: 'workspace_busy' }); verify(f, f.source); }
+      finally { if (child.connected) { const exited = once(child, 'exit'); child.send({ stop: true }); await exited; } }
+      await f.transfer.move(f.id, { target: f.targetId }); verify(f, f.target);
+    }
+    // Actual Host death leaves maintenance records behind; startup may recheck only the recorded generations.
+    for (const point of ['before-header', 'before-source']) {
+      const f = await fixture(); f.unlock();
+      const code = `const fs=require('node:fs'),path=require('node:path');const v=JSON.parse(process.argv[1]),base=v.bin;const {WorkspaceStore}=require(path.join(base,'workspace-store.js')),{WorkspaceMigration}=require(path.join(base,'workspace-migration.js')),{WorkspaceTransfer}=require(path.join(base,'workspace-transfer.js')),{WorkspaceRuntimeGate}=require(path.join(base,'workspace-runtime.js')),{ConversationRuntime}=require(path.join(base,'conversation-runtime.js')),{acquireWriteLease}=require(path.join(base,'util/json-storage.js'));acquireWriteLease(path.join(v.data,'host'));const store=new WorkspaceStore(v.data,path.join(v.data,'sessions')),migration=new WorkspaceMigration(store,{agentDir:v.data,workspaceRoots:[v.scenario]}),gate=new WorkspaceRuntimeGate(v.python,path.join(v.directory,'child-logs'),v.guards),runtime=new ConversationRuntime({store,gate,sessions:{sessions:new Map()},assertReady:id=>migration.assertWorkspaceReady(id),verifyPlan:p=>p}),transfer=new WorkspaceTransfer({store,gate,runtime,assertSystemReady:()=>migration.assertSystemReady(),assertWorkspaceReady:id=>migration.assertWorkspaceReady(id)});const pause=()=>{process.send({crashWindow:true});return new Promise(()=>{});};if(v.point==='before-header')store.relocateHistory=pause;else{const edit=store.editWorkspace.bind(store);store.editWorkspace=(id,...args)=>id===v.sourceId?pause():edit(id,...args);}transfer.move(v.id,{target:v.targetId}).catch(e=>{console.error(e);process.exit(1)});setInterval(()=>{},1000);`;
+      const child = spawn(process.execPath, ['-e', code, JSON.stringify({ ...f, bin: path.resolve('bin'), python, point })], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+      t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+      await ready(child); const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited; f.relock();
+      const restarted = await f.start(); assert.equal(restarted.migration.status().dataState, 'ready'); verify(f, point === 'before-header' ? f.source : f.target);
+      assert.equal(restarted.gate.diagnostics(f.source).phase, 'stopped'); assert.equal(restarted.gate.diagnostics(f.target).phase, 'stopped');
+    }
+    // Foreign edits and corrupt intents must block recovery without pruning either copy.
+    {
+      const f = await fixture(), edit = f.store.editWorkspace.bind(f.store);
+      f.store.editWorkspace = async (id: string, ...args: any[]) => { if (id === f.sourceId) throw Object.assign(new Error('pending move'), { code: 'EIO' }); return edit(id, ...args); };
+      try { await assert.rejects(f.transfer.move(f.id, { target: f.targetId }), { code: 'EIO' }); } finally { f.store.editWorkspace = edit; }
+      fs.writeFileSync(f.privateFile(f.target), 'foreign change'); await assert.rejects(f.start(), { code: 'workspace_revision_conflict' });
+      assert.equal(f.store.readWorkspace(f.sourceId).manifest.conversations.length, 1); assert.equal(f.store.readWorkspace(f.targetId).manifest.conversations.length, 1);
+      fs.writeFileSync(f.privateFile(f.target), '{"keep":true}');
+      const native = fs.readFileSync(f.history, 'utf8'); fs.writeFileSync(f.history, native.replace(`native-${f.id}`, 'changed-native-identity')); await assert.rejects(f.start(), { code: 'history_identity_mismatch' }); fs.writeFileSync(f.history, native);
+      const file = path.join(f.data, 'transfers', `${f.id}.json`), journal = fs.readFileSync(file); fs.writeFileSync(file, '{}'); await assert.rejects(f.start(), { code: 'metadata_corrupt' }); fs.writeFileSync(file, journal);
+      await f.start(); verify(f, f.target);
+    }
+    t.diagnostic('Move regression covers persisted intents, equal-time empty sessions, six interrupted stages, foreign-process leases and two SIGKILL Host restarts.');
+  }
   // Kernel identities survive process.title changes; stale PID identities never authorize a stop.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
