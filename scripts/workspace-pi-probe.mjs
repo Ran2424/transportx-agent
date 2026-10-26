@@ -34,6 +34,7 @@ async function stop(child) {
 
 let mode = 'normal';
 let releaseProvider;
+let streamedReplies = 0;
 let providerCalls = 0;
 const provider = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk;
@@ -51,9 +52,10 @@ const provider = http.createServer(async (req, res) => {
   const chunk = (delta, finish_reason = null) => ({ id: 'workspace-probe', object: 'chat.completion.chunk', created: 1, model: 'smoke', choices: [{ index: 0, delta, finish_reason }] });
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   if (mode === 'rename-stream') {
-    res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: '改名期间保留的回答首段，' }))}\n\n`);
+    const turn = ++streamedReplies;
+    res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: `第${turn}轮改名期间保留的回答首段，` }))}\n\n`);
     await new Promise((resolve) => { releaseProvider = resolve; });
-    res.write(`data: ${JSON.stringify(chunk({ content: '以及改名后的回答尾段。' }))}\n\n`);
+    res.write(`data: ${JSON.stringify(chunk({ content: `以及第${turn}轮改名后的回答尾段。` }))}\n\n`);
     res.write(`data: ${JSON.stringify(chunk({}, 'stop'))}\n\n`); res.end('data: [DONE]\n\n'); return;
   }
   res.write(`data: ${JSON.stringify(chunk(tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `probe-${providerCalls}`, type: 'function', function: tool }] } : { role: 'assistant', content: 'workspace probe complete' }))}\n\n`);
@@ -63,7 +65,7 @@ const provider = http.createServer(async (req, res) => {
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
 fs.writeFileSync(path.join(root, 'models.json'), JSON.stringify({ providers: { probe: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'local-probe-only', models: [{ id: 'smoke', reasoning: false, input: ['text'], contextWindow: 32768, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
 const env = { ...process.env, TAU_APP_ROOT: repo, TAU_RESOURCES_DIR: repo, TAU_PI_ENTRYPOINT: cli, TAU_USER_DATA_DIR: root, TAU_RUNTIME_COORDINATION_DIR: path.join(root, 'runtime-guards'), PI_CODING_AGENT_DIR: root, PI_CODING_AGENT_SESSION_DIR: path.join(root, 'sessions') };
-let host, browser;
+let host, browser, diagnoseRename;
 try {
   for (const scenario of ['empty', 'failure', 'interrupt', 'normal']) {
     mode = scenario;
@@ -194,30 +196,43 @@ Pi.prototype.handleEvent = function(event) {
   browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   const page = await browser.newPage({ locale: 'zh-CN' }), uiErrors = [];
   page.on('pageerror', (error) => uiErrors.push(error.message));
+  const frames = [];
+  page.on('websocket', (socket) => socket.on('framereceived', ({ payload }) => { try { frames.push(JSON.parse(String(payload))); } catch {} }));
   const session = await createHostConversation(json, { name: '改名与保存复验', model: 'probe/smoke', parentDirectory: path.join(root, 'scenario') });
   const id = session.conversationId, route = `/api/conversations/${id}`, original = await json(`${route}/snapshot`), file = path.join(root, 'sessions', original.conversation.history.key);
+  diagnoseRename = async () => ({ state: await json(`${route}/snapshot`), browserText: await page.locator('body').innerText(), frames: frames.slice(-100), uiErrors });
   const rename = async (name) => { const workspace = await json(`/api/workspaces/${session.workspaceId}`); return json(route, { name, expectedRevision: workspace.revision }, 'PATCH'); };
   await rename('首轮落盘前改名'); assert.equal(fs.existsSync(file), false, 'renaming cannot precreate the Native file');
   await page.goto(endpoint, { waitUntil: 'networkidle' });
   await page.evaluate((id) => localStorage.setItem('tau-active-conversation-id', id), id); await page.reload({ waitUntil: 'networkidle' });
   const composer = page.getByLabel('消息输入'); await composer.waitFor();
   mode = 'rename-stream'; await composer.fill('你好'); await page.getByRole('button', { name: '发送消息', exact: true }).click();
-  await page.getByText('改名期间保留的回答首段，', { exact: false }).first().waitFor();
+  await page.getByText('第1轮改名期间保留的回答首段，', { exact: false }).first().waitFor();
   await page.locator('.session-row.is-active').click({ button: 'right' });
   await page.getByRole('menuitem', { name: '重命名会话', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '重命名会话', exact: true });
   await dialog.locator('input').fill('生成中改名'); await dialog.getByRole('button', { name: '保存', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
   const partial = await json(`${route}/snapshot`); assert.equal(partial.runtime.id, session.id); assert.equal(partial.snapshot.isStreaming, true);
   assert.equal(fs.existsSync(file), false, 'first reply is still unflushed during rename');
-  await page.reload({ waitUntil: 'networkidle' }); await page.getByText('改名期间保留的回答首段，', { exact: false }).first().waitFor();
+  await page.reload({ waitUntil: 'networkidle' }); await page.getByText('第1轮改名期间保留的回答首段，', { exact: false }).first().waitFor();
   releaseProvider(); releaseProvider = null; mode = 'normal';
   const rows = (state, role) => state.entries.filter((entry) => entry.message?.role === role);
   const settled = (count) => until(async () => { const state = await nativeSnapshot(json, id); return !state.isStreaming && rows(state, 'user').length === count && rows(state, 'assistant').length === count && state; }, `rename/persistence ${count} turns`);
-  await settled(1); await page.getByText('以及改名后的回答尾段。', { exact: false }).first().waitFor();
-  await composer.fill('你好'); await page.getByRole('button', { name: '发送消息', exact: true }).click(); await settled(2);
+  await settled(1); await page.getByText('以及第1轮改名后的回答尾段。', { exact: false }).first().waitFor();
+  const firstMessages = JSON.parse(JSON.stringify(rows(await nativeSnapshot(json, id), 'assistant'))), firstNativeId = header(file).id;
+  mode = 'rename-stream'; await composer.fill('你好'); await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  await page.getByText('第2轮改名期间保留的回答首段，', { exact: false }).first().waitFor();
+  await rename('已有历史生成中改名'); const secondPartial = await json(`${route}/snapshot`);
+  assert.equal(secondPartial.runtime.id, session.id); assert.equal(secondPartial.snapshot.isStreaming, true); assert.equal(header(file).id, firstNativeId);
+  await page.reload({ waitUntil: 'networkidle' }); await page.getByText('第2轮改名期间保留的回答首段，', { exact: false }).first().waitFor();
+  releaseProvider(); releaseProvider = null; mode = 'normal';
+  const secondSettled = await settled(2); assert.deepEqual(rows(secondSettled, 'assistant').slice(0, 1), firstMessages, 'renaming with an existing Native file preserves the prior reply');
+  await page.getByText('以及第2轮改名后的回答尾段。', { exact: false }).first().waitFor();
   await until(async () => await page.getByText('你好', { exact: true }).count() === 2, 'both identical greetings remain visible');
   await rename('Untitled'); assert.equal((await json(`${route}/snapshot`)).runtime.sessionName, 'Untitled', 'an explicit title must agree in Manifest and live runtime');
   await json(`${route}/close`, { stopCurrent: true }); await rename('离线改名');
+  // Reproduce the old Host's unstructured name tail in this test-owned file.
+  fs.appendFileSync(file, JSON.stringify({ type: 'session_info', name: '旧 Host 尾部名称', explicit: true, timestamp: new Date().toISOString() }) + '\n');
   const bytes = fs.readFileSync(file), nativeId = header(file).id;
   await stop(host); endpoint = await launchHost(); await until(async () => (await json('/api/health')).dataState === 'ready', 'rename restart inventory');
   const restored = await json(`${route}/snapshot`); assert.equal(restored.conversation.name, '离线改名'); assert.equal(restored.runtime, null); assert.equal(restored.conversation.history.key, original.conversation.history.key); assert.deepEqual(fs.readFileSync(file), bytes);
@@ -226,9 +241,11 @@ Pi.prototype.handleEvent = function(event) {
   await page.getByRole('button', { name: '激活此会话', exact: true }).click(); await composer.waitFor();
   await composer.fill('你好'); await page.getByRole('button', { name: '发送消息', exact: true }).click(); await settled(3);
   assert.equal(header(file).id, nativeId); await page.reload({ waitUntil: 'networkidle' }); await until(async () => await page.getByText('你好', { exact: true }).count() === 3, 'three identical greetings survive restart and reload'); assert.deepEqual(uiErrors, []);
-  report.renamePersistence = { passed: true, firstFlushDeferred: true, streamedRename: true, reloadDuringStream: true, repeatedGreetings: 3, restarted: true, nativeIdentityPreserved: true, originalWindowsMiniMaxReproduced: false };
+  assert.deepEqual(fs.readFileSync(file).subarray(0, bytes.length), bytes, 'legacy recovery and the third turn retain every prior Native byte');
+  report.renamePersistence = { passed: true, firstFlushDeferred: true, streamedRename: true, existingHistoryStreamRename: true, reloadDuringStream: true, repeatedGreetings: 3, restarted: true, legacyNameTailRecovered: true, nativeIdentityPreserved: true, originalWindowsMiniMaxReproduced: false };
   report.passed = true;
 } catch (error) {
+  if (diagnoseRename) { try { report.renameFailure = await diagnoseRename(); } catch {} }
   report.passed = false; report.error = error.stack; throw error;
 } finally {
   releaseProvider?.();

@@ -289,6 +289,23 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     }
   }
 
+  // A provider may reuse a response ID across turns; replay dedup must preserve both replies.
+  {
+    const store = new ConversationStore();
+    const first = { role: 'assistant', responseId: 'provider-reused-id', timestamp: 1000, content: '第一轮完整回答' };
+    const second = { role: 'assistant', responseId: 'provider-reused-id', timestamp: 2000, content: '第二轮首段与尾段' };
+    store.hydrate('rename', { entries: [{ id: 'native-first', message: first }], isStreaming: true, streamingMessage: { ...second, content: '第二轮首段' } });
+    store.streamDelta('rename', 'text', '与尾段');
+    store.streamCompleted('rename', second); store.streamEnded('rename');
+    assert.equal(store.get().bySession.rename.snapshotEntries.length, 2, 'an existing Native reply cannot suppress the next response');
+    assert.equal(store.get().bySession.rename.snapshotEntries[1].message.content, second.content);
+    store.streamCompleted('rename', second);
+    store.appendEntry('rename', { id: 'native-second', message: second });
+    assert.equal(store.get().bySession.rename.snapshotEntries.length, 2, 'the same response delivered again still deduplicates');
+    store.appendEntry('rename', { message: { ...second, timestamp: 3000 } });
+    assert.equal(store.get().bySession.rename.snapshotEntries.length, 3, 'a later identical reply with a reused ID remains distinct');
+  }
+
   // authoritative snapshots replace abandoned branches, overlays, tools and dialogs
   {
     const kernel = createAppKernel({ transport: { subscribe: () => () => { } }, http: async () => { throw new Error('unused'); } });

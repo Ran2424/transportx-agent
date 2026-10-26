@@ -26,7 +26,7 @@ import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from 
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
 import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
-import { appendSessionNameEntry, inferSessionTitle, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
+import { inferSessionTitle, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
 import {
   PI_WEB_BRIDGE_ENTRY,
   PI_RUNTIME_MINIMUM,
@@ -133,6 +133,7 @@ export class PiRpcSession {
   exitCode: number | null;
   titleSet: boolean;
   pendingSessionNamePersistence: string | null;
+  private persistingSessionName = false;
   userMessages: string[];
   piVersion: string;
   capabilityTracker: SessionCapabilityTracker;
@@ -587,16 +588,22 @@ export class PiRpcSession {
   }
 
   persistPendingSessionName() {
-    if (!this.sessionFile || !this.pendingSessionNamePersistence) return;
+    if (!this.sessionFile || !this.pendingSessionNamePersistence || this.persistingSessionName) return;
     // Appending before Pi's first flush would pre-create the file and make
     // Pi's exclusive create throw EEXIST; stay pending and retry later.
     if (!sessionFileReadyForNameAppend(this.sessionFile)) return;
-    try {
-      appendSessionNameEntry(this.sessionFile, this.pendingSessionNamePersistence);
-      this.pendingSessionNamePersistence = null;
-    } catch (error) {
+    const name = this.pendingSessionNamePersistence;
+    this.persistingSessionName = true;
+    // Pi owns the Native tree and must assign the entry ID and current parent.
+    void this.send({ type: 'set_session_name', name }, { timeoutMs: 5000 }).then((response) => {
+      if (!response.success) throw new Error(String(response.error || 'Pi did not confirm the session name'));
+      if (this.pendingSessionNamePersistence === name) this.pendingSessionNamePersistence = null;
+    }).catch((error) => {
       console.error(`[Pi ${this.id}] Failed to persist session name: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    }).finally(() => {
+      this.persistingSessionName = false;
+      if (this.pendingSessionNamePersistence && this.pendingSessionNamePersistence !== name) this.persistPendingSessionName();
+    });
   }
 
   maybeTitle() {
