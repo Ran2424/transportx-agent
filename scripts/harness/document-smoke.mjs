@@ -171,8 +171,40 @@ export async function documentSmoke(page, browser) {
   await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
   await reader.locator('[data-citation-id="canvas:pdf:2"]').click();
   await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).click();
-  await reader.locator('iframe').waitFor();
-  assert.match(await reader.locator('iframe').getAttribute('src'), /#page=2&/);
+  const pdfView = reader.locator('.document-pdf');
+  async function expectPdfPage(number, color) {
+    await page.waitForFunction(({ number, color }) => {
+      const root = document.querySelector('.canvas-panel:not([hidden]) .document-pdf');
+      const canvas = root?.querySelector(`.page[data-page-number="${number}"] canvas`);
+      if (!canvas || Number(root.querySelector('input').value) !== number) return false;
+      const pixel = canvas.getContext('2d').getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 3), 1, 1).data;
+      return color.every((value, index) => Math.abs(pixel[index] - value) <= 2);
+    }, { number, color });
+    await pdfView.locator(`.page[data-page-number="${number}"] .textLayer`).getByText(`CANVAS PDF PAGE ${number}`, { exact: true }).waitFor();
+  }
+  await expectPdfPage(2, [201, 221, 249]);
+  assert.equal(await reader.locator('iframe, object, embed').count(), 0, 'PDF renders directly in Canvas');
+  await pdfView.getByRole('button', { name: '下一页', exact: true }).click();
+  await expectPdfPage(3, [255, 210, 181]);
+  await pdfView.getByLabel('PDF 页码', { exact: true }).fill('1.5');
+  await expectPdfPage(1, [188, 232, 213]);
+  await pdfView.getByLabel('PDF 页码', { exact: true }).fill('2');
+  await expectPdfPage(2, [201, 221, 249]);
+  const initialZoom = Number((await pdfView.locator('output').innerText()).replace('%', ''));
+  await pdfView.getByRole('button', { name: '放大', exact: true }).click();
+  assert.ok(Number((await pdfView.locator('output').innerText()).replace('%', '')) > initialZoom);
+  await pdfView.getByRole('button', { name: '适应宽度', exact: true }).click();
+  for (const theme of ['light', 'dark', 'sand']) {
+    await page.evaluate((theme) => document.documentElement.dataset.theme = theme, theme);
+    assert.equal(await pdfView.locator('.document-pdf-scroll').evaluate((node) => getComputedStyle(node).backgroundColor === getComputedStyle(node.closest('.document-workspace')).backgroundColor), true);
+    await pdfView.screenshot({ path: path.join(evidenceDirectory, `pdf-canvas-${theme}.png`), animations: 'disabled' });
+  }
+  await page.evaluate(() => document.documentElement.dataset.theme = 'sand');
+  await page.setViewportSize({ width: 900, height: 760 });
+  await page.waitForFunction(() => { const root = document.querySelector('.canvas-panel:not([hidden]) .document-pdf-scroll'); return root && root.scrollWidth <= root.clientWidth + 2; });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
+  await expectPdfPage(2, [201, 221, 249]);
   const downloadPromise = page.waitForEvent('download');
   await reader.getByRole('button', { name: '下载原文件', exact: true }).click();
   assert.equal(fs.readFileSync(await (await downloadPromise).path()).equals(pdf), true);
@@ -244,13 +276,18 @@ export async function documentSmoke(page, browser) {
   page.off('request', countRead);
   fs.writeFileSync(path.join(cwd, 'canvas-auto.pdf'), pdf);
   await present('pdf', 'present');
-  await reader.locator('iframe').waitFor();
-  await reader.locator('iframe').evaluate((node) => { node.dataset.beforeUpdate = 'true'; });
+  await reader.locator('.document-pdf canvas').first().waitFor();
+  await reader.locator('.document-pdf').evaluate((node) => { node.dataset.beforeUpdate = 'true'; });
   await present('pdf', 'update');
   await page.waitForFunction(() => {
     const frame = document.querySelector('.canvas-panel:not([hidden]) .document-pdf');
     return frame && !frame.dataset.beforeUpdate;
   });
+  await reader.locator('.document-pdf canvas').first().waitFor();
+  fs.writeFileSync(path.join(cwd, 'canvas-auto.pdf'), 'invalid PDF');
+  await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
+  await reader.getByRole('alert').filter({ hasText: '内嵌 PDF 预览不可用' }).waitFor();
+  assert.equal(await reader.getByRole('button', { name: '下载原文件', exact: true }).isEnabled(), true);
   await present('markdown', 'clear');
   await present('pdf', 'clear');
   while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
