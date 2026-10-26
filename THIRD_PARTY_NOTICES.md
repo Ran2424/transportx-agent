@@ -42,3 +42,7 @@ The read-only CAD Canvas uses the following third-party packages:
 - `@velipso/polybool` 1.1.1 — 0BSD
 
 Their upstream license texts and copyright notices are distributed with the corresponding npm packages.
+
+## PDF.js
+
+PDF previews use Mozilla PDF.js (`pdfjs-dist`, Apache-2.0). Its license is included with the locally bundled runtime assets at `pdfjs/LICENSE`; font and WebAssembly notices are retained in the corresponding asset directories.

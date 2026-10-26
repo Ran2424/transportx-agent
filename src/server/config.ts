@@ -40,7 +40,7 @@ export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
     return null; // Video processing reports a clear error when ffmpeg is unavailable.
   }
 })();
-export const PLATFORM_VERSION = '3.23.2';
+export const PLATFORM_VERSION = '3.24.0';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -110,7 +110,7 @@ function findReactWebDir() {
 }
 
 export const MIME_TYPES = {
-  '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+  '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.mjs': 'application/javascript',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff': 'font/woff',

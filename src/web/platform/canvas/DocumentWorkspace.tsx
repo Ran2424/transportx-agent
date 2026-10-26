@@ -1,5 +1,5 @@
 import { exportCitationMarkdown } from '../../../contracts/citation-compiler';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css';
 import { isCitationResourceErrorCode, type CitationEnvelope, type CitationResourceErrorCode } from '../../../contracts/citation';
@@ -12,6 +12,8 @@ import { sessionFileUrl, withDownload } from '../workspace/file-urls';
 import { documentFormat, documentTarget, type DocumentPosition, type DocumentView } from './document-state';
 import { renderReport } from './report-renderer';
 import { downloadDocument, exportReportPdf } from './report-export';
+
+const PdfDocument = lazy(() => import('./PdfDocument'));
 
 export function DocumentWorkspace({ view, active, positions }: { view: DocumentView; active: boolean; positions: Map<string, DocumentPosition> }) {
   const { t, i18n } = useTranslation();
@@ -146,8 +148,7 @@ export function DocumentWorkspace({ view, active, positions }: { view: DocumentV
     {stale ? <p className="document-notice" role="status">{t('document.sourceUpdated')}</p> : null}
     {notice ? <p className="document-notice" role="status">{notice}</p> : null}
     {error ? <p className="document-notice is-error" role="alert">{error}</p> : !ready ? <p className="document-notice" role="status">{t('workspace.reading')}</p> : view.format === 'pdf' ? <>
-      <iframe key={`${view.navigationId}:${view.revision}:${refresh}`} className="document-pdf" src={`${resourceUrl}#page=${pdfPage}&view=FitH`} title={t('workspace.originalPdfTitle', { name: view.title })} onError={() => setError(t('document.pdfUnavailable'))} />
-      <p className="document-pdf-help">{t('document.pdfHelp')}</p>
+      <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><PdfDocument key={`${view.id}:${view.revision}:${refresh}`} url={resourceUrl} title={view.title} page={pdfPage} navigationId={view.navigationId} position={positions.get(view.id)} onPosition={(position) => positions.set(view.id, position)} /></Suspense>
     </> : view.format === 'csv' ? <div className="document-reading-layout">
       <div ref={viewport} className="document-scroll" onScroll={(event) => { if (active && ready) positions.set(view.id, { scrollTop: event.currentTarget.scrollTop, navigationId: view.navigationId }); }}>
         {!rows.length ? <p className="file-preview-empty">{t('workspace.tableEmpty')}</p> : <div className="file-preview-table-wrap document-csv-table"><table className="file-preview-table"><thead><tr>{rows[0].map((cell, index) => <th key={`${cell}-${index}`}>{cell}</th>)}</tr></thead><tbody>{rows.slice(1).map((row, rowIndex) => <tr key={rowIndex} data-document-row={rowIndex + 1} className={view.locator?.kind === 'table' && rowIndex + 1 >= (view.locator.rowStart || 1) && rowIndex + 1 <= (view.locator.rowEnd || view.locator.rowStart || 0) ? 'is-cited' : ''}>{rows[0].map((_, cellIndex) => <td key={cellIndex}>{row[cellIndex] || ''}</td>)}</tr>)}</tbody></table></div>}

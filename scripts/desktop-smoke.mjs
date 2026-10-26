@@ -127,7 +127,7 @@ try {
     return await window.transportxDesktop.download(url);
   }, new URL(window.url()).origin);
   if (path.relative(downloadsDir, downloadedPdfPath).startsWith('..') || path.isAbsolute(path.relative(downloadsDir, downloadedPdfPath)) || !fs.existsSync(downloadedPdfPath) || fs.readFileSync(downloadedPdfPath).subarray(0, 4).toString() !== '%PDF') throw new Error('Desktop PDF download was not saved');
-  // Exercise the same sandboxed native PDF embedding used by the Canvas reader.
+  // Prepare a test-owned PDF for the Canvas rendering check below.
   const previewUrl = await window.evaluate(async () => {
     const response = await fetch('/api/reports/pdf/download', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' },
@@ -137,21 +137,6 @@ try {
     return url;
   });
   const inlinePdf = await (await fetch(new URL(previewUrl, window.url()))).arrayBuffer();
-  await window.route('**/canvas-smoke.pdf', (route) => route.fulfill({ contentType: 'application/pdf', body: Buffer.from(inlinePdf) }));
-  await window.evaluate(() => {
-    const frame = document.createElement('iframe');
-    frame.id = 'canvas-pdf-smoke'; frame.title = 'Canvas native PDF';
-    frame.style.cssText = 'position:fixed;inset:60px 20px 20px;width:90%;height:80%;z-index:9999;background:white';
-    frame.src = '/canvas-smoke.pdf#page=3&view=FitH';
-    document.body.append(frame);
-  });
-  await window.locator('#canvas-pdf-smoke').waitFor();
-  await window.waitForTimeout(1_000);
-  const documentValidationDir = path.resolve('.plans/canvas-document-viewer/validation');
-  fs.mkdirSync(documentValidationDir, { recursive: true });
-  await window.locator('#canvas-pdf-smoke').screenshot({ path: path.join(documentValidationDir, 'electron-pdf-page-3.png') });
-  await window.evaluate(() => document.querySelector('#canvas-pdf-smoke')?.remove());
-  console.log('[desktop-smoke] native PDF page-navigation screenshot captured');
   await window.getByRole('button', { name: '打开设置' }).click();
   const settings = window.getByTestId('settings-workspace');
   await settings.waitFor();
@@ -201,6 +186,23 @@ try {
     fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
     fs.writeFileSync('.plans/workspace-conversations/desktop-network.json', JSON.stringify({ oldBusinessRequests: 0, requests: urls.map((value) => new URL(value).pathname) }, null, 2));
     console.log('[desktop-smoke] durable create/reload, explicit real Pi activation/close and new-endpoint trace passed');
+    fs.writeFileSync(path.join(snapshot.runtime.cwd, 'canvas-smoke.pdf'), Buffer.from(inlinePdf));
+    const dock = window.getByTestId('workspace-dock');
+    if (!await dock.isVisible()) await window.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
+    await dock.getByRole('button', { name: '刷新文件', exact: true }).click();
+    await dock.getByRole('button', { name: /canvas-smoke.pdf/ }).click();
+    const pdfView = window.locator('.canvas-panel:not([hidden]) .document-pdf');
+    await pdfView.getByLabel('PDF 页码', { exact: true }).fill('3');
+    await pdfView.locator('.page[data-page-number="3"] .textLayer').getByText('CANVAS PDF PAGE 3', { exact: true }).waitFor();
+    await window.waitForFunction(() => {
+      const canvas = document.querySelector('.canvas-panel:not([hidden]) .page[data-page-number="3"] canvas');
+      return canvas && canvas.width > 0 && canvas.height > 0;
+    });
+    if (await pdfView.locator('iframe, object, embed').count()) throw new Error('PDF preview uses a browser plugin');
+    const documentValidationDir = path.resolve('.plans/canvas-document-viewer/validation');
+    fs.mkdirSync(documentValidationDir, { recursive: true });
+    await pdfView.screenshot({ path: path.join(documentValidationDir, 'electron-pdf-page-3.png') });
+    console.log('[desktop-smoke] integrated PDF worker, rendered page, selectable text and page navigation passed');
   }
   if (!fs.existsSync(path.join(dataRoot, 'scenario')) || !fs.existsSync(path.join(dataRoot, 'sessions')) || !fs.existsSync(path.join(dataRoot, 'modules'))) throw new Error(`TransportX data directories were not created under ${dataRoot}`);
   await app.close();

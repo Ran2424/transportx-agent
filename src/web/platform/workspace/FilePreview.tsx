@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel/commands.js';
@@ -12,6 +12,8 @@ type FileIcon = 'workspace' | 'file' | 'report' | 'code' | 'image' | 'table';
 type PreviewKind = 'code' | 'table' | 'report' | 'image' | 'pdf' | 'document' | null;
 
 export type FilePresentation = { kind: string; icon: FileIcon; label: string; preview: PreviewKind; extension: string };
+const PdfDocument = lazy(() => import('../canvas/PdfDocument'));
+
 export type ExternalPreviewSource = {
   url: string;
   kind: 'document' | 'image';
@@ -165,7 +167,9 @@ export function FilePreview({ item, sessionId, stackIndex, initialOffset, extern
   const body = presentation.preview === 'image'
     ? <img className="file-preview-image" src={previewUrl} alt={item.name} />
     : presentation.preview === 'document'
-        ? <iframe className="file-preview-document" src={previewUrl} title={t('workspace.sourceTitle', { name: item.name })} />
+        ? externalSource?.mimeType.split(';')[0].trim().toLowerCase() === 'application/pdf'
+          ? <Suspense fallback={<p className="file-preview-loading">{t('workspace.reading')}</p>}><PdfDocument url={previewUrl} title={item.name} /></Suspense>
+          : <iframe className="file-preview-document" src={previewUrl} title={t('workspace.sourceTitle', { name: item.name })} />
         : error
           ? <p className="file-preview-error">{error}</p>
           : !content

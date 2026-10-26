@@ -103,3 +103,6 @@ modules/installable/
 # CAD generated assets
 test/cad/out/
 src/web/public/workers/
+
+# PDF.js generated runtime assets
+src/web/public/pdfjs/
