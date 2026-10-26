@@ -179,7 +179,7 @@ export class WorkspaceMigrationRunner {
     };
     visit(item.path);
     const owner = readJsonObject(workspaceMetadataPath(item.path, '.tau/workspace-owner.json'));
-    if (owner.version !== 1 || owner.workspace !== toPosixPath(item.path) || owner.parent !== toPosixPath(fs.realpathSync(path.dirname(item.path)))) throw failure('workspace_ownership_unproven', 'Isolation does not prove physical directory ownership.');
+    if (owner.directoryOwnership === 'external' || owner.version !== 1 || owner.workspace !== toPosixPath(item.path) || owner.parent !== toPosixPath(fs.realpathSync(path.dirname(item.path)))) throw failure('workspace_ownership_unproven', 'Isolation does not prove physical directory ownership.');
     for (const root of new Set(state.scopes.map((scope) => scope.sessionsDirectory))) for (const source of historySources(root, () => {})) {
       const own = root === item.sessionsDirectory && item.histories.find((history) => history.key === source.key);
       try {

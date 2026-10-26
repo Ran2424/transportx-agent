@@ -198,7 +198,12 @@ Pi.prototype.handleEvent = function(event) {
   page.on('pageerror', (error) => uiErrors.push(error.message));
   const frames = [];
   page.on('websocket', (socket) => socket.on('framereceived', ({ payload }) => { try { frames.push(JSON.parse(String(payload))); } catch {} }));
-  const session = await createHostConversation(json, { name: '改名与保存复验', model: 'probe/smoke', parentDirectory: path.join(root, 'scenario') });
+  const projectDirectory = path.join(root, 'scenario', 'opened-project'); fs.mkdirSync(projectDirectory);
+  const sourceBytes = Buffer.from('existing project source\n'); fs.writeFileSync(path.join(projectDirectory, 'source.txt'), sourceBytes);
+  const options = await json('/api/platform/session-options');
+  const opened = await json('/api/conversations', { requestId: crypto.randomUUID(), workspace: { kind: 'folder', name: '改名与保存复验', directory: projectDirectory }, name: '改名与保存复验', model: 'probe/smoke', domainId: 'com.transportx.workbench', profile: { schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected: options.modules.filter(item => item.selectedByDefault).map(({ id, version }) => ({ id, version })) } } });
+  const session = (await json(`/api/conversations/${opened.conversation.id}/activate`, {})).runtime;
+  assert.equal(session.cwd, fs.realpathSync(projectDirectory));
   const id = session.conversationId, route = `/api/conversations/${id}`, original = await json(`${route}/snapshot`), file = path.join(root, 'sessions', original.conversation.history.key);
   diagnoseRename = async () => ({ state: await json(`${route}/snapshot`), browserText: await page.locator('body').innerText(), frames: frames.slice(-100), uiErrors });
   const rename = async (name) => { const workspace = await json(`/api/workspaces/${session.workspaceId}`); return json(route, { name, expectedRevision: workspace.revision }, 'PATCH'); };
@@ -234,6 +239,7 @@ Pi.prototype.handleEvent = function(event) {
   // Reproduce the old Host's unstructured name tail in this test-owned file.
   fs.appendFileSync(file, JSON.stringify({ type: 'session_info', name: '旧 Host 尾部名称', explicit: true, timestamp: new Date().toISOString() }) + '\n');
   const bytes = fs.readFileSync(file), nativeId = header(file).id;
+  assert.equal(fs.realpathSync(header(file).cwd), fs.realpathSync(projectDirectory));
   await stop(host); endpoint = await launchHost(); await until(async () => (await json('/api/health')).dataState === 'ready', 'rename restart inventory');
   const restored = await json(`${route}/snapshot`); assert.equal(restored.conversation.name, '离线改名'); assert.equal(restored.runtime, null); assert.equal(restored.conversation.history.key, original.conversation.history.key); assert.deepEqual(fs.readFileSync(file), bytes);
   assert.equal(rows(restored.snapshot, 'user').length, 2); assert.equal(rows(restored.snapshot, 'assistant').length, 2);
@@ -242,6 +248,8 @@ Pi.prototype.handleEvent = function(event) {
   await composer.fill('你好'); await page.getByRole('button', { name: '发送消息', exact: true }).click(); await settled(3);
   assert.equal(header(file).id, nativeId); await page.reload({ waitUntil: 'networkidle' }); await until(async () => await page.getByText('你好', { exact: true }).count() === 3, 'three identical greetings survive restart and reload'); assert.deepEqual(uiErrors, []);
   assert.deepEqual(fs.readFileSync(file).subarray(0, bytes.length), bytes, 'legacy recovery and the third turn retain every prior Native byte');
+  assert.deepEqual(fs.readFileSync(path.join(projectDirectory, 'source.txt')), sourceBytes);
+  report.openFolderWorkspace = { passed: true, exactCwd: true, originalFilePreserved: true, restartAndContinuation: true };
   report.renamePersistence = { passed: true, firstFlushDeferred: true, streamedRename: true, existingHistoryStreamRename: true, reloadDuringStream: true, repeatedGreetings: 3, restarted: true, legacyNameTailRecovered: true, nativeIdentityPreserved: true, originalWindowsMiniMaxReproduced: false };
   report.passed = true;
 } catch (error) {

@@ -1,5 +1,6 @@
 const { hostPlatform } = require('../bin/host-platform.js');
 const { createDiagnosticLogger } = require('../bin/diagnostic-log.js');
+const { toPosixPath } = require('../bin/util/path.js');
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -217,6 +218,11 @@ else {
     });
     ipcMain.handle('transportx:window:is-maximized', () => Boolean(mainWindow?.isMaximized()));
     ipcMain.handle('transportx:window:close', () => { mainWindow?.close(); });
+    ipcMain.handle('transportx:workspace:select-directory', async (event: Electron.IpcMainInvokeEvent) => {
+      assertUpdateSender(event, mainWindow, workbenchOrigin);
+      const result = await dialog.showOpenDialog(mainWindow!, { properties: ['openDirectory'] });
+      return result.canceled || !result.filePaths[0] ? null : toPosixPath(fs.realpathSync(result.filePaths[0]));
+    });
     ipcMain.handle('transportx:download', async (event: Electron.IpcMainInvokeEvent, value: unknown) => {
       if (event.sender !== mainWindow?.webContents || typeof value !== 'string') throw new Error('Invalid download request');
       const target = new URL(value, workbenchOrigin);

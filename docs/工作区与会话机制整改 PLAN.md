@@ -400,6 +400,7 @@ type CreateConversationInput = {
   requestId: string;
   workspace:
     | { kind: 'new'; name: string; parentDirectory?: string }
+    | { kind: 'folder'; name: string; directory: string }
     | { kind: 'existing'; workspaceId: string; expectedRevision: number; defaultsRevision: number };
   name: string;
   model?: string;
@@ -409,7 +410,9 @@ type CreateConversationInput = {
 };
 ```
 
-workspace 为互斥联合，禁止同时传 workspaceId 和父目录，也不接受裸 cwd 表示“猜测复用”。新工作区必须明确有效 profile/domain/model；新 UI 的 defaults 初始化为首个会话配置。
+workspace 为互斥联合，禁止混传 workspaceId、directory 和父目录，也不接受裸 cwd 表示“猜测复用”。新工作区必须明确有效 profile/domain/model；新 UI 的 defaults 初始化为首个会话配置。
+
+2026-10-26 打开文件夹：`folder` 将已有目录本身登记为工作区，不分配子目录，仍需完整 model/domain/profile。规范化路径后检查重叠工作区、删除记录、迁移保护与私有应用数据；已有 `.tau` 不覆盖。Catalog 和 owner 均标记 `directoryOwnership=external`，不授予整目录删除权；桌面选择器返回 Host 本机目录，Web 输入的也是 Host 本机绝对路径。已登记目录在界面中切到该工作区，使用 `existing` 创建会话。这不包含物理搬迁或重新登记带旧 `.tau` 的未索引目录。
 
 2026-10-25 实施确认：existing 工作区创建同时传 expectedRevision 与 defaultsRevision，分别校验管理版本和所用默认配置版本。相同 requestId 先核对不可变输入摘要并返回原记录，再对尚未提交的新请求做版本校验；不因已成功请求导致的版本增加而重复创建。
 

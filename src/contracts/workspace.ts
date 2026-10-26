@@ -29,12 +29,14 @@ export type WorkspaceCatalogEntryV1 = {
   state: 'creating' | 'ready' | 'deleting' | 'deleted';
   /** Reserved system workspace that only holds conversations moved out of ordinary workspaces. */
   kind?: 'standalone';
+  /** Existing project directories are never owned for recursive deletion. */
+  directoryOwnership?: 'external';
   deletion: null | { requestId: string; manifestRevision: number; rootIdentity: string; conversationIds: string[]; historyKeys: string[]; invocationOwnerKeys: string[]; error: DeletionError; stage: 'frozen' | 'invocations-cleaned' | 'history-cleaned' | 'workspace-cleaned' };
 };
 export type WorkspaceCatalogV1 = { schemaVersion: 1; revision: number; entries: WorkspaceCatalogEntryV1[] };
 export type CreateConversationInput = {
   requestId: string;
-  workspace: { kind: 'new'; name: string; parentDirectory?: string } | { kind: 'existing'; workspaceId: string; expectedRevision: number; defaultsRevision: number };
+  workspace: { kind: 'new'; name: string; parentDirectory?: string } | { kind: 'folder'; name: string; directory: string } | { kind: 'existing'; workspaceId: string; expectedRevision: number; defaultsRevision: number };
   name: string; model?: string; profile?: SessionProfileV1; domainId?: string; appendSystemPrompt?: string;
 };
 export type WorkspaceParseResult<T> = { ok: true; value: T; diagnostics: [] } | { ok: false; value: null; diagnostics: ContractDiagnostic[] };
@@ -151,13 +153,14 @@ export function parseWorkspaceCatalogStructured(value: unknown): WorkspaceParseR
       const ids = new Set(), paths = new Set(), requests = new Set();
       root.entries.forEach((value, index) => {
         const path = `catalog.entries[${index}]`;
-        const entry = fields(value, 'workspaceId path creationRequestId creationInputSha256 state deletion kind', path, diagnostics);
+        const entry = fields(value, 'workspaceId path creationRequestId creationInputSha256 state deletion kind directoryOwnership', path, diagnostics);
         if (!entry) return;
         check(typeof entry.workspaceId === 'string' && WORKSPACE_ID.test(entry.workspaceId), `${path}.workspaceId`, diagnostics);
         check(text(entry.path, 4096) && /^(?:\/|[A-Za-z]:\/)/.test(String(entry.path)) && !String(entry.path).includes('\\') && !String(entry.path).split('/').some((part) => part === '.' || part === '..'), `${path}.path`, diagnostics);
         creation(entry, path, diagnostics);
         check(oneOf(entry.state, ['creating', 'ready', 'deleting', 'deleted']), `${path}.state`, diagnostics);
         check(entry.kind === undefined || entry.kind === 'standalone', `${path}.kind`, diagnostics);
+        check(entry.directoryOwnership === undefined || entry.directoryOwnership === 'external', `${path}.directoryOwnership`, diagnostics);
         check(!ids.has(entry.workspaceId) && !paths.has(entry.path) && (entry.creationRequestId === null || !requests.has(entry.creationRequestId)), path, diagnostics, 'Catalog identity, path and creation request must be unique.');
         ids.add(entry.workspaceId); paths.add(entry.path); if (entry.creationRequestId !== null) requests.add(entry.creationRequestId);
         if (entry.deletion !== null) {
@@ -178,8 +181,9 @@ export function parseCreateConversationStructured(value: unknown): WorkspacePars
     check(text(root.requestId), 'create.requestId', diagnostics);
     check(text(root.name, 120), 'create.name', diagnostics);
     const workspace = asRecord(root.workspace);
-    if (workspace?.kind === 'new') {
-      fields(workspace, 'kind name parentDirectory', 'create.workspace', diagnostics);
+    if (workspace?.kind === 'new' || workspace?.kind === 'folder') {
+      fields(workspace, workspace.kind === 'folder' ? 'kind name directory' : 'kind name parentDirectory', 'create.workspace', diagnostics);
+      if (workspace.kind === 'folder') check(text(workspace.directory, 4096), 'create.workspace.directory', diagnostics);
       check(text(workspace.name, 120), 'create.workspace.name', diagnostics);
       check(workspace.parentDirectory === undefined || text(workspace.parentDirectory, 4096), 'create.workspace.parentDirectory', diagnostics);
       check(text(root.model, 500) && text(root.domainId), 'create.model', diagnostics, 'A new workspace requires explicit model and domain.');
@@ -187,7 +191,7 @@ export function parseCreateConversationStructured(value: unknown): WorkspacePars
     } else if (workspace?.kind === 'existing') {
       fields(workspace, 'kind workspaceId expectedRevision defaultsRevision', 'create.workspace', diagnostics);
       check(typeof workspace.workspaceId === 'string' && WORKSPACE_ID.test(workspace.workspaceId) && integer(workspace.expectedRevision) && integer(workspace.defaultsRevision), 'create.workspace', diagnostics);
-    } else check(false, 'create.workspace.kind', diagnostics, 'Select new or existing workspace explicitly.');
+    } else check(false, 'create.workspace.kind', diagnostics, 'Select a new workspace, project folder or registered workspace explicitly.');
     check(root.model === undefined || text(root.model, 500), 'create.model', diagnostics);
     check(root.domainId === undefined || text(root.domainId), 'create.domainId', diagnostics);
     if (root.profile !== undefined) { const profile = parseSessionProfileStructured(root.profile); check(profile.ok && profile.value.modules.selectionMode === 'explicit', 'create.profile', diagnostics, 'Creation requires a complete explicit SessionProfileV1.'); }

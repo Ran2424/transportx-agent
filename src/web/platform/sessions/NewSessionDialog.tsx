@@ -31,6 +31,10 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
   const [name, setName] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
   const [parentDirectory, setParentDirectory] = useState('');
+  const [locationMode, setLocationMode] = useState<'new' | 'folder'>('new');
+  const [directory, setDirectory] = useState('');
+  const [choosingDirectory, setChoosingDirectory] = useState(false);
+  const desktop = (window as Window & { transportxDesktop?: { selectWorkspaceDirectory?(): Promise<string | null> } }).transportxDesktop;
   const requestIds = useRef(new Map<string, string>());
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
   const [moduleOptions, setModuleOptions] = useState<SessionModuleOption[]>([]);
@@ -66,6 +70,23 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
     return () => { current = false; };
   }, [kernel, open, workspace]);
 
+  function selectFolder(value: string) {
+    setDirectory(value);
+    const canonical = value.replaceAll('\\', '/').replace(/\/$/, '');
+    const registered = workspaces.find((item) => item.availability === 'ready' && item.kind !== 'standalone' && item.path === canonical);
+    if (registered) { onWorkspaceChange(registered); return; }
+    if (!workspaceName.trim() || workspaceName === directory.replaceAll('\\', '/').replace(/\/$/, '').split('/').at(-1)) setWorkspaceName(canonical.split('/').at(-1) || '');
+  }
+
+  async function chooseDirectory() {
+    setChoosingDirectory(true); setError('');
+    try {
+      const selected = await desktop?.selectWorkspaceDirectory?.();
+      if (selected) selectFolder(selected);
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setChoosingDirectory(false); }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
@@ -88,7 +109,7 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
         await kernel.commands.session.activate(confirmationId, { confirmCurrentConfiguration: { expectedRevision: workspace.revision, domainId, modelSpec: model, profile } });
         await kernel.commands.session.list(); onOpenChange(false); onCreated(confirmationId); return;
       }
-      const input = { workspace: workspace ? { kind: 'existing' as const, workspaceId: workspace.id, expectedRevision: workspace.revision!, defaultsRevision: workspace.defaultsRevision! } : { kind: 'new' as const, name: workspaceName.trim(), ...(parentDirectory.trim() ? { parentDirectory: parentDirectory.trim() } : {}) }, name: name.trim() || t(workspace ? 'workspaceFlow.untitled' : 'workspaceFlow.initialAnalysis'), model, profile, domainId };
+      const input = { workspace: workspace ? { kind: 'existing' as const, workspaceId: workspace.id, expectedRevision: workspace.revision!, defaultsRevision: workspace.defaultsRevision! } : locationMode === 'folder' ? { kind: 'folder' as const, name: workspaceName.trim(), directory: directory.trim() } : { kind: 'new' as const, name: workspaceName.trim(), ...(parentDirectory.trim() ? { parentDirectory: parentDirectory.trim() } : {}) }, name: name.trim() || t(workspace ? 'workspaceFlow.untitled' : 'workspaceFlow.initialAnalysis'), model, profile, domainId };
       const digest = JSON.stringify(input), requestId = requestIds.current.get(digest) || crypto.randomUUID(); requestIds.current.set(digest, requestId);
       const session = await kernel.commands.session.create({ ...input, requestId });
       kernel.dispatch({ type: 'session/created', session });
@@ -162,8 +183,15 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
       footer={null}
     >
       <form className="form-stack" onSubmit={submit}>
-        {mode === 'create' && <label className="field-label"><span>{t('workspaceFlow.workspace')}</span><select value={workspace?.id || ''} onChange={(event) => onWorkspaceChange(workspaces.find((item) => item.id === event.target.value) || null)}><option value="">{t('workspaceFlow.newWorkspace')}</option>{workspaces.filter((item) => item.availability === 'ready' && item.kind !== 'standalone').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-        {mode === 'create' && !workspace && <><label className="field-label"><span>{t('workspaceFlow.name')}</span><input value={workspaceName} maxLength={120} required onChange={(event) => setWorkspaceName(event.target.value)} /></label><label className="field-label"><span>{t('workspaceFlow.parent')}</span><input value={parentDirectory} placeholder={t('workspaceFlow.defaultParent')} onChange={(event) => setParentDirectory(event.target.value)} /></label></>}
+        {mode === 'create' && <label className="field-label"><span>{t('workspaceFlow.workspace')}</span><select aria-label={t('workspaceFlow.workspace')} value={workspace?.id || ''} onChange={(event) => onWorkspaceChange(workspaces.find((item) => item.id === event.target.value) || null)}><option value="">{t('workspaceFlow.newWorkspace')}</option>{workspaces.filter((item) => item.availability === 'ready' && item.kind !== 'standalone').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        {mode === 'create' && !workspace && <>
+          <label className="field-label"><span>{t('workspaceFlow.locationMode')}</span><select aria-label={t('workspaceFlow.locationMode')} value={locationMode} onChange={(event) => setLocationMode(event.target.value as 'new' | 'folder')}><option value="new">{t('workspaceFlow.createDirectory')}</option><option value="folder">{t('workspaceFlow.openFolder')}</option></select></label>
+          {locationMode === 'folder' ? <>
+            <div className="field-with-action"><label className="field-label"><span>{t('workspaceFlow.directory')}</span><input value={directory} required placeholder={t('workspaceFlow.directoryPlaceholder')} onChange={(event) => selectFolder(event.target.value)} /></label>{desktop?.selectWorkspaceDirectory && <Button type="button" variant="outline" disabled={choosingDirectory || submitting} onClick={() => void chooseDirectory()}>{t('workspaceFlow.chooseFolder')}</Button>}</div>
+            <p className="field-help">{t('workspaceFlow.folderHelp')}</p>
+          </> : <label className="field-label"><span>{t('workspaceFlow.parent')}</span><input value={parentDirectory} placeholder={t('workspaceFlow.defaultParent')} onChange={(event) => setParentDirectory(event.target.value)} /></label>}
+          <label className="field-label"><span>{t('workspaceFlow.name')}</span><input value={workspaceName} maxLength={120} required onChange={(event) => setWorkspaceName(event.target.value)} /></label>
+        </>}
         {workspace && <p className="confirmation-dialog-copy">{workspace.name} · {workspace.path}<br />{mode === 'confirmation' ? t('workspaceFlow.missingPlan') : t('workspaceFlow.futureOnly')}</p>}
         {mode === 'create' && <label className="field-label"><span>{t('sessions.taskName')}</span><input value={name} maxLength={120} autoFocus placeholder={t('sessions.taskNamePlaceholder')} onChange={(event) => setName(event.target.value)} /></label>}
         {moduleGroups.length ? (
@@ -199,7 +227,7 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
         {error ? <div className="inline-error" role="alert">{error}</div> : null}
         <div className="form-actions">
           <DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose>
-          <Button type="submit" disabled={submitting || !model || moduleBlockers.length > 0}>{submitting ? t('common.saving') : mode === 'defaults' ? t('workspaceFlow.saveDefaults') : mode === 'confirmation' ? t('workspaceFlow.confirmActivate') : t('workspaceFlow.create')}</Button>
+          <Button type="submit" disabled={submitting || choosingDirectory || !model || moduleBlockers.length > 0}>{submitting ? t('common.saving') : mode === 'defaults' ? t('workspaceFlow.saveDefaults') : mode === 'confirmation' ? t('workspaceFlow.confirmActivate') : t('workspaceFlow.create')}</Button>
         </div>
       </form>
     </Dialog>

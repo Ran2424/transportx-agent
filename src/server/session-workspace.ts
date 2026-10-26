@@ -85,7 +85,7 @@ export function resolveSessionWorkspaceForDeletion(cwd: string, sessionFile?: st
   const ownerFile = path.join(resolved, '.tau', WORKSPACE_OWNER_FILE);
   if (fs.existsSync(ownerFile)) {
     const owner = JSON.parse(fs.readFileSync(containedFile(resolved, ownerFile), 'utf8'));
-    if (owner.version !== 1 || typeof owner.workspace !== 'string' || typeof owner.parent !== 'string' || !isWithin(real, owner.workspace) || !isWithin(owner.workspace, real) || !isWithin(owner.parent, real) || isWithin(real, owner.parent) || path.relative(owner.parent, real) !== path.basename(real)) throw refused();
+    if (owner.directoryOwnership === 'external' || owner.version !== 1 || typeof owner.workspace !== 'string' || typeof owner.parent !== 'string' || !isWithin(real, owner.workspace) || !isWithin(owner.workspace, real) || !isWithin(owner.parent, real) || isWithin(real, owner.parent) || path.relative(owner.parent, real) !== path.basename(real)) throw refused();
     return resolved;
   }
   // Older task directories have no owner marker; require the configured root and saved plan.

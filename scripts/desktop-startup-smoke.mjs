@@ -53,6 +53,18 @@ async function stop(healthUrl) {
 
 try {
   const fresh = await start();
+  // Exercise the real preload/IPC path while replacing only the native OS dialog in this test app.
+  await app.evaluate(({ dialog }, directory) => {
+    dialog.showOpenDialog = async (_window, options) => {
+      if (JSON.stringify(options.properties) !== JSON.stringify(['openDirectory'])) throw new Error('Directory-only chooser required');
+      return { canceled: false, filePaths: [directory] };
+    };
+  }, dataRoot);
+  const chooserWindow = await app.firstWindow();
+  assert.equal(await chooserWindow.evaluate(() => window.transportxDesktop.selectWorkspaceDirectory()), fs.realpathSync(dataRoot).replaceAll('\\', '/'));
+  await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
+  assert.equal(await chooserWindow.evaluate(() => window.transportxDesktop.selectWorkspaceDirectory()), null);
+  console.log('[desktop-startup] real directory chooser bridge and cancellation passed');
   await stop(fresh.healthUrl);
   console.log('[desktop-startup] fresh startup and normal IPC exit passed');
 

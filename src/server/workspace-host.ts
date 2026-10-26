@@ -53,7 +53,7 @@ export class WorkspaceHost {
   private async projectWorkspace(id: string, state: ReturnType<WorkspaceMigration['read']>, catalog: ReturnType<WorkspaceStore['readCatalog']>) {
     const source = state.items.find((item) => item.workspaceId === id);
     const entry = catalog.entries.find((entry) => entry.workspaceId === id);
-    const unavailable = (code: string, message: string, itemId?: string) => ({ id, path: entry?.path || source?.path || '', name: path.basename(entry?.path || source?.path || '') || id, revision: source?.revision ?? null, defaultsRevision: null, defaults: null, conversations: [], availability: source?.state === 'isolated' ? 'isolated' : entry?.state === 'deleting' ? 'deleting' : 'blocked', kind: entry?.kind === 'standalone' ? 'standalone' : 'workspace', migrationItemId: itemId || source?.id || null, error: { code, message }, deletion: entry?.deletion || null });
+    const unavailable = (code: string, message: string, itemId?: string) => ({ id, path: entry?.path || source?.path || '', name: path.basename(entry?.path || source?.path || '') || id, revision: source?.revision ?? null, defaultsRevision: null, defaults: null, conversations: [], availability: source?.state === 'isolated' ? 'isolated' : entry?.state === 'deleting' ? 'deleting' : 'blocked', kind: entry?.kind === 'standalone' ? 'standalone' : 'workspace', migrationItemId: itemId || source?.id || null, error: { code, message }, directoryOwnership: entry?.directoryOwnership, deletion: entry?.deletion || null });
     if (!entry && !source) throw problem('workspace_missing', 'Workspace is not registered.', 404);
     if (entry?.state === 'deleted') throw problem('workspace_missing', 'Workspace was deleted.', 404);
     if (source && source.state !== 'ready') return unavailable('workspace_migration_required', 'Workspace migration is incomplete.', source.id);
@@ -67,7 +67,7 @@ export class WorkspaceHost {
       try { const history = this.options.store.inspectHistory(directory, record); if (history.sessionFile) { const summary = await readSessionSummary(history.sessionFile, (cwd) => typeof cwd === 'string' ? cwd : null); hasMessages = hasMessages || summary?.hasMessages || (summary ? false : null); if (typeof summary?.lastConversationAt === 'string' && summary.lastConversationAt && (!lastConversationAt || summary.lastConversationAt > lastConversationAt)) lastConversationAt = summary.lastConversationAt; } } catch { if (!hasMessages) hasMessages = null; }
       return { record, runtime: runtime?.metadata() || null, lastConversationAt, hasMessages };
     }));
-    return { id, path: directory, name: manifest.name, createdAt: manifest.createdAt, revision: manifest.revision, defaultsRevision: manifest.defaultsRevision, defaults: manifest.defaults, conversations, availability: 'ready', kind: entry!.kind === 'standalone' ? 'standalone' : 'workspace', migrationItemId: source?.id || null, error: null, deletion: entry!.deletion };
+    return { id, path: directory, name: manifest.name, createdAt: manifest.createdAt, revision: manifest.revision, defaultsRevision: manifest.defaultsRevision, defaults: manifest.defaults, conversations, availability: 'ready', kind: entry!.kind === 'standalone' ? 'standalone' : 'workspace', migrationItemId: source?.id || null, error: null, directoryOwnership: entry!.directoryOwnership, deletion: entry!.deletion };
   }
   async index() {
     this.options.migration.assertSystemReady();

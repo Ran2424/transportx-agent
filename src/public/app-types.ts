@@ -109,6 +109,7 @@ export type WorkspaceView = {
   availability: 'ready' | 'blocked' | 'isolated' | 'deleting';
   /** Standalone workspaces hold conversations that were moved out of ordinary workspaces. */
   kind?: 'workspace' | 'standalone';
+  directoryOwnership?: 'external';
   migrationItemId: string | null;
   error: { code: string; message: string } | null;
   deletion?: import('../contracts/workspace.js').WorkspaceCatalogEntryV1['deletion'];

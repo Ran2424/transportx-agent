@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('transportxDesktop', {
       return () => ipcRenderer.removeListener('transportx:update:state', handler);
     },
   },
+  selectWorkspaceDirectory(): Promise<string | null> { return ipcRenderer.invoke('transportx:workspace:select-directory'); },
   download(url: string): Promise<string> { return ipcRenderer.invoke('transportx:download', url); },
   filePath(file: File): string { return webUtils.getPathForFile(file); },
   // Window controls used by the frameless Win/Linux chrome. macOS already
