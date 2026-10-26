@@ -1,13 +1,14 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { assertGeoResourceAccess } from './geo-resource-access.js';
 import { readVerifiedGeoResource } from './geo-resource-storage.js';
 import { writeJson as sendJson } from './http/response.js';
 
-type GeoResourceSession = { cwd: string };
+type GeoResourceSession = { cwd: string; entries?: unknown[]; resolvedSessionPlan?: { modules?: Array<{ id?: string }> } | null };
 type GeoResourceRouteDeps = { getSession(sessionId: string): GeoResourceSession | null | undefined };
 
 const RESOURCE_ID_RE = /^geo_[a-f0-9]{16,64}$/;
-const GEO_RESOURCE_ROUTE_RE = /^\/api\/live-sessions\/([^/]+)\/geo-resources\/([^/]+)\/(manifest|data)$/;
+const GEO_RESOURCE_ROUTE_RE = /^\/api\/conversations\/([^/]+)\/geo-resources\/([^/]+)\/(manifest|data)$/;
 
 export function handleGeoResourceRoute(
   req: IncomingMessage,
@@ -39,6 +40,7 @@ export function serveGeoResource(req: IncomingMessage, res: ServerResponse, sess
   if (!RESOURCE_ID_RE.test(resourceId)) return sendJson(res, 400, { error: 'Invalid geo resource id' });
   try {
     const { manifest, buffer: data } = readVerifiedGeoResource(session.cwd, resourceId);
+    assertGeoResourceAccess(session, resourceId, manifest.sha256);
     const etag = `"${manifest.sha256}"`;
     if (req.headers['if-none-match'] === etag) {
       res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, max-age=0, must-revalidate' });

@@ -221,8 +221,8 @@ else {
       if (event.sender !== mainWindow?.webContents || typeof value !== 'string') throw new Error('Invalid download request');
       const target = new URL(value, workbenchOrigin);
       const reportPdf = /^\/api\/reports\/pdf\/download\/[a-f0-9-]+$/.test(target.pathname);
-      const sessionFile = target.pathname === '/api/file/raw' && target.searchParams.get('download') === '1';
-      const citationFile = /^\/api\/live-sessions\/[^/]+\/citation-resources\/[^/]+\/content$/.test(target.pathname) && target.searchParams.get('download') === '1';
+      const sessionFile = /^\/api\/conversations\/[^/]+\/(?:files\/raw|attachments\/[^/]+\/file)$/.test(target.pathname) && target.searchParams.get('download') === '1';
+      const citationFile = /^\/api\/conversations\/[^/]+\/citation-resources\/[^/]+\/content$/.test(target.pathname) && target.searchParams.get('download') === '1';
       if (target.origin !== workbenchOrigin || (!reportPdf && !sessionFile && !citationFile)) throw new Error('Invalid download URL');
       return await downloadToFile(event.sender, target.toString());
     });

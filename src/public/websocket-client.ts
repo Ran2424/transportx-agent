@@ -1,4 +1,5 @@
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
+import { AGENT_HOST_PROTOCOL_VERSION } from '../contracts/host-protocol.js';
 
 /**
  * WebSocket Client - Handles connection to backend WebSocket server.
@@ -68,6 +69,7 @@ export class WebSocketClient implements KernelTransport {
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
+      this.ws?.send(JSON.stringify({ type: 'hello', protocolVersion: AGENT_HOST_PROTOCOL_VERSION }));
       console.log('[WS] Connected');
       this.reconnectAttempts = 0;
       this.connectionState = 'open';
@@ -91,7 +93,7 @@ export class WebSocketClient implements KernelTransport {
       this.connectionState = 'closed';
       this.emit({ kind: 'disconnected', reason: event.reason || undefined });
 
-      if (!this.isIntentionallyClosed) {
+      if (!this.isIntentionallyClosed && event.code !== 4006) {
         this.attemptReconnect();
       }
     };

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { formatContextWindow } from '../../lib/formatting';
 
 function numeric(value: unknown): number | null {
@@ -7,7 +7,7 @@ function numeric(value: unknown): number | null {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-function contextUsage(session: LiveSession | undefined) {
+function contextUsage(session: ConversationView | undefined) {
   const usage = session?.contextUsage;
   const used = numeric(usage?.tokens);
   const limit = numeric(usage?.contextWindow)
@@ -17,7 +17,7 @@ function contextUsage(session: LiveSession | undefined) {
   return { used, limit, percent };
 }
 
-export function ComposerContextUsage({ session }: { session: LiveSession | undefined }) {
+export function ComposerContextUsage({ session }: { session: ConversationView | undefined }) {
   const { t } = useTranslation();
   const usage = contextUsage(session);
   const percent = usage.percent === null ? 0 : usage.percent;

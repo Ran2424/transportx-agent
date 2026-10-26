@@ -1,8 +1,9 @@
+import { protocolHeaders } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
 export async function moduleLanguageSmoke(page) {
-  const overviewResponse = await page.request.post(new URL('/api/rpc', page.url()).href, { data: { type: 'get_platform_overview' } });
+  const overviewResponse = await page.request.post(new URL('/api/rpc', page.url()).href, { headers: protocolHeaders, data: { type: 'get_platform_overview' } });
   const overview = (await overviewResponse.json()).data;
   const spatial = overview.modules.find((module) => module.id === 'com.transportx.spatial-analysis');
   const legacyData = [
@@ -36,6 +37,8 @@ export async function moduleLanguageSmoke(page) {
     return route.continue();
   };
   await page.route('**/api/rpc', intercept);
+  const scopedOverview = (route) => route.fulfill({ json: overview });
+  await page.route('**/api/conversations/*/overview', scopedOverview);
   const interceptOptions = (route) => route.fulfill({ json: options });
   await page.route('**/api/platform/session-options', interceptOptions);
   await page.evaluate(() => { window.transportxDesktop = { filePath: () => '/tmp/bilingual-smoke.zip' }; });
@@ -87,8 +90,8 @@ export async function moduleLanguageSmoke(page) {
       await search.fill('');
       if (process.env.TAU_CAPABILITY_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.TAU_CAPABILITY_SCREENSHOT_DIR, `legacy-data-${language}.png`), animations: 'disabled' });
       await center.getByRole('button', { name: english ? 'Close' : '关闭', exact: true }).click();
-      await page.getByRole('button', { name: english ? 'New traffic task' : '新建交通任务', exact: true }).first().click();
-      const task = page.getByRole('dialog', { name: english ? 'New traffic task' : '新建交通任务', exact: true });
+      await page.getByRole('button', { name: english ? 'New workspace and conversation' : '新建工作区和会话', exact: true }).first().click();
+      const task = page.getByRole('dialog', { name: english ? 'New conversation' : '新建会话', exact: true });
       const disclosure = task.locator('details').filter({ has: page.locator('summary', { hasText: english ? 'Task Modules and versions' : '任务 Module 与版本' }) });
       if (await disclosure.count()) await disclosure.locator('summary').click();
       const row = task.locator('.session-module-row').filter({ has: page.locator('[title="smoke.alpha"]') });
@@ -105,6 +108,7 @@ export async function moduleLanguageSmoke(page) {
     await page.locator('.settings-return').click();
   } finally {
     await page.unroute('**/api/rpc', intercept);
+    await page.unroute('**/api/conversations/*/overview', scopedOverview);
     await page.unroute('**/api/platform/session-options', interceptOptions);
     await page.evaluate(() => { delete window.transportxDesktop; });
   }

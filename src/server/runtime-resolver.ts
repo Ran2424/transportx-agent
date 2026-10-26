@@ -4,7 +4,8 @@ const path = require('node:path');
 import { sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 
-export const AGENT_HOST_PROTOCOL_VERSION = 1;
+import { AGENT_HOST_PROTOCOL_VERSION } from '../contracts/host-protocol.js';
+export { AGENT_HOST_PROTOCOL_VERSION };
 export const RUNTIME_MANIFEST_VERSION = 1;
 
 export type RuntimeEntry = {

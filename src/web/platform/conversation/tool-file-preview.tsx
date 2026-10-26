@@ -12,7 +12,7 @@ export function ToolFilePreview({ sessionId, path }: { sessionId: string; path: 
   const [open, setOpen] = useState(false);
   const item = { name: toolFileName(path), path, isDirectory: false };
   const presentation = filePresentation(item);
-  const previewUrl = `/api/file/preview?${new URLSearchParams({ sessionId, path })}`;
+  const previewUrl = `/api/conversations/${encodeURIComponent(sessionId)}/files/preview?${new URLSearchParams({ path })}`;
   return <div className={`tool-read-preview is-${presentation.kind}`}>
     {presentation.preview === 'image' ? <button className="tool-read-image-button" type="button" onClick={() => documentFormat(path) ? openDocument({ sessionId, title: item.name, path }) : setOpen(true)} title={t('conversation.tool.preview', { name: item.name })}><img src={previewUrl} alt={t('conversation.tool.imageAlt', { name: item.name })} /></button> : null}
     {presentation.preview && presentation.preview !== 'image' ? <button className="tool-read-open" type="button" onClick={() => documentFormat(path) ? openDocument({ sessionId, title: item.name, path }) : setOpen(true)}><Icon name={presentation.icon} /><span>{t('conversation.tool.previewRead', { type: presentation.label, name: item.name })}</span></button> : presentation.preview ? null : <span className="tool-read-unavailable"><Icon name={presentation.icon} />{t('conversation.tool.previewUnsupported', { name: item.name })}</span>}

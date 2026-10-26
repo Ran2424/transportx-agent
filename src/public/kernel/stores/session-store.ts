@@ -5,13 +5,16 @@
  * streaming state in presentation code.
  */
 
-import type { LiveSession, SessionAttachment, SessionSnapshot } from '../../app-types.js';
+import type { LiveSession, ConversationView, ConversationViewUpdate, WorkspaceIndex, WorkspaceView, SessionAttachment, SessionSnapshot } from '../../app-types.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
 import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../../contracts/geo.js';
 import { parsePiMessageQueue } from '../../../contracts/pi-rpc.js';
 
 export type SessionStoreState = {
-  sessions: LiveSession[];
+  sessions: ConversationView[];
+  runtimes: Record<string, LiveSession>;
+  workspaces: WorkspaceView[];
+  indexLoaded: boolean;
   activeSessionId: string | null;
   streamingBySession: Record<string, boolean>;
   compactingBySession: Record<string, boolean>;
@@ -20,7 +23,7 @@ export type SessionStoreState = {
   geoInteractionBySession: Record<string, { contextCount: number; waitingRequest?: GeoInteractionRequestV1; lastResponse?: GeoInteractionResponseV1; waitingScreenshotRequest?: GeoScreenshotRequestV1 }>;
 };
 
-const INITIAL: SessionStoreState = { sessions: [], activeSessionId: null, streamingBySession: {}, compactingBySession: {}, attachmentsBySession: {}, attachmentRevisionBySession: {}, geoInteractionBySession: {} };
+const INITIAL: SessionStoreState = { sessions: [], runtimes: {}, workspaces: [], indexLoaded: false, activeSessionId: null, streamingBySession: {}, compactingBySession: {}, attachmentsBySession: {}, attachmentRevisionBySession: {}, geoInteractionBySession: {} };
 
 export class SessionStore {
   private readonly store: Store<SessionStoreState> = createStore<SessionStoreState>(INITIAL);
@@ -33,6 +36,32 @@ export class SessionStore {
     return this.store.subscribe(listener);
   }
 
+  indexReceived(index: WorkspaceIndex) {
+    this.store.set((prev) => ({ ...prev, workspaces: index.workspaces, indexLoaded: true }));
+    for (const workspace of index.workspaces) for (const item of workspace.conversations) {
+      if (this.get().sessions.some((view) => view.id === item.record.id)) this.upsert({ id: item.record.id, record: item.record, workspaceRevision: workspace.revision ?? undefined, sessionName: item.record.name });
+    }
+  }
+  conversationForRuntime(id: string) { return this.get().runtimes[id]?.conversationId || null; }
+  liveSessionId(id: string) { return this.get().sessions.find((view) => view.id === id)?.liveSessionId || null; }
+  runtimeReceived(runtime: LiveSession) {
+    const id = runtime.conversationId; if (!id || !runtime.workspaceId) return;
+    this.store.set((prev) => ({ ...prev, runtimes: { ...Object.fromEntries(Object.entries(prev.runtimes).filter(([key, value]) => value.conversationId !== id || key === runtime.id)), [runtime.id]: { ...prev.runtimes[runtime.id], ...runtime } } }));
+    const current = this.get().sessions.find((view) => view.id === id);
+    this.upsert({ ...current, ...runtime, id, liveSessionId: runtime.id });
+  }
+  runtimeClosed(liveSessionId: string) {
+    const id = this.conversationForRuntime(liveSessionId);
+    this.store.set((prev) => { const runtimes = { ...prev.runtimes }; delete runtimes[liveSessionId]; return { ...prev, runtimes }; });
+    if (id && this.liveSessionId(id) === liveSessionId) this.upsert({ id, liveSessionId: null, isStreaming: false, isCompacting: false, capabilities: undefined, resolvedSessionPlan: undefined, pendingExtensionUiRequests: [], piQueue: { steering: [], followUp: [] } });
+    return id;
+  }
+  runtimesReceived(runtimes: LiveSession[]) {
+    const ids = new Set(runtimes.map((runtime) => runtime.id));
+    for (const previous of Object.keys(this.get().runtimes)) if (!ids.has(previous)) this.runtimeClosed(previous);
+    for (const runtime of runtimes) this.runtimeReceived(runtime);
+  }
+
   isStreaming(sessionId: string): boolean {
     return !!this.store.get().streamingBySession[sessionId];
   }
@@ -41,7 +70,7 @@ export class SessionStore {
     return !!this.store.get().compactingBySession[sessionId];
   }
 
-  listReceived(sessions: LiveSession[]) {
+  listReceived(sessions: ConversationView[]) {
     this.store.set((prev) => {
       const streamingBySession: Record<string, boolean> = {};
       const compactingBySession: Record<string, boolean> = {};
@@ -58,16 +87,17 @@ export class SessionStore {
       const activeSessionId = prev.activeSessionId && sessions.some((s) => s.id === prev.activeSessionId)
         ? prev.activeSessionId
         : null;
-      return { sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession, geoInteractionBySession };
+      return { ...prev, sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession, geoInteractionBySession };
     });
   }
 
-  upsert(session: LiveSession) {
+  upsert(session: ConversationViewUpdate) {
     if (!session?.id) return;
     this.store.set((prev) => {
       const index = prev.sessions.findIndex((s) => s.id === session.id);
+      if (index === -1 && session.liveSessionId === undefined) return prev;
       const sessions = index === -1
-        ? [...prev.sessions, session]
+        ? [...prev.sessions, session as ConversationView]
         : prev.sessions.map((s, i) => (i === index ? { ...s, ...session } : s));
       const streamingBySession = session.isStreaming === undefined
         ? prev.streamingBySession
@@ -82,6 +112,7 @@ export class SessionStore {
   closed(sessionId: string) {
     this.store.set((prev) => {
       const sessions = prev.sessions.filter((s) => s.id !== sessionId);
+      const runtimes = Object.fromEntries(Object.entries(prev.runtimes).filter(([, runtime]) => runtime.conversationId !== sessionId));
       const streamingBySession = { ...prev.streamingBySession };
       const compactingBySession = { ...prev.compactingBySession };
       const attachmentsBySession = { ...prev.attachmentsBySession };
@@ -93,7 +124,7 @@ export class SessionStore {
       delete attachmentRevisionBySession[sessionId];
       delete geoInteractionBySession[sessionId];
       const activeSessionId = prev.activeSessionId === sessionId ? null : prev.activeSessionId;
-      return { sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession, geoInteractionBySession };
+      return { ...prev, runtimes, sessions, activeSessionId, streamingBySession, compactingBySession, attachmentsBySession, attachmentRevisionBySession, geoInteractionBySession };
     });
   }
 
@@ -144,7 +175,7 @@ export class SessionStore {
   }
 
   applySnapshot(sessionId: string, snapshot: SessionSnapshot) {
-    if (snapshot.session) this.upsert({ ...snapshot.session, id: snapshot.session.id ?? sessionId, piQueue: parsePiMessageQueue(snapshot.session.piQueue) ?? { steering: [], followUp: [] } });
+    if (snapshot.session) this.upsert({ ...snapshot.session, id: sessionId, piQueue: parsePiMessageQueue(snapshot.session.piQueue) ?? { steering: [], followUp: [] } });
     else if (this.store.get().sessions.some((session) => session.id === sessionId)) this.upsert({ id: sessionId, piQueue: { steering: [], followUp: [] } });
     if (snapshot.isStreaming !== undefined) this.setStreaming(sessionId, !!snapshot.isStreaming);
     if (snapshot.isCompacting !== undefined) this.setCompacting(sessionId, !!snapshot.isCompacting);

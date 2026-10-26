@@ -1,3 +1,4 @@
+import { createHostConversation, nativeSnapshot } from './workspace-client.mjs';
 import { cadWorkspaceSmoke } from './cad-workspace-smoke.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,19 +8,19 @@ import { chromium } from 'playwright';
 import { defaultSessionProfile } from '../../src/contracts/session-profile.ts';
 
 // Real Pi, Host, Python and browser; only model tool choices are scripted.
-export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerInputs }) {
+export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerInputs, trackRequest }) {
   const option = (await json('/api/platform/session-options')).modules.find((item) => item.id === 'com.transportx.cad');
   assert.ok(option?.enabledForNewSessions);
   assert.equal(option.selectedByDefault, false);
   const profile = defaultSessionProfile([{ id: option.id, version: option.version }]);
-  const session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'CAD module acceptance', profile })).session;
-  const snapshot = (id = session.id) => json(`/api/live-sessions/${id}/snapshot`);
+  const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: 'CAD module acceptance', profile });
+  const snapshot = (id = session.conversationId) => nativeSnapshot(json, id);
   const results = (state) => state.entries.filter((entry) => entry.message?.role === 'toolResult').map((entry) => entry.message);
   async function execute(tool, params, extra = {}, selected = session, isError = false) {
-    const before = results(await snapshot(selected.id)).length;
+    const before = results(await snapshot(selected.conversationId)).length;
     const ack = await rpc({ type: 'prompt', sessionId: selected.id, message: 'core:' + JSON.stringify({ tool, params }), ...extra });
     assert.equal(ack.success, true, JSON.stringify(ack));
-    const state = await until(async () => { const value = await snapshot(selected.id); return !value.isStreaming && results(value).length > before && value; }, `CAD ${tool}`, 40000);
+    const state = await until(async () => { const value = await snapshot(selected.conversationId); return !value.isStreaming && results(value).length > before && value; }, `CAD ${tool}`, 40000);
     const result = results(state).at(-1);
     assert.equal(result.isError, isError, JSON.stringify(result));
     return result;
@@ -47,12 +48,13 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
   assert.ok(inspected.entities.some((entity) => entity.type === 'TEXT' && entity.text === '道路 ROAD-01'));
   const browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   const page = await browser.newPage({ locale: 'zh-CN', viewport: { width: 1440, height: 960 } });
+  page.on('request', (request) => trackRequest?.(request.url()));
   page.setDefaultTimeout(20000);
   const errors = []; page.on('pageerror', (error) => errors.push(error.message));
   const output = process.env.TRANSPORTX_CAD_VALIDATION_DIR || path.join(root, 'cad-validation');
   fs.mkdirSync(output, { recursive: true });
   try {
-    await page.addInitScript((id) => { if (window === window.top) localStorage.setItem('tau-active-live-session-id', id); }, session.id);
+    await page.addInitScript((id) => { if (window === window.top) localStorage.setItem('tau-active-conversation-id', id); }, session.conversationId);
     await page.goto(endpoint);
     const panel = page.locator('.canvas-panel:not([hidden]) [data-testid=cad-canvas]');
     async function attachCurrent() {
@@ -151,7 +153,7 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     await panel.locator('.cad-canvas-badge', { hasText: 'r3' }).waitFor();
     await panel.locator('canvas').waitFor();
     assert.equal(await page.locator('.cad-canvas-host canvas').count(), 1);
-    const reloadResponse = page.waitForResponse((response) => response.url().includes('/api/file/raw?') && decodeURIComponent(response.url()).includes('road/r3.dxf'));
+    const reloadResponse = page.waitForResponse((response) => response.url().includes('/files/raw?') && decodeURIComponent(response.url()).includes('road/r3.dxf'));
     await panel.getByRole('button', { name: '刷新图纸', exact: true }).click();
     await reloadResponse;
     await until(() => panel.getByRole('button', { name: '点选', exact: true }).isEnabled(), 'refreshed CAD ready');
@@ -177,13 +179,13 @@ export async function cadHostSmoke({ root, endpoint, json, rpc, until, providerI
     const workspace = await cadWorkspaceSmoke({ execute, session, page, panel, output });
     // Same fileId and revision in another session must load its own bytes.
     fs.mkdirSync(path.join(root, 'other-scenario'), { recursive: true });
-    const other = (await json('/api/live-sessions', { cwd: path.join(root, 'other-scenario'), model: 'probe/smoke', name: 'CAD other session', profile })).session;
+    const other = await createHostConversation(json, { parentDirectory: path.join(root, 'other-scenario'), model: 'probe/smoke', name: 'CAD other session', profile });
     fs.writeFileSync(path.join(other.cwd, 'road.geojson'), JSON.stringify({ ...source, features: [{ ...source.features[0], properties: { kind: 'road', name: 'OTHER SESSION' } }] }));
     await execute('cad_draw', request, {}, other);
     const otherDrawing = (await execute('cad_inspect', { fileId: 'road' }, {}, other)).details.result;
     await execute('cad_draw', { kind: 'edit', fileId: 'road', baseRevision: 1, expectedSha256: otherDrawing.summary.sha256, operations: [{ op: 'drawText', layer: 'REVIEW', text: 'Other revision two', height: 2.5, position: [0, 5] }] }, {}, other);
     await Promise.all([
-      page.waitForResponse((response) => response.url().includes('/api/file/raw?') && response.url().includes(other.id) && decodeURIComponent(response.url()).includes('r2.dxf')),
+      page.waitForResponse((response) => response.url().includes('/files/raw?') && response.url().includes(other.conversationId) && decodeURIComponent(response.url()).includes('r2.dxf')),
       page.getByTestId('live-tabs').locator('.live-tab-select').filter({ hasText: 'CAD other session' }).click(),
     ]);
     await panel.locator('.cad-canvas-badge', { hasText: 'r2' }).waitFor();

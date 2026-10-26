@@ -1,12 +1,13 @@
+import { createHostConversation, nativeSnapshot, closeHostConversation } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 
 // Production Host + real Pi tools + real browser. Only model selection is scripted.
-export async function canvasCoreSmoke({ root, endpoint, json, rpc, until }) {
-  let session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model: 'probe/smoke', name: 'Canvas core acceptance' })).session;
-  const snapshot = () => json(`/api/live-sessions/${session.id}/snapshot`);
+export async function canvasCoreSmoke({ root, endpoint, json, rpc, until, trackRequest }) {
+  let session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model: 'probe/smoke', name: 'Canvas core acceptance' });
+  const snapshot = () => nativeSnapshot(json, session.conversationId);
   const results = (state) => state.entries.filter((entry) => entry.message?.role === 'toolResult').map((entry) => entry.message);
   async function execute(tool, params, extra = {}) {
     const before = results(await snapshot()).length;
@@ -18,9 +19,10 @@ export async function canvasCoreSmoke({ root, endpoint, json, rpc, until }) {
   const success = (result) => { assert.equal(result.isError, false, JSON.stringify(result)); return result.details; };
   const browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
   const page = await browser.newPage({ locale: 'zh-CN', viewport: { width: 1440, height: 960 } });
+  page.on('request', (request) => trackRequest?.(request.url()));
   const errors = []; page.on('pageerror', (error) => errors.push(error.message));
   try {
-    await page.addInitScript((id) => { if (window === window.top) localStorage.setItem('tau-active-live-session-id', id); }, session.id);
+    await page.addInitScript((id) => { if (window === window.top) localStorage.setItem('tau-active-conversation-id', id); }, session.conversationId);
     await page.goto(endpoint);
     await page.getByLabel('消息输入').waitFor();
     fs.writeFileSync(path.join(session.cwd, 'report.md'), '# Core Canvas report\n\n## Conclusion\n\nOriginal content.');
@@ -46,7 +48,7 @@ export async function canvasCoreSmoke({ root, endpoint, json, rpc, until }) {
 
     const citations = success(await execute('tau_resolve_citation', { sources: [{ path: 'report.md', locator: { kind: 'document', section: 'Conclusion' }, contentKind: 'source-only' }] })).citations;
     const pinned = success(await execute('canvas_present', { ...present, resource: { scope: 'capability', moduleId: 'com.transportx.citation', resourceId: citations.sources[0].sourceVersionId } })).canvas;
-    const context = (await json(`/api/sessions/${session.id}/canvas-contexts`, { viewId: pinned.viewId, revision: pinned.revision, target: { kind: 'locator', section: 'Conclusion' } })).context;
+    const context = (await json(`/api/conversations/${session.conversationId}/canvas-contexts`, { viewId: pinned.viewId, revision: pinned.revision, target: { kind: 'locator', section: 'Conclusion' } })).context;
     const inspected = success(await execute('canvas_inspect_context', { contextIds: [context.contextId] }, { canvasContextIds: [context.contextId] }));
     assert.equal(inspected.contexts[0].contextId, context.contextId);
     assert.equal((await execute('canvas_inspect_context', { contextIds: [context.contextId] })).isError, true, 'old contexts do not leak into a new turn');
@@ -67,7 +69,7 @@ export async function canvasCoreSmoke({ root, endpoint, json, rpc, until }) {
     const geo = success(await execute('inspect_map_context', { contextIds: [selected.context.contextId] }));
     assert.equal(geo.result.contexts[0].mode, 'viewport');
     success(await execute('canvas_present', { viewId: map.canvas.viewId, operation: 'focus' }));
-    const geoContext = (await json(`/api/sessions/${session.id}/canvas-contexts`, { viewId: map.canvas.viewId, revision: 1 })).context;
+    const geoContext = (await json(`/api/conversations/${session.conversationId}/canvas-contexts`, { viewId: map.canvas.viewId, revision: 1 })).context;
     assert.equal(success(await execute('canvas_inspect_context', { contextIds: [geoContext.contextId] }, { canvasContextIds: [geoContext.contextId] })).contexts[0].adapterId, 'com.transportx.canvas.geo');
 
     const asking = execute('tau_ask_user', { kind: 'confirm', title: 'Core interaction', message: 'Confirm fixture action?' });
@@ -80,9 +82,9 @@ export async function canvasCoreSmoke({ root, endpoint, json, rpc, until }) {
     assert.ok(!overview.modules.some((module) => module.id === 'com.transportx.task'));
     const previous = await snapshot();
     const bytes = fs.readFileSync(previous.sessionFile, 'utf8');
-    await fetch(`${endpoint}/api/live-sessions/${session.id}`, { method: 'DELETE' });
-    session = (await json('/api/live-sessions/resume', { filePath: previous.sessionFile, cwd: session.cwd, model: 'probe/smoke' })).session;
-    assert.equal(fs.readFileSync(previous.sessionFile, 'utf8'), bytes, 'resuming does not rewrite existing results');
+    await closeHostConversation(json, session.conversationId);
+    session = (await json(`/api/conversations/${session.conversationId}/activate`, {})).runtime;
+    assert.ok(fs.readFileSync(previous.sessionFile, 'utf8').startsWith(bytes), 'activation may append Native runtime metadata while retaining every existing result byte');
     const shown = success(await execute('present_visualization', { command: 'show_map', visualizationId: 'core_map' }));
     assert.equal(shown.visualization.revision, 1, 'Geo restores its scene from Pi history');
     success(await execute('canvas_present', { viewId: pinned.viewId, operation: 'focus' }));

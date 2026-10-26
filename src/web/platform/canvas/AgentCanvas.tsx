@@ -1,13 +1,13 @@
 import { Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { Icon } from '../../components/icons';
 import type { CanvasState, CanvasView } from './canvas-state';
 import type { DocumentPosition } from './document-state';
 import { rendererForCanvasView } from './renderer-registry';
 
 export function AgentCanvas({ session, views, state, documentPositions, onActivate, onCloseTab, onClose, onShareContext }: {
-  session: LiveSession | null;
+  session: ConversationView | null;
   views: CanvasView[];
   state: CanvasState;
   documentPositions: Map<string, DocumentPosition>;

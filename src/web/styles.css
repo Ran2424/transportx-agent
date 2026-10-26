@@ -1382,3 +1382,20 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .model-access-actions { display: flex; align-items: flex-start; gap: 8px; }
 .model-refresh { display: grid; gap: 8px; }
 .model-refresh .inline-error { white-space: pre-line; max-width: 480px; }
+
+/* Durable workspace and conversation navigation. */
+.workspace-group { padding: 3px 0 8px; }
+.workspace-group-heading { display: flex; align-items: center; gap: 2px; min-height: 32px; }
+.workspace-group-name { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 6px 8px; background: transparent; border: 0; color: var(--text-secondary); text-align: left; font-size: 12px; }
+.workspace-group-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-group-name small { margin-left: auto; font-size: 11px; }
+.workspace-group-name svg { width: 12px; height: 12px; flex-shrink: 0; }
+.workspace-group-name[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.workspace-group .session-row { padding-left: 24px; }
+.conversation-persistent-stage { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.conversation-persistent-stage > .conversation-workspace { flex: 1; min-height: 0; }
+.conversation-offline-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: 12px; }
+.conversation-plan-source { padding: 4px 16px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+.migration-dialog { width: min(860px, 94vw); }
+.migration-source-list article, .migration-report article { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border-default); font-size: 12px; overflow-wrap: anywhere; }
+.migration-report pre { max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 11px; }

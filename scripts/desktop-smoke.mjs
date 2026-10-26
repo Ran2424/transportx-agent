@@ -1,3 +1,4 @@
+import { protocolHeaders } from './harness/workspace-client.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -62,8 +63,11 @@ try {
     throw new Error(`Unsafe renderer preferences: ${JSON.stringify(preferences)}`);
   }
   const healthUrl = `${new URL(window.url()).origin}/api/health`;
-  const health = await (await fetch(healthUrl)).json();
-  if (health.product !== 'TransportX Agent' || health.protocolVersion !== 1) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
+  let health = await (await fetch(healthUrl)).json();
+  const inventoryDeadline = Date.now() + 20_000;
+  while (health.dataState === 'initializing' && Date.now() < inventoryDeadline) { await new Promise((resolve) => setTimeout(resolve, 100)); health = await (await fetch(healthUrl)).json(); }
+  if (health.dataState !== 'ready') throw new Error(`Desktop data inventory is unavailable: ${health.dataState}`);
+  if (health.product !== 'TransportX Agent' || health.protocolVersion !== 2) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
   // Exercise the production Host -> Supervisor -> Electron dialog channel. Only
   // this test-owned fixture is accepted; the native decision itself is stubbed.
   const trustSource = path.join(temporaryHome, 'trust-probe');
@@ -80,7 +84,7 @@ try {
       return { response: globalThis.transportxTrustDecision, checkboxChecked: false };
     };
   });
-  const moduleRpc = async (body) => (await (await fetch(new URL('/api/rpc', healthUrl), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json());
+  const moduleRpc = async (body) => (await (await fetch(new URL('/api/rpc', healthUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify(body) })).json());
   try {
     const denied = await moduleRpc({ type: 'install_module', sourcePath: trustSource, trusted: true });
     if (denied.success !== false || fs.existsSync(trustMarker)) throw new Error('Native trust rejection did not block the fixture');
@@ -107,7 +111,7 @@ try {
   const oversizedDataUrlPayload = 'A'.repeat(1_500_000);
   const pdfResponse = await fetch(`${new URL(window.url()).origin}/api/reports/pdf`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...protocolHeaders },
     body: JSON.stringify({ title: '桌面打包验证', html: `<article data-payload="${oversizedDataUrlPayload}"><h1>TransportX</h1><p>Desktop PDF bridge</p></article>` }),
   });
   const pdf = Buffer.from(await pdfResponse.arrayBuffer());
@@ -116,7 +120,7 @@ try {
   await app.evaluate(({ app }, value) => app.setPath('downloads', value), downloadsDir);
   const downloadedPdfPath = await window.evaluate(async (origin) => {
     const response = await fetch(`${origin}/api/reports/pdf/download`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' },
       body: JSON.stringify({ title: '桌面下载验证', html: '<article><h1>TransportX</h1><p>Desktop download test</p></article>' }),
     });
     const { url } = await response.json();
@@ -126,7 +130,7 @@ try {
   // Exercise the same sandboxed native PDF embedding used by the Canvas reader.
   const previewUrl = await window.evaluate(async () => {
     const response = await fetch('/api/reports/pdf/download', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' },
       body: JSON.stringify({ title: 'Canvas page navigation', html: [1, 2, 3].map((page) => `<section style="${page < 3 ? 'break-after:page;' : ''}font-size:40px">CANVAS PDF PAGE ${page}</section>`).join('') }),
     });
     const { url } = await response.json();
@@ -164,10 +168,36 @@ try {
   await settings.getByLabel('模块包路径').waitFor();
   await window.keyboard.press('Escape');
   await window.getByRole('button', { name: '新建交通任务' }).first().click();
-  const newTask = window.getByRole('dialog', { name: '新建交通任务' });
+  const newTask = window.getByRole('dialog', { name: '新建会话' });
   await newTask.getByRole('button', { name: '添加模型' }).waitFor();
-  if (!await newTask.getByRole('button', { name: '创建任务' }).isDisabled()) throw new Error('New task must require an explicit model');
+  if (!await newTask.getByRole('button', { name: '创建会话' }).isDisabled()) throw new Error('New task must require an explicit model');
   await window.keyboard.press('Escape');
+  if (!process.env.TRANSPORTX_SMOKE_DATA_ROOT) {
+    const added = await moduleRpc({ type: 'add_model', provider: 'desktop-smoke', modelId: 'smoke', name: 'Desktop test model', baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', apiKey: 'test-owned-desktop-key', contextWindow: 8192, maxTokens: 1024 });
+    if (!added.success) throw new Error(JSON.stringify(added));
+    const urls = []; window.on('request', (request) => urls.push(request.url()));
+    await window.getByRole('button', { name: '新建交通任务' }).first().click();
+    await newTask.getByLabel('工作区名称', { exact: true }).fill('Desktop workspace');
+    await newTask.getByLabel('会话名称（可选）', { exact: true }).fill('Desktop durable conversation');
+    await newTask.getByRole('button', { name: '创建会话', exact: true }).click();
+    await window.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
+    const conversationId = await window.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
+    if ((await (await fetch(healthUrl)).json()).liveSessionCount !== 0) throw new Error('Desktop creation unexpectedly started Pi');
+    await window.reload();
+    await window.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
+    if (await window.evaluate(() => localStorage.getItem('tau-active-conversation-id')) !== conversationId) throw new Error('Desktop reload lost the saved identity');
+    await window.getByRole('button', { name: '激活此会话', exact: true }).click();
+    await window.waitForFunction(() => !document.querySelector('.conversation-offline-bar'));
+    const snapshot = await (await fetch(new URL(`/api/conversations/${conversationId}/snapshot`, healthUrl))).json();
+    if (!snapshot.runtime?.id || snapshot.runtime.id === conversationId) throw new Error('Desktop did not separate durable and live identities');
+    const closed = await fetch(new URL(`/api/conversations/${conversationId}/close`, healthUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify({ stopCurrent: true }) });
+    if (!closed.ok) throw new Error(await closed.text());
+    await window.getByRole('button', { name: '激活此会话', exact: true }).waitFor();
+    if (urls.some((value) => /^\/api\/(live-sessions|sessions|session-history|file|files)(?:\/|$)/.test(new URL(value).pathname))) throw new Error('Desktop requested an old business endpoint');
+    fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
+    fs.writeFileSync('.plans/workspace-conversations/desktop-network.json', JSON.stringify({ oldBusinessRequests: 0, requests: urls.map((value) => new URL(value).pathname) }, null, 2));
+    console.log('[desktop-smoke] durable create/reload, explicit real Pi activation/close and new-endpoint trace passed');
+  }
   if (!fs.existsSync(path.join(dataRoot, 'scenario')) || !fs.existsSync(path.join(dataRoot, 'sessions')) || !fs.existsSync(path.join(dataRoot, 'modules'))) throw new Error(`TransportX data directories were not created under ${dataRoot}`);
   await app.close();
   let stopped = false;

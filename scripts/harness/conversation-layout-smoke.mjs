@@ -1,3 +1,4 @@
+import { browserJson, createBrowserConversation, closeBrowserConversation } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -151,7 +152,7 @@ export async function streamingScrollSmoke(page) {
 export async function toolStateSmoke(page, baseUrl) {
   if (process.env.TAU_STYLE_STAGE === 'before') return;
   const composer = page.getByLabel('消息输入');
-  const originalSession = await page.evaluate(() => localStorage.getItem('tau-active-live-session-id'));
+  const originalSession = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
   const reading = page.locator('.assistant-message', { hasText: '已生成的部分正文' }).first();
   await composer.fill('样式-工具'); await composer.press('Enter');
   const open = page.locator('.tool-card', { has: page.locator('[data-tool-call-id="style-open"]') });
@@ -182,8 +183,7 @@ export async function toolStateSmoke(page, baseUrl) {
   await open.evaluate((node) => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
   await page.evaluate(() => { for (let node = document.querySelector('.conversation-pane'); node; node = node.parentElement) node.scrollLeft = 0; });
   await page.screenshot({ path: '.plans/style-upgrade-phase-two/validation/tool-states.png', animations: 'disabled' });
-  const created = await (await page.request.post(`${baseUrl}/api/live-sessions`, { data: { name: '工具隔离B', model: 'kimi-coding/k2p7' } })).json();
-  const session = created.session;
+  const session = await createBrowserConversation(page, baseUrl, '工具隔离B');
   await page.locator('.live-tab-select', { hasText: '工具隔离B' }).click();
   await composer.fill('样式-隔离'); await composer.press('Enter');
   const isolated = page.locator('[data-tool-call-id="style-open"]');
@@ -191,10 +191,10 @@ export async function toolStateSmoke(page, baseUrl) {
   assert.equal(await isolated.getAttribute('aria-expanded'), 'false', 'the same tool ID in another session has independent state');
   await page.locator('.live-tab-select').first().click();
   await open.locator('.tool-card-toggle').waitFor();
-  assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-live-session-id')), originalSession);
+  assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')), originalSession);
   assert.equal(await open.locator('.tool-card-toggle').getAttribute('aria-expanded'), 'true', 'returning to a session restores manual expansion');
   assert.equal(await closed.locator('.tool-card-toggle').getAttribute('aria-expanded'), 'false');
-  await page.request.delete(`${baseUrl}/api/live-sessions/${session.id}`);
+  await closeBrowserConversation(page, baseUrl, session.id);
   console.log('Tool state smoke: preparing/running/completion, live/history transition, read-above scroll, safe failure summary and session isolation/return passed.');
 }
 

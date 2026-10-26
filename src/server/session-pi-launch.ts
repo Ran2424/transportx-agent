@@ -27,6 +27,7 @@ function sessionModules(plan: ResolvedSessionPlan) {
 }
 
 export type SessionPiLaunchInput = {
+  signal?: AbortSignal;
   cwd: string;
   sessionId: string;
   sessionFile: string | null;

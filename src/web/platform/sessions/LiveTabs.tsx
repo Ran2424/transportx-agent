@@ -1,10 +1,10 @@
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../components/icons';
 import { compactModelLabel, sessionTitle } from '../../lib/formatting';
 
 type LiveTabsProps = {
-  sessions: LiveSession[];
+  sessions: ConversationView[];
   activeSessionId: string | null;
   streamingBySession: Record<string, boolean>;
   pendingDialogSessions: Set<string>;

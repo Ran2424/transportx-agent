@@ -10,7 +10,8 @@ import { ServerRouter } from './router.js';
 import type { CitationService } from './citation-service.js';
 import type { SpatialAnalysisService } from './spatial-analysis-service.js';
 import type { VideoService } from './video-service.js';
-import { parseSessionProfileStructured } from '../contracts/index.js';
+import { registerWorkspaceApi } from './workspace-api.js';
+import type { WorkspaceHost } from './workspace-host.js';
 import { serviceModuleIds, sessionServiceLabel, type SessionService } from './session-service.js';
 import { validateToolRequest } from './tool-request.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
@@ -20,39 +21,31 @@ import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
 import { inspectTaskModule } from './module-authoring.js';
+import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 import type { CadService } from './cad-service.js';
 
 type ApiRouteServices = {
   beginOperation?(url: URL): () => void;
   sessions: LiveSessionManager;
+  workspaces: WorkspaceHost;
   snapshotSchemaVersion: number;
   health(): JsonRecord;
+  conversationOverview(id: string): unknown;
   sessionOptions(): JsonRecord;
   json(res: ServerResponse, status: number, data: unknown): void;
   errorMessage(error: unknown): string;
   errorStatus(error: unknown): number;
   readBody(req: IncomingMessage): Promise<RpcCommand>;
-  resolveSessionFile(filePath: string): string;
-  sessionCwd(value: unknown): string | null;
-  readSessionHeaderCwd(filePath: string): string | null;
-  readSessionEntries(filePath: string): unknown[];
-  deriveSessionName(entries: JsonRecord[]): string | null;
-  serveProjects(res: ServerResponse): void;
-  serveSessions(res: ServerResponse): void;
-  serveSearch(res: ServerResponse, query: string): void | Promise<void>;
-  resolveLivePath(session: PiRpcSession, requestedPath?: string | null): string;
-  serveFiles(res: ServerResponse, path: string): void;
+  serveFiles(res: ServerResponse, path: string, root?: string): void;
   serveFileContent(res: ServerResponse, path: string): void;
   serveResources(res: ServerResponse, session: PiRpcSession): Promise<void>;
   servePreview(res: ServerResponse, path: string): void;
   serveRawFile(req: IncomingMessage, res: ServerResponse, path: string, download: boolean): void;
-  resolveOpen(body: RpcCommand): string;
   openNative(path: string): Promise<void>;
   handleRpc(command: RpcCommand): Promise<RpcResponse>;
   renderReportPdf(title: string, html: string): Promise<Buffer>;
-  serveSessionFile(res: ServerResponse, dirName: string, fileName: string): void;
   listAttachments(cwd: string): unknown[];
-  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource): Promise<unknown[]>;
+  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource, conversationId: string): Promise<unknown[]>;
   deleteAttachment(cwd: string, id: string): void;
   citation: CitationService;
   spatial: SpatialAnalysisService;
@@ -106,92 +99,60 @@ export function createApiRouter(services: ApiRouteServices) {
     finally { req.off('aborted', cancel); res.off('close', cancel); }
   };
   const runJob = <T>(req: IncomingMessage, res: ServerResponse, session: PiRpcSession, execute: (signal: AbortSignal) => Promise<T>) => withRequestSignal(req, res, (signal) => services.sessions.runJob(session.id, execute, signal));
-  const serveRawFile = ({ req, res, url, deps }: import('./router.js').RouteContext<ApiRouteServices>) => {
-    const sessionId = url.searchParams.get('sessionId');
-    if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-    const session = deps.sessions.get(sessionId);
-    if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-    try { deps.serveRawFile(req, res, deps.resolveLivePath(session, url.searchParams.get('path')), url.searchParams.get('download') === '1'); }
-    catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-  };
+  registerWorkspaceApi(router);
   router
     .get('/api/health', ({ res, deps }) => deps.json(res, 200, deps.health()))
+    .get(/^\/api\/conversations\/([^/]+)\/overview$/, ({ res, params, deps }) => { try { deps.json(res, 200, deps.conversationOverview(decodeURIComponent(params[0]))); } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); } })
     .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))
-    .get('/api/live-sessions', ({ res, deps }) => deps.json(res, 200, { sessions: deps.sessions.list() }))
-    .post('/api/live-sessions', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        const name = typeof body.name === 'string' ? body.name.trim() : '';
-        const profile = body.profile === undefined ? undefined : parseSessionProfileStructured(body.profile);
-        if (profile && !profile.ok) return deps.json(res, 400, { error: profile.diagnostics.map((item) => item.message).join('; '), diagnostics: profile.diagnostics });
-        const domainId = typeof body.domainId === 'string' && body.domainId.trim() ? body.domainId.trim() : undefined;
-        const appendSystemPrompt = typeof body.appendSystemPrompt === 'string' && body.appendSystemPrompt.trim() ? body.appendSystemPrompt.trim() : undefined;
-        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null, ...(domainId ? { domainId } : {}), ...(profile?.ok ? { profile: profile.value } : {}), ...(appendSystemPrompt ? { appendSystemPrompt } : {}) });
-        deps.json(res, 200, { session: session.metadata(), ...(body.profile === undefined ? { diagnostics: [{ code: 'profile_compat_default', path: 'profile', severity: 'warning', message: 'profile was omitted; the current Module selection was frozen as compat-default.' }] } : {}) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
+    .get(/^\/api\/conversations\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps);
+      if (target) deps.json(res, 200, { attachments: deps.listAttachments(target.directory) });
     })
-    .post('/api/live-sessions/resume', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        if (!body.filePath || typeof body.filePath !== 'string') return deps.json(res, 400, { error: 'filePath required' });
-        const resolvedFile = deps.resolveSessionFile(body.filePath);
-        const existing = deps.sessions.findBySessionFile(resolvedFile);
-        const cwd = deps.sessionCwd(body.cwd) || deps.readSessionHeaderCwd(resolvedFile);
-        if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
-          return deps.json(res, 400, { error: 'Cannot resume session because its project directory no longer exists' });
-        }
-        const entries = deps.readSessionEntries(resolvedFile) as JsonRecord[];
-        const sessionName = deps.deriveSessionName(entries);
-        const reusedPending = deps.sessions.hasPendingResume(resolvedFile);
-        const session = await deps.sessions.resume({ sessionFile: resolvedFile, cwd, model: body.model || '', entries, sessionName, useCurrentConfiguration: body.useCurrentConfiguration === true });
-        deps.json(res, 200, { session: session.metadata(), ...(reusedPending || existing?.id === session.id ? { reused: true } : {}) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
+    .get(/^\/api\/conversations\/([^/]+)\/attachments\/([^/]+)\/file$/, ({ req, res, url, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps); if (!target) return;
+      try { const attachment = resolveSessionAttachments(target.directory, [decodeURIComponent(params[1])])[0]; deps.serveRawFile(req, res, attachmentFilePath(target.directory, attachment), url.searchParams.get('download') === '1'); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/snapshot$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (session) deps.json(res, 200, session.snapshot());
+    .get(/^\/api\/conversations\/([^/]+)\/resources$/, async ({ res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps); if (session) await deps.serveResources(res, session);
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (session) deps.json(res, 200, { attachments: deps.listAttachments(session.cwd) });
-    })
-    .get(/^\/api\/live-sessions\/([^/]+)\/citations$/, ({ res, url, params, deps }) => {
+    .get(/^\/api\/conversations\/([^/]+)\/citations$/, ({ res, url, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try {
         const offset = Number(url.searchParams.get('offset') || 0);
         const limit = Number(url.searchParams.get('limit') || 200);
         const ids = url.searchParams.get('ids')?.split(',');
-        deps.json(res, 200, { citations: deps.citation.registry(session).list(offset, limit, ids) });
+        deps.json(res, 200, { citations: deps.citation.list(session, offset, limit, ids) });
       } catch (error) { deps.json(res, 409, { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
+    .get(/^\/api\/conversations\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.video.metrics(session, decodeURIComponent(params[1]))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/citations\/evidence\/([^/]+)$/, ({ res, params, deps }) => {
+    .get(/^\/api\/conversations\/([^/]+)\/citations\/evidence\/([^/]+)$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.citation.detail(session, decodeURIComponent(params[1]))); }
       catch (error) { citationResourceError(res, error); }
     })
-    .post(/^\/api\/live-sessions\/([^/]+)\/attachments$/, async ({ req, res, url, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (!session) return;
+    .post(/^\/api\/conversations\/([^/]+)\/attachments$/, async ({ req, res, url, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps);
+      if (!target) return;
       const source = url.searchParams.get('source');
       if (source !== 'picker' && source !== 'drop' && source !== 'clipboard') return deps.json(res, 400, { error: 'Invalid attachment source' });
-      try { deps.json(res, 200, { attachments: await deps.uploadAttachments(session.cwd, req, source) }); }
+      try { deps.json(res, 200, { attachments: await deps.uploadAttachments(target.directory, req, source, target.conversation.id) }); }
       catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
     })
-    .delete(/^\/api\/live-sessions\/([^/]+)\/attachments\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (!session) return;
-      try { deps.deleteAttachment(session.cwd, decodeURIComponent(params[1])); deps.json(res, 200, { success: true }); }
+    .delete(/^\/api\/conversations\/([^/]+)\/attachments\/([^/]+)$/, ({ res, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps);
+      if (!target) return;
+      try { deps.deleteAttachment(target.directory, decodeURIComponent(params[1])); deps.json(res, 200, { success: true }); }
       catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-contexts$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/geo-contexts$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try {
@@ -199,94 +160,41 @@ export function createApiRouter(services: ApiRouteServices) {
         deps.json(res, 200, created);
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/canvas-presentations$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/canvas-presentations$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, { canvas: await deps.canvas.presentResource(session, await deps.readBody(req) as Parameters<CanvasService['present']>[1]) }); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/canvas-contexts$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/canvas-contexts$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, { context: deps.canvas.createContext(session, await deps.readBody(req) as Parameters<CanvasService['createContext']>[1]) }); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/sessions\/([^/]+)\/geo-contexts\/([^/]+)$/, ({ res, params, deps }) => {
+    .get(/^\/api\/conversations\/([^/]+)\/geo-contexts\/([^/]+)$/, ({ res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.getContext(session, decodeURIComponent(params[1]))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-screenshots$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/geo-screenshots$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.saveScreenshot(session, await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-screenshots\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/geo-screenshots\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.respondScreenshot(session, decodeURIComponent(params[1]), await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-interactions\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/geo-interactions\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, await deps.geo.respond(session, decodeURIComponent(params[1]), await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
-    })
-    .get(/^\/api\/live-sessions\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (session) deps.json(res, 404, { error: 'Not found' });
-    })
-    .delete(/^\/api\/live-sessions\/([^/]+)$/, async ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (!session) return;
-      try { await deps.sessions.delete(session.id, 'closed_by_user'); deps.json(res, 200, { success: true }); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/projects', ({ res, deps }) => deps.serveProjects(res))
-    .get('/api/sessions', ({ res, deps }) => deps.serveSessions(res))
-    .get('/api/search', ({ res, url, deps }) => deps.serveSearch(res, url.searchParams.get('q') || ''))
-    .get('/api/files', ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { deps.serveFiles(res, deps.resolveLivePath(session, url.searchParams.get('path') || session.cwd)); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/file/content', ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { deps.serveFileContent(res, deps.resolveLivePath(session, url.searchParams.get('path'))); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/file/raw', serveRawFile)
-    .head('/api/file/raw', serveRawFile)
-    .get('/api/session-resources', async ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { await deps.serveResources(res, session); }
-      catch (error) { deps.json(res, 500, { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/file/preview', ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { deps.servePreview(res, deps.resolveLivePath(session, url.searchParams.get('path'))); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .post('/api/open', async ({ req, res, deps }) => {
-      try {
-        await deps.openNative(deps.resolveOpen(await deps.readBody(req)));
-        deps.json(res, 200, { ok: true });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/reports/pdf', async ({ req, res, deps }) => {
       try {
@@ -568,36 +476,7 @@ export function createApiRouter(services: ApiRouteServices) {
       try { deps.json(res, 200, await deps.handleRpc(await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .post('/api/sessions/delete', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        if (body.deleteWorkspace !== undefined && typeof body.deleteWorkspace !== 'boolean') return deps.json(res, 400, { error: 'deleteWorkspace must be a boolean' });
-        if (body.sessionId !== undefined) {
-          if (typeof body.sessionId !== 'string' || !body.sessionId) return deps.json(res, 400, { error: 'sessionId required' });
-          const session = deps.sessions.get(body.sessionId);
-          if (!session) return deps.json(res, 200, { success: true, alreadyDeleted: true });
-          if (session.sessionFile) deps.resolveSessionFile(session.sessionFile);
-          await deps.sessions.deleteConversation({ sessionId: body.sessionId, deleteWorkspace: body.deleteWorkspace !== false });
-          return deps.json(res, 200, { success: true });
-        }
-        if (!body.filePath || typeof body.filePath !== 'string') return deps.json(res, 400, { error: 'filePath required' });
-        let sessionFile: string;
-        try { sessionFile = deps.resolveSessionFile(body.filePath); }
-        catch (error) {
-          if (deps.errorMessage(error) === 'Session not found') return deps.json(res, 200, { success: true, alreadyDeleted: true });
-          throw error;
-        }
-        await deps.sessions.deleteHistory(sessionFile, body.deleteWorkspace !== false);
-        deps.json(res, 200, { success: true });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as NodeJS.ErrnoException).code, path: (error as NodeJS.ErrnoException).path }); }
-    })
-    .get('/api/session-history', ({ res, url, deps }) => {
-      try {
-        const sessionFile = deps.resolveSessionFile(url.searchParams.get('filePath') || '');
-        deps.json(res, 200, { schemaVersion: deps.snapshotSchemaVersion, entries: deps.readSessionEntries(sessionFile) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get(/^\/api\/sessions\/([^/]+)\/([^/]+)$/, ({ res, params, deps }) => deps.serveSessionFile(res, params[0], params[1]));
+;
   return router;
 }
 
@@ -606,6 +485,8 @@ function resolveServiceSession(res: ServerResponse, body: RpcCommand, services: 
   const token = typeof body.token === 'string' ? body.token : '';
   const session = services.sessions.get(sessionId);
   if (!session || session.terminating || !session.resolvedSessionPlan?.modules?.some((module) => module.id === serviceModuleIds[service]) || !token || token !== session.serviceTokens[service]) { services.json(res, 403, { error: `${sessionServiceLabel[service]} host access denied` }); return null; }
+  try { if (!session.lifecycle?.isCurrent(session) || services.workspaces.target(session.conversationId).manifest.id !== session.workspaceId) throw new Error('Runtime binding changed.'); }
+  catch { services.json(res, 403, { error: `${sessionServiceLabel[service]} runtime binding denied` }); return null; }
   return session;
 }
 
@@ -613,7 +494,11 @@ function resolveLiveSessionParam(res: ServerResponse, value: string, services: A
   let id: string;
   try { id = decodeURIComponent(value); }
   catch { services.json(res, 400, { error: 'Malformed live session id' }); return null; }
-  const session = services.sessions.get(id);
-  if (!session) { services.json(res, 404, { error: 'Live session not found' }); return null; }
-  return session;
+  try { return services.workspaces.live(id); }
+  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
+}
+
+function resolveConversationTargetParam(res: ServerResponse, value: string, services: ApiRouteServices) {
+  try { return services.workspaces.target(decodeURIComponent(value)); }
+  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
 }

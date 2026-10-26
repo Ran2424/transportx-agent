@@ -3,6 +3,7 @@ const { test } = require('node:test') as typeof import('node:test');
 test('Thinking and tool durations remain frozen across live events and history reload', async (t) => {
   {
     const assert = require('node:assert/strict');
+    const conversationId = 'conv_00000000-0000-4000-8000-000000000001';
     const fs = require('node:fs');
     const os = require('node:os');
     const path = require('node:path');
@@ -13,7 +14,7 @@ test('Thinking and tool durations remain frozen across live events and history r
     {
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-session-event-timing-'));
       t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-      const timing = new SessionEventTiming(new TimingMetricsStore(cwd));
+      const timing = new SessionEventTiming(new TimingMetricsStore(cwd, conversationId));
       const assistant = { role: 'assistant', responseId: 'response-1', content: [{ type: 'thinking', thinking: '分析中' }, { type: 'text', text: '结论' }] };
 
       timing.apply({ type: 'message_start', message: assistant }, 1_000);
@@ -38,6 +39,7 @@ test('Thinking and tool durations remain frozen across live events and history r
 
   {
     const assert = require('node:assert/strict');
+    const conversationId = 'conv_00000000-0000-4000-8000-000000000001';
     const fs = require('node:fs');
     const os = require('node:os');
     const path = require('node:path');
@@ -54,22 +56,27 @@ test('Thinking and tool durations remain frozen across live events and history r
         content: [{ type: 'thinking', thinking: '分析中' }, { type: 'text', text: '结论' }],
       };
       const toolResult = { role: 'toolResult', toolCallId: 'tool-timing-1', toolName: 'read', timestamp: 12_000, content: [{ type: 'text', text: '完成' }] };
-      const store = new TimingMetricsStore(cwd);
+      const store = new TimingMetricsStore(cwd, conversationId);
       store.recordThinking(thinkingMessage, 1_000, 4_200, 3_200);
       store.recordTool('tool-timing-1', 5_000, 6_250, 1_250);
 
       const rawEntries: any[] = [{ type: 'message', message: thinkingMessage }, { type: 'message', message: toolResult }];
-      const enriched = new TimingMetricsStore(cwd).enrichEntries(rawEntries);
+      const enriched = new TimingMetricsStore(cwd, conversationId).enrichEntries(rawEntries);
       assert.equal(enriched[0].message.content[0].durationMs, 3_200);
       assert.equal(enriched[0].message.content[0].startedAt, 1_000);
       assert.equal(enriched[1].message.durationMs, 1_250);
       assert.equal(enriched[1].message.startedAt, 5_000);
-      const existingDuration = new TimingMetricsStore(cwd).enrichEntries([{ type: 'message', message: { ...toolResult, durationMs: 1_250 } }]);
+      const existingDuration = new TimingMetricsStore(cwd, conversationId).enrichEntries([{ type: 'message', message: { ...toolResult, durationMs: 1_250 } }]);
       assert.equal(existingDuration[0].message.startedAt, 5_000, 'reload restores exact start even when duration was already present');
       assert.equal(rawEntries[0].message.content[0].durationMs, undefined);
       assert.equal(rawEntries[1].message.durationMs, undefined);
       assert.equal(rawEntries[1].message.startedAt, undefined);
-      assert.ok(fs.existsSync(path.join(cwd, '.tau', 'timing-metrics.v1.json')));
+      assert.ok(fs.existsSync(path.join(cwd, '.tau', 'conversations', conversationId, 'timing-metrics.v1.json')));
+      const other = new TimingMetricsStore(cwd, 'conv_00000000-0000-4000-8000-000000000002');
+      assert.equal(other.enrichEntries(rawEntries)[1].message.durationMs, undefined, 'colliding toolCallId in another conversation does not inherit timing');
+      other.recordTool('tool-timing-1', 10_000, 10_100, 100);
+      assert.equal(other.enrichEntries(rawEntries)[1].message.durationMs, 100);
+      assert.equal(new TimingMetricsStore(cwd, conversationId).enrichEntries(rawEntries)[1].message.durationMs, 1250);
     }
 
     // historical entries without exact timing metadata remain unannotated
@@ -81,10 +88,10 @@ test('Thinking and tool durations remain frozen across live events and history r
         { type: 'message', message: { role: 'assistant', timestamp: 9_000, content: [{ type: 'thinking', thinking: '旧思考' }, { type: 'text', text: '旧回答' }] } },
         { type: 'message', message: { role: 'toolResult', toolCallId: 'old-tool', timestamp: 10_000, content: '旧结果' } },
       ];
-      const enriched = new TimingMetricsStore(cwd).enrichEntries(entries);
+      const enriched = new TimingMetricsStore(cwd, conversationId).enrichEntries(entries);
       assert.equal(enriched[1].message.content[0].durationMs, undefined);
       assert.equal(enriched[2].message.durationMs, undefined);
-      assert.equal(fs.existsSync(path.join(cwd, '.tau', 'timing-metrics.v1.json')), false);
+      assert.equal(fs.existsSync(path.join(cwd, '.tau', 'conversations', conversationId, 'timing-metrics.v1.json')), false);
     }
   }
 });

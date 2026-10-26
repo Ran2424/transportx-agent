@@ -3,7 +3,7 @@ import type { SessionAttachment } from '../../../public/app-types.js';
 import { filePresentation } from '../workspace/FilePreview';
 
 export function attachmentPreviewUrl(sessionId: string, attachment: SessionAttachment) {
-  return `/api/file/preview?${new URLSearchParams({ sessionId, path: attachment.relativePath })}`;
+  return `/api/conversations/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachment.id)}/file`;
 }
 
 export function formatBytes(size: number) {

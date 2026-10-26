@@ -9,7 +9,7 @@ test('Canvas documents round-trip with stable identity and reject unavailable ad
 
   function session(cwd: string) {
     return {
-      id: 'session-1', cwd, entries: [], citationRegistryId: 'session-1', activeCanvasContextIds: [] as string[],
+      id: 'session-1', conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd, entries: [], citationRegistryId: 'session-1', activeCanvasContextIds: [] as string[],
       resolvedSessionPlan: {
         modules: [{ id: 'com.transportx.document', canvasViews: [{ adapterId: 'com.transportx.canvas.document', kind: 'document', protocolVersion: '1.0' }] }],
       },
@@ -116,7 +116,7 @@ test('Canvas documents round-trip with stable identity and reject unavailable ad
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-cad-canvas-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const current = {
-      id: 'cad-session', cwd: root, entries: [], citationRegistryId: 'cad-session', activeCanvasContextIds: [] as string[],
+      id: 'cad-session', conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd: root, entries: [], citationRegistryId: 'cad-session', activeCanvasContextIds: [] as string[],
       resolvedSessionPlan: { modules: [{ id: 'com.transportx.cad', canvasViews: [{ adapterId: 'com.transportx.canvas.cad', kind: 'cad', protocolVersion: '1.0' }] }] },
     };
     const presentation = {
@@ -141,6 +141,8 @@ test('Canvas documents round-trip with stable identity and reject unavailable ad
     assert.match(buildCanvasContextPrompt([context.contextId]), /CAD drawing/);
     current.activeCanvasContextIds = [context.contextId];
     assert.equal(service.inspectContexts(current, [context.contextId]).length, 1);
+    const other = { ...current, conversationId: 'conv_00000000-0000-4000-8000-000000000002' };
+    assert.throws(() => service.inspectContexts(other, [context.contextId]), /not found|not available|Unknown/i, 'shared CAD data does not authorize another conversation private context');
     fs.writeFileSync(path.join(root, 'cad/junction_plan/r1.dxf'), 'tampered');
     assert.throws(() => service.inspectContexts(current, [context.contextId]), /checksum/);
     assert.throws(() => service.createContext(current, { viewId: presentation.viewId, revision: 1 }), /checksum/);

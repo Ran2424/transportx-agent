@@ -3,6 +3,7 @@ const { spawn, execFile } = require('node:child_process');
 
 // Built from the authoritative release profile, never hand-maintained here.
 type HostOperations = {
+  processInspection: { workspaceScript: string; command?: string; args?: string[]; pythonScript?: string; bootCommand: string; bootArgs: string[] };
   systemPrompt: string;
   updateInstallerPattern?: string;
   posixPermissions: boolean;

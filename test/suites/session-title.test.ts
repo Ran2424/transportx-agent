@@ -27,7 +27,7 @@ test('Titles are inferred and persisted once after Pi flushes its session header
     try {
       const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
       const manager = new LiveSessionManager();
-      const session = new PiRpcSession(manager, { cwd: directory, sessionName: '课程设计' });
+      const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd: directory, sessionName: '课程设计' });
       manager.sessions.set(session.id, session);
       // Pi revealed the session file but has not flushed yet: the name write must
       // not pre-create the file (Pi's first flush uses exclusive create).

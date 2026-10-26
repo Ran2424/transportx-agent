@@ -34,9 +34,12 @@ import {
 } from '../contracts/index.js';
 import type { CitationService } from './citation-service.js';
 import { relativePosixPath } from './util/path.js';
+import { conversationStatePath } from './workspace-store.js';
+import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 
 type CanvasSession = {
   id: string;
+  conversationId: string;
   cwd: string;
   entries: Array<Record<string, unknown>>;
   resolvedSessionPlan: ResolvedSessionPlanV3 | null;
@@ -270,22 +273,19 @@ export class CanvasService {
   }
 
   private contextFile(session: CanvasSession) {
-    return path.join(session.cwd, '.tau', 'canvas-contexts.json');
+    return conversationStatePath(session, 'canvas-contexts.json');
   }
 
   private readContexts(session: CanvasSession): CanvasContextV1[] {
-    try {
-      const value = JSON.parse(fs.readFileSync(this.contextFile(session), 'utf8'));
-      return Array.isArray(value) ? value.flatMap((item) => parseCanvasContext(item) ?? []) : [];
-    } catch { return []; }
+    const value = readJsonObject(this.contextFile(session), { version: 1, contexts: [] });
+    const contexts = Array.isArray(value.contexts) ? value.contexts.map(parseCanvasContext) : [];
+    if (value.version !== 1 || !Array.isArray(value.contexts) || contexts.some((context) => !context)) throw Object.assign(new Error('Canvas context metadata is corrupt.'), { code: 'metadata_corrupt', status: 409 });
+    return contexts as CanvasContextV1[];
   }
 
   private writeContexts(session: CanvasSession, contexts: CanvasContextV1[]) {
     const file = this.contextFile(session);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const temporary = `${file}.${crypto.randomUUID()}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify(contexts, null, 2)}\n`, { mode: 0o600 });
-    fs.renameSync(temporary, file);
+    writeJsonAtomic(file, { version: 1, contexts });
   }
 }
 

@@ -48,7 +48,7 @@ test('Video query, presentation, metrics and derived media enforce time and runt
     t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
     return {
       cwd,
-      resolvedSessionPlan: { assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] },
+      resolvedSessionPlan: { modules: [{ id: 'com.transportx.video' }], assets: [{ id: 'data:demo-videos', kind: 'data', path: dataRoot }] },
     } as any;
   }
 

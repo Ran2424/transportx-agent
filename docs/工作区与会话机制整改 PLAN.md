@@ -1,11 +1,11 @@
 # 工作区与会话机制整改 PLAN
 
-- 状态：设计审查修订版，待技术验证；本文不代表运行代码已具备所述能力。
+- 状态：PR 1 / PR 2A 已进入集成验收；本文件保留设计约束，实际完成范围与证据见 [P0 记录](<工作区与会话机制整改 P0 记录.md>)。PR 2B / PR 3 及 P2 仍按阶段推进。
 - 日期：2026-10-25。
 - 核查基线：3.23.2 当前工作目录源码，包含本地尚未提交的改动；不是对远端 main 的运行验收。
 - 问题来源：[#41 同一工作文件夹持续工作](https://github.com/Ran2424/transportx-agent/issues/41)、[#87 改名与目录名称](https://github.com/Ran2424/transportx-agent/issues/87)、[#88 空会话与残留目录](https://github.com/Ran2424/transportx-agent/issues/88)，以及用户补充的整改意见。
 - 当前架构权威：[ARCHITECTURE.md](ARCHITECTURE.md)。本文中的新结构、API 和行为均为目标设计；实施后再同步架构正文。
-- 本次修订：唯一新 API 保留，启动改为“全局安全就绪 + 工作区独立迁移就绪”；异常历史不阻塞无关工作区。补充主分支原子切换、精确备份/空间预检、历史资源链接投影、客户端失败安全及锁异常恢复；T1–T4 仍待实测。
+- 本次修订：唯一新 API 保留，启动改为“全局安全就绪 + 工作区独立迁移就绪”；异常历史不阻塞无关工作区。补充主分支原子切换、精确备份/空间预检、历史资源链接投影、客户端失败安全及锁异常恢复；T1–T4 和各批次实施结果见 P0 记录，不以设计表格代替运行验收。
 
 ## 1. 决策与范围
 
@@ -260,6 +260,8 @@ Pi 在首次 assistant 前的用户输入持久性是现有运行时边界；本
 
 Host 按 canonical cwd 管理 WorkspaceRuntimeGate；门禁覆盖 Pi 启动、空闲、执行、压缩、问答等待、Pi 队列、停止及受管作业清理，不只覆盖 prompt HTTP 请求。
 
+运行协调文件与锁位于固定用户配置目录的 `runtime-guards/`，使用平台 profile 的 home fallback，不随 `TAU_USER_DATA_DIR` 或 `PI_CODING_AGENT_DIR` 改变。锁不放在将被删除的工作区内部；目录删除后，仍可凭 catalog 中的固定目标查看诊断、核验代次并完成提交。删除目标另外保存目录身份及会话 ID 墓碑，不能对同路径重建的新目录继续递归清理。
+
 1. 浏览另一条会话的历史不启动 Pi，也不停止当前运行。
 2. 用户请求激活 B，若同工作区 A 空闲，等待 A 持久化、受管作业结束及进程树停止后，再启动 B。
 3. A 正在执行、压缩、等待输入或有 steering/follow-up 队列：返回 workspace_busy，展示 A 和状态。用户可以返回 A，或明确选择“停止 A 并切换”；不能静默取消或转移队列。
@@ -336,7 +338,7 @@ PR 2B 再补 Citation、Geo/Video、Document/Office、CAD 的高级离线预览�
 
 ### 5.6 历史资源链接投影
 
-T3 必须抽样真实历史中的附件、Markdown 图片/链接、工具结果、Canvas、Geo/Video 与文档资源，区分地址是运行时生成还是已写入 JSONL/展示数据；当前尚未完成抽样，不能假定不存在旧 URL。
+T3 必须抽样真实历史中的附件、Markdown 图片/链接、工具结果、Canvas、Geo/Video 与文档资源，区分地址是运行时生成还是已写入 JSONL/展示数据；抽样与实现结果见 P0 记录，不能仅凭静态搜索假定不存在旧 URL。
 
 如存在 /api/file/raw 或含旧 liveSessionId 的持久 URL，新读取投影按“当前已验证 conversation/history 归属 → 已注册资源 ID 或受控相对路径 → 真实路径/哈希/当前计划权限”生成新地址。旧 live ID 不能证明归属，不做任意字符串替换，也不把旧认证参数带入新 URL。仅解析已知本地旧格式，不代理外部地址或接受任意绝对路径。
 
@@ -398,7 +400,7 @@ type CreateConversationInput = {
   requestId: string;
   workspace:
     | { kind: 'new'; name: string; parentDirectory?: string }
-    | { kind: 'existing'; workspaceId: string; defaultsRevision: number };
+    | { kind: 'existing'; workspaceId: string; expectedRevision: number; defaultsRevision: number };
   name: string;
   model?: string;
   profile?: SessionProfileV1;
@@ -408,6 +410,8 @@ type CreateConversationInput = {
 ```
 
 workspace 为互斥联合，禁止同时传 workspaceId 和父目录，也不接受裸 cwd 表示“猜测复用”。新工作区必须明确有效 profile/domain/model；新 UI 的 defaults 初始化为首个会话配置。
+
+2026-10-25 实施确认：existing 工作区创建同时传 expectedRevision 与 defaultsRevision，分别校验管理版本和所用默认配置版本。相同 requestId 先核对不可变输入摘要并返回原记录，再对尚未提交的新请求做版本校验；不因已成功请求导致的版本增加而重复创建。
 
 GET history 的 entries 沿用现有消息契约，不新增第二套消息对象。新只读资源接口统一使用 /api/conversations/:conversationId/ 下的命名空间：PR 2A 只交付 files/attachments 的基础入口，citations、geo-resources、video-resources 等高级离线映射在 PR 2B 逐项验收后启用。参数、下载与错误码复用既有实现，不开放任意资产路径入口。
 
@@ -499,7 +503,7 @@ catalog 的阶段记录不在被删除目录内；中断后不依赖已移除的
 
 ### 8.1 范围、就绪与部分可用性
 
-新版 Host 首次启动统一清点实际 SESSIONS_DIR、已有 catalog、默认/配置根目录及历史 header.cwd 指向的已知目录，零用户消息历史也纳入；不扫描整块磁盘、不跟随符号链接。未知且没有配置/历史线索的文件夹不承诺自动发现。
+新版 Host 首次启动统一清点实际 SESSIONS_DIR、已有 catalog 和软件默认/显式配置的工作区根目录，零用户消息历史也纳入。历史 header.cwd 只能用于关联根目录内的工作区，不能凭 Pi 历史自动登记根目录外的项目；前缀相似的相邻目录不属于该范围。软件内主动创建的自定义父目录工作区仍按 catalog 管理。先前误发现的外部项退出迁移和侧栏清单，来源元数据归入 excluded-sources.json 审计记录，原历史、目录、catalog 身份及删除记录保留；不扫描整块磁盘、不跟随符号链接。
 
 先验证全局 Writer、Schema、catalog/删除墓碑并提交 inventory、稳定 ID 和受保护路径，再将 systemReadiness 置 ready。随后正常工作区和新任务可用，逐工作区转换继续进行；一处损坏历史不要求用户先确认隔离才能进入应用。catalog/墓碑不可信或全局状态不可持久化仍全局 blocked，不能用部分可用性绕过全局安全条件。
 
@@ -579,7 +583,7 @@ catalog/全局标记损坏时先核对备份、Manifest、源清单和墓碑；�
 
 ### 9.1 技术验证：PR 1 编码前置条件（P0）
 
-先验证 Pi/Host 技术前提，可编写局部探针，不开始生产生命周期改造。当前均未运行，不能依据源码推断通过。
+先验证 Pi/Host 技术前提，可编写局部探针，不开始生产生命周期改造。运行证据记录于 P0 记录，不能依据源码推断通过。
 
 | 编号 | 探针 | 必须取得的证据与失败处理 |
 |---|---|---|
@@ -665,7 +669,7 @@ P1：工作区展示改名、路径复制/打开、零会话说明和旧目录�
 
 ### 9.6 检查方式与测试预算
 
-本次仅文档修订，所有探针与运行验收未执行。实施先跑 npm run test:budget，Node 实际注册总数不超过 40；上述断言并入现有综合场景，不新增子测试或隐藏 case 列表。预算不减少关键故障覆盖，真实 Pi、文件系统故障注入和本机跨进程验证保留独立证据。
+本节定义实施验收方式；已运行的探针、平台范围与未完成项见 P0 记录。实施先跑 npm run test:budget，Node 实际注册总数不超过 40；上述断言并入现有综合场景，不新增子测试或隐藏 case 列表。预算不减少关键故障覆盖，真实 Pi、文件系统故障注入和本机跨进程验证保留独立证据。
 
 - 服务端/契约：npm run typecheck + npm test，覆盖身份、逐工作区迁移、精确备份、API 删除、两级门禁、删除阶段与 CLI。
 - UI：npm run typecheck:react + npm run test:web，覆盖迁移页、歧义处理、忙碌/队列与切换；只用新端点。

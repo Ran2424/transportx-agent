@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SessionAttachment } from '../../../public/app-types.js';
+import { useSessionState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
 import { useOpenDocument } from '../canvas/document-context';
 import { documentFormat } from '../canvas/document-state';
@@ -10,6 +11,12 @@ import { formatBytes } from './conversation-attachments';
 export function SessionAttachmentLibrary({ sessionId, attachments, selectedIds, error, onReload, onReuse }: { sessionId: string; attachments: Record<string, SessionAttachment>; selectedIds: string[]; error?: string; onReload(): void; onReuse(attachment: SessionAttachment): void }) {
   const { t } = useTranslation();
   const openDocument = useOpenDocument();
+  const state = useSessionState();
+  const workspace = state.workspaces.find((item) => item.conversations.some(({ record }) => record.id === sessionId));
+  function origin(attachment: SessionAttachment) {
+    const id = typeof attachment.sourceConversationId === 'string' ? attachment.sourceConversationId : null;
+    return id ? t('conversation.attachmentOrigin', { name: workspace?.conversations.find(({ record }) => record.id === id)?.record.name || id }) : t('conversation.attachmentOriginUnknown');
+  }
   const [preview, setPreview] = useState<SessionAttachment | null>(null);
   const items = Object.values(attachments).filter((item) => item.status === 'ready');
   function view(attachment: SessionAttachment) {
@@ -24,6 +31,7 @@ export function SessionAttachmentLibrary({ sessionId, attachments, selectedIds, 
       <div className="session-attachment-library-list">{items.length ? items.map((attachment) => <article key={attachment.id}>
         <button className="session-attachment-preview" type="button" aria-label={t('conversation.previewAttachment', { name: attachment.name })} onClick={() => view(attachment)}><Icon name={filePresentation({ name: attachment.name, path: attachment.relativePath, isDirectory: false }).icon} /><strong title={attachment.name}>{attachment.name}</strong></button>
         <small>{formatBytes(attachment.size)} · {t('conversation.attachmentReadable')}</small>
+        <small title={attachment.sourceConversationId || undefined}>{origin(attachment)}</small>
         <code>{attachment.relativePath}</code>
         <button className="session-attachment-reuse" type="button" disabled={selectedIds.includes(attachment.id)} aria-label={t('conversation.reuseAttachment', { name: attachment.name })} onClick={() => onReuse(attachment)}>{t(selectedIds.includes(attachment.id) ? 'conversation.attachmentSelected' : 'conversation.useAttachment')}</button>
       </article>) : <p>{t('conversation.noUploadedFiles')}</p>}</div>

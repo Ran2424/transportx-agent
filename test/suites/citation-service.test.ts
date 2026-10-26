@@ -44,6 +44,8 @@ test('Citation evidence resolves controlled data and originals while refusing un
   const input = { sourceKey: 'execution:one', title: '受控计数', value: { columns: ['count'], rows: [[3]] }, locator: { kind: 'result', field: 'count' }, executionRef: { path: 'manifest.json', sha256: hashCitationFile(path.join(cwd, 'manifest.json')), operation: 'count', inputHashes: [] } };
   const inline = service.registerInline(session, input); service.registerInline(session, input);
   assert.equal(inline.sources[0].content.value, undefined); assert.deepEqual(service.detail(session, inline.evidence[0].evidenceId).preview.table.rows, [[3]]);
+  assert.throws(() => service.detail({ ...session, id: 'other_conversation', citationRegistryId: session.id }, inline.evidence[0].evidenceId), /verified publication/);
+  assert.equal(service.list({ ...session, id: 'other_conversation', citationRegistryId: session.id }).evidence.some((item: any) => item.evidenceId === inline.evidence[0].evidenceId), false, 'another conversation cannot read an unverified inline result from the shared registry');
   assert.throws(() => service.registerInline(session, { ...input, value: 'x'.repeat(256 * 1024 + 1) }), /256 KiB/);
   const registryFile = service.registry(session).filePath, originalRegistry = fs.readFileSync(registryFile, 'utf8');
   const tampered = JSON.parse(originalRegistry);

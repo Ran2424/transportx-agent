@@ -569,7 +569,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
       manifestVersion: 1,
       product: { name: 'TransportX Agent', version: '3.0.3' },
-      agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 1 },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 2 },
       pi: entry('runtimes/pi/cli.js', '0.80.10'),
       python: entry('runtimes/python/python', '3.10.0'),
     }));
@@ -603,7 +603,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
       manifestVersion: 1,
       product: { name: 'TransportX Agent', version: '3.0.9' },
-      agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 1 },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 2 },
       pi: entry('runtimes/pi/cli.js', '0.80.10'),
       python: entry('runtimes/python/python', '3.10.20'),
       ffmpeg: { ...entry('runtimes/ffmpeg/ffmpeg', '8.0'), arch: 'arm64' },
@@ -640,6 +640,13 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.equal(generated.darwin.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.linux.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.win32.systemPrompt, 'PI_SYSTEM_WINDOWS.md');
+    assert.match(generated.darwin.processInspection.pythonScript, /proc_pidinfo/);
+    assert.match(generated.darwin.processInspection.pythonScript, /usec/);
+    assert.match(generated.linux.processInspection.pythonScript, /\/proc\//);
+    assert.match(generated.win32.processInspection.workspaceScript, /OpenProcessToken/);
+    assert.match(generated.win32.processInspection.workspaceScript, /CreateToolhelp32Snapshot/);
+    assert.match(generated.win32.processInspection.args.join(' '), /CreationDate/);
+    assert.match(generated.win32.processInspection.args.join(' '), /ExecutablePath/);
     const { toPosixPath } = require('../../bin/util/path.js');
     assert.equal(toPosixPath('C:\\tasks\\report'), 'C:/tasks/report');
     assert.equal(toPosixPath('\\\\server\\share\\tasks\\report'), '//server/share/tasks/report');

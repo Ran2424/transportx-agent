@@ -24,8 +24,8 @@ test('Session snapshots preserve authoritative metadata and independently config
 
   // combines the projection snapshot with the authoritative session metadata
   {
-    const snapshot = sessionSnapshot({ messages: [{ role: 'user', content: '分析' }] }, source, { ok: true }, []);
-    assert.equal(snapshot.messages.length, 1);
+    const snapshot = sessionSnapshot({ schemaVersion: 1, entries: [{ type: 'message', message: { role: 'user', content: '分析' } }] }, source, { ok: true }, []);
+    assert.equal(snapshot.entries.length, 1);
     assert.equal(snapshot.session.id, source.id);
     assert.equal(snapshot.session.resolvedSessionPlan, source.resolvedSessionPlan);
     assert.equal(snapshot.contextUsage.percent, 23);
@@ -35,8 +35,10 @@ test('Session snapshots preserve authoritative metadata and independently config
   {
     const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
     const manager = new LiveSessionManager();
-    const session = new PiRpcSession(manager, { id: 'clocked', cwd: '/tmp/clocked' });
+    const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', id: 'clocked', cwd: '/tmp/clocked' });
+    assert.equal(session.metadata().lastConversationAt, '', 'an empty runtime has no observed conversation activity');
     session.handleEvent({ type: 'agent_start' });
+    assert.equal(session.metadata().lastConversationAt, '', 'activation is not a user or assistant message');
     session.handleEvent({ type: 'message_update', message: { role: 'assistant', content: [{ type: 'text', text: 'current partial' }] } });
     session.handleEvent({ type: 'tool_execution_start', toolCallId: 'call', toolName: 'read', args: { path: 'file' } });
     const snapshot = session.snapshot();
@@ -89,15 +91,15 @@ test('Session snapshots preserve authoritative metadata and independently config
         assert.equal(require.cache[require.resolve('./bin/config.js')], undefined);
         assert.equal(require.cache[require.resolve('./bin/platform-composition.js')], undefined);
         const calls = [];
-        const assembler = { assemble: (domain, cwd) => { calls.push(domain); return { modules: [], assets: [], workingDirectory: cwd }; }, save: () => {}, load: () => {} };
         PiRpcSession.prototype.start = async function () { calls.push(this.manager.runtime.command); };
-        const dependencies = (domain) => ({ defaultDomainId: domain, assembler, assemblerForProfile: () => assembler, createWorkspace: () => process.env.PI_CODING_AGENT_DIR, command: domain + '-pi', spawn: () => {}, endpoints: {}, launch: () => ({ args: [], env: {} }) });
+        const dependencies = (domain) => ({ command: domain + '-pi', spawn: () => {}, endpoints: {}, launch: () => ({ args: [], env: {} }) });
         (async () => {
           const a = new LiveSessionManager(dependencies('a'));
           const b = new LiveSessionManager(dependencies('b'));
-          const sa = await a.create({ model: 'provider/model' });
-          const sb = await b.create({ model: 'provider/model' });
-          assert.deepEqual(calls, ['a','a-pi','b','b-pi']);
+          const options = { cwd: process.env.PI_CODING_AGENT_DIR, workspaceId: 'test-workspace', conversationId: 'conv_00000000-0000-4000-8000-000000000001', lifecycle: {} };
+          const sa = await a.startInstance(new PiRpcSession(a, options));
+          const sb = await b.startInstance(new PiRpcSession(b, options));
+          assert.deepEqual(calls, ['a-pi','b-pi']);
           assert.equal(a.get(sb.id), undefined);
           assert.equal(b.get(sa.id), undefined);
           process.stdout.write('isolated');

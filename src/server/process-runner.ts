@@ -4,6 +4,7 @@ const { spawn } = require('node:child_process');
 import type { ChildProcess } from 'node:child_process';
 import type { Executable } from './runtime-resolver.js';
 import { signalProcessTree } from './process-tree.js';
+import { managedRuntimeProcess } from './workspace-runtime.js';
 
 export type ProcessRunOptions = {
   cwd?: string;
@@ -23,12 +24,17 @@ export class ProcessRunner {
   run(executable: Executable, args: string[], options: ProcessRunOptions): Promise<{ stdout: string; stderr: string }> {
     if (hostChildren.size >= 4) return Promise.reject(Object.assign(new Error('Host process capacity reached'), { status: 503 }));
     if (options.signal?.aborted) return Promise.reject(new Error('Analysis cancelled'));
+    let tracked: ReturnType<typeof managedRuntimeProcess>;
+    try { tracked = managedRuntimeProcess(options.cwd); }
+    catch (error) { return Promise.reject(error); }
     const child: ChildProcess = spawn(executable.command, [...executable.args, ...args], {
       ...(options.cwd ? { cwd: options.cwd } : {}),
       env: { ...process.env, ...options.env },
       detached: hostPlatform.detached,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    let trackingError: Error | null = null;
+    try { tracked?.started(child); } catch (error) { trackingError = error as Error; }
     hostChildren.add(child);
     let stop!: () => void;
     const completion = new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -67,6 +73,8 @@ export class ProcessRunner {
         options.signal?.removeEventListener('abort', cancelled);
         this.children.delete(child);
         hostChildren.delete(child);
+        try { tracked?.stopped(); }
+        catch { return reject(Object.assign(new Error('Process exited but its runtime stop record could not be saved.'), { code: 'process_stop_unconfirmed', status: 503 })); }
         if (stopped) return reject(stopped);
         if (!spawnError && code === 0) return resolve({ stdout: stdout(), stderr: stderr() });
         signalProcessTree(child, 'SIGKILL');
@@ -75,6 +83,7 @@ export class ProcessRunner {
         const wrapped = Object.assign(new Error(options.errorMessage?.(output, error) || output.trim() || error.message), { stderr: output });
         reject(wrapped);
       });
+      if (trackingError) halt(trackingError);
     });
     this.children.set(child, { stop, completion });
     return completion;

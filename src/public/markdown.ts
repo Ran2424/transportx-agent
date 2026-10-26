@@ -7,9 +7,9 @@
 
 export type MarkdownImageResolver = (url: string) => string;
 
-export function renderMarkdown(text: string, citationNumbers: Record<string, number> = {}, imageResolver?: MarkdownImageResolver, locale = 'zh-CN') {
+export function renderMarkdown(text: string, citationNumbers: Record<string, number> = {}, imageResolver?: MarkdownImageResolver, locale = 'zh-CN', resourceLinks: Record<string, string> = {}) {
   if (!text) return '';
-  const inline = (value: string) => renderInline(value, citationNumbers, imageResolver, locale);
+  const inline = (value: string) => renderInline(value, citationNumbers, imageResolver, locale, resourceLinks);
 
   // Normalize line endings
   text = text.replace(/\r\n/g, '\n');
@@ -220,7 +220,9 @@ export function renderUserMarkdown(text: string) {
   return renderMarkdown(text);
 }
 
-function renderInline(text: string, citationNumbers?: Record<string, number>, imageResolver?: MarkdownImageResolver, locale = 'zh-CN') {
+function renderInline(text: string, citationNumbers?: Record<string, number>, imageResolver?: MarkdownImageResolver, locale = 'zh-CN', resourceLinks: Record<string, string> = {}) {
+  const unavailable = locale.startsWith('zh') ? '旧资源链接不可用' : 'Legacy resource unavailable';
+  const projectResource = (url: string) => { const key = url.replace(/&amp;/g, '&'); return Object.hasOwn(resourceLinks, key) ? escapeHtml(resourceLinks[key]) : url; };
   text = escapeHtml(text);
   // Inline code (must come first to protect content)
   const codeSpans: string[] = [];
@@ -246,8 +248,9 @@ function renderInline(text: string, citationNumbers?: Record<string, number>, im
   // Images (before links so ![...](...) isn't caught by link regex)
   const images: string[] = [];
   text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, url: string) => {
-    const resolvedUrl = imageResolver ? imageResolver(url) : url;
-    if (!safeUrl(resolvedUrl, true)) return alt;
+    const projectedUrl = projectResource(url);
+    const resolvedUrl = imageResolver ? imageResolver(projectedUrl) : projectedUrl;
+    if (!safeUrl(resolvedUrl, true)) return legacyHostResource(url) ? `${alt} (${unavailable})` : alt;
     const index = images.length;
     images.push(`<img src="${resolvedUrl}" alt="${alt}" class="inline-image">`);
     return `%%IIMAGE${index}%%`;
@@ -268,10 +271,10 @@ function renderInline(text: string, citationNumbers?: Record<string, number>, im
   text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
   // Links
-  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => safeUrl(url) ? `<a href="${url}" target="_blank" rel="noopener">${label}</a>` : label);
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => { const projected = projectResource(url); return legacyHostResource(projected) ? `${label} (${unavailable})` : safeUrl(projected) ? `<a href="${projected}" target="_blank" rel="noopener">${label}</a>` : label; });
 
   // Auto-link bare URLs
-  text = text.replace(/(^|[^"'])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  text = text.replace(/(^|[^"'])(https?:\/\/[^\s<]+)/g, (_match, prefix: string, url: string) => { const projected = projectResource(url); return legacyHostResource(projected) ? `${prefix}${unavailable}` : `${prefix}<a href="${projected}" target="_blank" rel="noopener">${url}</a>`; });
 
   // Restore inline code
   text = text.replace(/%%ICODE(\d+)%%/g, (_, idx: string) => codeSpans[parseInt(idx)]);
@@ -290,5 +293,13 @@ function escapeHtml(text: string) {
 
 function safeUrl(value: string, image = false) {
   const url = value.trim();
-  return image ? /^(https?:|data:image\/)/i.test(url) : /^(https?:|mailto:)/i.test(url);
+  return !legacyHostResource(url) && (image ? /^(https?:|data:image\/)/i.test(url) : /^(https?:|mailto:)/i.test(url));
+}
+
+function legacyHostResource(value: string) {
+  try {
+    const url = new URL(value, value.startsWith('/api/') ? 'http://localhost' : undefined);
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || (typeof location !== 'undefined' && url.origin === location.origin);
+    return local && /^\/api\/(?:live-sessions|sessions|session-history|file|files|file-content|file-preview|export)(?:\/|$)/.test(url.pathname);
+  } catch { return false; }
 }

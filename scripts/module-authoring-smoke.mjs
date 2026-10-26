@@ -1,3 +1,4 @@
+import { createHostConversation, nativeSnapshot, protocolHeaders } from './harness/workspace-client.mjs';
 // Opt-in acceptance with an actual configured model. Never a fixed provider.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -31,7 +32,7 @@ async function until(check, label, timeout = 30000) {
 }
 let endpoint;
 async function json(url, body) {
-  const response = await fetch(endpoint + url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const response = await fetch(endpoint + url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify(body) } : {});
   const value = await response.json(); assert.equal(response.ok, true, JSON.stringify(value)); return value;
 }
 const rpc = (body) => json('/api/rpc', body);
@@ -40,9 +41,9 @@ const csv = 'road,hour,volume\nA,08,10\nA,08,20\nA,09,15\nB,08,7\n';
 const program = `import csv,json,sys\nfrom collections import defaultdict\ncounts=defaultdict(float)\nwith open(sys.argv[1],newline='',encoding='utf-8') as handle:\n for row in csv.DictReader(handle): counts[(row['road'],row['hour'])]+=float(row['volume'])\npeaks={}\nfor (road,hour),volume in counts.items():\n if road not in peaks or volume>peaks[road]['volume']: peaks[road]={'road':road,'hour':hour,'volume':volume}\nprint(json.dumps(list(peaks.values())))\n`;
 const scope = '只读本任务提供的资料，不读取任务外的认证文件，不输出环境变量值。不要安装依赖或修改平台/内置 Python。优先使用模块制作技能。请实际完成，不只给建议。';
 async function run(session, message) {
-  const before = (await json(`/api/live-sessions/${session.id}/snapshot`)).entries.length;
+  const before = (await nativeSnapshot(json, session.conversationId)).entries.length;
   assert.equal((await rpc({ type: 'prompt', sessionId: session.id, message })).success, true);
-  const state = await until(async () => { const value = await json(`/api/live-sessions/${session.id}/snapshot`); return !value.isStreaming && value.entries.length > before && value; }, 'real model authoring turn', 300000);
+  const state = await until(async () => { const value = await nativeSnapshot(json, session.conversationId); return !value.isStreaming && value.entries.length > before && value; }, 'real model authoring turn', 300000);
   const failed = state.entries.filter((entry) => entry.message?.role === 'assistant').at(-1)?.message;
   if (failed?.stopReason === 'error') throw new Error(`Real model failed: ${String(failed.errorMessage).slice(0, 1000)}`);
   return state;
@@ -50,8 +51,9 @@ async function run(session, message) {
 try {
   const ready = await until(() => output.split('\n').map((line) => { try { return JSON.parse(line); } catch { return null; } }).find((value) => value?.type === 'transportx-agent-host-ready'), 'Host ready');
   endpoint = `http://127.0.0.1:${ready.port}`;
+  await until(async () => (await json('/api/health')).dataState === 'ready', 'Host data inventory');
   for (const name of ['csv', 'missing', 'api']) {
-    const session = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model, name: `Real authoring ${name}` })).session;
+    const session = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model, name: `Real authoring ${name}` });
     sessions.push(session);
     fs.mkdirSync(path.join(session.cwd, 'provided'));
     let prompt;
@@ -79,7 +81,7 @@ try {
     report.push({ case: name, model, sessionFile: state.sessionFile, toolCalls: results.map((item) => ({ name: item.toolName, isError: !!item.isError })), installationVerified: name === 'csv', remaining: name === 'missing' ? 'ortools is unavailable; execution not claimed' : name === 'api' ? 'credential not supplied; API execution not claimed' : null });
     console.log(JSON.stringify({ completed: name, evidenceRoot: session.cwd }));
   }
-  const execution = (await json('/api/live-sessions', { cwd: path.join(root, 'scenario'), model, name: 'Execute agent-created module' })).session; sessions.push(execution);
+  const execution = await createHostConversation(json, { parentDirectory: path.join(root, 'scenario'), model, name: 'Execute agent-created module' }); sessions.push(execution);
   fs.writeFileSync(path.join(execution.cwd, 'volumes.csv'), csv);
   const state = await run(execution, '使用刚安装的 local.p4-csv 模块工具处理 volumes.csv。必须调用该工具，不用 bash/python 代替计算。报告 A 道路高峰小时和流量。');
   const results = state.entries.filter((entry) => entry.message?.role === 'toolResult').map((entry) => entry.message);

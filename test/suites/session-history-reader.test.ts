@@ -25,6 +25,7 @@ test('History search tolerates malformed lines without hiding read failures or l
         id: 'session-1',
         timestamp: '2026-08-21T08:00:00.000Z',
         lastConversationAt: '2026-08-21T08:03:00.000Z',
+        hasMessages: true,
         name: '徐家汇早高峰分析',
         firstMessage: 'Analyze weekday congestion at Xujiahui.',
         cwd: '/projects/traffic',
@@ -38,6 +39,14 @@ test('History search tolerates malformed lines without hiding read failures or l
         firstMessage: 'Please analyze weekday congestion at Xujiahui.',
         matches: [{ role: 'user', snippet: '…Please analyze weekday congestion at Xujiahui.' }],
       });
+      const empty = path.join(directory, 'empty.jsonl');
+      fs.writeFileSync(empty, JSON.stringify({ type: 'session', id: 'empty', timestamp: '2026-08-21T08:00:00.000Z', cwd: '~/traffic' }) + '\n');
+      assert.equal((await readSessionSummary(empty, normalize))?.hasMessages, false);
+      assert.equal((await readSessionSummary(empty, normalize))?.lastConversationAt, '', 'a setup header is not conversation activity');
+      fs.appendFileSync(empty, JSON.stringify({ type: 'message', message: { role: 'user', content: 'Unknown message time' } }) + '\n');
+      fs.utimesSync(empty, new Date('2030-01-01'), new Date('2030-01-01'));
+      assert.equal((await readSessionSummary(empty, normalize))?.hasMessages, true);
+      assert.equal((await readSessionSummary(empty, normalize))?.lastConversationAt, '', 'unknown activity does not fall back to creation or file time');
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }

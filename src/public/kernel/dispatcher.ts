@@ -26,6 +26,9 @@ export function createDispatcher(stores: KernelStores): Dispatch {
   const normalizer = createEventNormalizer();
   return function dispatch(action: AppAction): void {
     switch (action.type) {
+      case 'runtime/healthReceived':
+        stores.runtime.healthReceived(action.health);
+        break;
       case 'runtime/connecting':
         stores.runtime.connecting();
         break;
@@ -36,6 +39,29 @@ export function createDispatcher(stores: KernelStores): Dispatch {
         stores.runtime.disconnected();
         break;
 
+      case 'session/indexReceived':
+        stores.session.indexReceived(action.index);
+        break;
+      case 'session/runtimesReceived': {
+        const next = new Set(action.runtimes.map((runtime) => runtime.id));
+        for (const previous of Object.values(stores.session.get().runtimes)) if (!next.has(previous.id) && previous.conversationId) {
+          stores.conversation.streamEnded(previous.conversationId); stores.conversation.queueDrained(previous.conversationId); stores.extensionUi.dropSession(previous.conversationId);
+        }
+        stores.session.runtimesReceived(action.runtimes);
+        break;
+      }
+      case 'session/runtimeReceived': {
+        const id = action.runtime.conversationId;
+        if (id && stores.session.liveSessionId(id) && stores.session.liveSessionId(id) !== action.runtime.id) { stores.conversation.streamEnded(id); stores.conversation.queueDrained(id); stores.extensionUi.dropSession(id); }
+        stores.session.runtimeReceived(action.runtime);
+        if (id && action.runtime.isStreaming === false) stores.conversation.streamEnded(id);
+        break;
+      }
+      case 'session/runtimeClosed': {
+        const id = stores.session.runtimeClosed(action.liveSessionId);
+        if (id) { stores.conversation.streamEnded(id); stores.conversation.queueDrained(id); stores.toolExecution.dropSession(id); stores.extensionUi.dropSession(id); }
+        break;
+      }
       case 'session/listReceived': {
         for (const previous of stores.session.get().sessions) {
           if (action.sessions.some((session) => session.id === previous.id)) continue;

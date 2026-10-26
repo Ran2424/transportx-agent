@@ -3,29 +3,6 @@ const { test } = require('node:test') as typeof import('node:test');
 test('RPC dispatch validates pending contexts and enforces desktop installation boundaries', async (t) => {
   {
     const assert = require('node:assert/strict');
-    const { createHtmlExportRpcHandlers } = require('../../bin/rpc-handlers/html-export.js');
-    const reply = {
-      success(data: unknown) { return { success: true, data }; },
-      failure(error: string) { return { success: false, error }; },
-    };
-
-    // HTML export handler resolves a live session before delegating process execution
-    {
-      const calls: Array<Record<string, unknown>> = [];
-      const session = { cwd: '/tmp/traffic-task', sessionFile: '/tmp/traffic-task/session.jsonl' };
-      const handler = createHtmlExportRpcHandlers({
-        getLiveSession: () => session,
-        resolveSessionFile: (filePath: string) => filePath,
-        async runExport(input: Record<string, unknown>) { calls.push(input); return '/tmp/traffic-task/session.html'; },
-        errorMessage(error: unknown) { return String(error); },
-      }).export_html;
-      assert.deepEqual(await handler.handle({ type: 'export_html', sessionId: 'session-1', outputPath: 'report.html' }, reply), { success: true, data: { path: '/tmp/traffic-task/session.html' } });
-      assert.deepEqual(calls, [{ file: session.sessionFile, cwd: session.cwd, outputPath: 'report.html' }]);
-    }
-  }
-
-  {
-    const assert = require('node:assert/strict');
     const { createModuleRpcHandlers } = require('../../bin/rpc-handlers/module.js');
     const reply = {
       success(data: unknown) { return { success: true, data }; },
@@ -111,7 +88,7 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
       const { PiRpcSession, LiveSessionManager } = require('../../bin/sessions.js');
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-pending-message-'));
       t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
-      const session = new PiRpcSession(new LiveSessionManager(), { cwd });
+      const session = new PiRpcSession(new LiveSessionManager(), { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd });
       const pending = (commandId: string, text: string, canvasContextIds: string[]) => ({ commandId, text, attachmentIds: [], geoContextIds: [], canvasContextIds });
       session.registerPendingMessage(pending('first', 'first text', ['canvas-a']));
       session.registerPendingMessage(pending('second', 'second text', ['canvas-b']));

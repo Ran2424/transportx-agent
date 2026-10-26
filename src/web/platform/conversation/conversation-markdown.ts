@@ -2,11 +2,11 @@ import { renderMarkdown } from '../../../public/markdown.js';
 import i18n from '../../i18n';
 
 const ALLOWED_TAGS = new Set(['A', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL']);
-const ALLOWED_ATTRIBUTES = new Set(['aria-label', 'class', 'checked', 'data-citation-id', 'data-citation-ids', 'disabled', 'href', 'rel', 'src', 'style', 'target', 'type']);
+const ALLOWED_ATTRIBUTES = new Set(['alt', 'aria-label', 'class', 'checked', 'data-citation-id', 'data-citation-ids', 'disabled', 'href', 'rel', 'src', 'style', 'target', 'type']);
 
-export function renderConversationMarkdown(markdown: string, citationNumbers: Record<string, number> = {}) {
+export function renderConversationMarkdown(markdown: string, citationNumbers: Record<string, number> = {}, resourceLinks: Record<string, string> = {}) {
   const template = document.createElement('template');
-  template.innerHTML = renderMarkdown(markdown, citationNumbers, undefined, i18n.language);
+  template.innerHTML = renderMarkdown(markdown, citationNumbers, undefined, i18n.language, Object.fromEntries(Object.entries(resourceLinks).map(([old, current]) => [old, new URL(current, window.location.origin).href])));
   template.content.querySelectorAll('*').forEach((node) => {
     if (!ALLOWED_TAGS.has(node.tagName)) { node.replaceWith(document.createTextNode(node.textContent || '')); return; }
     [...node.attributes].forEach((attribute) => {
