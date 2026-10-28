@@ -1,0 +1,41 @@
+name: Mirror verified Windows 3.24.0 release from OSS
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mirror-win-3.24.0
+  cancel-in-progress: false
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: 3.24.0
+      RELEASE_ID: '426625295'
+      RELEASE_SOURCE: 26bf9a338f85133175f2061bc6fb0cc7c6947648
+      INSTALLER_SHA256: cb8a907883ce662dd58478a340de4e7710bc69ca708f86af36d8e67b528c20fb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify user-supplied installer and mirror without replacing assets
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > release.json
+          jq -e --arg tag "v$RELEASE_VERSION" '.tag_name == $tag and .draft == false' release.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { getPlatformProfile } from './desktop/scripts/platform-profile.mjs';
+          const profile = getPlatformProfile('win');
+          fs.writeFileSync('download-base.txt', new URL(profile.update.url).origin + '/releases/v' + process.env.RELEASE_VERSION + '/');
+          fs.writeFileSync('installer-name.txt', profile.update.artifactName.replace('${version}', process.env.RELEASE_VERSION).replace('${ext}', 'exe'));
+          NODE
+          name=$(cat installer-name.txt)
+          curl --fail --location --retry 3 --header 'Accept-Encoding: identity' "$(cat download-base.txt)build-info-win-$RELEASE_VERSION.json" -o build-info.json
+          jq -e --arg version "$RELEASE_VERSION" --arg source "$RELEASE_SOURCE" --arg name "$name" --arg sha "$INSTALLER_SHA256" '.version == $version and .sourceRevision == $source and .sourceDirty == true and (.authorization | length > 0) and any(.files[]; .name == $name and .sha256 == $sha)' build-info.json
+          curl --fail --location --retry 3 --header 'Accept-Encoding: identity' "$(cat download-base.txt)$name" -o "$name"
+          printf '%s  %s\n' "$INSTALLER_SHA256" "$name" | sha256sum --check --strict
+          gh release upload "v$RELEASE_VERSION" "$name" --repo "$GITHUB_REPOSITORY"
