@@ -6,7 +6,7 @@
 
 ## 3.24.0 - 2026-10-28
 
-macOS arm64 已发布，安装包源码固定为 `28cfc891ff6aec6a2d200f74a99870a69e28e03f`，按用户授权沿用 ad-hoc 签名且未 Apple 公证。Windows 3.24.0 暂未发布；平台验收及来源见 [3.24.0 发布记录](releases/3.24.0.md)。
+macOS arm64 与 Windows x64 已发布。Mac 安装包源码固定为 `28cfc891ff6aec6a2d200f74a99870a69e28e03f`，按用户授权沿用 ad-hoc 签名且未 Apple 公证。Windows 使用用户提供并确认发布的安装包，来源为 `26bf9a3` 的有未提交改动构建，含 Mac main 没有的城市轨道交通空间活力 Demo 代码，未在本机执行 Windows 安装验收；平台验收及来源见 [3.24.0 发布记录](releases/3.24.0.md)。
 
 ### Added
 

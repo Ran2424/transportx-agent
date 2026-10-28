@@ -1,6 +1,6 @@
 # TransportX Agent 架构
 
-- 源码版本：3.24.0（2026-10-28 已发布 macOS arm64；平台状态见 [发布记录](releases/3.24.0.md)）
+- 源码版本：3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
 - 文档状态：当前实现的架构权威
 - 更新日期：2026-10-28
 - 发布 Profile：macOS arm64（DMG + ZIP 更新包）与 Windows x64（NSIS）；Linux 不是发布目标
