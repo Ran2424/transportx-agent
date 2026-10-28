@@ -4,7 +4,9 @@
 
 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/)，项目版本遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。日期采用 ISO 8601（`YYYY-MM-DD`）。
 
-## 3.24.0 - 未发布
+## 3.24.0 - 2026-10-28
+
+macOS arm64 已发布，安装包源码固定为 `28cfc891ff6aec6a2d200f74a99870a69e28e03f`，按用户授权沿用 ad-hoc 签名且未 Apple 公证。Windows 3.24.0 暂未发布；平台验收及来源见 [3.24.0 发布记录](releases/3.24.0.md)。
 
 ### Added
 

@@ -1,8 +1,8 @@
 # TransportX Agent 架构
 
-- 源码版本：3.24.0（未发布，按当前工作区实现核查）
+- 源码版本：3.24.0（2026-10-28 已发布 macOS arm64；平台状态见 [发布记录](releases/3.24.0.md)）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-10-23
+- 更新日期：2026-10-28
 - 发布 Profile：macOS arm64（DMG + ZIP 更新包）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
