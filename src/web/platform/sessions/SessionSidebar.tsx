@@ -15,14 +15,14 @@ type Props = {
   onClose(): void; onGoHome(): void; onNewSession(workspace?: WorkspaceView): void; onManageModules(): void;
   onSelect(conversationId: string): void;
   onDelete(workspace: WorkspaceView, record?: ConversationRecordV1): void;
-  onDefaults(workspace: WorkspaceView): void; onDiagnostics(workspace?: WorkspaceView): void;
+  onDiagnostics(workspace?: WorkspaceView): void;
 };
 type Target = { workspace: WorkspaceView; record?: ConversationRecordV1 };
 function savedCollapsed() { try { return JSON.parse(window.localStorage.getItem('tau-collapsed-workspaces') || '[]') as string[]; } catch { return []; } }
 function conversationActivity(item: WorkspaceView['conversations'][number]) { return Date.parse(item.lastConversationAt || '') || (item.hasMessages === false ? Date.parse(item.record.createdAt) || 0 : 0); }
 function workspaceActivity(workspace: WorkspaceView) { return Math.max(0, ...workspace.conversations.map((item) => Date.parse(item.lastConversationAt || '') || 0)) || (workspace.conversations.every((item) => item.hasMessages === false) ? Date.parse(workspace.createdAt || '') || 0 : 0); }
 
-export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSessionId, historyRevision, onClose, onGoHome, onNewSession, onManageModules, onSelect, onDelete, onDefaults, onDiagnostics }: Props) {
+export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSessionId, historyRevision, onClose, onGoHome, onNewSession, onManageModules, onSelect, onDelete, onDiagnostics }: Props) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(''), [searchIds, setSearchIds] = useState<Set<string> | null>(null);
   const [error, setError] = useState(''), [loading, setLoading] = useState(false);
@@ -139,7 +139,6 @@ export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSe
     {menu && <div className="session-context-menu" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 200) }}>
       {menu.workspace.availability === 'ready' && menu.record?.state !== 'deleting' && <button type="button" role="menuitem" onClick={() => { setRename(menu); setRenameValue(menu.record?.name || menu.workspace.name); setError(''); setMenu(null); }}>{t(menu.record ? 'workspaceFlow.renameConversation' : 'workspaceFlow.renameWorkspace')}</button>}
       {menu.record && menu.record.state !== 'deleting' && menu.workspace.availability === 'ready' && <button type="button" role="menuitem" onClick={() => { openMove(menu); setMenu(null); }}>{t(menu.workspace.kind === 'standalone' ? 'workspaceFlow.moveIntoWorkspace' : 'workspaceFlow.moveConversation')}</button>}
-      {!menu.record && menu.workspace.kind !== 'standalone' && menu.workspace.availability === 'ready' && <button type="button" role="menuitem" onClick={() => { onDefaults(menu.workspace); setMenu(null); }}>{t('workspaceFlow.editDefaults')}</button>}
       <button type="button" role="menuitem" onClick={() => { onDiagnostics(menu.workspace); setMenu(null); }}>{t('workspaceFlow.diagnostics')}</button>
       {(menu.workspace.kind !== 'standalone' && menu.workspace.directoryOwnership !== 'external' || menu.record) && (menu.workspace.availability === 'ready' || menu.workspace.availability === 'deleting' || menu.workspace.availability === 'isolated') && <button type="button" role="menuitem" onClick={() => { onDelete(menu.workspace, menu.record); setMenu(null); }}>{menu.workspace.availability === 'isolated' ? t('workspaceFlow.deleteIsolated') : menu.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')}</button>}
     </div>}

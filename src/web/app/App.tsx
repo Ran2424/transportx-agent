@@ -83,9 +83,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
   const [canvases, setCanvases] = useState<Record<string, CanvasState>>({});
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [creationSequence, setCreationSequence] = useState(0);
-  const [quickCreate, setQuickCreate] = useState(false);
-  const quickWorkspace = useRef<string | null>(null);
-  const quickNavigation = useRef(0);
+  const [creationExpandAdvanced, setCreationExpandAdvanced] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general');
   const [modelOpen, setModelOpen] = useState(false);
@@ -97,7 +95,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
   const [deleteTarget, setDeleteTarget] = useState<{ workspace: WorkspaceView; record?: ConversationRecordV1; isolated?: boolean; input: DeletionRequest } | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [creationWorkspace, setCreationWorkspace] = useState<WorkspaceView | null>(null);
-  const [creationMode, setCreationMode] = useState<'create' | 'defaults' | 'confirmation'>('create');
+  const [creationMode, setCreationMode] = useState<'create' | 'confirmation'>('create');
   const [confirmationId, setConfirmationId] = useState<string>();
   const activationConfirmation = useRef<{ id: string; resolve(): void; reject(error: Error): void } | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
@@ -292,12 +290,13 @@ export function App({ account }: { account?: ReactNode } = {}) {
   }, [selectSession, sessionState.sessions, sessionState.workspaces, sessionState.indexLoaded]);
 
   function openNewSession(workspace: WorkspaceView | null = null) {
-    if (quickWorkspace.current) return;
-    quickWorkspace.current = workspace?.id || null; quickNavigation.current = navigationSequence.current; setQuickCreate(!!workspace);
-    if (workspace) setNotice(t('workspaceFlow.creating'));
-    setCreationSequence(value => value + 1); setCreationWorkspace(workspace); setCreationMode('create'); setConfirmationId(undefined); setNewSessionOpen(true);
+    setCreationSequence(value => value + 1);
+    setCreationExpandAdvanced(!!workspace);
+    setCreationWorkspace(workspace);
+    setCreationMode('create');
+    setConfirmationId(undefined);
+    setNewSessionOpen(true);
   }
-  function finishQuickCreate() { quickWorkspace.current = null; setNotice(value => value === t('workspaceFlow.creating') ? '' : value); }
   function openDiagnostics(workspace?: WorkspaceView) { setDiagnosticsWorkspace(workspace || null); setDiagnosticsOpen(true); }
   async function activateConversation(id: string) {
     const current = kernel.stores.session.get();
@@ -306,10 +305,10 @@ export function App({ account }: { account?: ReactNode } = {}) {
     if (target.liveSessionId) return;
     const workspace = current.workspaces.find(item => item.id === target.workspaceId);
     if (target.record?.plan === null && workspace) {
-      if (quickWorkspace.current) throw new Error(t('workspaceFlow.creating'));
       await new Promise<void>((resolve, reject) => {
         activationConfirmation.current = { id, resolve, reject };
-        setCreationSequence(value => value + 1); setQuickCreate(false);
+        setCreationSequence(value => value + 1);
+        setCreationExpandAdvanced(false);
         setCreationWorkspace(workspace); setConfirmationId(id); setCreationMode('confirmation'); setNewSessionOpen(true);
       });
       return;
@@ -431,8 +430,8 @@ export function App({ account }: { account?: ReactNode } = {}) {
   return (
     <OpenDocumentContext.Provider value={openDocument}><CitationDetailProvider sessionId={activeSession?.id}><AppShell
       header={<Header account={account} connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
-      sidebar={<SessionSidebar onManageModules={() => { setSettingsSection('modules'); setSettingsOpen(true); }} open={sidebarOpen} dataReady={runtime.health?.dataState === 'ready'} sessions={sessionState.sessions} workspaces={sessionState.workspaces} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={(workspace) => openNewSession(workspace)} onSelect={(id) => void selectSession(id)} onDelete={requestDeletion} onDefaults={(workspace) => { if (quickWorkspace.current) return; setQuickCreate(false); setCreationWorkspace(workspace); setCreationMode('defaults'); setNewSessionOpen(true); }} onDiagnostics={openDiagnostics} />}
-      tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => openNewSession()} />}
+      sidebar={<SessionSidebar onManageModules={() => { setSettingsSection('modules'); setSettingsOpen(true); }} open={sidebarOpen} dataReady={runtime.health?.dataState === 'ready'} sessions={sessionState.sessions} workspaces={sessionState.workspaces} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={(workspace) => openNewSession(workspace)} onSelect={(id) => void selectSession(id)} onDelete={requestDeletion} onDiagnostics={openDiagnostics} />}
+      tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => openNewSession()} onActivate={activateConversation} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
       canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; const view = canvasContent.views.find((view) => view.id === input.viewId && view.canvas?.revision === input.revision); canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input), view?.title); }} />}
@@ -441,7 +440,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
       settingsOpen={settingsOpen}
       overlays={<>
         <projectUi.UpdateNotice onOpen={() => { setSettingsSection('general'); setSettingsOpen(true); }} />
-        <NewSessionDialog key={creationSequence} quickCreate={quickCreate && creationMode === 'create'} onQuickCreateFinished={finishQuickCreate} open={newSessionOpen} onOpenChange={changeCreationOpen} workspace={creationWorkspace} workspaces={sessionState.workspaces} onWorkspaceChange={setCreationWorkspace} mode={creationMode} confirmationId={confirmationId} onCreated={(id, fromQuickCreate) => { if (activationConfirmation.current?.id === id) { activationConfirmation.current.resolve(); activationConfirmation.current = null; return; } if (!fromQuickCreate || quickNavigation.current === navigationSequence.current) void selectSession(id); }} onAddModel={() => openModelSetup('new')} />
+        <NewSessionDialog key={creationSequence} expandAdvanced={creationExpandAdvanced} open={newSessionOpen} onOpenChange={changeCreationOpen} workspace={creationWorkspace} workspaces={sessionState.workspaces} onWorkspaceChange={setCreationWorkspace} mode={creationMode} confirmationId={confirmationId} onCreated={(id) => { if (activationConfirmation.current?.id === id) { activationConfirmation.current.resolve(); activationConfirmation.current = null; return; } void selectSession(id); }} onAddModel={() => openModelSetup('new')} />
         <MigrationDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} workspace={diagnosticsWorkspace} />
         <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
