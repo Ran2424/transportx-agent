@@ -410,7 +410,7 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
     catch (error) { return json(res, 503, { code: 'system_not_ready', error: (error as Error).message, migration: workspaceMigration.status() }); }
   }
   try {
-    if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.live(id) })) return;
+    if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.geoResourceSession(id) })) return;
     if (handleVideoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.live(id), authorize: (id, resourceId) => { videoService.loadManifest(workspaceHost.live(id)!, resourceId); } })) return;
     if (handleCitationResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.live(id) })) return;
   } catch (error) { return json(res, ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code || '') ? 404 : errorStatus(error), { error: errorMessage(error), code: (error as { code?: string }).code }); }

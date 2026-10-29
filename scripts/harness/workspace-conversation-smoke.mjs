@@ -57,6 +57,18 @@ try {
     await page.locator('.workspace-group-heading').filter({ hasText: '整改冒烟工作区' }).waitFor();
     await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
     await page.getByLabel('消息输入').waitFor();
+    const fileDock = page.getByTestId('workspace-dock');
+    if (!(await fileDock.getAttribute('class')).includes('is-open')) await page.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
+    await fileDock.locator('.workspace-empty').waitFor();
+    const historyFile = path.join(created.data.directory, 'history-visible.csv');
+    fs.writeFileSync(historyFile, 'station,count\nA,31\n');
+    await fileDock.getByRole('button', { name: '刷新文件', exact: true }).click();
+    await fileDock.getByRole('button', { name: /history-visible.csv/ }).waitFor();
+    await page.locator('.session-row').filter({ hasText: '会话 B' }).click();
+    await fileDock.getByRole('button', { name: /history-visible.csv/ }).waitFor();
+    fs.unlinkSync(historyFile);
+    await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
+    await fileDock.locator('.workspace-empty').waitFor();
     assert.equal((await req('/api/health')).data.liveSessionCount, 0, 'history browsing never spawns Pi');
     assert.equal((await req(`/api/workspaces/${ws}`)).data.conversations.find(item => item.record.id === a).lastConversationAt, null, 'activation does not manufacture message activity');
     assert.equal((await req(`/api/conversations/${a}/close`, { filePath: 'old-session.jsonl' })).status, 400, 'legacy path input is rejected even with a current protocol header');

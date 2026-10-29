@@ -45,6 +45,14 @@ export class WorkspaceHost {
     if (!session && required) throw problem('conversation_not_active', 'Activate this conversation explicitly to use this view.');
     return session || null;
   }
+  geoResourceSession(id: string) {
+    const target = this.target(id);
+    return this.boundRuntime(id, target.manifest.id) || {
+      cwd: target.directory,
+      entries: this.options.runtime.snapshot(id).snapshot.entries,
+      resolvedSessionPlan: this.options.store.readPlan(target.directory, target.conversation),
+    };
+  }
   private boundRuntime(id: string, workspaceId: string) { return [...this.options.sessions.sessions.values()].find((session) => session.conversationId === id && session.workspaceId === workspaceId && !session.terminating && session.lifecycle?.isReady(session)); }
   async workspace(id: string) {
     this.options.migration.assertSystemReady();
