@@ -135,7 +135,18 @@ export class WorkspaceRuntimeGate {
       try {
       const previous = readRuntime(location.file);
       if (previous && (previous.directory !== toPosixPath(location.directory) || previous.workspaceId !== workspaceId)) throw failure('Runtime workspace identity changed.', 'workspace_identity_conflict');
-      if (previous && previous.phase !== 'stopped') throw Object.assign(failure('Previous Host/Pi/job stop is unconfirmed; open runtime diagnostics.'), { generation: previous.generation });
+      if (previous && previous.phase !== 'stopped') {
+        const host = inspectRecordedProcess(previous.host, this.pythonCommand);
+        const hostStopped = host.state === 'exited' || host.state === 'replaced';
+        const rebooted = hostStopped && previous.host.bootId !== currentBootId();
+        const processesStopped = hostStopped && previous.processes.every((item) => {
+          if (item.state === 'stopped' || rebooted) return true;
+          if (!item.identity) return item.pid !== null && inspectProcess(item.pid, this.pythonCommand).state === 'exited';
+          const observation = inspectRecordedProcess(item.identity, this.pythonCommand);
+          return observation.state === 'exited' || observation.state === 'replaced';
+        });
+        if (!processesStopped) throw Object.assign(failure('Previous Host/Pi/job stop is unconfirmed; open runtime diagnostics.'), { generation: previous.generation });
+      }
       const host = inspectProcess(process.pid, this.pythonCommand);
       if (host.state !== 'running') throw failure(host.state === 'unknown' ? host.reason : 'Host identity is unavailable.');
       const at = new Date().toISOString();

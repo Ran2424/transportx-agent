@@ -499,6 +499,30 @@ test('Session close, history deletion and process cancellation preserve writer o
     assert.equal(gate.diagnostics(root).processes[0].kind, 'managed');
     assert.equal(gate.diagnostics(root).processes[0].state, 'stopped', 'domain subprocess completion commits its runtime stop before returning');
     next.finish();
+    const runtimeFile = path.join(root, 'coordination', fs.readdirSync(path.join(root, 'coordination')).find((name: string) => /^[a-f0-9]{64}\.json$/.test(name)));
+    const stoppedRecord = JSON.parse(fs.readFileSync(runtimeFile, 'utf8'));
+    const interrupted = { ...stoppedRecord, phase: 'running', host: observed.identity, processes: [{ id: 'interrupted-pi', kind: 'pi', state: 'running', pid: child.pid, identity: observed.identity }] };
+    fs.writeFileSync(runtimeFile, JSON.stringify(interrupted));
+    const recovered = gate.take(root, workspaceId, conversationId);
+    assert.notEqual(recovered.generation, interrupted.generation, 'a confirmed exited Host and Pi do not permanently block activation');
+    recovered.finish();
+    for (const blocked of [
+      { ...interrupted, host: original.identity },
+      { ...interrupted, processes: [{ ...interrupted.processes[0], pid: process.pid, identity: original.identity }] },
+      { ...interrupted, processes: [{ ...interrupted.processes[0], state: 'starting', pid: null, identity: null }] },
+      { ...interrupted, processes: [{ ...interrupted.processes[0], state: 'starting', pid: process.pid, identity: null }] },
+      { ...interrupted, processes: [{ ...interrupted.processes[0], pid: process.pid, identity: { ...original.identity, executableSha256: '0'.repeat(64) } }] },
+    ]) {
+      const bytes = JSON.stringify(blocked); fs.writeFileSync(runtimeFile, bytes);
+      assert.throws(() => gate.take(root, workspaceId, conversationId), { code: 'process_stop_unconfirmed' });
+      assert.equal(fs.readFileSync(runtimeFile, 'utf8'), bytes, 'an unsafe or unknown generation is never replaced');
+    }
+    const recycled = { ...original.identity, startedAt: 'previous-kernel-start' };
+    fs.writeFileSync(runtimeFile, JSON.stringify({ ...interrupted, host: recycled, processes: [{ ...interrupted.processes[0], pid: process.pid, identity: recycled }] }));
+    gate.take(root, workspaceId, conversationId).finish();
+    assert.equal(inspectRecordedProcess(original.identity, python).state, 'running', 'recycled PIDs are not signalled during passive recovery');
+    fs.writeFileSync(runtimeFile, JSON.stringify({ ...interrupted, host: { ...observed.identity, bootId: '0'.repeat(64) }, processes: [{ ...interrupted.processes[0], state: 'starting', pid: null, identity: null }] }));
+    gate.take(root, workspaceId, conversationId).finish();
   }
   // New tasks and existing workspaces share a durable creation commit, including response-loss recovery.
   {
