@@ -33,6 +33,7 @@ import { CadDrawingStore, safePath, jobArtifact, serviceError } from './cad/file
 import { CadCommit } from './cad/commit.js';
 import { cadPresentation } from './cad/presentation.js';
 import type { CanvasContextV1 } from '../contracts/canvas.js';
+import type { CanvasSession } from './canvas-service.js';
 
 const MAX_ENGINE_OUTPUT = 8 * 1024 * 1024;
 const ENGINE_TIMEOUT_MS = 120_000;
@@ -65,7 +66,7 @@ export class CadService {
   private runner: PythonRunner;
   private locks = new Map<string, Promise<void>>();
 
-  constructor(executable: ConstructorParameters<typeof PythonRunner>[0], private scriptPath: string, private inspectContexts?: (session: PiRpcSession, ids: string[]) => CanvasContextV1[]) {
+  constructor(executable: ConstructorParameters<typeof PythonRunner>[0], private scriptPath: string, private inspectContexts?: (session: CanvasSession, ids: string[]) => CanvasContextV1[]) {
     this.runner = new PythonRunner(executable);
   }
 
@@ -79,7 +80,7 @@ export class CadService {
     }
   }
 
-  async inspect(session: PiRpcSession, body: JsonRecord, signal?: AbortSignal): Promise<CadInspectResultV1> {
+  async inspect(session: CanvasSession, body: JsonRecord, signal?: AbortSignal): Promise<CadInspectResultV1> {
     const { contextId, ...input } = requestBody(body);
     if (contextId !== undefined && typeof contextId !== 'string') throw serviceError('CAD contextId must be a string.');
     const context = typeof contextId === 'string' ? this.attachedSelection(session, contextId) : undefined;
@@ -194,7 +195,7 @@ export class CadService {
 
   private sourceFileId(sourcePath: string) { return `cad_${crypto.createHash('sha256').update(sourcePath).digest('hex').slice(0, 24)}`; }
 
-  resolvePresentation(session: PiRpcSession, viewId: string) {
+  resolvePresentation(session: CanvasSession, viewId: string) {
     const identity = viewId.match(/^cad:([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:@r([0-9]+))?$/);
     if (!identity) return null;
     const fileId = identity[1];
@@ -205,7 +206,7 @@ export class CadService {
     return cadPresentation(manifest, undefined, 'present', undefined, historicalRevision);
   }
 
-  async present(session: PiRpcSession, input: { resource?: unknown; title?: unknown }) {
+  async present(session: CanvasSession, input: { resource?: unknown; title?: unknown }) {
     const resource = input.resource as { scope?: unknown; path?: unknown } | undefined;
     if (resource?.scope !== 'session-file' || typeof resource.path !== 'string') throw serviceError('CAD requires a session DXF resource.');
     const absolute = safePath(session, resource.path, ['.dxf']);
@@ -230,7 +231,7 @@ export class CadService {
     });
   }
 
-  private attachedSelection(session: PiRpcSession, contextId: string) {
+  private attachedSelection(session: CanvasSession, contextId: string) {
     const context = this.inspectContexts?.(session, [contextId])[0];
     if (!context || context.adapterId !== CAD_CANVAS_ADAPTER_ID || !parseCadCanvasSelection(context.selection)?.drawingSha256) throw serviceError('Attach a current CAD selection.', 409, 'cad.context_mismatch');
     return context;
@@ -288,7 +289,7 @@ export class CadService {
     }
   }
 
-  private createJob(session: PiRpcSession, operationId?: string): string {
+  private createJob(session: { cwd: string }, operationId?: string): string {
     if (operationId && !/^cad_[a-f0-9]{32}$/.test(operationId)) throw serviceError('Invalid CAD operation ID.');
     const jobId = operationId ?? `cad_${Date.now().toString(36)}_${crypto.randomBytes(5).toString('hex')}`;
     const jobDir = safePath(session, `.tau/cad-jobs/${jobId}`, [], false);
@@ -297,7 +298,7 @@ export class CadService {
   }
 
   private async runEngine(
-    session: PiRpcSession,
+    session: { cwd: string },
     jobDir: string,
     action: 'draw' | 'inspect' | 'verify',
     request: unknown,
@@ -321,7 +322,7 @@ export class CadService {
     return stdout;
   }
 
-  private readManifest(session: PiRpcSession, fileId: string) { return this.store.readManifest(session, fileId); }
-  private resolveInput(session: PiRpcSession, request: CadInspectRequestV1 | CadVerifyRequestV1) { return this.store.resolveInput(session, request); }
+  private readManifest(session: { cwd: string }, fileId: string) { return this.store.readManifest(session, fileId); }
+  private resolveInput(session: { cwd: string }, request: CadInspectRequestV1 | CadVerifyRequestV1) { return this.store.resolveInput(session, request); }
   private commit(...args: Parameters<CadCommit['commit']>) { return this.commits.commit(...args); }
 }

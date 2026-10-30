@@ -2,8 +2,6 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-import type { PiRpcSession } from '../sessions.js';
-
 import { sha256File } from '../asset-integrity.js';
 import { writeJsonAtomic } from '../util/json-storage.js';
 import { isWithin, relativePosixPath } from '../util/path.js';
@@ -20,6 +18,7 @@ import {
 } from '../../contracts/index.js';
 
 const MAX_INPUT_BYTES = 50 * 1024 * 1024;
+type CadFileContext = { cwd: string };
 type ServiceError = Error & { status?: number; code?: string };
 
 export function serviceError(message: string, status = 400, code?: string): ServiceError {
@@ -37,7 +36,7 @@ function assertRelativePath(relativePath: string): void {
   }
 }
 
-export function safePath(session: PiRpcSession, relativePath: string, extensions: string[] = [], mustExist = true): string {
+export function safePath(session: CadFileContext, relativePath: string, extensions: string[] = [], mustExist = true): string {
   assertRelativePath(relativePath);
   const root = fs.realpathSync(session.cwd);
   let cursor = root;
@@ -75,7 +74,7 @@ export function jobArtifact(jobDir: string, name: string): string {
 }
 
 export class CadDrawingStore {
-  findSource(session: PiRpcSession, sourcePath: string): CadDrawingManifestV1 | null {
+  findSource(session: CadFileContext, sourcePath: string): CadDrawingManifestV1 | null {
     const root = safePath(session, '.tau/cad-drawings', [], false);
     if (!fs.existsSync(root)) return null;
     const matches = fs.readdirSync(root, { withFileTypes: true })
@@ -86,7 +85,7 @@ export class CadDrawingStore {
     return matches[0] ?? null;
   }
 
-  registerSnapshot(session: PiRpcSession, fileId: string, sourcePath: string, summary: CadInspectResultV1['summary'], title: unknown): CadDrawingManifestV1 {
+  registerSnapshot(session: CadFileContext, fileId: string, sourcePath: string, summary: CadInspectResultV1['summary'], title: unknown): CadDrawingManifestV1 {
     const absolute = safePath(session, sourcePath, ['.dxf']);
     const sha256 = sha256File(absolute);
     if (sha256 !== summary.sha256) throw serviceError('CAD input changed while opening.', 409, 'cad.checksum');
@@ -115,11 +114,11 @@ export class CadDrawingStore {
     return manifest;
   }
 
-  manifestPath(session: PiRpcSession, fileId: string): string {
+  manifestPath(session: CadFileContext, fileId: string): string {
     return safePath(session, `.tau/cad-drawings/${fileId}/manifest.json`, [], false);
   }
 
-  readManifest(session: PiRpcSession, fileId: string): CadDrawingManifestV1 | null {
+  readManifest(session: CadFileContext, fileId: string): CadDrawingManifestV1 | null {
     const file = this.manifestPath(session, fileId);
     if (!fs.existsSync(file)) return null;
     let value: unknown;
@@ -134,7 +133,7 @@ export class CadDrawingStore {
     return parsed.value;
   }
 
-  resolveInput(session: PiRpcSession, request: CadInspectRequestV1 | CadVerifyRequestV1): { relativePath: string; absolutePath: string } {
+  resolveInput(session: CadFileContext, request: CadInspectRequestV1 | CadVerifyRequestV1): { relativePath: string; absolutePath: string } {
     if (request.path) {
       const absolutePath = safePath(session, request.path, ['.dxf'], true);
       return { relativePath: relativePosixPath(fs.realpathSync(session.cwd), absolutePath), absolutePath };

@@ -37,7 +37,7 @@ import { relativePosixPath } from './util/path.js';
 import { conversationStatePath } from './workspace-store.js';
 import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 
-type CanvasSession = {
+export type CanvasSession = {
   id: string;
   conversationId: string;
   cwd: string;

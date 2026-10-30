@@ -92,9 +92,9 @@ let authEnabled = !!PROJECT_AUTH || (AUTH_CONFIGURED && TAU_SETTINGS.authEnabled
 let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
-const canvasService: CanvasService = new CanvasService(citationService, (session, requestedPath) => { const live = liveManager.get(session.id); if (!live) throw Object.assign(new Error('Conversation runtime is unavailable.'), { status: 404 }); return workspaceHost.file(live.conversationId, requestedPath); }, {
-  present: (session, input) => cadService.present(liveManager.get(session.id)!, input),
-  resolve: (session, viewId) => cadService.resolvePresentation(liveManager.get(session.id)!, viewId),
+const canvasService: CanvasService = new CanvasService(citationService, (session, requestedPath) => workspaceHost.file(session.conversationId, requestedPath), {
+  present: (session, input) => cadService.present(session, input),
+  resolve: (session, viewId) => cadService.resolvePresentation(session, viewId),
 });
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py')));
 const cadService: CadService = new CadService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/cad/scripts/cad_engine.py')), (session, ids) => canvasService.inspectContexts(session, ids));
@@ -410,9 +410,9 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
     catch (error) { return json(res, 503, { code: 'system_not_ready', error: (error as Error).message, migration: workspaceMigration.status() }); }
   }
   try {
-    if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.live(id) })) return;
-    if (handleVideoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.live(id), authorize: (id, resourceId) => { videoService.loadManifest(workspaceHost.live(id)!, resourceId); } })) return;
-    if (handleCitationResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.live(id) })) return;
+    if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.resourceContext(id) })) return;
+    if (handleVideoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.resourceContext(id), authorize: (id, resourceId) => { videoService.loadManifest(workspaceHost.resourceContext(id), resourceId); } })) return;
+    if (handleCitationResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.resourceContext(id) })) return;
   } catch (error) { return json(res, ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code || '') ? 404 : errorStatus(error), { error: errorMessage(error), code: (error as { code?: string }).code }); }
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }

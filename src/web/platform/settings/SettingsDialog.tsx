@@ -61,12 +61,13 @@ type SettingsPageProps = {
   onExpandThinkingChange(value: boolean): void;
   session: ConversationView | null;
   onAddModel(): void;
+  onEnsureRuntime(id: string): Promise<void>;
   section: SettingsSectionId;
   onSectionChange(section: SettingsSectionId): void;
   onBack(): void;
 };
 
-export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, expandThinking, onExpandThinkingChange, session, onAddModel, section, onSectionChange, onBack }: SettingsPageProps) {
+export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkingChange, expandThinking, onExpandThinkingChange, session, onAddModel, onEnsureRuntime, section, onSectionChange, onBack }: SettingsPageProps) {
   const { t } = useTranslation();
   const { locale, preference, setPreference } = useLocale();
   const kernel = appKernel;
@@ -101,7 +102,8 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
       kernel.commands.platform.getAvailableModels(session?.id).then((value) => { if (current) setModels(value); }),
       kernel.commands.platform.getModelProviders().then((value) => { if (current) setModelProviders(value); }),
     ];
-    if (session) {
+    setAutoCompact(session?.autoCompactionEnabled ?? true);
+    if (session?.liveSessionId) {
       requests.push(kernel.commands.agent.getState(session.id).then((state) => {
         if (current && state.autoCompactionEnabled !== undefined) setAutoCompact(state.autoCompactionEnabled);
       }));
@@ -116,7 +118,9 @@ export function SettingsPage({ theme, onThemeChange, showThinking, onShowThinkin
     setAutoCompact(next);
     setBusy('compact');
     try {
+      await onEnsureRuntime(session.id);
       await kernel.commands.agent.setAutoCompaction(session.id, next);
+      setAutoCompact(next);
     } catch (cause) {
       setAutoCompact(!next);
       setError((cause as { message?: string })?.message || t('settings.error.autoCompact'));
