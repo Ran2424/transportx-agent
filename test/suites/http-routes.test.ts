@@ -59,6 +59,13 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const resource = JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/geo-resources', resourceId, 'manifest.json'), 'utf8'));
     session.entries.push({ type: 'message', message: { role: 'toolResult', toolName: 'publish_geodata', details: { kind: 'tau-geo-resource', resource } } });
   }
+  function persistResourceContext(session: any) {
+    const file = path.join(session.cwd, '.tau/conversations', session.conversationId, 'plan.json');
+    const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
+    writeJsonAtomic(file, { ...plan, ...session.resolvedSessionPlan, modules: (session.resolvedSessionPlan?.modules || []).map((module: any) => ({ version: '1.0.0', type: 'capability', origin: 'builtin', packageRoot: session.cwd, entrypoints: [], ...module })), assets: (session.resolvedSessionPlan?.assets || []).map((asset: any) => ({ moduleId: 'com.transportx.video', moduleVersion: '1.0.0', integrityStatus: 'unverified', ...asset })) });
+    session.entries.forEach((entry: any, index: number) => fs.appendFileSync(session.sessionFile, JSON.stringify({ ...entry, id: `resource-${index}`, parentId: index ? `resource-${index - 1}` : null }) + '\n'));
+    liveManager.sessions.delete(session.id);
+  }
   function videoAuthorization(session: any, resourceId: string) {
     const resource = JSON.parse(fs.readFileSync(path.join(session.cwd, '.tau/video-resources', resourceId, 'manifest.json'), 'utf8'));
     const assetRoot = path.join(process.env.TAU_USER_DATA_DIR!, 'test-assets', session.id); fs.mkdirSync(path.join(assetRoot, 'videos'), { recursive: true });
@@ -383,6 +390,10 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.equal((await request(`${base}/api/conversations/${other.conversationId}/video-resources/${resourceId}/data`)).status, 404, 'cross-session resourceId is rejected');
     assert.equal((await request(`${base}/api/conversations/${owner.conversationId}/video-resources/..%2Fsecret/data`)).status, 400);
     assert.equal((await request(`${base}/api/conversations/${owner.conversationId}/video-resources/video_xyz/data`)).status, 400, 'malformed resource id');
+    persistResourceContext(owner);
+    const historicalVideo = await request(`${base}/api/conversations/${owner.conversationId}/video-resources/${resourceId}/data`, { headers: { Range: 'bytes=0-9' } });
+    assert.equal(historicalVideo.status, 206);
+    assert.equal((await historicalVideo.arrayBuffer()).byteLength, 10);
 
     // Manifest/bytes mismatch is reported as a conflict, not served silently.
     const manifestPath = path.join(firstRoot, '.tau', 'video-resources', resourceId, 'manifest.json');
@@ -423,6 +434,8 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const response = await request(`${base}/api/conversations/${session.conversationId}/video-resources/${resourceId}/metrics`);
     assert.equal(response.status, 200);
     assert.deepEqual(await jsonBody(response), { metrics: [{ id: 'visible_people', label: '画面人数', unit: '人', sampleIntervalSeconds: 1, samples: [{ offsetSeconds: 0, value: 3 }, { offsetSeconds: 1, value: 4 }] }] });
+    persistResourceContext(session);
+    assert.equal((await request(`${base}/api/conversations/${session.conversationId}/video-resources/${resourceId}/metrics`)).status, 200);
   }
 
   // Geo resources cannot be read through another live session
@@ -441,6 +454,31 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     registerSession(owner); registerSession(other);
     assert.equal((await request(`${base}/api/conversations/${owner.conversationId}/geo-resources/${resourceId}/data`)).status, 200);
     assert.equal((await request(`${base}/api/conversations/${other.conversationId}/geo-resources/${resourceId}/data`)).status, 404);
+    // History browsing reads published data without starting a runtime.
+    const planFile = path.join(firstRoot, '.tau/conversations', owner.conversationId, 'plan.json');
+    const plan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
+    const geoModules = [{ id: 'com.transportx.geo', version: '1.5.0', type: 'capability', origin: 'builtin', packageRoot: path.resolve('modules/capabilities/geo'), entrypoints: [] }];
+    writeJsonAtomic(planFile, { ...plan, modules: geoModules });
+    fs.appendFileSync(owner.sessionFile, JSON.stringify({ ...owner.entries[0], id: 'geo-publication', parentId: null }) + '\n');
+    liveManager.sessions.delete(owner.id);
+    const historicalUrl = `${base}/api/conversations/${owner.conversationId}/geo-resources/${resourceId}`;
+    const historicalData = await request(`${historicalUrl}/data`);
+    assert.equal(historicalData.status, 200, await historicalData.text());
+    assert.equal((await request(`${historicalUrl}/manifest`)).status, 200);
+    assert.equal((await request(`${base}/api/conversations/${owner.conversationId}/resources`)).status, 200);
+    const { DOCUMENT_CANVAS_ADAPTER_ID, CANVAS_PRESENTATION_VERSION } = require('../../bin/contracts/index.js');
+    writeJsonAtomic(planFile, { ...plan, modules: [...geoModules, { ...geoModules[0], id: 'com.transportx.canvas', canvasViews: [{ adapterId: DOCUMENT_CANVAS_ADAPTER_ID, kind: 'document', protocolVersion: CANVAS_PRESENTATION_VERSION }] }] });
+    fs.writeFileSync(path.join(firstRoot, 'report.md'), '# Historical report');
+    assert.equal((await request(`${base}/api/conversations/${owner.conversationId}/canvas-presentations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adapterId: DOCUMENT_CANVAS_ADAPTER_ID, resource: { scope: 'session-file', path: 'report.md' } }) })).status, 200);
+    assert.equal(liveManager.sessions.has(owner.id), false);
+    const unpublished = fakeSession('tau_geo_unpublished'); unpublished.cwd = firstRoot;
+    registerSession(unpublished);
+    const unpublishedPlan = path.join(firstRoot, '.tau/conversations', unpublished.conversationId, 'plan.json');
+    writeJsonAtomic(unpublishedPlan, { ...plan, modules: geoModules });
+    liveManager.sessions.delete(unpublished.id);
+    assert.equal((await request(`${base}/api/conversations/${unpublished.conversationId}/geo-resources/${resourceId}/data`)).status, 403);
+    fs.appendFileSync(path.join(dir, 'data.geojson'), ' ');
+    assert.equal((await request(`${historicalUrl}/data`)).status, 409);
   }
 
   // Geo interaction routes enforce capability, token scope and terminal response
@@ -497,6 +535,7 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.equal(fs.existsSync(path.join(cwd, '.tau', 'geo-interactions')), false);
 
     session.resolvedSessionPlan.modules = [{ id: 'com.transportx.geo' }];
+    persistResourceContext(session);
     const createdResponse = await request(contextUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(context) });
     assert.equal(createdResponse.status, 200);
     const created = await jsonBody(createdResponse);
@@ -511,6 +550,8 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     const screenshot = await jsonBody(screenshotResponse);
     assert.equal(path.dirname(screenshot.path), fs.realpathSync(cwd));
     assert.equal(fs.existsSync(screenshot.path), true);
+    assert.equal(liveManager.sessions.has(session.id), false, 'map context and screenshot do not start Pi');
+    liveManager.sessions.set(session.id, session);
 
     let screenshotRequestId = '';
     const broadcast = liveManager.broadcast.bind(liveManager);
@@ -590,6 +631,12 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     assert.equal(response.status, 200);
     assert.equal(await response.text(), report.toString());
     assert.equal(response.headers.get('etag'), `"${sha256}"`);
+    persistResourceContext(owner);
+    assert.equal((await request(url)).status, 200);
+    assert.equal((await request(`${base}/api/conversations/${owner.conversationId}/citations`)).status, 200);
+    assert.equal((await request(`${base}/api/conversations/${owner.conversationId}/citations/evidence/e_report`)).status, 200);
+    assert.equal(liveManager.sessions.has(owner.id), false, 'citation browsing does not start Pi');
+    liveManager.sessions.set(owner.id, owner);
     const head = await request(url, { method: 'HEAD' });
     assert.equal(head.status, 200);
     assert.equal(head.headers.get('content-length'), String(report.length));

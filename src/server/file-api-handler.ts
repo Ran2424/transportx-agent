@@ -82,9 +82,9 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     }
     return [...byName.values()].sort((a, b) => a.usedCount !== b.usedCount ? b.usedCount - a.usedCount : a.label.localeCompare(b.label));
   };
-  const serveResources = async (res: ServerResponse, session: PiRpcSession) => {
+  const serveResources = async (res: ServerResponse, session: { entries: JsonRecord[]; send?: PiRpcSession['send'] }) => {
     let commands: JsonRecord[] = [], commandsError = '';
-    try {
+    if (session.send) try {
       const response = await session.send({ type: 'get_commands' }, { timeoutMs: 5000 });
       const data = (response.data || response.result || response) as JsonRecord;
       commands = Array.isArray(data.commands) ? data.commands.filter((item): item is JsonRecord => !!item && typeof item === 'object') : [];

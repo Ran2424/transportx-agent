@@ -25,14 +25,14 @@ export function ConversationComposer({ onActivate, retryDraft, sessionId, sessio
   const setValue = (update: string | ((current: string) => string)) => composerDraftStore.setMessage(sessionId, typeof update === 'function' ? update(composerDraftStore.getMessage(sessionId)) : update);
   const [error, setError] = useState('');
   const sending = useRef(false);
-  const [sendPhase, setSendPhase] = useState<'activating' | 'sending' | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const { pending, setPending, addAttachments, removeAttachment, reuseAttachment } = useComposerAttachments(sessionId, setError);
   const geoContexts = useSyncExternalStore(geoContextStore.subscribe, () => geoContextStore.get(sessionId));
   const canvasContexts = useSyncExternalStore(canvasContextStore.subscribe, () => canvasContextStore.get(sessionId));
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const uploading = pending.some((item) => item.status === 'uploading');
-  const canSubmit = !!session && !sendPhase && !compacting && !uploading && (!!value.trim() || pending.some((item) => item.status === 'ready' && item.attachment) || geoContexts.length > 0 || canvasContexts.length > 0);
+  const canSubmit = !!session && !submitting && !compacting && !uploading && (!!value.trim() || pending.some((item) => item.status === 'ready' && item.attachment) || geoContexts.length > 0 || canvasContexts.length > 0);
   const { citeOpen, citeLoading, citeCandidates, setCiteOpen, openCitePicker, insertCitation } = useComposerCitationPicker({ sessionId, onCitationEnvelope, onInsert: (marker) => setValue((current) => current.replace('/cite', marker)), onError: setError, onFocus: () => inputRef.current?.focus() });
   useEffect(() => { if (retryDraft) { setValue(retryDraft.message); inputRef.current?.focus(); } }, [retryDraft]);
   const resize = () => { const input = inputRef.current; if (input) { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 200)}px`; } };
@@ -45,13 +45,13 @@ export function ConversationComposer({ onActivate, retryDraft, sessionId, sessio
     const message = value.trim() || (attachmentIds.length ? t('conversation.attachmentOnly') : geoContextIds.length ? t('conversation.geoContextOnly') : canvasContextIds.length ? t('conversation.canvasContextOnly') : '');
     if (!message) return;
     setError(''); sending.current = true;
+    setSubmitting(true);
     try {
       const live = kernel.stores.session.get().sessions.find(item => item.id === sessionId)?.liveSessionId;
-      if (!live) { setSendPhase('activating'); await onActivate(sessionId); mode = 'prompt'; }
+      if (!live) { await onActivate(sessionId); mode = 'prompt'; }
       if (kernel.stores.session.get().activeSessionId !== sessionId) throw new Error(t('conversation.selectionChanged'));
-      setSendPhase('sending');
       if (mode === 'steer') await kernel.commands.agent.steer({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); else await kernel.commands.agent.sendPrompt({ sessionId, message, attachmentIds, geoContextIds, canvasContextIds }); if (composerDraftStore.getMessage(sessionId) === value) setValue(''); setPending((current) => current.filter((item) => !item.attachment || !attachmentIds.includes(item.attachment.id))); geoContextIds.forEach((id) => geoContextStore.remove(sessionId, id)); canvasContextIds.forEach((id) => canvasContextStore.remove(sessionId, id)); } catch (cause) { setError((cause as Error).message || t('conversation.sendFailed')); }
-    finally { sending.current = false; setSendPhase(null); }
+    finally { sending.current = false; setSubmitting(false); }
   }
   return <footer className="conversation-composer">
     {piQueued.length ? <section className="pi-message-queue" aria-label={t('conversation.agentQueue')}>
@@ -99,7 +99,7 @@ export function ConversationComposer({ onActivate, retryDraft, sessionId, sessio
             <button className="composer-tool-toggle" type="button" aria-label={t('conversation.openCitationManager')} onClick={onOpenCitationManager}><Icon name="citation" /><span className="composer-action-hint" aria-hidden="true">{t('conversation.citationManager')}</span></button>
             <ComposerContextUsage session={session} />
             {session?.record && <span className="composer-plan-source" title={t(`workspaceFlow.planSource.${session.record.plan?.source || 'missing'}`)}>{t('conversation.configuration')}</span>}
-            {sendPhase && <span className="composer-start-status" role="status">{t(sendPhase === 'activating' ? 'workspaceFlow.activating' : 'conversation.sending')}</span>}
+            {submitting && <span className="composer-start-status" role="status">{t('conversation.sending')}</span>}
           </div>
           {compacting
             ? <span className="composer-compacting" role="status">{t('conversation.compacting')}</span>

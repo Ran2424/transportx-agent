@@ -38,7 +38,7 @@ type ApiRouteServices = {
   readBody(req: IncomingMessage): Promise<RpcCommand>;
   serveFiles(res: ServerResponse, path: string, root?: string): void;
   serveFileContent(res: ServerResponse, path: string): void;
-  serveResources(res: ServerResponse, session: PiRpcSession): Promise<void>;
+  serveResources(res: ServerResponse, session: { entries: JsonRecord[]; send?: PiRpcSession['send'] }): Promise<void>;
   servePreview(res: ServerResponse, path: string): void;
   serveRawFile(req: IncomingMessage, res: ServerResponse, path: string, download: boolean): void;
   openNative(path: string): Promise<void>;
@@ -114,10 +114,10 @@ export function createApiRouter(services: ApiRouteServices) {
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .get(/^\/api\/conversations\/([^/]+)\/resources$/, async ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps); if (session) await deps.serveResources(res, session);
+      const session = resolveResourceContextParam(res, params[0], deps); if (session) await deps.serveResources(res, session);
     })
     .get(/^\/api\/conversations\/([^/]+)\/citations$/, ({ res, url, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try {
         const offset = Number(url.searchParams.get('offset') || 0);
@@ -127,13 +127,13 @@ export function createApiRouter(services: ApiRouteServices) {
       } catch (error) { deps.json(res, 409, { error: deps.errorMessage(error) }); }
     })
     .get(/^\/api\/conversations\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.video.metrics(session, decodeURIComponent(params[1]))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .get(/^\/api\/conversations\/([^/]+)\/citations\/evidence\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.citation.detail(session, decodeURIComponent(params[1]))); }
       catch (error) { citationResourceError(res, error); }
@@ -153,7 +153,7 @@ export function createApiRouter(services: ApiRouteServices) {
       catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
     })
     .post(/^\/api\/conversations\/([^/]+)\/geo-contexts$/, async ({ req, res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try {
         const created = deps.geo.createContext(session, await deps.readBody(req));
@@ -161,25 +161,25 @@ export function createApiRouter(services: ApiRouteServices) {
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
     .post(/^\/api\/conversations\/([^/]+)\/canvas-presentations$/, async ({ req, res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, { canvas: await deps.canvas.presentResource(session, await deps.readBody(req) as Parameters<CanvasService['present']>[1]) }); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post(/^\/api\/conversations\/([^/]+)\/canvas-contexts$/, async ({ req, res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, { context: deps.canvas.createContext(session, await deps.readBody(req) as Parameters<CanvasService['createContext']>[1]) }); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .get(/^\/api\/conversations\/([^/]+)\/geo-contexts\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.getContext(session, decodeURIComponent(params[1]))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post(/^\/api\/conversations\/([^/]+)\/geo-screenshots$/, async ({ req, res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.saveScreenshot(session, await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
@@ -495,6 +495,14 @@ function resolveLiveSessionParam(res: ServerResponse, value: string, services: A
   try { id = decodeURIComponent(value); }
   catch { services.json(res, 400, { error: 'Malformed live session id' }); return null; }
   try { return services.workspaces.live(id); }
+  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
+}
+
+function resolveResourceContextParam(res: ServerResponse, value: string, services: ApiRouteServices) {
+  let id: string;
+  try { id = decodeURIComponent(value); }
+  catch { services.json(res, 400, { error: 'Malformed conversation id' }); return null; }
+  try { return services.workspaces.resourceContext(id); }
   catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
 }
 
