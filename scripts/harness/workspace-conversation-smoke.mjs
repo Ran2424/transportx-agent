@@ -57,6 +57,18 @@ try {
     await page.locator('.workspace-group-heading').filter({ hasText: '整改冒烟工作区' }).waitFor();
     await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
     await page.getByLabel('消息输入').waitFor();
+    const fileDock = page.getByTestId('workspace-dock');
+    if (!(await fileDock.getAttribute('class')).includes('is-open')) await page.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
+    await fileDock.locator('.workspace-empty').waitFor();
+    const historyFile = path.join(created.data.directory, 'history-visible.csv');
+    fs.writeFileSync(historyFile, 'station,count\nA,31\n');
+    await fileDock.getByRole('button', { name: '刷新文件', exact: true }).click();
+    await fileDock.getByRole('button', { name: /history-visible.csv/ }).waitFor();
+    await page.locator('.session-row').filter({ hasText: '会话 B' }).click();
+    await fileDock.getByRole('button', { name: /history-visible.csv/ }).waitFor();
+    fs.unlinkSync(historyFile);
+    await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
+    await fileDock.locator('.workspace-empty').waitFor();
     assert.equal((await req('/api/health')).data.liveSessionCount, 0, 'history browsing never spawns Pi');
     const readyLabel = await page.locator('.workspace-task-status').innerText();
     assert.equal(await page.locator('.model-trigger').isEnabled(), true, 'model selection is available before Pi starts');
