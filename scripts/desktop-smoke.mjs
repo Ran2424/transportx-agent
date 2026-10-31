@@ -153,7 +153,7 @@ try {
   await settings.getByLabel('模块包路径').waitFor();
   await window.keyboard.press('Escape');
   const newWorkspace = window.getByRole('button', { name: '打开工作区', exact: true }).first();
-  if (!await newWorkspace.isVisible()) await window.getByRole('button', { name: '打开或关闭侧栏', exact: true }).click();
+  if (!await newWorkspace.isVisible()) await window.getByRole('button', { name: '展开或收起会话侧栏', exact: true }).click();
   await newWorkspace.click();
   const newTask = window.getByRole('dialog', { name: '打开工作区' });
   await newTask.locator('.menu-select-trigger').click();
