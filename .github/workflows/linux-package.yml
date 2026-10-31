@@ -65,7 +65,7 @@ jobs:
       - name: Install and launch the actual DEB
         run: |
           sudo apt-get install -y ./release/*-linux-x64.deb
-          TRANSPORTX_PACKAGED_APP='/opt/TransportX Agent' xvfb-run -a dbus-run-session -- node scripts/desktop-smoke.mjs
+          TAU_PYTHON_COMMAND="$RUNNER_TEMP/external-python-must-not-run" TRANSPORTX_PACKAGED_APP='/opt/TransportX Agent' xvfb-run -a dbus-run-session -- node scripts/desktop-smoke.mjs
       - name: Verify uninstall
         run: |
           sudo apt-get remove -y transportx-agent
