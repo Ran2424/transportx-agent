@@ -25,6 +25,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [contextWindow, setContextWindow] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
   const [reasoning, setReasoning] = useState(false);
   const [images, setImages] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -75,7 +76,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
         setApiKey('');
         onConfigured(result.name || result.id);
       } else {
-        const details = { modelId, name, baseUrl, ...(apiKey.trim() ? { apiKey } : {}), ...(contextWindow.trim() ? { contextWindow: Number(contextWindow) } : {}), reasoning, images };
+        const details = { modelId, name, baseUrl, ...(apiKey.trim() ? { apiKey } : {}), ...(contextWindow.trim() ? { contextWindow: Number(contextWindow) } : {}), ...(maxTokens.trim() ? { maxTokens: Number(maxTokens) } : {}), reasoning, images };
         const result = mode === 'local'
           ? await kernel.commands.platform.addLocalModel(details)
           : await kernel.commands.platform.addModel({ ...details, provider, api });
@@ -85,6 +86,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
         setBaseUrl('');
         setApiKey('');
         setContextWindow('');
+        setMaxTokens('');
         setReasoning(false);
         setImages(false);
         onConfigured(result.reference);
@@ -187,6 +189,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
             <div className="form-stack">
               <label className="field-label"><span>{t('model.setup.displayName')}</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder={t('model.setup.displayNamePlaceholder')} /></label>
               <label className="field-label"><span>{t('model.setup.contextWindow')}</span><input type="number" min="1" step="1" value={contextWindow} onChange={(event) => setContextWindow(event.target.value)} placeholder="128000" /></label>
+      <label className="field-label"><span>{t('model.setup.maxTokens')}</span><input type="number" min="1" step="1" value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} placeholder="16384" /><small>{t('model.setup.tokenLimitsHelp')}</small></label>
               <div className="model-capability-row">
                 <label><input type="checkbox" checked={reasoning} onChange={(event) => setReasoning(event.target.checked)} />{t('model.setup.reasoning')}</label>
                 <label><input type="checkbox" checked={images} onChange={(event) => setImages(event.target.checked)} />{t('model.setup.images')}</label>

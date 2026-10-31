@@ -1,0 +1,31 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.canvas",
+  "toolId": "canvas.inspect",
+  "piName": "canvas_inspect_context",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "canvas.inspect-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "contextIds"
+    ],
+    "properties": {
+      "contextIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^canvas_context_[a-f0-9-]+$"
+        },
+        "minItems": 1,
+        "maxItems": 20
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "pi-canvas-context",
+    "version": "1.0",
+    "detailsKind": "tau-canvas-contexts"
+  }
+}

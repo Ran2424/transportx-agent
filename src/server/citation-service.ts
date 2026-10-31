@@ -11,7 +11,7 @@ import type { ResolvedSessionPlan } from './session-assembly.js';
 import { isWithin } from './util/path.js';
 import { CitationRegistryStore } from './citation-registry.js';
 import { citationResourceFailure, hashCitationFile, locateCitationFile, verifyCitationFile } from './citation-resources.js';
-export type CitationServiceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: ResolvedSessionPlan | null };
+export type CitationServiceSession = { id: string; cwd: string; citationRegistryId?: string; entries?: unknown[]; resolvedSessionPlan?: ResolvedSessionPlan | null };
 export type CitationInput = { path: string; assetId?: string; title?: string; locator: CitationLocator; contentKind: CitationEvidence['contentKind']; text?: string; metadata?: CitationMetadata; deliverable?: boolean };
 function hash(value: string | Buffer) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function mimeFor(file: string) {
@@ -51,7 +51,27 @@ function previewFile(file: string, mime: string, locator?: CitationLocator): Cit
   return { kind: 'text', text: lines.slice(start, start + CITATION_PREVIEW_ROWS).join('\n'), truncated: start > 0 || lines.length > CITATION_PREVIEW_ROWS };
 }
 export class CitationService {
+  private inlinePublications = new WeakMap<object, Set<string>>();
   registry(session: CitationServiceSession) { return new CitationRegistryStore(session.cwd, session.citationRegistryId || session.id); }
+  private authorizeSource(session: CitationServiceSession, source: CitationSourceVersion) {
+    if (source.content.kind === 'file' && source.content.scope === 'asset') verifyCitationFile(session, source);
+    if (source.content.kind === 'inline') {
+      const ownHistory = session.entries?.some((row) => {
+        const message = (row as { message?: { role?: string; toolName?: string; isError?: boolean; details?: { kind?: string; citations?: CitationEnvelope } } })?.message;
+        return message?.role === 'toolResult' && message.toolName === 'tau_spatial_analyze' && !message.isError && message.details?.kind === 'tau-spatial-analysis' && message.details.citations?.sources?.some((item) => item.sourceVersionId === source.sourceVersionId && item.content.sha256 === source.content.sha256);
+      });
+      if (!this.inlinePublications.get(session)?.has(source.sourceVersionId) && !ownHistory) throw Object.assign(new Error('This conversation has no verified publication of this inline result.'), { status: 403 });
+    }
+  }
+  list(session: CitationServiceSession, offset = 0, limit = 200, ids?: string[]): CitationEnvelope {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new Error('Invalid citation pagination.');
+    const registry = this.registry(session).load();
+    const sources = registry.sources.filter((source) => { try { this.authorizeSource(session, source); return true; } catch { return false; } });
+    const allowed = new Set(sources.map((source) => source.sourceVersionId));
+    const all = registry.evidence.filter((item) => allowed.has(item.sourceVersionId) && (!ids || ids.includes(item.evidenceId))), evidence = all.slice(offset, offset + limit);
+    const selected = new Set(evidence.map((item) => item.sourceVersionId));
+    return { protocol: 'pi-citation', version: '3.0', sources: sources.filter((source) => selected.has(source.sourceVersionId)).map(publicCitationSource), evidence, ...(offset + limit < all.length ? { nextOffset: offset + limit } : {}) };
+  }
   private evidence(source: CitationSourceVersion, input: Pick<CitationInput, 'locator' | 'contentKind' | 'text'>): CitationEvidence {
     const locator = parseCitationLocator(input.locator);
     if (!locator) throw new Error('Citation locator is invalid.');
@@ -59,31 +79,37 @@ export class CitationService {
   }
   resolve(session: CitationServiceSession, inputs: CitationInput[]): CitationEnvelope { return this.resolveFiles(session, inputs); }
   private resolveFiles(session: CitationServiceSession, inputs: CitationInput[], sourceKeys = new Map<string, string>()): CitationEnvelope {
-    if (!Array.isArray(inputs) || !inputs.length || inputs.length > 20) throw new Error('sources must contain 1–20 specific original files or results.');
-    const sources: CitationSourceVersion[] = [], evidence: CitationEvidence[] = [];
-    const registry = this.registry(session).load();
-    for (const input of inputs) {
-      if (!input || typeof input.path !== 'string' || (input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 500)) || (input.text !== undefined && (typeof input.text !== 'string' || input.text.length > 16000)) || !['excerpt', 'summary', 'result', 'source-only'].includes(input.contentKind)) throw new Error('A concrete source file is required; directory matches are candidates only.');
-      const scope = input.assetId ? 'asset' as const : 'session' as const;
-      const reference = { scope, ...(input.assetId ? { assetId: input.assetId } : {}), path: input.path };
-      const { resolved, stat } = locateCitationFile(session, reference), sha256 = hashCitationFile(resolved);
-      const sourceKey = sourceKeys.get(input.path) || `${scope}:${input.assetId || this.registry(session).sessionId}:${input.path}`;
-      const sourceVersionId = `sv_${hash(JSON.stringify([sourceKey, sha256]))}`;
-      const source: CitationSourceVersion = registry.sources.find((item) => item.sourceVersionId === sourceVersionId) || { sourceVersionId, sourceKey, title: input.title?.trim() || path.basename(resolved), acquiredAt: new Date().toISOString(), content: { kind: 'file', ...reference, mimeType: mimeFor(resolved), sha256, size: stat.size }, ...(input.metadata ? { metadata: input.metadata } : {}) };
-      const item = this.evidence(source, input);
-      // An excerpt is an independently checkable verbatim span, never a knowledge summary.
-      if (input.contentKind === 'excerpt') {
-        const preview = previewFile(resolved, mimeFor(resolved));
-        let original = preview.kind === 'text' ? fs.readFileSync(resolved, 'utf8') : '';
-        const locator = item.locator;
-        if (locator.kind === 'document' && (locator.page || locator.printedPage)) original = '';
-        if (locator.kind === 'document' && locator.lineStart) original = original.split(/\r?\n/).slice(locator.lineStart - 1, locator.lineEnd || locator.lineStart).join('\n');
-        if (!input.text || !original.includes(input.text)) throw new Error('A verbatim excerpt must be verifiable at the fixed text location; otherwise use summary or source-only.');
+    let phase = 'validation';
+    try {
+      if (!Array.isArray(inputs) || !inputs.length || inputs.length > 20) throw new Error('sources must contain 1–20 specific original files or results.');
+      const sources: CitationSourceVersion[] = [], evidence: CitationEvidence[] = [];
+      const registry = this.registry(session).load();
+      for (const input of inputs) {
+        if (!input || typeof input.path !== 'string' || (input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 500)) || (input.text !== undefined && (typeof input.text !== 'string' || input.text.length > 16000)) || !['excerpt', 'summary', 'result', 'source-only'].includes(input.contentKind)) throw new Error('A concrete source file is required; directory matches are candidates only.');
+        const scope = input.assetId ? 'asset' as const : 'session' as const;
+        const reference = { scope, ...(input.assetId ? { assetId: input.assetId } : {}), path: input.path };
+        const { resolved, stat } = locateCitationFile(session, reference), sha256 = hashCitationFile(resolved);
+        const sourceKey = sourceKeys.get(input.path) || `${scope}:${input.assetId || this.registry(session).sessionId}:${input.path}`;
+        const sourceVersionId = `sv_${hash(JSON.stringify([sourceKey, sha256]))}`;
+        const source: CitationSourceVersion = registry.sources.find((item) => item.sourceVersionId === sourceVersionId) || { sourceVersionId, sourceKey, title: input.title?.trim() || path.basename(resolved), acquiredAt: new Date().toISOString(), content: { kind: 'file', ...reference, mimeType: mimeFor(resolved), sha256, size: stat.size }, ...(input.metadata ? { metadata: input.metadata } : {}) };
+        const item = this.evidence(source, input);
+        // An excerpt is an independently checkable verbatim span, never a knowledge summary.
+        if (input.contentKind === 'excerpt') {
+          const preview = previewFile(resolved, mimeFor(resolved));
+          let original = preview.kind === 'text' ? fs.readFileSync(resolved, 'utf8') : '';
+          const locator = item.locator;
+          if (locator.kind === 'document' && (locator.page || locator.printedPage)) original = '';
+          if (locator.kind === 'document' && locator.lineStart) original = original.split(/\r?\n/).slice(locator.lineStart - 1, locator.lineEnd || locator.lineStart).join('\n');
+          if (!input.text || !original.includes(input.text)) throw new Error('A verbatim excerpt must be verifiable at the fixed text location; otherwise use summary or source-only.');
+        }
+        if (!sources.some((value) => value.sourceVersionId === sourceVersionId)) sources.push(source);
+        if (!evidence.some((value) => value.evidenceId === item.evidenceId)) evidence.push(item);
       }
-      if (!sources.some((value) => value.sourceVersionId === sourceVersionId)) sources.push(source);
-      if (!evidence.some((value) => value.evidenceId === item.evidenceId)) evidence.push(item);
+      phase = 'commit';
+      return this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources, evidence });
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: phase === 'commit' ? 'citation_result_unknown' : 'citation_input_invalid', phase, commit: phase === 'commit' ? 'unknown' : 'not_committed' });
     }
-    return this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources, evidence });
   }
   // Called only by Host producers after successful, validated execution; never exposed as Agent input.
   registerInline(session: CitationServiceSession, input: { sourceKey: string; title: string; value: CitationInline; locator: CitationLocator; executionRef: NonNullable<CitationSourceVersion['executionRef']> }): CitationEnvelope {
@@ -93,7 +119,9 @@ export class CitationService {
     const value: CitationInline = typeof input.value === 'string' ? input.value : { columns: input.value.columns, rows: input.value.rows };
     const sha256 = hash(JSON.stringify(value)), sourceVersionId = `sv_${hash(JSON.stringify([input.sourceKey, sha256]))}`;
     const source: CitationSourceVersion = { sourceVersionId, sourceKey: input.sourceKey, title: input.title, acquiredAt: new Date().toISOString(), content: { kind: 'inline', sha256, value }, executionRef: input.executionRef };
-    return this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources: [source], evidence: [this.evidence(source, { locator: input.locator, contentKind: 'result' })] });
+    const registered = this.registry(session).register({ protocol: 'pi-citation', version: '3.0', sources: [source], evidence: [this.evidence(source, { locator: input.locator, contentKind: 'result' })] });
+    const own = this.inlinePublications.get(session) || new Set<string>(); own.add(sourceVersionId); this.inlinePublications.set(session, own);
+    return registered;
   }
   registerSpatialResult(session: CitationServiceSession, result: import('../contracts/spatial.js').SpatialAnalysisResultV1) {
     const output = locateCitationFile(session, { scope: 'session', path: result.output.relativePath });
@@ -106,6 +134,7 @@ export class CitationService {
     const registry = this.registry(session).load(), evidence = registry.evidence.find((item) => item.evidenceId === evidenceId);
     const source = evidence && registry.sources.find((item) => item.sourceVersionId === evidence.sourceVersionId);
     if (!evidence || !source) throw Object.assign(new Error('Evidence not found in this session.'), { code: 'ENOENT' });
+    this.authorizeSource(session, source);
     let preview: CitationPreview;
     try {
       preview = source.content.kind === 'inline' && source.content.value !== undefined ? previewValue(source.content.value) : previewFile(verifyCitationFile(session, source).resolved, source.content.kind === 'file' ? source.content.mimeType : 'text/plain', evidence.locator);
@@ -115,26 +144,39 @@ export class CitationService {
     }
     return { source: publicCitationSource(source), evidence, preview };
   }
-  async resolveWeb(session: CitationServiceSession, urls: string[]) {
-    if (!Array.isArray(urls) || !urls.length || urls.length > 10 || urls.some((url) => typeof url !== 'string')) throw new Error('webUrls must contain 1–10 public HTTPS URLs.');
-    const inputs: CitationInput[] = [], sourceKeys = new Map<string, string>();
-    for (const url of [...new Set(urls)]) {
-      const target = await publicCitationTarget(url), response = await fetchPinnedPublicCitation(target);
-      const mime = response.headers['content-type']?.split(';')[0].toLowerCase() || '';
-      if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300 || !mime.startsWith('text/')) { response.resume(); throw new Error('Web citation fetch failed.'); }
-      const body = await readWebSnapshot(response), relative = `.tau/citation-snapshots/${hash(target.url.href)}-${hash(body)}.html`;
-      // Locate the parent through the same root boundary before writing snapshots.
-      const directory = path.join(session.cwd, '.tau', 'citation-snapshots');
-      fs.mkdirSync(directory, { recursive: true });
-      const real = fs.realpathSync(directory);
-      if (!isWithin(fs.realpathSync(session.cwd), real)) throw new Error('Citation snapshot directory is outside this session.');
-      const snapshot = path.join(session.cwd, relative);
-      if (!fs.existsSync(snapshot)) fs.writeFileSync(snapshot, body, { mode: 0o600, flag: 'wx' });
-      else if (fs.lstatSync(snapshot).isSymbolicLink() || hashCitationFile(snapshot) !== hash(body)) throw new Error('Citation snapshot is unsafe or has changed.');
-      sourceKeys.set(relative, `web:${hash(target.url.href)}`);
-      inputs.push({ path: relative, title: target.url.hostname, locator: { kind: 'source' }, contentKind: 'source-only', metadata: { url } });
+  async resolveWeb(session: CitationServiceSession, urls: string[], signal?: AbortSignal) {
+    try {
+      signal?.throwIfAborted();
+      if (!Array.isArray(urls) || !urls.length || urls.length > 10 || urls.some((url) => typeof url !== 'string')) throw new Error('webUrls must contain 1–10 public HTTPS URLs.');
+      const inputs: CitationInput[] = [], sourceKeys = new Map<string, string>();
+      for (const url of [...new Set(urls)]) {
+        signal?.throwIfAborted();
+        const target = await publicCitationTarget(url);
+        signal?.throwIfAborted();
+        const response = await fetchPinnedPublicCitation(target, signal);
+        const mime = response.headers['content-type']?.split(';')[0].toLowerCase() || '';
+        if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300 || !mime.startsWith('text/')) { response.resume(); throw new Error('Web citation fetch failed.'); }
+        const body = await readWebSnapshot(response);
+        signal?.throwIfAborted();
+        const relative = `.tau/citation-snapshots/${hash(target.url.href)}-${hash(body)}.html`;
+        // Locate the parent through the same root boundary before writing snapshots.
+        const directory = path.join(session.cwd, '.tau', 'citation-snapshots');
+        fs.mkdirSync(directory, { recursive: true });
+        const real = fs.realpathSync(directory);
+        if (!isWithin(fs.realpathSync(session.cwd), real)) throw new Error('Citation snapshot directory is outside this session.');
+        const snapshot = path.join(session.cwd, relative);
+        if (!fs.existsSync(snapshot)) fs.writeFileSync(snapshot, body, { mode: 0o600, flag: 'wx' });
+        else if (fs.lstatSync(snapshot).isSymbolicLink() || hashCitationFile(snapshot) !== hash(body)) throw new Error('Citation snapshot is unsafe or has changed.');
+        sourceKeys.set(relative, `web:${hash(target.url.href)}`);
+        inputs.push({ path: relative, title: target.url.hostname, locator: { kind: 'source' }, contentKind: 'source-only', metadata: { url } });
+      }
+      signal?.throwIfAborted();
+      return this.resolveFiles(session, inputs, sourceKeys);
+    } catch (error) {
+      const failure = error as Error & { commit?: string };
+      if (failure.commit) throw failure;
+      throw Object.assign(failure, { code: signal?.aborted ? 'citation_cancelled' : 'citation_fetch_failed', phase: 'fetch', commit: 'not_committed' });
     }
-    return this.resolveFiles(session, inputs, sourceKeys);
   }
 }
 
@@ -167,13 +209,14 @@ export async function publicCitationUrl(rawUrl: string) {
   return (await publicCitationTarget(rawUrl)).url;
 }
 
-function fetchPinnedPublicCitation(target: PublicCitationTarget) {
+function fetchPinnedPublicCitation(target: PublicCitationTarget, signal?: AbortSignal) {
   return new Promise<IncomingMessage>((resolve, reject) => {
     const request = https.request({
       hostname: target.url.hostname,
       port: target.url.port || undefined,
       path: `${target.url.pathname}${target.url.search}`,
       method: 'GET',
+      signal,
       headers: { Accept: 'text/html, text/plain, application/xhtml+xml' },
       servername: target.url.hostname,
       lookup: (_hostname, _options, callback) => callback(null, target.address, target.family),

@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 export async function documentSmoke(page, browser) {
-  const session = await page.evaluate(async () => (await (await fetch('/api/live-sessions')).json()).sessions[0]);
+  const session = await page.evaluate(async () => (await (await fetch(`/api/conversations/${localStorage.getItem('tau-active-conversation-id')}/snapshot`)).json()).runtime);
   const cwd = session.cwd;
   const composer = page.getByLabel('消息输入');
   const canvas = page.locator('[data-testid=agent-canvas]');
@@ -30,6 +30,9 @@ export async function documentSmoke(page, browser) {
   const sourceVersion = (id, name, bytes, mimeType) => ({ sourceVersionId: id, sourceKey: `session:${name}`, title: name, acquiredAt: new Date().toISOString(), content: { kind: 'file', scope: 'session', path: name, mimeType, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), size: Buffer.byteLength(bytes) } });
   fs.writeFileSync(path.join(cwd, 'canvas-counts.csv'), '站点,数量\n上海站,12\n上海南站,24\n虹桥站,36\n');
   const sources = [sourceVersion('canvas:report', 'canvas-report.md', report, 'text/markdown'), sourceVersion('canvas:source', 'canvas-source.md', source, 'text/markdown'), sourceVersion('canvas:pdf', 'canvas-evidence.pdf', pdf, 'application/pdf'), sourceVersion('canvas:chart', 'canvas-chart.svg', fs.readFileSync(path.join(cwd, 'canvas-chart.svg')), 'image/svg+xml'), sourceVersion('canvas:counts', 'canvas-counts.csv', fs.readFileSync(path.join(cwd, 'canvas-counts.csv')), 'text/csv')];
+  sources[0].title = '2024-05-22订单清洗漏斗与运营指标分析报告：样本筛选、重复订单核验、异常数据处理及分时段统计口径说明';
+  sources[3].title = '2024-05-22五档次运营指标均值总表及图表';
+  sources[4].title = '2024-05-22_' + 'TrafficOperationsAnalysisAndOrderCleaning'.repeat(4) + '.csv';
   sources[1].metadata = { issuedAt: '2026-10-01', edition: '2026 版', standardNumber: 'TX-01' };
   const evidence = [
     { evidenceId: 'canvas:report', sourceVersionId: 'canvas:report', locator: { kind: 'source' }, contentKind: 'source-only' },
@@ -40,7 +43,7 @@ export async function documentSmoke(page, browser) {
     { evidenceId: 'canvas:pdf:3', sourceVersionId: 'canvas:pdf', locator: { kind: 'document', page: 3 }, contentKind: 'source-only' },
     { evidenceId: 'canvas:counts:rows', sourceVersionId: 'canvas:counts', locator: { kind: 'table', rowStart: 2, rowEnd: 3, columns: ['数量'] }, contentKind: 'result' },
   ];
-  const registry = { protocol: 'pi-citation', version: '3.0', schemaVersion: 2, sessionId: session.citationRegistryId || session.id, sources, evidence };
+  const registry = { protocol: 'pi-citation', version: '3.0', schemaVersion: 2, sessionId: JSON.parse(fs.readFileSync(path.join(cwd, '.tau/workspace.json'), 'utf8')).citationRegistryId, sources, evidence };
   fs.mkdirSync(path.join(cwd, '.tau'), { recursive: true });
   fs.writeFileSync(path.join(cwd, '.tau', 'citations.json'), JSON.stringify(registry));
 
@@ -87,7 +90,7 @@ export async function documentSmoke(page, browser) {
   const slowGate = new Promise((resolve) => { releaseSlow = resolve; });
   let receivedSlow;
   const slowStarted = new Promise((resolve) => { receivedSlow = resolve; });
-  const slowPattern = '**/api/file/content?*canvas-slow.md*';
+  const slowPattern = '**/api/conversations/*/files/content?*canvas-slow.md*';
   await page.route(slowPattern, async (route) => {
     receivedSlow();
     await slowGate;
@@ -97,7 +100,7 @@ export async function documentSmoke(page, browser) {
   await slowStarted;
   await page.getByRole('button', { name: '关闭视图：canvas-slow.md', exact: true }).click();
   await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).click();
-  const slowResponse = page.waitForResponse((response) => response.url().includes('/api/file/content?') && response.url().includes('canvas-slow.md'));
+  const slowResponse = page.waitForResponse((response) => response.url().includes('/files/content?') && response.url().includes('canvas-slow.md'));
   releaseSlow();
   await slowResponse;
   await page.unroute(slowPattern);
@@ -168,8 +171,60 @@ export async function documentSmoke(page, browser) {
   await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
   await reader.locator('[data-citation-id="canvas:pdf:2"]').click();
   await detail.getByRole('button', { name: '在 Canvas 查看定位', exact: true }).click();
-  await reader.locator('iframe').waitFor();
-  assert.match(await reader.locator('iframe').getAttribute('src'), /#page=2&/);
+  const pdfView = reader.locator('.document-pdf');
+  async function expectPdfPage(number, color) {
+    await page.waitForFunction(({ number, color }) => {
+      const root = document.querySelector('.canvas-panel:not([hidden]) .document-pdf');
+      const canvas = root?.querySelector(`.page[data-page-number="${number}"] canvas`);
+      if (!canvas || Number(root.querySelector('input').value) !== number) return false;
+      const pixel = canvas.getContext('2d').getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 3), 1, 1).data;
+      return color.every((value, index) => Math.abs(pixel[index] - value) <= 2);
+    }, { number, color });
+    await pdfView.locator(`.page[data-page-number="${number}"] .textLayer`).getByText(`CANVAS PDF PAGE ${number}`, { exact: true }).waitFor();
+  }
+  await expectPdfPage(2, [201, 221, 249]);
+  assert.equal(await reader.locator('iframe, object, embed').count(), 0, 'PDF renders directly in Canvas');
+  await pdfView.getByRole('button', { name: '下一页', exact: true }).click();
+  await expectPdfPage(3, [255, 210, 181]);
+  await pdfView.getByLabel('PDF 页码', { exact: true }).fill('1.5');
+  await expectPdfPage(1, [188, 232, 213]);
+  await pdfView.getByLabel('PDF 页码', { exact: true }).fill('2');
+  await expectPdfPage(2, [201, 221, 249]);
+  const initialZoom = Number((await pdfView.locator('output').innerText()).replace('%', ''));
+  await pdfView.getByRole('button', { name: '放大', exact: true }).click();
+  assert.ok(Number((await pdfView.locator('output').innerText()).replace('%', '')) > initialZoom);
+  await pdfView.getByRole('button', { name: '适应宽度', exact: true }).click();
+  for (const theme of ['light', 'dark', 'sand']) {
+    await page.evaluate((theme) => document.documentElement.dataset.theme = theme, theme);
+    assert.equal(await pdfView.locator('.document-pdf-scroll').evaluate((node) => getComputedStyle(node).backgroundColor === getComputedStyle(node.closest('.document-workspace')).backgroundColor), true);
+    await pdfView.screenshot({ path: path.join(evidenceDirectory, `pdf-canvas-${theme}.png`), animations: 'disabled' });
+  }
+  await page.evaluate(() => document.documentElement.dataset.theme = 'sand');
+  await page.setViewportSize({ width: 900, height: 760 });
+  await page.waitForFunction(() => { const root = document.querySelector('.canvas-panel:not([hidden]) .document-pdf-scroll'); return root && root.scrollWidth <= root.clientWidth + 2; });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
+  await expectPdfPage(2, [201, 221, 249]);
+  await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.getByRole('tab', { name: 'canvas-evidence.pdf', exact: true }).first().click();
+  await expectPdfPage(2, [201, 221, 249]);
+  assert.ok(await pdfView.locator('.page[data-page-number="2"]').evaluate((node) => node.getBoundingClientRect().width > 100));
+  let releasePdf;
+  const heldPdf = new Promise((resolve) => { releasePdf = resolve; });
+  const pdfPattern = '**/citation-resources/canvas%3Apdf/content?*';
+  const holdPdf = async (route) => { await heldPdf; await route.continue(); };
+  await page.route(pdfPattern, holdPdf);
+  try {
+    const requested = page.waitForRequest(pdfPattern);
+    await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
+    await requested;
+    await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();
+    releasePdf();
+    await page.waitForFunction(() => !!document.querySelector('.canvas-panel[hidden] .document-pdf input:not([disabled])'));
+  } finally { releasePdf(); await page.unroute(pdfPattern, holdPdf); }
+  await page.getByRole('tab', { name: 'canvas-evidence.pdf', exact: true }).first().click();
+  await expectPdfPage(2, [201, 221, 249]);
   const downloadPromise = page.waitForEvent('download');
   await reader.getByRole('button', { name: '下载原文件', exact: true }).click();
   assert.equal(fs.readFileSync(await (await downloadPromise).path()).equals(pdf), true);
@@ -234,29 +289,71 @@ export async function documentSmoke(page, browser) {
   await present('markdown', 'update');
   await reader.getByRole('heading', { name: '自动刷新 B', exact: true }).waitFor();
   let reads = 0;
-  const countRead = (request) => { if (request.url().includes('/api/file/content?') && request.url().includes('canvas-auto.md')) reads++; };
+  const countRead = (request) => { if (request.url().includes('/files/content?') && request.url().includes('canvas-auto.md')) reads++; };
   page.on('request', countRead);
   await present('markdown', 'focus');
   assert.equal(reads, 0, 'focus does not reload the current Markdown');
   page.off('request', countRead);
   fs.writeFileSync(path.join(cwd, 'canvas-auto.pdf'), pdf);
   await present('pdf', 'present');
-  await reader.locator('iframe').waitFor();
-  await reader.locator('iframe').evaluate((node) => { node.dataset.beforeUpdate = 'true'; });
+  await reader.locator('.document-pdf canvas').first().waitFor();
+  await reader.locator('.document-pdf').evaluate((node) => { node.dataset.beforeUpdate = 'true'; });
   await present('pdf', 'update');
   await page.waitForFunction(() => {
     const frame = document.querySelector('.canvas-panel:not([hidden]) .document-pdf');
     return frame && !frame.dataset.beforeUpdate;
   });
+  await reader.locator('.document-pdf canvas').first().waitFor();
+  fs.writeFileSync(path.join(cwd, 'canvas-auto.pdf'), 'invalid PDF');
+  await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
+  await reader.getByRole('alert').filter({ hasText: '内嵌 PDF 预览不可用' }).waitFor();
+  assert.equal(await reader.getByRole('button', { name: '下载原文件', exact: true }).isEnabled(), true);
   await present('markdown', 'clear');
   await present('pdf', 'clear');
   while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
+  await composer.fill('交付成果-长标题'); await composer.press('Enter');
+  const artifacts = page.locator('.assistant-message:not(.is-streaming)', { hasText: '长标题交付验收完成。' }).locator('.message-artifacts');
+  await artifacts.waitFor();
+  assert.equal(await artifacts.locator('button').count(), 3);
+  const originalTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  for (const mode of ['wide', 'split', 'mobile']) {
+    await page.setViewportSize({ width: mode === 'mobile' ? 390 : 1280, height: 900 });
+    if (mode === 'split') {
+      await artifacts.locator('button').first().focus(); await page.keyboard.press('Enter');
+      await reader.getByRole('heading', { name: 'Canvas 报告', exact: true }).waitFor();
+    }
+    if (mode === 'mobile') await page.getByRole('button', { name: '收起画布', exact: true }).click();
+    for (const theme of ['light', 'dark', 'sand']) {
+      await page.evaluate((value) => document.documentElement.dataset.theme = value, theme);
+      const metrics = await artifacts.locator('button').evaluateAll((nodes) => nodes.map((node) => {
+        const title = node.querySelector('strong'), copy = node.querySelector('.message-artifact-copy');
+        const action = node.querySelector('.message-artifact-action'), icon = node.querySelector('.message-artifact-icon');
+        const rect = node.getBoundingClientRect(), textRect = title.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, titleWidth: textRect.width, titleHeight: textRect.height, lineHeight: parseFloat(getComputedStyle(title).lineHeight), fullTitle: title.title === title.textContent, clamped: title.scrollHeight > title.clientHeight, ordered: icon.getBoundingClientRect().right <= copy.getBoundingClientRect().left && copy.getBoundingClientRect().right <= action.getBoundingClientRect().left, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, metadata: node.querySelector('small').textContent, action: action.textContent };
+      }));
+      for (const metric of metrics) {
+        assert.ok(metric.titleWidth >= metric.width / 2, 'long titles use the flexible text column');
+        assert.ok(metric.titleHeight <= metric.lineHeight * 2 + 1 && metric.height <= 84, 'titles occupy at most two lines');
+        assert.ok(metric.fullTitle && metric.ordered, 'full titles remain available and columns do not overlap');
+        assert.ok(metric.scrollWidth <= metric.clientWidth + 1, 'cards do not overflow horizontally');
+        assert.match(metric.metadata, /(?:MD|SVG|CSV) · .+ · \d+(?:\.\d+)? (?:B|KB|MB)/);
+        assert.equal(metric.action, '打开');
+      }
+      assert.ok(metrics.some((metric) => metric.clamped), 'long filenames exercise the two-line clamp');
+      await artifacts.screenshot({ path: path.join(evidenceDirectory, `artifacts-${mode}-${theme}.png`), animations: 'disabled' });
+    }
+  }
+  await page.evaluate((value) => document.documentElement.dataset.theme = value, originalTheme);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('button', { name: '切换画布', exact: true }).click();
+  while (await canvas.locator('.canvas-tab-close').count()) await canvas.locator('.canvas-tab-close').first().click();
+  console.log('Artifact smoke: Chinese/date/continuous English titles, metadata, two-line bounds, keyboard opening and three-theme wide/split/mobile screenshots passed.');
   console.log('Citation smoke: collapsed references, shared details, multi-source groups, table rows, pinned Canvas navigation, exports and version failures passed.');
 }
 
 export async function officeRefreshSmoke(page) {
   const { ZipFile } = await import('yazl');
-  const session = await page.evaluate(async () => (await (await fetch('/api/live-sessions')).json()).sessions[0]);
+  const session = await page.evaluate(async () => (await (await fetch(`/api/conversations/${localStorage.getItem('tau-active-conversation-id')}/snapshot`)).json()).runtime);
   const makeDocx = (text) => new Promise((resolve, reject) => {
     const zip = new ZipFile(), chunks = [];
     zip.addBuffer(Buffer.from('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'), '[Content_Types].xml');
@@ -281,13 +378,13 @@ export async function officeRefreshSmoke(page) {
   await page.waitForFunction(() => !document.querySelector('.canvas-panel:not([hidden]) .office-actions button')?.disabled);
   const revised = await makeDocx('Office revision B');
   fs.writeFileSync(file, revised);
-  const loaded = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/file/raw?') && response.url().includes('canvas-auto.docx'));
+  const loaded = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/files/raw?') && response.url().includes('canvas-auto.docx'));
   await present('update');
   assert.deepEqual(await (await loaded).body(), revised);
   await page.waitForFunction(() => !document.querySelector('.canvas-panel:not([hidden]) .office-actions button')?.disabled);
   assert.equal(await office.getByRole('alert').count(), 0);
   let reads = 0;
-  const countRead = (request) => { if (request.url().includes('canvas-auto.docx') && request.url().includes('/api/file/raw?')) reads++; };
+  const countRead = (request) => { if (request.url().includes('canvas-auto.docx') && request.url().includes('/files/raw?')) reads++; };
   page.on('request', countRead);
   await present('focus');
   assert.equal(reads, 0, 'focus does not reload Office bytes');

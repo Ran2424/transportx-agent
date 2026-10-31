@@ -1,0 +1,10 @@
+{
+  "closedLayers": [
+    "LANDUSE-300",
+    "MARKING-AREA",
+    "MARKING-HATCH",
+    "PAVEMENT",
+    "TRANSIT-PLATFORM",
+    "WORKZONE"
+  ]
+}

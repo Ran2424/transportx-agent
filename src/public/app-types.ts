@@ -25,7 +25,7 @@ export type SessionSnapshot = {
   entries: SessionEntry[];
   sessionId?: string;
   sessionFile?: string | null;
-  session?: LiveSession;
+  session?: ConversationView;
   isStreaming?: boolean;
   isCompacting?: boolean;
   model?: ModelRecord | null;
@@ -63,7 +63,10 @@ export type ModelRecord = {
 };
 
 export type LiveSession = {
+  workspaceId?: string | null;
+  conversationId?: string | null;
   id: string;
+  piQueue?: import('../contracts/pi-rpc.js').PiMessageQueue;
   pendingExtensionUiRequests?: AppEvent[];
   cwd?: string;
   sessionFile?: string | null;
@@ -84,8 +87,37 @@ export type LiveSession = {
     ok: boolean;
     mismatches: CapabilityMismatchReason[];
     diagnostics?: ContractDiagnostic[];
+    toolObservation?: { revision?: number; live: boolean; observedAt?: string };
   };
 };
+
+/** UI identity is the durable conversation; the process identity is explicit. */
+export type ConversationView = Omit<LiveSession, 'id'> & {
+  id: string;
+  liveSessionId: string | null;
+  record?: import('../contracts/workspace.js').ConversationRecordV1;
+  workspaceRevision?: number;
+  resourceLinks?: Record<string, string>;
+};
+export type ConversationViewUpdate = Partial<ConversationView> & { id: string };
+export type WorkspaceView = {
+  id: string; path: string; name: string;
+  createdAt?: string;
+  revision: number | null; defaultsRevision: number | null;
+  defaults: import('../contracts/workspace.js').WorkspaceDefaultsV1 | null;
+  conversations: Array<{ record: import('../contracts/workspace.js').ConversationRecordV1; runtime: LiveSession | null; lastConversationAt: string | null; hasMessages?: boolean | null }>;
+  availability: 'ready' | 'blocked' | 'isolated' | 'deleting';
+  /** Standalone workspaces hold conversations that were moved out of ordinary workspaces. */
+  kind?: 'workspace' | 'standalone';
+  directoryOwnership?: 'external';
+  migrationItemId: string | null;
+  error: { code: string; message: string } | null;
+  deletion?: import('../contracts/workspace.js').WorkspaceCatalogEntryV1['deletion'];
+};
+export type WorkspaceIndex = { schemaVersion: 1; workspaces: WorkspaceView[]; migration: unknown; sources: unknown[] };
+export function conversationView(record: import('../contracts/workspace.js').ConversationRecordV1, workspace: { id: string; path: string; revision: number }, runtime: LiveSession | null): ConversationView {
+  return { ...runtime, id: record.id, conversationId: record.id, liveSessionId: runtime?.id || null, workspaceId: workspace.id, workspaceRevision: workspace.revision, cwd: workspace.path, sessionName: record.name, createdAt: record.createdAt, modelSpec: runtime?.modelSpec || record.modelSpec || '', record };
+}
 
 export type UsageRecord = {
   input?: number;
@@ -161,4 +193,4 @@ export type AppEvent = {
 };
 
 export type ExtensionUIRequest = { sessionId: string; event: AppEvent };
-export type RpcCommand = { type: string; sessionId?: string; filePath?: string; [key: string]: unknown };
+export type RpcCommand = { type: string; sessionId?: string; [key: string]: unknown };

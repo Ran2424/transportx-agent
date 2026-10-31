@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
 import { GEO_CONTEXTS_PER_MESSAGE, type GeoClientContextV1, type GeoContextMode, type GeoInteractionRequestV1, type VisualizationEnvelope } from '../../../contracts/geo.js';
 import { useSessionState } from '../../app/store-hooks';
@@ -29,7 +29,7 @@ type RuntimeModule = { createGeoMapRuntime(container: HTMLElement, onError: (mes
 
 const MODES: Array<'browse' | GeoContextMode> = ['browse', 'feature', 'point', 'rectangle', 'viewport'];
 
-export function GeoWorkspace({ session, active, envelope: selected, onContextChange }: { session: LiveSession; active: boolean; envelope: VisualizationEnvelope; onContextChange?(target: unknown, selection?: unknown): void }) {
+export function GeoWorkspace({ session, active, envelope: selected, onContextChange }: { session: ConversationView; active: boolean; envelope: VisualizationEnvelope; onContextChange?(target: unknown, selection?: unknown): void }) {
   const { t } = useTranslation();
   const sessions = useSessionState();
   const [runtime, setRuntime] = useState<GeoRuntime | null>(null);

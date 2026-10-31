@@ -41,8 +41,11 @@ const port = Number(argValue('--port', 0)) || (await freePort());
 // ---- 隔离环境（必须在 require bin/tau.js 之前设置，config 在加载时读取） ----
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-fake-pi-'));
 const agentDir = path.join(tempRoot, 'agent');
-const sessionsDir = path.join(agentDir, 'sessions');
-const projectsDir = path.join(tempRoot, 'scenario');
+const sessionsDir = path.resolve(argValue('--sessions-directory', path.join(agentDir, 'sessions')));
+const projectsDir = path.resolve(argValue('--projects-directory', path.join(tempRoot, 'scenario')));
+fs.mkdirSync(agentDir, { recursive: true });
+if (argValue('--catalog-seed', '')) fs.copyFileSync(argValue('--catalog-seed', ''), path.join(agentDir, 'workspaces.json'));
+if (process.argv.includes('--blocked-fixture')) fs.writeFileSync(path.join(agentDir, 'workspaces.json'), '{broken-catalog');
 fs.mkdirSync(sessionsDir, { recursive: true });
 fs.mkdirSync(projectsDir, { recursive: true });
 fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { 'kimi-coding': { baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', models: [{ id: 'k2p7', name: 'Fake K2P7', contextWindow: 262144, reasoning: true }] } } }));
@@ -55,9 +58,11 @@ process.env.TAU_HOST = '127.0.0.1';
 process.env.PI_OFFLINE = '1';
 
 // Exercise enabled, disabled and multiple installed versions without user data.
+const fixtureModuleRoots = [];
 for (const [id, versions] of [['smoke.alpha', ['1.0.0', '2.0.0']], ['smoke.beta', ['1.0.0']], ['smoke.disabled', ['1.0.0']]]) {
   for (const version of versions) {
     const packageRoot = path.join(agentDir, 'modules', id, version);
+    fixtureModuleRoots.push(packageRoot);
     fs.mkdirSync(packageRoot, { recursive: true });
     fs.writeFileSync(path.join(packageRoot, 'manifest.json'), JSON.stringify({
       manifestVersion: 2, id, name: id, version, type: 'module',
@@ -65,6 +70,9 @@ for (const [id, versions] of [['smoke.alpha', ['1.0.0', '2.0.0']], ['smoke.beta'
     }));
   }
 }
+// This harness owns these inert fixtures; production trust checks stay enabled.
+const { ModuleTrustStore } = require(path.join(REPO_ROOT, 'bin/module-trust.js'));
+await new ModuleTrustStore(path.join(agentDir, 'settings/module-trust.json'), async () => true).ensure(fixtureModuleRoots);
 fs.writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify({ tau: { enabledModuleIds: ['smoke.alpha', 'smoke.beta'] } }));
 
 // ---- 预置会话文件：resume 基线（straight fixture，cwd 重写进临时任务目录） ----
@@ -89,7 +97,7 @@ function loadStraightFixture(cwd) {
 
 const resumeCwd = path.join(projectsDir, 'resume-task');
 fs.mkdirSync(resumeCwd, { recursive: true });
-const resumeFile = writeSeededSession('resume', loadStraightFixture(resumeCwd));
+const resumeFile = process.argv.includes('--no-seed') ? null : writeSeededSession('resume', loadStraightFixture(resumeCwd));
 
 // ---- 预置长会话（200 条消息历史，首次渲染性能基线） ----
 function buildLongHistory(cwd, turns = 100) {
@@ -106,10 +114,25 @@ function buildLongHistory(cwd, turns = 100) {
 }
 const longCwd = path.join(projectsDir, 'long-history-task');
 fs.mkdirSync(longCwd, { recursive: true });
-const longHistoryFile = writeSeededSession('long-history', buildLongHistory(longCwd));
+const longHistoryFile = process.argv.includes('--no-seed') ? null : writeSeededSession('long-history', buildLongHistory(longCwd));
+
+// An opt-in, test-owned upgrade fixture: the two baselines above plus 27 clean
+// legacy workspaces and one corrupt workspace. Production has no such switch.
+const upgradeFixtures = [];
+if (process.argv.includes('--upgrade-fixture')) {
+  for (let index = 0; index < 28; index++) {
+    const cwd = path.join(projectsDir, `upgrade-${String(index).padStart(2, '0')}`);
+    fs.mkdirSync(cwd, { recursive: true });
+    const file = writeSeededSession(`upgrade-${index}`, [{ type: 'session', version: 3, id: `upgrade-native-${index}`, timestamp: '2026-10-25T00:00:00.000Z', cwd }]);
+    const corrupt = index === 27;
+    if (corrupt) { fs.mkdirSync(path.join(cwd, '.tau')); fs.writeFileSync(path.join(cwd, '.tau/canvas-contexts.json'), '{"broken":'); }
+    upgradeFixtures.push({ cwd, file, corrupt });
+  }
+}
 
 // ---- 启动 server 并注入 fake-pi ----
 const tau = require(path.join(REPO_ROOT, 'bin', 'tau.js'));
+tau._setRuntimeCoordinationForTest(path.resolve(argValue('--runtime-coordination', path.join(tempRoot, 'runtime-guards'))));
 const children = new Set();
 tau._setSpawnPiForTest((cmd, args, opts) => {
   const child = spawn(process.execPath, [FAKE_PI, ...args], {
@@ -127,7 +150,7 @@ let cleanedUp = false;
 async function shutdown(exitCode) {
   if (cleanedUp) return;
   cleanedUp = true;
-  try { await tau.liveManager.shutdown(); } catch {}
+  try { await tau.conversationRuntime.shutdown(); } catch {}
   for (const child of children) { try { child.kill('SIGKILL'); } catch {} }
   try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch {}
   process.exit(exitCode);
@@ -142,7 +165,7 @@ const deadline = Date.now() + 10000;
 for (;;) {
   try {
     const response = await fetch(`${baseUrl}/api/health`);
-    if (response.ok) break;
+    if (response.ok && (await response.json()).dataState === (process.argv.includes('--blocked-fixture') ? 'blocked' : 'ready')) break;
   } catch {}
   if (Date.now() > deadline) {
     process.stderr.write('[serve-with-fake-pi] health check timed out\n');
@@ -160,4 +183,5 @@ process.stdout.write(`TAU_FAKE_READY ${JSON.stringify({
   resumeCwd,
   longHistoryFile,
   longHistoryCwd: longCwd,
+  upgradeFixtures,
 })}\n`);

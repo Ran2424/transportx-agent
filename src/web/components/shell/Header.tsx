@@ -1,4 +1,4 @@
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
 import type { ConnectionState } from '../../../public/kernel/stores/runtime-store.js';
 import { BrandMark } from '../BrandMark';
@@ -10,7 +10,7 @@ import { projectUi } from '../../app/project-ui';
 type HeaderProps = {
   account?: ReactNode;
   connection: ConnectionState;
-  activeSession: LiveSession | null;
+  activeSession: ConversationView | null;
   streaming: boolean;
   sidebarOpen: boolean;
   fileOpen: boolean;

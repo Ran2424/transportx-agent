@@ -2,22 +2,17 @@ import { openNativeTarget } from './host-platform.js';
 import fs = require('node:fs');
 import path = require('node:path');
 
-import { containedFile } from './util/resource-path.js';
 import { resourceSecurityHeaders } from './resource-policy.js';
 import type { ServerResponse } from 'node:http';
-import type { JsonRecord, RpcCommand, StatusError } from './types.js';
+import type { JsonRecord } from './types.js';
 import type { PiRpcSession } from './sessions.js';
 import { latestPiWebBridgeEnvelope } from '../contracts/index.js';
 import { isWithin } from './util/path.js';
 
 type FileHandlersOptions = {
-  sessionsDir: string;
   expandHome(value: string): string;
   json(res: ServerResponse, status: number, data: unknown): void;
   errorMessage(error: unknown): string;
-  isWithinPath(root: string, target: string): boolean;
-  resolveLivePath(session: PiRpcSession | null | undefined, requestedPath?: string | null): string;
-  getLiveSession(id?: string): PiRpcSession | null | undefined;
 };
 
 const IGNORED_NAMES = new Set(['node_modules', '.git', '__pycache__', '.DS_Store', '.Trash', '.next', '.nuxt', 'dist', 'build', '.cache', '.turbo', 'venv', '.venv', 'env', '.env.local', '.pi', 'coverage', '.nyc_output', '.parcel-cache']);
@@ -27,7 +22,7 @@ const DEFAULT_TOOLS: Record<string, { label: string; description: string }> = {
 };
 
 export function createFileApiHandlers(options: FileHandlersOptions) {
-  const serveFiles = (res: ServerResponse, rawPath: string) => {
+  const serveFiles = (res: ServerResponse, rawPath: string, rootPath = rawPath) => {
     try {
       const dirPath = path.resolve(options.expandHome(rawPath));
       if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) return options.json(res, 400, { error: 'Not a directory' });
@@ -35,6 +30,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
         if ((entry.name.startsWith('.') && entry.name !== '.env') || IGNORED_NAMES.has(entry.name)) return [];
         try {
           const fullPath = path.join(dirPath, entry.name), stat = fs.statSync(fullPath);
+          if (!isWithin(fs.realpathSync(rootPath), fs.realpathSync(fullPath))) return [];
           return [{ name: entry.name, path: fullPath, isDirectory: entry.isDirectory(), size: entry.isDirectory() ? null : stat.size, mtime: stat.mtimeMs }];
         } catch { return []; }
       });
@@ -86,9 +82,9 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     }
     return [...byName.values()].sort((a, b) => a.usedCount !== b.usedCount ? b.usedCount - a.usedCount : a.label.localeCompare(b.label));
   };
-  const serveResources = async (res: ServerResponse, session: PiRpcSession) => {
+  const serveResources = async (res: ServerResponse, session: { entries: JsonRecord[]; send?: PiRpcSession['send'] }) => {
     let commands: JsonRecord[] = [], commandsError = '';
-    try {
+    if (session.send) try {
       const response = await session.send({ type: 'get_commands' }, { timeoutMs: 5000 });
       const data = (response.data || response.result || response) as JsonRecord;
       commands = Array.isArray(data.commands) ? data.commands.filter((item): item is JsonRecord => !!item && typeof item === 'object') : [];
@@ -108,7 +104,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     const mimes: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon' };
     const mime = mimes[path.extname(filePath).toLowerCase().slice(1)];
     if (!mime) return options.json(res, 415, { error: 'Not a previewable image' });
-    try { if (!fs.statSync(filePath).isFile()) throw new Error('Not a file'); res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'private, no-store', ...resourceSecurityHeaders(mime) }); fs.createReadStream(filePath).pipe(res); }
+    try { if (!fs.statSync(filePath).isFile()) throw new Error('Not a file'); res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'private, no-store', ...resourceSecurityHeaders(mime) }); const stream = fs.createReadStream(filePath); stream.on('error', () => res.destroy()); stream.pipe(res); }
     catch (error) { options.json(res, 404, { error: options.errorMessage(error) }); }
   };
   const serveRawFile = (req: import('node:http').IncomingMessage, res: ServerResponse, filePath: string, download: boolean) => {
@@ -146,25 +142,10 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
       }
       res.writeHead(200, { ...baseHeaders, 'Content-Length': stat.size });
       if (req.method === 'HEAD') { res.end(); return; }
-      fs.createReadStream(filePath).pipe(res);
+      const stream = fs.createReadStream(filePath); stream.on('error', () => res.destroy()); stream.pipe(res);
     } catch (error) {
       options.json(res, (error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500, { error: options.errorMessage(error) });
     }
-  };
-  const resolveExportedSessionPath = (filePath: string) => {
-    const resolved = path.resolve(options.expandHome(filePath || '')), root = path.resolve(options.sessionsDir);
-    if (!isWithin(root, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Can only open exported session HTML without a live session') as StatusError; error.status = 403; throw error; }
-    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) { const error = new Error('File not found') as StatusError; error.status = 404; throw error; }
-    return containedFile(root, resolved);
-  };
-  const resolveOpen = (body: RpcCommand) => {
-    if (!body?.filePath || typeof body.filePath !== 'string') throw new Error('filePath required');
-    if (body.sessionId) {
-      const resolved = options.resolveLivePath(options.getLiveSession(body.sessionId), body.filePath);
-      if (!fs.existsSync(resolved)) { const error = new Error('File not found') as StatusError; error.status = 404; throw error; }
-      return resolved;
-    }
-    return resolveExportedSessionPath(body.filePath);
   };
   const openNative = async (filePath: string) => {
     if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
@@ -172,5 +153,5 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     if (!fs.existsSync(resolved)) throw new Error('File not found');
     await openNativeTarget(resolved);
   };
-  return { serveFiles, serveFileContent, serveResources, servePreview, serveRawFile, resolveOpen, openNative, resolveExportedSessionPath };
+  return { serveFiles, serveFileContent, serveResources, servePreview, serveRawFile, openNative };
 }

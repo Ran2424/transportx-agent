@@ -1,0 +1,51 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.cad",
+  "name": "CAD Drawing",
+  "version": "1.4.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [
+    "com.transportx.canvas"
+  ],
+  "entrypoints": {
+    "piExtensions": [
+      "extensions/pi-cad/index.ts"
+    ],
+    "skills": [
+      "skills/SKILL.md"
+    ]
+  },
+  "contributes": {
+    "canvasViews": [
+      {
+        "adapterId": "com.transportx.canvas.cad",
+        "kind": "cad",
+        "protocolVersion": "1.0"
+      }
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "CAD 制图",
+        "description": "通用二维 CAD 协作工作空间：接入 Python 或其他引擎生成的 DXF，持续修订、观察和展示同一份图纸。",
+        "features": [
+          "工作区与 Agent 复用同一 CAD 画布",
+          "选区提供参考，Agent 按版本连续修改并保留历史",
+          "按需转换 GeoJSON、检查与导出 PNG/PDF"
+        ]
+      },
+      "en-US": {
+        "name": "CAD Drawing",
+        "description": "A general-purpose 2D CAD workspace for Python-generated DXF and native edits, with shared views, observations and revisioned commits.",
+        "features": [
+          "Shared CAD views from workspace and Agent",
+          "Reference selections and continuous revisioned Agent edits",
+          "On-demand GeoJSON conversion, validation and PNG/PDF export"
+        ]
+      }
+    }
+  }
+}

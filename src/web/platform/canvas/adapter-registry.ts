@@ -1,5 +1,10 @@
 import type { CanvasPresentationV1 } from '../../../contracts/canvas.ts';
 import {
+  CAD_CANVAS_ADAPTER_ID,
+  parseCadCanvasPayload,
+  parseCadCanvasTarget,
+} from '../../../contracts/canvas-cad.ts';
+import {
   DOCUMENT_CANVAS_ADAPTER_ID,
   GEO_CANVAS_ADAPTER_ID,
   VIDEO_CANVAS_ADAPTER_ID,
@@ -96,7 +101,26 @@ const videoAdapter: CanvasAdapter = {
   },
 };
 
-const adapters = new Map([documentAdapter, geoAdapter, videoAdapter].map((adapter) => [adapter.adapterId, adapter]));
+const cadAdapter: CanvasAdapter = {
+  adapterId: CAD_CANVAS_ADAPTER_ID,
+  kind: 'cad',
+  reduce(_previous, presentation) {
+    if (presentation.operation === 'clear') return null;
+    const payload = parseCadCanvasPayload(presentation.payload);
+    const target = presentation.target === undefined ? undefined : parseCadCanvasTarget(presentation.target) ?? undefined;
+    if (!payload || presentation.target !== undefined && !target) return null;
+    return {
+      id: presentation.viewId,
+      kind: 'cad',
+      title: presentation.title,
+      revision: presentation.revision,
+      canvas: presentation,
+      ...(payload.preview ? { previewPath: payload.preview } : {}),
+    };
+  },
+};
+
+const adapters = new Map([documentAdapter, geoAdapter, videoAdapter, cadAdapter].map((adapter) => [adapter.adapterId, adapter]));
 
 export function getCanvasAdapter(adapterId: string): CanvasAdapter | null {
   return adapters.get(adapterId) ?? null;

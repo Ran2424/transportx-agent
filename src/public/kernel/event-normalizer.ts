@@ -6,11 +6,12 @@
  * produce error/raised actions — the stores are never touched silently.
  */
 
-import type { AppEvent, AppMessage, LiveSession, SessionEntry, SessionSnapshot } from '../app-types.js';
+import type { AppEvent, AppMessage, LiveSession, ConversationView, SessionEntry, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
 import { appError, type AppError } from '../../contracts/errors.ts';
 import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured, parseGeoScreenshotRequestStructured } from '../../contracts/geo.ts';
 import { retryState, classifyFailure } from '../../contracts/run-feedback.ts';
+import { isPiExtensionDialogRequest, parsePiMessageQueue } from '../../contracts/pi-rpc.ts';
 import type { TransportSignal } from './transport.js';
 
 type RawMessage = { type?: unknown; [key: string]: unknown };
@@ -20,7 +21,7 @@ export type EventNormalizer = {
   normalizeMessage(message: unknown): AppAction[];
 };
 
-export function createEventNormalizer(options: { getActiveSessionId?: () => string | null } = {}): EventNormalizer {
+export function createEventNormalizer(options: { getActiveSessionId?: () => string | null; resolveConversationId?: (liveSessionId: string) => string | null; projectRuntime?: (runtime: LiveSession) => ConversationView | undefined } = {}): EventNormalizer {
   // Run ids are deterministic per normalizer instance so replaying the same
   // event sequence twice yields identical state.
   const streamSeqBySession = new Map<string, number>();
@@ -32,7 +33,7 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
   });
 
   const resolveSessionId = (sessionId: unknown): string | null => {
-    if (typeof sessionId === 'string' && sessionId) return sessionId;
+    if (typeof sessionId === 'string' && sessionId) return options.resolveConversationId ? options.resolveConversationId(sessionId) : sessionId;
     return options.getActiveSessionId?.() ?? null;
   };
 
@@ -51,8 +52,15 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
     }
     // extension_ui_request may legitimately arrive without a session.
     if (eventType === 'extension_ui_request') {
-      const sessionId = typeof rawSessionId === 'string' && rawSessionId ? rawSessionId : null;
-      return [{ type: 'extensionUi/requested', sessionId, request: event }];
+      const sessionId = typeof rawSessionId === 'string' && rawSessionId ? resolveSessionId(rawSessionId) : null;
+      if (isPiExtensionDialogRequest(event) || event.method === 'notify' || event.method === 'set_editor_text') {
+        return [{ type: 'extensionUi/requested', sessionId, request: event }];
+      }
+      if (['setStatus', 'setWidget', 'setTitle'].includes(String(event.method))) {
+        // Terminal presentation hints have no workbench surface or reply.
+        return [];
+      }
+      return [protocolError('unknown_extension_ui_method', `Unknown Pi extension UI method "${event.method}"`, sessionId ?? undefined)];
     }
 
     const sessionId = resolveSessionId(rawSessionId);
@@ -166,6 +174,12 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         // thinking level changes are reflected by live_session_updated.
         // agent_settled remains the authoritative streaming boundary.
         return [];
+      case 'queue_update': {
+        const piQueue = parsePiMessageQueue(event);
+        return piQueue
+          ? [{ type: 'session/updated', session: { id: sessionId, piQueue } }]
+          : [protocolError('malformed_pi_queue', 'Pi queue_update must contain steering and followUp string arrays', sessionId)];
+      }
       case 'entry_appended': {
         const entry = (event as { entry?: SessionEntry }).entry;
         return entry ? [{ type: 'conversation/messageAppended', sessionId, entry }] : [];
@@ -185,6 +199,8 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         return event.name
           ? [{ type: 'session/updated', session: { id: sessionId, sessionName: event.name } }]
           : [];
+      case 'session_info_changed':
+        return [{ type: 'session/updated', session: { id: sessionId, sessionName: typeof event.name === 'string' ? event.name.trim() || null : null } }];
       default:
         return [protocolError('unknown_event_type', `Unknown RPC event type "${eventType}"`, sessionId, { eventType })];
     }
@@ -200,18 +216,18 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         if (raw.liveSessions !== undefined && !Array.isArray(raw.liveSessions)) {
           return [protocolError('malformed_message', 'state message with non-array liveSessions')];
         }
-        return [{ type: 'session/listReceived', sessions: (raw.liveSessions ?? []) as LiveSession[] }];
+        return [{ type: 'session/runtimesReceived', runtimes: (raw.liveSessions ?? []) as LiveSession[] }];
       }
       case 'event':
         return normalizeRpcEvent(raw.sessionId, (raw.event ?? {}) as AppEvent);
       case 'live_session_created':
-        return [{ type: 'session/created', session: raw.session as LiveSession }];
+        return [{ type: 'session/runtimeReceived', runtime: raw.session as LiveSession }];
       case 'live_session_updated':
-        return [{ type: 'session/updated', session: raw.session as LiveSession }];
+        return [{ type: 'session/runtimeReceived', runtime: raw.session as LiveSession }];
       case 'live_session_closed': {
         const sessionId = (raw.sessionId ?? (raw.session as LiveSession | undefined)?.id) as string | undefined;
         return sessionId
-          ? [{ type: 'session/closed', sessionId }]
+          ? [{ type: 'session/runtimeClosed', liveSessionId: sessionId }]
           : [protocolError('malformed_message', 'live_session_closed without a session id')];
       }
       case 'live_session_snapshot': {
@@ -228,10 +244,13 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
           return [protocolError('malformed_message', 'live_session_snapshot without a session id')];
         }
         const { type: _ignored, ...snapshot } = raw;
-        return [{ type: 'session/snapshotReceived', sessionId, snapshot: snapshot as unknown as SessionSnapshot }];
+        const conversationId = resolveSessionId(sessionId);
+        if (!conversationId) return [];
+        const projected = { ...snapshot, sessionId: conversationId, session: raw.session ? options.projectRuntime?.(raw.session as LiveSession) : undefined } as unknown as SessionSnapshot;
+        return [{ type: 'session/snapshotReceived', sessionId: conversationId, snapshot: projected }];
       }
       case 'geo_interaction_updated': {
-        const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId : '';
+        const sessionId = typeof raw.sessionId === 'string' ? resolveSessionId(raw.sessionId) : null;
         if (!sessionId) return [protocolError('malformed_message', 'geo_interaction_updated without a session id')];
         const request = raw.request === undefined ? undefined : parseGeoInteractionRequestStructured(raw.request);
         const response = raw.response === undefined ? undefined : parseGeoInteractionResponseStructured(raw.response);
@@ -241,7 +260,7 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         return [{ type: 'session/geoInteractionUpdated', sessionId, request: request?.value, response: response?.value }];
       }
       case 'geo_screenshot_updated': {
-        const sessionId = typeof raw.sessionId === 'string' ? raw.sessionId : '';
+        const sessionId = typeof raw.sessionId === 'string' ? resolveSessionId(raw.sessionId) : null;
         if (!sessionId) return [protocolError('malformed_message', 'geo_screenshot_updated without a session id')];
         if (raw.request !== undefined) {
           const request = parseGeoScreenshotRequestStructured(raw.request);

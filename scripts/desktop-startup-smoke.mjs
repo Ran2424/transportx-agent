@@ -19,9 +19,30 @@ async function start() {
   return { healthUrl, owner: JSON.parse(fs.readFileSync(ownerFile(), 'utf8')) };
 }
 
+async function waitForLeaseRelease(timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (fs.existsSync(lock) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
 async function stop(healthUrl) {
   await app.close();
   app = null;
+  await waitForLeaseRelease();
+  if (fs.existsSync(lock)) {
+    try {
+      const owner = JSON.parse(fs.readFileSync(ownerFile(), 'utf8'));
+      let alive = false;
+      try { process.kill(owner.pid, 0); alive = true; } catch {}
+      console.error('[desktop-startup] lease still present', { owner, alive });
+    } catch (error) {
+      console.error('[desktop-startup] lease owner unreadable', error);
+    }
+    for (const file of ['desktop.log', 'agent-host.log', 'runtime.jsonl']) {
+      try { console.error(`[desktop-startup] ${file}\n${fs.readFileSync(path.join(dataRoot, 'logs', file), 'utf8').slice(-4000)}`); } catch {}
+    }
+  }
   assert.equal(fs.existsSync(lock), false, 'normal desktop exit must release its lease');
   await assert.rejects(fetch(healthUrl), 'normal desktop exit must stop its Host');
   for (const file of ['runtime.jsonl', 'agent-host.log', 'desktop.log']) {
@@ -32,6 +53,32 @@ async function stop(healthUrl) {
 
 try {
   const fresh = await start();
+  // Exercise the real preload/IPC path while replacing only the native OS dialog in this test app.
+  await app.evaluate(({ dialog }, directory) => {
+    dialog.showOpenDialog = async (_window, options) => {
+      if (JSON.stringify(options.properties) !== JSON.stringify(['openDirectory'])) throw new Error('Directory-only chooser required');
+      return { canceled: false, filePaths: [directory] };
+    };
+  }, dataRoot);
+  const chooserWindow = await app.firstWindow();
+  assert.equal(await chooserWindow.evaluate(() => window.transportxDesktop.selectWorkspaceDirectory()), fs.realpathSync(dataRoot).replaceAll('\\', '/'));
+  await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
+  assert.equal(await chooserWindow.evaluate(() => window.transportxDesktop.selectWorkspaceDirectory()), null);
+  await chooserWindow.getByRole('button', { name: /^(打开工作区|Open workspace)$/ }).first().click();
+  const creation = chooserWindow.locator('.new-session-dialog');
+  await app.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, dataRoot);
+  await creation.getByRole('button', { name: /^(打开已有文件夹|Open an existing folder)$/ }).click();
+  const expectedDirectory = fs.realpathSync(dataRoot).replaceAll('\\', '/');
+  await creation.locator('.workspace-location-path').filter({ hasText: path.basename(dataRoot) }).waitFor();
+  assert.equal(await creation.locator('.workspace-location-path').getAttribute('title'), expectedDirectory);
+  assert.equal(await creation.locator('input[aria-label]').count(), 0, 'native folder selection renders a path card');
+  await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
+  await creation.getByRole('button', { name: /^(更换|Change)$/ }).click();
+  assert.equal(await creation.locator('.workspace-location-path').getAttribute('title'), expectedDirectory, 'cancel keeps the previous folder');
+  // The normal-exit scenario waits for configuration reads to finish, not just the native picker.
+  await creation.locator('.menu-select-trigger:not([disabled])').waitFor();
+  await creation.getByRole('button', { name: /^(取消|Cancel)$/ }).click();
+  console.log('[desktop-startup] real directory chooser bridge and cancellation passed');
   await stop(fresh.healthUrl);
   console.log('[desktop-startup] fresh startup and normal IPC exit passed');
 

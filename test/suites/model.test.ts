@@ -14,7 +14,6 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
       const handlers = createModelRpcHandlers({
         agentDir: '/tmp/transportx-models',
         getAvailableModels: async () => ['openai/gpt-5.5'],
-        invalidateModelListCache() { },
         errorMessage(error: unknown) { return String(error); },
       });
       assert.deepEqual(Object.keys(handlers).sort(), [
@@ -27,12 +26,30 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
         'discover_local_models',
         'get_available_models',
         'get_model_providers',
+        'refresh_models',
         'update_model',
       ]);
       assert.deepEqual(await handlers.get_available_models.handle({ type: 'get_available_models' }, reply), {
         success: true,
         data: { models: ['openai/gpt-5.5'] },
       });
+    }
+    // Concurrent refresh callers share the catalog result, but a busy session
+    // must not contaminate diagnostics returned for another session.
+    {
+      const access = require('../../bin/pi-model-access.js');
+      const refresh = access.refreshPiModels;
+      const shared = { models: ['deepseek/new'], errors: [{ provider: 'openai', message: '503' }] };
+      access.refreshPiModels = async () => shared;
+      try {
+        const handlers = createModelRpcHandlers({ agentDir: '/tmp/unused', getAvailableModels: async () => [], syncModels: async (id: string) => { if (id === 'busy') throw new Error('session busy'); }, errorMessage: (error: Error) => error.message });
+        const [busy, idle] = await Promise.all(['busy', 'idle'].map((sessionId) => handlers.refresh_models.handle({ type: 'refresh_models', sessionId }, reply)));
+        assert.deepEqual(busy.data.errors, [...shared.errors, { message: 'session busy' }]);
+        assert.deepEqual(idle.data.errors, shared.errors);
+        assert.equal(shared.errors.length, 1);
+        access.refreshPiModels = async () => { throw new Error('broken models.json'); };
+        assert.deepEqual(await handlers.refresh_models.handle({ type: 'refresh_models' }, reply), { success: false, error: 'broken models.json' });
+      } finally { access.refreshPiModels = refresh; }
     }
   }
 
@@ -43,6 +60,59 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
     const path = require('node:path');
     const { connectPiModelProvider, disconnectPiModelProvider, listAvailablePiModels, listPiModelProviders } = require('../../bin/pi-model-access.js');
     const { addLocalPiModel, addPiModel, updatePiModel, deletePiModelProvider } = require('../../bin/pi-model-config.js');
+
+    // Host retains one native runtime, uses Pi's forced catalog refresh/cache,
+    // preserves user overrides and reports partial failures without losing models.
+    {
+      const http = require('node:http') as typeof import('node:http');
+      const { createPiModelRuntime } = require('../../bin/pi-model-runtime.js');
+      const { refreshPiModelCatalog } = require('../../bin/pi-model-access.js');
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-pi-catalog-'));
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      fs.writeFileSync(path.join(root, 'auth.json'), JSON.stringify({ deepseek: { type: 'api_key', key: 'test-only' } }));
+      fs.writeFileSync(path.join(root, 'models.json'), JSON.stringify({ providers: { deepseek: { modelOverrides: { 'deepseek-v4-flash': { contextWindow: 1_000_000, maxTokens: 32768 } } } } }));
+      let mode = 'success', requests = 0;
+      let remoteModel: any;
+      const server = http.createServer((request, response) => {
+        if (request.url !== '/api/models/providers/deepseek') { response.writeHead(404).end(); return; }
+        requests++;
+        if (mode === 'failure') { response.writeHead(503).end(); return; }
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ models: [remoteModel, { ...remoteModel, id: 'new-traffic-model', name: 'New Traffic Model' }] }));
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      t.after(() => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }));
+      const catalogBaseUrl = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
+      const use = createPiModelRuntime(root, { catalogBaseUrl });
+      const first = await use(async (runtime: any) => {
+        remoteModel = { ...runtime.getModel('deepseek', 'deepseek-v4-flash'), contextWindow: 200_000, maxTokens: 8192 };
+        return runtime;
+      });
+      assert.equal(requests, 0, 'ordinary reads stay offline');
+      assert.equal(await use(async (runtime: any) => runtime), first, 'readers reuse the native runtime');
+      const configBefore = fs.readFileSync(path.join(root, 'models.json'), 'utf8');
+      const refreshed = await use(refreshPiModelCatalog);
+      assert.equal(refreshed.errors.length, 0);
+      assert.ok(refreshed.models.some((model: any) => model.provider === 'deepseek' && model.id === 'new-traffic-model'));
+      assert.equal(refreshed.models.find((model: any) => model.id === 'deepseek-v4-flash').contextWindow, 1_000_000);
+      assert.equal(refreshed.models.find((model: any) => model.id === 'deepseek-v4-flash').maxOutput, 32768);
+      await use(refreshPiModelCatalog);
+      assert.equal(requests, 2, 'explicit refresh bypasses Pi catalog TTL');
+      mode = 'failure';
+      const failed = await use(refreshPiModelCatalog);
+      assert.ok(failed.errors.some((error: any) => error.provider === 'deepseek' && error.message.includes('503')));
+      assert.ok(failed.models.some((model: any) => model.id === 'new-traffic-model'), 'failed refresh retains the last usable overlay');
+      assert.equal(fs.readFileSync(path.join(root, 'models.json'), 'utf8'), configBefore, 'catalog refresh never rewrites user configuration');
+      const restored = await createPiModelRuntime(root, { catalogBaseUrl })(async (runtime: any) => runtime.getAvailable());
+      assert.ok(restored.some((model: any) => model.id === 'new-traffic-model'), 'new offline processes load Pi persisted cache');
+      assert.equal(requests, 3);
+      fs.writeFileSync(path.join(root, 'models.json'), '{broken');
+      await assert.rejects(use(async () => []), /corrupt/);
+      fs.writeFileSync(path.join(root, 'models.json'), configBefore.replace('1000000', '1100000'));
+      assert.equal(await use(async (runtime: any) => runtime.getModel('deepseek', 'deepseek-v4-flash').contextWindow), 1_100_000, 'external configuration changes reload without a second Host cache');
+      const aborted = await refreshPiModelCatalog({ refresh: async () => ({ aborted: true, errors: new Map() }), getAvailable: async () => [], getError: () => undefined });
+      assert.match(aborted.errors[0].message, /超时/);
+    }
 
     // Local discovery, credentials and persisted configuration work with the real Pi runtime.
     {
@@ -67,6 +137,7 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
         const prompt = JSON.parse(body);
         assert.equal(request.url, '/v1/chat/completions');
         assert.equal(prompt.model, 'traffic-local');
+        assert.equal(prompt.max_tokens ?? prompt.max_completion_tokens, 32768, 'configured output budget reaches the actual Provider request');
         response.writeHead(200, { 'Content-Type': 'text/event-stream' });
         const chunk = { id: 'local-reply', object: 'chat.completion.chunk', created: 1, model: prompt.model, choices: [{ index: 0, delta: { role: 'assistant', content: 'local reply' }, finish_reason: null }] };
         response.end(`data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
@@ -93,7 +164,7 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
       assert.equal((await discoverLocalModels({ baseUrl, apiKey: 'local-secret' })).models.length, 1);
       catalog = 'models';
 
-      const added = await addLocalPiModel({ baseUrl, modelId: 'traffic-local', contextWindow: 8192 }, agentDir);
+      const added = await addLocalPiModel({ baseUrl, modelId: 'traffic-local', contextWindow: 1_000_000, maxTokens: 32768 }, agentDir);
       assert.match(added.provider, /^local-[a-f0-9]{12}$/);
       assert.deepEqual(JSON.parse(fs.readFileSync(path.join(agentDir, 'auth.json'), 'utf8')), {}, 'keyless access stores no user credential');
       assert.equal((await listAvailablePiModels(agentDir)).find((model: any) => model.provider === added.provider)?.id, 'traffic-local');
@@ -102,10 +173,14 @@ test('Model access and mutations preserve credentials, concurrent writes, backup
         const runtime = await ModelRuntime.create({ authPath: path.join(agentDir, 'auth.json'), modelsPath: path.join(agentDir, 'models.json'), allowModelNetwork: false });
         const model = runtime.getModel(added.provider, 'traffic-local');
         assert.ok(model);
-        const reply = await runtime.completeSimple(model!, { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] });
+        assert.equal(model!.contextWindow, 1_000_000);
+        assert.equal(model!.maxTokens, 32768);
+        const reply = await runtime.completeSimple(model!, { messages: [{ role: 'user', content: 'history '.repeat(20_000), timestamp: Date.now() }] });
         assert.equal(reply.stopReason, 'stop');
         assert.deepEqual(reply.content, [{ type: 'text', text: 'local reply' }]);
       };
+      await assert.rejects(updatePiModel({ provider: added.provider, modelId: 'traffic-local', contextWindow: 1000, maxTokens: 1001 }, agentDir), /最大输出/);
+      await assert.rejects(updatePiModel({ provider: added.provider, modelId: 'traffic-local', maxTokens: -1 }, agentDir), /最大输出/);
       await send();
       assert.equal(requestAuth, 'Bearer transportx-local');
       const sameService = await addLocalPiModel({ baseUrl: `${baseUrl}/v1/`, modelId: 'second-model' }, agentDir);

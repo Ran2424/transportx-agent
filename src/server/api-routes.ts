@@ -10,53 +10,56 @@ import { ServerRouter } from './router.js';
 import type { CitationService } from './citation-service.js';
 import type { SpatialAnalysisService } from './spatial-analysis-service.js';
 import type { VideoService } from './video-service.js';
-import { parseSessionProfileStructured } from '../contracts/index.js';
+import { registerWorkspaceApi } from './workspace-api.js';
+import type { WorkspaceHost } from './workspace-host.js';
 import { serviceModuleIds, sessionServiceLabel, type SessionService } from './session-service.js';
+import { validateToolRequest } from './tool-request.js';
 import type { GeoInteractionService } from './geo-interaction-service.js';
 import type { CanvasService } from './canvas-service.js';
+import { CadInvocations } from './cad-invocations.js';
+import { SpatialInvocations } from './spatial-invocations.js';
+import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
+import path from 'node:path';
+import { inspectTaskModule } from './module-authoring.js';
+import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
+import type { CadService } from './cad-service.js';
 
 type ApiRouteServices = {
   beginOperation?(url: URL): () => void;
   sessions: LiveSessionManager;
+  workspaces: WorkspaceHost;
   snapshotSchemaVersion: number;
   health(): JsonRecord;
+  conversationOverview(id: string): unknown;
   sessionOptions(): JsonRecord;
   json(res: ServerResponse, status: number, data: unknown): void;
   errorMessage(error: unknown): string;
   errorStatus(error: unknown): number;
   readBody(req: IncomingMessage): Promise<RpcCommand>;
-  resolveSessionFile(filePath: string): string;
-  sessionCwd(value: unknown): string | null;
-  readSessionHeaderCwd(filePath: string): string | null;
-  readSessionEntries(filePath: string): unknown[];
-  deriveSessionName(entries: JsonRecord[]): string | null;
-  serveProjects(res: ServerResponse): void;
-  serveSessions(res: ServerResponse): void;
-  serveSearch(res: ServerResponse, query: string): void | Promise<void>;
-  resolveLivePath(session: PiRpcSession, requestedPath?: string | null): string;
-  serveFiles(res: ServerResponse, path: string): void;
+  serveFiles(res: ServerResponse, path: string, root?: string): void;
   serveFileContent(res: ServerResponse, path: string): void;
-  serveResources(res: ServerResponse, session: PiRpcSession): Promise<void>;
+  serveResources(res: ServerResponse, session: { entries: JsonRecord[]; send?: PiRpcSession['send'] }): Promise<void>;
   servePreview(res: ServerResponse, path: string): void;
   serveRawFile(req: IncomingMessage, res: ServerResponse, path: string, download: boolean): void;
-  resolveOpen(body: RpcCommand): string;
   openNative(path: string): Promise<void>;
   handleRpc(command: RpcCommand): Promise<RpcResponse>;
   renderReportPdf(title: string, html: string): Promise<Buffer>;
-  serveSessionFile(res: ServerResponse, dirName: string, fileName: string): void;
   listAttachments(cwd: string): unknown[];
-  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource): Promise<unknown[]>;
+  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource, conversationId: string): Promise<unknown[]>;
   deleteAttachment(cwd: string, id: string): void;
   citation: CitationService;
   spatial: SpatialAnalysisService;
   video: VideoService;
   geo: GeoInteractionService;
   canvas: CanvasService;
+  cad: CadService;
 };
 
 export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
 
 export function createApiRouter(services: ApiRouteServices) {
+  const cadInvocations = new CadInvocations(path.join(PI_AGENT_DIR, 'executions', 'cad'), SESSIONS_DIR, services.cad);
+  const spatialInvocations = new SpatialInvocations(path.join(PI_AGENT_DIR, 'executions', 'spatial'), SESSIONS_DIR, services.spatial);
   const router = new ServerRouter(services, services.beginOperation);
   const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number; timer: ReturnType<typeof setTimeout> }>();
   let renderingPdfs = 0;
@@ -87,189 +90,111 @@ export function createApiRouter(services: ApiRouteServices) {
       return { pdf, filename: `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf` };
     } finally { renderingPdfs--; }
   };
-  const runJob = async <T>(req: IncomingMessage, res: ServerResponse, session: PiRpcSession, execute: (signal: AbortSignal) => Promise<T>) => {
+  const withRequestSignal = async <T>(req: IncomingMessage, res: ServerResponse, execute: (signal: AbortSignal) => Promise<T>) => {
     const controller = new AbortController();
     const cancel = () => controller.abort();
     req.once('aborted', cancel);
     res.once('close', cancel);
-    try { return await services.sessions.runJob(session.id, execute, controller.signal); }
+    try { return await execute(controller.signal); }
     finally { req.off('aborted', cancel); res.off('close', cancel); }
   };
-  const serveRawFile = ({ req, res, url, deps }: import('./router.js').RouteContext<ApiRouteServices>) => {
-    const sessionId = url.searchParams.get('sessionId');
-    if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-    const session = deps.sessions.get(sessionId);
-    if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-    try { deps.serveRawFile(req, res, deps.resolveLivePath(session, url.searchParams.get('path')), url.searchParams.get('download') === '1'); }
-    catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-  };
+  const runJob = <T>(req: IncomingMessage, res: ServerResponse, session: PiRpcSession, execute: (signal: AbortSignal) => Promise<T>) => withRequestSignal(req, res, (signal) => services.sessions.runJob(session.id, execute, signal));
+  registerWorkspaceApi(router);
   router
     .get('/api/health', ({ res, deps }) => deps.json(res, 200, deps.health()))
+    .get(/^\/api\/conversations\/([^/]+)\/overview$/, ({ res, params, deps }) => { try { deps.json(res, 200, deps.conversationOverview(decodeURIComponent(params[0]))); } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); } })
     .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))
-    .get('/api/live-sessions', ({ res, deps }) => deps.json(res, 200, { sessions: deps.sessions.list() }))
-    .post('/api/live-sessions', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        const name = typeof body.name === 'string' ? body.name.trim() : '';
-        const profile = body.profile === undefined ? undefined : parseSessionProfileStructured(body.profile);
-        if (profile && !profile.ok) return deps.json(res, 400, { error: profile.diagnostics.map((item) => item.message).join('; '), diagnostics: profile.diagnostics });
-        const domainId = typeof body.domainId === 'string' && body.domainId.trim() ? body.domainId.trim() : undefined;
-        const appendSystemPrompt = typeof body.appendSystemPrompt === 'string' && body.appendSystemPrompt.trim() ? body.appendSystemPrompt.trim() : undefined;
-        const session = await deps.sessions.create({ cwd: body.cwd, model: body.model || '', sessionName: name || null, ...(domainId ? { domainId } : {}), ...(profile?.ok ? { profile: profile.value } : {}), ...(appendSystemPrompt ? { appendSystemPrompt } : {}) });
-        deps.json(res, 200, { session: session.metadata(), ...(body.profile === undefined ? { diagnostics: [{ code: 'profile_compat_default', path: 'profile', severity: 'warning', message: 'profile was omitted; the current Module selection was frozen as compat-default.' }] } : {}) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
+    .get(/^\/api\/conversations\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps);
+      if (target) deps.json(res, 200, { attachments: deps.listAttachments(target.directory) });
     })
-    .post('/api/live-sessions/resume', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        if (!body.filePath || typeof body.filePath !== 'string') return deps.json(res, 400, { error: 'filePath required' });
-        const resolvedFile = deps.resolveSessionFile(body.filePath);
-        const existing = deps.sessions.findBySessionFile(resolvedFile);
-        const cwd = deps.sessionCwd(body.cwd) || deps.readSessionHeaderCwd(resolvedFile);
-        if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
-          return deps.json(res, 400, { error: 'Cannot resume session because its project directory no longer exists' });
-        }
-        const entries = deps.readSessionEntries(resolvedFile) as JsonRecord[];
-        const sessionName = deps.deriveSessionName(entries);
-        const reusedPending = deps.sessions.hasPendingResume(resolvedFile);
-        const session = await deps.sessions.resume({ sessionFile: resolvedFile, cwd, model: body.model || '', entries, sessionName, useCurrentConfiguration: body.useCurrentConfiguration === true });
-        deps.json(res, 200, { session: session.metadata(), ...(reusedPending || existing?.id === session.id ? { reused: true } : {}) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code, details: 'details' in error ? error.details : [] } : {}) }); }
+    .get(/^\/api\/conversations\/([^/]+)\/attachments\/([^/]+)\/file$/, ({ req, res, url, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps); if (!target) return;
+      try { const attachment = resolveSessionAttachments(target.directory, [decodeURIComponent(params[1])])[0]; deps.serveRawFile(req, res, attachmentFilePath(target.directory, attachment), url.searchParams.get('download') === '1'); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/snapshot$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (session) deps.json(res, 200, session.snapshot());
+    .get(/^\/api\/conversations\/([^/]+)\/resources$/, async ({ res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps); if (session) await deps.serveResources(res, session);
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (session) deps.json(res, 200, { attachments: deps.listAttachments(session.cwd) });
-    })
-    .get(/^\/api\/live-sessions\/([^/]+)\/citations$/, ({ res, url, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+    .get(/^\/api\/conversations\/([^/]+)\/citations$/, ({ res, url, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try {
         const offset = Number(url.searchParams.get('offset') || 0);
         const limit = Number(url.searchParams.get('limit') || 200);
         const ids = url.searchParams.get('ids')?.split(',');
-        deps.json(res, 200, { citations: deps.citation.registry(session).list(offset, limit, ids) });
+        deps.json(res, 200, { citations: deps.citation.list(session, offset, limit, ids) });
       } catch (error) { deps.json(res, 409, { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+    .get(/^\/api\/conversations\/([^/]+)\/video-resources\/([^/]+)\/metrics$/, ({ res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.video.metrics(session, decodeURIComponent(params[1]))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/live-sessions\/([^/]+)\/citations\/evidence\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+    .get(/^\/api\/conversations\/([^/]+)\/citations\/evidence\/([^/]+)$/, ({ res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.citation.detail(session, decodeURIComponent(params[1]))); }
       catch (error) { citationResourceError(res, error); }
     })
-    .post(/^\/api\/live-sessions\/([^/]+)\/attachments$/, async ({ req, res, url, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (!session) return;
+    .post(/^\/api\/conversations\/([^/]+)\/attachments$/, async ({ req, res, url, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps);
+      if (!target) return;
       const source = url.searchParams.get('source');
       if (source !== 'picker' && source !== 'drop' && source !== 'clipboard') return deps.json(res, 400, { error: 'Invalid attachment source' });
-      try { deps.json(res, 200, { attachments: await deps.uploadAttachments(session.cwd, req, source) }); }
+      try { deps.json(res, 200, { attachments: await deps.uploadAttachments(target.directory, req, source, target.conversation.id) }); }
       catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
     })
-    .delete(/^\/api\/live-sessions\/([^/]+)\/attachments\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (!session) return;
-      try { deps.deleteAttachment(session.cwd, decodeURIComponent(params[1])); deps.json(res, 200, { success: true }); }
+    .delete(/^\/api\/conversations\/([^/]+)\/attachments\/([^/]+)$/, ({ res, params, deps }) => {
+      const target = resolveConversationTargetParam(res, params[0], deps);
+      if (!target) return;
+      try { deps.deleteAttachment(target.directory, decodeURIComponent(params[1])); deps.json(res, 200, { success: true }); }
       catch (cause) { deps.json(res, deps.errorStatus(cause), { error: deps.errorMessage(cause) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-contexts$/, async ({ req, res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+    .post(/^\/api\/conversations\/([^/]+)\/geo-contexts$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try {
         const created = deps.geo.createContext(session, await deps.readBody(req));
         deps.json(res, 200, created);
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/canvas-contexts$/, async ({ req, res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+    .post(/^\/api\/conversations\/([^/]+)\/canvas-presentations$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
+      if (!session) return;
+      try { deps.json(res, 200, { canvas: await deps.canvas.presentResource(session, await deps.readBody(req) as Parameters<CanvasService['present']>[1]) }); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post(/^\/api\/conversations\/([^/]+)\/canvas-contexts$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, { context: deps.canvas.createContext(session, await deps.readBody(req) as Parameters<CanvasService['createContext']>[1]) }); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .get(/^\/api\/sessions\/([^/]+)\/geo-contexts\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+    .get(/^\/api\/conversations\/([^/]+)\/geo-contexts\/([^/]+)$/, ({ res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.getContext(session, decodeURIComponent(params[1]))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-screenshots$/, async ({ req, res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
+    .post(/^\/api\/conversations\/([^/]+)\/geo-screenshots$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.saveScreenshot(session, await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-screenshots\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/geo-screenshots\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, deps.geo.respondScreenshot(session, decodeURIComponent(params[1]), await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
     })
-    .post(/^\/api\/sessions\/([^/]+)\/geo-interactions\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
+    .post(/^\/api\/conversations\/([^/]+)\/geo-interactions\/([^/]+)\/respond$/, async ({ req, res, params, deps }) => {
       const session = resolveLiveSessionParam(res, params[0], deps);
       if (!session) return;
       try { deps.json(res, 200, await deps.geo.respond(session, decodeURIComponent(params[1]), await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
-    })
-    .get(/^\/api\/live-sessions\/([^/]+)$/, ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (session) deps.json(res, 404, { error: 'Not found' });
-    })
-    .delete(/^\/api\/live-sessions\/([^/]+)$/, async ({ res, params, deps }) => {
-      const session = resolveLiveSessionParam(res, params[0], deps);
-      if (!session) return;
-      try { await deps.sessions.delete(session.id, 'closed_by_user'); deps.json(res, 200, { success: true }); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/projects', ({ res, deps }) => deps.serveProjects(res))
-    .get('/api/sessions', ({ res, deps }) => deps.serveSessions(res))
-    .get('/api/search', ({ res, url, deps }) => deps.serveSearch(res, url.searchParams.get('q') || ''))
-    .get('/api/files', ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { deps.serveFiles(res, deps.resolveLivePath(session, url.searchParams.get('path') || session.cwd)); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/file/content', ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { deps.serveFileContent(res, deps.resolveLivePath(session, url.searchParams.get('path'))); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/file/raw', serveRawFile)
-    .head('/api/file/raw', serveRawFile)
-    .get('/api/session-resources', async ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { await deps.serveResources(res, session); }
-      catch (error) { deps.json(res, 500, { error: deps.errorMessage(error) }); }
-    })
-    .get('/api/file/preview', ({ res, url, deps }) => {
-      const sessionId = url.searchParams.get('sessionId');
-      if (!sessionId) return deps.json(res, 400, { error: 'No live session selected' });
-      const session = deps.sessions.get(sessionId);
-      if (!session) return deps.json(res, 404, { error: 'Live session not found' });
-      try { deps.servePreview(res, deps.resolveLivePath(session, url.searchParams.get('path'))); }
-      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .post('/api/open', async ({ req, res, deps }) => {
-      try {
-        await deps.openNative(deps.resolveOpen(await deps.readBody(req)));
-        deps.json(res, 200, { ok: true });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/reports/pdf', async ({ req, res, deps }) => {
       try {
@@ -309,72 +234,203 @@ export function createApiRouter(services: ApiRouteServices) {
       });
       res.end(entry.pdf);
     })
+    .post('/api/internal/modules/package', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'moduleAuthoring');
+        if (!session) return;
+        await validateToolRequest('com.transportx.module-authoring', body);
+        const { packageRoot, manifest } = inspectTaskModule(session.cwd, body.packagePath);
+        if (body.action === 'inspect') return deps.json(res, 200, { action: 'inspect', id: manifest.id, version: manifest.version, entries: manifest.entrypoints, dependencies: manifest.dependencies, codeExecuted: false, toolCallId: body.toolCallId });
+        const installed = await deps.handleRpc({ type: 'install_module', sourcePath: packageRoot });
+        if (!installed.success) throw new Error(String(installed.error || 'Module installation was not accepted'));
+        deps.json(res, 200, { action: 'install', id: manifest.id, version: manifest.version, installed: true, next: 'Create a new task to use the installed module. This task retains its frozen module plan.', toolCallId: body.toolCallId });
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: 'module_package_failed', phase: 'package', commit: 'not_started' }); }
+    })
     .post('/api/internal/citations/resolve', async ({ req, res, deps }) => {
+      let toolCallId: string | undefined;
+      const rejected = (message: string) => deps.json(res, 400, { error: message, toolCallId, code: 'citation_input_invalid', phase: 'validation', commit: 'not_started' });
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'citation');
         if (!session) return;
-        if (['knowledgeIds', 'attachmentIds', 'artifacts', 'datasets', 'value', 'executionRef'].some((key) => key in body)) return deps.json(res, 400, { error: 'Unsupported citation input. Use concrete sources with typed locators.' });
+        toolCallId = typeof body.toolCallId === 'string' ? body.toolCallId : undefined;
+        if (['knowledgeIds', 'attachmentIds', 'artifacts', 'datasets', 'value', 'executionRef'].some((key) => key in body)) return rejected('Unsupported citation input. Use concrete sources with typed locators.');
+        if ('sources' in body && 'webUrls' in body) return rejected('sources and webUrls cannot be combined. Register local files with sources and public HTTPS pages with webUrls in separate calls; omit the other field entirely. Reuse evidence IDs from both calls. Do not put URLs in sources[].path.');
+        await validateToolRequest('com.transportx.citation', body);
         if (Array.isArray(body.sources) && body.sources.length && !body.webUrls) {
           const inputs = body.sources as import('./citation-service.js').CitationInput[];
           const citations = deps.citation.resolve(session, inputs);
           const deliverableEvidenceIds = inputs.flatMap((input) => input.deliverable ? citations.evidence.filter((item) => citations.sources.some((source) => source.sourceVersionId === item.sourceVersionId && source.content.kind === 'file' && source.content.path === input.path && source.content.assetId === input.assetId)).map((item) => item.evidenceId) : []);
-          return deps.json(res, 200, { citations, deliverableEvidenceIds });
+          return deps.json(res, 200, { citations, deliverableEvidenceIds, ...(toolCallId ? { toolCallId } : {}) });
         }
-        if (Array.isArray(body.webUrls) && !body.sources) return deps.json(res, 200, { citations: await deps.citation.resolveWeb(session, body.webUrls as string[]) });
-        deps.json(res, 400, { error: 'Provide sources or webUrls.' });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        if (Array.isArray(body.webUrls) && !body.sources) return deps.json(res, 200, { citations: await withRequestSignal(req, res, (signal) => deps.citation.resolveWeb(session, body.webUrls as string[], signal)), ...(toolCallId ? { toolCallId } : {}) });
+        rejected('Provide exactly one non-empty array: sources for local files, or webUrls for public HTTPS pages. Omit the other field entirely.');
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, code: failure.code || 'citation_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown', field: failure.field });
+      }
     })
-    .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
+    .post('/api/internal/spatial/prepare', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'spatial');
         if (!session) return;
-        const result = await runJob(req, res, session, (signal) => deps.spatial.analyze(session, body, signal));
+        await validateToolRequest('com.transportx.spatial-analysis', body);
+        const record = spatialInvocations.prepare(session, body);
+        deps.json(res, 200, { operationId: record.operationId, state: record.state, toolCallId: body.toolCallId });
+      } catch (error) { const failure = error as Error & { code?: string; commit?: string }; deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: failure.code || 'spatial_prepare_failed', phase: 'prepare', commit: failure.commit || 'not_started' }); }
+    })
+    .post('/api/internal/spatial/execution', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'spatial');
+        if (!session) return;
+        await validateToolRequest('com.transportx.spatial-analysis', body, 'spatial.execution');
+        if (body.action !== 'query' && body.action !== 'cancel') throw Object.assign(new Error('Expected query or cancel'), { status: 400 });
+        const reference = { operationId: body.operationId, lookupToolCallId: body.lookupToolCallId };
+        const record = body.action === 'cancel' ? spatialInvocations.cancel(session, reference) : spatialInvocations.query(session, reference);
+        // Owner and normalized request remain Host metadata, not model/history.
+        deps.json(res, 200, { operationId: record.operationId, state: record.state, jobId: record.jobId, result: record.result, error: record.error, ...('cancellationRequested' in record ? { cancellationRequested: record.cancellationRequested } : {}), toolCallId: body.toolCallId });
+      } catch (error) { const failure = error as Error & { code?: string }; deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: failure.code || 'spatial_query_failed', phase: 'confirmation', commit: 'unknown' }); }
+    })
+    .post('/api/internal/spatial/analyze', async ({ req, res, deps }) => {
+      let toolCallId: string | undefined;
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'spatial');
+        if (!session) return;
+        await validateToolRequest('com.transportx.spatial-analysis', body);
+        if (body.toolCallId !== undefined && (typeof body.toolCallId !== 'string' || !body.toolCallId || body.toolCallId.length > 200)) return deps.json(res, 400, { error: 'Invalid Spatial toolCallId', code: 'spatial_input_invalid', phase: 'validation', commit: 'not_started' });
+        toolCallId = body.toolCallId;
+        const invocation = await withRequestSignal(req, res, (signal) => spatialInvocations.execute(session, body, signal, (jobSignal, analysisId, onJob, request) => services.sessions.runJob(session.id, (executionSignal) => deps.spatial.analyze(session, body, executionSignal, analysisId, request), jobSignal, onJob)));
+        const { result } = invocation;
         // Citation failure must never re-enter SpatialAnalysisService's output cleanup.
-        try { deps.json(res, 200, { result, citations: deps.citation.registerSpatialResult(session, result) }); }
-        catch (error) { deps.json(res, 200, { result, citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        try { deps.json(res, 200, { ...invocation, ...(toolCallId ? { toolCallId } : {}), citations: deps.citation.registerSpatialResult(session, result) }); }
+        catch (error) { deps.json(res, 200, { ...invocation, ...(toolCallId ? { toolCallId } : {}), citationWarning: `分析完成，依据登记失败：${deps.errorMessage(error)}` }); }
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string; operationId?: string };
+        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), toolCallId, operationId: failure.operationId, code: failure.code || 'spatial_result_unknown', phase: failure.phase || 'host', commit: failure.commit || 'unknown', field: failure.field });
+      }
     })
     .post('/api/internal/geo/inspect', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
-        deps.json(res, 200, { result: deps.geo.inspect(session, body) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        await validateToolRequest('com.transportx.geo', body, 'geo.inspect');
+        deps.json(res, 200, { result: deps.geo.inspect(session, body), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'geo_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/canvas/present', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'canvas');
         if (!session) return;
-        deps.json(res, 200, { canvas: deps.canvas.present(session, body as Parameters<CanvasService['present']>[1]) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        await validateToolRequest('com.transportx.canvas', body, 'canvas.present');
+        deps.json(res, 200, { canvas: await deps.canvas.presentResource(session, body as Parameters<CanvasService['present']>[1]), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'canvas_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/canvas/inspect', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'canvas');
         if (!session) return;
-        deps.json(res, 200, { contexts: deps.canvas.inspectContexts(session, body.contextIds) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+        await validateToolRequest('com.transportx.canvas', body, 'canvas.inspect');
+        deps.json(res, 200, { contexts: deps.canvas.inspectContexts(session, body.contextIds), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'canvas_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
+    })
+    .post('/api/internal/cad/inspect', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.inspect');
+        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.inspect(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
+      }
+    })
+    .post('/api/internal/cad/draw', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.draw');
+        const confirmation = await withRequestSignal(req, res, (signal) => cadInvocations.execute(session, body, signal, (jobSignal, record) => services.sessions.runJob(session.id, (executionSignal) => deps.cad.draw(session, record.request, executionSignal, record.operationId, record.inputSha256), jobSignal)));
+        deps.json(res, 200, { ...confirmation, toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
+      }
+    })
+    .post('/api/internal/cad/verify', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.verify');
+        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.verify(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
+      }
+    })
+    .post('/api/internal/cad/execution', async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'cad');
+        if (!session) return;
+        await validateToolRequest('com.transportx.cad', body, 'cad.execution');
+        const record = body.action === 'cancel' ? cadInvocations.cancel(session, { operationId: body.operationId, lookupToolCallId: body.lookupToolCallId }) : cadInvocations.query(session, { operationId: body.operationId, lookupToolCallId: body.lookupToolCallId });
+        deps.json(res, 200, { operationId: record.operationId, state: record.state, result: record.result, error: record.error, ...('cancellationRequested' in record ? { cancellationRequested: record.cancellationRequested } : {}), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'cad_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), operationId: failure.operationId });
+      }
     })
     .post('/api/internal/geo/request', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
-        deps.json(res, 200, { result: await deps.geo.request(session, body) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+        await validateToolRequest('com.transportx.geo', body, 'geo.request');
+        deps.json(res, 200, { result: await withRequestSignal(req, res, (signal) => deps.geo.request(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'geo_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/geo/screenshot', async ({ req, res, deps }) => {
       try {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'geo');
         if (!session) return;
-        deps.json(res, 200, { result: await deps.geo.requestScreenshot(session, body) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
+        await validateToolRequest('com.transportx.geo', body, 'geo.screenshot');
+        deps.json(res, 200, { result: await withRequestSignal(req, res, (signal) => deps.geo.requestScreenshot(session, body, signal)), toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { code?: string; phase?: string; commit?: string; field?: string };
+        const status = deps.errorStatus(error);
+        deps.json(res, status, { error: deps.errorMessage(error), code: failure.code || 'geo_request_failed', phase: failure.phase || 'host', commit: failure.commit || (status >= 400 && status < 500 ? 'not_started' : 'unknown'), field: failure.field });
+      }
     })
     .post('/api/internal/video/search', async ({ req, res, deps }) => {
       try {
@@ -420,36 +476,7 @@ export function createApiRouter(services: ApiRouteServices) {
       try { deps.json(res, 200, await deps.handleRpc(await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
-    .post('/api/sessions/delete', async ({ req, res, deps }) => {
-      try {
-        const body = await deps.readBody(req);
-        if (body.deleteWorkspace !== undefined && typeof body.deleteWorkspace !== 'boolean') return deps.json(res, 400, { error: 'deleteWorkspace must be a boolean' });
-        if (body.sessionId !== undefined) {
-          if (typeof body.sessionId !== 'string' || !body.sessionId) return deps.json(res, 400, { error: 'sessionId required' });
-          const session = deps.sessions.get(body.sessionId);
-          if (!session) return deps.json(res, 200, { success: true, alreadyDeleted: true });
-          if (session.sessionFile) deps.resolveSessionFile(session.sessionFile);
-          await deps.sessions.deleteConversation({ sessionId: body.sessionId, deleteWorkspace: body.deleteWorkspace !== false });
-          return deps.json(res, 200, { success: true });
-        }
-        if (!body.filePath || typeof body.filePath !== 'string') return deps.json(res, 400, { error: 'filePath required' });
-        let sessionFile: string;
-        try { sessionFile = deps.resolveSessionFile(body.filePath); }
-        catch (error) {
-          if (deps.errorMessage(error) === 'Session not found') return deps.json(res, 200, { success: true, alreadyDeleted: true });
-          throw error;
-        }
-        await deps.sessions.deleteHistory(sessionFile, body.deleteWorkspace !== false);
-        deps.json(res, 200, { success: true });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as NodeJS.ErrnoException).code, path: (error as NodeJS.ErrnoException).path }); }
-    })
-    .get('/api/session-history', ({ res, url, deps }) => {
-      try {
-        const sessionFile = deps.resolveSessionFile(url.searchParams.get('filePath') || '');
-        deps.json(res, 200, { schemaVersion: deps.snapshotSchemaVersion, entries: deps.readSessionEntries(sessionFile) });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get(/^\/api\/sessions\/([^/]+)\/([^/]+)$/, ({ res, params, deps }) => deps.serveSessionFile(res, params[0], params[1]));
+;
   return router;
 }
 
@@ -458,6 +485,8 @@ function resolveServiceSession(res: ServerResponse, body: RpcCommand, services: 
   const token = typeof body.token === 'string' ? body.token : '';
   const session = services.sessions.get(sessionId);
   if (!session || session.terminating || !session.resolvedSessionPlan?.modules?.some((module) => module.id === serviceModuleIds[service]) || !token || token !== session.serviceTokens[service]) { services.json(res, 403, { error: `${sessionServiceLabel[service]} host access denied` }); return null; }
+  try { if (!session.lifecycle?.isCurrent(session) || services.workspaces.target(session.conversationId).manifest.id !== session.workspaceId) throw new Error('Runtime binding changed.'); }
+  catch { services.json(res, 403, { error: `${sessionServiceLabel[service]} runtime binding denied` }); return null; }
   return session;
 }
 
@@ -465,7 +494,19 @@ function resolveLiveSessionParam(res: ServerResponse, value: string, services: A
   let id: string;
   try { id = decodeURIComponent(value); }
   catch { services.json(res, 400, { error: 'Malformed live session id' }); return null; }
-  const session = services.sessions.get(id);
-  if (!session) { services.json(res, 404, { error: 'Live session not found' }); return null; }
-  return session;
+  try { return services.workspaces.live(id); }
+  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
+}
+
+function resolveResourceContextParam(res: ServerResponse, value: string, services: ApiRouteServices) {
+  let id: string;
+  try { id = decodeURIComponent(value); }
+  catch { services.json(res, 400, { error: 'Malformed conversation id' }); return null; }
+  try { return services.workspaces.resourceContext(id); }
+  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
+}
+
+function resolveConversationTargetParam(res: ServerResponse, value: string, services: ApiRouteServices) {
+  try { return services.workspaces.target(decodeURIComponent(value)); }
+  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
 }

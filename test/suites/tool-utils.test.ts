@@ -6,13 +6,16 @@ test('Tool projection, file icons and localized truncation preserve conversation
 
     // classifies Tool Card icons and resolves supplied file paths
     {
-      const { compactCharacterCount, toolFileName, toolFilePath, toolIconName } = await import('../../src/web/platform/conversation/tool-card-utils.ts');
+      const { compactCharacterCount, hostExecutionState, toolFileName, toolFilePath, toolIconName } = await import('../../src/web/platform/conversation/tool-card-utils.ts');
       assert.equal(toolIconName('present_visualization'), 'map');
       assert.equal(toolIconName('read_csv'), 'file');
       assert.equal(toolIconName('apply-patch'), 'write');
       assert.equal(toolFilePath({ sourceInfo: { path: 'reports/result.md' } }), 'reports/result.md');
       assert.equal(toolFileName('reports\\result.md'), 'result.md');
       assert.equal(compactCharacterCount(12_345), '12k');
+      assert.equal(hostExecutionState({ details: { kind: 'tau-spatial-analysis-error', error: { code: 'spatial_result_unknown' } } }), 'unknown');
+      assert.equal(hostExecutionState({ details: { kind: 'tau-spatial-analysis-error', error: { code: 'spatial_cancelled' } } }), 'cancelled');
+      assert.equal(hostExecutionState({ details: { kind: 'tau-spatial-analysis', result: {} } }), null);
     }
   }
 

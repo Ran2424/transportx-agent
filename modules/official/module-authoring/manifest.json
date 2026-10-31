@@ -2,13 +2,16 @@
   "manifestVersion": 2,
   "id": "com.transportx.module-authoring",
   "name": "Module Authoring",
-  "version": "1.1.1",
+  "version": "1.2.2",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "entrypoints": {
     "skills": [
       "skill/SKILL.md"
+    ],
+    "piExtensions": [
+      "extensions/pi-module-package/index.ts"
     ]
   },
   "presentation": {

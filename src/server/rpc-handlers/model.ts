@@ -1,5 +1,5 @@
 import { addLocalPiModel, addPiModel, deletePiModel, deletePiModelProvider, updatePiModel } from '../pi-model-config.js';
-import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders } from '../pi-model-access.js';
+import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders, refreshPiModels } from '../pi-model-access.js';
 import { discoverLocalModels } from '../local-model-service.js';
 import type { AddLocalModelInput } from '../../contracts/local-model.js';
 import type { RpcHandlerRegistry } from '../rpc-handlers.js';
@@ -8,7 +8,7 @@ import type { RpcCommand } from '../types.js';
 type ModelRpcDependencies = {
   agentDir: string;
   getAvailableModels(): Promise<unknown>;
-  invalidateModelListCache(): void;
+  syncModels?(sessionId: string): Promise<void>;
   errorMessage(error: unknown): string;
 };
 
@@ -18,6 +18,19 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
   return {
     get_available_models: {
       handle: async (_command, reply) => reply.success({ models: await deps.getAvailableModels() }),
+    },
+    refresh_models: {
+      handle: async (command, reply) => {
+        try {
+          const refreshed = await refreshPiModels(deps.agentDir);
+          const result = { ...refreshed, errors: [...refreshed.errors] };
+          if (command.sessionId && deps.syncModels) {
+            try { await deps.syncModels(command.sessionId); }
+            catch (error) { result.errors.push({ message: deps.errorMessage(error) }); }
+          }
+          return reply.success(result);
+        } catch (error) { return reply.failure(deps.errorMessage(error)); }
+      },
     },
     get_model_providers: {
       handle: async (_command, reply) => {
@@ -29,7 +42,6 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
       handle: async (command, reply) => {
         try {
           const connected = await connectPiModelProvider(provider(command), String(command.apiKey || ''), deps.agentDir);
-          deps.invalidateModelListCache();
           return reply.success({ provider: connected });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
@@ -38,7 +50,6 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
       handle: async (command, reply) => {
         try {
           await disconnectPiModelProvider(provider(command), deps.agentDir);
-          deps.invalidateModelListCache();
           return reply.success();
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
@@ -47,7 +58,6 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
       handle: async (command, reply) => {
         try {
           const model = await addPiModel(command as Omit<Partial<import('../pi-model-config.js').AddPiModelInput>, 'api'> & { api?: string }, deps.agentDir);
-          deps.invalidateModelListCache();
           return reply.success({ model });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
@@ -62,7 +72,6 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
       handle: async (command, reply) => {
         try {
           const model = await addLocalPiModel(command as AddLocalModelInput, deps.agentDir);
-          deps.invalidateModelListCache();
           return reply.success({ model });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
@@ -70,8 +79,7 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
     update_model: {
       handle: async (command, reply) => {
         try {
-          const model = await updatePiModel(command as { provider: string; modelId: string; name?: string; contextWindow?: number; reasoning?: boolean; images?: boolean }, deps.agentDir);
-          deps.invalidateModelListCache();
+          const model = await updatePiModel(command as { provider: string; modelId: string; name?: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean; images?: boolean }, deps.agentDir);
           return reply.success({ model });
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
@@ -80,7 +88,6 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
       handle: async (command, reply) => {
         try {
           await deletePiModel(provider(command), String(command.modelId || ''), deps.agentDir);
-          deps.invalidateModelListCache();
           return reply.success();
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
@@ -89,7 +96,6 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
       handle: async (command, reply) => {
         try {
           await deletePiModelProvider(provider(command), deps.agentDir);
-          deps.invalidateModelListCache();
           return reply.success();
         } catch (error) { return reply.failure(deps.errorMessage(error)); }
       },

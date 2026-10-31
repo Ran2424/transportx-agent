@@ -1,0 +1,166 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.cad",
+  "toolId": "cad.inspect",
+  "piName": "cad_inspect",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "cad-inspect-v4",
+  "input": {
+    "type": "object",
+    "properties": {
+      "contextId": {
+        "type": "string",
+        "pattern": "^canvas_context_[a-f0-9-]+$",
+        "description": "Inspect only entities in this attached CAD selection; the Host resolves its exact file/version."
+      },
+      "fileId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+      },
+      "path": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "include": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "summary"
+            },
+            {
+              "type": "string",
+              "const": "layers"
+            },
+            {
+              "type": "string",
+              "const": "entities"
+            },
+            {
+              "type": "string",
+              "const": "blocks"
+            },
+            {
+              "type": "string",
+              "const": "units"
+            },
+            {
+              "type": "string",
+              "const": "extents"
+            },
+            {
+              "type": "string",
+              "const": "textStyles"
+            },
+            {
+              "type": "string",
+              "const": "geometry"
+            }
+          ]
+        },
+        "maxItems": 8
+      },
+      "selector": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "handle"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "handle"
+              },
+              "handle": {
+                "type": "string",
+                "pattern": "^[0-9A-F]{1,16}$"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "layer"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "layer"
+              },
+              "layer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "entityType": {
+                "type": "string",
+                "maxLength": 40
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "min",
+              "max"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "bounds"
+              },
+              "layer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "entityType": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "min": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "max": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 500
+      },
+      "cursor": {
+        "type": "string",
+        "maxLength": 160
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "tau-cad",
+    "version": "1.0",
+    "detailsKind": "tau-cad-inspect"
+  }
+}

@@ -40,7 +40,7 @@ export const FFMPEG_EXECUTABLES: VideoExecutables | null = (() => {
     return null; // Video processing reports a clear error when ffmpeg is unavailable.
   }
 })();
-export const PLATFORM_VERSION = '3.23.1';
+export const PLATFORM_VERSION = '3.24.1';
 
 export function expandHome(p: string) {
   if (!p || typeof p !== 'string') return p;
@@ -74,12 +74,14 @@ export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(APP_PATHS.appRoot, 'src',
 export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.workbench';
 export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
+  'modules/capabilities/tool-activation/manifest.json',
   'modules/capabilities/interaction/manifest.json',
   'modules/capabilities/citation/manifest.json',
   'modules/capabilities/canvas/manifest.json',
   'modules/capabilities/document/manifest.json',
   'modules/capabilities/geo/manifest.json',
   'modules/capabilities/spatial-analysis/manifest.json',
+  'modules/capabilities/cad/manifest.json',
   'modules/official/traffic-report/manifest.json',
   'modules/official/module-authoring/manifest.json',
   'modules/official/cli/manifest.json',
@@ -108,7 +110,7 @@ function findReactWebDir() {
 }
 
 export const MIME_TYPES = {
-  '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+  '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.mjs': 'application/javascript',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff': 'font/woff',

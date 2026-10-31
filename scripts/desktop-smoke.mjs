@@ -1,3 +1,4 @@
+import { protocolHeaders } from './harness/workspace-client.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,7 +25,7 @@ if (packaged) {
   const resourcesDir = packaged.resourcesDir;
   const manifest = JSON.parse(fs.readFileSync(path.join(resourcesDir, 'runtime-manifest.json'), 'utf8'));
   const packagedPython = path.join(resourcesDir, manifest.python?.path || '');
-  const python = spawnSync(packagedPython, ['-B', '-I', '-c', 'import matplotlib,numpy,pandas,platform,pyproj,shapely,sqlite3,ssl,yaml; print(platform.python_version())'], {
+  const python = spawnSync(packagedPython, ['-B', '-I', '-c', 'import ezdxf,matplotlib,numpy,pandas,platform,pyproj,shapely,sqlite3,ssl,yaml; print(platform.python_version())'], {
     encoding: 'utf8',
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
   });
@@ -36,10 +37,12 @@ if (packaged) {
   }
   console.log('[desktop-smoke] optional ffmpeg runtime is absent from the base package');
 }
+const launchEnvironment = { ...process.env };
+if (packaged) delete launchEnvironment.TAU_PYTHON_COMMAND;
 const app = await electron.launch({
   ...(packaged ? { executablePath: packaged.executable } : { args: ['.'], cwd: process.cwd() }),
   env: {
-    ...process.env,
+    ...launchEnvironment,
     HOME: temporaryHome,
     TAU_USER_DATA_DIR: dataRoot,
     ...(packaged ? {} : { TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3' }),
@@ -65,8 +68,41 @@ try {
     throw new Error(`Unsafe renderer preferences: ${JSON.stringify(preferences)}`);
   }
   const healthUrl = `${new URL(window.url()).origin}/api/health`;
-  const health = await (await fetch(healthUrl)).json();
-  if (health.product !== 'TransportX Agent' || health.protocolVersion !== 1) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
+  let health = await (await fetch(healthUrl)).json();
+  const inventoryDeadline = Date.now() + 20_000;
+  while (health.dataState === 'initializing' && Date.now() < inventoryDeadline) { await new Promise((resolve) => setTimeout(resolve, 100)); health = await (await fetch(healthUrl)).json(); }
+  if (health.dataState !== 'ready') throw new Error(`Desktop data inventory is unavailable: ${health.dataState}`);
+  if (health.product !== 'TransportX Agent' || health.protocolVersion !== 2) throw new Error(`Unexpected health: ${JSON.stringify(health)}`);
+  // Exercise the production Host -> Supervisor -> Electron dialog channel. Only
+  // this test-owned fixture is accepted; the native decision itself is stubbed.
+  const trustSource = path.join(temporaryHome, 'trust-probe');
+  const trustMarker = path.join(temporaryHome, 'trust-probe-executed');
+  fs.mkdirSync(trustSource);
+  fs.writeFileSync(path.join(trustSource, 'manifest.json'), JSON.stringify({ manifestVersion: 2, id: 'local.desktop-trust-probe', name: 'Desktop trust fixture', version: '1.0.0', type: 'module', platformVersion: '>=3.0.0 <4.0.0', dependencies: [], entrypoints: { piExtensions: ['index.js'] } }));
+  fs.writeFileSync(path.join(trustSource, 'index.js'), `require('node:fs').writeFileSync(${JSON.stringify(trustMarker)}, 'executed');`);
+  await app.evaluate(({ dialog }) => {
+    globalThis.transportxTrustDialogOriginal = dialog.showMessageBox;
+    globalThis.transportxTrustDecision = 0;
+    globalThis.transportxTrustDialogs = [];
+    dialog.showMessageBox = async (options) => {
+      globalThis.transportxTrustDialogs.push(options);
+      return { response: globalThis.transportxTrustDecision, checkboxChecked: false };
+    };
+  });
+  const moduleRpc = async (body) => (await (await fetch(new URL('/api/rpc', healthUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify(body) })).json());
+  try {
+    const denied = await moduleRpc({ type: 'install_module', sourcePath: trustSource, trusted: true });
+    if (denied.success !== false || fs.existsSync(trustMarker)) throw new Error('Native trust rejection did not block the fixture');
+    await app.evaluate(() => { globalThis.transportxTrustDecision = 1; });
+    const accepted = await moduleRpc({ type: 'install_module', sourcePath: trustSource });
+    if (!accepted.success || fs.existsSync(trustMarker)) throw new Error('Static installation executed the fixture or ignored native acceptance');
+    const dialogs = await app.evaluate(() => globalThis.transportxTrustDialogs);
+    if (dialogs.length !== 2 || dialogs.some((item) => item.defaultId !== 0 || item.cancelId !== 0 || !item.detail.includes('index.js') || !item.message.includes('local.desktop-trust-probe@1.0.0'))) throw new Error('Native trust disclosure or default choice is incorrect');
+    if (!(await moduleRpc({ type: 'uninstall_module', moduleId: 'local.desktop-trust-probe' })).success) throw new Error('Could not remove the test-owned module');
+    console.log('[desktop-smoke] native module trust IPC, rejection, acceptance and static install OK (test-owned decision stub)');
+  } finally {
+    await app.evaluate(({ dialog }) => { dialog.showMessageBox = globalThis.transportxTrustDialogOriginal; });
+  }
   // Phase 0 playback spike: the packaged renderer must accept the Video Input Spec codec.
   const codecSupport = await window.evaluate(() => {
     const probe = document.createElement('video');
@@ -80,7 +116,7 @@ try {
   const oversizedDataUrlPayload = 'A'.repeat(1_500_000);
   const pdfResponse = await fetch(`${new URL(window.url()).origin}/api/reports/pdf`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...protocolHeaders },
     body: JSON.stringify({ title: '桌面打包验证', html: `<article data-payload="${oversizedDataUrlPayload}"><h1>TransportX</h1><p>Desktop PDF bridge</p></article>` }),
   });
   const pdf = Buffer.from(await pdfResponse.arrayBuffer());
@@ -89,38 +125,23 @@ try {
   await app.evaluate(({ app }, value) => app.setPath('downloads', value), downloadsDir);
   const downloadedPdfPath = await window.evaluate(async (origin) => {
     const response = await fetch(`${origin}/api/reports/pdf/download`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' },
       body: JSON.stringify({ title: '桌面下载验证', html: '<article><h1>TransportX</h1><p>Desktop download test</p></article>' }),
     });
     const { url } = await response.json();
     return await window.transportxDesktop.download(url);
   }, new URL(window.url()).origin);
   if (path.relative(downloadsDir, downloadedPdfPath).startsWith('..') || path.isAbsolute(path.relative(downloadsDir, downloadedPdfPath)) || !fs.existsSync(downloadedPdfPath) || fs.readFileSync(downloadedPdfPath).subarray(0, 4).toString() !== '%PDF') throw new Error('Desktop PDF download was not saved');
-  // Exercise the same sandboxed native PDF embedding used by the Canvas reader.
+  // Prepare a test-owned PDF for the Canvas rendering check below.
   const previewUrl = await window.evaluate(async () => {
     const response = await fetch('/api/reports/pdf/download', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' },
       body: JSON.stringify({ title: 'Canvas page navigation', html: [1, 2, 3].map((page) => `<section style="${page < 3 ? 'break-after:page;' : ''}font-size:40px">CANVAS PDF PAGE ${page}</section>`).join('') }),
     });
     const { url } = await response.json();
     return url;
   });
   const inlinePdf = await (await fetch(new URL(previewUrl, window.url()))).arrayBuffer();
-  await window.route('**/canvas-smoke.pdf', (route) => route.fulfill({ contentType: 'application/pdf', body: Buffer.from(inlinePdf) }));
-  await window.evaluate(() => {
-    const frame = document.createElement('iframe');
-    frame.id = 'canvas-pdf-smoke'; frame.title = 'Canvas native PDF';
-    frame.style.cssText = 'position:fixed;inset:60px 20px 20px;width:90%;height:80%;z-index:9999;background:white';
-    frame.src = '/canvas-smoke.pdf#page=3&view=FitH';
-    document.body.append(frame);
-  });
-  await window.locator('#canvas-pdf-smoke').waitFor();
-  await window.waitForTimeout(1_000);
-  const documentValidationDir = path.resolve('.plans/canvas-document-viewer/validation');
-  fs.mkdirSync(documentValidationDir, { recursive: true });
-  await window.locator('#canvas-pdf-smoke').screenshot({ path: path.join(documentValidationDir, 'electron-pdf-page-3.png') });
-  await window.evaluate(() => document.querySelector('#canvas-pdf-smoke')?.remove());
-  console.log('[desktop-smoke] native PDF page-navigation screenshot captured');
   await window.getByRole('button', { name: '打开设置' }).click();
   const settings = window.getByTestId('settings-workspace');
   await settings.waitFor();
@@ -136,11 +157,60 @@ try {
   await settings.getByRole('button', { name: '模块', exact: true }).click();
   await settings.getByLabel('模块包路径').waitFor();
   await window.keyboard.press('Escape');
-  await window.getByRole('button', { name: '新建交通任务' }).first().click();
-  const newTask = window.getByRole('dialog', { name: '新建交通任务' });
-  await newTask.getByRole('button', { name: '添加模型' }).waitFor();
-  if (!await newTask.getByRole('button', { name: '创建任务' }).isDisabled()) throw new Error('New task must require an explicit model');
+  const newWorkspace = window.getByRole('button', { name: '打开工作区', exact: true }).first();
+  if (!await newWorkspace.isVisible()) await window.getByRole('button', { name: '展开或收起会话侧栏', exact: true }).click();
+  await newWorkspace.click();
+  const newTask = window.getByRole('dialog', { name: '打开工作区' });
+  await newTask.locator('.menu-select-trigger').click();
+  await newTask.getByRole('option', { name: '添加模型' }).waitFor();
   await window.keyboard.press('Escape');
+  if (!await newTask.getByRole('button', { name: '进入工作区' }).isDisabled()) throw new Error('New task must require an explicit model');
+  await window.keyboard.press('Escape');
+  if (!process.env.TRANSPORTX_SMOKE_DATA_ROOT) {
+    const added = await moduleRpc({ type: 'add_model', provider: 'desktop-smoke', modelId: 'smoke', name: 'Desktop test model', baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', apiKey: 'test-owned-desktop-key', contextWindow: 8192, maxTokens: 1024 });
+    if (!added.success) throw new Error(JSON.stringify(added));
+    const urls = []; window.on('request', (request) => urls.push(request.url()));
+    await newWorkspace.click();
+    await newTask.getByRole('button', { name: '创建新文件夹', exact: true }).click();
+    await newTask.locator('.workspace-advanced > summary').click();
+    await newTask.getByLabel('工作区名称', { exact: true }).fill('Desktop workspace');
+    await newTask.getByLabel('会话名称（可选）', { exact: true }).fill('Desktop durable conversation');
+    await newTask.getByRole('button', { name: '进入工作区', exact: true }).click();
+    await window.getByLabel('消息输入').waitFor();
+    const conversationId = await window.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
+    if ((await (await fetch(healthUrl)).json()).liveSessionCount !== 0) throw new Error('Desktop creation unexpectedly started Pi');
+    await window.reload();
+    await window.getByLabel('消息输入').waitFor();
+    if (await window.evaluate(() => localStorage.getItem('tau-active-conversation-id')) !== conversationId) throw new Error('Desktop reload lost the saved identity');
+    const activated = await fetch(new URL(`/api/conversations/${conversationId}/activate`, healthUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: '{}' });
+    if (!activated.ok) throw new Error(await activated.text());
+    const snapshot = await (await fetch(new URL(`/api/conversations/${conversationId}/snapshot`, healthUrl))).json();
+    if (!snapshot.runtime?.id || snapshot.runtime.id === conversationId) throw new Error('Desktop did not separate durable and live identities');
+    const closed = await fetch(new URL(`/api/conversations/${conversationId}/close`, healthUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', ...protocolHeaders }, body: JSON.stringify({ stopCurrent: true }) });
+    if (!closed.ok) throw new Error(await closed.text());
+    await window.getByLabel('消息输入').waitFor();
+    if (urls.some((value) => /^\/api\/(live-sessions|sessions|session-history|file|files)(?:\/|$)/.test(new URL(value).pathname))) throw new Error('Desktop requested an old business endpoint');
+    fs.mkdirSync('.plans/workspace-conversations', { recursive: true });
+    fs.writeFileSync('.plans/workspace-conversations/desktop-network.json', JSON.stringify({ oldBusinessRequests: 0, requests: urls.map((value) => new URL(value).pathname) }, null, 2));
+    console.log('[desktop-smoke] durable create/reload, explicit real Pi activation/close and new-endpoint trace passed');
+    fs.writeFileSync(path.join(snapshot.runtime.cwd, 'canvas-smoke.pdf'), Buffer.from(inlinePdf));
+    const dock = window.getByTestId('workspace-dock');
+    if (!await dock.isVisible()) await window.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
+    await dock.getByRole('button', { name: '刷新文件', exact: true }).click();
+    await dock.getByRole('button', { name: /canvas-smoke.pdf/ }).click();
+    const pdfView = window.locator('.canvas-panel:not([hidden]) .document-pdf');
+    await pdfView.getByLabel('PDF 页码', { exact: true }).fill('3');
+    await pdfView.locator('.page[data-page-number="3"] .textLayer').getByText('CANVAS PDF PAGE 3', { exact: true }).waitFor();
+    await window.waitForFunction(() => {
+      const canvas = document.querySelector('.canvas-panel:not([hidden]) .page[data-page-number="3"] canvas');
+      return canvas && canvas.width > 0 && canvas.height > 0;
+    });
+    if (await pdfView.locator('iframe, object, embed').count()) throw new Error('PDF preview uses a browser plugin');
+    const documentValidationDir = path.resolve('.plans/canvas-document-viewer/validation');
+    fs.mkdirSync(documentValidationDir, { recursive: true });
+    await pdfView.screenshot({ path: path.join(documentValidationDir, 'electron-pdf-page-3.png') });
+    console.log('[desktop-smoke] integrated PDF worker, rendered page, selectable text and page navigation passed');
+  }
   if (!fs.existsSync(path.join(dataRoot, 'scenario')) || !fs.existsSync(path.join(dataRoot, 'sessions')) || !fs.existsSync(path.join(dataRoot, 'modules'))) throw new Error(`TransportX data directories were not created under ${dataRoot}`);
   await app.close();
   let stopped = false;

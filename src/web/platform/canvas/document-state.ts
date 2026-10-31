@@ -14,7 +14,7 @@ export type DocumentView = DocumentRequest & {
   canvasTarget?: DocumentCanvasTarget;
   canvas?: CanvasPresentationV1;
 };
-export type DocumentPosition = { scrollTop: number; navigationId: number };
+export type DocumentPosition = { scrollTop: number; navigationId: number; pdfPage?: number; pdfScale?: string };
 
 const OFFICE_MIME_TYPES: Record<string, Extract<DocumentFormat, 'docx' | 'xlsx' | 'pptx'>> = {
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',

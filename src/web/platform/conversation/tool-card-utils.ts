@@ -1,6 +1,14 @@
 export const TOOL_LABELS: Record<string, string> = {
-  read: 'conversation.tool.read', bash: 'conversation.tool.command', shell: 'conversation.tool.command', command: 'conversation.tool.command', exec: 'conversation.tool.command', edit: 'conversation.tool.edit', write: 'conversation.tool.write', create: 'conversation.tool.create', apply_patch: 'conversation.tool.patch', tau_task: 'conversation.tool.taskStatus', tau_ask_user: 'conversation.tool.ask', publish_geodata: 'conversation.tool.publish', present_visualization: 'conversation.tool.mapDisplay', tau_resolve_citation: 'conversation.tool.citation',
+  read: 'conversation.tool.read', bash: 'conversation.tool.command', shell: 'conversation.tool.command', command: 'conversation.tool.command', exec: 'conversation.tool.command', edit: 'conversation.tool.edit', write: 'conversation.tool.write', create: 'conversation.tool.create', apply_patch: 'conversation.tool.patch', tau_ask_user: 'conversation.tool.ask', publish_geodata: 'conversation.tool.publish', present_visualization: 'conversation.tool.mapDisplay', tau_resolve_citation: 'conversation.tool.citation',
 };
+
+export function hostExecutionState(result: unknown): 'unknown' | 'cancelled' | null {
+  const details = result && typeof result === 'object' ? (result as { details?: { kind?: string; error?: { code?: string } } }).details : undefined;
+  if (!['tau-spatial-analysis-error', 'tau-cad-error', 'tau-citation-error', 'tau-module-package-error'].includes(details?.kind || '')) return null;
+  if (['cad_result_unknown', 'spatial_result_unknown', 'citation_result_unknown', 'module_install_unknown'].includes(details?.error?.code || '')) return 'unknown';
+  if (['cad_cancelled', 'spatial_cancelled', 'citation_cancelled'].includes(details?.error?.code || '')) return 'cancelled';
+  return null;
+}
 
 export function toolIconName(name: string) {
   const normalized = name.trim().toLowerCase().replaceAll('-', '_');

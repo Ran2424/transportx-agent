@@ -1,248 +1,158 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession } from '../../../public/app-types.js';
-import type { HistoryProject, HistorySession } from '../../../public/kernel/commands.js';
+import type { ConversationRecordV1 } from '../../../contracts/workspace.js';
+import type { ConversationView, WorkspaceView } from '../../../public/app-types.js';
 import { appKernel } from '../../app/composition-root';
 import { BrandMark } from '../../components/BrandMark';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
-import { relativeTime, sessionTitle } from '../../lib/formatting';
+import { relativeTime } from '../../lib/formatting';
 import { CapabilityPane } from '../capabilities/CapabilityPane';
-import i18n from '../../i18n';
 
-type SessionSidebarProps = {
-  open: boolean;
-  sessions: LiveSession[];
-  activeSessionId: string | null;
-  historyRevision: number;
-  onClose(): void;
-  onGoHome(): void;
-  onNewSession(): void;
-  onManageModules(): void;
-  onSelectLive(sessionId: string): void;
-  onSelectHistory(session: HistorySession, project: HistoryProject): void;
-  onDeleteLive(session: LiveSession): Promise<void>;
-  onDeleteHistory(session: HistorySession): Promise<void>;
-  onRenameLive(session: LiveSession, name: string): Promise<void>;
-  onRenameHistory(session: HistorySession, name: string): Promise<void>;
+type Props = {
+  open: boolean; dataReady: boolean; sessions: ConversationView[]; workspaces: WorkspaceView[]; activeSessionId: string | null; historyRevision: number;
+  onClose(): void; onGoHome(): void; onNewSession(workspace?: WorkspaceView): void; onManageModules(): void;
+  onSelect(conversationId: string): void;
+  onDelete(workspace: WorkspaceView, record?: ConversationRecordV1): void;
+  onDiagnostics(workspace?: WorkspaceView): void;
 };
+type Target = { workspace: WorkspaceView; record?: ConversationRecordV1 };
+function savedCollapsed() { try { return JSON.parse(window.localStorage.getItem('tau-collapsed-workspaces') || '[]') as string[]; } catch { return []; } }
+function conversationActivity(item: WorkspaceView['conversations'][number]) { return Date.parse(item.lastConversationAt || '') || (item.hasMessages === false ? Date.parse(item.record.createdAt) || 0 : 0); }
+function workspaceActivity(workspace: WorkspaceView) { return Math.max(0, ...workspace.conversations.map((item) => Date.parse(item.lastConversationAt || '') || 0)) || (workspace.conversations.every((item) => item.hasMessages === false) ? Date.parse(workspace.createdAt || '') || 0 : 0); }
 
-function historyTitle(session: HistorySession) {
-  return session.sessionName || session.name || session.firstMessage || i18n.t('sessions.emptyTask');
-}
-
-function isScenarioSession(cwd?: string) {
-  return /\/scenario(?:\/|$)/i.test((cwd || '').replace(/\\/g, '/'));
-}
-
-function timestampValue(value?: string) {
-  const timestamp = new Date(value || '').getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-type SidebarSession = {
-  key: string;
-  title: string;
-  timestamp?: string;
-  live?: LiveSession;
-  history?: HistorySession;
-  project?: HistoryProject;
-};
-
-function initialCapabilityCollapsed() {
-  if (typeof window === 'undefined') return false;
-  const saved = window.localStorage.getItem('tau-capability-collapsed');
-  if (saved !== null) return saved === '1';
-  return window.innerWidth <= 860;
-}
-
-function initialConversationCollapsed() {
-  return typeof window !== 'undefined' && window.localStorage.getItem('tau-conversation-collapsed') === '1';
-}
-
-export function SessionSidebar({
-  open,
-  sessions,
-  activeSessionId,
-  historyRevision,
-  onClose,
-  onGoHome,
-  onNewSession,
-  onManageModules,
-  onSelectLive,
-  onSelectHistory,
-  onDeleteLive,
-  onDeleteHistory,
-  onRenameLive,
-  onRenameHistory,
-}: SessionSidebarProps) {
+export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSessionId, historyRevision, onClose, onGoHome, onNewSession, onManageModules, onSelect, onDelete, onDiagnostics }: Props) {
   const { t } = useTranslation();
-  const kernel = appKernel;
-  const [projects, setProjects] = useState<HistoryProject[]>([]);
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [error, setError] = useState('');
-  const [capabilityCollapsed, setCapabilityCollapsed] = useState(initialCapabilityCollapsed);
-  const [conversationCollapsed, setConversationCollapsed] = useState(initialConversationCollapsed);
-  const [contextMenu, setContextMenu] = useState<{ item: SidebarSession; x: number; y: number } | null>(null);
-  const [renameTarget, setRenameTarget] = useState<SidebarSession | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [renameError, setRenameError] = useState('');
-  const [renaming, setRenaming] = useState(false);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const dismiss = (event?: PointerEvent) => {
-      if (event?.target instanceof Element && event.target.closest('.session-context-menu')) return;
-      setContextMenu(null);
-    };
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') dismiss(); };
-    window.addEventListener('pointerdown', dismiss);
-    window.addEventListener('keydown', onKeyDown);
-    return () => { window.removeEventListener('pointerdown', dismiss); window.removeEventListener('keydown', onKeyDown); };
-  }, [contextMenu]);
-
-  useEffect(() => {
-    let current = true;
-    setLoading(true);
-    setError('');
-    kernel.commands.session.listHistory()
-      .then((next) => { if (current) setProjects(next); })
-      .catch(() => { if (current) setError(t('sessions.loadFailed')); })
-      .finally(() => { if (current) setLoading(false); });
-    return () => { current = false; };
-  }, [historyRevision, kernel, refreshKey, t]);
-
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const scenarioSessions = useMemo(() => {
-    const liveSessions = sessions.filter((session) => isScenarioSession(session.cwd));
-    const liveFiles = new Set(liveSessions.map((session) => session.sessionFile).filter(Boolean));
-    const items: SidebarSession[] = liveSessions.map((session) => ({
-      key: `live:${session.id}`,
-      title: sessionTitle(session),
-      timestamp: session.lastConversationAt || session.createdAt,
-      live: session,
-    }));
-
-    projects
-      .filter((project) => isScenarioSession(project.path))
-      .forEach((project) => {
-        (project.sessions || []).forEach((session) => {
-          if (session.filePath && liveFiles.has(session.filePath)) return;
-          const lastConversationAt = session.lastConversationAt || session.timestamp || session.sessionTimestamp;
-          items.push({
-            key: `history:${session.filePath || `${project.path}:${historyTitle(session)}`}`,
-            title: historyTitle(session),
-            timestamp: lastConversationAt,
-            history: session,
-            project,
-          });
-        });
-      });
-
-    return items
-      .filter((item) => !normalizedQuery || item.title.toLocaleLowerCase().includes(normalizedQuery))
-      .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp));
-  }, [projects, sessions, normalizedQuery]);
-
-  const toggleCapability = () => {
-    setCapabilityCollapsed((value) => {
-      const next = !value;
-      window.localStorage.setItem('tau-capability-collapsed', next ? '1' : '0');
-      return next;
-    });
-  };
-
-  const toggleConversation = () => {
-    setConversationCollapsed((value) => {
-      const next = !value;
-      window.localStorage.setItem('tau-conversation-collapsed', next ? '1' : '0');
-      return next;
-    });
-  };
-
-  async function deleteConversation() {
-    const item = contextMenu?.item;
-    setContextMenu(null);
-    if (!item) return;
-    if (item.live) await onDeleteLive(item.live);
-    else if (item.history) await onDeleteHistory(item.history);
+  const [query, setQuery] = useState(''), [searchIds, setSearchIds] = useState<Set<string> | null>(null);
+  const [error, setError] = useState(''), [loading, setLoading] = useState(false);
+  const [collapsed, setCollapsed] = useState(savedCollapsed);
+  const [capabilityCollapsed, setCapabilityCollapsed] = useState(() => { const saved = window.localStorage.getItem('tau-capability-collapsed'); return saved === null ? window.innerWidth <= 860 : saved === '1'; });
+  const [conversationCollapsed, setConversationCollapsed] = useState(() => window.localStorage.getItem('tau-conversation-collapsed') === '1');
+  const [menu, setMenu] = useState<(Target & { x: number; y: number }) | null>(null);
+  const [rename, setRename] = useState<Target | null>(null), [renameValue, setRenameValue] = useState(''), [saving, setSaving] = useState(false);
+  const [move, setMove] = useState<Target | null>(null), [moveTarget, setMoveTarget] = useState(''), [moving, setMoving] = useState(false);
+  const regularWorkspaces = workspaces.filter((workspace) => workspace.kind !== 'standalone');
+  const standaloneRows = workspaces.filter((workspace) => workspace.kind === 'standalone').flatMap((workspace) => workspace.conversations.map((item) => ({ workspace, item })));
+  const moveDestinations = move ? [
+    ...(move.workspace.kind === 'standalone' ? [] : [{ value: 'standalone', label: t('workspaceFlow.moveOutOption') }]),
+    ...regularWorkspaces.filter((workspace) => workspace.availability === 'ready' && workspace.id !== move.workspace.id).map((workspace) => ({ value: workspace.id, label: workspace.name })),
+  ] : [];
+  async function refresh() { setLoading(true); try { await appKernel.commands.session.list(); setError(''); } catch (cause) { setError((cause as Error).message); } finally { setLoading(false); } }
+  function openMove(target: Target) {
+    const destinations = target.workspace.kind === 'standalone'
+      ? regularWorkspaces.filter((workspace) => workspace.availability === 'ready')
+      : [{ id: 'standalone' }, ...regularWorkspaces.filter((workspace) => workspace.availability === 'ready' && workspace.id !== target.workspace.id)];
+    setMove(target); setMoveTarget(destinations[0]?.id || ''); setError('');
   }
-
-  function beginRename() {
-    const item = contextMenu?.item;
-    setContextMenu(null);
-    if (!item) return;
-    setRenameTarget(item);
-    setRenameValue(item.title);
-    setRenameError('');
-  }
-
-  async function renameConversation() {
-    const item = renameTarget;
-    const name = renameValue.trim();
-    if (!item || !name || renaming) return;
-    setRenaming(true); setRenameError('');
+  async function submitMove() {
+    if (!move || !moveTarget) return;
+    setMoving(true); setError('');
+    const run = (stopCurrent: boolean) => appKernel.commands.session.moveConversation(move.record!.id, { target: moveTarget, ...(stopCurrent ? { stopCurrent: true } : {}) });
     try {
-      if (item.live) await onRenameLive(item.live, name);
-      else if (item.history) await onRenameHistory(item.history, name);
-      setRenameTarget(null);
-    } catch (cause) {
-      setRenameError((cause as Error).message || t('sessions.renameFailed'));
-    } finally {
-      setRenaming(false);
-    }
+      try { await run(false); }
+      catch (cause) {
+        if ((cause as { code?: string }).code !== 'workspace_busy' || !window.confirm(t('workspaceFlow.stopMove'))) throw cause;
+        await run(true);
+      }
+      setMove(null); await refresh();
+    } catch (cause) { setError((cause as Error).message); await refresh(); }
+    finally { setMoving(false); }
   }
-
-  return (
-    <>
-      <aside className={`session-sidebar${open ? ' is-open' : ''}`} aria-label={t('sessions.sidebar')} data-testid="session-sidebar">
-        <div className="sidebar-tools">
-          <button className="sidebar-home-mark" type="button" aria-label={t('sessions.goHome')} onClick={onGoHome}>
-            <BrandMark className="sidebar-home-icon" />
-          </button>
-          <label className="sidebar-search">
-            <Icon name="search" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('sessions.searchPlaceholder')} aria-label={t('sessions.search')} />
-          </label>
-          <button className="icon-button accent-button" type="button" aria-label={t('sessions.newTask')} onClick={onNewSession}><Icon name="plus" /></button>
-          <button className="icon-button" type="button" aria-label={t('sessions.refresh')} onClick={() => setRefreshKey((value) => value + 1)}><Icon name="refresh" /></button>
-          <button className="icon-button mobile-only" type="button" aria-label={t('sessions.closeSidebar')} onClick={onClose}><Icon name="close" /></button>
-        </div>
-
-        <div className="sidebar-split">
-          <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={toggleCapability} onManageModules={onManageModules} />
-          <section className={`conversation-section${conversationCollapsed ? ' is-collapsed' : ''}`} aria-label={t('sessions.conversationList')}>
-            <header className="sidebar-section-heading"><strong><Icon name="workspace" />{t('sessions.conversations')}</strong>{scenarioSessions.length ? <small>{scenarioSessions.length}</small> : null}<button className="sidebar-section-toggle" type="button" aria-expanded={!conversationCollapsed} aria-label={conversationCollapsed ? t('sessions.expandConversations') : t('sessions.collapseConversations')} onClick={toggleConversation}><Icon name="chevron" /></button></header>
-            {!conversationCollapsed ? <div className="session-scroll">
-              {loading ? <div className="session-empty">{t('sessions.loadingIndex')}</div> : null}
-              {error ? <div className="session-empty is-error">{error}</div> : null}
-              {!loading && !error && scenarioSessions.map((item) => (
-                <button
-                  className={`session-row${item.live?.id === activeSessionId ? ' is-active' : ''}`}
-                  type="button"
-                  key={item.key}
-                  onClick={() => item.live ? onSelectLive(item.live.id) : onSelectHistory(item.history!, item.project!)}
-                  onContextMenu={(event) => { event.preventDefault(); setContextMenu({ item, x: event.clientX, y: event.clientY }); }}
-                >
-                  <span className="session-row-main"><strong>{item.title}</strong><small>{relativeTime(item.timestamp)}</small></span>
-                  {item.live?.isStreaming ? <span className="session-row-meta"><i className="streaming-beacon" /></span> : null}
-                </button>
-              ))}
-              {!loading && !error && scenarioSessions.length === 0 ? <div className="session-empty">{t('sessions.emptyScenario')}</div> : null}
-            </div> : null}
-          </section>
-        </div>
-
-      </aside>
-      {contextMenu ? <div className="session-context-menu" role="menu" style={{ left: Math.min(contextMenu.x, window.innerWidth - 176), top: Math.min(contextMenu.y, window.innerHeight - 84) }}><button type="button" role="menuitem" onClick={beginRename}>{t('sessions.renameConversation')}</button><button type="button" role="menuitem" onClick={() => void deleteConversation()}>{t('sessions.deleteConversation')}</button></div> : null}
-      <Dialog open={!!renameTarget} onOpenChange={(next) => { if (!next && !renaming) setRenameTarget(null); }} title={t('sessions.renameConversation')} className="confirmation-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={renaming}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!renameValue.trim() || renaming} onClick={() => void renameConversation()}>{renaming ? t('common.saving') : t('common.save')}</Button></>}>
-        <label className="field-label"><span>{t('sessions.taskName')}</span><input value={renameValue} maxLength={120} autoFocus onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void renameConversation(); } }} /></label>
-        {renameError ? <p className="form-error">{renameError}</p> : null}
-      </Dialog>
-      <button className={`mobile-scrim${open ? ' is-visible' : ''}`} type="button" aria-label={t('sessions.toggleCloseSidebar')} onClick={onClose} />
-    </>
-  );
+  useEffect(() => { if (!dataReady) { setLoading(false); setError(''); return; } void refresh(); }, [historyRevision, dataReady]);
+  useEffect(() => {
+    if (!menu) return;
+    const dismiss = (event: PointerEvent) => { if (!(event.target instanceof Element && event.target.closest('.session-context-menu'))) setMenu(null); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(null); };
+    window.addEventListener('pointerdown', dismiss); window.addEventListener('keydown', escape);
+    return () => { window.removeEventListener('pointerdown', dismiss); window.removeEventListener('keydown', escape); };
+  }, [menu]);
+  useEffect(() => {
+    let current = true; setSearchIds(null);
+    if (query.trim().length < 2) return;
+    const timer = window.setTimeout(() => { void appKernel.commands.session.searchHistory(query).then((items) => { if (current) setSearchIds(new Set(items.map((item) => item.conversationId))); }).catch((cause) => { if (current) setError((cause as Error).message); }); }, 200);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [query]);
+  function toggleWorkspace(id: string) { const next = collapsed.includes(id) ? collapsed.filter((value) => value !== id) : [...collapsed, id]; setCollapsed(next); window.localStorage.setItem('tau-collapsed-workspaces', JSON.stringify(next)); }
+  async function saveName() {
+    if (!rename || rename.workspace.revision === null) return;
+    setSaving(true); setError('');
+    try {
+      if (rename.record) await appKernel.commands.session.rename({ conversationId: rename.record.id, name: renameValue.trim(), expectedRevision: rename.workspace.revision });
+      else await appKernel.commands.session.updateWorkspace(rename.workspace.id, { name: renameValue.trim(), expectedRevision: rename.workspace.revision });
+      setRename(null); await refresh();
+    } catch (cause) { setError((cause as Error).message); await appKernel.commands.session.list().catch(() => {}); }
+    finally { setSaving(false); }
+  }
+  return <>
+    <aside className={`session-sidebar${open ? ' is-open' : ''}`} aria-label={t('sessions.sidebar')} data-testid="session-sidebar">
+      <div className="sidebar-tools">
+        <button className="sidebar-home-mark" type="button" aria-label={t('sessions.goHome')} onClick={onGoHome}><BrandMark className="sidebar-home-icon" /></button>
+        <label className="sidebar-search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('sessions.searchPlaceholder')} aria-label={t('sessions.search')} /></label>
+        <button className="icon-button accent-button" type="button" aria-label={t('workspaceFlow.newAction')} disabled={!dataReady} onClick={() => onNewSession()}><Icon name="plus" /></button>
+        <button className="icon-button" type="button" aria-label={t('sessions.refresh')} disabled={!dataReady || loading} onClick={() => void refresh()}><Icon name="refresh" /></button>
+        <button className="icon-button mobile-only" type="button" aria-label={t('sessions.closeSidebar')} onClick={onClose}><Icon name="close" /></button>
+      </div>
+      <div className="sidebar-split">
+        <CapabilityPane collapsed={capabilityCollapsed} onToggleCollapsed={() => { setCapabilityCollapsed(!capabilityCollapsed); window.localStorage.setItem('tau-capability-collapsed', capabilityCollapsed ? '0' : '1'); }} onManageModules={onManageModules} />
+        <section className={`conversation-section${conversationCollapsed ? ' is-collapsed' : ''}`} aria-label={t('workspaceFlow.sidebar')}>
+          <header className="sidebar-section-heading"><strong><Icon name="workspace" />{t('workspaceFlow.workspaces')}</strong><small>{regularWorkspaces.length + (standaloneRows.length ? 1 : 0)}</small><button className="sidebar-section-toggle" type="button" aria-expanded={!conversationCollapsed} aria-label={conversationCollapsed ? t('sessions.expandConversations') : t('sessions.collapseConversations')} onClick={() => { setConversationCollapsed(!conversationCollapsed); window.localStorage.setItem('tau-conversation-collapsed', conversationCollapsed ? '0' : '1'); }}><Icon name="chevron" /></button></header>
+          {!conversationCollapsed && <div className="session-scroll">
+            {loading && !workspaces.length && <div className="session-empty">{t('sessions.loadingIndex')}</div>}
+            {error && <div className="session-empty is-error">{error}<button type="button" onClick={() => onDiagnostics()}>{t('workspaceFlow.migration')}</button></div>}
+            {[...regularWorkspaces].sort((left, right) => workspaceActivity(right) - workspaceActivity(left)).map((workspace) => {
+              const rows = [...workspace.conversations].sort((left, right) => conversationActivity(right) - conversationActivity(left)).filter(({ record }) => !query.trim() || record.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) || searchIds?.has(record.id));
+              if (query.trim() && !rows.length && !workspace.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return null;
+              const expanded = !!query.trim() || !collapsed.includes(workspace.id);
+              return <section className="workspace-group" key={workspace.id}>
+                <div className="workspace-group-heading">
+                  <button type="button" className="workspace-group-name" aria-expanded={expanded} onClick={() => toggleWorkspace(workspace.id)} title={workspace.path}><Icon name="chevron" /><strong>{workspace.name}</strong><small>{workspace.conversations.length}</small></button>
+                  {workspace.availability === 'ready' && <button className="icon-button" type="button" aria-label={t('workspaceFlow.newIn', { name: workspace.name })} onClick={() => onNewSession(workspace)}><Icon name="plus" /></button>}
+                  <button className="icon-button" type="button" aria-label={t('workspaceFlow.actions', { name: workspace.name })} onClick={(event) => setMenu({ workspace, x: event.clientX, y: event.clientY })}>⋯</button>
+                </div>
+                {workspace.availability !== 'ready' && <button type="button" className="session-empty is-error" onClick={() => workspace.availability === 'deleting' ? onDelete(workspace) : onDiagnostics(workspace)}>{workspace.availability === 'deleting' ? t('workspaceFlow.continueDelete') : `${workspace.availability === 'isolated' ? t('workspaceFlow.isolated') : t('workspaceFlow.needsMigration')} · ${t('workspaceFlow.inspectDetails')}`}</button>}
+                {expanded && rows.map(({ record, runtime, lastConversationAt, hasMessages }) => <button className={`session-row${record.id === activeSessionId ? ' is-active' : ''}`} type="button" key={record.id} aria-disabled={record.state === 'deleting'} onClick={() => record.state === 'deleting' ? onDelete(workspace, record) : onSelect(record.id)} onContextMenu={(event) => { event.preventDefault(); setMenu({ workspace, record, x: event.clientX, y: event.clientY }); }}>
+                  <span className="session-row-main"><strong>{record.name}</strong><small>{record.state === 'deleting' ? t('workspaceFlow.unfinishedDelete') : record.state === 'start-failed' ? t('workspaceFlow.startFailed') : lastConversationAt ? relativeTime(lastConversationAt) : t(hasMessages === false ? 'workspaceFlow.noMessages' : 'workspaceFlow.unknownActivity')}</small></span>
+                  {(sessions.find((view) => view.id === record.id)?.isStreaming ?? runtime?.isStreaming) && <span className="session-row-meta"><i className="streaming-beacon" /></span>}
+                </button>)}
+              </section>;
+            })}
+            {standaloneRows.length > 0 && (() => {
+              const rows = standaloneRows.filter(({ item }) => !query.trim() || item.record.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) || searchIds?.has(item.record.id)).sort((left, right) => conversationActivity(right.item) - conversationActivity(left.item));
+              if (query.trim() && !rows.length) return null;
+              const expanded = !!query.trim() || !collapsed.includes('standalone');
+              return <section className="workspace-group" key="standalone">
+                <div className="workspace-group-heading">
+                  <button type="button" className="workspace-group-name" aria-expanded={expanded} onClick={() => toggleWorkspace('standalone')} title={t('workspaceFlow.standalone')}><Icon name="chevron" /><strong>{t('workspaceFlow.standalone')}</strong><small>{standaloneRows.length}</small></button>
+                </div>
+                {expanded && rows.map(({ workspace, item }) => <button className={`session-row${item.record.id === activeSessionId ? ' is-active' : ''}`} type="button" key={item.record.id} aria-disabled={item.record.state === 'deleting'} onClick={() => item.record.state === 'deleting' ? onDelete(workspace, item.record) : onSelect(item.record.id)} onContextMenu={(event) => { event.preventDefault(); setMenu({ workspace, record: item.record, x: event.clientX, y: event.clientY }); }}>
+                  <span className="session-row-main"><strong>{item.record.name}</strong><small>{item.record.state === 'deleting' ? t('workspaceFlow.unfinishedDelete') : item.record.state === 'start-failed' ? t('workspaceFlow.startFailed') : item.lastConversationAt ? relativeTime(item.lastConversationAt) : t(item.hasMessages === false ? 'workspaceFlow.noMessages' : 'workspaceFlow.unknownActivity')}</small></span>
+                  {(sessions.find((view) => view.id === item.record.id)?.isStreaming ?? item.runtime?.isStreaming) && <span className="session-row-meta"><i className="streaming-beacon" /></span>}
+                </button>)}
+              </section>;
+            })()}
+            {!loading && !error && !regularWorkspaces.length && !standaloneRows.length && <div className="session-empty">{t('workspaceFlow.empty')}</div>}
+          </div>}
+        </section>
+      </div>
+    </aside>
+    {menu && <div className="session-context-menu" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 190), top: Math.min(menu.y, window.innerHeight - 200) }}>
+      {menu.workspace.availability === 'ready' && menu.record?.state !== 'deleting' && <button type="button" role="menuitem" onClick={() => { setRename(menu); setRenameValue(menu.record?.name || menu.workspace.name); setError(''); setMenu(null); }}>{t(menu.record ? 'workspaceFlow.renameConversation' : 'workspaceFlow.renameWorkspace')}</button>}
+      {menu.record && menu.record.state !== 'deleting' && menu.workspace.availability === 'ready' && <button type="button" role="menuitem" onClick={() => { openMove(menu); setMenu(null); }}>{t(menu.workspace.kind === 'standalone' ? 'workspaceFlow.moveIntoWorkspace' : 'workspaceFlow.moveConversation')}</button>}
+      <button type="button" role="menuitem" onClick={() => { onDiagnostics(menu.workspace); setMenu(null); }}>{t('workspaceFlow.diagnostics')}</button>
+      {(menu.workspace.kind !== 'standalone' && menu.workspace.directoryOwnership !== 'external' || menu.record) && (menu.workspace.availability === 'ready' || menu.workspace.availability === 'deleting' || menu.workspace.availability === 'isolated') && <button type="button" role="menuitem" onClick={() => { onDelete(menu.workspace, menu.record); setMenu(null); }}>{menu.workspace.availability === 'isolated' ? t('workspaceFlow.deleteIsolated') : menu.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')}</button>}
+    </div>}
+    <Dialog open={!!rename} onOpenChange={(next) => { if (!next && !saving) setRename(null); }} title={rename?.record ? t('workspaceFlow.renameConversation') : t('workspaceFlow.renameWorkspace')} className="confirmation-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={saving}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!renameValue.trim() || saving} onClick={() => void saveName()}>{t('common.save')}</Button></>}>
+      <label className="field-label"><span>{t('workspaceFlow.fieldName')}</span><input value={renameValue} maxLength={120} autoFocus onChange={(event) => setRenameValue(event.target.value)} /></label>{error && <p className="form-error">{error}</p>}
+    </Dialog>
+    <Dialog open={!!move} onOpenChange={(next) => { if (!next && !moving) setMove(null); }} title={move?.workspace.kind === 'standalone' ? t('workspaceFlow.moveIntoWorkspace') : t('workspaceFlow.moveConversation')} className="confirmation-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={moving}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!moveTarget || moving} onClick={() => void submitMove()}>{moving ? t('common.saving') : t('workspaceFlow.moveConfirm')}</Button></>}>
+      <div className="form-stack">
+        <p className="confirmation-dialog-copy">{move?.record?.name}</p>
+        {moveDestinations.length ? <label className="field-label"><span>{t('workspaceFlow.moveTarget')}</span><select value={moveTarget} onChange={(event) => setMoveTarget(event.target.value)}>{moveDestinations.map((destination) => <option key={destination.value} value={destination.value}>{destination.label}</option>)}</select></label> : <p className="confirmation-dialog-copy">{t('workspaceFlow.noMoveTarget')}</p>}
+        <p className="field-help">{t('workspaceFlow.moveHelp')}</p>
+        {error && <p className="form-error">{error}</p>}
+      </div>
+    </Dialog>
+    <button className={`mobile-scrim${open ? ' is-visible' : ''}`} type="button" aria-label={t('sessions.toggleCloseSidebar')} onClick={onClose} />
+  </>;
 }

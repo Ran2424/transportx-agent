@@ -2,7 +2,7 @@
  * Session snapshot contract shared between Server (Pi JSONL) and Browser Kernel.
  *
  * `SessionSnapshot` is the canonical shape stored in `LiveSessionManager` and
- * returned by `/api/sessions/*`. The Server owns file IO; this module keeps
+ * nested in `/api/conversations/:id/snapshot`. The Server owns file IO; this module keeps
  * the pure parsing + branch-walking logic so both sides use the same algorithm.
  *
  * Phase 3 split:

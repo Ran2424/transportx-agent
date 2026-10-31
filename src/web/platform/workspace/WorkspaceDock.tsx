@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LiveSession } from '../../../public/app-types.js';
+import type { ConversationView } from '../../../public/app-types.js';
 import type { WorkspaceFile } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
 import { useSessionState } from '../../app/store-hooks';
@@ -33,7 +33,7 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
 }
 
 /** The resource dock intentionally exposes only session files. */
-export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: LiveSession | null; onClose(): void }) {
+export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: ConversationView | null; onClose(): void }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const openDocument = useOpenDocument();
@@ -65,7 +65,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
 
   async function openFile(item: WorkspaceFile) {
     if (item.isDirectory) { await load(item.path); return; }
-    if (session && documentFormat(item.path)) { openDocument({ sessionId: session.id, title: item.name, path: item.path }); return; }
+    if (session && (documentFormat(item.path) || /\.dxf$/i.test(item.path))) { openDocument({ sessionId: session.id, title: item.name, path: item.path }); return; }
     if (filePresentation(item).preview) { setPreviewFiles((current) => [...current.filter((file) => file.path !== item.path), item]); return; }
     await navigator.clipboard?.writeText(item.path);
     setCopiedPath(item.path);
@@ -94,7 +94,7 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
     <div className="workspace-file-list" role="tabpanel" aria-label={t('workspace.taskFiles')}>
       {!session ? <WorkspaceEmpty title={t('workspace.noTask')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
     </div>
-    <footer className="workspace-dock-footer"><span>SESSION SCOPED</span><span>{session?.id.slice(-8) || 'NO SESSION'}</span></footer>
+    <footer className="workspace-dock-footer"><span>{t('workspace.sharedFiles')}</span><span>{session?.workspaceId?.slice(-8) || 'NO SESSION'}</span></footer>
     {session ? previewFiles.map((file, index) => <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />) : null}
   </aside>;
 }

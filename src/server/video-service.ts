@@ -231,7 +231,9 @@ export class VideoService {
     return { candidates };
   }
 
-  loadManifest(session: VideoSessionContext, resourceId: string): { manifest: VideoResourceManifestV1; videoPath: string } {
+  loadManifest(session: VideoSessionContext, resourceId: string, ancestors = new Set<string>()): { manifest: VideoResourceManifestV1; videoPath: string } {
+    if (ancestors.has(resourceId) || ancestors.size >= 16) throw Object.assign(new Error('Video resource parent chain is invalid.'), { status: 409 });
+    ancestors.add(resourceId);
     if (!/^video_[a-f0-9]{16}$/.test(resourceId)) throw new Error(`Invalid video resource id: ${resourceId}`);
     const root = resourcesRoot(session.cwd);
     const resourceDir = path.join(root, resourceId);
@@ -241,10 +243,19 @@ export class VideoService {
     const realDir = fs.realpathSync(resourceDir);
     const realManifest = fs.realpathSync(manifestPath);
     const realVideo = fs.realpathSync(videoPath);
-    if (!isWithin(realRoot, realDir) || !isWithin(realDir, realManifest) || !isWithin(realDir, realVideo)) throw new Error('Video resource path is not allowed');
+    if (!isWithin(realRoot, realDir) || !isWithin(realDir, realManifest) || !isWithin(realDir, realVideo)) throw Object.assign(new Error('Video resource path is not allowed'), { status: 403 });
     const parsed = parseVideoResourceManifestStructured(JSON.parse(fs.readFileSync(realManifest, 'utf8')));
-    if (!parsed.ok) throw new Error(`Video resource manifest is invalid: ${videoDiagnosticsMessage(parsed.diagnostics)}`);
-    if (parsed.value.resourceId !== resourceId) throw new Error('Video resource manifest id mismatch');
+    if (!parsed.ok) throw Object.assign(new Error(`Video resource manifest is invalid: ${videoDiagnosticsMessage(parsed.diagnostics)}`), { status: 409 });
+    if (parsed.value.resourceId !== resourceId) throw Object.assign(new Error('Video resource manifest id mismatch'), { status: 409 });
+    if (!session.resolvedSessionPlan?.modules.some((module) => module.id === 'com.transportx.video')) throw Object.assign(new Error('Video capability is not authorized by this conversation plan.'), { status: 403 });
+    if (parsed.value.kind === 'source') {
+      const record = this.catalog(session).find((item) => item.entry.videoId === parsed.value.videoId);
+      if (!record) throw Object.assign(new Error('Video source is not authorized by this conversation plan.'), { status: 403 });
+      if (record.assetId !== parsed.value.sourceAssetId || record.entry.file !== parsed.value.sourceRelativePath) throw Object.assign(new Error('Video source differs from this conversation asset.'), { status: 403 });
+      const root = fs.realpathSync(record.assetRoot), original = fs.realpathSync(path.resolve(root, record.entry.file));
+      if (!isWithin(root, original) || sha256File(original) !== parsed.value.sha256) throw Object.assign(new Error('The authorized video version is unavailable.'), { status: 403 });
+    } else this.loadManifest(session, parsed.value.parentResourceId!, ancestors);
+    if (sha256File(realVideo) !== parsed.value.sha256) throw Object.assign(new Error('Video resource content differs from its manifest.'), { status: 409 });
     return { manifest: parsed.value, videoPath: realVideo };
   }
 

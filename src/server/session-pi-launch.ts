@@ -2,13 +2,32 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 import { APP_PATHS, PI_COMMAND_ARGS, PI_AGENT_DIR, PYTHON_COMMAND, SESSIONS_DIR } from './config.js';
-import { piProcessEnv } from './pi-runtime.js';
+import { assertPiResourceBoundary, piProcessEnv } from './pi-runtime.js';
 import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import type { SessionService } from './session-service.js';
 import { projectAdapter } from './project-adapter.js';
+import { readModuleToolContracts } from './tool-contracts.js';
+import { CORE_TOOL_BINDINGS } from '../contracts/tool-interface.js';
+
+function sessionModules(plan: ResolvedSessionPlan) {
+  return plan.modules.map((module) => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(module.packageRoot, 'manifest.json'), 'utf8'));
+    const skills = module.entrypoints.filter((entry) => entry.kind === 'skill').map((entry) => entry.path);
+    return {
+      id: module.id, version: module.version, name: manifest.name, description: manifest.description || manifest.presentation?.locales?.[manifest.presentation?.defaultLocale || 'zh-CN']?.description || '',
+      searchText: [JSON.stringify(manifest.presentation || {}), ...skills.map((file) => {
+        const text = fs.readFileSync(file, 'utf8');
+        return text.startsWith('---') ? text.slice(0, text.indexOf('\n---', 3) + 4).slice(0, 16000) : '';
+      })].join(' '),
+      extensions: module.entrypoints.filter((entry) => entry.kind === 'extension').map((entry) => entry.path), skills,
+      contractFiles: (CORE_TOOL_BINDINGS[module.id] || []).filter((binding) => fs.existsSync(path.join(module.packageRoot, binding.file))).map((binding) => path.join(module.packageRoot, binding.file)),
+    };
+  });
+}
 
 export type SessionPiLaunchInput = {
+  signal?: AbortSignal;
   cwd: string;
   sessionId: string;
   sessionFile: string | null;
@@ -26,7 +45,9 @@ function assetDirectoryEnvironment(plan: ResolvedSessionPlan, kind: 'data' | 'kn
 
 export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
   const { resolvedSessionPlan: plan } = input;
-  const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--system-prompt', loadSystemPrompt()];
+  assertPiResourceBoundary(PI_COMMAND_ARGS);
+  for (const module of plan.modules) readModuleToolContracts(module.packageRoot, module.id);
+  const args = [...PI_COMMAND_ARGS, '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve', '--system-prompt', loadSystemPrompt()];
   for (const extensionPath of projectAdapter.piExtensions(APP_PATHS.appRoot)) {
     if (!fs.existsSync(extensionPath)) throw new Error(`Project extension not found: ${extensionPath}`);
     args.push('--extension', extensionPath);
@@ -51,6 +72,10 @@ export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
       PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
       TAU_DISABLED: '1',
       TAU_PYTHON_COMMAND: PYTHON_COMMAND,
+      TRANSPORTX_SESSION_MODULES_JSON: JSON.stringify(sessionModules(plan)),
+      TAU_MODULE_ENDPOINT: input.endpoints.moduleAuthoring,
+      TAU_MODULE_SESSION_ID: input.sessionId,
+      TAU_MODULE_TOKEN: input.serviceTokens.moduleAuthoring,
       TAU_CITATION_ENDPOINT: input.endpoints.citation,
       TAU_CITATION_SESSION_ID: input.sessionId,
       TAU_CITATION_TOKEN: input.serviceTokens.citation,
@@ -66,6 +91,9 @@ export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
       TAU_CANVAS_ENDPOINT: input.endpoints.canvas,
       TAU_CANVAS_SESSION_ID: input.sessionId,
       TAU_CANVAS_TOKEN: input.serviceTokens.canvas,
+      TAU_CAD_ENDPOINT: input.endpoints.cad,
+      TAU_CAD_SESSION_ID: input.sessionId,
+      TAU_CAD_TOKEN: input.serviceTokens.cad,
       MPLCONFIGDIR: path.join(APP_PATHS.cacheDir, 'matplotlib'),
       PYTHONPYCACHEPREFIX: path.join(APP_PATHS.cacheDir, 'python'),
       ...assetDirectoryEnvironment(plan, 'knowledge', 'TRANSPORTX_KNOWLEDGE_ASSETS_JSON'),

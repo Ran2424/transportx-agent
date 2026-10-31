@@ -1,3 +1,4 @@
+import { protocolHeaders } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,7 @@ export async function capabilitySmoke(page) {
   assert.equal(await center.locator('.capability-inspector').count(), 0);
   await center.getByRole('button', { name: '重置筛选', exact: true }).click();
   await cards.first().waitFor();
-  await cards.filter({ hasText: '空间分析' }).click();
+  await cards.filter({ has: page.getByText('空间分析', { exact: true }) }).click();
   await center.getByRole('heading', { name: '功能概览', exact: true }).waitFor();
   assert.equal(await center.getByRole('heading', { name: '当前任务', exact: true }).count(), 0);
   assert.equal(await center.getByRole('heading', { name: '如何使用', exact: true }).count(), 0);
@@ -30,7 +31,9 @@ export async function capabilitySmoke(page) {
   };
   await page.route('**/api/rpc', interceptOpen);
   try {
+    const opened = page.waitForResponse((response) => response.url().endsWith('/api/rpc') && response.request().postDataJSON()?.type === 'open_module_directory');
     await center.getByRole('button', { name: '在文件管理器中打开', exact: true }).click();
+    await opened;
     assert.deepEqual(openedModules, [{ type: 'open_module_directory', moduleId: 'com.transportx.spatial-analysis' }]);
     assert.equal(await page.getByRole('dialog').count(), 1, 'opening the native folder does not create an internal file browser');
   } finally { await page.unroute('**/api/rpc', interceptOpen); }
@@ -53,7 +56,7 @@ export async function capabilitySmoke(page) {
   await page.setViewportSize({ width: 1280, height: 900 });
   await center.getByRole('button', { name: '关闭', exact: true }).click();
 
-  const response = await page.request.post(new URL('/api/rpc', page.url()).href, { data: { type: 'get_platform_overview' } });
+  const response = await page.request.post(new URL('/api/rpc', page.url()).href, { headers: protocolHeaders, data: { type: 'get_platform_overview' } });
   const overview = (await response.json()).data;
   const baseModule = { id: 'smoke.presentation', name: '能力展示测试', version: '1.0.0', type: 'module', origin: 'installed', removable: true, enabled: true, extensions: 0, skills: 1,
     skillFiles: [{ entryPath: 'skills/SKILL.md', name: '站点接驳分析', description: '检查站点周边的数据与接驳设施。', content: '# 站点接驳分析\n\nTest source.' }],
@@ -72,6 +75,8 @@ export async function capabilitySmoke(page) {
     return route.continue();
   };
   await page.route('**/api/rpc', intercept);
+  const interceptOverview = (route) => route.fulfill({ json: failLoad ? { error: 'load boundary' } : overview, status: failLoad ? 503 : 200 });
+  await page.route('**/api/conversations/*/overview', interceptOverview);
   try {
     await opener.click();
     await search.fill('站点接驳分析');
@@ -100,6 +105,7 @@ export async function capabilitySmoke(page) {
     await page.getByRole('button', { name: /返回工作台/ }).click();
   } finally {
     await page.unroute('**/api/rpc', intercept);
+    await page.unroute('**/api/conversations/*/overview', interceptOverview);
   }
   // Returning from settings remounts the sidebar and reloads real platform state.
   console.log('Capability smoke: module summaries, native folder command, catalog search, resource state, controls, recovery, themes and mobile layout passed.');

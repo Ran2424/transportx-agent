@@ -40,7 +40,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     extensionUi: new ExtensionUiStore(),
   };
   const apply = createDispatcher(stores);
-  const normalizer = createEventNormalizer({ getActiveSessionId: () => stores.session.get().activeSessionId });
+  const normalizer = createEventNormalizer({ getActiveSessionId: () => stores.session.get().activeSessionId, resolveConversationId: (id) => stores.session.conversationForRuntime(id), projectRuntime: (runtime) => { const id = runtime.conversationId; if (!id) return undefined; return { ...stores.session.get().sessions.find((view) => view.id === id), ...runtime, id, liveSessionId: runtime.id }; } });
   const pendingStreamDeltas = new Map<string, Array<Extract<AppAction, { type: 'conversation/streamDelta' }>>>();
   const pendingToolArguments = new Map<string, Extract<AppAction, { type: 'tool/argumentsUpdated' }>>();
   let cancelScheduledFlush: (() => void) | null = null;
@@ -115,6 +115,8 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   const acceptSnapshot = (id: string, snapshot: SessionSnapshot) => {
     const owner = snapshotOwners.get(snapshot);
     if (disposed || closedSessions.has(id) || (owner && (owner.epoch !== connectionEpoch || owner.request !== snapshotRequests.get(id)))) return false;
+    const current = stores.session.get().sessions.find((view) => view.id === id);
+    if (current && snapshot.session && snapshot.session.liveSessionId !== current.liveSessionId) return false;
     if (snapshot.hostGeneration && hostGeneration && snapshot.hostGeneration !== hostGeneration) return false;
     if (owner?.overflow) { recoveryNeeded.add(id); return false; }
     if (snapshot.revision !== undefined && snapshot.revision < (revisions.get(id) ?? -1) && !owner) return false;
@@ -124,6 +126,8 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   const trackLifecycle = (action: AppAction) => {
     if (action.type === 'session/closed') closedSessions.add(action.sessionId);
     if (action.type === 'session/created') closedSessions.delete(action.session.id);
+    if (action.type === 'session/runtimeReceived' && action.runtime.conversationId) closedSessions.delete(action.runtime.conversationId);
+    if (action.type === 'session/runtimesReceived') for (const runtime of action.runtimes) if (runtime.conversationId) closedSessions.delete(runtime.conversationId);
     if (action.type === 'session/listReceived') {
       for (const previous of stores.session.get().sessions) if (!action.sessions.some((session) => session.id === previous.id)) closedSessions.add(previous.id);
       for (const session of action.sessions) closedSessions.delete(session.id);
@@ -137,7 +141,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     const { streamingBySession, compactingBySession } = stores.session.get();
     const { bySession } = stores.conversation.get();
     for (const [sessionId, conv] of Object.entries(bySession)) {
-      if (streamingBySession[sessionId] || compactingBySession[sessionId] || conv.live.queued.length === 0 || flushingSessions.has(sessionId) || failedQueuedPrompts.has(conv.live.queued[0])) continue;
+      if (!stores.session.liveSessionId(sessionId) || streamingBySession[sessionId] || compactingBySession[sessionId] || conv.live.queued.length === 0 || flushingSessions.has(sessionId) || failedQueuedPrompts.has(conv.live.queued[0])) continue;
       flushingSessions.add(sessionId);
       void (async () => {
         let attempted: object | null = null;
@@ -180,6 +184,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
   commands = createCommands({
     http: options.http,
     dispatch,
+    liveSessionId: (id) => stores.session.liveSessionId(id),
     isStreaming: (sessionId) => stores.session.isStreaming(sessionId),
     isCompacting: (sessionId) => stores.session.isCompacting(sessionId),
   });
@@ -210,7 +215,11 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
 
   const unsubscribe = transport.subscribe((signal) => {
     if (signal.kind === 'connected' || signal.kind === 'disconnected') connectionEpoch++;
-    const raw = signal.kind === 'message' ? signal.message as { type?: string; event?: { type?: string }; hostGeneration?: string; revision?: number; sessionId?: string; session?: { id?: string }; liveSessions?: { id: string }[] } : null;
+    const raw = signal.kind === 'message' ? signal.message as { type?: string; event?: { type?: string }; hostGeneration?: string; revision?: number; sessionId?: string; session?: { id?: string; conversationId?: string }; liveSessions?: { id: string; conversationId?: string }[] } : null;
+    if (raw?.type === 'live_session_updated' && raw.session?.id && !stores.session.get().runtimes[raw.session.id]) return;
+    const lifecycle = raw && ['state', 'live_session_created', 'live_session_updated', 'live_session_closed'].includes(raw.type || '');
+    const logicalId = raw?.sessionId ? stores.session.conversationForRuntime(raw.sessionId) : raw?.session?.conversationId;
+    if (raw?.sessionId && !lifecycle && !logicalId) return;
     if (raw?.hostGeneration) {
       if (raw.type === 'state') {
         if (hostGeneration !== raw.hostGeneration) {
@@ -220,7 +229,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
           connectionEpoch++;
         }
       } else if (hostGeneration && hostGeneration !== raw.hostGeneration) return;
-      const ids = raw.type === 'state' ? (raw.liveSessions ?? []).map((session) => session.id) : [raw.sessionId || raw.session?.id || ''];
+      const ids = raw.type === 'state' ? (raw.liveSessions ?? []).map((session) => session.conversationId || '') : [logicalId || ''];
       for (const id of ids) {
         if (!id || raw.revision === undefined) continue;
         if (raw.revision < (revisions.get(id) ?? -1)) return;
@@ -229,7 +238,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
     }
     for (const action of normalizer.normalizeSignal(signal)) {
       trackLifecycle(action);
-      const id = 'sessionId' in action ? action.sessionId : 'session' in action ? action.session.id : null;
+      const id = 'sessionId' in action ? action.sessionId : 'session' in action ? action.session.id : action.type === 'session/runtimeReceived' ? action.runtime.conversationId : null;
       const journal = id ? snapshotJournals.get(id) : undefined;
       if (journal && raw?.revision !== undefined) {
         journal.bytes += JSON.stringify(action).length;
@@ -242,7 +251,7 @@ export function createAppKernel(options: AppKernelOptions): AppKernel {
       apply(action);
     }
     if (raw?.type === 'state') refreshActiveSnapshot();
-    if (raw?.event?.type === 'agent_settled' && raw.sessionId && recoveryNeeded.has(raw.sessionId)) refreshActiveSnapshot();
+    if (raw?.event?.type === 'agent_settled' && raw.sessionId && recoveryNeeded.has(stores.session.conversationForRuntime(raw.sessionId) || '')) refreshActiveSnapshot();
     flushQueuedPrompts();
   });
 

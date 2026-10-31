@@ -11,6 +11,7 @@ export type SessionHistorySummary = {
   lastConversationAt: unknown;
   name: string | null;
   firstMessage: string | null;
+  hasMessages: boolean;
   cwd: string | null;
 };
 
@@ -71,33 +72,26 @@ export function readSessionHeaderCwd(filePath: string, normalizeSessionCwd: Norm
 export async function readSessionSummary(filePath: string, normalizeSessionCwd: NormalizeSessionCwd): Promise<SessionHistorySummary | null> {
   const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
   const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-  let header: JsonRecord | null = null, firstMessage: string | null = null, sessionName: string | null = null, lastConversationAt = '', userMessageCount = 0, lineCount = 0;
+  let header: JsonRecord | null = null, firstMessage: string | null = null, sessionName: string | null = null, lastConversationAt = '', hasMessages = false;
   for await (const line of lines) {
     if (!line.trim()) continue;
-    lineCount += 1;
     try {
       const entry = JSON.parse(line) as JsonRecord;
       if (entry.type === 'session') header = entry;
       else if (entry.type === 'session_info' && typeof entry.name === 'string') sessionName = entry.name;
       else if (entry.type === 'message' && (entry.message as JsonRecord | undefined)?.role === 'user') {
-        userMessageCount += 1;
         if (!firstMessage) firstMessage = titleFromMessageContent((entry.message as JsonRecord).content);
       }
       if (entry.type === 'message' && ['user', 'assistant'].includes(String((entry.message as JsonRecord | undefined)?.role || ''))) {
+        hasMessages = true;
         const timestamp = messageTimestamp(entry);
         if (timestamp > lastConversationAt) lastConversationAt = timestamp;
       }
     } catch {}
   }
   lines.close(); stream.destroy();
-  // Only skip sessions that never had any user message (i.e. pure setup /
-  // model_change / pi-web-bridge entries with no real exchange). The
-  // previous "(userMessageCount <= 1 && lineCount <= 8)" heuristic also
-  // filtered out single-turn conversations — the typical hello/back probe
-  // produces exactly 7 lines and 1 user message — which made them invisible
-  // to /api/sessions even though they are valid exchanges.
-  if (!header?.id || userMessageCount === 0) return null;
-  return { id: header.id, timestamp: header.timestamp || '', lastConversationAt: lastConversationAt || header.timestamp || '', name: sessionName, firstMessage, cwd: normalizeSessionCwd(header.cwd) };
+  if (!header?.id) return null;
+  return { id: header.id, timestamp: header.timestamp || '', lastConversationAt, name: sessionName, firstMessage, hasMessages, cwd: normalizeSessionCwd(header.cwd) };
 }
 
 export async function searchSessionFile(filePath: string, query: string, normalizeSessionCwd: NormalizeSessionCwd): Promise<SessionHistorySearchResult | null> {

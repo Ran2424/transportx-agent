@@ -1,11 +1,11 @@
-import type { LiveSession, ModelRecord } from '../../public/app-types.js';
+import type { ConversationView, ModelRecord } from '../../public/app-types.js';
 import i18n from '../i18n';
 
 export function basename(value = ''): string {
   return value.split(/[/\\]/).filter(Boolean).pop() || value || i18n.t('sessions.task');
 }
 
-export function sessionTitle(session: LiveSession): string {
+export function sessionTitle(session: ConversationView): string {
   return session.sessionName || basename(session.cwd || '') || i18n.t('sessions.newTaskFallback');
 }
 
@@ -35,7 +35,7 @@ export function formatModelOption(model: ModelRecord | string): { reference: str
   };
 }
 
-export function compactModelLabel(session: LiveSession): string {
+export function compactModelLabel(session: ConversationView): string {
   const raw = session.modelLabel || session.modelSpec || modelReference(session.model) || i18n.t('common.default');
   return String(raw).replace(/^.*\//, '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
 }

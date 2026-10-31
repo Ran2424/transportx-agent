@@ -17,6 +17,7 @@ export function hashCitationFile(file: string) {
 }
 export function locateCitationFile(session: CitationResourceSession, content: { scope: 'session' | 'asset'; assetId?: string; path: string }) {
   if (!citationRelativePath(content.path)) throw Object.assign(new Error('Citation path is invalid.'), { code: 'EACCES' });
+  if (content.scope === 'session' && /^\.tau\/(?:conversations(?:\/|$)|migrations(?:\/|$)|workspace(?:-owner)?\.json$|resolved-session-plan(?:\.v3)?\.json$|attachments\.json$|citations\.json$|attachment-message-refs\.json$|canvas-contexts\.json$|timing-metrics\.v1\.json$|geo-interactions(?:\/|$))/.test(content.path)) throw Object.assign(new Error('Private workspace metadata is not a citation source.'), { code: 'EACCES' });
   const asset = content.scope === 'asset' ? session.resolvedSessionPlan?.assets?.find((item) => item.id === content.assetId && (item.kind === 'knowledge' || item.kind === 'data')) : undefined;
   const rootPath = content.scope === 'session' ? session.cwd : asset?.path;
   if (!rootPath) throw Object.assign(new Error('Citation asset is not authorized in this session.'), { code: 'EACCES' });
@@ -48,7 +49,7 @@ export function citationResourceError(res: ServerResponse, error: unknown) {
   json(res, failure.status, { error: failure.error, code: failure.code });
 }
 export function handleCitationResourceRoute(req: IncomingMessage, res: ServerResponse, cleanPath: string, deps: { getSession(id: string): CitationResourceSession | null | undefined }) {
-  const match = cleanPath.match(/^\/api\/live-sessions\/([^/]+)\/citation-resources\/([^/]+)\/(content|preview)$/);
+  const match = cleanPath.match(/^\/api\/conversations\/([^/]+)\/citation-resources\/([^/]+)\/(content|preview)$/);
   if (!match || !['GET', 'HEAD'].includes(req.method || '')) return false;
   try {
     const session = deps.getSession(decodeURIComponent(match[1]));

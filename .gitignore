@@ -1,7 +1,10 @@
 node_modules/
+.env.local
 .npm-cache/
 .tsbuildinfo/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 
 # TypeScript build output
 /bin/
@@ -19,6 +22,7 @@ node_modules/
 /dist/
 /dist-desktop/
 /release/
+/release-cadfix/
 /desktop/build/
 /public/geo-runtime.css
 
@@ -62,6 +66,17 @@ test/baselines/screenshots/*.png
 !/docs/releases/
 !/docs/软件更新功能开发 PLAN.md
 !/docs/引用依据模块升级 PLAN.md
+!/docs/Tool 与插件架构优化 PLAN.md
+!/docs/Tool 与插件架构优化 P0 记录.md
+!/docs/Tool 与插件架构优化 P1 记录.md
+!/docs/Tool 与插件架构优化 P2 记录.md
+!/docs/Tool 与插件架构优化 P3 记录.md
+!/docs/Tool 与插件架构优化 P4 记录.md
+!/docs/交通仿真与优化能力升级 PLAN.md
+!/docs/Agent 主动启用工具与动态加载 PLAN.md
+!/docs/工作区与会话机制整改 PLAN.md
+!/docs/工作区与会话机制整改 P0 记录.md
+!/docs/工作台视觉优化 PLAN.md
 !/docs/guide/
 !/docs/images/
 /docs/images/*
@@ -84,3 +99,10 @@ test/baselines/screenshots/*.png
 
 # 用户本地可安装模块不写入仓库
 modules/installable/
+
+# CAD generated assets
+test/cad/out/
+src/web/public/workers/
+
+# PDF.js generated runtime assets
+src/web/public/pdfjs/

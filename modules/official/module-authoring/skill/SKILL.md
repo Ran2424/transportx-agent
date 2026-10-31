@@ -5,7 +5,15 @@ description: Create or extend a self-contained TransportX Module when a user ask
 
 # Create a TransportX Module
 
-Create one self-contained Module package. Ask only for missing choices that change the package: package name/ID, whether it needs executable Pi tools, and the source of any Data or Knowledge files.
+Turn the user's script, CLI program or API documentation into one task-local installable package. Infer a readable name and a non-reserved `local.*` ID from the stated purpose; ask only when missing business behavior, samples or credentials prevent a useful result. The user should not need to understand Manifest, Extension or Host internals.
+
+1. Read the supplied program/docs and expected input/output. Preserve the original program when a small adapter suffices; do not rewrite working business logic.
+2. Choose Pi-local execution for an ordinary script/CLI/API client. Use the public Pi `registerTool`, execute signal, `pi.exec` and package-relative files. Do not invent Host endpoints, copy platform tokens or claim platform permission from a Manifest.
+3. Check the actual dependency availability using `TAU_PYTHON_COMMAND` and the supplied runtime. Never run pip/npm into the bundled runtime without explicit user instruction. If a dependency or credential is missing, explain the exact requirement and mark execution unverified; still provide the package where useful.
+4. Keep API credentials in an explicitly configured environment variable or authorized external configuration. Never embed credentials in source, samples, ZIPs or logs. Do not inspect unrelated authentication files or print environment values.
+5. Generate the package under this task, run the supplied sample with expected-output comparison when dependencies permit, then call `tau_module_package` with action `inspect`. This is static validation and does not prove execution.
+6. If the user requested installation, call action `install` on that same relative package path. The existing desktop trust confirmation decides whether code may load. Generating or inspecting code is not installation authorization. If the user only requested a package, deliver it without installing.
+7. After successful installation, state that new tasks can use it. Do not promise that the current frozen task has acquired new tools. Updates need a version increment; existing tasks retain exact versions.
 
 ## Package contract
 
@@ -29,6 +37,7 @@ Use `manifestVersion: 2`. Set `type` to `module` for user content; use `capabili
 - Knowledge/Data Skills must own bounded discovery: startup exposes only asset ID, short purpose and browse/search entry. Provide paginated or explicitly truncated directories and candidates, then read a specific original span/result. Preserve resolvable original paths and typed locations; catalog matches are not evidence. Do not scan/load all bodies at startup or rely on Citation to index a library. Multi-source knowledge summaries must retain all original locations.
 - For **Knowledge**, preserve original PDFs, HTML, or documents under that domain asset folder. Include the retrieval index and page/section mapping required for precise citations. Add SHA-256 checksums and declare `integrityFile`. Multiple Knowledge assets are active together; runtime provides `TRANSPORTX_KNOWLEDGE_ASSETS_JSON` as an asset-ID-to-root-directory map. A Skill must select its own declared asset ID. Never replace the original source file with extracted Markdown or JSONL alone.
 - For an **Extension**, add it only when a deterministic Pi tool or structured bridge is necessary. Keep it narrow, validate inputs, and make it independent of local absolute paths.
+- Register every tool during Extension initialization. Runtime late registration is unsupported. In Workbench, tools are discovered/inspected/enabled by Module through `manage_capabilities`; do not reset active tools yourself. No domain/group/catalog declarations are needed. Enable only opens schemas; execution retains its normal input, authorization and cancellation rules. Installed or updated code is assembled in a new task.
 
 ## Manifest example
 
@@ -70,24 +79,10 @@ Use `manifestVersion: 2`. Set `type` to `module` for user content; use `capabili
   back it up first and re-validate the JSON afterwards; the host only enables modules that
   pass the `enabledModuleIds` allow-list filter.
 
-### Verification recipe
+### Verification and delivery
 
-Before telling the user to restart, reproduce the load path with the compiled modules:
+Use `tau_module_package({ action: "inspect", packagePath: "<task-relative-package>" })` for package validation. Do not require the user to run repository-internal Registry code or edit settings. Successful inspection confirms paths/manifest only. A real sample call verifies execution; report these separately.
 
-```js
-const { ModuleRegistry } = require('./bin/module-registry.js');
-const { ModuleInstaller } = require('./bin/module-installer.js');
-const { parseModuleManifestStructured } = require('./bin/contracts/module.js');
-```
+For an update, increment the module version and install through the same tool or capability management. Keep old versions for frozen tasks. Disable affects new tasks; close active users before uninstalling. Existing historical Tool Results remain readable even when code is unavailable.
 
-1. Parse the package manifest with `parseModuleManifestStructured` and require `ok: true`.
-2. Build `ModuleRegistry(platformVersion).load([...builtinSources, ...installer.sources()])`
-   with `enabled` derived from `settings.json`'s `tau.enabledModuleIds`.
-3. Assert `registry.errors.length === 0` and `registry.get(id)?.enabled === true`.
-
-If any check fails, fix the manifest or registration and re-run until the module is both
-parsed and enabled with zero errors.
-
-## Finish safely
-
-Validate that the manifest paths exist, no package path escapes its root, and every cited Knowledge record resolves to its original source. Keep the package in the user's chosen working directory; then tell the user to install that package through TransportX settings. Do not copy content directly into the application's installed Modules directory.
+Deliver the package directory (or ZIP when requested), short usage, sample result and any missing dependencies/configuration. Install only when requested, through the existing installer/trust decision. Never copy files directly into managed module storage.

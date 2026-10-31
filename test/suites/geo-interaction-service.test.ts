@@ -38,6 +38,7 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
       summary: { title: '道路' }, generatedAt: '2026-09-02T00:00:00.000Z',
     };
     const session: any = {
+      conversationId: 'conv_00000000-0000-4000-8000-000000000001',
       id: `session_${path.basename(cwd)}`,
       cwd,
       entries: [{ type: 'message', message: { role: 'toolResult', details: { visualization: envelope } } }],
@@ -46,6 +47,10 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
       activeGeoContextIds: [],
       envelope,
     };
+    if (!options.inline) {
+      const resourceFile = path.join(cwd, '.tau/geo-resources/geo_aaaaaaaaaaaaaaaaaaaaaaaa/manifest.json');
+      if (fs.existsSync(resourceFile)) session.entries.push({ type: 'message', message: { role: 'toolResult', toolName: 'publish_geodata', details: { kind: 'tau-geo-resource', resource: JSON.parse(fs.readFileSync(resourceFile, 'utf8')) } } });
+    }
     return session;
   }
 
@@ -72,7 +77,7 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     const session = makeSession(cwd, { geo: false });
     assert.equal(service.snapshot(session), undefined);
     assert.throws(() => service.createContext(session, geoContext()), /unavailable/);
-    assert.equal(fs.existsSync(path.join(cwd, '.tau', 'geo-interactions')), false);
+    assert.equal(fs.existsSync(path.join(cwd, '.tau', 'conversations', session.conversationId, 'geo-interactions')), false);
   }
 
   // Feature Contexts require verified resource ids and inspect only explicit or active ids
@@ -94,6 +99,14 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     assert.deepEqual(service.inspect(session, {}), { status: 'no_geo_context' });
     session.activeGeoContextIds = [created.context.contextId];
     assert.equal(service.inspect(session, {}).source, 'active_prompt');
+    const other = { ...session, conversationId: 'conv_00000000-0000-4000-8000-000000000002' };
+    assert.throws(() => service.inspect(other, { contextIds: [created.context.contextId] }), /not found|not available/i);
+    service.recordMessageRefs(session, { text: 'same text', timestamp: 123, contextIds: [created.context.contextId] });
+    assert.deepEqual(service.readMessageRefs(cwd, other.conversationId), []);
+    const refsFile = path.join(cwd, '.tau/conversations', session.conversationId, 'geo-interactions/message-refs.json');
+    fs.writeFileSync(refsFile, 'null');
+    assert.throws(() => service.recordMessageRefs(session, { text: 'same text', contextIds: [created.context.contextId] }), { code: 'metadata_corrupt' });
+    assert.equal(fs.readFileSync(refsFile, 'utf8'), 'null');
 
     const inline = makeSession(cwd, { inline: true });
     inline.id = session.id;
@@ -110,7 +123,7 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     const session = makeSession(cwd);
     session.entries = [];
     await assert.rejects(() => service.request(session, { visualizationId: 'missing', sceneRevision: 1, mode: 'viewport', prompt: '选择视野' }), /not available/);
-    assert.equal(fs.existsSync(path.join(cwd, '.tau', 'geo-interactions')), false);
+    assert.equal(fs.existsSync(path.join(cwd, '.tau', 'conversations', session.conversationId, 'geo-interactions')), false);
     const contextIds = [`geoctx_${'f'.repeat(16)}`];
     const entries = [{ message: { role: 'user', content: '相同文字', timestamp: 2 } }];
     assert.deepEqual(applyGeoMessageRefs(entries, [{ text: '相同文字', timestamp: 1, contextIds }]), entries);
@@ -160,6 +173,13 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     assert.equal(fs.existsSync(path.join(cwd, captured.relativePath)), true);
     assert.deepEqual(await pending, captured);
     assert.equal(service.snapshot(session)?.waitingScreenshotRequest, undefined);
+    const controller = new AbortController();
+    const cancelled = service.requestScreenshot(session, { visualizationId: 'traffic_map', sceneRevision: 1 }, controller.signal);
+    controller.abort();
+    assert.deepEqual(await cancelled, { status: 'failed', reason: 'agent_aborted' });
+    assert.equal(service.snapshot(session)?.waitingScreenshotRequest, undefined);
+    assert.equal(service.screenshotWaiters.size, 0);
+
   }
 
   // Geo requests submit once, persist terminal state and restore through snapshots
@@ -180,7 +200,16 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     assert.equal(service.snapshot(session)?.waitingRequest, undefined);
     const duplicate = await service.respond(session, request!.requestId, { status: 'submitted', context: geoContext('rectangle', 'd') });
     assert.equal(duplicate.response.contextId, submitted.response.contextId);
-    assert.equal(fs.existsSync(path.join(cwd, '.tau', 'geo-interactions', 'contexts', `geoctx_${'d'.repeat(16)}`)), false);
+    session.activeGeoContextIds = [submitted.response.contextId];
+    const controller = new AbortController();
+    const cancelled = service.request(session, { visualizationId: 'traffic_map', sceneRevision: 1, mode: 'viewport', prompt: '选择视野' }, controller.signal);
+    controller.abort();
+    assert.equal((await cancelled).response.status, 'aborted');
+    assert.equal(service.waitingRequest(session), null);
+    assert.equal(service.waiters.size, 0);
+    assert.deepEqual(session.activeGeoContextIds, [submitted.response.contextId], 'one cancelled request must not discard the current turn context');
+
+    assert.equal(fs.existsSync(path.join(cwd, '.tau', 'conversations', session.conversationId, 'geo-interactions', 'contexts', `geoctx_${'d'.repeat(16)}`)), false);
   }
 
   // cancel, abort and revision invalidation resolve their waiting tools distinctly
@@ -211,7 +240,7 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     const service = new GeoInteractionService();
     const session = makeSession(cwd);
     const requestId = `georeq_${'e'.repeat(16)}`;
-    const dir = path.join(cwd, '.tau', 'geo-interactions', 'requests', requestId);
+    const dir = path.join(cwd, '.tau', 'conversations', session.conversationId, 'geo-interactions', 'requests', requestId);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'request.json'), JSON.stringify({ version: 1, requestId, sessionId: session.id, visualizationId: 'traffic_map', sceneRevision: 1, mode: 'viewport', prompt: '选择', required: false, timeoutSeconds: 30, status: 'waiting', createdAt: '2026-09-02T00:00:00.000Z', expiresAt: '2026-09-02T00:00:30.000Z' }));
     assert.equal(service.waitingRequest(session), null);

@@ -69,7 +69,7 @@ if (fs.existsSync(sessionFile)) {
 function appendSessionEntry(entry) {
   // 追加到会话文件的条目总是接续当前链尾：忽略 fixture 自带的 id/parentId，
   // 否则 selectCurrentSessionBranch 回溯时会把链尾之前的条目误判为放弃分支。
-  const id = `fx${(++entryCounter).toString(16).padStart(6, '0')}`;
+  const id = crypto.randomUUID();
   const row = { ...entry, id, parentId: lastEntryId, timestamp: entry.timestamp || new Date().toISOString() };
   lastEntryId = id;
   fs.appendFileSync(sessionFile, JSON.stringify(row) + '\n');
@@ -111,7 +111,8 @@ function chunkText(text, chunks) {
 }
 
 function registerFakeCitations(envelope) {
-  const sessionId = process.env.TAU_CITATION_SESSION_ID;
+  const manifestFile = path.join(process.cwd(), '.tau/workspace.json');
+  const sessionId = fs.existsSync(manifestFile) ? JSON.parse(fs.readFileSync(manifestFile, 'utf8')).citationRegistryId : process.env.TAU_CITATION_SESSION_ID;
   if (!sessionId || !envelope) return;
   const registryPath = path.join(process.cwd(), '.tau', 'citations.json');
   const registry = fs.existsSync(registryPath)
@@ -128,7 +129,8 @@ function registerFakeCitations(envelope) {
 // ---- 回放引擎 ----
 let aborted = false;
 let replaying = null;
-let taskStateRevision = 0;
+const piQueue = { steering: [], followUp: [] };
+function emitQueueUpdate() { emit({ type: 'queue_update', steering: [...piQueue.steering], followUp: [...piQueue.followUp] }); }
 const pendingUi = new Map();
 
 async function runSteps(steps, promptMessage) {
@@ -173,6 +175,24 @@ async function runSteps(steps, promptMessage) {
 
     if (step.event) { emit(step.event); continue; }
 
+    if (step.waitForFile) {
+      while (!fs.existsSync(path.resolve(process.cwd(), step.waitForFile)) && !aborted) await sleep(20);
+      if (aborted) { finalizeAborted(); return; }
+      continue;
+    }
+
+    if (step.consumeQueue) {
+      const text = piQueue[step.consumeQueue].shift();
+      emitQueueUpdate();
+      if (text !== undefined) {
+        const message = { role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() };
+        emit({ type: 'message_start', message });
+        appendSessionEntry({ type: 'message', message });
+        emit({ type: 'message_end', message });
+      }
+      continue;
+    }
+
     if (step.entryAppended) {
       const entry = appendSessionEntry(step.entryAppended);
       emit({ type: 'entry_appended', entry });
@@ -195,15 +215,17 @@ async function runSteps(steps, promptMessage) {
       const directory = path.join(process.cwd(), '.tau', 'geo-resources', step.geoResource.resourceId);
       fs.mkdirSync(directory, { recursive: true });
       fs.writeFileSync(path.join(directory, 'data.geojson'), raw);
-      fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify({
+      const resource = {
         resourceId: step.geoResource.resourceId,
         title: step.geoResource.title || step.geoResource.resourceId,
         bytes: raw.byteLength,
         sha256: crypto.createHash('sha256').update(raw).digest('hex'),
         featureCount: step.geoResource.data.features.length,
         ...(step.geoResource.idField ? { idField: step.geoResource.idField } : {}),
-      }, null, 2));
-      continue;
+      };
+      fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify(resource, null, 2));
+      step.tool = { name: 'publish_geodata', args: {}, result: { content: [{ type: 'text', text: `Published ${resource.resourceId}` }], details: { kind: 'tau-geo-resource', resource } } };
+
     }
 
     if (step.streamText) {
@@ -312,6 +334,7 @@ async function runSteps(steps, promptMessage) {
       if (step.ui.notifyType) request.notifyType = step.ui.notifyType;
       if (step.ui.timeout) request.timeout = step.ui.timeout;
       emit(request);
+      if (!['select', 'confirm', 'input', 'editor'].includes(request.method)) continue;
       const response = await new Promise((resolve) => pendingUi.set(requestId, resolve));
       pendingUi.delete(requestId);
       diag(`ui ${requestId} responded: ${JSON.stringify(response)}`);
@@ -339,6 +362,8 @@ async function handleCommand(command) {
         model,
         thinkingLevel: 'high',
         isStreaming: !!replaying,
+        isCompacting: false,
+        pendingMessageCount: piQueue.steering.length + piQueue.followUp.length,
         autoCompactionEnabled: true,
         contextUsage: { tokens: { input: 800, output: 120 } },
       });
@@ -349,7 +374,7 @@ async function handleCommand(command) {
     case 'get_commands':
       respond(id, true, {
         commands: [
-          { name: 'task', description: '切换任务模式', source: 'extension' },
+          { name: 'transportx_reload_models', source: 'extension' },
           { name: 'shanghai-traffic-data-assets', description: '查询受治理的上海体育馆交通数据', source: 'skill', path: path.join(REPO_ROOT, 'modules', 'official', 'traffic-data', 'skill', 'SKILL.md'), location: 'project' },
         ],
       });
@@ -358,13 +383,17 @@ async function handleCommand(command) {
       respond(id, true, { entries: [] });
       return;
     case 'set_model': {
-      const spec = String(command.model || modelSpec);
+      const spec = String(command.provider && command.modelId ? `${command.provider}/${command.modelId}` : command.model || modelSpec);
       const [provider, rest] = spec.split('/', 2);
       model.provider = rest ? provider : model.provider;
       model.id = (rest || provider).split(':')[0];
       respond(id, true, { model });
       return;
     }
+    case 'set_session_name':
+      appendSessionEntry({ type: 'session_info', name: command.name });
+      respond(id, true, {});
+      return;
     case 'set_thinking_level':
     case 'cycle_thinking_level':
     case 'cycle_model':
@@ -388,22 +417,19 @@ async function handleCommand(command) {
     case 'prompt':
     case 'steer':
     case 'follow_up': {
-      respond(id, true, {});
       const message = String(command.message || '');
-      const taskModeMatch = message.trim().match(/^\/task (on|off) --silent$/);
-      if (taskModeMatch) {
-        const entry = appendSessionEntry({
-          type: 'custom',
-          customType: 'pi-task-mode',
-          data: {
-            schemaVersion: 1,
-            revision: ++taskStateRevision,
-            enabled: taskModeMatch[1] === 'on',
-          },
-        });
-        emit({ type: 'entry_appended', entry });
+      if (command.type !== 'prompt' && replaying) {
+        piQueue[command.type === 'steer' ? 'steering' : 'followUp'].push(message);
+        emitQueueUpdate();
+        respond(id, true, {});
         return;
       }
+      if (message.startsWith('/transportx_reload_models ')) {
+        emit({ type: 'extension_ui_request', id: crypto.randomUUID(), method: 'setStatus', statusKey: 'transportx:model-sync', statusText: JSON.stringify({ token: message.split(' ')[1] }) });
+        respond(id, true, {});
+        return;
+      }
+      respond(id, true, {});
       const rule = (scenario.rules || []).find((candidate) => message.includes(candidate.match));
       const steps = (rule || scenario.fallback || { steps: [{ streamText: { text: '（fake-pi 默认回复）', chunks: 4 } }] }).steps;
       replaying = runSteps(steps, message).finally(() => { replaying = null; });

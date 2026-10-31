@@ -1,11 +1,13 @@
-import type { LiveSession } from '../../../../public/app-types.js';
+import type { ConversationView } from '../../../../public/app-types.js';
 import type { CanvasView } from '../canvas-state.ts';
 import type { DocumentPosition } from '../document-state.ts';
 
 export type CanvasRendererProps = {
-  session: LiveSession;
+  session: ConversationView;
   view: CanvasView;
   active: boolean;
   documentPositions: Map<string, DocumentPosition>;
+  onAttachContext?(): Promise<void>;
+  contextStatus?: 'idle' | 'busy' | 'done' | 'error';
   onContextChange(target?: unknown, selection?: unknown): void;
 };

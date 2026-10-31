@@ -10,7 +10,7 @@
 TRANSPORTX_PYTHON_RUNTIME_DIR="<python-runtime-directory>" npm run desktop:pack -- --publish=never
 ```
 
-Linux 不要求 macOS/Windows 代码签名凭据；构建流程仍检查主机与 Python 架构、Python 版本及必需模块。基础包不含可选 Video Capability 的 ffmpeg。
+Linux 不要求 macOS/Windows 代码签名凭据；构建流程仍检查主机与 Python 架构、Python 版本及必需模块。基础包不含可选 Video Capability 的 ffmpeg，当前也不提供受支持的 Linux Video Capability 安装包；Native Runtime 安装契约仍限于 macOS/Windows。
 
 GitHub Actions 的 `Linux x64 test package` 工作流使用 Ubuntu 22.04 x64，下载固定版本和 SHA-256 的可重定位 Python，执行类型检查、桌面契约测试，并安装实际 DEB 后运行桌面冒烟和卸载检查。工作流产出安装包、SHA-256 和 `linux-x64-validation.txt`，其中记录 CI 系统和包内 x64 ELF 引用的运行库版本，并阻止高于 glibc 2.28 的 x64 依赖通过检查。依赖可能附带其他架构的预编译文件；它们不参与 x64 的运行库基线判断。这些检查不等于 UOS 实机验收。
 

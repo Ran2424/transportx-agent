@@ -1,0 +1,80 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.geo",
+  "toolId": "geo.request",
+  "piName": "request_geo_input",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "geo.request-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "visualizationId",
+      "sceneRevision",
+      "mode",
+      "prompt"
+    ],
+    "properties": {
+      "visualizationId": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "sceneRevision": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "mode": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "feature"
+          },
+          {
+            "type": "string",
+            "const": "point"
+          },
+          {
+            "type": "string",
+            "const": "rectangle"
+          },
+          {
+            "type": "string",
+            "const": "viewport"
+          }
+        ]
+      },
+      "prompt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "required": {
+        "type": "boolean"
+      },
+      "targetLayerIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+        },
+        "minItems": 1,
+        "maxItems": 32
+      },
+      "maxFeatures": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000
+      },
+      "timeoutSeconds": {
+        "type": "integer",
+        "minimum": 30,
+        "maximum": 1800
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-geo-interaction",
+    "version": 1,
+    "detailsKind": "tau-geo-interaction"
+  }
+}

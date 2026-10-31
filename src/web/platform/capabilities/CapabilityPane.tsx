@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PlatformOverview } from '../../../public/kernel/commands.js';
 import { appKernel } from '../../app/composition-root';
+import { useSessionState } from '../../app/store-hooks';
 import { projectUi } from '../../app/project-ui';
 import { Icon, type IconName } from '../../components/icons';
 import { Button } from '../../components/ui/button';
@@ -18,6 +19,9 @@ export function CapabilityPane({ collapsed, onToggleCollapsed, onManageModules }
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage || i18n.language;
   const kernel = appKernel;
+  const sessionState = useSessionState();
+  const sessionId = sessionState.activeSessionId || undefined;
+  const observation = sessionState.sessions.find((session) => session.id === sessionId)?.capabilities?.toolObservation;
   const [centerOpen, setCenterOpen] = useState(false);
   const [category, setCategory] = useState<CapabilityCategory | 'all'>('all');
   const [query, setQuery] = useState('');
@@ -35,12 +39,12 @@ export function CapabilityPane({ collapsed, onToggleCollapsed, onManageModules }
     let current = true;
     setLoading(true);
     setError('');
-    kernel.commands.platform.getOverview()
+    kernel.commands.platform.getOverview(sessionId)
       .then((value) => { if (current) setOverview(value); })
       .catch(() => { if (current) setError(t('capability.loadFailed')); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [kernel, reloadKey, t]);
+  }, [kernel, reloadKey, sessionId, observation?.revision, observation?.live, centerOpen, t]);
 
   const categories = CAPABILITY_CATEGORIES.map((item) => ({ ...item, label: t(item.labelKey), icon: categoryIcons[item.id] }));
   const allItems = useMemo(() => overview ? projectCapabilities(overview, t, language) : [], [overview, t, language]);
@@ -70,6 +74,7 @@ export function CapabilityPane({ collapsed, onToggleCollapsed, onManageModules }
     setActionError('');
     try {
       setOverview(await kernel.commands.platform.setModuleEnabled(item.moduleId, enabled));
+      setReloadKey((value) => value + 1);
     } catch (cause) {
       setActionError((cause as { message?: string })?.message || t('capability.updateFailed'));
     } finally {
@@ -131,6 +136,7 @@ export function CapabilityPane({ collapsed, onToggleCollapsed, onManageModules }
           <div className="capability-detail-heading"><span className="capability-kind">{t(`capability.category.${selectedItem.category}`)}</span>{status(selectedItem)}</div>
           <h2>{selectedItem.name}</h2>
           <section className="capability-detail-section"><h3>{t('capability.functionOverview')}</h3><p className="capability-description">{selectedItem.description}</p>{selectedItem.features.length ? <ul className="capability-feature-list">{selectedItem.features.map((feature) => <li key={feature}>{feature}</li>)}</ul> : null}</section>
+          {selectedItem.toolDiagnostics?.length ? <section className="capability-detail-section capability-tool-diagnostics"><h3>{t('capability.tools.title')}</h3><p>{t('capability.tools.scope')}</p><ul>{selectedItem.toolDiagnostics.map((tool) => <li key={tool.toolId} data-tool-state={tool.state}><code>{tool.piName}</code><strong>{t(`capability.tools.state.${tool.state}`)}</strong><span>{t(`capability.tools.reason.${tool.reason}`)}</span>{tool.observedRevision !== undefined ? <small>{t('capability.tools.observation', { revision: tool.observedRevision, time: tool.observedAt ? new Date(tool.observedAt).toLocaleString(language) : t('capability.tools.timeUnknown') })}</small> : null}</li>)}</ul></section> : null}
           {projectUi.nativeActions ? <button type="button" className="capability-files-link" disabled={openingDirectory} onClick={() => void openModuleDirectory(selectedItem)}><Icon name="workspace" />{t('capability.openDirectory')}<Icon name="open" /></button> : null}
           {selectedItem.moduleAssets.length ? <section className="capability-detail-section"><h3>{t('capability.resources')}</h3><ul className="capability-resource-list">{selectedItem.moduleAssets.map((asset) => <li key={asset.id}><strong title={asset.id}>{asset.name}</strong><span data-state={!asset.configured || asset.error ? 'attention' : 'ready'}>{asset.error ? t('capability.resourceError') : asset.configured ? t('capability.configured') : t('capability.pendingConfig')}</span>{asset.error ? <p>{asset.error}</p> : null}</li>)}</ul></section> : null}
           {overview?.errors.filter((item) => item.moduleId === selectedItem.moduleId).map((item, index) => <p className="inline-error" role="alert" key={index}>{item.message}</p>)}

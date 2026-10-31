@@ -1,3 +1,4 @@
+import { browserJson, createBrowserConversation, protocolHeaders } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -5,39 +6,31 @@ import path from 'node:path';
 export async function workspaceCleanupSmoke(page) {
   for (const deleteWorkspace of [true, false]) {
     const name = deleteWorkspace ? '工作目录清理验收' : '保留工作目录验收';
-    const session = await page.evaluate(async (name) => {
-      const response = await fetch('/api/live-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, model: 'kimi-coding/k2p7' }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      return result.session;
-    }, name);
+    const session = await createBrowserConversation(page, page.url().replace(/\/$/, ''), name);
     fs.writeFileSync(path.toNamespacedPath(path.join(session.cwd, 'nul')), 'bash error output');
-    await page.reload({ waitUntil: 'networkidle' });
-    const historyFile = await page.evaluate(async (id) => {
-      const { sessions } = await (await fetch('/api/live-sessions')).json();
-      return sessions.find((session) => session.id === id)?.sessionFile;
-    }, session.id);
-    assert.equal(typeof historyFile, 'string');
+    const snapshot = await browserJson(page, page.url().replace(/\/$/, ''), `/api/conversations/${session.id}/snapshot`);
+    const historyFile = snapshot.snapshot.sessionFile;
     assert.ok(fs.existsSync(historyFile));
-    await page.locator('.session-row', { hasText: name }).click({ button: 'right' });
-    await page.getByRole('menuitem', { name: '删除对话', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: '删除对话', exact: true });
-    const checkbox = dialog.getByRole('checkbox', { name: '同时删除工作目录及其中的全部文件' });
-    assert.equal(await checkbox.isChecked(), true, 'workspace cleanup is selected by default');
-    await dialog.getByText(`将删除：${session.cwd}`, { exact: true }).waitFor();
+    await page.reload({ waitUntil: 'networkidle' });
+    const title = deleteWorkspace ? '删除整个工作区' : '删除此会话';
+    if (deleteWorkspace) await page.getByRole('button', { name: `${name} 工作区操作`, exact: true }).click();
+    else await page.locator('.session-row').filter({ hasText: name }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: title, exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: title, exact: true });
+    assert.equal(await dialog.getByRole('checkbox').isChecked(), false, 'execution stop requires an explicit choice');
+    await dialog.getByText(session.cwd, { exact: true }).waitFor();
     assert.equal(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth), true, 'the workspace path fits the dialog');
-    if (!deleteWorkspace) await checkbox.uncheck();
-    const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/sessions/delete') && response.request().method() === 'POST');
-    await dialog.getByRole('button', { name: '删除对话', exact: true }).click();
+    const route = deleteWorkspace ? `/api/workspaces/${session.workspaceId}/delete` : `/api/conversations/${session.id}`;
+    const responsePromise = page.waitForResponse((response) => response.url().endsWith(route) && response.request().method() === (deleteWorkspace ? 'POST' : 'DELETE'));
+    await dialog.getByRole('button', { name: '确认删除', exact: true }).click();
     const response = await responsePromise;
     assert.equal(response.status(), 200, await response.text());
-    assert.equal(response.request().postDataJSON().deleteWorkspace, deleteWorkspace);
     assert.equal(fs.existsSync(session.cwd), !deleteWorkspace);
     assert.equal(fs.existsSync(historyFile), false);
   }
   console.log('Workspace cleanup smoke: default deletion, reserved-name files, explicit retention and history cleanup passed.');
   const logs = await page.evaluate(async () => {
-    const result = await (await fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'get_platform_overview' }) })).json();
+    const result = await (await fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' }, body: JSON.stringify({ type: 'get_platform_overview' }) })).json();
     return result.data.storage.logs;
   });
   assert.ok(fs.existsSync(path.join(logs, 'runtime.jsonl')), 'runtime diagnostics survive workspace cleanup');

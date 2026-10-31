@@ -10,7 +10,6 @@
     "capabilities": {
       "piVersion": "0.80.10",
       "bridgeVersion": 1,
-      "taskEnvelopeVersion": 1,
       "geoSceneVersion": "1.0",
       "extensionUiKinds": ["select", "confirm", "input", "editor", "notify"],
       "eventReplay": true
@@ -39,7 +38,6 @@
     "capabilities": {
       "piVersion": "0.80.10",
       "bridgeVersion": 2,
-      "taskEnvelopeVersion": 1,
       "geoSceneVersion": "1.0",
       "extensionUiKinds": ["select", "confirm", "input", "editor", "notify"],
       "eventReplay": true

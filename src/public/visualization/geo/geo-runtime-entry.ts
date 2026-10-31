@@ -434,7 +434,7 @@ class MapLibreGeoRuntime {
   private sourceData(source: GeoSource, sessionId: string | null): maplibregl.GeoJSONSourceSpecification['data'] {
     return source.type === 'geojson-inline'
       ? source.data as maplibregl.GeoJSONSourceSpecification['data']
-      : `/api/live-sessions/${encodeURIComponent(sessionId!)}/geo-resources/${encodeURIComponent(source.resourceId)}/data`;
+      : `/api/conversations/${encodeURIComponent(sessionId!)}/geo-resources/${encodeURIComponent(source.resourceId)}/data`;
   }
 
   private addLayers(scene: GeoSceneSnapshot) {

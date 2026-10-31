@@ -2,11 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { Type } from 'typebox';
+import type { TSchema } from 'typebox';
+import { parseToolInterfaceContract } from '../../../../../src/contracts/tool-interface.ts';
+import { HostCallError, postHostOperation } from '../../../../shared/host-client.ts';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import {
+  GEO_REQUEST_DEFAULT_TIMEOUT_SECONDS,
   isFeatureCollection,
   parseGeoScene,
+  parseGeoClientContextStructured,
+  parseGeoInteractionResponseStructured,
   parseVisualizationEnvelope,
   formatSceneValidationErrors,
   type GeoJsonFeatureCollection,
@@ -44,91 +49,6 @@ function canvasPresentation(envelope: VisualizationEnvelope) {
     generatedAt: envelope.generatedAt,
   };
 }
-
-const BasemapIdSchema = Type.Union(
-  [Type.Literal('default'), Type.Literal('light'), Type.Literal('dark'), Type.Literal('none')],
-  { description: 'Use light/default for most maps, dark for high-contrast dashboards, and none only for an intentionally blank or offline canvas' },
-);
-
-const PopupSchema = Type.Object({
-  fields: Type.Array(Type.Object({
-    field: Type.String(), label: Type.String(),
-    format: Type.Optional(Type.Union([Type.Literal('text'), Type.Literal('integer'), Type.Literal('decimal'), Type.Literal('percent')])),
-  })),
-});
-
-const VisualizationIdSchema = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' });
-const ItemIdSchema = Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,63}$' });
-const ResourceIdSchema = Type.String({ pattern: '^geo_[a-f0-9]{16,64}$' });
-const LayerTypeSchema = Type.Union([Type.Literal('circle'), Type.Literal('line'), Type.Literal('fill'), Type.Literal('label'), Type.Literal('chart')]);
-const ChartTypeSchema = Type.Union([Type.Literal('pie'), Type.Literal('donut'), Type.Literal('bar')]);
-const ChartCollisionModeSchema = Type.Union([Type.Literal('show-all'), Type.Literal('hide-overlap')]);
-const ChannelSchema = Type.Union([
-  Type.Literal('color'), Type.Literal('radius'), Type.Literal('opacity'), Type.Literal('strokeColor'),
-  Type.Literal('strokeWidth'), Type.Literal('width'), Type.Literal('dash'), Type.Literal('outlineColor'),
-  Type.Literal('textField'), Type.Literal('size'), Type.Literal('haloColor'), Type.Literal('haloWidth'),
-]);
-// Pi runs TypeBox Value.Convert before execute(). Keep Number before String so
-// numeric style values are not coerced to strings by the first union branch.
-const VisualOutputSchema = Type.Union([Type.Number(), Type.String(), Type.Array(Type.Number())]);
-const NumericStopSchema = Type.Object({ value: Type.Number(), output: Type.Union([Type.Number(), Type.String()]) });
-const CategorySchema = Type.Object({
-  value: Type.Union([Type.Number(), Type.String(), Type.Boolean()]),
-  output: Type.Union([Type.Number(), Type.String()]),
-});
-
-const PresentVisualizationCommandSchema = Type.Object({
-  command: Type.Union([
-    Type.Literal('create_map'), Type.Literal('add_layer'), Type.Literal('set_constant'), Type.Literal('set_step'),
-    Type.Literal('set_continuous'), Type.Literal('set_categorical'), Type.Literal('set_popup'),
-    Type.Literal('set_controls'), Type.Literal('set_metadata'), Type.Literal('set_camera'),
-    Type.Literal('fit_bounds'), Type.Literal('set_visibility'), Type.Literal('remove_layer'),
-    Type.Literal('reorder_layers'), Type.Literal('select'), Type.Literal('clear'), Type.Literal('show_map'),
-    Type.Literal('add_chart_layer'), Type.Literal('set_chart'),
-  ], { description: 'One atomic scene mutation: create/add content, change one style or popup/control/metadata concern, focus/select, or clear. create_map starts a visualizationId; later commands update it.' }),
-  visualizationId: VisualizationIdSchema,
-  title: Type.Optional(Type.String({ description: 'Map title for create_map, or replacement title for set_metadata.' })),
-  description: Type.Optional(Type.String()),
-  warnings: Type.Optional(Type.Array(Type.String())),
-  resourceId: Type.Optional(ResourceIdSchema),
-  sourceId: Type.Optional(ItemIdSchema),
-  idField: Type.Optional(Type.String()),
-  layerId: Type.Optional(ItemIdSchema),
-  layerType: Type.Optional(LayerTypeSchema),
-  layerTitle: Type.Optional(Type.String()),
-  color: Type.Optional(Type.String()),
-  textField: Type.Optional(Type.String()),
-  basemap: Type.Optional(BasemapIdSchema),
-  visible: Type.Optional(Type.Boolean()),
-  channel: Type.Optional(ChannelSchema),
-  value: Type.Optional(VisualOutputSchema),
-  field: Type.Optional(Type.String()),
-  defaultValue: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-  stops: Type.Optional(Type.Array(NumericStopSchema, { minItems: 2, maxItems: 16 })),
-  categories: Type.Optional(Type.Array(CategorySchema, { minItems: 1, maxItems: 64 })),
-  fallback: Type.Optional(Type.Union([Type.Number(), Type.String()])),
-  fields: Type.Optional(PopupSchema.properties.fields),
-  navigation: Type.Optional(Type.Boolean()),
-  fullscreen: Type.Optional(Type.Boolean()),
-  layerSwitcher: Type.Optional(Type.Boolean()),
-  legend: Type.Optional(Type.Boolean()),
-  fitToData: Type.Optional(Type.Boolean()),
-  center: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2 })),
-  zoom: Type.Optional(Type.Number()),
-  bounds: Type.Optional(Type.Array(Type.Number(), { minItems: 4, maxItems: 4 })),
-  padding: Type.Optional(Type.Number()),
-  layerIds: Type.Optional(Type.Array(ItemIdSchema, { minItems: 1, maxItems: 64 })),
-  featureIds: Type.Optional(Type.Array(Type.Union([Type.Number(), Type.String()]), { maxItems: 5000 })),
-  chartType: Type.Optional(ChartTypeSchema),
-  valueFields: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
-  colors: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
-  size: Type.Optional(Type.Number({ minimum: 16, maximum: 96 })),
-  collisionMode: Type.Optional(ChartCollisionModeSchema),
-  maxValue: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
-  trackColor: Type.Optional(Type.String()),
-  labelField: Type.Optional(Type.String()),
-  labelFormat: Type.Optional(Type.Union([Type.Literal('text'), Type.Literal('integer'), Type.Literal('decimal'), Type.Literal('percent')])),
-}, { description: 'Flat command parameters. Do not pass a scene JSON object.' });
 
 const COMMAND_REQUIRED_PARAMS: Record<string, string[]> = {
   create_map: ['title', 'resourceId', 'layerType'],
@@ -323,27 +243,16 @@ function assertSceneResources(cwd: string, scene: GeoSceneSnapshot) {
   }
 }
 
-const InspectMapContextSchema = Type.Object({
-  contextIds: Type.Optional(Type.Array(Type.String({ pattern: '^geoctx_[A-Za-z0-9_-]{12,64}$' }), { maxItems: 8 })),
-  maxFeatures: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
-  includeProvenance: Type.Optional(Type.Boolean()),
-}, { additionalProperties: false });
-
-const RequestGeoInputSchema = Type.Object({
-  visualizationId: VisualizationIdSchema,
-  sceneRevision: Type.Integer({ minimum: 1 }),
-  mode: Type.Union([Type.Literal('feature'), Type.Literal('point'), Type.Literal('rectangle'), Type.Literal('viewport')]),
-  prompt: Type.String({ minLength: 1, maxLength: 500 }),
-  required: Type.Optional(Type.Boolean()),
-  targetLayerIds: Type.Optional(Type.Array(ItemIdSchema, { minItems: 1, maxItems: 32 })),
-  maxFeatures: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
-  timeoutSeconds: Type.Optional(Type.Integer({ minimum: 30, maximum: 1800 })),
-}, { additionalProperties: false });
-
-const CaptureGeoScreenshotSchema = Type.Object({
-  visualizationId: VisualizationIdSchema,
-  sceneRevision: Type.Integer({ minimum: 1 }),
-}, { additionalProperties: false });
+function contract(file: string) {
+  const value = parseToolInterfaceContract(JSON.parse(fs.readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8')));
+  if (!value) throw new Error('Invalid Geo Tool Contract');
+  return value;
+}
+const presentContract = contract('tool-contract.json');
+const publishContract = contract('publish-contract.json');
+const inspectContract = contract('inspect-contract.json');
+const requestContract = contract('request-contract.json');
+const screenshotContract = contract('screenshot-contract.json');
 
 function geoHost() {
   const endpoint = process.env.TAU_GEO_ENDPOINT;
@@ -353,17 +262,17 @@ function geoHost() {
   return { endpoint, sessionId, token };
 }
 
-async function geoHostCall(pathname: 'inspect' | 'request' | 'screenshot', body: Record<string, unknown>, signal?: AbortSignal) {
-  const host = geoHost();
-  const response = await fetch(`${host.endpoint}/api/internal/geo/${pathname}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, sessionId: host.sessionId, token: host.token }),
-    signal,
-  });
-  const payload = await response.json() as { error?: string; result?: unknown };
-  if (!response.ok) throw new Error(payload.error || 'Geo Agent Host request failed.');
-  return payload.result;
+async function geoHostCall(pathname: 'inspect' | 'request' | 'screenshot', body: Record<string, unknown>, toolCallId: string, signal?: AbortSignal) {
+  const definition = pathname === 'inspect' ? inspectContract : pathname === 'request' ? requestContract : screenshotContract;
+  const timeoutMs = pathname === 'request' ? (Number(body.timeoutSeconds) || GEO_REQUEST_DEFAULT_TIMEOUT_SECONDS) * 1000 + 10_000 : pathname === 'screenshot' ? 70_000 : 30_000;
+  const payload = await postHostOperation<{ result: unknown }>(geoHost(), `/api/internal/geo/${pathname}`, body, { toolCallId, contractVersion: definition.contractVersion, signal, timeoutMs });
+  const result = payload.result as Record<string, unknown> | undefined;
+  const valid = result && (pathname === 'inspect'
+    ? result.status === 'no_geo_context' || result.status === 'ok' && Array.isArray(result.contexts) && result.contexts.every((item) => parseGeoClientContextStructured(item).ok)
+    : pathname === 'request' ? parseGeoInteractionResponseStructured(result.response).ok
+    : result.status === 'failed' && typeof result.reason === 'string' || result.status === 'captured' && typeof result.relativePath === 'string' && typeof result.bytes === 'number');
+  if (!valid) throw new HostCallError('Geo result was not confirmed. Inspect the existing map, request or screenshot before repeating this operation.', 'host_result_unknown', 'response_decode', 'unknown');
+  return result;
 }
 
 export default function geoVisualizationExtension(pi: ExtensionAPI) {
@@ -392,9 +301,9 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
     description: 'Read explicitly named Geo Contexts, or the Geo Contexts attached to the current user turn. Never falls back to a previous turn.',
     promptSnippet: 'Inspect verified map selections attached to the current user turn',
     promptGuidelines: ['Call this first when the current user message carries Geo Context IDs. Treat multiple Contexts separately; do not infer a union or intersection.'],
-    parameters: InspectMapContextSchema,
-    async execute(_toolCallId, params, signal) {
-      const result = await geoHostCall('inspect', params as Record<string, unknown>, signal);
+    parameters: inspectContract.input as unknown as TSchema,
+    async execute(toolCallId, params, signal) {
+      const result = await geoHostCall('inspect', params as Record<string, unknown>, toolCallId, signal);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], details: { kind: 'tau-geo-context' as const, result } };
     },
   });
@@ -405,9 +314,9 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
     description: 'Ask the user to select verified features, a WGS84 point, an axis-aligned rectangle, or the current viewport on an existing map, then wait for the terminal response.',
     promptSnippet: 'Request one structured map input when the user must identify a location, feature, or extent',
     promptGuidelines: ['Handle submitted, cancelled, expired, aborted, and invalidated as distinct outcomes. Do not ask the user to type coordinates that can be selected on the map.'],
-    parameters: RequestGeoInputSchema,
-    async execute(_toolCallId, params, signal) {
-      const result = await geoHostCall('request', params as Record<string, unknown>, signal);
+    parameters: requestContract.input as unknown as TSchema,
+    async execute(toolCallId, params, signal) {
+      const result = await geoHostCall('request', params as Record<string, unknown>, toolCallId, signal);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], details: { kind: 'tau-geo-interaction' as const, result } };
     },
   });
@@ -422,9 +331,9 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       'Use the returned relativePath directly in Markdown image syntax when the screenshot belongs in a report.',
       'A screenshot is a presentation artifact, not a substitute for querying or validating the underlying GIS data.',
     ],
-    parameters: CaptureGeoScreenshotSchema,
-    async execute(_toolCallId, params, signal) {
-      const result = await geoHostCall('screenshot', params as Record<string, unknown>, signal) as { status?: string; reason?: string; relativePath?: string };
+    parameters: screenshotContract.input as unknown as TSchema,
+    async execute(toolCallId, params, signal) {
+      const result = await geoHostCall('screenshot', params as Record<string, unknown>, toolCallId, signal) as { status?: string; reason?: string; relativePath?: string };
       if (result.status !== 'captured' || !result.relativePath) throw new Error(`Map screenshot failed: ${result.reason || 'unknown error'}`);
       return {
         content: [{ type: 'text' as const, text: `Saved map screenshot to ${result.relativePath}. Use ![map description](${result.relativePath}) to include it in Markdown reports.` }],
@@ -442,12 +351,10 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       'Read the geo-visualization-explanation skill before first using publish_geodata or present_visualization for a map task.',
       'Write generated GeoJSON in the current task working directory, then call publish_geodata with a path relative to that directory.',
     ],
-    parameters: Type.Object({
-      path: Type.String({ description: 'GeoJSON path inside the current task directory' }),
-      title: Type.Optional(Type.String()),
-      idField: Type.Optional(Type.String()),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    parameters: publishContract.input as unknown as TSchema,
+    async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
+      if (signal?.aborted) throw new Error('Geo publication cancelled before execution.');
+      const params = rawParams as { path: string; title?: string; idField?: string };
       const requested = path.resolve(ctx.cwd, params.path.replace(/^@/, ''));
       const resolved = fs.realpathSync(requested);
       const root = fs.realpathSync(ctx.cwd);
@@ -481,7 +388,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       fs.writeFileSync(manifestPath, JSON.stringify(resource, null, 2));
       return {
         content: [{ type: 'text', text: `Published ${data.features.length} GeoJSON features as ${resourceId}.` }],
-        details: { resource },
+        details: { kind: 'tau-geo-resource', resource },
       };
     },
   });
@@ -503,8 +410,9 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       'Use remove_layer to remove one layer while retaining its data source, and use reorder_layers with the complete current layerId list to control draw order from bottom to top. Do not omit an existing layer from reorder_layers; it must be a complete permutation.',
       'Reuse the current visualizationId when the user asks to add or overlay content. If the same styling target fails validation twice, preserve the last successful map and stop retrying that command.',
     ],
-    parameters: PresentVisualizationCommandSchema,
-    async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
+    parameters: presentContract.input as unknown as TSchema,
+    async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
+      if (signal?.aborted) throw new Error('Geo presentation cancelled before execution.');
       const params = rawParams as PresentCommand;
       assertCommandParams(params);
       const current = scenes.get(params.visualizationId);
@@ -515,7 +423,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
           visualizationId: params.visualizationId, revision: current!.revision,
           operation: 'focus', scene, summary: { title: scene.metadata.title }, generatedAt: new Date().toISOString(),
         };
-        return { content: [{ type: 'text' as const, text: `Showing map "${scene.metadata.title}" in Canvas.` }], details: { visualization: envelope, canvas: canvasPresentation(envelope) } };
+        return { content: [{ type: 'text' as const, text: `Showing map "${scene.metadata.title}" in Canvas.` }], details: { kind: 'tau-geo-visualization', visualization: envelope, canvas: canvasPresentation(envelope) } };
       }
       let scene: GeoSceneSnapshot | null = null;
       let operation: VisualizationEnvelope['operation'] = 'patch';
@@ -672,7 +580,7 @@ export default function geoVisualizationExtension(pi: ExtensionAPI) {
       scenes.set(params.visualizationId, { revision, scene });
       return {
         content: [{ type: 'text', text: scene ? `Map "${title}" updated (${scene.layers.length} layers, revision ${revision}).` : `Map "${title}" cleared.` }],
-        details: { visualization: envelope, canvas: canvasPresentation(envelope) },
+        details: { kind: 'tau-geo-visualization', visualization: envelope, canvas: canvasPresentation(envelope) },
       };
     },
   });

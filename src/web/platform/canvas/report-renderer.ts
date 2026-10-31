@@ -14,7 +14,7 @@ function reportImageUrl(url: string, view: DocumentView, citations: CitationEnve
   const source = citations?.sources.find((item) => item.content.kind === 'file' && item.content.mimeType.startsWith('image/') && item.content.scope === (view.source?.content.kind === 'file' ? view.source.content.scope : 'session') && item.content.assetId === (view.source?.content.kind === 'file' ? view.source.content.assetId : undefined) && documentPath(item.content.path, '') === documentPath(path, ''));
   if (source) return `${window.location.origin}${citationResourceUrl(view.sessionId, source.sourceVersionId)}?sha256=${source.content.sha256}`;
   if (view.source?.content.kind === 'file' && view.source.content.scope === 'asset') return '';
-  return `${window.location.origin}/api/file/preview?${new URLSearchParams({ sessionId: view.sessionId, path })}`;
+  return `${window.location.origin}/api/conversations/${encodeURIComponent(view.sessionId)}/files/preview?${new URLSearchParams({ path })}`;
 }
 
 export async function renderReport(source: string, view: DocumentView, citations: CitationEnvelope | null) {

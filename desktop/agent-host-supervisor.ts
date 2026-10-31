@@ -13,7 +13,8 @@ import type { UtilityProcess } from 'electron';
 import type { DesktopPaths } from './app-paths.js';
 
 export const AGENT_HOST_READY_TYPE = 'transportx-agent-host-ready';
-export const AGENT_HOST_PROTOCOL_VERSION = 1;
+export const { AGENT_HOST_PROTOCOL_VERSION } = require('../bin/contracts/host-protocol.js');
+const { compatibleHostHealth } = require('../bin/contracts/host-protocol.js');
 
 export type AgentHostReady = {
   type: typeof AGENT_HOST_READY_TYPE;
@@ -30,6 +31,7 @@ type SupervisorOptions = {
   updatePreparationTimeoutMs?: number;
   onUnexpectedExit?: (message: string) => void;
   renderPdf?: (title: string, html: string) => Promise<Buffer>;
+  confirmModuleTrust?: (request: { id: string; version: string; name: string; packageRoot: string; entrypoints: string[]; dependencies: string[] }) => Promise<boolean>;
 };
 
 export function parseReadyLine(line: string): AgentHostReady | null {
@@ -66,7 +68,7 @@ function checkHealth(url: string, timeoutMs = 3000): Promise<void> {
       response.on('end', () => {
         try {
           const health = JSON.parse(body);
-          if (response.statusCode !== 200 || health.status !== 'ok' || health.protocolVersion !== AGENT_HOST_PROTOCOL_VERSION) throw new Error('invalid health response');
+          if (response.statusCode !== 200 || health.status !== 'ok' || !compatibleHostHealth(health)) throw new Error('Agent Host is incompatible; upgrade or restart it.');
           resolve();
         } catch (error) { reject(error); }
       });
@@ -158,6 +160,18 @@ export class AgentHostSupervisor {
         });
     this.child = child;
     child.on('message', (message: unknown) => {
+      const trust = message as { type?: string; id?: string; request?: Parameters<NonNullable<SupervisorOptions['confirmModuleTrust']>>[0] };
+      if (trust?.type === 'transportx-module-trust-request' && trust.id) {
+        const request = trust.request;
+        if (!request || typeof request.id !== 'string' || typeof request.version !== 'string' || typeof request.name !== 'string' || typeof request.packageRoot !== 'string' || !Array.isArray(request.entrypoints) || !Array.isArray(request.dependencies)) return;
+        const respond = (accepted: boolean) => {
+          if (this.child !== child || this.stopping) return;
+          try { sendMessage(child, { type: 'transportx-module-trust-response', id: trust.id, accepted }); } catch {}
+        };
+        if (!this.options.confirmModuleTrust) respond(false);
+        else this.options.confirmModuleTrust(request).then(respond, () => respond(false));
+        return;
+      }
       const request = message as { type?: string; id?: string; title?: string; html?: string };
       if (request?.type !== 'transportx-pdf-request' || !request.id || typeof request.title !== 'string' || typeof request.html !== 'string') return;
       if (!this.options.renderPdf || Buffer.byteLength(request.html, 'utf8') > 50 * 1024 * 1024) {

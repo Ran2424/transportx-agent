@@ -10,6 +10,15 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
   const builder = require('js-yaml').load(fs.readFileSync(path.join(process.cwd(), 'desktop/electron-builder.common.yml'), 'utf8'));
   assert.ok(builder.asarUnpack.includes('modules/**'), 'native module browsing needs complete physical module folders');
   assert.ok(builder.asarUnpack.includes('src/contracts/**'), 'unpacked extensions retain their relative contract imports');
+  assert.ok(builder.asarUnpack.includes('dist/module-extensions/**'), 'remapped bundled entries must also be unpacked by their source path');
+  const { CORE_TOOL_BINDINGS, coreModulePath } = require('../../bin/contracts/tool-interface.js');
+  for (const moduleId of Object.keys(CORE_TOOL_BINDINGS)) {
+    const directory = coreModulePath(moduleId);
+    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'modules', directory, 'manifest.json'), 'utf8'));
+    for (const entry of manifest.entrypoints.piExtensions) {
+      assert.ok(builder.files.includes(`!modules/${directory}/${entry}`), `${moduleId}: exclude the source entry so only the mapped bundle targets its packaged path`);
+    }
+  }
 
   // Physical module folders must still load through Pi's extension loader.
   {
@@ -17,6 +26,8 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     t.after(() => fs.rmSync(unpacked, { recursive: true, force: true }));
     const capabilities = path.join(unpacked, 'modules', 'capabilities');
     fs.cpSync(path.join(process.cwd(), 'modules', 'capabilities'), capabilities, { recursive: true });
+    fs.cpSync(path.join(process.cwd(), 'dist', 'module-extensions', 'capabilities'), capabilities, { recursive: true });
+    assert.equal(fs.existsSync(path.join(unpacked, 'modules', 'shared')), false, 'private build helpers are not runtime dependencies');
     fs.cpSync(path.join(process.cwd(), 'src', 'contracts'), path.join(unpacked, 'src', 'contracts'), { recursive: true });
     const entries = fs.readdirSync(capabilities, { withFileTypes: true }).filter((entry: any) => entry.isDirectory()).flatMap((entry: any) => {
       const root = path.join(capabilities, entry.name);
@@ -25,7 +36,14 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     });
     const { pathToFileURL } = require('node:url');
     const { loadExtensions } = await import(pathToFileURL(path.join(process.cwd(), 'node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js')).href);
-    const loaded = await loadExtensions(entries, unpacked);
+    const previousModules = process.env.TRANSPORTX_SESSION_MODULES_JSON;
+    process.env.TRANSPORTX_SESSION_MODULES_JSON = '[]';
+    let loaded;
+    try { loaded = await loadExtensions(entries, unpacked); }
+    finally {
+      if (previousModules === undefined) delete process.env.TRANSPORTX_SESSION_MODULES_JSON;
+      else process.env.TRANSPORTX_SESSION_MODULES_JSON = previousModules;
+    }
     assert.deepEqual(loaded.errors, []);
     assert.equal(loaded.extensions.length, entries.length);
   }
@@ -569,7 +587,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
       manifestVersion: 1,
       product: { name: 'TransportX Agent', version: '3.0.3' },
-      agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 1 },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.3'), protocolVersion: 2 },
       pi: entry('runtimes/pi/cli.js', '0.80.10'),
       python: entry('runtimes/python/python', '3.10.0'),
     }));
@@ -603,7 +621,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     fs.writeFileSync(path.join(root, 'runtime-manifest.json'), JSON.stringify({
       manifestVersion: 1,
       product: { name: 'TransportX Agent', version: '3.0.9' },
-      agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 1 },
+      agentHost: { ...entry('agent-host/tau.js', '3.0.9'), protocolVersion: 2 },
       pi: entry('runtimes/pi/cli.js', '0.80.10'),
       python: entry('runtimes/python/python', '3.10.20'),
       ffmpeg: { ...entry('runtimes/ffmpeg/ffmpeg', '8.0'), arch: 'arm64' },
@@ -640,6 +658,13 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
     assert.equal(generated.darwin.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.linux.systemPrompt, 'PI_SYSTEM_POSIX.md');
     assert.equal(generated.win32.systemPrompt, 'PI_SYSTEM_WINDOWS.md');
+    assert.match(generated.darwin.processInspection.pythonScript, /proc_pidinfo/);
+    assert.match(generated.darwin.processInspection.pythonScript, /usec/);
+    assert.match(generated.linux.processInspection.pythonScript, /\/proc\//);
+    assert.match(generated.win32.processInspection.workspaceScript, /OpenProcessToken/);
+    assert.match(generated.win32.processInspection.workspaceScript, /CreateToolhelp32Snapshot/);
+    assert.match(generated.win32.processInspection.args.join(' '), /CreationDate/);
+    assert.match(generated.win32.processInspection.args.join(' '), /ExecutablePath/);
     const { toPosixPath } = require('../../bin/util/path.js');
     assert.equal(toPosixPath('C:\\tasks\\report'), 'C:/tasks/report');
     assert.equal(toPosixPath('\\\\server\\share\\tasks\\report'), '//server/share/tasks/report');

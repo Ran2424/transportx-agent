@@ -11,46 +11,58 @@ const { spawn, execFile } = require('node:child_process');
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
-import { containedFile } from './util/resource-path.js';
 import { acquireWriteLease } from './util/json-storage.js';
 import { APP_PATHS, ARGS, AUTH_CONFIGURED, PROJECT_AUTH, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
 import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SESSION_ASSEMBLER, reloadModules, setModuleEnabled, sessionAssemblerForProfile } from './platform-composition.js';
 import { buildSessionPiLaunch } from './session-pi-launch.js';
-import { createSessionWorkingDirectory } from './session-workspace.js';
+import { BUILTIN_MODULE_MANIFESTS } from './config.js';
+import { ModuleTrustStore, confirmDesktopModuleTrust, ensureSessionModuleTrust } from './module-trust.js';
+import { readToolContract } from './tool-contracts.js';
+import { approvedHostToolContract } from './tool-request.js';
+import { diagnoseTool } from './tool-diagnostics.js';
+import { CORE_TOOL_BINDINGS } from '../contracts/tool-interface.js';
+import { resolveSessionWorkspaceForDeletion, removeSessionWorkingDirectory } from './session-workspace.js';
 import { SESSION_COOKIE_NAME, SESSION_REFRESH_THRESHOLD_SECONDS, buildSessionCookie, issueSessionToken, parseCookies, verifySessionToken } from './auth.js';
-import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel, invalidateModelListCache } from './model-utils.js';
+import { getAvailableModels, modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import { LiveSessionManager, PiRpcSession } from './sessions.js';
 import { makeSessionId as makeId } from './session-workspace.js';
-import { appendSessionNameEntry, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
 import { handleGeoResourceRoute } from './geo-resources.js';
 import { handleVideoResourceRoute } from './video-resources.js';
 import { handleCitationResourceRoute } from './citation-resources.js';
 import { renderReportPdf, desktopMessageChannel } from './report-pdf.js';
 import { UpdatePreparation } from './update-preparation.js';
 import { inspectPiRuntime, piProcessEnv } from './pi-runtime.js';
-import { readSessionBranch } from './session-projection.js';
 import { createApiRouter, REPORT_PDF_MAX_HTML_BYTES } from './api-routes.js';
 import { SESSION_SNAPSHOT_SCHEMA_VERSION } from '../contracts/index.js';
 import { createFileApiHandlers } from './file-api-handler.js';
-import { createSessionHistoryHandlers } from './session-history-handler.js';
 import { createStaticHandler } from './static-handler.js';
 import { attachWebSocketHandler } from './websocket-handler.js';
 import { AGENT_HOST_PROTOCOL_VERSION } from './runtime-resolver.js';
 import type { RpcHandlerRegistry } from './rpc-handlers.js';
 import { createAuthRpcHandlers } from './rpc-handlers/auth.js';
-import { createHtmlExportRpcHandlers } from './rpc-handlers/html-export.js';
 import { createModuleRpcHandlers } from './rpc-handlers/module.js';
 import { createModelRpcHandlers } from './rpc-handlers/model.js';
 import { createNativeRpcHandlers } from './rpc-handlers/native.js';
 import { buildGeoPromptContext, geoInteractionService } from './geo-interaction-service.js';
 import { createPlatformRpcHandlers } from './rpc-handlers/platform.js';
-import { createSessionReadRpcHandlers, createSessionRpcHandlers } from './rpc-handlers/session.js';
 import { platformOverview, resolveModuleDirectory } from './platform-overview.js';
 import { buildAttachmentContext } from '../contracts/attachments.js';
 import { listSessionAttachments, saveUploadedAttachments, deleteSessionAttachment, resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 import { CitationService } from './citation-service.js';
+import { WorkspaceStore } from './workspace-store.js';
+import { WorkspaceMigration } from './workspace-migration.js';
+import { WorkspaceMigrationRunner } from './workspace-migration-runner.js';
+import { WorkspaceRuntimeGate } from './workspace-runtime.js';
+import { WorkspaceService } from './workspace-service.js';
+import { ConversationRuntime } from './conversation-runtime.js';
+import { WorkspaceDeletion } from './workspace-deletion.js';
+import { WorkspaceTransfer } from './workspace-transfer.js';
+import { WorkspaceHost } from './workspace-host.js';
+import { removeExecutionMetadata } from './util/execution-owner.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
+import { CadService } from './cad-service.js';
+import { preferUnpackedPath } from './session-assembly.js';
 import { VideoService } from './video-service.js';
 import { verifyChecksumFile } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
@@ -62,12 +74,16 @@ import { readJsonBody } from './http/request.js';
 import { createHash } from 'node:crypto';
 import { parseRpcCommand } from './rpc-command-input.js';
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
+import { HOST_PROTOCOL_HEADER } from '../contracts/host-protocol.js';
 const diagnoseCommand = boundedDiagnostics(200);
 
+const moduleTrust = new ModuleTrustStore(path.join(APP_PATHS.settingsDir, 'module-trust.json'), (request) => DESKTOP_MODE ? confirmDesktopModuleTrust(request) : Promise.resolve(false));
 const liveManager = new LiveSessionManager({
-  defaultDomainId: DEFAULT_DOMAIN_ID, assembler: SESSION_ASSEMBLER, assemblerForProfile: sessionAssemblerForProfile,
-  createWorkspace: createSessionWorkingDirectory, command: PI_COMMAND, launch: buildSessionPiLaunch, spawn,
-  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '' },
+  command: PI_COMMAND, launch: async (input) => {
+    await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust);
+    return buildSessionPiLaunch(input);
+  }, spawn,
+  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '', cad: '' },
 });
 
 function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
@@ -76,13 +92,32 @@ let authEnabled = !!PROJECT_AUTH || (AUTH_CONFIGURED && TAU_SETTINGS.authEnabled
 let lanUrl = '';
 let tailscaleUrl = '';
 const citationService = new CitationService();
-const canvasService = new CanvasService(citationService, (session, requestedPath) => resolveLiveSessionPath(liveManager.get(session.id), requestedPath));
-const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py'));
+const canvasService: CanvasService = new CanvasService(citationService, (session, requestedPath) => workspaceHost.file(session.conversationId, requestedPath), {
+  present: (session, input) => cadService.present(session, input),
+  resolve: (session, viewId) => cadService.resolvePresentation(session, viewId),
+});
+const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py')));
+const cadService: CadService = new CadService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/cad/scripts/cad_engine.py')), (session, ids) => canvasService.inspectContexts(session, ids));
+let cadHealth: { ok: boolean; version?: string; reason?: string } | null = null;
+void cadService.health().then((value) => { cadHealth = value; }).catch((error) => { cadHealth = { ok: false, reason: String(error) }; });
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (response) => response.delivery === 'unknown');
 const updatePreparation = new UpdatePreparation();
+const workspaceStore = new WorkspaceStore(APP_PATHS.userDataDir, SESSIONS_DIR);
+const workspaceMigration = new WorkspaceMigration(workspaceStore, { agentDir: PI_AGENT_DIR, workspaceRoots: [...new Set([APP_PATHS.scenarioDir, TAU_SETTINGS.projectsDir].filter((value): value is string => !!value))], recoverTransfers: () => workspaceTransfer.recover() });
+const workspaceGate = new WorkspaceRuntimeGate(PYTHON_EXECUTABLE.command, APP_PATHS.logsDir, process.env.TAU_RUNTIME_COORDINATION_DIR ? path.resolve(process.env.TAU_RUNTIME_COORDINATION_DIR) : undefined);
+const migrationRunner = new WorkspaceMigrationRunner(workspaceMigration, workspaceGate, PYTHON_EXECUTABLE.command);
+const assembleWorkspacePlan = (configuration: { domainId: string; profile: import('../contracts/index.js').SessionProfileV1 }, directory: string) => sessionAssemblerForProfile(configuration.profile).assemble(configuration.domainId, directory, configuration.profile);
+const validateWorkspaceModel = async (spec: string) => {
+  const { model } = parseModelSpecToModel(spec);
+  if (!model || !(await getAvailableModels()).some((candidate: { provider?: string; id?: string }) => candidate.provider === model.provider && candidate.id === model.id)) throw Object.assign(new Error('Selected model is unavailable. Choose a configured model.'), { code: 'model_unavailable', status: 400 });
+};
+const conversationRuntime = new ConversationRuntime({ store: workspaceStore, sessions: liveManager, gate: workspaceGate, assertReady: (id) => workspaceMigration.assertWorkspaceReady(id), verifyPlan: async (plan, directory, modelSpec) => { const verified = SESSION_ASSEMBLER.verify(plan, directory); if (modelSpec) await validateWorkspaceModel(modelSpec); return verified; } });
+const workspaceCreation = new WorkspaceService({ store: workspaceStore, defaultParentDirectory: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir, expandHome, assemble: assembleWorkspacePlan, validateModel: validateWorkspaceModel, assertReady: (id) => id ? workspaceMigration.assertWorkspaceReady(id) : workspaceMigration.assertSystemReady(), assertAllocationAllowed: (directory) => workspaceMigration.assertAllocationAllowed(directory) });
+const workspaceDeletion = new WorkspaceDeletion({ store: workspaceStore, gate: workspaceGate, runtime: conversationRuntime, pythonCommand: PYTHON_EXECUTABLE.command, assertReady: (id) => workspaceMigration.assertWorkspaceReady(id), assertSystemReady: () => workspaceMigration.assertSystemReady(), historyDirectories: () => workspaceMigration.read().scopes.map((scope) => scope.sessionsDirectory), cleanupInvocations: (context) => removeExecutionMetadata(['cad', 'spatial'].map((kind) => path.join(PI_AGENT_DIR, 'executions', kind)), context, SESSIONS_DIR), verifyWorkspace: resolveSessionWorkspaceForDeletion, removeWorkspace: removeSessionWorkingDirectory });
+const workspaceTransfer = new WorkspaceTransfer({ store: workspaceStore, runtime: conversationRuntime, gate: workspaceGate, assertSystemReady: () => workspaceMigration.assertSystemReady(), assertWorkspaceReady: (id) => workspaceMigration.assertWorkspaceReady(id) });
+const workspaceHost = new WorkspaceHost({ store: workspaceStore, migration: workspaceMigration, runner: migrationRunner, gate: workspaceGate, runtime: conversationRuntime, creation: workspaceCreation, deletion: workspaceDeletion, transfer: workspaceTransfer, sessions: liveManager, assemble: assembleWorkspacePlan, validateModel: validateWorkspaceModel, beginOperation: () => updatePreparation.beginOperation() });
 const rpcHandlers: RpcHandlerRegistry = {
-  ...createHtmlExportRpcHandlers<PiRpcSession>({ getLiveSession: (sessionId) => liveManager.get(sessionId), resolveSessionFile, runExport: runPiHtmlExport, errorMessage }),
   ...createPlatformRpcHandlers(currentPlatformOverview, async () => { fs.mkdirSync(APP_PATHS.logsDir, { recursive: true }); await openNativeTarget(APP_PATHS.logsDir); }, async (moduleId) => {
     if (PROJECT_AUTH || !isLoopbackHost(HOST)) throw new Error('Module folders can only be opened on the local workstation');
     const module = MODULE_REGISTRY.get(moduleId);
@@ -100,24 +135,23 @@ const rpcHandlers: RpcHandlerRegistry = {
       timer.unref?.();
     },
   }),
-  ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, invalidateModelListCache, errorMessage }),
+  ...createModelRpcHandlers({ agentDir: PI_AGENT_DIR, getAvailableModels, errorMessage, syncModels: async (sessionId) => {
+    const session = liveManager.get(sessionId);
+    if (!session) throw new Error('当前任务已关闭，请重新选择任务。');
+    await session.modelSync.reload(session);
+  } }),
   ...createModuleRpcHandlers({
     desktopMode: DESKTOP_MODE,
     installer: MODULE_INSTALLER,
     registry: MODULE_REGISTRY,
+    authorizeModules: (roots) => moduleTrust.ensure(roots),
+    forgetModules: (roots) => moduleTrust.forget(roots),
     reloadModules,
     setModuleEnabled,
     hasActiveModule: (moduleId) => [...liveManager.sessions.values()].some((session) => session.resolvedSessionPlan?.modules.some((module) => module.id === moduleId)),
     overview: currentPlatformOverview,
     errorMessage,
   }),
-  ...createSessionRpcHandlers<PiRpcSession>({
-    getLiveSession: (sessionId) => liveManager.get(sessionId),
-    findLiveSessionByFile: (filePath) => liveManager.findBySessionFile(filePath),
-    appendSessionName,
-    updateLiveSessionName,
-  }),
-  ...createSessionReadRpcHandlers<PiRpcSession>((sessionId) => liveManager.get(sessionId)),
   ...createNativeRpcHandlers<PiRpcSession>({
     getLiveSession: (sessionId) => liveManager.get(sessionId),
     resolveAttachments: resolveSessionAttachments,
@@ -128,6 +162,7 @@ const rpcHandlers: RpcHandlerRegistry = {
     validateCanvasContexts: (session, contextIds) => canvasService.validateContextIds(session, contextIds),
     buildCanvasContext: buildCanvasContextPrompt,
     parseModel: parseModelSpecToModel,
+    syncModels: (session) => session.modelSync.reload(session),
     errorMessage,
     completeCommand: (command, response) => {
       if (command.clientCommandId && reliableCommandTypes.has(command.type || '')) rpcCommandLedger.settle(`${command.sessionId || ''}:${command.clientCommandId}`, { ...response, clientCommandId: command.clientCommandId });
@@ -195,31 +230,6 @@ function readBody(req: IncomingMessage): Promise<RpcCommand> {
   return readJsonBody(req, limit) as Promise<RpcCommand>;
 }
 
-function resolveSessionFile(filePath: string) {
-  if (!filePath || typeof filePath !== 'string') throw new Error('filePath required');
-  const resolved = path.resolve(filePath), root = path.resolve(SESSIONS_DIR);
-  if (!isWithin(root, resolved) || !resolved.endsWith('.jsonl')) throw new Error('Invalid session file');
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Session not found');
-  return containedFile(root, resolved);
-}
-
-function appendSessionName(filePath: string, name: string) {
-  const resolved = resolveSessionFile(filePath);
-  // Never pre-create or append before Pi's first flush (see
-  // sessionFileReadyForNameAppend): the in-memory name is unaffected and a
-  // live session's pending name is persisted after agent_settled.
-  if (sessionFileReadyForNameAppend(resolved)) appendSessionNameEntry(resolved, name);
-  return resolved;
-}
-
-function updateLiveSessionName(session: PiRpcSession | null | undefined, name: string) {
-  if (!session) return;
-  session.sessionName = name; session.titleSet = true;
-  if (!session.sessionFile) session.pendingSessionNamePersistence = name;
-  liveManager.broadcast({ type: 'event', sessionId: session.id, event: { type: 'session_name', name } });
-  liveManager.broadcastUpdated(session.id);
-}
-
 function resolveLiveSessionPath(session: PiRpcSession | null | undefined, requestedPath?: string | null) {
   if (!session) { const error = new Error('Live session not found') as StatusError; error.status = 404; throw error; }
   const root = fs.realpathSync(path.resolve(session.cwd));
@@ -231,36 +241,36 @@ function resolveLiveSessionPath(session: PiRpcSession | null | undefined, reques
   return resolved;
 }
 
-function resolveExportOutputPath(outputPath: string, sessionFile: string) {
-  if (!outputPath || typeof outputPath !== 'string') throw new Error('outputPath required');
-  const sessionDir = path.dirname(path.resolve(sessionFile)), sessionDirReal = fs.realpathSync(sessionDir), expanded = expandHome(outputPath), resolved = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(sessionDir, expanded);
-  if (!isWithin(sessionDir, resolved) || path.extname(resolved).toLowerCase() !== '.html') { const error = new Error('Export outputPath must be an .html file in the session directory') as StatusError; error.status = 403; throw error; }
-  let parentReal: string;
-  try { parentReal = fs.realpathSync(path.dirname(resolved)); } catch { const error = new Error('Export output directory not found') as StatusError; error.status = 404; throw error; }
-  if (!isWithin(sessionDirReal, parentReal) || (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink())) { const error = new Error('Export outputPath must stay inside the session directory') as StatusError; error.status = 403; throw error; }
-  return resolved;
-}
-
-async function runPiHtmlExport({ file, cwd, outputPath }: { file: string; cwd: string; outputPath?: string }) {
-  const args = [...PI_COMMAND_ARGS, '--export', file, ...(outputPath ? [resolveExportOutputPath(outputPath, file)] : [])];
-  const output = await new Promise<string>((resolve, reject) => execFile(PI_COMMAND, args, { cwd: cwd || path.dirname(file), timeout: 30000, encoding: 'utf8', env: piProcessEnv() }, (error: NodeJS.ErrnoException | null, stdout: string, stderr: string) => error ? reject(new Error(stderr || error.message)) : resolve(stdout)));
-  let result = path.resolve(expandHome(output.trim().split('\n').pop() || file.replace(/\.jsonl$/, '.html')));
-  if (!fs.existsSync(result)) result = file.replace(/\.jsonl$/, '.html');
-  return result;
-}
-
 function openUrl(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url)) return Promise.reject(new Error('Invalid URL'));
   return openNativeTarget(url);
 }
 
-function currentPlatformOverview() {
+function currentPlatformOverview(sessionId?: string, frozenPlan?: import('../contracts/index.js').ResolvedSessionPlanV3) {
   const storage = { root: PI_AGENT_DIR, scenario: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir };
+  const session = sessionId ? liveManager.get(sessionId) : null;
+  const selectedPlan = frozenPlan || session?.resolvedSessionPlan;
+  const withTools = (overview: ReturnType<typeof platformOverview>) => ({ ...overview, modules: overview.modules.map((module) => {
+    const identities = CORE_TOOL_BINDINGS[module.id];
+    if (!identities) return module;
+    const selected = selectedPlan?.modules.find((item) => item.id === module.id);
+    const toolDiagnostics = identities.map(({ toolId, piName }) => {
+      const base = { moduleId: module.id, toolId, piName, contractVersion: 'unknown', ...(session?.id ? { sessionId: session.id } : {}) };
+      try {
+        const contract = readToolContract(selected?.packageRoot || MODULE_REGISTRY.get(module.id)!.packageRoot, module.id, toolId);
+        if (!contract) return { ...base, state: 'unverified' as const, reason: 'missing_contract' };
+        return diagnoseTool(contract, selected, session && !session.terminating && session.child ? session.capabilityTracker.observation() : undefined, session?.entries || [], session?.id, approvedHostToolContract(module.id, toolId));
+      } catch {
+        return { ...base, state: 'unavailable' as const, reason: 'invalid_contract' };
+      }
+    });
+    return { ...module, toolDiagnostics };
+  }) });
   try {
-    const plan = SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, storage.scenario);
-    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(plan.assets.map((asset) => asset.id)));
+    const plan = selectedPlan || SESSION_ASSEMBLER.assemble(DEFAULT_DOMAIN_ID, storage.scenario);
+    return withTools(platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(plan.assets.map((asset) => asset.id))));
   } catch (error) {
-    return platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(), errorMessage(error));
+    return withTools(platformOverview(APP_PATHS, MODULE_REGISTRY, ASSET_RESOLVER, storage, new Set(), errorMessage(error)));
   }
 }
 
@@ -270,9 +280,13 @@ function currentSessionOptions() {
   const platformModules = [...MODULE_REGISTRY.modules.values()].filter((module) => module.origin !== 'installed');
   const platformSources = platformModules.map((module) => ({ manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin }));
   const platformModuleIds = new Set(platformModules.map((module) => module.manifest.id));
+  const defaultModuleIds = new Set(MODULE_REGISTRY.dependencyOrder('com.transportx.workbench').map((module) => module.manifest.id));
   return {
     schemaVersion: 1,
-    modules: MODULE_INSTALLER.catalog().map((entry) => {
+    modules: [
+      ...MODULE_INSTALLER.catalog(),
+      ...platformModules.filter((module) => module.origin === 'builtin' && module.enabled && module.manifest.type === 'capability' && !defaultModuleIds.has(module.manifest.id)).map((module) => ({ id: module.manifest.id, version: module.manifest.version, manifest: module.manifest, source: { manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin } })),
+    ].map((entry) => {
       const runtime = moduleRuntimeCompatible(entry.manifest);
       let dependenciesCompatible = false;
       try {
@@ -287,9 +301,9 @@ function currentSessionOptions() {
         ...(entry.manifest.presentation ? { presentation: entry.manifest.presentation } : {}),
         version: entry.version,
         type: entry.manifest.type,
-        origin: 'installed',
+        origin: entry.source.origin,
         compatible,
-        enabledForNewSessions: compatible && enabled.has(entry.id),
+        enabledForNewSessions: compatible && (entry.source.origin === 'builtin' || enabled.has(entry.id)),
         selectedByDefault: compatible && enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
         dependencies: entry.manifest.dependencies,
         assets: (entry.manifest.contributes?.assets || []).map((asset) => {
@@ -312,6 +326,11 @@ async function handleRpcCommandOnce(command: RpcCommand): Promise<RpcResponse> {
 }
 
 async function dispatchRpcCommand(command: RpcCommand): Promise<RpcResponse> {
+  if (!['get_auth', 'set_auth', 'open_logs_directory'].includes(command.type || '')) workspaceMigration.assertSystemReady();
+  if (command.sessionId) {
+    const session = liveManager.get(command.sessionId);
+    if (!session?.workspaceId || !session.conversationId || workspaceHost.live(session.conversationId, false) !== session) throw Object.assign(new Error('The live conversation binding is no longer current.'), { code: 'conversation_not_active', status: 409 });
+  }
   const success = (data?: unknown): RpcResponse => ({ type: 'response', command: command.type, success: true, id: command.id, ...(data === undefined ? {} : { data }) });
   const failure = (message: string): RpcResponse => {
     logHostEvent('warn', 'rpc_failed', { command: command.type, sessionId: command.sessionId, message });
@@ -351,15 +370,15 @@ function setCorsForAllowedOrigin(req: IncomingMessage, res: ServerResponse) {
   const origin = req.headers.origin;
   if (!origin) return true;
   if (!isAllowedApiOrigin(req)) return false;
-  res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS'); res.setHeader('Access-Control-Allow-Headers', `Content-Type, ${HOST_PROTOCOL_HEADER}`);
   return true;
 }
 
-const history = createSessionHistoryHandlers({ sessionsDir: SESSIONS_DIR, projectsDir: TAU_SETTINGS.projectsDir, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, expandHome, json, errorMessage, readBranch: readSessionBranch, isGenericSessionName, sessions: liveManager });
-const files = createFileApiHandlers({ sessionsDir: SESSIONS_DIR, expandHome, json, errorMessage, isWithinPath: isWithin, resolveLivePath: resolveLiveSessionPath, getLiveSession: (id) => id ? liveManager.get(id) : null });
+const files = createFileApiHandlers({ expandHome, json, errorMessage });
 const apiRouter = createApiRouter({
   beginOperation: (url) => url.pathname === '/api/health' ? () => {} : updatePreparation.beginOperation(),
-  sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform }), sessionOptions: currentSessionOptions, json, errorMessage, errorStatus, readBody, resolveSessionFile, sessionCwd: history.normalizeSessionCwd, readSessionHeaderCwd: history.readSessionHeaderCwd, readSessionEntries: history.readSessionEntries, deriveSessionName: history.deriveSessionName, serveProjects: history.serveProjects, serveSessions: history.serveSessions, serveSearch: history.serveSearch, resolveLivePath: resolveLiveSessionPath, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, serveRawFile: files.serveRawFile, resolveOpen: files.resolveOpen, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf, serveSessionFile: history.serveSessionFile,
+  conversationOverview: (id) => { const target = workspaceHost.target(id), session = workspaceHost.live(id, false); return currentPlatformOverview(session?.id, workspaceStore.readPlan(target.directory, target.conversation)); },
+  workspaces: workspaceHost, sessions: liveManager, snapshotSchemaVersion: SESSION_SNAPSHOT_SCHEMA_VERSION, health: () => ({ status: 'ok', product: 'TransportX Agent', role: 'agent-host', protocolVersion: AGENT_HOST_PROTOCOL_VERSION, dataState: workspaceMigration.status().dataState, migration: workspaceMigration.status(), liveSessionCount: liveManager.sessions.size, lanUrl, tailscaleUrl: tailscaleUrl || undefined, platform: process.platform, cad: cadHealth ? { status: cadHealth.ok ? 'ok' : 'unavailable', ...(cadHealth.version ? { version: cadHealth.version } : {}), ...(cadHealth.reason ? { reason: cadHealth.reason } : {}) } : { status: 'unknown' } }), sessionOptions: currentSessionOptions, json, errorMessage, errorStatus, readBody, serveFiles: files.serveFiles, serveFileContent: files.serveFileContent, serveResources: files.serveResources, servePreview: files.servePreview, serveRawFile: files.serveRawFile, openNative: files.openNative, handleRpc: handleRpcCommand, renderReportPdf,
   listAttachments: listSessionAttachments,
   uploadAttachments: saveUploadedAttachments,
   deleteAttachment: deleteSessionAttachment,
@@ -368,6 +387,7 @@ const apiRouter = createApiRouter({
   video: videoService,
   geo: geoInteractionService,
   canvas: canvasService,
+  cad: cadService,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -383,9 +403,17 @@ function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: stri
   if (req.method === 'OPTIONS') { if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' }); res.writeHead(200); res.end(); return; }
   if (!originAllowed) return json(res, 403, { error: 'Origin not allowed' });
   const parsed = new URL(`http://localhost${req.url || urlPath}`);
-  if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
-  if (handleVideoResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
-  if (handleCitationResourceRoute(req, res, parsed.pathname, { getSession: (id) => liveManager.get(id) })) return;
+  if (!parsed.pathname.startsWith('/api/internal/') && ['POST', 'PATCH', 'DELETE'].includes(req.method || '') && req.headers[HOST_PROTOCOL_HEADER.toLowerCase()] !== String(AGENT_HOST_PROTOCOL_VERSION)) return json(res, 426, { code: 'unsupported_client', error: 'Client protocol is incompatible. Upgrade or restart the client.', expectedProtocolVersion: AGENT_HOST_PROTOCOL_VERSION });
+  const diagnostic = parsed.pathname === '/api/health' || parsed.pathname.startsWith('/api/migration') || /^\/api\/workspaces\/[^/]+\/(migration|runtime-diagnostics|runtime-recovery)(?:\/resolve)?$/.test(parsed.pathname);
+  if (!diagnostic && parsed.pathname !== '/api/rpc') {
+    try { workspaceMigration.assertSystemReady(); }
+    catch (error) { return json(res, 503, { code: 'system_not_ready', error: (error as Error).message, migration: workspaceMigration.status() }); }
+  }
+  try {
+    if (handleGeoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.resourceContext(id) })) return;
+    if (handleVideoResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.resourceContext(id), authorize: (id, resourceId) => { videoService.loadManifest(workspaceHost.resourceContext(id), resourceId); } })) return;
+    if (handleCitationResourceRoute(req, res, parsed.pathname, { getSession: (id) => workspaceHost.resourceContext(id) })) return;
+  } catch (error) { return json(res, ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code || '') ? 404 : errorStatus(error), { error: errorMessage(error), code: (error as { code?: string }).code }); }
   if (!apiRouter.dispatch(req, res, parsed)) json(res, 404, { error: 'Not found' });
 }
 
@@ -418,6 +446,8 @@ function computeUrls(port: number) {
   liveManager.runtime.endpoints.video = endpoint;
   liveManager.runtime.endpoints.geo = endpoint;
   liveManager.runtime.endpoints.canvas = endpoint;
+  liveManager.runtime.endpoints.moduleAuthoring = endpoint;
+  liveManager.runtime.endpoints.cad = endpoint;
 }
 
 let releaseHostWriter: (() => void) | null = null;
@@ -425,10 +455,19 @@ function listen(port: number, attemptsLeft = 10) {
   initializeHostLogging(APP_PATHS.logsDir);
   validateHostAccess(TAU_SETTINGS, !!PROJECT_AUTH);
   if (!releaseHostWriter) {
-    releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host'));
-    const release = () => { if (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount) return; releaseHostWriter?.(); releaseHostWriter = null; };
-    server.once('close', release);
-    process.once('exit', release);
+    try { releaseHostWriter = acquireWriteLease(path.join(PI_AGENT_DIR, 'host')); }
+    catch (error) { logHostError('host_writer_unavailable', error); }
+    const release = (force = false) => {
+      // A background CAD health probe can still be settling while normal
+      // server shutdown completes. Once the process is exiting, this writer
+      // must release its own lease regardless of that transient probe.
+      if (!force && (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount)) return;
+      releaseHostWriter?.();
+      releaseHostWriter = null;
+    };
+    server.once('close', () => release());
+    process.once('exit', () => release(true));
+    if (releaseHostWriter) { const complete = updatePreparation.beginOperation(); void workspaceMigration.initialize().then(() => workspaceHost.startConversions()).catch((error) => logHostError('workspace_migration_failed', error)).finally(complete); }
   }
   server.once('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE' && attemptsLeft > 0) { console.log(`[Tau] Port ${port} in use, trying ${port + 1}...`); server.removeAllListeners('error'); listen(port + 1, attemptsLeft - 1); }
@@ -449,7 +488,7 @@ function listen(port: number, attemptsLeft = 10) {
 let shuttingDown = false;
 async function verifyIdleAndSave() {
   const busy = () => { throw Object.assign(new Error('Host is busy'), { code: 'host_busy' }); };
-  if (shuttingDown || liveManager.pendingResumes.size || liveManager.terminatingResumes.size || spatialAnalysisService.activeCount || videoService.activeCount) busy();
+  if (shuttingDown || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount) busy();
   const sessions = [...liveManager.sessions.values()];
   for (const session of sessions) {
     if (session.isStreaming || session.isCompacting || session.terminating || session.transport.pendingCount || session.pendingExtensionUiRequests.size) busy();
@@ -512,12 +551,17 @@ async function shutdown(signal: string) {
   logHostEvent('info', 'host_shutdown', { signal, sessions: liveManager.sessions.size });
   socketHandler.close(); try { wss.close(); } catch {}
   try {
-    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), liveManager.shutdown()]);
+    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), cadService.terminateAll(), conversationRuntime.shutdown()]);
     server.close(() => process.exit(process.exitCode || 0));
     setTimeout(() => process.exit(process.exitCode || 0), 2500).unref();
   } catch (error) {
     console.error('[Tau] Shutdown could not confirm process exit:', error);
     process.exitCode = 1;
+    // A Python child may not acknowledge termination on some hosts. The Host
+    // is already shutting down, so do not let that child keep the writer lease
+    // alive indefinitely.
+    server.close(() => process.exit(process.exitCode || 1));
+    setTimeout(() => process.exit(process.exitCode || 1), 2500).unref();
   }
 }
 function startCli() {
@@ -536,8 +580,9 @@ function startCli() {
   listen(PORT);
 }
 
+function _setRuntimeCoordinationForTest(directory: string) { if (server.listening || liveManager.sessions.size || releaseHostWriter) throw new Error('Configure test coordination before starting Host.'); Object.assign(workspaceGate, { coordinationDirectory: path.resolve(directory) }); }
 function _setAuthForTest(enabled: boolean) { authEnabled = !!enabled; }
 function _setCredentialsForTest(user: string, pass: string) { TAU_SETTINGS.user = user; TAU_SETTINGS.pass = pass; }
 function _issueSessionTokenForTest(expiresAtSeconds?: number) { return issueSessionToken(expiresAtSeconds); }
 
-module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, resolveSessionFile, appendSessionName, updateLiveSessionName, isWithinPath: isWithin, resolveLiveSessionPath, resolveExportOutputPath, resolveExportedSessionPath: files.resolveExportedSessionPath, resolveOpenPath: files.resolveOpen, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, invalidateModelListCache };
+module.exports = { parseArgs, expandHome, loadTauSettings, modelLabel, normalizeModel, parseModelSpecToModel, getAvailableModels, makeId, PiRpcSession, LiveSessionManager, liveManager, isWithinPath: isWithin, resolveLiveSessionPath, openUrl, handleRpcCommand, isAllowedApiOrigin, setCorsForAllowedOrigin, handleApiRoute, serveStaticFile: staticHandler.serveStaticFile, serveReactStaticFile: staticHandler.serveReactStaticFile, server, wss, workspaceHost, conversationRuntime, computeUrls, listen, startCli, SESSIONS_DIR, PI_AGENT_DIR, checkAuth, SESSION_COOKIE_NAME, _setAuthForTest, _setCredentialsForTest, _issueSessionTokenForTest, _setSpawnPiForTest, _setRuntimeCoordinationForTest };

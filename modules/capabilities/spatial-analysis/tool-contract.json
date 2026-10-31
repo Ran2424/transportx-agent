@@ -1,0 +1,129 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.spatial-analysis",
+  "toolId": "spatial.analyze",
+  "piName": "tau_spatial_analyze",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "spatial-explicit-crs-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "operation"
+    ],
+    "properties": {
+      "operation": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "buffer"
+          },
+          {
+            "type": "string",
+            "const": "nearest"
+          },
+          {
+            "type": "string",
+            "const": "spatial_join"
+          }
+        ]
+      },
+      "inputPath": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "leftPath": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "rightPath": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "inputCrs": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "leftCrs": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "rightCrs": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "metricCrs": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "distanceMeters": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "maxDistanceMeters": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "dissolve": {
+        "type": "boolean"
+      },
+      "predicate": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "intersects"
+          },
+          {
+            "type": "string",
+            "const": "within"
+          },
+          {
+            "type": "string",
+            "const": "contains"
+          }
+        ]
+      },
+      "cardinality": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "one-to-one"
+          },
+          {
+            "type": "string",
+            "const": "one-to-many"
+          }
+        ]
+      },
+      "multipleMatchStrategy": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "error"
+          },
+          {
+            "type": "string",
+            "const": "first"
+          }
+        ]
+      },
+      "rightFields": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "maxItems": 20
+      },
+      "repairInvalid": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-spatial-analysis",
+    "version": 1,
+    "detailsKind": "tau-spatial-analysis"
+  }
+}

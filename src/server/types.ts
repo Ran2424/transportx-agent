@@ -48,9 +48,6 @@ export type RpcCommand = {
   id?: string;
   type?: string;
   sessionId?: string;
-  filePath?: string;
-  outputPath?: string;
-  cwd?: string;
   model?: string;
   provider?: string;
   modelId?: string;

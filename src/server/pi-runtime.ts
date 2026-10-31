@@ -1,4 +1,6 @@
 const { execFileSync } = require('node:child_process');
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { PI_RUNTIME_MINIMUM } from '../contracts/version.js';
 export const MAX_PI_VERSION_EXCLUSIVE = '0.85.0';
@@ -22,6 +24,17 @@ export function piProcessEnv(extra: NodeJS.ProcessEnv = {}) {
     ...(process.env.TAU_DESKTOP === '1' ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
     ...extra,
   };
+}
+
+export function assertPiResourceBoundary(prefixArgs: string[]) {
+  const entry = prefixArgs[0];
+  // Custom executable overrides are operator-supplied runtimes; the bundled
+  // CLI must carry our audited fix even if npm was run with --ignore-scripts.
+  if (!entry || path.basename(entry) !== 'cli.js') return;
+  const loader = fs.readFileSync(path.join(path.dirname(entry), 'core', 'resource-loader.js'), 'utf8');
+  if (loader.split('TransportX: disabled resource discovery must not execute package-manager commands.').length !== 3) {
+    throw new Error('Pi resource boundary patch is missing. Rebuild TransportX before starting a session.');
+  }
 }
 
 export function assertSupportedPiVersion(value: unknown) {

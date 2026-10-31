@@ -1,5 +1,5 @@
 export function sessionFileUrl(sessionId: string, filePath: string, download = false) {
-  return `/api/file/raw?${new URLSearchParams({ sessionId, path: filePath, ...(download ? { download: '1' } : {}) })}`;
+  return `/api/conversations/${encodeURIComponent(sessionId)}/files/raw?${new URLSearchParams({ path: filePath, ...(download ? { download: '1' } : {}) })}`;
 }
 
 export function withDownload(url: string) {

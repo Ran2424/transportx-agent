@@ -1,0 +1,854 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.cad",
+  "toolId": "cad.draw",
+  "piName": "cad_draw",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "cad-draw-v5",
+  "input": {
+    "type": "object",
+    "required": [
+      "kind"
+    ],
+    "properties": {
+      "kind": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "from-geojson"
+          },
+          {
+            "type": "string",
+            "const": "edit"
+          },
+          {
+            "type": "string",
+            "const": "import"
+          },
+          {
+            "type": "string",
+            "const": "commit-candidate"
+          }
+        ],
+        "description": "from-geojson creates a new drawing from GeoJSON; edit modifies an existing drawing; import registers an existing DXF; commit-candidate submits a Python/other-engine candidate as the next revision of an existing drawing."
+      },
+      "fileId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+        "description": "Stable drawing id. Edits with contextId resolve it on the Host; otherwise required for edit."
+      },
+      "candidateMode": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "rebuild"
+          },
+          {
+            "type": "string",
+            "const": "based-on-current"
+          }
+        ],
+        "description": "Required for commit-candidate: declare whole regeneration or editing a copy of the current DXF. Both invalidate old version-bound contexts; preserving handles is not guaranteed."
+      },
+      "sourceCrs": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120,
+        "description": "Required for from-geojson. Explicit input CRS, for example EPSG:4326."
+      },
+      "expectedSha256": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$",
+        "description": "Exact base DXF hash for edits without contextId. With contextId the Host resolves and verifies the frozen selection version."
+      },
+      "contextId": {
+        "type": "string",
+        "pattern": "^canvas_context_[a-f0-9-]+$"
+      },
+      "sourcePath": {
+        "type": "string",
+        "maxLength": 1000,
+        "description": "Session-relative .geojson/.json path for from-geojson, or .dxf path for import. Omit for edit."
+      },
+      "target": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "code"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "epsg"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^EPSG:[0-9]{4,6}$",
+                "maxLength": 40,
+                "description": "Projected CRS code in EPSG:<number> form, for example EPSG:32651. Units must be metres."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "origin"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "local"
+              },
+              "origin": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "rotationDeg": {
+                "type": "number"
+              },
+              "scale": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        ],
+        "description": "Required for kind=\"from-geojson\"; omit for kind=\"edit\" and kind=\"import\"."
+      },
+      "units": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "m"
+          },
+          {
+            "type": "string",
+            "const": "mm"
+          }
+        ],
+        "description": "Drawing units. from-geojson currently supports only \"m\"."
+      },
+      "layerKey": {
+        "type": "string",
+        "maxLength": 120,
+        "description": "GeoJSON property used as the layer mapping key. Defaults to \"kind\"."
+      },
+      "layerMap": {
+        "type": "object",
+        "patternProperties": {
+          "^.*$": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "description": "Required for from-geojson: maps GeoJSON property values to DXF layer names."
+      },
+      "labelField": {
+        "type": "string",
+        "maxLength": 120,
+        "description": "GeoJSON property copied into text labels."
+      },
+      "labelLayer": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      },
+      "fillLayers": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "maxItems": 64
+      },
+      "repairInvalid": {
+        "type": "boolean"
+      },
+      "title": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "baseRevision": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Required only for kind=\"edit\"; must equal the current revision from cad_inspect. Omit for from-geojson/import."
+      },
+      "operations": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "selector",
+                "dx",
+                "dy"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "move"
+                },
+                "selector": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "handle"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "handle"
+                        },
+                        "handle": {
+                          "type": "string",
+                          "pattern": "^[0-9A-F]{1,16}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "layer"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "layer"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "min",
+                        "max"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bounds"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "min": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        },
+                        "max": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "dx": {
+                  "type": "number",
+                  "description": "Translation along drawing X in drawing units; not true east or a curve offset."
+                },
+                "dy": {
+                  "type": "number",
+                  "description": "Translation along drawing Y in drawing units."
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "selector",
+                "dx",
+                "dy"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "copy"
+                },
+                "selector": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "handle"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "handle"
+                        },
+                        "handle": {
+                          "type": "string",
+                          "pattern": "^[0-9A-F]{1,16}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "layer"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "layer"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "min",
+                        "max"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bounds"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "min": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        },
+                        "max": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "dx": {
+                  "type": "number",
+                  "description": "Translation along drawing X in drawing units; not true east or a curve offset."
+                },
+                "dy": {
+                  "type": "number",
+                  "description": "Translation along drawing Y in drawing units."
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "description": "Place copies at n*dx,n*dy for n=1..count."
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "selector"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "delete"
+                },
+                "selector": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "handle"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "handle"
+                        },
+                        "handle": {
+                          "type": "string",
+                          "pattern": "^[0-9A-F]{1,16}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "layer"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "layer"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "min",
+                        "max"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bounds"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "min": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        },
+                        "max": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "selector",
+                "layer"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "setLayer"
+                },
+                "selector": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "handle"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "handle"
+                        },
+                        "handle": {
+                          "type": "string",
+                          "pattern": "^[0-9A-F]{1,16}$"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "layer"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "layer"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "min",
+                        "max"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bounds"
+                        },
+                        "layer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "min": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        },
+                        "max": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 2,
+                          "maxItems": 2
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "layer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "layer",
+                "points"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "drawPolyline"
+                },
+                "layer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "minItems": 2,
+                  "maxItems": 10000
+                },
+                "closed": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "layer",
+                "position",
+                "text",
+                "height"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "drawText"
+                },
+                "layer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "position": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "height": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "rotationDeg": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "layer",
+                "boundary"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "drawHatch"
+                },
+                "layer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "boundary": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "minItems": 3,
+                  "maxItems": 10000
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "op",
+                "layer",
+                "name",
+                "position"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "insertBlock"
+                },
+                "layer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "position": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "rotationDeg": {
+                  "type": "number"
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "minItems": 1,
+        "maxItems": 200,
+        "description": "Required only for kind=\"edit\"; ordered drawing operations."
+      },
+      "exportPreview": {
+        "type": "boolean",
+        "description": "Generate PNG/PDF only when explicitly requested. Editing does not need an export."
+      },
+      "dryRun": {
+        "type": "boolean",
+        "description": "When true, validate and return the plan without writing DXF or preview files."
+      }
+    },
+    "additionalProperties": false,
+    "anyOf": [
+      {
+        "properties": {
+          "kind": {
+            "const": "from-geojson"
+          }
+        },
+        "required": [
+          "sourcePath",
+          "sourceCrs",
+          "target",
+          "layerMap"
+        ]
+      },
+      {
+        "properties": {
+          "kind": {
+            "const": "import"
+          }
+        },
+        "required": [
+          "sourcePath"
+        ]
+      },
+      {
+        "properties": {
+          "kind": {
+            "const": "commit-candidate"
+          }
+        },
+        "required": [
+          "sourcePath",
+          "fileId",
+          "baseRevision",
+          "expectedSha256",
+          "candidateMode"
+        ]
+      },
+      {
+        "properties": {
+          "kind": {
+            "const": "edit"
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "contextId"
+            ]
+          },
+          {
+            "required": [
+              "fileId",
+              "baseRevision",
+              "expectedSha256"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "output": {
+    "protocol": "tau-cad",
+    "version": "1.0",
+    "detailsKind": "tau-cad-draw"
+  }
+}

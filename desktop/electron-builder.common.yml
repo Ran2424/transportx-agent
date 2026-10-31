@@ -9,6 +9,8 @@ asar: true
 asarUnpack:
   - modules/**
   - src/contracts/**
+  # FileSet unpack matching uses its source path, before remapping to modules/.
+  - dist/module-extensions/**
 afterPack: desktop/scripts/after-pack.cjs
 directories:
   output: release
@@ -20,6 +22,17 @@ files:
   - dist/web/**
   - modules/**
   - "!modules/installable/**"
+  - "!modules/shared/**"
+  - "!modules/capabilities/cad/extensions/pi-cad/index.ts"
+  - "!modules/official/module-authoring/extensions/pi-module-package/index.ts"
+  - "!modules/capabilities/citation/extensions/pi-citation/index.ts"
+  - "!modules/capabilities/spatial-analysis/extensions/pi-spatial-analysis/index.ts"
+  - "!modules/capabilities/canvas/extensions/pi-canvas/index.ts"
+  - "!modules/capabilities/geo/extensions/pi-geo-visualization/index.ts"
+  - "!modules/capabilities/interaction/extensions/pi-user-interaction/index.ts"
+  - "!modules/capabilities/tool-activation/extensions/pi-tool-activation/index.ts"
+  - from: dist/module-extensions
+    to: modules
   - src/contracts/**
   - src/server/prompts/**
 extraResources:

@@ -20,6 +20,7 @@ export type SessionAttachment = {
   source: SessionAttachmentSource;
   status: SessionAttachmentStatus;
   createdAt?: string;
+  sourceConversationId?: string | null;
   error?: string;
 };
 
