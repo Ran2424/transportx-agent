@@ -2,6 +2,51 @@ const { test } = require('node:test') as typeof import('node:test');
 
 test('Session close, history deletion and process cancellation preserve writer ownership', async (t) => {
   const { toPosixPath } = require('../../bin/util/path.js');
+  // Probe diagnostics distinguish native commands without treating failures as confirmed exits.
+  {
+    const assert = require('node:assert/strict'), childProcess = require('node:child_process');
+    const { hostPlatform } = require('../../bin/host-platform.js'), diagnostics = require('../../bin/diagnostic-log.js');
+    const modulePath = require.resolve('../../bin/process-inspection.js');
+    const original = { sync: childProcess.execFileSync, async: childProcess.execFile, log: diagnostics.logHostEvent, profile: hostPlatform.processInspection, kill: process.kill };
+    const records: any[] = [], signals: unknown[] = [];
+    let mode = 'boot-timeout';
+    const timeout = Object.assign(new Error('Native probe timed out'), { code: 'ETIMEDOUT', status: null, signal: 'SIGTERM', stderr: Buffer.from('CIM probe did not finish') });
+    try {
+      hostPlatform.processInspection = { ...original.profile, pythonScript: undefined, command: 'fixture-process', args: [], bootCommand: 'fixture-boot', bootArgs: [] };
+      diagnostics.logHostEvent = (_level: string, event: string, fields: unknown) => { if (event === 'native_process_probe') records.push(fields); };
+      childProcess.execFileSync = (command: string, _args: string[], options: any) => {
+        assert.equal(options.timeout, 5000);
+        if (command === 'fixture-boot') { if (mode === 'boot-timeout') throw timeout; return 'fixture-boot-id'; }
+        if (mode === 'process-timeout') throw timeout;
+        if (mode === 'command-error') throw Object.assign(new Error('CIM query failed'), { code: 'EIO', status: 7, signal: null, stderr: 'CIM access denied' });
+        return JSON.stringify({ state: 'running', pid: mode === 'wrong-pid' ? process.pid + 1 : process.pid, startedAt: 'fixture-start', command: 'fixture-node', parentPid: process.ppid });
+      };
+      process.kill = ((_pid: number, signal: unknown) => { signals.push(signal); return true; }) as typeof process.kill;
+      const inspection = require(modulePath);
+      assert.equal(inspection.inspectProcess(process.pid, 'unused').state, 'unknown');
+      assert.deepEqual(records.map(({ probe, outcome }) => [probe, outcome]), [['process-identity', 'success'], ['boot-identity', 'error']]);
+      assert.equal(records[1].code, 'ETIMEDOUT'); assert.equal(records[1].signal, 'SIGTERM');
+      assert.equal(records[1].stderr, 'CIM probe did not finish');
+      mode = 'healthy';
+      const running = inspection.inspectProcess(process.pid, 'unused'); assert.equal(running.state, 'running');
+      mode = 'process-timeout';
+      await assert.rejects(inspection.stopRecordedProcess(running.identity, 'unused'), { code: 'process_stop_unconfirmed' });
+      assert.ok(signals.every((signal) => signal === 0), 'an unverified identity must never be signalled');
+      assert.equal(records.at(-1).probe, 'process-identity'); assert.equal(records.at(-1).targetPid, process.pid);
+      mode = 'command-error';
+      assert.equal(inspection.inspectProcess(process.pid, 'unused').state, 'unknown');
+      assert.equal(records.at(-1).status, 7); assert.equal(records.at(-1).stderr, 'CIM access denied');
+      mode = 'wrong-pid';
+      assert.equal(inspection.inspectProcess(process.pid, 'unused').state, 'unknown', 'a command completing does not bypass identity validation');
+      childProcess.execFile = (...args: any[]) => { args.at(-1)(timeout, '', 'inventory stderr'); return {}; };
+      await assert.rejects(inspection.workspaceProcessInventory(process.cwd(), 'fixture-python'), { code: 'process_stop_unconfirmed' });
+      assert.equal(records.at(-1).probe, 'workspace-inventory'); assert.equal(records.at(-1).timeoutMs, 20000);
+      assert.ok(records.every((record) => Number.isFinite(record.durationMs) && record.durationMs >= 0));
+    } finally {
+      childProcess.execFileSync = original.sync; childProcess.execFile = original.async; diagnostics.logHostEvent = original.log;
+      hostPlatform.processInspection = original.profile; process.kill = original.kill; delete require.cache[modulePath];
+    }
+  }
   // Legacy conversion preserves Native bytes, stops at unowned processes and resumes verified writes.
   {
     const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');

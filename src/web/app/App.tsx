@@ -299,7 +299,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
   }
   function finishQuickCreate() { quickWorkspace.current = null; setNotice(value => value === t('workspaceFlow.creating') ? '' : value); }
   function openDiagnostics(workspace?: WorkspaceView) { setDiagnosticsWorkspace(workspace || null); setDiagnosticsOpen(true); }
-  async function activateConversation(id: string) {
+  async function ensureConversationRuntime(id: string) {
     const current = kernel.stores.session.get();
     const target = current.sessions.find(item => item.id === id);
     if (current.activeSessionId !== id || !target) throw new Error(t('conversation.selectionChanged'));
@@ -312,6 +312,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
         setCreationSequence(value => value + 1); setQuickCreate(false);
         setCreationWorkspace(workspace); setConfirmationId(id); setCreationMode('confirmation'); setNewSessionOpen(true);
       });
+      if (kernel.stores.session.get().activeSessionId !== id) throw new Error(t('conversation.selectionChanged'));
       return;
     }
     try { await kernel.commands.session.activate(id); }
@@ -321,6 +322,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
       if (!window.confirm(t('workspaceFlow.stopSwitch'))) throw new Error(t('conversation.activationCancelled'));
       await kernel.commands.session.activate(id, { stopCurrent: true });
     }
+    if (kernel.stores.session.get().activeSessionId !== id) throw new Error(t('conversation.selectionChanged'));
   }
   function changeCreationOpen(open: boolean) {
     if (!open && activationConfirmation.current) {
@@ -378,7 +380,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
     { id: 'model', label: t('app.command.model.label'), description: activeSession ? t('app.command.model.description') : t('app.command.requiresSession'), disabled: !activeSession, action: () => setModelOpen(true) },
     { id: 'compact', label: t('app.command.compact.label'), description: activeSession ? t('app.command.compact.description') : t('app.command.requiresSession'), disabled: !activeSession || activeStreaming || activeCompacting, action: async () => {
       if (!activeSession) return;
-      try { await kernel.commands.agent.compact(activeSession.id); setNotice(t('app.notice.compacted')); }
+      try { await ensureConversationRuntime(activeSession.id); await kernel.commands.agent.compact(activeSession.id); setNotice(t('app.notice.compacted')); }
       catch (cause) { setNotice((cause as { message?: string })?.message || t('app.error.compact')); }
     } },
     { id: 'settings', label: t('app.command.settings.label'), description: t('app.command.settings.description'), shortcut: '⌘,', action: () => setSettingsOpen(true) },
@@ -433,17 +435,17 @@ export function App({ account }: { account?: ReactNode } = {}) {
       header={<Header account={account} connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar onManageModules={() => { setSettingsSection('modules'); setSettingsOpen(true); }} open={sidebarOpen} dataReady={runtime.health?.dataState === 'ready'} sessions={sessionState.sessions} workspaces={sessionState.workspaces} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={(workspace) => openNewSession(workspace)} onSelect={(id) => void selectSession(id)} onDelete={requestDeletion} onDefaults={(workspace) => { if (quickWorkspace.current) return; setQuickCreate(false); setCreationWorkspace(workspace); setCreationMode('defaults'); setNewSessionOpen(true); }} onDiagnostics={openDiagnostics} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} onNewSession={() => openNewSession()} />}
-      conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => openNewSession()} onActivate={activateConversation} showThinking={showThinking} expandThinking={expandThinking} />}
+      conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => openNewSession()} onActivate={ensureConversationRuntime} showThinking={showThinking} expandThinking={expandThinking} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
       canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; const view = canvasContent.views.find((view) => view.id === input.viewId && view.canvas?.revision === input.revision); canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input), view?.title); }} />}
       canvasOpen={canvas.open}
-      settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
+      settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onEnsureRuntime={ensureConversationRuntime} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}
       overlays={<>
         <projectUi.UpdateNotice onOpen={() => { setSettingsSection('general'); setSettingsOpen(true); }} />
         <NewSessionDialog key={creationSequence} quickCreate={quickCreate && creationMode === 'create'} onQuickCreateFinished={finishQuickCreate} open={newSessionOpen} onOpenChange={changeCreationOpen} workspace={creationWorkspace} workspaces={sessionState.workspaces} onWorkspaceChange={setCreationWorkspace} mode={creationMode} confirmationId={confirmationId} onCreated={(id, fromQuickCreate) => { if (activationConfirmation.current?.id === id) { activationConfirmation.current.resolve(); activationConfirmation.current = null; return; } if (!fromQuickCreate || quickNavigation.current === navigationSequence.current) void selectSession(id); }} onAddModel={() => openModelSetup('new')} />
         <MigrationDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} workspace={diagnosticsWorkspace} />
-        <ModelPickerDialog open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
+        <ModelPickerDialog onEnsureRuntime={ensureConversationRuntime} open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />

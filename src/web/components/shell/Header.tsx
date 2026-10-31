@@ -58,7 +58,7 @@ export function Header({
         <button
           className="model-trigger"
           type="button"
-          disabled={!activeSession?.liveSessionId}
+          disabled={!activeSession}
           onClick={onOpenModel}
           aria-label={t('header.modelAndThinking')}
         >
@@ -72,7 +72,7 @@ export function Header({
         {activeSession ? (
           <button className="workspace-task" type="button" aria-label={t('header.goHome')} title={sessionTitle(activeSession)} onClick={onGoHome}>
             <span className="workspace-task-name">{sessionTitle(activeSession)}</span>
-            <span className={`workspace-task-status${streaming ? ' is-streaming' : ''}`}>{!activeSession.liveSessionId ? t('workspace.conversationSaved') : streaming ? t('header.status.streaming') : t('header.status.ready')}</span>
+            <span className={`workspace-task-status${streaming ? ' is-streaming' : ''}`}>{streaming ? t('header.status.streaming') : t('header.status.ready')}</span>
           </button>
         ) : (
           <button className="workspace-brand" type="button" aria-label={t('header.goHome')} onClick={onGoHome}>

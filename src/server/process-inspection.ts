@@ -2,17 +2,38 @@ import crypto from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { isWithin, toPosixPath } from './util/path.js';
-import type { ChildProcess } from 'node:child_process';
+import type { ChildProcess, ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { hostPlatform } from './host-platform.js';
 import { signalProcessTree } from './process-tree.js';
+import { logHostEvent } from './diagnostic-log.js';
 
 export type ProcessIdentity = { pid: number; startedAt: string; executableSha256: string; bootId: string };
 export type ProcessObservation = { state: 'running'; identity: ProcessIdentity; parentPid: number; groupId: number | null } | { state: 'exited' } | { state: 'unknown'; reason: string };
+type Probe = 'process-identity' | 'boot-identity' | 'workspace-inventory';
+function recordProbe(probe: Probe, command: string, started: number, timeoutMs: number, targetPid?: number, error?: unknown, stderr?: string) {
+  const failure = error as (NodeJS.ErrnoException & { status?: number | null; signal?: string | null; stderr?: string | Buffer }) | undefined;
+  logHostEvent(failure ? 'warn' : 'debug', 'native_process_probe', {
+    probe, command, targetPid, timeoutMs, durationMs: Math.round((performance.now() - started) * 10) / 10,
+    outcome: failure ? 'error' : 'success', code: failure?.code, status: failure?.status, signal: failure?.signal,
+    message: failure?.message, stderr: String(stderr ?? failure?.stderr ?? '').slice(0, 2048),
+  });
+}
+function runProbe(probe: Probe, command: string, args: string[], options: ExecFileSyncOptionsWithStringEncoding, targetPid?: number) {
+  const started = performance.now();
+  try {
+    const output = execFileSync(command, args, options);
+    recordProbe(probe, command, started, options.timeout!, targetPid);
+    return output;
+  } catch (error) {
+    recordProbe(probe, command, started, options.timeout!, targetPid, error);
+    throw error;
+  }
+}
 let bootId: string | undefined;
 export function currentBootId() {
   if (bootId) return bootId;
   const profile = hostPlatform.processInspection;
-  const value = execFileSync(profile.bootCommand, profile.bootArgs, { encoding: 'utf8', timeout: 5000, maxBuffer: 16384, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const value = runProbe('boot-identity', profile.bootCommand, profile.bootArgs, { encoding: 'utf8', timeout: 5000, maxBuffer: 16384, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   if (!value || value.length > 1000) throw new Error('System boot identity could not be verified.');
   bootId = crypto.createHash('sha256').update(value).digest('hex');
   return bootId;
@@ -27,7 +48,7 @@ export function inspectProcess(pid: number, pythonCommand: string): ProcessObser
     const profile = hostPlatform.processInspection;
     const command = profile.pythonScript ? pythonCommand : profile.command!;
     const args = profile.pythonScript ? ['-c', profile.pythonScript, String(pid)] : profile.args!.map((arg) => arg.replaceAll('{pid}', String(pid)));
-    const output = execFileSync(command, args, { encoding: 'utf8', timeout: 5000, maxBuffer: 16384, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LC_ALL: 'C', LANG: 'C', PYTHONDONTWRITEBYTECODE: '1' } }).trim();
+    const output = runProbe('process-identity', command, args, { encoding: 'utf8', timeout: 5000, maxBuffer: 16384, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LC_ALL: 'C', LANG: 'C', PYTHONDONTWRITEBYTECODE: '1' } }, pid).trim();
     const value = JSON.parse(output);
     if (value?.state === 'exited') return { state: 'exited' };
     if (value?.state !== 'running' || Number(value.pid) !== pid || typeof value.startedAt !== 'string' || !value.startedAt || typeof value.command !== 'string' || !value.command || !Number.isSafeInteger(value.parentPid)) throw new Error('Incomplete process inspection.');
@@ -73,7 +94,12 @@ export async function stopRecordedProcess(identity: ProcessIdentity, pythonComma
 /** Legacy processes have no spawn journal. Only a confirmed workspace cwd blocks migration/deletion. */
 export async function workspaceProcessInventory(directory: string, pythonCommand: string) {
   const target = fs.realpathSync(directory);
-  const output = await new Promise<string>((resolve, reject) => execFile(pythonCommand, ['-c', hostPlatform.processInspection.workspaceScript, String(process.pid)], { encoding: 'utf8', timeout: 20000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', LC_ALL: 'C', LANG: 'C' } }, (error, stdout) => error ? reject(Object.assign(new Error('Workspace process inventory is unavailable.'), { code: 'process_stop_unconfirmed', status: 409 })) : resolve(stdout)));
+  const started = performance.now();
+  const output = await new Promise<string>((resolve, reject) => execFile(pythonCommand, ['-c', hostPlatform.processInspection.workspaceScript, String(process.pid)], { encoding: 'utf8', timeout: 20000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', LC_ALL: 'C', LANG: 'C' } }, (error, stdout, stderr) => {
+    recordProbe('workspace-inventory', pythonCommand, started, 20000, undefined, error || undefined, stderr);
+    if (error) reject(Object.assign(new Error('Workspace process inventory is unavailable.'), { code: 'process_stop_unconfirmed', status: 409 }));
+    else resolve(stdout);
+  }));
   const value = JSON.parse(output);
   if (!value || !Array.isArray(value.processes) || !value.processes.every((entry: { pid?: unknown; cwd?: unknown }) => entry && Number.isSafeInteger(entry.pid) && Number(entry.pid) > 0 && (entry.cwd === null || typeof entry.cwd === 'string' && !!entry.cwd))) throw Object.assign(new Error('Workspace process inventory is incomplete.'), { code: 'process_stop_unconfirmed', status: 409 });
   const processes: Array<{ pid: number; cwd: string | null; observation: ProcessObservation }> = [];
