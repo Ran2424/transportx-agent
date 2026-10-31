@@ -152,7 +152,9 @@ try {
   await settings.getByRole('button', { name: '模块', exact: true }).click();
   await settings.getByLabel('模块包路径').waitFor();
   await window.keyboard.press('Escape');
-  await window.getByRole('button', { name: '新建交通任务' }).first().click();
+  const newWorkspace = window.getByRole('button', { name: '打开工作区', exact: true }).first();
+  if (!await newWorkspace.isVisible()) await window.getByRole('button', { name: '打开或关闭侧栏', exact: true }).click();
+  await newWorkspace.click();
   const newTask = window.getByRole('dialog', { name: '打开工作区' });
   await newTask.locator('.menu-select-trigger').click();
   await newTask.getByRole('option', { name: '添加模型' }).waitFor();
@@ -163,7 +165,7 @@ try {
     const added = await moduleRpc({ type: 'add_model', provider: 'desktop-smoke', modelId: 'smoke', name: 'Desktop test model', baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', apiKey: 'test-owned-desktop-key', contextWindow: 8192, maxTokens: 1024 });
     if (!added.success) throw new Error(JSON.stringify(added));
     const urls = []; window.on('request', (request) => urls.push(request.url()));
-    await window.getByRole('button', { name: '新建交通任务' }).first().click();
+    await newWorkspace.click();
     await newTask.getByRole('button', { name: '创建新文件夹', exact: true }).click();
     await newTask.locator('.workspace-advanced > summary').click();
     await newTask.getByLabel('工作区名称', { exact: true }).fill('Desktop workspace');

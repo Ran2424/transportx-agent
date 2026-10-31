@@ -539,7 +539,11 @@ test('Session close, history deletion and process cancellation preserve writer o
     const next = gate.take(root, workspaceId, 'conv_00000000-0000-4000-8000-000000000003');
     assert.notEqual(next.generation, lease.generation);
     const { ProcessRunner } = require('../../bin/process-runner.js');
-    const output = await new ProcessRunner().run({ command: process.execPath, args: [] }, ['-e', "setTimeout(()=>console.log('tracked-native'),150)"], { cwd: root, timeoutMs: 2000, maxBuffer: 1024 });
+    const registeredFile = path.join(root, 'managed-process-registered');
+    const running = new ProcessRunner().run({ command: process.execPath, args: [] }, ['-e', "const fs=require('node:fs');const timer=setInterval(()=>{if(fs.existsSync(process.argv[1])){clearInterval(timer);console.log('tracked-native');}},10);", registeredFile], { cwd: root, timeoutMs: 2000, maxBuffer: 1024 });
+    // run() registers the child synchronously; let it exit only after identity inspection finishes.
+    fs.writeFileSync(registeredFile, 'registered');
+    const output = await running;
     assert.match(output.stdout, /tracked-native/);
     assert.equal(gate.diagnostics(root).processes[0].kind, 'managed');
     assert.equal(gate.diagnostics(root).processes[0].state, 'stopped', 'domain subprocess completion commits its runtime stop before returning');
