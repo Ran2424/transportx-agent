@@ -1,0 +1,83 @@
+name: Linux x64 test package
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/linux-package.yml
+      - desktop/**
+      - scripts/desktop-smoke.mjs
+permissions:
+  contents: read
+concurrency:
+  group: linux-package-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install desktop build and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-0 libnss3 libasound2 libgbm1 libsecret-1-0 xvfb dbus-x11 fonts-noto-cjk
+      - name: Prepare relocatable Python 3.10 x64
+        run: |
+          curl -fL --retry 3 'https://github.com/astral-sh/python-build-standalone/releases/download/20251014/cpython-3.10.19%2B20251014-x86_64-unknown-linux-gnu-install_only.tar.gz' -o "$RUNNER_TEMP/python.tar.gz"
+          echo '85c96114de83d783db18137f3858bcd3b5a9c4cbe9053f0072d7b5f52154a8c9  '"$RUNNER_TEMP/python.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/python-runtime"
+          tar -xzf "$RUNNER_TEMP/python.tar.gz" -C "$RUNNER_TEMP/python-runtime"
+          "$RUNNER_TEMP/python-runtime/python/bin/python3" -m pip install --only-binary=:all: -r desktop/python-requirements.txt
+          echo "TRANSPORTX_PYTHON_RUNTIME_DIR=$RUNNER_TEMP/python-runtime/python" >> "$GITHUB_ENV"
+      - run: npm ci --ignore-scripts
+      - run: node node_modules/electron/install.js
+      - run: npm run test:budget
+      - run: npm run typecheck
+      - name: Build DEB without publishing
+        run: npm run desktop:pack -- --publish=never
+      - name: Verify desktop lifecycle and runtime contracts
+        env:
+          TAU_PYTHON_COMMAND: ${{ runner.temp }}/python-runtime/python/bin/python3
+        run: node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/desktop-launch.test.ts test/suites/desktop-runtime.test.ts
+      - name: Record package metadata and binary requirements
+        run: |
+          {
+            echo "Source: $GITHUB_SHA"
+            echo 'CI host (does not certify UOS compatibility):'
+            cat /etc/os-release
+            dpkg-deb --info release/*-linux-x64.deb
+            echo 'Runtime versions referenced by bundled x64 ELF binaries (target UOS: glibc 2.28):'
+            find release/linux-unpacked -type f \( -name '*.so*' -o -name '*.node' -o -perm /111 \) -exec sh -c 'for file do if file -b "$file" | grep -q "^ELF 64-bit.*x86-64"; then objdump -T "$file" 2>/dev/null | grep "\*UND\*" | grep -oE "(GLIBC|GLIBCXX|CXXABI)_[0-9.]+" || true; fi; done' sh {} + | sort -Vu
+          } > release/linux-x64-validation.txt
+          cat release/linux-x64-validation.txt
+          cd release
+          sha256sum *-linux-x64.deb > SHA256SUMS-linux-x64.txt
+      - name: Check UOS glibc 2.28 symbol baseline
+        run: |
+          required=$(sed -n 's/^GLIBC_//p' release/linux-x64-validation.txt | sort -V | tail -1)
+          test -n "$required"
+          echo "Highest x64 GLIBC symbol version: $required"
+          dpkg --compare-versions "$required" le 2.28
+      - name: Install and launch the actual DEB
+        run: |
+          sudo apt-get install -y ./release/*-linux-x64.deb
+          TAU_PYTHON_COMMAND="$RUNNER_TEMP/external-python-must-not-run" TRANSPORTX_PACKAGED_APP='/opt/TransportX Agent' xvfb-run -a dbus-run-session -- node scripts/desktop-smoke.mjs
+      - name: Verify uninstall
+        run: |
+          sudo apt-get remove -y transportx-agent
+          test ! -e '/opt/TransportX Agent/transportx-agent'
+          test ! -e /usr/bin/transportx-agent
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: transportx-linux-x64-test
+          compression-level: 0
+          retention-days: 14
+          path: |
+            release/*-linux-x64.deb
+            release/SHA256SUMS-linux-x64.txt
+            release/linux-x64-validation.txt

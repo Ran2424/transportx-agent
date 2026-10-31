@@ -1,0 +1,12 @@
+# Linux x64 test installer; UOS compatibility requires target-machine acceptance.
+linux:
+  executableName: transportx-agent
+  icon: app-icon.svg
+  category: Science
+  maintainer: TransportX contributors
+  synopsis: Local traffic analysis workbench
+  target:
+    - target: deb
+      arch: x64
+deb:
+  compression: xz

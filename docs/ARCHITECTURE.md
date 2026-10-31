@@ -1,9 +1,9 @@
 # TransportX Agent 架构
 
-- 源码版本：3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
+- 源码版本：3.24.1（未发布）；最近正式发布为 3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-10-28
-- 发布 Profile：macOS arm64（DMG + ZIP 更新包）与 Windows x64（NSIS）；Linux 不是发布目标
+- 更新日期：2026-10-31
+- 打包 Profile：macOS arm64（DMG + ZIP 更新包）、Windows x64（NSIS）与实验性 Linux x64（DEB 测试包，尚未通过 UOS 实机验收或正式发布）
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
 
@@ -476,6 +476,7 @@ desktop/electron-builder.yml
   ├─ electron-builder.common.yml   通用资源与 asar 规则
   ├─ electron-builder.mac.yml      macOS arm64 DMG + ZIP
   ├─ electron-builder.win.yml      Windows x64 NSIS
+  ├─ electron-builder.linux.yml    Linux x64 DEB 测试包
   └─ scripts/update-builder-config.cjs
                                   按 Profile 注入产物命名、更新源与发布说明
 ```
@@ -490,6 +491,8 @@ desktop/electron-builder.yml
 4. electron-builder 按对应 fragment 与动态更新配置打包。
 
 macOS 产物包含 DMG、供自动更新使用的 ZIP、`latest-mac.yml`、blockmap、SHA-256 与安装说明；Windows 产物包含 NSIS setup、`latest.yml` 与校验文件。正式发行的签名预检要求 macOS Developer ID + 公证、Windows Authenticode + 可信时间戳；已发布版本的实际签名状态以对应发布记录为准。
+
+Linux x64 仅提供实验性 DEB 构建，不要求 macOS/Windows 签名凭据；Actions 在 Linux 主机上验证实际安装包、内置 Python、桌面启动与卸载，并检查 x64 ELF 的 glibc 2.28 基线。安装包只作为 CI 测试产物保存，未上传官网或正式更新源，UOS 实机验收仍待完成；当前不提供 Linux Video Capability。构建与目标机验收见 [Linux x64 测试安装包](releases/linux-x64-test.md)。
 
 Video Capability 同时显式设置 `TRANSPORTX_VIDEO_MODULE_DIR` 与 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`，独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。ffmpeg runtime 没有仓库或个人开发目录的隐式默认值；源码目录不可代替平台专属 ZIP 安装。
 

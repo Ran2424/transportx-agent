@@ -16,7 +16,7 @@
 
 | 层 | 技术 |
 |---|---|
-| 桌面 | Electron 43、electron-builder 26（DMG arm64 / NSIS x64） |
+| 桌面 | Electron 43、electron-builder 26（DMG arm64 / NSIS x64 / Linux x64 DEB 测试包） |
 | 服务端 | Node.js + TypeScript，`src/server/` |
 | 前端 | React 19、Vite、Tailwind CSS 4、Radix Dialog、MapLibre GL |
 | 运行时 | 内置 Pi CLI `@earendil-works/pi-coding-agent` 0.80.10、可重定位 Python 3.10（PyYAML/numpy/matplotlib）；可安装 Video Capability 独立携带静态 ffmpeg/ffprobe 8.0 |
@@ -71,7 +71,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 - **CHANGELOG 归集**：当前平台版本的安装包尚未正式发布时，所有后续变更（含文档与开发工具）追加到 `docs/CHANGELOG.md` 的当前版本段，标为 `## <version> - 未发布`；不另建 `Unreleased`，不因每次改动提升平台版本。正式发布时填写实际发布日期并冻结该段；发布后的新变更开启下一版本段。内部测试打包、源码提交或 PR 合并不算正式发布；任一平台正式发布后，该版本即冻结。Module 仍遵守独立版本纪律。
 - **提交策略**：小型修复与小幅功能改动可直接提交 `main`；涉及新能力、架构调整或多环节联动的较大改动走「分支 → PR → 合并」流程（参考 PR #12 的 Video Capability）。
 - **安全边界**：模块安装拒绝符号链接与路径逃逸；文件/Geo/Citation 资源按会话目录与 SHA-256 校验；Markdown 安全渲染；鉴权 Cookie 与 WebSocket 断连处理均有测试覆盖。
-- **跨平台维护纪律**：所有 OS 相关的事实（python 入口与架构校验、ffmpeg 文件名 / chmod / 架构探测、签名环境变量、安装器 / 卸载器形为、安装器静默参数、release metadata）都集中于 [`desktop/scripts/platform-profile.mjs`](desktop/scripts/platform-profile.mjs)。`desktop/electron-builder.yml` 仅负责用 `extends:` 组合 [`electron-builder.common.yml`](desktop/electron-builder.common.yml) + [`electron-builder.mac.yml`](desktop/electron-builder.mac.yml) + [`electron-builder.win.yml`](desktop/electron-builder.win.yml)。增减新 OS 仅意味着：（1）在 `platform-profile.mjs` 增一条 profile；（2）新增一份 `electron-builder.<os>.yml` fragment 并在主文件 `extends` 中加入；（3）如果 profile.signing.hostArchRequired 不是 `x64/arm64`、或 ffmpeg/python 入口不一致，更新 [`test/desktop-runtime.test.ts`](test/desktop-runtime.test.ts) 的 snapshot 子例。**不允许在任何业务文件（`src/server/**`、`desktop/main.ts`、`desktop/agent-host-supervisor.ts`、`scripts/**`）重新引入 `process.platform === '...'` 分支、`path.sep` 拼接的边界判定、或 `.exe` 字符串拼接**；一律走现成 helper：`isWithin`（来自 `src/server/util/path.ts`）、`toPosixPath` / `relativePosixPath`（同上）。磁盘序列化一律 POSIX；内存判定一律 `path.relative`；混合写法在 review 阶段会被打回。同一 `npm run desktop:pack` 命令会根据 `process.platform` 自动走对应 profile，无需为 Windows 维护独立脚本。
+- **跨平台维护纪律**：所有 OS 相关的事实（python 入口与架构校验、ffmpeg 文件名 / chmod / 架构探测、签名环境变量、安装器 / 卸载器形为、安装器静默参数、release metadata）都集中于 [`desktop/scripts/platform-profile.mjs`](desktop/scripts/platform-profile.mjs)。`desktop/electron-builder.yml` 仅负责用 `extends:` 组合 [`electron-builder.common.yml`](desktop/electron-builder.common.yml) + [`electron-builder.mac.yml`](desktop/electron-builder.mac.yml) + [`electron-builder.win.yml`](desktop/electron-builder.win.yml) + [`electron-builder.linux.yml`](desktop/electron-builder.linux.yml)。增减新 OS 仅意味着：（1）在 `platform-profile.mjs` 增一条 profile；（2）新增一份 `electron-builder.<os>.yml` fragment 并在主文件 `extends` 中加入；（3）如果 profile.signing.hostArchRequired 不是 `x64/arm64`、或 ffmpeg/python 入口不一致，更新 [`test/desktop-runtime.test.ts`](test/desktop-runtime.test.ts) 的 snapshot 子例。**不允许在任何业务文件（`src/server/**`、`desktop/main.ts`、`desktop/agent-host-supervisor.ts`、`scripts/**`）重新引入 `process.platform === '...'` 分支、`path.sep` 拼接的边界判定、或 `.exe` 字符串拼接**；一律走现成 helper：`isWithin`（来自 `src/server/util/path.ts`）、`toPosixPath` / `relativePosixPath`（同上）。磁盘序列化一律 POSIX；内存判定一律 `path.relative`；混合写法在 review 阶段会被打回。同一 `npm run desktop:pack` 命令会根据 `process.platform` 自动走对应 profile，无需为 Windows 维护独立脚本。
 
 ## 发布流程
 
@@ -89,6 +89,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 
    - Windows x64（已在 `platform-profile.win`）：`npm run desktop:pack` 在 Windows x64 主机上直接走入 `check-desktop-release.mjs` 的 win 分支。
 
+   - Linux x64 为实验性 DEB 测试构建，只在 Linux 主机执行并使用 `--publish=never`，不上传官网或正式更新源；UOS 实机验收仍待完成，当前不提供 Linux Video Capability。流程见 [Linux x64 测试安装包](docs/releases/linux-x64-test.md)。
    - 自包含 Python 3.10 runtime 的源目录由 `TRANSPORTX_PYTHON_RUNTIME_DIR` 显式指定；如缺失，可从 `desktop/build/runtimes/python`（上次构建残留）恢复，或按 `desktop/python-requirements.txt` 重新准备。
    - Video Capability 单独设置 `TRANSPORTX_VIDEO_MODULE_DIR` 与 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`；ffmpeg runtime 不使用仓库内或开发者个人目录的隐式默认值，LICENSE/NOTICES 随模块包携带。
    - 产物在 `release/`：mac 产出 `latest-mac.yml` + DMG + blockmap + sha256 + `README-安装说明.txt`；win 产出 NSIS `setup.exe` + sha256 + 清单文件。同一句 `npm run desktop:pack` 下由 `process.platform` 决定产出哪个 artifact，**不要**在 macOS 上交叉打 Windows 包。

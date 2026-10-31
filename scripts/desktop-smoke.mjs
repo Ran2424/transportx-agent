@@ -25,7 +25,7 @@ if (packaged) {
   const resourcesDir = packaged.resourcesDir;
   const manifest = JSON.parse(fs.readFileSync(path.join(resourcesDir, 'runtime-manifest.json'), 'utf8'));
   const packagedPython = path.join(resourcesDir, manifest.python?.path || '');
-  const python = spawnSync(packagedPython, ['-B', '-I', '-c', 'import matplotlib,numpy,platform,sqlite3,ssl,yaml; print(platform.python_version())'], {
+  const python = spawnSync(packagedPython, ['-B', '-I', '-c', 'import ezdxf,matplotlib,numpy,pandas,platform,pyproj,shapely,sqlite3,ssl,yaml; print(platform.python_version())'], {
     encoding: 'utf8',
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
   });
@@ -37,18 +37,23 @@ if (packaged) {
   }
   console.log('[desktop-smoke] optional ffmpeg runtime is absent from the base package');
 }
+const launchEnvironment = { ...process.env };
+if (packaged) delete launchEnvironment.TAU_PYTHON_COMMAND;
 const app = await electron.launch({
   ...(packaged ? { executablePath: packaged.executable } : { args: ['.'], cwd: process.cwd() }),
   env: {
-    ...process.env,
+    ...launchEnvironment,
     HOME: temporaryHome,
     TAU_USER_DATA_DIR: dataRoot,
-    TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3',
+    ...(packaged ? {} : { TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND || 'python3' }),
   },
 });
 
 try {
   const window = await app.firstWindow({ timeout: 20_000 });
+  await window.waitForSelector('.workspace-brand', { timeout: 20_000 });
+  await window.evaluate(() => localStorage.setItem('tau-locale', 'zh-CN'));
+  await window.reload();
   await window.waitForSelector('.workspace-brand', { timeout: 20_000 });
   const title = await window.title();
   const brand = await window.locator('.workspace-brand').innerText();

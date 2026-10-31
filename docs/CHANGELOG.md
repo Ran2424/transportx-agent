@@ -6,6 +6,10 @@
 
 ## 3.24.1 - 未发布
 
+### Added
+
+- 增加 Linux x64 DEB 测试包：沿用平台 profile 配置及 `desktop:pack`，内置可重定位 Python 3.10；Linux Actions 验证安装、桌面启动、Host 退出与卸载，输出 SHA-256 并检查 x64 ELF 不超出 glibc 2.28 基线。安装包冒烟覆盖当前 Python 必需模块，并排除外部 Python 覆盖。测试包未发布到更新源，UOS V20 1070 兼容性仍需目标机验收，暂不提供 Linux Video Capability 安装包。
+
 ### Fixed
 
 - 准备会话运行时在租约内复核上一代 Host 与 Pi/受管进程；只有已确认退出、PID 已复用或跨开机代次时才恢复，保留仍运行、身份不明及同次开机未记录 PID 的阻止规则，恢复过程不发送终止信号。

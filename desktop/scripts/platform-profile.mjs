@@ -46,6 +46,12 @@ const PYTHON_PROFILE = {
     archErrorMessage: 'x64',
     requiredModules: PYTHON_REQUIRED_MODULES,
   },
+  linux: {
+    entry: 'bin/python3',
+    archCheck: (machine) => machine === 'x86_64',
+    archErrorMessage: 'x64',
+    requiredModules: PYTHON_REQUIRED_MODULES,
+  },
 };
 
 function darwinFfmpegArchCheck(binaryPath) {
@@ -56,6 +62,13 @@ function darwinFfmpegArchCheck(binaryPath) {
 
 function noopFfmpegArchCheck() {
   // Windows / static ffmpeg builds are validated by filename + version probe alone.
+}
+
+function linuxFfmpegArchCheck(binaryPath) {
+  const result = spawnSync('file', [binaryPath], { encoding: 'utf8' });
+  if (result.status !== 0 || !/ELF 64-bit.*x86-64/.test(result.stdout)) {
+    throw new Error(`Bundled Linux ${path.basename(binaryPath)} must be an x64 ELF binary: ${(result.stderr || result.stdout || '').trim()}`);
+  }
 }
 
 const FFMPEG_PROFILE = {
@@ -69,6 +82,12 @@ const FFMPEG_PROFILE = {
     binName: (name) => `${name}.exe`,
     chmodRequired: false,
     archCheck: noopFfmpegArchCheck,
+    arch: 'x64',
+  },
+  linux: {
+    binName: (name) => name,
+    chmodRequired: true,
+    archCheck: linuxFfmpegArchCheck,
     arch: 'x64',
   },
 };
@@ -100,6 +119,13 @@ const SIGNING_PROFILE = {
     allowUnsignedEnv: 'TRANSPORTX_ALLOW_UNSIGNED_BUILD',
     allowUnsignedPurpose: 'internal structure verification of unsigned Windows installers only',
   },
+  linux: {
+    hostArchRequired: 'x64',
+    description: 'Linux x64 DEB packages do not use platform code signing; distribute the SHA-256 checksum with the installer.',
+    requiredEnv: [],
+    allowUnsignedEnv: 'TRANSPORTX_ALLOW_UNSIGNED_BUILD',
+    allowUnsignedPurpose: 'Linux DEB packages do not require a signing bypass',
+  },
 };
 
 const RELEASE_PROFILE = {
@@ -124,6 +150,15 @@ const RELEASE_PROFILE = {
     requiresFfmpeg: false,
     supportsInstallerSmoke: true,
     notes: 'NSIS silent install/launch/uninstall validated by test:windows-installer-smoke.',
+  },
+  linux: {
+    label: 'Linux x64',
+    installerArtifact: 'deb',
+    productExeBasename: 'transportx-agent',
+    productExeSuffix: '',
+    requiresFfmpeg: false,
+    supportsInstallerSmoke: true,
+    notes: 'DEB install/launch/uninstall verified on Linux CI; UOS V20 requires separate target-machine acceptance.',
   },
 };
 
@@ -163,10 +198,26 @@ export const PLATFORM_PROFILES = Object.freeze({
       requiredExtensions: ['.exe'],
     }),
   }),
+  linux: Object.freeze({
+    key: 'linux',
+    builderPlatform: 'linux',
+    label: RELEASE_PROFILE.linux.label,
+    python: PYTHON_PROFILE.linux,
+    ffmpeg: FFMPEG_PROFILE.linux,
+    signing: SIGNING_PROFILE.linux,
+    release: RELEASE_PROFILE.linux,
+    update: Object.freeze({
+      directory: 'updates/stable/linux-x64/',
+      url: 'https://download.transkgllm.com/updates/stable/linux-x64/',
+      manifest: 'latest-linux.yml',
+      websiteInstallerPattern: '^TransportX[.-]Agent-((?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))-linux-x64\\.deb$',
+      artifactName: 'TransportX-Agent-${version}-linux-x64.${ext}',
+      requiredExtensions: ['.deb'],
+    }),
+  }),
 });
 
-// Runtime operations are also generated into bin/host-platform.json. Linux
-// keeps its existing Web development behavior; it is not a desktop release.
+// Runtime operations are also generated into bin/host-platform.json.
 const PROCESS_INSPECTION = {
   darwin: {
     workspaceScript: `import json,os,subprocess
@@ -292,7 +343,7 @@ print(json.dumps({'processes':records}))`,
 export const HOST_PLATFORM_OPERATIONS = Object.freeze({
   darwin: { processInspection: PROCESS_INSPECTION.darwin, systemPrompt: 'PI_SYSTEM_POSIX.md', updateInstallerPattern: PLATFORM_PROFILES.darwin.update.websiteInstallerPattern, posixPermissions: true, detached: true, tree: 'process-group', openCommand: 'open', detachedOpen: false, utilityHost: true, insetTitleBar: true, dataRoot: { env: null, fallback: [], parts: ['.transportx', 'traffic-agent'] }, packaged: { executableParts: ['Contents', 'MacOS', RELEASE_PROFILE.darwin.productExeBasename], resourcesParts: ['Contents', 'Resources'], executableExtension: '' } },
   win32: { processInspection: PROCESS_INSPECTION.win32, systemPrompt: 'PI_SYSTEM_WINDOWS.md', updateInstallerPattern: PLATFORM_PROFILES.win.update.websiteInstallerPattern, posixPermissions: false, detached: false, tree: 'taskkill', treeCommand: 'taskkill', treeArgs: ['/pid', '/T'], treeForceArg: '/F', openCommand: 'explorer.exe', detachedOpen: true, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'APPDATA', fallback: ['AppData', 'Roaming'], parts: ['TransportX', 'traffic-agent'] }, packaged: { executableParts: [RELEASE_PROFILE.win.productExeName], resourcesParts: ['resources'], executableExtension: RELEASE_PROFILE.win.productExeSuffix } },
-  linux: { processInspection: PROCESS_INSPECTION.linux, systemPrompt: 'PI_SYSTEM_POSIX.md', posixPermissions: true, desktopDataRoot: 'electron', detached: true, tree: 'process-group', openCommand: 'xdg-open', detachedOpen: false, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'XDG_CONFIG_HOME', fallback: ['.config'], parts: ['transportx-traffic-agent'] }, packaged: null },
+  linux: { processInspection: PROCESS_INSPECTION.linux, systemPrompt: 'PI_SYSTEM_POSIX.md', updateInstallerPattern: PLATFORM_PROFILES.linux.update.websiteInstallerPattern, posixPermissions: true, desktopDataRoot: 'electron', detached: true, tree: 'process-group', openCommand: 'xdg-open', detachedOpen: false, utilityHost: false, insetTitleBar: false, dataRoot: { env: 'XDG_CONFIG_HOME', fallback: ['.config'], parts: ['transportx-traffic-agent'] }, packaged: { executableParts: [RELEASE_PROFILE.linux.productExeBasename], resourcesParts: ['resources'], executableExtension: '' } },
 });
 
 export function hostPlatformOperations(platform = process.platform) {
