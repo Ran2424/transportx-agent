@@ -152,7 +152,13 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
     server.close(resolve);
   }));
 
-  t.after(() => fs.rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
+  t.after(() => {
+    const log = path.join(process.env.PI_CODING_AGENT_DIR!, 'logs', 'runtime.jsonl');
+    if (fs.existsSync(log)) for (const line of fs.readFileSync(log, 'utf8').trim().split('\n')) {
+      if (JSON.parse(line).event === 'native_process_probe') t.diagnostic(line);
+    }
+    fs.rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
+  });
 
   await new Promise<void>((resolve) => {
     server.once('listening', () => {
