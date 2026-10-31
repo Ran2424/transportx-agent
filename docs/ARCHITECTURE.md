@@ -1,8 +1,8 @@
 # TransportX Agent 架构
 
-- 源码版本：3.24.0（未发布，按当前工作区实现核查）
+- 源码版本：3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-10-23
+- 更新日期：2026-10-28
 - 发布 Profile：macOS arm64（DMG + ZIP 更新包）与 Windows x64（NSIS）；Linux 不是发布目标
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
@@ -119,7 +119,7 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 
 开发启动 `npm run desktop:dev` 和 `./start.sh` 会读取项目根目录的可选 `.env.local`，其中可设置 `TAU_PYTHON_COMMAND` 为目标环境的解释器绝对路径；已导出的同名环境变量优先，未配置时仍使用 PATH 中的 `python3`。`.env.local` 不入 Git，可参考 `.env.example`，不修改全局 shell PATH。Host 将选定解释器传给 Pi 的同名变量及会话上下文；脚本、依赖探测和 `-m pip` 应使用同一解释器。正式安装包不读取此开发配置，继续使用内置运行时机制。
 
-每个显式激活的会话以 Pi RPC 进程运行；已保存但未激活的会话不占 Pi 实例。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
+会话运行生命周期由 Host 内部管理，用户不需要手动激活。打开会话、查看地图/视频/引用/文档、保存选区上下文和导出地图截图使用持久会话上下文，不启动 Pi；发送消息或执行模型设置、压缩等操作时按需启动 Pi RPC 进程，空闲运行实例可由 Host 复用或切换。界面只呈现发送、生成、等待交互及失败等任务状态，不以“已保存/已激活”区分历史会话与运行实例。工作区存在未完成任务或交互时，切换执行必须由用户确认，运行诊断页保留进程与租约信息。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
 发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely、ezdxf。
 
@@ -146,6 +146,8 @@ Light / Dark / Sand 的 primitive 与 semantic token 统一声明在 [tokens.css
 ## 3. 关键数据流
 
 ### 3.1 创建与装配
+
+工作区内的“新建会话”打开高级配置表单，用户确认后才保存会话，不自动创建或启动 Pi；模型与能力从平台目录初始化，任务范围留空。工作区默认配置的数据与 API 保留供兼容和历史会话配置确认使用，日常新建不自动继承，也不提供编辑默认配置入口。
 
 ```mermaid
 flowchart LR

@@ -105,6 +105,10 @@ test('Controlled spatial operations produce auditable results and reject CRS and
     assert.equal(inspected.drawing.revision, 1);
     assert.equal(inspected.drawing.sourceCrs, 'EPSG:4326');
     assert.equal(inspected.drawing.target.rotationDeg, 90);
+    const historicalContext = { id: owner.conversationId, conversationId: owner.conversationId, cwd: root, entries: [], citationRegistryId: 'cad-owner', resolvedSessionPlan: owner.resolvedSessionPlan };
+    const historicalView = await cad.present(historicalContext, { resource: { scope: 'session-file', path: created.result.drawing.path } });
+    assert.equal(historicalView.revision, 1, 'a persistent conversation can open CAD without a Pi instance');
+    assert.equal(cad.resolvePresentation(historicalContext, historicalView.viewId).revision, 1);
     // Exercise the built module's model-facing result, not only the Host details.
     const extension = await import(require('node:url').pathToFileURL(path.resolve('dist/tool-modules/cad/extensions/pi-cad/index.ts')).href);
     const registered: any[] = [];

@@ -4,7 +4,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: mirror-mac-3.23.0
+  group: mirror-mac-3.24.0
   cancel-in-progress: false
 jobs:
   mirror:
@@ -12,9 +12,9 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_VERSION: 3.23.0
-      RELEASE_ID: '413412063'
-      RELEASE_SOURCE: 50dfba75215edc1b69914a13b55ce3086e7f90dc
+      RELEASE_VERSION: 3.24.0
+      RELEASE_ID: '426625295'
+      RELEASE_SOURCE: 28cfc891ff6aec6a2d200f74a99870a69e28e03f
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,7 +34,7 @@ jobs:
           fs.writeFileSync('expected-names.txt', profile.update.requiredExtensions.map(extension => profile.update.artifactName.replace('${version}', process.env.RELEASE_VERSION).replace('${ext}', extension.slice(1))).join('\n') + '\n');
           NODE
           curl --fail --location --retry 3 --header 'Accept-Encoding: identity' "$(cat download-base.txt)build-info-mac-$RELEASE_VERSION.json" -o build-info.json
-          jq -e --arg version "$RELEASE_VERSION" --arg source "$RELEASE_SOURCE" '.version == $version and .sourceRevision == $source and .distribution == "internal"' build-info.json
+          jq -e --arg version "$RELEASE_VERSION" --arg source "$RELEASE_SOURCE" '.version == $version and .sourceRevision == $source and .distribution == "stable"' build-info.json
       - name: Verify and mirror installer archives
         run: |
           set -euo pipefail
@@ -43,5 +43,5 @@ jobs:
             [[ "$sha" =~ ^[a-f0-9]{64}$ ]]
             curl --fail --location --retry 3 --header 'Accept-Encoding: identity' "$(cat download-base.txt)$name" -o "$name"
             printf '%s  %s\n' "$sha" "$name" | sha256sum --check --strict
-            gh release upload "v$RELEASE_VERSION" "$name" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "v$RELEASE_VERSION" "$name" --repo "$GITHUB_REPOSITORY"
           done < expected-names.txt

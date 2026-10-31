@@ -14,6 +14,7 @@ import { readSessionSummary, searchSessionFile } from './session-history-reader.
 import { isWithin, relativePosixPath } from './util/path.js';
 import { asRecord } from '../contracts/common.js';
 import { historicalResourceLinks } from './historical-resource-links.js';
+import { readSessionBranch } from './session-projection.js';
 
 type Configuration = { domainId: string; modelSpec: string; profile: SessionProfileV1 };
 type Options = {
@@ -27,7 +28,7 @@ const problem = (code: string, message: string, status = 409) => Object.assign(n
 const name = (value: unknown) => { if (typeof value !== 'string' || !value.trim() || value.trim().length > 120) throw problem('invalid_name', 'Name must contain 1–120 characters.', 400); return value.trim(); };
 const revision = (value: unknown): number => { if (!Number.isSafeInteger(value) || Number(value) < 0) throw problem('workspace_revision_conflict', 'A current revision is required.'); return Number(value); };
 
-/** Persistent API authority. A real live instance is required only for execution/advanced views. */
+/** Persistent API authority. Agent execution requires a live runtime. */
 export class WorkspaceHost {
   private background: Promise<unknown> | null = null;
   constructor(readonly options: Options) {}
@@ -42,8 +43,15 @@ export class WorkspaceHost {
   live(id: string, required = true) {
     const target = this.target(id);
     const session = this.boundRuntime(id, target.manifest.id);
-    if (!session && required) throw problem('conversation_not_active', 'Activate this conversation explicitly to use this view.');
+    if (!session && required) throw problem('conversation_not_active', 'The conversation runtime has stopped. Retry the operation.');
     return session || null;
+  }
+  resourceContext(id: string) {
+    const target = this.target(id);
+    const session = this.boundRuntime(id, target.manifest.id);
+    if (session) return session;
+    const history = this.options.store.inspectHistory(target.directory, target.conversation);
+    return { id, conversationId: id, cwd: target.directory, citationRegistryId: target.manifest.citationRegistryId, entries: history.sessionFile ? readSessionBranch(history.sessionFile) : [], resolvedSessionPlan: target.conversation.plan ? this.options.store.readPlan(target.directory, target.conversation) : null };
   }
   private boundRuntime(id: string, workspaceId: string) { return [...this.options.sessions.sessions.values()].find((session) => session.conversationId === id && session.workspaceId === workspaceId && !session.terminating && session.lifecycle?.isReady(session)); }
   async workspace(id: string) {

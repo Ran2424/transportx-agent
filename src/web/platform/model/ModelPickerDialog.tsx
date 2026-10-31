@@ -17,7 +17,7 @@ const thinkingLevels = [
   ['xhigh', 'model.thinking.xhigh'],
 ] as const;
 
-export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: { open: boolean; onOpenChange(open: boolean): void; session: ConversationView | null; onAddModel(): void }) {
+export function ModelPickerDialog({ open, onOpenChange, session, onAddModel, onEnsureRuntime }: { open: boolean; onOpenChange(open: boolean): void; session: ConversationView | null; onAddModel(): void; onEnsureRuntime(id: string): Promise<void> }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const [models, setModels] = useState<Array<ModelRecord | string>>([]);
@@ -37,12 +37,12 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
     setError('');
     Promise.all([
       kernel.commands.platform.getAvailableModels(session.id),
-      kernel.commands.agent.getState(session.id),
+      session.liveSessionId ? kernel.commands.agent.getState(session.id) : Promise.resolve(null),
     ]).then(([available, state]) => {
       if (!current) return;
       setModels(available);
-      if (state.model !== undefined) setModel(modelReference(state.model));
-      if (state.thinkingLevel) setThinking(state.thinkingLevel);
+      if (state?.model !== undefined) setModel(modelReference(state.model));
+      if (state?.thinkingLevel) setThinking(state.thinkingLevel);
     }).catch((cause) => {
       if (current) setError((cause as { message?: string })?.message || t('model.error.list'));
     }).finally(() => {
@@ -57,6 +57,7 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel }: {
     setSaving(true);
     setError('');
     try {
+      await onEnsureRuntime(session.id);
       await kernel.commands.agent.setModel({ sessionId: session.id, model });
       await kernel.commands.agent.setThinkingLevel({ sessionId: session.id, level: thinking });
       const state = await kernel.commands.agent.getState(session.id);

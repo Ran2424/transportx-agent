@@ -308,7 +308,7 @@ async function rpcCommand(deps: CommandDeps, command: Record<string, unknown>): 
   const sessionId = command.sessionId as string | undefined;
   if (sessionId) {
     const liveSessionId = deps.liveSessionId(sessionId);
-    if (!liveSessionId && !['get_available_models', 'refresh_models'].includes(String(command.type))) throw appError({ code: 'conversation_not_active', category: 'session', message: '请先激活此会话。', sessionId, retryable: false });
+    if (!liveSessionId && !['get_available_models', 'refresh_models'].includes(String(command.type))) throw appError({ code: 'conversation_not_active', category: 'session', message: '会话运行已结束，请重试当前操作。', sessionId, retryable: false });
     command = { ...command, sessionId: liveSessionId || undefined };
   }
   const data = await httpJson(deps.http, '/api/rpc', { method: 'POST', body: command }, { category: 'session', sessionId });
