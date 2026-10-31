@@ -185,9 +185,6 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .live-tab-close { width: 26px; border: 0; background: transparent; color: var(--text-tertiary); cursor: pointer; }
 .live-tab-close:hover { color: var(--status-danger); }
 .pending-dialog-beacon { width: 14px; height: 14px; display: grid; place-items: center; border-radius: 50%; color: var(--surface-canvas); background: var(--status-warning); font-size: 9px; font-style: normal; }
-.live-tab-add { width: 45px; flex: 0 0 45px; display: grid; place-items: center; padding: 0; border: 0; color: var(--text-secondary); background: transparent; cursor: pointer; }
-.live-tab-add:hover { color: var(--selection-fg); background: var(--selection-bg); }
-.live-tab-add svg { width: 15px; height: 15px; }
 
 /* ============================================================
    Conversation Stage & Welcome

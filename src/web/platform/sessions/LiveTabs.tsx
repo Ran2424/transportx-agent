@@ -1,6 +1,5 @@
 import type { ConversationView } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../../components/icons';
 import { compactModelLabel, sessionTitle } from '../../lib/formatting';
 
 type LiveTabsProps = {
@@ -10,10 +9,9 @@ type LiveTabsProps = {
   pendingDialogSessions: Set<string>;
   onSelect(sessionId: string): void;
   onClose(sessionId: string): void;
-  onNewSession(): void;
 };
 
-export function LiveTabs({ sessions, activeSessionId, streamingBySession, pendingDialogSessions, onSelect, onClose, onNewSession }: LiveTabsProps) {
+export function LiveTabs({ sessions, activeSessionId, streamingBySession, pendingDialogSessions, onSelect, onClose }: LiveTabsProps) {
   const { t } = useTranslation();
   return (
     <nav className="live-tabs" aria-label={t('sessions.running')} data-testid="live-tabs">
@@ -30,7 +28,6 @@ export function LiveTabs({ sessions, activeSessionId, streamingBySession, pendin
           </div>
         ))}
       </div>
-      <button className="live-tab-add" type="button" aria-label={t('sessions.newTask')} onClick={onNewSession}><Icon name="plus" /></button>
     </nav>
   );
 }

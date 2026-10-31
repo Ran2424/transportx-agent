@@ -147,6 +147,8 @@ Light / Dark / Sand 的 primitive 与 semantic token 统一声明在 [tokens.css
 
 ### 3.1 创建与装配
 
+工作区内的“新建会话”打开高级配置表单，用户确认后才保存会话，不自动创建或启动 Pi；模型与能力从平台目录初始化，任务范围留空。工作区默认配置的数据与 API 保留供兼容和历史会话配置确认使用，日常新建不自动继承，也不提供编辑默认配置入口。
+
 ```mermaid
 flowchart LR
   selection["Domain + Session Profile<br/>模块选择与任务范围"] --> registry["Module Registry<br/>解析依赖闭包"]

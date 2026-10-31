@@ -79,7 +79,9 @@ export async function localModelSmoke(page, baseUrl) {
     await page.getByText('smoke-local', { exact: true }).first().waitFor();
     await page.getByRole('button', { name: '常规', exact: true }).click();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: '新建交通任务', exact: true }).first().click();
+    const newWorkspace = page.getByRole('button', { name: '打开工作区', exact: true }).first();
+    if (!await newWorkspace.isVisible()) await page.getByRole('button', { name: '展开或收起会话侧栏', exact: true }).click();
+    await newWorkspace.click();
     const newTask = page.getByRole('dialog', { name: '打开工作区', exact: true });
     await newTask.locator('.menu-select-trigger').first().click();
     await page.getByRole('option').filter({ hasText: 'smoke-local' }).waitFor();
