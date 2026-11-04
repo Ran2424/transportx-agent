@@ -8,6 +8,8 @@
 
 ### Added
 
+- 增加麒麟服务器 V10 的 Linux x64 原生 RPM 测试构建：复用现有平台 profile 与 Linux 应用产物，独立声明 RPM 依赖；手动 CI 可生成 RPM、记录哈希和安装脚本，并在 Rocky Linux 8 检查安装、包内运行时与卸载。默认 DEB 构建不变，麒麟 VNC 桌面与内网模型仍待目标机验收，不作为正式发布。
+
 - 增加 Linux x64 DEB 测试包：沿用平台 profile 配置及 `desktop:pack`，内置可重定位 Python 3.10；Linux Actions 验证安装、桌面启动、Host 退出与卸载，输出 SHA-256 并检查 x64 ELF 不超出 glibc 2.28 基线。安装包冒烟覆盖当前 Python 必需模块，并排除外部 Python 覆盖。测试包未发布到更新源，UOS V20 1070 兼容性仍需目标机验收，暂不提供 Linux Video Capability 安装包。
 
 ### Fixed

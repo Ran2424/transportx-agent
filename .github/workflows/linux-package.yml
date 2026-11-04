@@ -1,6 +1,11 @@
 name: Linux x64 test package
 on:
   workflow_dispatch:
+    inputs:
+      build_rpm:
+        description: 'Also build a native x64 RPM and check installation on Rocky Linux 8'
+        type: boolean
+        default: false
   pull_request:
     paths:
       - .github/workflows/linux-package.yml
@@ -71,6 +76,52 @@ jobs:
           sudo apt-get remove -y transportx-agent
           test ! -e '/opt/TransportX Agent/transportx-agent'
           test ! -e /usr/bin/transportx-agent
+      - name: Install RPM build tools
+        if: inputs.build_rpm == true
+        run: sudo apt-get install -y rpm
+      - name: Build native RPM from the Linux packaged application
+        if: inputs.build_rpm == true
+        run: node node_modules/electron-builder/cli.js --config desktop/electron-builder.yml --linux rpm --x64 --prepackaged release/linux-unpacked --publish=never
+      - name: Record RPM metadata, dependencies and installation scripts
+        if: inputs.build_rpm == true
+        run: |
+          {
+            echo "Source: $GITHUB_SHA"
+            rpm -qpi release/*-linux-x64.rpm
+            echo 'RPM requirements:'
+            rpm -qpR release/*-linux-x64.rpm
+            echo 'RPM scripts:'
+            rpm -qp --scripts release/*-linux-x64.rpm
+          } > release/linux-x64-rpm-metadata.txt
+          cat release/linux-x64-rpm-metadata.txt
+          cd release
+          sha256sum *-linux-x64.rpm > SHA256SUMS-linux-x64-rpm.txt
+      - name: Install, check bundled runtimes and uninstall RPM on Rocky Linux 8
+        if: inputs.build_rpm == true
+        shell: bash
+        run: |
+          docker pull rockylinux:8
+          docker image inspect rockylinux:8 --format '{{.Id}} {{join .RepoDigests " "}}' > release/linux-x64-rpm-install-validation.txt
+          docker run --rm -v "$PWD/release:/packages:ro" rockylinux:8 bash -eu -o pipefail -c '
+            cat /etc/os-release
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"
+            dnf install -y /packages/*-linux-x64.rpm
+            rpm -q transportx-agent
+            test -x "/opt/TransportX Agent/transportx-agent"
+            test -e /usr/bin/transportx-agent
+            test -f /usr/share/applications/transportx-agent.desktop
+            ldd "/opt/TransportX Agent/transportx-agent" > /tmp/transportx-ldd.txt
+            cat /tmp/transportx-ldd.txt
+            if grep -q "not found" /tmp/transportx-ldd.txt; then exit 1; fi
+            ELECTRON_RUN_AS_NODE=1 "/opt/TransportX Agent/transportx-agent" -e "console.log(JSON.stringify({arch:process.arch,node:process.version}))"
+            "/opt/TransportX Agent/resources/runtimes/python/bin/python3" -B -I -c "import ezdxf,matplotlib,numpy,pandas,platform,pyproj,shapely,sqlite3,ssl,yaml; print(platform.python_version())"
+            stat -c "sandbox: %U:%G %a %n" "/opt/TransportX Agent/chrome-sandbox"
+            rpm -e transportx-agent
+            test ! -e "/opt/TransportX Agent/transportx-agent"
+            test ! -e /usr/bin/transportx-agent
+            test ! -e /usr/share/applications/transportx-agent.desktop
+            echo RPM_INSTALL_RUNTIME_UNINSTALL_PASS
+          ' | tee -a release/linux-x64-rpm-install-validation.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -80,4 +131,16 @@ jobs:
           path: |
             release/*-linux-x64.deb
             release/SHA256SUMS-linux-x64.txt
+            release/linux-x64-validation.txt
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.build_rpm == true
+        with:
+          name: transportx-linux-x64-rpm-test
+          compression-level: 0
+          retention-days: 14
+          path: |
+            release/*-linux-x64.rpm
+            release/SHA256SUMS-linux-x64-rpm.txt
+            release/linux-x64-rpm-metadata.txt
+            release/linux-x64-rpm-install-validation.txt
             release/linux-x64-validation.txt

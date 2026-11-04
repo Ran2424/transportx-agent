@@ -206,6 +206,10 @@ export const PLATFORM_PROFILES = Object.freeze({
     ffmpeg: FFMPEG_PROFILE.linux,
     signing: SIGNING_PROFILE.linux,
     release: RELEASE_PROFILE.linux,
+    rpm: Object.freeze({
+      compression: 'xz',
+      depends: ['gtk3', 'libnotify', 'nss', 'libXScrnSaver', 'libXtst', 'xdg-utils', 'at-spi2-core', 'libuuid', 'libsecret', 'alsa-lib', 'mesa-libgbm'],
+    }),
     update: Object.freeze({
       directory: 'updates/stable/linux-x64/',
       url: 'https://download.transkgllm.com/updates/stable/linux-x64/',
