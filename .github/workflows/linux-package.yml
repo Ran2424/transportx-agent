@@ -98,9 +98,13 @@ jobs:
           sha256sum *-linux-x64.rpm > SHA256SUMS-linux-x64-rpm.txt
       - name: Install, check bundled runtimes and uninstall RPM on Rocky Linux 8
         if: inputs.build_rpm == true
+        shell: bash
         run: |
-          docker run --rm -v "$PWD/release:/packages:ro" rockylinux:8.10 bash -eu -o pipefail -c '
+          docker pull rockylinux:8
+          docker image inspect rockylinux:8 --format '{{.Id}} {{join .RepoDigests " "}}' > release/linux-x64-rpm-install-validation.txt
+          docker run --rm -v "$PWD/release:/packages:ro" rockylinux:8 bash -eu -o pipefail -c '
             cat /etc/os-release
+            test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.28"
             dnf install -y /packages/*-linux-x64.rpm
             rpm -q transportx-agent
             test -x "/opt/TransportX Agent/transportx-agent"
@@ -117,7 +121,7 @@ jobs:
             test ! -e /usr/bin/transportx-agent
             test ! -e /usr/share/applications/transportx-agent.desktop
             echo RPM_INSTALL_RUNTIME_UNINSTALL_PASS
-          ' | tee release/linux-x64-rpm-install-validation.txt
+          ' | tee -a release/linux-x64-rpm-install-validation.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
