@@ -11,6 +11,7 @@ module.exports = async function updateBuilderConfig() {
   const section = sections.find((value) => value.startsWith(`${version} - `)) || sections.find((value) => value.startsWith('Unreleased\n'));
   if (!section) throw new Error(`No release notes for ${version}`);
   return {
+    ...(profile.rpm ? { rpm: profile.rpm } : {}),
     [profile.builderPlatform]: {
       artifactName: profile.update.artifactName,
       publish: { provider: 'generic', url: profile.update.url },
