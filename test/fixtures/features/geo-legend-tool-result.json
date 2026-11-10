@@ -1,0 +1,556 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Legend map published."
+    }
+  ],
+  "details": {
+    "visualization": {
+      "protocol": "pi-visualization",
+      "version": "1.0",
+      "kind": "geo",
+      "visualizationId": "legend_check",
+      "revision": 1,
+      "operation": "replace",
+      "scene": {
+        "view": {
+          "mode": "bounds",
+          "bounds": [
+            121.42,
+            31.17,
+            121.48,
+            31.22
+          ],
+          "padding": 30
+        },
+        "basemap": {
+          "id": "none"
+        },
+        "sources": [
+          {
+            "id": "points",
+            "type": "geojson-inline",
+            "data": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "id": "站点一",
+                  "geometry": {
+                    "type": "Point",
+                    "coordinates": [
+                      121.435,
+                      31.19
+                    ]
+                  },
+                  "properties": {
+                    "name": "Point 1",
+                    "kind": "类别 A",
+                    "volume": 120,
+                    "bus": 30,
+                    "rail": 70
+                  }
+                },
+                {
+                  "type": "Feature",
+                  "id": "站点二",
+                  "geometry": {
+                    "type": "Point",
+                    "coordinates": [
+                      121.465,
+                      31.2
+                    ]
+                  },
+                  "properties": {
+                    "name": "Point 2",
+                    "kind": "类别 B",
+                    "volume": 600,
+                    "bus": 30,
+                    "rail": 70
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "routes",
+            "type": "geojson-inline",
+            "data": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "id": "测试线路",
+                  "geometry": {
+                    "type": "LineString",
+                    "coordinates": [
+                      [
+                        121.425,
+                        31.195
+                      ],
+                      [
+                        121.475,
+                        31.21
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "name": "LineString 3",
+                    "kind": "类别 B",
+                    "volume": 120,
+                    "bus": 30,
+                    "rail": 70
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "areas",
+            "type": "geojson-inline",
+            "data": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "id": "区域一",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          121.425,
+                          31.175
+                        ],
+                        [
+                          121.445,
+                          31.175
+                        ],
+                        [
+                          121.445,
+                          31.185
+                        ],
+                        [
+                          121.425,
+                          31.185
+                        ],
+                        [
+                          121.425,
+                          31.175
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "name": "Polygon 4",
+                    "kind": "类别 B",
+                    "volume": 80,
+                    "bus": 30,
+                    "rail": 70
+                  }
+                },
+                {
+                  "type": "Feature",
+                  "id": "区域二",
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [
+                          121.45,
+                          31.175
+                        ],
+                        [
+                          121.475,
+                          31.175
+                        ],
+                        [
+                          121.475,
+                          31.185
+                        ],
+                        [
+                          121.45,
+                          31.185
+                        ],
+                        [
+                          121.45,
+                          31.175
+                        ]
+                      ]
+                    ]
+                  },
+                  "properties": {
+                    "name": "Polygon 5",
+                    "kind": "类别 B",
+                    "volume": 600,
+                    "bus": 30,
+                    "rail": 70
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "layers": [
+          {
+            "id": "classes",
+            "sourceId": "points",
+            "type": "circle",
+            "title": "分类点位",
+            "encoding": {
+              "color": {
+                "mode": "categorical",
+                "field": "kind",
+                "categories": [
+                  {
+                    "value": "类别 A",
+                    "output": "#2563eb"
+                  },
+                  {
+                    "value": "类别 B",
+                    "output": "#db2777"
+                  }
+                ],
+                "fallback": "#64748b"
+              }
+            },
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            }
+          },
+          {
+            "id": "steps",
+            "sourceId": "areas",
+            "type": "fill",
+            "title": "分级区域",
+            "encoding": {
+              "color": {
+                "mode": "step",
+                "field": "volume",
+                "default": "#fef3c7",
+                "stops": [
+                  {
+                    "value": 100,
+                    "output": "#fb923c"
+                  },
+                  {
+                    "value": 300,
+                    "output": "#f97316"
+                  },
+                  {
+                    "value": 500,
+                    "output": "#ea580c"
+                  },
+                  {
+                    "value": 1000,
+                    "output": "#dc2626"
+                  },
+                  {
+                    "value": 2000,
+                    "output": "#b91c1c"
+                  }
+                ]
+              },
+              "opacity": {
+                "mode": "constant",
+                "value": 0.65
+              }
+            },
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            }
+          },
+          {
+            "id": "ramp",
+            "sourceId": "areas",
+            "type": "fill",
+            "title": "连续区域",
+            "encoding": {
+              "color": {
+                "mode": "continuous",
+                "field": "volume",
+                "stops": [
+                  {
+                    "value": 0,
+                    "output": "#eff6ff"
+                  },
+                  {
+                    "value": 100,
+                    "output": "#93c5fd"
+                  },
+                  {
+                    "value": 1000,
+                    "output": "#1d4ed8"
+                  }
+                ]
+              },
+              "opacity": {
+                "mode": "constant",
+                "value": 0.5
+              }
+            },
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            }
+          },
+          {
+            "id": "sizes",
+            "sourceId": "points",
+            "type": "circle",
+            "title": "数值点位",
+            "encoding": {
+              "color": {
+                "mode": "continuous",
+                "field": "volume",
+                "stops": [
+                  {
+                    "value": 0,
+                    "output": "#a7f3d0"
+                  },
+                  {
+                    "value": 1000,
+                    "output": "#0f766e"
+                  }
+                ]
+              },
+              "radius": {
+                "mode": "continuous",
+                "field": "volume",
+                "stops": [
+                  {
+                    "value": 0,
+                    "output": 4
+                  },
+                  {
+                    "value": 1000,
+                    "output": 20
+                  }
+                ]
+              }
+            },
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            }
+          },
+          {
+            "id": "route",
+            "sourceId": "routes",
+            "type": "line",
+            "title": "线要素",
+            "encoding": {
+              "color": {
+                "mode": "constant",
+                "value": "#7c3aed"
+              },
+              "width": {
+                "mode": "constant",
+                "value": 4
+              },
+              "dash": {
+                "mode": "constant",
+                "value": [
+                  2,
+                  1
+                ]
+              }
+            },
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            }
+          },
+          {
+            "id": "labels",
+            "sourceId": "points",
+            "type": "label",
+            "title": "对象名称",
+            "encoding": {
+              "textField": {
+                "mode": "constant",
+                "value": "name"
+              },
+              "color": {
+                "mode": "constant",
+                "value": "#172033"
+              }
+            },
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            }
+          },
+          {
+            "id": "chart",
+            "sourceId": "points",
+            "type": "chart",
+            "title": "组成图式",
+            "encoding": {},
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            },
+            "chart": {
+              "type": "pie",
+              "valueFields": [
+                "bus",
+                "rail"
+              ],
+              "colors": [
+                "#ea580c",
+                "#0891b2"
+              ],
+              "size": 30
+            }
+          },
+          {
+            "id": "hidden",
+            "sourceId": "routes",
+            "type": "line",
+            "title": "备用线要素",
+            "encoding": {
+              "color": {
+                "mode": "constant",
+                "value": "#22c55e"
+              }
+            },
+            "popup": {
+              "fields": [
+                {
+                  "field": "volume",
+                  "label": "指标 A（u）"
+                },
+                {
+                  "field": "bus",
+                  "label": "分量 A"
+                },
+                {
+                  "field": "rail",
+                  "label": "分量 B"
+                }
+              ]
+            },
+            "visible": false
+          },
+          {
+            "id": "reference",
+            "sourceId": "areas",
+            "type": "fill",
+            "title": "参考区域",
+            "visible": false,
+            "encoding": {
+              "color": {
+                "mode": "constant",
+                "value": "#64748b"
+              },
+              "opacity": {
+                "mode": "constant",
+                "value": 0.15
+              }
+            }
+          }
+        ],
+        "controls": {
+          "legend": true,
+          "fullscreen": true
+        },
+        "metadata": {
+          "title": "地图图例验收",
+          "description": "合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。合成数据：通用图层的分类、分级、连续映射、大小、图式和显隐控制验证。"
+        }
+      },
+      "summary": {
+        "title": "地图图例验收"
+      },
+      "generatedAt": "2026-11-10T00:00:00.000Z"
+    }
+  }
+}

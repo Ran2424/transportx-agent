@@ -323,6 +323,20 @@
       ]
     },
     {
+      "match": "geo-legend-check",
+      "steps": [
+        { "tool": { "name": "present_visualization", "args": { "visualizationId": "legend_check" }, "result": { "$fixture": "features/geo-legend-tool-result.json" } } },
+        { "streamText": { "text": "图例验收地图已发布。", "chunks": 1, "delayMs": 10 } }
+      ]
+    },
+    {
+      "match": "geo-legend-off",
+      "steps": [
+        { "tool": { "name": "present_visualization", "args": { "visualizationId": "legend_check", "command": "set_controls" }, "result": { "$fixture": "features/geo-legend-off-tool-result.json" } } },
+        { "streamText": { "text": "图例已关闭。", "chunks": 1, "delayMs": 10 } }
+      ]
+    },
+    {
       "match": "geo-refresh-request",
       "steps": [
         { "geoHost": { "path": "request", "args": { "visualizationId": "geo_interaction_map", "sceneRevision": 2, "mode": "viewport", "prompt": "刷新恢复验收：请确认当前视野", "timeoutSeconds": 600 } } },
