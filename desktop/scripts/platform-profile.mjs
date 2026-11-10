@@ -34,6 +34,7 @@ export function getSimulationProbeProfile(platform = process.platform) {
       executable: (name) => name,
       wheelTag: 'macosx_15_0_arm64',
       startupTimeoutMs: 120000,
+      projDataRelative: ['sumo_data', 'data', 'proj'],
       dependencyCommand: 'otool', dependencyArgs: (file) => ['-L', file],
       processCommand: 'ps', processArgs: (pid) => ['eww', '-p', String(pid), '-o', 'rss=,command='],
       architectureCommand: 'file', architectureArgs: (file) => [file],

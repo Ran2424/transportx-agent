@@ -300,7 +300,16 @@ export const CadVerifySchema = Type.Object({
 
 export const CadExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), operationId: Type.Optional(Type.String({ pattern: '^cad_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
 
+export const TrafficPrepareSchema = Type.Object({ inputPath: Type.String({ minLength: 1, maxLength: 1000 }), assetId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
+export const TrafficRunSchema = Type.Object({ scenarioId: Type.String({ pattern: '^scenario_[a-f0-9]{32}$' }) }, { additionalProperties: false });
+export const TrafficExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), runId: Type.Optional(Type.String({ pattern: '^sim_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
+export const TrafficQuerySchema = Type.Object({ runId: Type.String({ pattern: '^sim_[a-f0-9]{32}$' }), time: Type.Optional(Type.Number({ minimum: 0, maximum: 600 })), objectId: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })) }, { additionalProperties: false });
+
 export const coreToolContracts = [
+  { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.prepare', piName: 'traffic_prepare_scenario', contractVersion: '1.0.0', semanticVersion: 'traffic-prepare-v1', input: TrafficPrepareSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
+  { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.run', piName: 'traffic_run', contractVersion: '1.0.0', semanticVersion: 'traffic-run-v1', input: TrafficRunSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
+  { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.execution', piName: 'traffic_execution', contractVersion: '1.0.0', semanticVersion: 'traffic-execution-v1', input: TrafficExecutionSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
+  { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.query', piName: 'traffic_query_results', contractVersion: '1.0.0', semanticVersion: 'traffic-query-v1', input: TrafficQuerySchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.inspect', piName: 'cad_inspect', contractVersion: '1.0.0', semanticVersion: 'cad-inspect-v4', input: CadInspectSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-inspect' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.draw', piName: 'cad_draw', contractVersion: '1.0.0', semanticVersion: 'cad-draw-v5', input: CadDrawSchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-draw' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v3', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },

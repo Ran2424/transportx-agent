@@ -57,7 +57,7 @@ class Blocks:
         block = {'protocol': 'transportx-simulation-block', 'version': 1, 'runId': self.job['runId'],
                  'sequence': sequence, 'networkSha256': self.job['network']['sha256'],
                  'start': self.start, 'frames': self.frames, 'eventStart': self.event_start,
-                 'sampleSeconds': self.job['scenario']['sampleSeconds'], 'coordinateSystem': 'synthetic-local-meters'}
+                 'sampleSeconds': self.job['scenario']['sampleSeconds'], 'coordinateSystem': 'sumo-network-meters'}
         events = atomic(self.root, 'events-' + str(sequence) + '.json', self.events)
         entry = atomic(self.root, 'block-' + str(sequence) + '.json', block)
         if entry['bytes'] > 2 * 1024 * 1024 or events['bytes'] > 2 * 1024 * 1024:

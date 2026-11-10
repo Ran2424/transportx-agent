@@ -73,6 +73,7 @@ import { isLoopbackHost, validateHostAccess } from './host-access.js';
 import { readJsonBody } from './http/request.js';
 import { createHash } from 'node:crypto';
 import { parseRpcCommand } from './rpc-command-input.js';
+import { SimulationService } from './simulation-service.js';
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
 import { HOST_PROTOCOL_HEADER } from '../contracts/host-protocol.js';
 const diagnoseCommand = boundedDiagnostics(200);
@@ -83,7 +84,7 @@ const liveManager = new LiveSessionManager({
     await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust);
     return buildSessionPiLaunch(input);
   }, spawn,
-  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '', cad: '' },
+  endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '', cad: '', traffic: '' },
 });
 
 function _setSpawnPiForTest(fn: typeof liveManager.runtime.spawn | null | undefined) { liveManager.runtime.spawn = fn || spawn; }
@@ -95,12 +96,16 @@ const citationService = new CitationService();
 const canvasService: CanvasService = new CanvasService(citationService, (session, requestedPath) => workspaceHost.file(session.conversationId, requestedPath), {
   present: (session, input) => cadService.present(session, input),
   resolve: (session, viewId) => cadService.resolvePresentation(session, viewId),
+}, {
+  resolve: (session, viewId) => /^simulation:sim_[a-f0-9]{32}$/.test(viewId) ? simulationService.presentation(workspaceHost.resourceContext(session.conversationId), viewId.slice('simulation:'.length)) : null,
+  freeze: (session, runId, target) => simulationService.freezeContext(workspaceHost.resourceContext(session.conversationId), runId, target),
 });
 const spatialAnalysisService = new SpatialAnalysisService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/spatial-analysis/scripts/spatial_analysis.py')));
 const cadService: CadService = new CadService(PYTHON_EXECUTABLE, preferUnpackedPath(path.resolve(APP_PATHS.appRoot, 'modules/capabilities/cad/scripts/cad_engine.py')), (session, ids) => canvasService.inspectContexts(session, ids));
 let cadHealth: { ok: boolean; version?: string; reason?: string } | null = null;
 void cadService.health().then((value) => { cadHealth = value; }).catch((error) => { cadHealth = { ok: false, reason: String(error) }; });
 const videoService = new VideoService(FFMPEG_EXECUTABLES);
+const simulationService: SimulationService = new SimulationService({ executable: PYTHON_EXECUTABLE, root: path.join(PI_AGENT_DIR, 'executions', 'traffic-simulation'), sessionsDirectory: SESSIONS_DIR, verifyPlan: (plan, cwd) => SESSION_ASSEMBLER.verify(plan, cwd), notify: (session, run, indexRevision) => liveManager.broadcast({ type: 'simulation_index_updated', sessionId: session.id, runId: run.runId, indexRevision, runUpdatedAt: run.updatedAt, canvas: simulationService.presentation(session, run.runId) }) });
 const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (response) => response.delivery === 'unknown');
 const updatePreparation = new UpdatePreparation();
 const workspaceStore = new WorkspaceStore(APP_PATHS.userDataDir, SESSIONS_DIR);
@@ -114,8 +119,8 @@ const validateWorkspaceModel = async (spec: string) => {
 };
 const conversationRuntime = new ConversationRuntime({ store: workspaceStore, sessions: liveManager, gate: workspaceGate, assertReady: (id) => workspaceMigration.assertWorkspaceReady(id), verifyPlan: async (plan, directory, modelSpec) => { const verified = SESSION_ASSEMBLER.verify(plan, directory); if (modelSpec) await validateWorkspaceModel(modelSpec); return verified; } });
 const workspaceCreation = new WorkspaceService({ store: workspaceStore, defaultParentDirectory: TAU_SETTINGS.projectsDir || APP_PATHS.scenarioDir, expandHome, assemble: assembleWorkspacePlan, validateModel: validateWorkspaceModel, assertReady: (id) => id ? workspaceMigration.assertWorkspaceReady(id) : workspaceMigration.assertSystemReady(), assertAllocationAllowed: (directory) => workspaceMigration.assertAllocationAllowed(directory) });
-const workspaceDeletion = new WorkspaceDeletion({ store: workspaceStore, gate: workspaceGate, runtime: conversationRuntime, pythonCommand: PYTHON_EXECUTABLE.command, assertReady: (id) => workspaceMigration.assertWorkspaceReady(id), assertSystemReady: () => workspaceMigration.assertSystemReady(), historyDirectories: () => workspaceMigration.read().scopes.map((scope) => scope.sessionsDirectory), cleanupInvocations: (context) => removeExecutionMetadata(['cad', 'spatial'].map((kind) => path.join(PI_AGENT_DIR, 'executions', kind)), context, SESSIONS_DIR), verifyWorkspace: resolveSessionWorkspaceForDeletion, removeWorkspace: removeSessionWorkingDirectory });
-const workspaceTransfer = new WorkspaceTransfer({ store: workspaceStore, runtime: conversationRuntime, gate: workspaceGate, assertSystemReady: () => workspaceMigration.assertSystemReady(), assertWorkspaceReady: (id) => workspaceMigration.assertWorkspaceReady(id) });
+const workspaceDeletion = new WorkspaceDeletion({ store: workspaceStore, gate: workspaceGate, runtime: conversationRuntime, pythonCommand: PYTHON_EXECUTABLE.command, assertReady: (id) => workspaceMigration.assertWorkspaceReady(id), assertSystemReady: () => workspaceMigration.assertSystemReady(), historyDirectories: () => workspaceMigration.read().scopes.map((scope) => scope.sessionsDirectory), cleanupInvocations: async (context) => { simulationService.cleanupOwner(context); await removeExecutionMetadata(['cad', 'spatial', 'traffic-simulation'].map((kind) => path.join(PI_AGENT_DIR, 'executions', kind)), context, SESSIONS_DIR); }, verifyWorkspace: resolveSessionWorkspaceForDeletion, removeWorkspace: removeSessionWorkingDirectory });
+const workspaceTransfer = new WorkspaceTransfer({ assertDomainTransferAllowed: (context) => simulationService.assertTransferAllowed(context), store: workspaceStore, runtime: conversationRuntime, gate: workspaceGate, assertSystemReady: () => workspaceMigration.assertSystemReady(), assertWorkspaceReady: (id) => workspaceMigration.assertWorkspaceReady(id) });
 const workspaceHost = new WorkspaceHost({ store: workspaceStore, migration: workspaceMigration, runner: migrationRunner, gate: workspaceGate, runtime: conversationRuntime, creation: workspaceCreation, deletion: workspaceDeletion, transfer: workspaceTransfer, sessions: liveManager, assemble: assembleWorkspacePlan, validateModel: validateWorkspaceModel, beginOperation: () => updatePreparation.beginOperation() });
 const rpcHandlers: RpcHandlerRegistry = {
   ...createPlatformRpcHandlers(currentPlatformOverview, async () => { fs.mkdirSync(APP_PATHS.logsDir, { recursive: true }); await openNativeTarget(APP_PATHS.logsDir); }, async (moduleId) => {
@@ -388,6 +393,7 @@ const apiRouter = createApiRouter({
   geo: geoInteractionService,
   canvas: canvasService,
   cad: cadService,
+  traffic: simulationService,
 });
 
 function handleApiRoute(req: IncomingMessage, res: ServerResponse, urlPath: string) {
@@ -448,6 +454,7 @@ function computeUrls(port: number) {
   liveManager.runtime.endpoints.canvas = endpoint;
   liveManager.runtime.endpoints.moduleAuthoring = endpoint;
   liveManager.runtime.endpoints.cad = endpoint;
+  liveManager.runtime.endpoints.traffic = endpoint;
 }
 
 let releaseHostWriter: (() => void) | null = null;
@@ -461,7 +468,7 @@ function listen(port: number, attemptsLeft = 10) {
       // A background CAD health probe can still be settling while normal
       // server shutdown completes. Once the process is exiting, this writer
       // must release its own lease regardless of that transient probe.
-      if (!force && (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount)) return;
+      if (!force && (liveManager.sessions.size || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount || simulationService.activeCount)) return;
       releaseHostWriter?.();
       releaseHostWriter = null;
     };
@@ -488,7 +495,7 @@ function listen(port: number, attemptsLeft = 10) {
 let shuttingDown = false;
 async function verifyIdleAndSave() {
   const busy = () => { throw Object.assign(new Error('Host is busy'), { code: 'host_busy' }); };
-  if (shuttingDown || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount) busy();
+  if (shuttingDown || spatialAnalysisService.activeCount || videoService.activeCount || cadService.activeCount || simulationService.activeCount) busy();
   const sessions = [...liveManager.sessions.values()];
   for (const session of sessions) {
     if (session.isStreaming || session.isCompacting || session.terminating || session.transport.pendingCount || session.pendingExtensionUiRequests.size) busy();
@@ -551,7 +558,7 @@ async function shutdown(signal: string) {
   logHostEvent('info', 'host_shutdown', { signal, sessions: liveManager.sessions.size });
   socketHandler.close(); try { wss.close(); } catch {}
   try {
-    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), cadService.terminateAll(), conversationRuntime.shutdown()]);
+    await Promise.all([spatialAnalysisService.terminateAll(), videoService.terminateAll(), cadService.terminateAll(), simulationService.terminateAll(), conversationRuntime.shutdown()]);
     server.close(() => process.exit(process.exitCode || 0));
     setTimeout(() => process.exit(process.exitCode || 0), 2500).unref();
   } catch (error) {

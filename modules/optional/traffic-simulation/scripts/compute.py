@@ -1,4 +1,4 @@
-"""P0 explicit calculation entry. This does not grant workspace or Module authorization."""
+"""Explicit calculation entry. Workspace and Module authorization belong to the Host."""
 import datetime
 import json
 import os
@@ -18,23 +18,28 @@ def integer(value, low, high):
 
 
 def validate(job):
-    if set(job) != {'protocol', 'version', 'runId', 'implementation', 'scenario', 'network', 'mapping', 'execution'} or job['protocol'] != 'transportx-simulation-job' or type(job['version']) is not int or job['version'] != 1:
+    if set(job) != {'protocol', 'version', 'runId', 'provenance', 'implementation', 'scenario', 'network', 'mapping', 'execution'} or job['protocol'] != 'transportx-simulation-job' or type(job['version']) is not int or job['version'] != 2:
         raise ValueError('job_version')
     code = [{'name': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())} for name in ['compute.py', 'engine.py', 'model.py', 'blocks.py']]
     from blocks import encode
-    if job['implementation'] != {'version': 'p0.1', 'sha256': digest(encode(code))}:
+    if job['implementation'] != {'version': '0.1.1', 'sha256': digest(encode(code))}:
         raise ValueError('implementation_version')
+    provenance = job['provenance']
+    if set(provenance) != {'kind', 'description', 'validDate', 'modelValidation'} or provenance['kind'] not in ['synthetic', 'assumed', 'observed', 'operating-plan'] or provenance['modelValidation'] != 'not_calibrated' or not isinstance(provenance['description'], str) or not 1 <= len(provenance['description']) <= 2000:
+        raise ValueError('provenance_invalid')
     scenario = job['scenario']
     fields = {'schemaVersion', 'model', 'networkVersion', 'serviceDate', 'timezone', 'startTime', 'durationSeconds', 'seed', 'stepSeconds', 'decisionSeconds', 'sampleSeconds', 'blockSeconds', 'units', 'backgroundCount'}
     if scenario.get('model') == 'evacuation':
         fields.add('service')
     if set(scenario) != fields or type(scenario['schemaVersion']) is not int or scenario['schemaVersion'] != 1 or scenario['model'] not in ['road', 'evacuation']:
         raise ValueError('scenario_fields')
-    if not isinstance(scenario['networkVersion'], str) or not re.fullmatch(r'synthetic-loop/v[1-9][0-9]*', scenario['networkVersion']):
+    if not isinstance(scenario['networkVersion'], str) or not 1 <= len(scenario['networkVersion']) <= 160:
         raise ValueError('network_version')
     if not isinstance(scenario['startTime'], str) or not re.fullmatch(r'([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]', scenario['startTime']):
         raise ValueError('clock_invalid')
     datetime.date.fromisoformat(scenario['serviceDate'])
+    if provenance['validDate'] != scenario['serviceDate']:
+        raise ValueError('provenance_date_mismatch')
     datetime.datetime.strptime(scenario['startTime'], '%H:%M:%S')
     if scenario['timezone'] != 'Asia/Shanghai' or scenario['units'] != {'time': 's', 'distance': 'm', 'speed': 'm/s'}:
         raise ValueError('clock_or_units')
@@ -58,14 +63,21 @@ def validate(job):
         raise ValueError('network_reference')
     if any(key.lower() in ['file', 'href'] for node in net.iter() for key in node.attrib):
         raise ValueError('network_reference')
-    if set(mapping) != {'version', 'networkVersion', 'networkSha256', 'edges'} or mapping['version'] != 1 or mapping['networkVersion'] != network['version'] or mapping['networkSha256'] != network['sha256'] or mapping['edges'] != {'hub': 'hub', 'outbound': 'out', 'relay': 'relay', 'inbound': 'back'}:
+    if not set(mapping) <= {'version', 'networkVersion', 'networkSha256', 'roadRoute', 'edges'} or mapping.get('version') != 1 or mapping.get('networkVersion') != network['version'] or mapping.get('networkSha256') != network['sha256']:
         raise ValueError('mapping_invalid')
     edges = {edge.attrib['id'] for edge in net.findall('edge')}
-    if not set(mapping['edges'].values()) <= edges:
-        raise ValueError('mapping_missing_edge')
-    if set(execution) != {'outputRoot', 'sumo', 'wallSeconds', 'maxOutputBytes'} or not integer(execution['wallSeconds'], 1, 60) or not integer(execution['maxOutputBytes'], 1, 64 * 1024 * 1024):
+    route = mapping.get('roadRoute')
+    if not isinstance(route, list) or not 1 <= len(route) <= 100 or any(not isinstance(edge, str) or edge not in edges for edge in route):
+        raise ValueError('mapping_invalid')
+    if scenario['model'] == 'evacuation':
+        service_edges = mapping.get('edges')
+        if not isinstance(service_edges, dict) or set(service_edges) != {'hub', 'outbound', 'relay', 'inbound'} or len(set(service_edges.values())) != 4 or not set(service_edges.values()) <= edges:
+            raise ValueError('mapping_invalid')
+    elif 'edges' in mapping:
+        raise ValueError('mapping_invalid')
+    if not {'outputRoot', 'sumo', 'wallSeconds', 'maxOutputBytes'} <= set(execution) or not set(execution) <= {'outputRoot', 'sumo', 'wallSeconds', 'maxOutputBytes', 'projData'} or not integer(execution['wallSeconds'], 1, 60) or not integer(execution['maxOutputBytes'], 1, 64 * 1024 * 1024):
         raise ValueError('execution_budget')
-    for key in ['outputRoot', 'sumo']:
+    for key in ['outputRoot', 'sumo'] + (['projData'] if 'projData' in execution else []):
         target = Path(execution[key])
         if not target.is_absolute() or any(part.is_symlink() for part in [target, *target.parents]):
             raise ValueError('execution_path')
@@ -88,7 +100,7 @@ def run(job, job_sha256):
         cancelled = True
 
     signal.signal(signal.SIGTERM, stop)
-    engine = Engine(job)
+    engine = Engine(job, lambda: cancelled)
     atomic(blocks.root, 'started.json', {'pythonPid': os.getpid(), 'sumoPid': engine.process.pid,
            'engineVersion': engine.version, 'command': engine.command,
            'environmentKeys': sorted(os.environ), 'startedWallNs': time.time_ns()})
@@ -166,7 +178,7 @@ def run(job, job_sha256):
                               wallSeconds=time.perf_counter() - started),
               'maxBufferedBlockBytes': blocks.max_buffer_bytes, 'writtenBlockBytes': blocks.written_bytes,
               'pythonPeakTracedBytes': tracemalloc.get_traced_memory()[1],
-              'source': 'synthetic', 'calibration': 'not_calibrated'}
+              'source': job['provenance']['kind'], 'calibration': 'not_calibrated'}
     atomic(blocks.root, 'result.json', result)
     if termination not in ['completed', 'cancelled']:
         error = RuntimeError(failure or termination)

@@ -20,6 +20,7 @@ type Options = {
   gate: WorkspaceRuntimeGate;
   assertSystemReady(): void;
   assertWorkspaceReady(workspaceId: string): void;
+  assertDomainTransferAllowed?(context: import('./util/execution-owner.js').OwnerSession): void;
 };
 type Located = { directory: string; manifest: WorkspaceManifestV1; conversation: ConversationRecordV1; kind: 'standalone' | 'workspace' };
 type MoveInput = { target: 'standalone' | string; stopCurrent?: boolean };
@@ -337,6 +338,7 @@ export class WorkspaceTransfer {
         target = { ...target, ...this.options.store.readWorkspace(target.manifest.id) };
         this.options.assertWorkspaceReady(source.manifest.id); this.options.assertWorkspaceReady(target.manifest.id);
         const history = this.options.store.inspectHistory(source.directory, source.conversation), sourceFiles = this.privateFiles(source.directory, conversationId);
+        if (history.sessionFile) this.options.assertDomainTransferAllowed?.({ cwd: source.directory, sessionFile: history.sessionFile, resolvedSessionPlan: source.conversation.plan ? this.options.store.readPlan(source.directory, source.conversation) : null });
         this.preparePrivateState(source, target);
         if (source.conversation.plan) await this.options.store.relocatePlan(source.directory, source.conversation, target.directory);
         copySessionAttachments(source.directory, target.directory, conversationAttachmentIds(source.directory, conversationId));

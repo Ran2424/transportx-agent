@@ -10,15 +10,15 @@ def validate_service(service):
     for key in ('busCapacity', 'boardingSeconds', 'transferSeconds', 'externalSeconds'):
         if type(service[key]) is not int or not 1 <= service[key] <= 1000:
             raise ValueError('service_number')
+    ids = set()
     for key, expected in [('departures', {'id', 'time', 'vehicle'}), ('metro', {'id', 'time', 'capacity'}), ('travelers', {'id', 'time', 'mode', 'destination'})]:
         rows = service[key]
         if not isinstance(rows, list) or not 1 <= len(rows) <= 1000:
             raise ValueError('service_rows')
-        ids = set()
         for row in rows:
             if not isinstance(row, dict) or set(row) != expected or type(row['time']) is not int or not 0 <= row['time'] <= 7200:
                 raise ValueError('service_row')
-            if not isinstance(row['id'], str) or not row['id'].isascii() or not row['id'].replace('-', '').isalnum() or row['id'] in ids:
+            if not isinstance(row['id'], str) or not 1 <= len(row['id']) <= 160 or not row['id'].isascii() or not row['id'].replace('-', '').isalnum() or row['id'] in ids or row['id'] in ['bus-0', 'car-0', 'ridehail-first'] or row['id'].startswith('road-') and row['id'][5:].isdigit():
                 raise ValueError('service_id')
             ids.add(row['id'])
             if key == 'departures' and row['vehicle'] != 'bus-0':
@@ -50,29 +50,29 @@ class Ledger:
             if vehicle['state'] == 'commanded' and actual['speed'] > 0 and not actual['stopped']:
                 vehicle['state'] = 'outbound'
                 self.trips += 1
-                emit('departure_observed', vehicle_id, trip=vehicle['trip'])
+                emit('departure_observed', vehicle_id, trip=vehicle['trip'], nodeId='node:hub')
                 for pid in vehicle['occupants']:
                     p = self.people[pid]
                     p.update(state='riding', location=vehicle_id, hubDeparture=time)
-                    emit('boarded', pid, vehicle=vehicle_id, trip=vehicle['trip'])
-            if vehicle['state'] == 'outbound' and actual['edge'] == 'relay' and actual['stopped']:
+                    emit('boarded', pid, vehicle=vehicle_id, trip=vehicle['trip'], nodeId='node:hub')
+            if vehicle['state'] == 'outbound' and actual['edgeRole'] == 'relay' and actual['stopped']:
                 for pid in vehicle['occupants']:
                     p = self.people[pid]
                     state = 'walking' if p['mode'] == 'bus' else 'external'
                     duration = self.service['transferSeconds'] if state == 'walking' else self.service['externalSeconds']
                     p.update(state=state, location='relay' if state == 'walking' else 'external-west', ready=time + duration)
-                    emit('alighted', pid, vehicle=vehicle_id)
+                    emit('alighted', pid, vehicle=vehicle_id, nodeId='node:relay')
                 vehicle['occupants'] = []
                 vehicle['state'] = 'returning'
                 self.waiting.append({'kind': 'return', 'vehicle': vehicle_id})
-            if vehicle['state'] == 'returning' and actual['edge'] == 'hub' and actual['stopped']:
+            if vehicle['state'] == 'returning' and actual['edgeRole'] == 'hub' and actual['stopped']:
                 vehicle.update(state='available', trip=None)
-                emit('vehicle_available', vehicle_id)
+                emit('vehicle_available', vehicle_id, nodeId='node:hub')
         for pid, p in sorted(self.people.items()):
             if p['state'] in ['walking', 'external'] and time >= p['ready']:
                 if p['state'] == 'walking':
                     p.update(state='connecting', location='relay')
-                    emit('transfer_ready', pid)
+                    emit('transfer_ready', pid, nodeId='node:relay')
                 else:
                     p.update(state='completed', location=p['destination'], completedAt=time)
                     emit('journey_completed', pid)
@@ -80,7 +80,7 @@ class Ledger:
         for pid, p in sorted(self.people.items()):
             if p['state'] == 'not_arrived' and p['time'] <= time:
                 p.update(state='waiting', location='hub')
-                emit('traveler_arrived', pid)
+                emit('traveler_arrived', pid, nodeId='node:hub')
         # Phase 3: close scheduled services only after arrivals, reserve resources sequentially.
         departures = list(self.service['departures'])
         departures += [{'id': 'ridehail-first', 'time': 5, 'vehicle': 'car-0'}]
@@ -89,22 +89,22 @@ class Ledger:
                 continue
             self.handled.add(trip['id'])
             vid = trip['vehicle']
-            emit('action_candidate', trip['id'], vehicle=vid)
+            emit('action_candidate', trip['id'], vehicle=vid, nodeId='node:hub')
             vehicle, actual = self.vehicles[vid], road.get(vid)
             mode = 'bus' if vid == 'bus-0' else 'ridehail'
             queue = sorted((p for p in self.people.values() if p['state'] == 'waiting' and p['mode'] == mode), key=lambda p: (p['time'], p['id']))
             reason = ('vehicle_reserved' if vehicle['state'] != 'available' else
-                      'vehicle_not_at_berth' if not actual or actual['edge'] != 'hub' or not actual['stopped'] else
+                      'vehicle_not_at_berth' if not actual or actual['edgeRole'] != 'hub' or not actual['stopped'] else
                       'no_matching_demand' if not queue else None)
             if reason:
-                emit('action_rejected', trip['id'], reason=reason)
+                emit('action_rejected', trip['id'], vehicle=vid, reason=reason, nodeId='node:hub')
                 continue
             capacity = self.service['busCapacity'] if mode == 'bus' else 1
             chosen = queue[:capacity]
             vehicle.update(state='boarding', occupants=[p['id'] for p in chosen], trip=trip['id'], ready=time + self.service['boardingSeconds'])
             for p in chosen:
                 p.update(state='boarding', location=vid)
-            emit('action_reserved', trip['id'], vehicle=vid, travelers=vehicle['occupants'])
+            emit('action_reserved', trip['id'], vehicle=vid, travelers=vehicle['occupants'], nodeId='node:hub')
         for vid, vehicle in self.vehicles.items():
             if vehicle['state'] == 'boarding' and time >= vehicle['ready']:
                 vehicle['state'] = 'commanded'
@@ -116,22 +116,22 @@ class Ledger:
             queue = sorted((p for p in self.people.values() if p['state'] == 'connecting'), key=lambda p: (p['ready'], p['id']))
             for p in queue[:train['capacity']]:
                 p.update(state='external', location=train['id'], ready=time + self.service['externalSeconds'])
-                emit('metro_boarded', p['id'], service=train['id'])
+                emit('metro_boarded', p['id'], service=train['id'], nodeId='node:relay')
             for p in queue[train['capacity']:]:
                 self.missed.add(p['id'])
-                emit('connection_missed', p['id'], service=train['id'], reason='capacity')
+                emit('connection_missed', p['id'], service=train['id'], reason='capacity', nodeId='node:relay')
         last = max(train['time'] for train in self.service['metro'])
         if time >= last:
             for pid, p in sorted(self.people.items()):
                 if p['state'] == 'connecting' and pid not in self.missed:
                     self.missed.add(pid)
-                    emit('connection_missed', pid, reason='last_service_closed')
+                    emit('connection_missed', pid, reason='last_service_closed', nodeId='node:relay')
         self.check()
 
     def apply(self, engine, emit):
         for action in self.waiting:
             engine.release(action['vehicle'], action['kind'])
-            emit('engine_accepted', action['vehicle'], action=action['kind'], trip=action.get('trip'))
+            emit('engine_accepted', action['vehicle'], action=action['kind'], trip=action.get('trip'), nodeId='node:hub' if action['kind'] == 'dispatch' else 'node:relay')
         self.waiting.clear()
 
     def check(self):
@@ -156,5 +156,6 @@ class Ledger:
         states = dict(Counter(p['state'] for p in self.people.values()))
         return {'totalTravelers': len(self.people), 'states': states, 'missedConnections': len(self.missed), 'dispatchedTrips': self.trips,
                 'unit': 'person', 'window': 'arrived through finalTime; unfinished retained',
+                'units': {'totalTravelers': 'person', 'states': 'person', 'missedConnections': 'person', 'dispatchedTrips': 'trip', 'hubDepartures': 'person', 'completedJourneys': 'person'},
                 'hubDepartures': sum('hubDeparture' in p for p in self.people.values()),
                 'completedJourneys': sum(p['state'] == 'completed' for p in self.people.values())}

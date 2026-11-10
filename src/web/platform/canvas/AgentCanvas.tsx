@@ -5,8 +5,10 @@ import { Icon } from '../../components/icons';
 import type { CanvasState, CanvasView } from './canvas-state';
 import type { DocumentPosition } from './document-state';
 import { rendererForCanvasView } from './renderer-registry';
+import type { AppKernel } from '../../../public/kernel/app-kernel.js';
 
-export function AgentCanvas({ session, views, state, documentPositions, onActivate, onCloseTab, onClose, onShareContext }: {
+export function AgentCanvas({ kernel, session, views, state, documentPositions, onActivate, onCloseTab, onClose, onShareContext }: {
+  kernel: AppKernel;
   session: ConversationView | null;
   views: CanvasView[];
   state: CanvasState;
@@ -54,7 +56,7 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
       <div ref={tabList} className="agent-canvas-tabs" role="tablist" aria-label={t('canvas.views')}>
         {tabs.map((view, index) => <div className={`canvas-tab${view.id === state.activeId ? ' is-active' : ''}`} key={view.id}>
           <button id={`canvas-tab-${view.id}`} type="button" role="tab" aria-selected={view.id === state.activeId} aria-controls={`canvas-panel-${view.id}`} tabIndex={view.id === state.activeId ? 0 : -1} onKeyDown={(event) => navigate(event, index)} onClick={() => onActivate(view.id)} title={view.title}>
-            <Icon name={view.kind === 'geo' ? 'map' : view.kind === 'video' ? 'video' : view.kind === 'cad' ? 'cad' : 'file'} /><span>{view.title}</span>
+            <Icon name={view.kind === 'geo' || view.kind === 'simulation' ? 'map' : view.kind === 'video' ? 'video' : view.kind === 'cad' ? 'cad' : 'file'} /><span>{view.title}</span>
           </button>
           <button className="canvas-tab-close" type="button" aria-label={t('canvas.closeView', { title: view.title })} onClick={() => onCloseTab(view.id)}><Icon name="close" /></button>
         </div>)}
@@ -67,7 +69,7 @@ export function AgentCanvas({ session, views, state, documentPositions, onActiva
       {session && tabs.map((view) => {
         const Renderer = rendererForCanvasView(view);
         return <div className="canvas-panel" role="tabpanel" id={`canvas-panel-${view.id}`} aria-labelledby={`canvas-tab-${view.id}`} key={view.id} hidden={view.id !== state.activeId}>
-          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer onAttachContext={shareContext} contextStatus={contextStatus} session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onContextChange={(target, selection) => updateContext(view.id, view.canvas?.revision, target, selection)} /></Suspense> : null}
+          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer kernel={kernel} onAttachContext={shareContext} contextStatus={contextStatus} session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onContextChange={(target, selection) => updateContext(view.id, view.canvas?.revision, target, selection)} /></Suspense> : null}
         </div>;
       })}
     </div>

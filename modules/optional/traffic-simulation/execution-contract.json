@@ -1,0 +1,43 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.traffic-simulation",
+  "toolId": "traffic.execution",
+  "piName": "traffic_execution",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "traffic-execution-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "query"
+          },
+          {
+            "type": "string",
+            "const": "cancel"
+          }
+        ]
+      },
+      "runId": {
+        "type": "string",
+        "pattern": "^sim_[a-f0-9]{32}$"
+      },
+      "lookupToolCallId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-traffic",
+    "version": 1,
+    "detailsKind": "traffic-result"
+  }
+}

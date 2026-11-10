@@ -303,6 +303,10 @@ test('HTTP enforces resource ownership, request limits, reliable delivery and sa
       for (const route of ['/api/live-sessions', '/api/health-extra', '/api/internal/unknown', '/api/internal/canvas/inspect']) assert.equal((await request(`${base}${route}`)).status, 401, route);
       const cad = await request(`${base}/api/internal/cad/inspect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id }) });
       assert.equal(cad.status, 403, 'CAD route requires a service token');
+      for (const operation of ['prepare', 'run/prepare', 'run', 'execution', 'query']) {
+        const denied = await request(`${base}/api/internal/traffic/${operation}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: session.id, token: 'canvas-token' }) });
+        assert.equal(denied.status, 403, `Traffic ${operation} rejects another service's token`);
+      }
     } finally { _setAuthForTest(false); }
   }
 

@@ -36,6 +36,7 @@ import type { CitationService } from './citation-service.js';
 import { relativePosixPath } from './util/path.js';
 import { conversationStatePath } from './workspace-store.js';
 import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
+import { SIMULATION_CANVAS_ADAPTER_ID, parseSimulationCanvasTarget } from '../contracts/simulation.js';
 
 export type CanvasSession = {
   id: string;
@@ -93,6 +94,7 @@ function validateTarget(adapterId: string, target: unknown) {
   if (adapterId === GEO_CANVAS_ADAPTER_ID) return parseGeoCanvasTarget(target);
   if (adapterId === VIDEO_CANVAS_ADAPTER_ID) return parseVideoCanvasTarget(target);
   if (adapterId === CAD_CANVAS_ADAPTER_ID) return parseCadCanvasTarget(target);
+  if (adapterId === SIMULATION_CANVAS_ADAPTER_ID) return parseSimulationCanvasTarget(target);
   return null;
 }
 
@@ -100,9 +102,22 @@ export class CanvasService {
   constructor(private readonly citation: CitationService, private readonly resolveSessionPath: ResolveSessionPath, private readonly cad?: {
     present(session: CanvasSession, input: PresentInput): Promise<CanvasPresentationV1>;
     resolve(session: CanvasSession, viewId: string): CanvasPresentationV1 | null;
+  }, private readonly simulation?: {
+    resolve(session: CanvasSession, viewId: string): CanvasPresentationV1 | null;
+    freeze(session: CanvasSession, runId: string, target: unknown): unknown;
   }) {}
 
   async presentResource(session: CanvasSession, input: PresentInput): Promise<CanvasPresentationV1> {
+    if (input.adapterId === SIMULATION_CANVAS_ADAPTER_ID && input.resource) {
+      const resource = input.resource as Record<string, unknown>;
+      if (resource.scope !== 'capability' || resource.moduleId !== 'com.transportx.traffic-simulation' || typeof resource.resourceId !== 'string') throw serviceError('Simulation Run reference is invalid.');
+      const canvas = this.simulation?.resolve(session, `simulation:${resource.resourceId}`);
+      if (!canvas) throw serviceError('Simulation Run is unavailable.', 404);
+      const target = validateTarget(SIMULATION_CANVAS_ADAPTER_ID, input.target);
+      if (input.target !== undefined && !target) throw serviceError('Simulation Canvas target is invalid.');
+      if (target) this.simulation?.freeze(session, resource.resourceId, target);
+      return { ...canvas, operation: requestedOperation(input.operation, 'present'), ...(target !== undefined ? { target } : {}) };
+    }
     if (input.adapterId !== CAD_CANVAS_ADAPTER_ID || !input.resource) return this.present(session, input);
     const declaration = session.resolvedSessionPlan?.modules.flatMap((module) => module.canvasViews).find((view) => view.adapterId === CAD_CANVAS_ADAPTER_ID);
     if (!this.cad || declaration?.protocolVersion !== CANVAS_PRESENTATION_VERSION) throw serviceError('CAD adapter is not enabled for this session.', 403);
@@ -115,6 +130,7 @@ export class CanvasService {
   }
 
   private previous(session: CanvasSession, viewId: string) {
+    if (viewId.startsWith('simulation:')) return this.simulation?.resolve(session, viewId) || null;
     const previous = previousPresentation(session, viewId);
     if (!viewId.startsWith('cad:')) return previous;
     const stored = this.cad?.resolve(session, viewId);
@@ -219,6 +235,11 @@ export class CanvasService {
       if (!valid) throw serviceError('Video Canvas target is invalid.');
     }
     let selection = input.selection;
+    if (presentation.adapterId === SIMULATION_CANVAS_ADAPTER_ID) {
+      const resource = presentation.resources[0];
+      if (!this.simulation || resource?.scope !== 'capability') throw serviceError('Simulation Run is unavailable.', 404);
+      selection = this.simulation.freeze(session, resource.resourceId, target);
+    }
     if (presentation.adapterId === CAD_CANVAS_ADAPTER_ID) {
       const payload = parseCadCanvasPayload(presentation.payload);
       const resource = presentation.resources[0];
@@ -249,6 +270,12 @@ export class CanvasService {
     const allowed = new Set(session.activeCanvasContextIds || []);
     if (contexts.some((context) => !allowed.has(context.contextId))) throw serviceError('Canvas context was not attached to the current user turn.', 403);
     for (const context of contexts) {
+      if (context.adapterId === SIMULATION_CANVAS_ADAPTER_ID) {
+        const resource = context.resources[0], stored = context.selection as { frameSha256?: string; networkSha256?: string; jobSha256?: string } | undefined;
+        if (!this.simulation || resource?.scope !== 'capability' || !stored) throw serviceError('Simulation context is unavailable.', 409);
+        const current = this.simulation.freeze(session, resource.resourceId, context.target) as typeof stored;
+        if (!current || stored.frameSha256 !== current.frameSha256 || stored.networkSha256 !== current.networkSha256 || stored.jobSha256 !== current.jobSha256) throw serviceError('Simulation context frame or input checksum changed.', 409);
+      }
       if (context.adapterId !== CAD_CANVAS_ADAPTER_ID) continue;
       const selection = parseCadCanvasSelection(context.selection);
       const resource = context.resources[0];

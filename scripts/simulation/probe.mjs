@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const { PythonRunner } = require('../../bin/python-runner.js');
 const { ProcessRunner } = require('../../bin/process-runner.js');
 const fixture = path.resolve('test/fixtures/simulation');
-const script = path.resolve('scripts/simulation/compute.py');
+const script = path.resolve('modules/optional/traffic-simulation/scripts/compute.py');
 const python = process.env.TAU_PYTHON_COMMAND;
 const dependencies = process.env.TRANSPORTX_SIMULATION_DEPS;
 if (!python || (!dependencies && !process.env.TRANSPORTX_SIMULATION_RUNTIME)) throw new Error('Set TAU_PYTHON_COMMAND and an explicit dependency directory or verified runtime');
@@ -172,7 +172,7 @@ try {
     evidence.conversionCases.push({ name: entry.name, nodeRejected: true, pythonRejectedBeforeEngine: true });
   }
   const invalidMap = prepare('invalid-mapping', roadInput);
-  invalidMap.job.mapping.edges.hub = 'missing';
+  invalidMap.job.mapping.roadRoute[0] = 'missing';
   fs.writeFileSync(invalidMap.file, JSON.stringify(invalidMap.job));
   await assert.rejects(runner.run(script, [invalidMap.file], { cwd: evidenceRoot, envMode: 'replace', env: environment, timeoutMs: 5000 }), /mapping_invalid/);
   assert.ok(!fs.existsSync(path.join(invalidMap.outputRoot, 'started.json')));

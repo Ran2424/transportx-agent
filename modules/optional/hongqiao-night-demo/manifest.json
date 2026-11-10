@@ -1,0 +1,12 @@
+{
+  "manifestVersion":2,
+  "id":"com.transportx.hongqiao-night-demo",
+  "name":"Hongqiao Night Synthetic Demo",
+  "version":"0.1.0",
+  "type":"module",
+  "platformVersion":">=3.24.2 <4.0.0",
+  "dependencies":["com.transportx.traffic-simulation"],
+  "entrypoints":{"skills":["skill/SKILL.md"]},
+  "contributes":{"assets":[{"id":"data:hongqiao-night-demo","kind":"data","path":"assets/night-demo","integrityFile":"assets/night-demo/SHA256SUMS.txt"}]},
+  "presentation":{"defaultLocale":"zh-CN","locales":{"zh-CN":{"name":"虹桥夜间疏运示例（合成）","description":"用于验证运行、回放与比较的小场景；道路、客流与服务参数均为合成，未做真实场景校准。"},"en-US":{"name":"Hongqiao Night Demo (Synthetic)","description":"Small synthetic and uncalibrated network, demand and services for execution, replay and comparison tests."}}}
+}

@@ -13,5 +13,6 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["desktop/**/*.ts"]
+  "include": ["desktop/**/*.ts"],
+  "exclude": ["desktop/build/**"]
 }

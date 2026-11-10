@@ -1500,3 +1500,23 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .composer-plan-source { color: var(--text-tertiary); font-size: 11px; cursor: help; }
 .composer-start-status { color: var(--text-secondary); font-size: 11px; }
+
+/* Simulation Canvas keeps execution state separate from the viewing clock. */
+.simulation-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; color: var(--text-primary); background: var(--surface-default); font-size: var(--text-xs); }
+.simulation-status, .simulation-timeline { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-default); }
+.simulation-status { justify-content: space-between; }
+.simulation-status button, .simulation-timeline button, .simulation-workspace select { min-height: var(--control-compact); padding: 0 var(--space-2); color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font: inherit; }
+.simulation-provenance { padding: var(--space-2) var(--space-3); color: var(--status-warning); background: var(--surface-sidebar); }
+.simulation-map { position: relative; flex: 1 1 45%; min-height: 180px; }
+.simulation-timeline input { min-width: 40px; flex: 1; accent-color: var(--interactive-primary-bg); }
+.simulation-timeline output { white-space: nowrap; font-family: var(--font-mono); }
+.simulation-coverage { padding: var(--space-2) var(--space-3); color: var(--text-secondary); font-size: var(--text-2xs); }
+.simulation-details { flex: 0 1 35%; min-height: 70px; overflow: auto; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border-default); }
+.simulation-details label { display: flex; align-items: center; gap: var(--space-2); }
+.simulation-details p { overflow-wrap: anywhere; margin: var(--space-2) 0; }
+.simulation-counts { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-3) 0; }
+.simulation-counts div { display: grid; gap: var(--space-1); }
+.simulation-counts dt { color: var(--text-secondary); }
+.simulation-counts dd { margin: 0; font-size: var(--text-md); font-family: var(--font-mono); }
+.simulation-details ol { padding-left: var(--space-4); }
+.simulation-error { padding: var(--space-2) var(--space-3); color: var(--status-danger); overflow-wrap: anywhere; }

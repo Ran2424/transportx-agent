@@ -16,6 +16,12 @@ export type CoreToolBinding = { toolId: string; piName: string; file: string; ex
 
 // Platform-owned bindings; Pi remains the only tool registry and runtime.
 export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
+  'com.transportx.traffic-simulation': [
+    { toolId: 'traffic.prepare', piName: 'traffic_prepare_scenario', file: 'prepare-contract.json', execution: 'host' },
+    { toolId: 'traffic.run', piName: 'traffic_run', file: 'run-contract.json', execution: 'host' },
+    { toolId: 'traffic.execution', piName: 'traffic_execution', file: 'execution-contract.json', execution: 'host' },
+    { toolId: 'traffic.query', piName: 'traffic_query_results', file: 'query-contract.json', execution: 'host' },
+  ],
   'com.transportx.tool-activation': [
     { toolId: 'capabilities.manage', piName: 'manage_capabilities', file: 'tool-contract.json', execution: 'pi-local' },
   ],
@@ -53,6 +59,7 @@ export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
 
 export function coreModulePath(moduleId: string) {
   if (!CORE_TOOL_BINDINGS[moduleId]) throw new Error(`No core tools for ${moduleId}`);
+  if (moduleId === 'com.transportx.traffic-simulation') return 'optional/traffic-simulation';
   return `${moduleId === 'com.transportx.module-authoring' ? 'official' : 'capabilities'}/${moduleId.slice('com.transportx.'.length)}`;
 }
 

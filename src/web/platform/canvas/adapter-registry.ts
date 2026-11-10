@@ -16,6 +16,7 @@ import { parseVisualizationEnvelope } from '../../../contracts/geo.ts';
 import { parseVideoEnvelopeStructured, parseVideoTimestamp } from '../../../contracts/video.ts';
 import type { CanvasView } from './canvas-state.ts';
 import { documentPath } from './document-state.ts';
+import { SIMULATION_CANVAS_ADAPTER_ID, SIMULATION_MODULE_ID, parseSimulationCanvasPayload, parseSimulationCanvasTarget } from '../../../contracts/simulation.ts';
 
 export type CanvasProjectionContext = { sessionId: string; cwd: string };
 
@@ -120,7 +121,18 @@ const cadAdapter: CanvasAdapter = {
   },
 };
 
-const adapters = new Map([documentAdapter, geoAdapter, videoAdapter, cadAdapter].map((adapter) => [adapter.adapterId, adapter]));
+const simulationAdapter: CanvasAdapter = {
+  adapterId: SIMULATION_CANVAS_ADAPTER_ID,
+  kind: 'simulation',
+  reduce(_previous, presentation) {
+    if (presentation.operation === 'clear') return null;
+    const payload = parseSimulationCanvasPayload(presentation.payload), resource = presentation.resources[0];
+    if (!payload || presentation.kind !== 'simulation' || presentation.viewId !== `simulation:${payload.runId}` || resource?.scope !== 'capability' || resource.moduleId !== SIMULATION_MODULE_ID || resource.resourceId !== payload.runId || presentation.target !== undefined && !parseSimulationCanvasTarget(presentation.target)) return null;
+    return { id: presentation.viewId, kind: 'simulation', title: presentation.title, revision: presentation.revision, canvas: presentation };
+  },
+};
+
+const adapters = new Map([documentAdapter, geoAdapter, videoAdapter, cadAdapter, simulationAdapter].map((adapter) => [adapter.adapterId, adapter]));
 
 export function getCanvasAdapter(adapterId: string): CanvasAdapter | null {
   return adapters.get(adapterId) ?? null;

@@ -5,15 +5,25 @@ import type { ModuleCanvasView } from './module.ts';
 
 export const RESOLVED_SESSION_PLAN_SCHEMA_VERSION = 3 as const;
 export type ResolvedPlanEntrypoint = { kind: 'prompt' | 'skill' | 'extension'; path: string };
-export type ResolvedPlanNativeRuntime = {
+type ResolvedRuntimeIdentity = {
   id: string;
-  kind: 'ffmpeg';
   platform: 'darwin' | 'win32';
   arch: 'arm64' | 'x64';
   version: string;
+};
+export type ResolvedPlanNativeRuntime = ResolvedRuntimeIdentity & ({
+  kind: 'ffmpeg';
   ffmpeg: { path: string; sha256: string };
   ffprobe: { path: string; sha256: string };
-};
+} | {
+  kind: 'sumo';
+  sumo: { path: string; sha256: string };
+  netconvert: { path: string; sha256: string };
+  duarouter: { path: string; sha256: string };
+  pythonPath: string;
+  projData: string;
+  integrityFile: { path: string; sha256: string };
+});
 export type ResolvedPlanModule = {
   id: string;
   version: string;
@@ -24,6 +34,13 @@ export type ResolvedPlanModule = {
   nativeRuntimes: ResolvedPlanNativeRuntime[];
   canvasViews: ModuleCanvasView[];
 };
+
+export function mapNativeRuntimePaths(runtime: ResolvedPlanNativeRuntime, convert: (path: string) => string): ResolvedPlanNativeRuntime {
+  const file = (entry: { path: string; sha256: string }) => ({ ...entry, path: convert(entry.path) });
+  return runtime.kind === 'sumo'
+    ? { ...runtime, sumo: file(runtime.sumo), netconvert: file(runtime.netconvert), duarouter: file(runtime.duarouter), pythonPath: convert(runtime.pythonPath), projData: convert(runtime.projData), integrityFile: file(runtime.integrityFile) }
+    : { ...runtime, ffmpeg: file(runtime.ffmpeg), ffprobe: file(runtime.ffprobe) };
+}
 export type ResolvedPlanAsset = {
   id: string;
   kind: 'knowledge' | 'data' | 'template';
@@ -85,6 +102,16 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
       const runtime = asRecord(candidateRuntime);
       const ffmpeg = asRecord(runtime?.ffmpeg); const ffprobe = asRecord(runtime?.ffprobe);
       const runtimeId = asString(runtime?.id, 200); const runtimeVersion = asString(runtime?.version, 100);
+      if (runtimeId && runtime?.kind === 'sumo' && ['darwin', 'win32'].includes(String(runtime.platform)) && ['arm64', 'x64'].includes(String(runtime.arch)) && runtimeVersion) {
+        const names = ['sumo', 'netconvert', 'duarouter', 'integrityFile'] as const;
+        const entries = names.map((name) => { const entry = asRecord(runtime[name]); return { name, path: asString(entry?.path, 2000), sha256: asString(entry?.sha256, 64) }; });
+        const pythonPath = asString(runtime.pythonPath, 2000), projData = asString(runtime.projData, 2000);
+        if (pythonPath && projData && entries.every((entry) => entry.path && entry.sha256 && SHA256_RE.test(entry.sha256))) {
+          const files = Object.fromEntries(entries.map((entry) => [entry.name, { path: entry.path!, sha256: entry.sha256! }])) as Record<typeof names[number], { path: string; sha256: string }>;
+          nativeRuntimes.push({ id: runtimeId, kind: 'sumo', platform: runtime.platform as ResolvedRuntimeIdentity['platform'], arch: runtime.arch as ResolvedRuntimeIdentity['arch'], version: runtimeVersion, ...files, pythonPath, projData });
+        }
+        return;
+      }
       const ffmpegPath = asString(ffmpeg?.path, 2000); const ffmpegSha256 = asString(ffmpeg?.sha256, 64);
       const ffprobePath = asString(ffprobe?.path, 2000); const ffprobeSha256 = asString(ffprobe?.sha256, 64);
       if (runtimeId && runtime?.kind === 'ffmpeg' && ['darwin', 'win32'].includes(String(runtime.platform)) && ['arm64', 'x64'].includes(String(runtime.arch)) && runtimeVersion && ffmpegPath && ffmpegSha256 && SHA256_RE.test(ffmpegSha256) && ffprobePath && ffprobeSha256 && SHA256_RE.test(ffprobeSha256)) {

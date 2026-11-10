@@ -1,9 +1,9 @@
 import maplibregl, {
-  type GeoJSONSource,
   type IControl,
   type Map as MapLibreMap,
 } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { createSharedMap, applySharedMapView, setSharedGeoJSON } from '../shared-map.js';
 import type {
   GeoClientContextV1,
   GeoContextMode,
@@ -28,30 +28,11 @@ import {
   retainedLayerVisibility,
 } from './geo-scene-reconciler.js';
 
-const BASEMAP_STYLES: Record<Exclude<GeoSceneSnapshot['basemap']['id'], 'none'>, string> = {
-  default: 'https://tiles.openfreemap.org/styles/positron',
-  light: 'https://tiles.openfreemap.org/styles/positron',
-  dark: 'https://tiles.openfreemap.org/styles/dark',
-};
-
 export type GeoInteractionEvent =
   | { type: 'draft_changed'; draft: GeoClientContextV1 | null }
   | { type: 'draft_stale'; previousRevision: number; nextRevision: number }
   | { type: 'limit_reached'; limit: number }
   | { type: 'unselectable_layer'; layerId: string };
-
-function blankStyle(basemap: GeoSceneSnapshot['basemap']) {
-  const backgrounds = { default: '#eef3f8', light: '#f4f6f8', dark: '#17202b', none: '#f7f8fa' };
-  return {
-    version: 8 as const,
-    sources: {},
-    layers: [{ id: 'background', type: 'background' as const, paint: { 'background-color': backgrounds[basemap.id] } }],
-  };
-}
-
-function styleForBasemap(basemap: GeoSceneSnapshot['basemap']) {
-  return basemap.id === 'none' ? blankStyle(basemap) : BASEMAP_STYLES[basemap.id];
-}
 
 function screenshotColor(style: CSSStyleDeclaration, name: string, fallback: string) {
   return style.getPropertyValue(name).trim() || fallback;
@@ -340,17 +321,7 @@ class MapLibreGeoRuntime {
     this.container.replaceChildren();
     const center = scene.view.mode === 'camera' ? scene.view.center : [0, 0] as [number, number];
     const zoom = scene.view.mode === 'camera' ? scene.view.zoom : 1;
-    const map = new maplibregl.Map({
-      container: this.container,
-      style: styleForBasemap(scene.basemap),
-      center,
-      zoom,
-      attributionControl: scene.basemap.id === 'none' ? false : { compact: true },
-      localIdeographFontFamily: '"Noto Sans CJK SC", "PingFang SC", sans-serif',
-      dragRotate: false,
-      pitchWithRotate: false,
-      canvasContextAttributes: { preserveDrawingBuffer: true },
-    });
+    const map = createSharedMap(this.container, scene.basemap, center, zoom);
     this.map = map;
     map.on('error', (event) => {
       if (!map.isStyleLoaded()) this.onError(event.error?.message || 'MapLibre error');
@@ -426,7 +397,7 @@ class MapLibreGeoRuntime {
         continue;
       }
       if (sourceDataKey(oldSource) !== sourceDataKey(source)) {
-        (map.getSource(runtimeId) as GeoJSONSource).setData(this.sourceData(source, sessionId));
+        setSharedGeoJSON(map, runtimeId, this.sourceData(source, sessionId));
       }
     }
   }
@@ -531,13 +502,7 @@ class MapLibreGeoRuntime {
   private applyView(view: GeoView, duration: number) {
     const map = this.map;
     if (!map) return;
-    if (view.mode === 'bounds') {
-      map.fitBounds(view.bounds, { padding: view.padding ?? 32, duration });
-    } else if (duration > 0) {
-      map.easeTo({ center: view.center, zoom: view.zoom, duration });
-    } else {
-      map.jumpTo({ center: view.center, zoom: view.zoom });
-    }
+    applySharedMapView(map, view, duration);
   }
 
   private requireMap() {

@@ -125,7 +125,7 @@ Host 通过 `TRANSPORTX_FONT_DIR` 注入内置思源黑体、思源宋体和 Jet
 
 发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely、ezdxf。
 
-`ProcessRunner` 与 `PythonRunner` 默认合并父环境；可信调用方可显式指定 `envMode: 'replace'`，仅向子进程提供批准的环境。交通仿真 P0 探针使用该模式并核验嵌套 SUMO 的环境与退出。探针位于 `scripts/simulation/`，尚不是生产仿真 Module、Host 服务或 Simulation Canvas，验证范围见 [P0 记录](<交通仿真与优化能力升级 P0 记录.md>)。
+`ProcessRunner` 与 `PythonRunner` 默认合并父环境；可信调用方可显式指定 `envMode: 'replace'`，仅向子进程提供批准的环境。交通仿真使用该模式，Python/SUMO 对按两个进程额度计入既有全局上限；复用会话 Job 与受管进程，不另设调度器。P0 探针及历史范围见 [P0 记录](<交通仿真与优化能力升级 P0 记录.md>)；计算入口现由独立 Traffic Simulation Module 携带，产品闭环验收状态见 [P1 记录](<交通仿真与优化能力升级 P1 记录.md>)。
 
 ### 2.7 React Workspace 与 Browser Kernel
 
@@ -293,7 +293,7 @@ Kernel 通过分页列表和按 Evidence ID 查询详情。列表包含来源元
 | 地图交互上下文与等待请求 | Session Snapshot、Geo Interaction Service | Pi Geo 工具、Browser Kernel、React Geo Workspace |
 | 模型定义与密钥 | 用户目录 `models.json`、`auth.json` | Agent Host、Pi；密钥不返回前端 |
 | Module 声明与完整性 | Module `manifest.json`、`integrityFile` | Registry、Installer、Session Assembly |
-| Module Native Runtime | Module `manifest.json` 中的 `nativeRuntimes` | Installer、Session Assembly、Video Service |
+| Module Native Runtime | Module `manifest.json` 中的 `nativeRuntimes` | Installer、Session Assembly、Video / Simulation Service |
 | 基础打包运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
 
 `src/contracts/` 必须保持纯粹：不依赖 Node、Electron、React、DOM 或 MapLibre。任何跨层字段先定义契约和解析规则，再实现服务端、Kernel、UI 适配。
@@ -333,7 +333,7 @@ Module 是统一安装与版本冻结单元，manifest 的 `type` 分为 `domain
 | Skill | `SKILL.md` 工作方法，可附参考文件和脚本 | `entrypoints.skills` → Pi `--skill`；本身不是可执行工具 |
 | Extension | TypeScript/JavaScript 扩展，在 Pi 进程中注册工具或监听事件 | `entrypoints.piExtensions` → Pi `--extension` |
 | Data / Knowledge / Template | 数据库、知识原文/索引、报告模板等文件资产 | `contributes.assets` → Asset Resolver → 会话计划和 Prompt |
-| Native Runtime | 平台与架构专属可执行文件；当前实现为 ffmpeg/ffprobe 组合 | `contributes.nativeRuntimes` → 安装/装配校验 → Video Service |
+| Native Runtime | 平台与架构专属可执行文件；ffmpeg/ffprobe 组合及 SUMO/netconvert/duarouter、Python 客户端与投影数据 | `contributes.nativeRuntimes` → 安装/装配校验 → 对应批准 Host 服务 |
 | Canvas View | Module 声明使用的平台内置受信任 Adapter；不包含前端代码 | `contributes.canvasViews` → Resolved Session Plan → Canvas Host 校验与 Adapter Registry |
 | Session Profile | 用户对任务范围与模块版本的选择 | 装配输入；不是执行进程 |
 | ResolvedSessionPlan v3 | 已解析的 Domain、模块版本、入口、资产与运行时清单 | 保存到任务 `.tau/`；用于启动、恢复和完整性校验 |

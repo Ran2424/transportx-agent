@@ -10,20 +10,23 @@ export type ProcessRunOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   envMode?: 'merge' | 'replace';
+  processWeight?: number;
   timeoutMs: number;
   maxBuffer: number;
   signal?: AbortSignal;
   errorMessage?(stderr: string, error: Error): string;
 };
 
-const hostChildren = new Set<ChildProcess>();
+const hostChildren = new Map<ChildProcess, number>();
 
 export class ProcessRunner {
-  get activeCount() { return this.children.size; }
-  private readonly children = new Map<ChildProcess, { stop(): void; completion: Promise<unknown> }>();
+  get activeCount() { return [...this.children.values()].reduce((total, child) => total + child.weight, 0); }
+  private readonly children = new Map<ChildProcess, { stop(): void; completion: Promise<unknown>; weight: number }>();
 
   run(executable: Executable, args: string[], options: ProcessRunOptions): Promise<{ stdout: string; stderr: string }> {
-    if (hostChildren.size >= 4) return Promise.reject(Object.assign(new Error('Host process capacity reached'), { status: 503 }));
+    const weight = options.processWeight ?? 1;
+    if (!Number.isInteger(weight) || weight < 1 || weight > 4) return Promise.reject(new Error('Invalid controlled process weight'));
+    if ([...hostChildren.values()].reduce((total, value) => total + value, 0) + weight > 4) return Promise.reject(Object.assign(new Error('Host process capacity reached'), { status: 503 }));
     if (options.signal?.aborted) return Promise.reject(new Error('Analysis cancelled'));
     let tracked: ReturnType<typeof managedRuntimeProcess>;
     try { tracked = managedRuntimeProcess(options.cwd); }
@@ -36,7 +39,7 @@ export class ProcessRunner {
     });
     let trackingError: Error | null = null;
     try { tracked?.started(child); } catch (error) { trackingError = error as Error; }
-    hostChildren.add(child);
+    hostChildren.set(child, weight);
     let stop!: () => void;
     const completion = new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
       let stopped: Error | null = null;
@@ -86,7 +89,7 @@ export class ProcessRunner {
       });
       if (trackingError) halt(trackingError);
     });
-    this.children.set(child, { stop, completion });
+    this.children.set(child, { stop, completion, weight });
     return completion;
   }
 

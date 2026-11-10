@@ -25,6 +25,10 @@ files:
   - modules/**
   - "!modules/installable/**"
   - "!modules/shared/**"
+  - "!modules/optional/hongqiao-night-demo/**"
+  - "!modules/optional/traffic-simulation/scripts/**"
+  - "!modules/optional/traffic-simulation/skill/**"
+  - "!modules/optional/traffic-simulation/extensions/pi-traffic-simulation/index.ts"
   - "!modules/capabilities/cad/extensions/pi-cad/index.ts"
   - "!modules/official/module-authoring/extensions/pi-module-package/index.ts"
   - "!modules/capabilities/citation/extensions/pi-citation/index.ts"
@@ -35,6 +39,9 @@ files:
   - "!modules/capabilities/tool-activation/extensions/pi-tool-activation/index.ts"
   - from: dist/module-extensions
     to: modules
+    filter:
+      - "**/*"
+      - "!optional/**"
   - src/contracts/**
   - src/server/prompts/**
 extraResources:

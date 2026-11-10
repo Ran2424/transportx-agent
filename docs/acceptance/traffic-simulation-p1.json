@@ -1,0 +1,155 @@
+{
+  "protocol": "transportx-simulation-p1-acceptance",
+  "version": 1,
+  "status": "passed_in_measured_scope",
+  "date": "2026-11-11",
+  "scope": {
+    "platform": "macOS arm64",
+    "python": "3.10",
+    "sumo": "1.28.0",
+    "module": "0.1.1",
+    "demo": "0.1.0",
+    "model": "deepseek/deepseek-v4-flash",
+    "input": "synthetic",
+    "modelValidation": "not_calibrated",
+    "durationSeconds": 600,
+    "backgroundVehicles": 120,
+    "travelers": 100
+  },
+  "checks": {
+    "nativeTrustAndInstall": true,
+    "actualPiDiscoveryAndExecution": true,
+    "missingInputDiagnosis": true,
+    "queryCoordinatesUnitsAndEvents": true,
+    "frozenContextIndependentOfPlayback": true,
+    "independentRelocatedModule": true,
+    "earlyAndPublishedCancellation": true,
+    "engineKillRetainsUnknown": true,
+    "sameCallDeduplicatedAndConflictRejected": true,
+    "historyAfterUninstall": true,
+    "committedOutputTamperingRejected": true,
+    "hiddenDoesNotCancelOrReopen": true,
+    "hiddenFrameReads": 0,
+    "lateResponseIsolation": {
+      "sha256": "844881cb27178b98f651681e315376b6806396b33606233bfb9c0b065d76135a",
+      "bytes": 105007,
+      "delivered": true
+    },
+    "geoDraftScreenshotLegendAndContext": true,
+    "geoRevision": 9,
+    "actualHostRestart": true,
+    "historyPiStarts": 0,
+    "nodeTests": 40,
+    "typecheckConfigurations": 6,
+    "webSmoke": "passed"
+  },
+  "runs": {
+    "modelQuery": "sim_56c9d7c5107ee50cead462531b41712d",
+    "hiddenRoad": "sim_d44f346be61f7acfcc7f836283624bc1",
+    "visibleRepresentative": "sim_f3160c51bb3eaebf8b3fead1e79d7b79",
+    "relocated": "sim_d09ac378bdc0fbc1f8ad6453bd4a9350"
+  },
+  "context": {
+    "runId": "sim_56c9d7c5107ee50cead462531b41712d",
+    "time": 60,
+    "objectId": "bus-0",
+    "lanePositionMeters": 89.38277128271832
+  },
+  "performance": {
+    "firstPublishedToVisibleMs": 108.52294921875,
+    "firstGeneratedToVisibleMs": 140.671875,
+    "visibleBeforeFinalPublication": true,
+    "timings": {
+      "stepSeconds": 0.13204057898838073,
+      "readSeconds": 2.210655329632573,
+      "routeSeconds": 0.0002667499938979745,
+      "actionSeconds": 0.0011269170208834112,
+      "rulesSeconds": 0.049466445023426786,
+      "snapshotSeconds": 0.4541917813476175,
+      "writeSeconds": 0.31346912306617014,
+      "wallSeconds": 3.2924143330019433
+    },
+    "writtenBlockBytes": 5383988,
+    "maxBufferedBlockBytes": 135034,
+    "pythonTracedPeakBytes": 1781842,
+    "playback": {
+      "wallSeconds": 8,
+      "speed": 16,
+      "sampledStateUpdates": 63,
+      "trajectorySampleSeconds": 2,
+      "rafMeanMs": 16.665903966597078,
+      "rafMeaning": "browser scheduling, not vehicle sampling"
+    },
+    "budgets": {
+      "publicationToVisibleMs": 1000,
+      "computeWallSeconds": 60,
+      "outputBytes": 67108864,
+      "maxChunkCache": 3
+    },
+    "limits": "Local measured profile only; heap snapshots/RAF cadence are not peak RSS or vehicle frame rate."
+  },
+  "package": {
+    "path": "release/modules/transportx-traffic-simulation-0.1.1-darwin-arm64.zip",
+    "bytes": 121690158,
+    "sha256": "f23c29b9841409171e2ec9c9326e9ad2844081b759bc6ba980fef1de92c669ba"
+  },
+  "evidence": [
+    {
+      "path": "tmp/simulation-p1-desktop/evidence/first-run.json",
+      "bytes": 99999,
+      "sha256": "158b540247561481102cc5f8c86fb3dbff58a4688694f861de646237b94e5b30"
+    },
+    {
+      "path": "tmp/simulation-p1-desktop/evidence/patched-run.json",
+      "bytes": 208909,
+      "sha256": "0a92987bd182f08a60b217e0b6be73bc2a8ecb9a20ab7a3974035b7a0cc0a7eb"
+    },
+    {
+      "path": "tmp/simulation-p1-desktop/evidence/restart.json",
+      "bytes": 9801,
+      "sha256": "ad0e196d07dea767c819057925efae5d1de0ade94ecdfcb4048e6ee32e872f4f"
+    },
+    {
+      "path": "tmp/simulation-p1-canvas-probe/evidence.json",
+      "bytes": 32332,
+      "sha256": "5251e4fb4a9b623c961bd4ab3d42b9f73c1d614d27233e353721643902875a90"
+    },
+    {
+      "path": "tmp/simulation-p1-canvas-probe-viewing/evidence.json",
+      "bytes": 69088,
+      "sha256": "ac27c6073dbf3e9778dadfbce2ef9766b77969178523b5eeec46848427804535"
+    },
+    {
+      "path": "tmp/simulation-p1-visible-probe-final/evidence.json",
+      "bytes": 90031,
+      "sha256": "af11b82d9851b388f0ff3dd72ffdfb68ddd612a3c7839ada9a58feab846ba6ce"
+    },
+    {
+      "path": "/private/tmp/transportx-simulation-p1-relocated-20261111/evidence.json",
+      "bytes": 11196,
+      "sha256": "e8f582e6a756d343254a11c8053aaa67c69d01b8a8092aec347a436b226af8f0"
+    },
+    {
+      "path": "tmp/simulation-p1-semantics-patch/evidence.json",
+      "bytes": 359799,
+      "sha256": "df65d186dd20f8eea280af4ca4d5cbea21d61f3e9e79a00beea62647750d4aa6"
+    },
+    {
+      "path": "tmp/simulation-p1-final-regression.log",
+      "bytes": 79329,
+      "sha256": "2c296b6f4f3dacee0fc7ca3d6968632c24b0851318eb3c4c9bd0cafda31d9568"
+    },
+    {
+      "path": "tmp/simulation-p1-final-web.log",
+      "bytes": 60002,
+      "sha256": "89fb69aff11184aab440c96965c93e555e591a172b67aab5e757e6f7aea3d5e5"
+    }
+  ],
+  "limitations": [
+    "P2 not implemented at this stage",
+    "P3 real Hongqiao calibration deferred by user",
+    "P4 clean OS, Windows, complete license closure and signing not passed",
+    "Existing Simulation conversation transfer across workspaces rejected",
+    "Only supported WGS84/UTM network mappings accepted"
+  ]
+}

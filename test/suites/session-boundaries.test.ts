@@ -1029,6 +1029,14 @@ test('Session close, history deletion and process cancellation preserve writer o
       assert.equal(runner.activeCount, 0);
       const result = await other.run(executable, ['-e', "process.stdout.write('done')"], { timeoutMs: 10000, maxBuffer: 1024 });
       assert.equal(result.stdout, 'done');
+      const weightedController = new AbortController();
+      const weighted = runner.run(executable, ['-e', 'setInterval(()=>{},1000)'], { ...options, signal: weightedController.signal, processWeight: 2 });
+      const weightedOutcome = assert.rejects(weighted, /cancelled/);
+      assert.equal(runner.activeCount, 2, 'one Python/SUMO pair reserves two global process slots');
+      await assert.rejects(other.run(executable, ['-e', ''], { ...options, processWeight: 3 }), /capacity/);
+      await assert.rejects(other.run(executable, ['-e', ''], { ...options, processWeight: 0 }), /weight/);
+      weightedController.abort(); await weightedOutcome;
+      assert.equal(runner.activeCount, 0);
     }
 
     // abort stops a descendant Writer even when its parent exits first

@@ -25,18 +25,26 @@ export type ModuleAsset = {
   integrityFile?: string;
 };
 
-export type ModuleNativeRuntime = {
+type NativeRuntimeIdentity = {
   id: string;
-  kind: 'ffmpeg';
   platform: 'darwin' | 'win32';
   arch: 'arm64' | 'x64';
   version: string;
+  notices?: string;
+};
+export type ModuleNativeRuntime = NativeRuntimeIdentity & ({
+  kind: 'ffmpeg';
   executables: {
     ffmpeg: { path: string; sha256: string };
     ffprobe: { path: string; sha256: string };
   };
-  notices?: string;
-};
+} | {
+  kind: 'sumo';
+  executables: Record<'sumo' | 'netconvert' | 'duarouter', { path: string; sha256: string }>;
+  pythonPath: string;
+  projData: string;
+  integrityFile: { path: string; sha256: string };
+});
 
 export type ModuleCanvasView = {
   adapterId: string;
@@ -223,6 +231,18 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
       const ffprobePath = asString(ffprobe?.path, 500);
       const ffmpegSha256 = asString(ffmpeg?.sha256, 64);
       const ffprobeSha256 = asString(ffprobe?.sha256, 64);
+      if (runtime && id && kind === 'sumo' && ['darwin', 'win32'].includes(platform || '') && ['arm64', 'x64'].includes(arch || '') && version) {
+        const names = ['sumo', 'netconvert', 'duarouter'] as const;
+        const entries = names.map((name) => { const item = asRecord(executables?.[name]); return { name, path: asString(item?.path, 500), sha256: asString(item?.sha256, 64) }; });
+        const pythonPath = asString(runtime.pythonPath, 500), projData = asString(runtime.projData, 500), integrity = asRecord(runtime.integrityFile);
+        const integrityPath = asString(integrity?.path, 500), integritySha256 = asString(integrity?.sha256, 64);
+        if (entries.some((entry) => !entry.path || !entry.sha256?.match(/^[a-f0-9]{64}$/i)) || Object.keys(executables || {}).length !== 3 || !pythonPath || !projData || !integrityPath || !integritySha256?.match(/^[a-f0-9]{64}$/i) || !asString(runtime.notices, 500)) {
+          diagnostics.push(diagnostic({ code: 'invalid_type', path: `$.contributes.nativeRuntimes[${index}]`, message: 'SUMO requires three executable hashes, Python client path, a full integrity file and notices.' }));
+        } else nativeRuntimes.push({ id, kind: 'sumo', platform: platform as NativeRuntimeIdentity['platform'], arch: arch as NativeRuntimeIdentity['arch'], version,
+          executables: Object.fromEntries(entries.map((entry) => [entry.name, { path: entry.path!, sha256: entry.sha256!.toLowerCase() }])) as Record<typeof names[number], { path: string; sha256: string }>,
+          pythonPath, projData, integrityFile: { path: integrityPath, sha256: integritySha256.toLowerCase() }, notices: asString(runtime.notices, 500)! });
+        return;
+      }
       if (!runtime || !id || kind !== 'ffmpeg' || !['darwin', 'win32'].includes(platform || '') || !['arm64', 'x64'].includes(arch || '') || !version || !ffmpegPath || !ffprobePath || !ffmpegSha256?.match(/^[a-f0-9]{64}$/i) || !ffprobeSha256?.match(/^[a-f0-9]{64}$/i)) {
         diagnostics.push(diagnostic({ code: 'invalid_type', path: `$.contributes.nativeRuntimes[${index}]`, message: 'Native runtime requires an id, supported platform/architecture, version, and SHA-256 executable entries.' }));
       } else nativeRuntimes.push({

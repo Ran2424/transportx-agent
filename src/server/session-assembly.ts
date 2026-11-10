@@ -9,6 +9,8 @@ import {
   type ResolvedPlanModule,
   type ResolvedPlanNativeRuntime,
   type ResolvedSessionPlanV3,
+  type ModuleNativeRuntime,
+  mapNativeRuntimePaths,
   type SessionProfileV1,
 } from '../contracts/index.js';
 import type { Executable } from './runtime-resolver.js';
@@ -17,6 +19,7 @@ import type { AssetResolver, ResolvedAsset } from './asset-resolver.js';
 import { verifyChecksumFile, sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 import { readModuleToolContracts } from './tool-contracts.js';
+import { canonicalToolSchema } from '../contracts/tool-interface.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
 
@@ -55,11 +58,41 @@ function resolvedNativeRuntimes(module: RegisteredModule): ResolvedPlanNativeRun
   const matchingIds = new Set(matching.map((runtime) => runtime.id));
   const missingRuntime = (module.manifest.contributes?.requiredNativeRuntimes || []).find((id) => !matchingIds.has(id));
   if (missingRuntime) throw new Error(`Module ${module.manifest.id} has no ${missingRuntime} runtime for ${process.platform}/${process.arch}`);
-  return matching.map((runtime) => {
-    const ffmpegPath = resolvePackagePath(module.packageRoot, runtime.executables.ffmpeg.path, 'ffmpeg executable');
-    const ffprobePath = resolvePackagePath(module.packageRoot, runtime.executables.ffprobe.path, 'ffprobe executable');
-    if (sha256File(ffmpegPath) !== runtime.executables.ffmpeg.sha256) throw new Error(`ffmpeg checksum mismatch in Module ${module.manifest.id}`);
-    if (sha256File(ffprobePath) !== runtime.executables.ffprobe.sha256) throw new Error(`ffprobe checksum mismatch in Module ${module.manifest.id}`);
+  return matching.map((runtime) => resolveNativeRuntime(module.packageRoot, runtime));
+}
+
+function resolveNativeRuntime(packageRoot: string, runtime: ModuleNativeRuntime): ResolvedPlanNativeRuntime {
+  if (runtime.kind === 'sumo') {
+    const executable = (name: 'sumo' | 'netconvert' | 'duarouter') => {
+      const entry = runtime.executables[name];
+      const file = resolvePackagePath(packageRoot, entry.path, `SUMO ${name}`);
+      if (fs.lstatSync(file).isSymbolicLink() || !isWithin(fs.realpathSync(packageRoot), fs.realpathSync(file)) || sha256File(file) !== entry.sha256) throw new Error(`SUMO ${name} checksum or path mismatch`);
+      return { path: file, sha256: entry.sha256 };
+    };
+    const checksum = resolvePackagePath(packageRoot, runtime.integrityFile.path, 'SUMO integrity file');
+    if (sha256File(checksum) !== runtime.integrityFile.sha256) throw new Error('SUMO integrity file changed');
+    verifyChecksumFile(packageRoot, checksum);
+    const root = fs.realpathSync(packageRoot);
+    for (const line of fs.readFileSync(checksum, 'utf8').split(/\r?\n/).filter((line: string) => line.trim())) {
+      const target = path.resolve(path.dirname(checksum), line.match(/^[a-f0-9]{64}\s+\*?(.+)$/i)![1]);
+      if (!isWithin(root, fs.realpathSync(target))) throw new Error('SUMO integrity target escapes package');
+      for (let current = target; isWithin(packageRoot, current) && current !== packageRoot; current = path.dirname(current)) {
+        if (fs.lstatSync(current).isSymbolicLink()) throw new Error('SUMO integrity target contains a symbolic link');
+      }
+    }
+    const pythonPath = resolvePackagePath(packageRoot, runtime.pythonPath, 'SUMO Python clients');
+    const projData = resolvePackagePath(packageRoot, runtime.projData, 'SUMO projection data');
+    if (!fs.statSync(projData).isDirectory() || !isWithin(fs.realpathSync(packageRoot), fs.realpathSync(projData))) throw new Error('SUMO projection data path is invalid');
+    if (!fs.statSync(pythonPath).isDirectory() || !isWithin(fs.realpathSync(packageRoot), fs.realpathSync(pythonPath))) throw new Error('SUMO Python path is invalid');
+    return { id: runtime.id, kind: 'sumo', platform: runtime.platform, arch: runtime.arch, version: runtime.version,
+      sumo: executable('sumo'), netconvert: executable('netconvert'), duarouter: executable('duarouter'), pythonPath, projData,
+      integrityFile: { path: checksum, sha256: runtime.integrityFile.sha256 } };
+  }
+  {
+    const ffmpegPath = resolvePackagePath(packageRoot, runtime.executables.ffmpeg.path, 'ffmpeg executable');
+    const ffprobePath = resolvePackagePath(packageRoot, runtime.executables.ffprobe.path, 'ffprobe executable');
+    if (sha256File(ffmpegPath) !== runtime.executables.ffmpeg.sha256) throw new Error('ffmpeg checksum mismatch in Module');
+    if (sha256File(ffprobePath) !== runtime.executables.ffprobe.sha256) throw new Error('ffprobe checksum mismatch in Module');
     return {
       id: runtime.id,
       kind: runtime.kind,
@@ -69,7 +102,7 @@ function resolvedNativeRuntimes(module: RegisteredModule): ResolvedPlanNativeRun
       ffmpeg: { path: ffmpegPath, sha256: runtime.executables.ffmpeg.sha256 },
       ffprobe: { path: ffprobePath, sha256: runtime.executables.ffprobe.sha256 },
     };
-  });
+  }
 }
 
 function frozenModuleManifest(module: Pick<ResolvedPlanModule, 'id' | 'version' | 'packageRoot'>) {
@@ -196,7 +229,7 @@ export class SessionAssembler {
           if (!isWithin(oldRoot, file)) throw new SessionPlanError('module_content_mismatch', 'Builtin entry escapes its original package root.', [{ moduleId: module.id, path: file }]);
           return resolvePackagePath(builtin.packageRoot, path.relative(oldRoot, file), 'Builtin entry');
         };
-        module = { ...module, packageRoot: builtin.packageRoot, entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: relocate(entry.path) })), nativeRuntimes: module.nativeRuntimes.map((runtime) => ({ ...runtime, ffmpeg: { ...runtime.ffmpeg, path: relocate(runtime.ffmpeg.path) }, ffprobe: { ...runtime.ffprobe, path: relocate(runtime.ffprobe.path) } })) };
+        module = { ...module, packageRoot: builtin.packageRoot, entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: relocate(entry.path) })), nativeRuntimes: module.nativeRuntimes.map((runtime) => mapNativeRuntimePaths(runtime, relocate)) };
         plan.modules[index] = module;
       }
       const manifest = frozenModuleManifest(module);
@@ -208,6 +241,12 @@ export class SessionAssembler {
       for (const runtime of module.nativeRuntimes) {
         const declared = manifest.contributes?.nativeRuntimes?.find((candidate) => candidate.id === runtime.id && candidate.platform === runtime.platform && candidate.arch === runtime.arch && candidate.version === runtime.version);
         if (!declared) throw new SessionPlanError('module_content_mismatch', `Native runtime is not declared by Module ${module.id}@${module.version}`, [{ moduleId: module.id, runtimeId: runtime.id }]);
+        if (runtime.kind === 'sumo' || declared.kind === 'sumo') {
+          try {
+            if (runtime.kind !== 'sumo' || declared.kind !== 'sumo' || canonicalToolSchema(resolveNativeRuntime(module.packageRoot, declared), 'data') !== canonicalToolSchema(runtime, 'data')) throw new Error('SUMO plan changed');
+          } catch (error) { throw new SessionPlanError('module_content_mismatch', `SUMO runtime changed: ${String(error)}`, [{ moduleId: module.id, runtimeId: runtime.id }]); }
+          continue;
+        }
         const expectedFfmpeg = resolvePackagePath(module.packageRoot, declared.executables.ffmpeg.path, 'ffmpeg executable');
         const expectedFfprobe = resolvePackagePath(module.packageRoot, declared.executables.ffprobe.path, 'ffprobe executable');
         if (runtime.ffmpeg.path !== expectedFfmpeg || runtime.ffprobe.path !== expectedFfprobe || runtime.ffmpeg.sha256 !== declared.executables.ffmpeg.sha256 || runtime.ffprobe.sha256 !== declared.executables.ffprobe.sha256) {

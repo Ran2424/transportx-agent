@@ -13,6 +13,8 @@ import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStruct
 import { retryState, classifyFailure } from '../../contracts/run-feedback.ts';
 import { isPiExtensionDialogRequest, parsePiMessageQueue } from '../../contracts/pi-rpc.ts';
 import type { TransportSignal } from './transport.js';
+import { parseCanvasPresentation } from '../../contracts/canvas.js';
+import { parseSimulationCanvasPayload, SIMULATION_CANVAS_ADAPTER_ID } from '../../contracts/simulation.js';
 
 type RawMessage = { type?: unknown; [key: string]: unknown };
 
@@ -212,6 +214,12 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
       return [protocolError('malformed_message', 'WebSocket message without a string type')];
     }
     switch (raw.type) {
+      case 'simulation_index_updated': {
+        const sessionId = resolveSessionId(raw.sessionId), canvas = parseCanvasPresentation(raw.canvas), payload = parseSimulationCanvasPayload(canvas?.payload);
+        if (!sessionId) return [];
+        if (!canvas || canvas.adapterId !== SIMULATION_CANVAS_ADAPTER_ID || canvas.kind !== 'simulation' || !payload || payload.runId !== raw.runId || canvas.viewId !== `simulation:${payload.runId}` || !Number.isInteger(raw.indexRevision) || (raw.indexRevision as number) < 0 || typeof raw.runUpdatedAt !== 'string' || raw.runUpdatedAt.length > 64 || !Number.isFinite(Date.parse(raw.runUpdatedAt))) return [protocolError('simulation_notice_invalid', 'Malformed Simulation index notification.', sessionId)];
+        return [{ type: 'session/simulationIndexUpdated', sessionId, canvas, indexRevision: raw.indexRevision as number, runUpdatedAt: raw.runUpdatedAt }];
+      }
       case 'state': {
         if (raw.liveSessions !== undefined && !Array.isArray(raw.liveSessions)) {
           return [protocolError('malformed_message', 'state message with non-array liveSessions')];

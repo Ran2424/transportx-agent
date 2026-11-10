@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import {
   CONVERSATION_ID, conversationPlanPath, isWorkspaceHistoryKey, parseWorkspaceCatalogStructured, parseWorkspaceManifestStructured,
   parseResolvedSessionPlanStructured, type WorkspaceCatalogV1, type WorkspaceCatalogEntryV1,
+  mapNativeRuntimePaths,
   type WorkspaceManifestV1, type ConversationRecordV1, type WorkspaceDefaultsV1, type WorkspaceParseResult,
   type ResolvedSessionPlanV3,
 } from '../contracts/index.js';
@@ -21,7 +22,7 @@ export function workspaceDiskPlan(plan: ResolvedSessionPlanV3): ResolvedSessionP
     ...plan, workspace: toPosixPath(plan.workspace),
     modules: plan.modules.map((module) => ({
       ...module, packageRoot: toPosixPath(module.packageRoot), entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })),
-      nativeRuntimes: module.nativeRuntimes.map((runtime) => ({ ...runtime, ffmpeg: { ...runtime.ffmpeg, path: toPosixPath(runtime.ffmpeg.path) }, ffprobe: { ...runtime.ffprobe, path: toPosixPath(runtime.ffprobe.path) } })),
+      nativeRuntimes: module.nativeRuntimes.map((runtime) => mapNativeRuntimePaths(runtime, toPosixPath)),
     })),
     assets: plan.assets.map((asset) => ({ ...asset, path: toPosixPath(asset.path), ...(asset.integrityFile ? { integrityFile: toPosixPath(asset.integrityFile) } : {}) })),
   };
