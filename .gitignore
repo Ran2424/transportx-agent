@@ -65,7 +65,11 @@ test/baselines/screenshots/*.png
 !/docs/CHANGELOG.md
 !/docs/RELEASE.md
 !/docs/releases/
+!/docs/acceptance/
+/docs/acceptance/*
+!/docs/acceptance/traffic-simulation-p0.json
 !/docs/交通仿真与优化能力升级 PLAN.md
+!/docs/交通仿真与优化能力升级 P0 记录.md
 !/docs/工作区与会话机制整改 PLAN.md
 !/docs/工作区与会话机制整改 P0 记录.md
 !/docs/工作台视觉优化 PLAN.md

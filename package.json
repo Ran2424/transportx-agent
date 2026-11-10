@@ -68,6 +68,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "npm run test:all",
     "test:budget": "node scripts/check-test-budget.mjs",
+    "test:simulation": "npm run build:server && npm run test:budget && node scripts/simulation/probe.mjs",
     "test:all": "npm run build && npm run test:budget && node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/*.test.ts",
     "test:core": "npm run build && npm run test:budget && node --test --test-reporter=./scripts/test-budget-reporter.mjs test/suites/desktop-launch.test.ts test/suites/transportx-cli.test.ts",
     "test:pi-smoke": "npm run build:server && npm run test:budget && node scripts/pi-rpc-smoke.mjs",

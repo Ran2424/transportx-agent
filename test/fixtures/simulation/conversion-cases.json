@@ -1,0 +1,16 @@
+[
+  {"name":"execution-override","patch":{"execution":{"sumo":"untrusted","wallSeconds":9999}}},
+  {"name":"output-override","patch":{"outputRoot":"../escape"}},
+  {"name":"wrong-units","patch":{"units":{"time":"min","distance":"m","speed":"m/s"}}},
+  {"name":"missing-units","delete":"units"},
+  {"name":"wrong-timezone","patch":{"timezone":"UTC"}},
+  {"name":"ambiguous-dst","patch":{"timezone":"America/New_York"}},
+  {"name":"invalid-date","patch":{"serviceDate":"2026-02-30"}},
+  {"name":"invalid-clock","patch":{"startTime":"24:10:00"}},
+  {"name":"numeric-coercion","patch":{"durationSeconds":"200"}},
+  {"name":"invalid-seed","patch":{"seed":-1}},
+  {"name":"boolean-seed","patch":{"seed":true}},
+  {"name":"oversized-horizon","patch":{"durationSeconds":3601}},
+  {"name":"unknown-field","patch":{"strategyCode":"print('untrusted')"}},
+  {"name":"road-with-passengers","patch":{"service":{}}}
+]

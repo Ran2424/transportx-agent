@@ -9,6 +9,7 @@ import { managedRuntimeProcess } from './workspace-runtime.js';
 export type ProcessRunOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  envMode?: 'merge' | 'replace';
   timeoutMs: number;
   maxBuffer: number;
   signal?: AbortSignal;
@@ -29,7 +30,7 @@ export class ProcessRunner {
     catch (error) { return Promise.reject(error); }
     const child: ChildProcess = spawn(executable.command, [...executable.args, ...args], {
       ...(options.cwd ? { cwd: options.cwd } : {}),
-      env: { ...process.env, ...options.env },
+      env: options.envMode === 'replace' ? { ...options.env } : { ...process.env, ...options.env },
       detached: hostPlatform.detached,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

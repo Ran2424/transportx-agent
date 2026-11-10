@@ -1,0 +1,1783 @@
+{
+  "protocol": "transportx-simulation-p0-acceptance",
+  "version": 1,
+  "date": "2026-11-10",
+  "phase": "P0",
+  "status": "passed_with_measured_scope",
+  "gitBaseline": "f122cf1",
+  "scope": "Synthetic technical fixtures on macOS arm64; not production Module, Pi autonomy, Canvas, calibration or distribution acceptance",
+  "hardware": {
+    "architecture": "arm64",
+    "os": "Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:26 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T8132",
+    "cpu": "Apple M4",
+    "logicalCpus": 10,
+    "memoryBytes": 25769803776
+  },
+  "sourceFiles": [
+    {
+      "path": "src/server/process-runner.ts",
+      "sha256": "ec92d3fb5a494998d4a39730fc0ec4627c35bf9e712cefb36b1e4cfc4396b5a5"
+    },
+    {
+      "path": "src/server/python-runner.ts",
+      "sha256": "a62aa3aaffd61162ab87f8b66ad0111a8878a5fc8683839a0c8cefe3e851f3e2"
+    },
+    {
+      "path": "desktop/scripts/platform-profile.mjs",
+      "sha256": "49a15f115e9262e005a79d840a8e77c489d177ed86c1f7e56615efab2312dce7"
+    },
+    {
+      "path": "scripts/simulation/blocks.py",
+      "sha256": "d38956daf0fe0e8e8a0f73f2c8fcb25a6916b59e4640e609d76d31e2370ccc58"
+    },
+    {
+      "path": "scripts/simulation/compute.py",
+      "sha256": "4af35f1b3a0bc6d1a14ef3fc23b641d81d3d6f2433a637e7e8d09bfbadd41ede"
+    },
+    {
+      "path": "scripts/simulation/engine.py",
+      "sha256": "d74d5eb625a3649b87ded0307b1ab217d16df46e8f127875a40d63f6144c9ce3"
+    },
+    {
+      "path": "scripts/simulation/job.mjs",
+      "sha256": "5d1a75148bd7be9ef87cf7e3ecf0bad0759c9608935b0a19a11d1102e30b56bf"
+    },
+    {
+      "path": "scripts/simulation/model.py",
+      "sha256": "9d17bba9d4a68dc6145b7c7ecc86ed2f93f422c356cda20cae9dbeb8edce8b82"
+    },
+    {
+      "path": "scripts/simulation/probe.mjs",
+      "sha256": "1790da6973c6920a33edce6b977020437263e88a892548208df1690d38e862a8"
+    },
+    {
+      "path": "scripts/simulation/runtime.mjs",
+      "sha256": "3e95aa666f904beb0e9b5b8666cc72ca93f33c66a00600a41479d6322eff2e93"
+    }
+  ],
+  "rawEvidence": {
+    "path": "tmp/simulation-p0-exit/evidence.json",
+    "sha256": "6fd0c149881d3547f82105bda763f951845f1f58705e1266338ac0cfca3b17c9"
+  },
+  "coldRuntimeEvidence": {
+    "path": "tmp/simulation-p0-acceptance-final/runtime-evidence.json",
+    "sha256": "2cc6a38587805fe5d63c2a1e7e6e56d81e1074bfde14fd697ba232d8f38fb5a7"
+  },
+  "runtime": {
+    "wheelLock": "scripts/simulation/runtime-lock.macos-arm64.json",
+    "fileCount": 222,
+    "nativeBytes": 343408896,
+    "files": [
+      {
+        "path": "sumo/bin/duarouter",
+        "sha256": "cc222e76a31031968aff733f459e91a2357f66a96474e46c4a7f142c6ee77aa3",
+        "bytes": 3106912
+      },
+      {
+        "path": "sumo_data/.libs/libarrow.2500.1.0.dylib",
+        "sha256": "4aa0c00d83367d73e5fa4c984044efc6fc9eb9635b9c2482af69505f51dbd1ed",
+        "bytes": 8724864
+      },
+      {
+        "path": "sumo_data/.libs/libzstd.1.5.7.dylib",
+        "sha256": "a8262a1829452678b7e3df43d6ae4a5e9fcf769b181f0157f887f08379e73013",
+        "bytes": 636336
+      },
+      {
+        "path": "sumo_data/.libs/libsnappy.1.3.1.dylib",
+        "sha256": "2d960620d10af8a6b848f41d1058131f436ec40ccffe690cd48a0140481de88b",
+        "bytes": 77888
+      },
+      {
+        "path": "sumo_data/.libs/liblz4.1.10.0.dylib",
+        "sha256": "c5462591fb3e7750533b2b217c94d5bbff117fea090449703cce9532efe4c8db",
+        "bytes": 173808
+      },
+      {
+        "path": "sumo_data/.libs/libbrotlidec.1.2.0.dylib",
+        "sha256": "3477224864062f7df5b3e323b746efe30768ec775cef5cd663325b1e79f4db9c",
+        "bytes": 86512
+      },
+      {
+        "path": "sumo_data/.libs/libbrotlicommon.1.2.0.dylib",
+        "sha256": "51a783913bddc427970eef4bc888b62c61c23c480606e79069e6b713fd3c87ba",
+        "bytes": 167936
+      },
+      {
+        "path": "sumo_data/.libs/libbrotlienc.1.2.0.dylib",
+        "sha256": "844ada32c1c5b78ce8b8d83483503897a91b855360a4e4a65fe3f4581df65689",
+        "bytes": 648048
+      },
+      {
+        "path": "sumo_data/.libs/libaws-crt-cpp.dylib",
+        "sha256": "cb468bc350ecb18e9bcf4b618faeaa08633ee397b5194dfac135d09c0872f23a",
+        "bytes": 636832
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-common.1.0.2.dylib",
+        "sha256": "97463bbca540eb1dc3c37593279c4e234297dcd5bdc27c6a4171897e53afeffa",
+        "bytes": 271040
+      },
+      {
+        "path": "sumo_data/.libs/libaws-checksums.1.0.1.dylib",
+        "sha256": "a525858155920006973614f556f6e679db6925127e6bfa70a903377d16edd9ef",
+        "bytes": 136512
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-sdkutils.1.0.0.dylib",
+        "sha256": "567334ebb35efef6250c7a058874c014e488105aa92192288f9626cdc2126492",
+        "bytes": 149680
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-cal.1.0.0.dylib",
+        "sha256": "744bbe4aad56ddca88c4a0c882ef124ce9d1619f8989cb6517cae2d2086f8d13",
+        "bytes": 119392
+      },
+      {
+        "path": "sumo_data/.libs/libcrypto.3.dylib",
+        "sha256": "b42e447421f074ea5194bd8e6527336a0f6a0b1e7e4de26c6b17484fa60aaf0e",
+        "bytes": 4575632
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-io.1.0.0.dylib",
+        "sha256": "2f434ba0fad7cbaa6b6fe2779d91aa31a7c0604fc0a7903b17e00004e698a8d1",
+        "bytes": 371152
+      },
+      {
+        "path": "sumo_data/.libs/libs2n.1.0.0.dylib",
+        "sha256": "da24ba7d688fad1bc94256f4ecce5ad8832e5455641c3a3a466d29c416db341e",
+        "bytes": 868480
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-http.1.0.0.dylib",
+        "sha256": "53c1a1a59cf067d5528b7aa008b255a57864917009cdf66cc0317cad6308ce59",
+        "bytes": 357088
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-compression.1.0.0.dylib",
+        "sha256": "338c976fad824b66c503d862aae87f8e1d74c7830cafceed8ab02555d13d2027",
+        "bytes": 70000
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-auth.1.0.0.dylib",
+        "sha256": "395fc5060d7a478c4f799b13a1635728dc90cabd7b606465c046ab7449e793d1",
+        "bytes": 267600
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-s3.1.3.1.dylib",
+        "sha256": "4868132baf74a50576941ccf0e4824672ab9416e2007d9dbbb2bb26cd2b31861",
+        "bytes": 305392
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-event-stream.1.0.0.dylib",
+        "sha256": "098d8efa0d7ab2fb2a7f954e0597a67b28af6c5f35c2639ae51a2ceda269469e",
+        "bytes": 132800
+      },
+      {
+        "path": "sumo_data/.libs/libaws-c-mqtt.1.0.0.dylib",
+        "sha256": "18bc5d9994d09fec47e86393c4fcefba6ffce0851518843f7adfef018d2274d3",
+        "bytes": 345680
+      },
+      {
+        "path": "sumo_data/.libs/libaws-cpp-sdk-core.dylib",
+        "sha256": "a4b750f860fd504c1fd9ac694c19b994adba02fbc8f856ead252a640be5c1f83",
+        "bytes": 1316064
+      },
+      {
+        "path": "sumo_data/.libs/libaws-cpp-sdk-s3.dylib",
+        "sha256": "e8df6eaee19a9f22794f0f3c94cc104502892de967e3b8ca9de8220d9d25033a",
+        "bytes": 1495456
+      },
+      {
+        "path": "sumo_data/.libs/libaws-cpp-sdk-identity-management.dylib",
+        "sha256": "a27c11aaff4f6992846af9563b4741d9d6350b03e685e5d516b79aa56ed57480",
+        "bytes": 129824
+      },
+      {
+        "path": "sumo_data/.libs/libaws-cpp-sdk-sts.dylib",
+        "sha256": "85d2ff3f920eb1afa0158e0e23154bf790554b8dd60c3bea21bd10d470e3debe",
+        "bytes": 319568
+      },
+      {
+        "path": "sumo_data/.libs/libaws-cpp-sdk-cognito-identity.dylib",
+        "sha256": "3e0338674cc211eee6c049be88f9ed0d3bc304b12763e6ae620e5b953e0aa6f3",
+        "bytes": 220928
+      },
+      {
+        "path": "sumo_data/.libs/libGL.1.dylib",
+        "sha256": "4eca86f4c43be5bafb91aab5b4dadc05b730a97d4bb1b25440b03ca0a7991afe",
+        "bytes": 502960
+      },
+      {
+        "path": "sumo_data/.libs/libxcb-shm.0.0.0.dylib",
+        "sha256": "2163c4ca17a674f8a46c4a5350df189e76779c7b25cc51bd0166fee584b91279",
+        "bytes": 69696
+      },
+      {
+        "path": "sumo_data/.libs/libXdmcp.6.dylib",
+        "sha256": "31997e2499a6a5e528e72d01c22079c45efecd97f82094b908ca8e0db3d52d4c",
+        "bytes": 54208
+      },
+      {
+        "path": "sumo_data/.libs/libXau.6.dylib",
+        "sha256": "754650ef0d0d642ecd77614cb1a1752ab8b2a7919c3bd5c3bc38a85cdd870ccf",
+        "bytes": 53088
+      },
+      {
+        "path": "sumo_data/.libs/libxcb.1.1.0.dylib",
+        "sha256": "1de97f7964a221b20547484fcc8a5db83537f2dbb33860002b2e5c62120ed937",
+        "bytes": 179344
+      },
+      {
+        "path": "sumo_data/.libs/libXext.6.dylib",
+        "sha256": "9e293f3ae78463991ffb77a5772a6ac0ae86e2e824ea5e702fc01a840bd69c89",
+        "bytes": 112112
+      },
+      {
+        "path": "sumo_data/.libs/libX11.6.dylib",
+        "sha256": "ac13ed9f85c11b2a1a6aa0f11af418371507eee60e8c1fedf0926a3c62565b4e",
+        "bytes": 995616
+      },
+      {
+        "path": "sumo_data/.libs/libX11-xcb.1.dylib",
+        "sha256": "be69f8f595a6ed2cbee037021499d09dc846961ba89ad650e7d5fcec5c0faf12",
+        "bytes": 34976
+      },
+      {
+        "path": "sumo_data/.libs/libxcb-glx.0.0.0.dylib",
+        "sha256": "0985acac66a4c4de7333c14cab3efcdcd8d8b37d6789057098a8c0c8bf5d77c5",
+        "bytes": 140416
+      },
+      {
+        "path": "sumo_data/.libs/libgallium-26.2.4.dylib",
+        "sha256": "281050162f94923b05c56bf41775eef76658876bd78ac6052212dac3ecdc496b",
+        "bytes": 17095584
+      },
+      {
+        "path": "sumo_data/.libs/libxcb-present.0.0.0.dylib",
+        "sha256": "318abc21bef75ff248c8a1813909361e2d7a4e1d555f5046edd3414a07f49c3d",
+        "bytes": 70320
+      },
+      {
+        "path": "sumo_data/.libs/libSPIRV-Tools.dylib",
+        "sha256": "0f7ee37a55035d193693be36f1184ed560df9e757ddc60a9e1f479bdd0db4d43",
+        "bytes": 1414976
+      },
+      {
+        "path": "sumo_data/.libs/libLLVM.23.1.dylib",
+        "sha256": "ce1247402924aa1763cbb5b39d5f8f1650b84ef877eceb7814c6f57fae5895b3",
+        "bytes": 152112640
+      },
+      {
+        "path": "sumo_data/.libs/libz3.5.1.0.0.dylib",
+        "sha256": "0786da421091589fe7baff9048c8072d42172a232cdbb2ffec2b6ed77a195705",
+        "bytes": 12562640
+      },
+      {
+        "path": "sumo_data/.libs/libGLU.1.dylib",
+        "sha256": "79594d856e83b3038da3403eef65bbec0236e7b72e613779753fcdaf322e0e76",
+        "bytes": 357856
+      },
+      {
+        "path": "sumo_data/.libs/libtiff.6.dylib",
+        "sha256": "2ab5321ef55304ca860b8ad79f15508b5287b5167001819c5973461424444313",
+        "bytes": 506576
+      },
+      {
+        "path": "sumo_data/.libs/libjpeg.8.3.2.dylib",
+        "sha256": "956aa98944f8f031c84bb8ddc89c9fa97cf1be08cd55334a2f984cd3ba5018e7",
+        "bytes": 445296
+      },
+      {
+        "path": "sumo_data/.libs/liblzma.5.dylib",
+        "sha256": "86bfc8361593a9f8212029b884e15716b013eb1645ec78c1db78d840bf908d06",
+        "bytes": 175728
+      },
+      {
+        "path": "sumo_data/.libs/libwebp.7.2.0.dylib",
+        "sha256": "698f28f71f7bf9af990f35dc1acd42e22710591e2d1fae2f2e2d8c5fd23101e2",
+        "bytes": 322944
+      },
+      {
+        "path": "sumo_data/.libs/libsharpyuv.0.1.2.dylib",
+        "sha256": "aa7ef02d97fe183c98c940d06f134912dac17d299330bbe9f38a58a91664503d",
+        "bytes": 68912
+      },
+      {
+        "path": "sumo_data/.libs/libpng16.16.dylib",
+        "sha256": "c47225e2f844a841dccf349eba1e83aff14fcda964e67b388a15c16f4b3bc1ba",
+        "bytes": 200368
+      },
+      {
+        "path": "sumo_data/.libs/libXi.6.dylib",
+        "sha256": "037abbe53970fa108011155072658719fa95f42c8498e418b8641fb6b69fbaef",
+        "bytes": 108112
+      },
+      {
+        "path": "sumo_data/.libs/libXfixes.3.dylib",
+        "sha256": "55e21c2f8354b068543d14d4b4cac694ea960017b79794f58060a48b1f8a1d33",
+        "bytes": 71680
+      },
+      {
+        "path": "sumo_data/.libs/libXrandr.2.dylib",
+        "sha256": "c63231151da78b1c110b1e4ed998103646637089ec9ec17f8bb5c188dedd2bc8",
+        "bytes": 89936
+      },
+      {
+        "path": "sumo_data/.libs/libXrender.1.dylib",
+        "sha256": "17ba2dfd5a98b5013ba4ef7bfeea5abeb807b616f72397b14791a53cc456534b",
+        "bytes": 89360
+      },
+      {
+        "path": "sumo_data/.libs/libXcursor.1.dylib",
+        "sha256": "30293fe982b9538adc84acf3dd22b1eba3630aa395bbaa07ec9c1f49d9f961a9",
+        "bytes": 75040
+      },
+      {
+        "path": "sumo_data/.libs/libXft.2.dylib",
+        "sha256": "6c40558c6b8795cbec9b49e4b0b38b9e98c48708976a91032101d3c53346920b",
+        "bytes": 129888
+      },
+      {
+        "path": "sumo_data/.libs/libfreetype.6.dylib",
+        "sha256": "4cf85bb72c616f24184fe8174ee31150ae7a2e9ea121616edd140a82cf17456e",
+        "bytes": 581520
+      },
+      {
+        "path": "sumo_data/.libs/libfontconfig.1.dylib",
+        "sha256": "3fc3ea76791f3c8b1c150a7af13d94f0dde75f3c2bd994d25fa2bd126ee0a72c",
+        "bytes": 465616
+      },
+      {
+        "path": "sumo_data/.libs/libintl.8.dylib",
+        "sha256": "eed4fa477546b616db32326b8f0050f821f0c117eb6b941560390177a0ca6a25",
+        "bytes": 223440
+      },
+      {
+        "path": "sumo_data/.libs/libFOX-1.6.0.dylib",
+        "sha256": "aef826279e6b90f018036fca86cb51058832fa55a2c9e5df100b8bf8c350318a",
+        "bytes": 2873296
+      },
+      {
+        "path": "sumo_data/.libs/libparquet.2500.1.0.dylib",
+        "sha256": "c64834c035052f7946948d30fa65d49195d51dd50929c2aa2489f191e247ff38",
+        "bytes": 2540016
+      },
+      {
+        "path": "sumo_data/.libs/libthrift-0.25.0.dylib",
+        "sha256": "9b4ec3348f180a82a0b7cab3c47a584f89887ed0befce8ec5cbe7af49d45af73",
+        "bytes": 508512
+      },
+      {
+        "path": "sumo_data/.libs/libssl.3.dylib",
+        "sha256": "0889b4c498941e4047962f6f26df7fb5818990c30b3ce42e9460dae07443d26f",
+        "bytes": 874496
+      },
+      {
+        "path": "sumo_data/.libs/libfmt.12.2.0.dylib",
+        "sha256": "d2bae3989c420b8433f2da87df921ea436522011c646e47594f4fbb73a803c81",
+        "bytes": 147168
+      },
+      {
+        "path": "sumo_data/.libs/libproj.25.9.9.0.dylib",
+        "sha256": "897c5eb8d6630913b61d3b5a7321e39b7fe7238a722c1303a1194446dcd01dcb",
+        "bytes": 3011760
+      },
+      {
+        "path": "sumo_data/.libs/libxerces-c-3.3.dylib",
+        "sha256": "b338116e9b383d22695828432823fafab19d5a90924532c15971ff4f6e2c57e3",
+        "bytes": 2783376
+      },
+      {
+        "path": "sumo/bin/netconvert",
+        "sha256": "7d7a8ba64a76c78f2395bf7d6cae9f72cfdad4bd8ed751776a8f29b4c68db62a",
+        "bytes": 4226096
+      },
+      {
+        "path": "sumo_data/.libs/libgdal.39.3.13.3.dylib",
+        "sha256": "ce98e11ae6897375a502980d60f34b2bf3521f684d6d17964fa18e48f4907875",
+        "bytes": 21442064
+      },
+      {
+        "path": "sumo_data/.libs/libarrow_compute.2500.1.0.dylib",
+        "sha256": "f97fe4b926a08b6ffe0a25de238cd00f7d8e46eef5ba70135dd23141381598e9",
+        "bytes": 8189136
+      },
+      {
+        "path": "sumo_data/.libs/libutf8proc.3.3.0.dylib",
+        "sha256": "cac1af65e00f1b2ee70dc19136be8c84e76f79c685e225a13272c7064f7a7ff3",
+        "bytes": 400064
+      },
+      {
+        "path": "sumo_data/.libs/libre2.11.0.0.dylib",
+        "sha256": "7e615f824771b7c096f43dd038ecf1f33db5a02ba46e04abc1b5541782c66653",
+        "bytes": 457888
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_spinlock_wait.2608.0.0.dylib",
+        "sha256": "60ce6592586830af0bc08c728c67dac04f017ff0177cf2813e96e43f549af008",
+        "bytes": 52496
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_severity.2608.0.0.dylib",
+        "sha256": "646d833b46e145bb7fde8f1ce4899f65e9682dab781b94a99ff25430540aa111",
+        "bytes": 53936
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_raw_logging_internal.2608.0.0.dylib",
+        "sha256": "388c0eafe8265fc1301065496acb6ac48f47aa7a22be6161178caf02959fddf8",
+        "bytes": 70064
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_base.2608.0.0.dylib",
+        "sha256": "d897dadac65688a2506dad1199b9e95e30f0aec95b77e43ba80f4ee181258faa",
+        "bytes": 72464
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_tracing_internal.2608.0.0.dylib",
+        "sha256": "9aa31dd921457c07c00a75d99e04aa542300f724eb8185df8d0429cc62ebc845",
+        "bytes": 35200
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_time_zone.2608.0.0.dylib",
+        "sha256": "99d6fa0344937739d4d8daf2c72070f3ee79bf639964179b4e694e6faff17977",
+        "bytes": 141536
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_civil_time.2608.0.0.dylib",
+        "sha256": "37845d8b2bcadd996f3b669c9b09a3508e925febd77bf7da532e8a22ae4977c0",
+        "bytes": 56224
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_int128.2608.0.0.dylib",
+        "sha256": "d525021b58338af6560dcc5e6d921274cb8ebea65dfce815571c161dd4f2ca59",
+        "bytes": 56496
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_source_location.2608.0.0.dylib",
+        "sha256": "991055c32eca80b73aef4a82be29c46aa362e7db60b43b1f358e5f5fe8d6510e",
+        "bytes": 34864
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_throw_delegate.2608.0.0.dylib",
+        "sha256": "c84f166cfc4a33d0de69beb0d90cdc8065bd91e1e7c7533664820a701c0e164c",
+        "bytes": 58672
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_hardening.2608.0.0.dylib",
+        "sha256": "b6abc98b23c98cc2e31d1d3a33efde7efb274bc998d35492414332e28dbdeb4a",
+        "bytes": 35008
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_strings_internal.2608.0.0.dylib",
+        "sha256": "ee5307aee2185ef47cd2dddbe0688be6aff91d5569a65ea9336af71e6cf61bd3",
+        "bytes": 55888
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_strings.2608.0.0.dylib",
+        "sha256": "55ab53ac96a8092dfb68d9873ecdbff850e62663c19af4a39025d13fa8f87491",
+        "bytes": 163968
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_time.2608.0.0.dylib",
+        "sha256": "16e0f26f502263908b22499d6f222c1001c64ecbefc237e241f4ae7bcd1a8757",
+        "bytes": 107312
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_utf8_for_code_point.2608.0.0.dylib",
+        "sha256": "be5243454f8a8c99d70c41c6ca18ec872aad8f521c1a57053f32a9b5c7757dab",
+        "bytes": 35120
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_decode_rust_punycode.2608.0.0.dylib",
+        "sha256": "8e7cf352f2fa6cd80c5dd90d0cc03aa73910c00aedf7904d4bb524b66bb4dd1e",
+        "bytes": 51904
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_demangle_rust.2608.0.0.dylib",
+        "sha256": "9cc34d6d2fc12fe295212ee1996f31e7547578208a0c3c1e9f732fbd45669fc8",
+        "bytes": 68576
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_demangle_internal.2608.0.0.dylib",
+        "sha256": "35f16f534261c3db3285ef131d7f613c27a1e1a285612ee3d36e77a6ae434259",
+        "bytes": 69088
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_debugging_internal.2608.0.0.dylib",
+        "sha256": "1ccd950871eb487de021718d9ac867ca71e23213c9dabb3f92d79cc4298ca928",
+        "bytes": 35008
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_malloc_internal.2608.0.0.dylib",
+        "sha256": "4f34b94320314c8792caac79f077127e8b83fcd3cedfa2b100f68f619bc99598",
+        "bytes": 54656
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_symbolize.2608.0.0.dylib",
+        "sha256": "a748a1719acb9a054ecb58a9cc5118fce1d1dd1c41e12c03ac93fbd31cea2355",
+        "bytes": 70080
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_stacktrace.2608.0.0.dylib",
+        "sha256": "3ce1d26b4835e7fbf15fde9b435c36baa38bfa628f606477ad1f8968d68c0893",
+        "bytes": 69664
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_kernel_timeout_internal.2608.0.0.dylib",
+        "sha256": "d95500a54479fbfda1aaef0e2cb349589d6d28501a6374ad1cbb34102dc4479d",
+        "bytes": 71056
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_graphcycles_internal.2608.0.0.dylib",
+        "sha256": "acd57ffb00acaebe273d7da8255d1df15928703ae2d14eb758da5b7323e4b3c1",
+        "bytes": 71824
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_synchronization.2608.0.0.dylib",
+        "sha256": "c9d240603221d1d978cd054bad2b4f1ae8c10218dfd98b3d0a60654d17f2d543",
+        "bytes": 136176
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_exponential_biased.2608.0.0.dylib",
+        "sha256": "6bb0d8017f5a2b5a30fe3880c1c1b7d63bc43270033a7cf4a38c9dddd4537934",
+        "bytes": 51888
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_hashtablez_sampler.2608.0.0.dylib",
+        "sha256": "8e0a2e00781af25cab958205d75213f63e147dc5f56e938f45a2bb74e0661d2d",
+        "bytes": 106240
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_city.2608.0.0.dylib",
+        "sha256": "d4ba18b160e10a73712390e6b96055faa16e4ef2dfc3043d54df9dcc026deae7",
+        "bytes": 35312
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_hash.2608.0.0.dylib",
+        "sha256": "9d5a9e29765710790948bd0e00a83d11a13323b4bc6303f0761bba428e478641",
+        "bytes": 68576
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_base_cpu_detect.2608.0.0.dylib",
+        "sha256": "9e80dcade46c96d396a861c1a6e9a7c42e353952faa1d0f183c55a45075647f1",
+        "bytes": 52384
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_crc_internal.2608.0.0.dylib",
+        "sha256": "a8df5a39cfc3da93c2bc5b63dc41246837cbe402a76f39025b298369305b3160",
+        "bytes": 71760
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_str_format_internal.2608.0.0.dylib",
+        "sha256": "77b78a1f9dc9f49e1ca234495d4f65f8944b5fdb1d5077ec2b3bc2c50cfea8ef",
+        "bytes": 129600
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_crc32c.2608.0.0.dylib",
+        "sha256": "b69f302952b39fca2be940c0aa7f0310cb602040df1574d3ac80e4d44f77a209",
+        "bytes": 89296
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_crc_cord_state.2608.0.0.dylib",
+        "sha256": "7f209738a50540e9d4b7497de4e53ac9519411cea376a1f68b846e8135546347",
+        "bytes": 70768
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_cordz_handle.2608.0.0.dylib",
+        "sha256": "ea4c539a860177e49a5cf1fa3fb7dfbd55e67afae99650820cc3c5bdd31e3ff4",
+        "bytes": 87696
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_cordz_functions.2608.0.0.dylib",
+        "sha256": "5c7a22e2dcaf18d4d5d3d68e4f3661c6d12d40d539036dac65d87c7533d71c29",
+        "bytes": 51648
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_cord_internal.2608.0.0.dylib",
+        "sha256": "5aa618c3b38486bdbce671a267c27e8d99df22bef5a6a9af59ab331c3bc019e1",
+        "bytes": 113424
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_cordz_info.2608.0.0.dylib",
+        "sha256": "43117ba652cb527362a58a6f30abc1b3e51ecc27e47e27821acc9f457dbbc38f",
+        "bytes": 106464
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_cord.2608.0.0.dylib",
+        "sha256": "7a63243628d9446f34138f6a7534fffbcf61c9e63164f8be69ab9669a511357d",
+        "bytes": 154144
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_raw_hash_set.2608.0.0.dylib",
+        "sha256": "c4312b29f6915d81951896ab8a344b85981414d79d13924e2ec2c546a3fa5fdc",
+        "bytes": 126624
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_commandlineflag_internal.2608.0.0.dylib",
+        "sha256": "0bffa7d1c86076dea20d62112582acda22202b1e99724e508869a37afc0e1278",
+        "bytes": 52352
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_commandlineflag.2608.0.0.dylib",
+        "sha256": "8d88396d69a9fdc92f1ae2adbe0f0c37d959b2a24a9d13a1e0f3089882efb8f3",
+        "bytes": 68960
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_private_handle_accessor.2608.0.0.dylib",
+        "sha256": "fe15c3bd289168de5b188c65c59fcff55c2a00168ae85ec66bd2ed127678a888",
+        "bytes": 53024
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_program_name.2608.0.0.dylib",
+        "sha256": "9f79e544c0701eb925d495b25346611304a07a964ed3615a1a2603792e43eb8c",
+        "bytes": 86688
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_config.2608.0.0.dylib",
+        "sha256": "2e05914a21af3dad1c7968b0d28990a52193c80eec5959facf52e88f5030986e",
+        "bytes": 89056
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_reflection.2608.0.0.dylib",
+        "sha256": "9ef131322c9bce78a97e22355a38c545bad6404d96639ba845e5d131a4b42e0a",
+        "bytes": 128192
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_marshalling.2608.0.0.dylib",
+        "sha256": "1e989a00304396d3ddd0a5a33505c6e5bc6bd3552e6a8f4c2d948c3e36082c16",
+        "bytes": 81968
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_flags_internal.2608.0.0.dylib",
+        "sha256": "e641cccf361f65db6b242b77e7d58784f3a43e7e23f22635ef9280d87bb3f7c6",
+        "bytes": 114864
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_fnmatch.2608.0.0.dylib",
+        "sha256": "7e8d4d66f7947d1bee2872f1b969d0b2430ab1da086d7d13bd618e2394700e37",
+        "bytes": 51808
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_vlog_config_internal.2608.0.0.dylib",
+        "sha256": "16f18bdf4d9e4f2b365cc89007137b42d3c7f3f24fe3b9f480771db3a5f70a14",
+        "bytes": 89888
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_strerror.2608.0.0.dylib",
+        "sha256": "48fca68f2daab68a466d8710402d2f4e28d9eaf0cf0aa81c952ef857a9e2c48d",
+        "bytes": 53024
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_proto.2608.0.0.dylib",
+        "sha256": "e85876e39d87b7d18e012de01362458847111bd2e5e706ef7bce98371f58ffba",
+        "bytes": 69088
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_entry.2608.0.0.dylib",
+        "sha256": "b61250d35bc7958de467641dd8b911d638e9372a659a90cb434fb8824118ecde",
+        "bytes": 71376
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_sink.2608.0.0.dylib",
+        "sha256": "1e5927d79e076f088e88a4206382d42fa23260c193bdb210239b69c998c4ed9a",
+        "bytes": 68464
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_globals.2608.0.0.dylib",
+        "sha256": "52ded77dd851dd6df76df0dc85eb7db380fc93f70b52f5b5be6b876fefc6d558",
+        "bytes": 105840
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_globals.2608.0.0.dylib",
+        "sha256": "135fb7e2cb8997d428806b430b35a5c11750f55fd630e3bbb513738fad549d4d",
+        "bytes": 86416
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_log_sink_set.2608.0.0.dylib",
+        "sha256": "aa15eccad34fe8e5ac6594a6304620fc5fc72ca5390b24ffb3c4db20011fe151",
+        "bytes": 105616
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_structured_proto.2608.0.0.dylib",
+        "sha256": "cad85dbd5014c07f2056859c2273eaa7654473388f5b598e9bb1db3f130cdb76",
+        "bytes": 69264
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_format.2608.0.0.dylib",
+        "sha256": "d0965d8cc4f42c5f5c57e66e3e3a68d359bcb96ee925d8fd1d5b4f868a8760c9",
+        "bytes": 71680
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_examine_stack.2608.0.0.dylib",
+        "sha256": "d8df1c1743fd02d40758d6f3998890536ca9cebae59add543596f0c5667cfb36",
+        "bytes": 69232
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_nullguard.2608.0.0.dylib",
+        "sha256": "e92bb6f55bb980ba69e972bd07fa0671514f9f5038529896a1910dd447123a75",
+        "bytes": 35200
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_message.2608.0.0.dylib",
+        "sha256": "17c9a47ec902984da49879a154755000594435dc50df994883f67c63b07d785a",
+        "bytes": 147520
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_conditions.2608.0.0.dylib",
+        "sha256": "f565b160f2757a29fb5d1062e924db0c504a431113a6221b001d056d2e3efec7",
+        "bytes": 52272
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_leak_check.2608.0.0.dylib",
+        "sha256": "3706233390c2506c05209dedaf8c7a062945e084a5a4b8f44874112a911047f3",
+        "bytes": 35696
+      },
+      {
+        "path": "sumo_data/.libs/libabsl_log_internal_check_op.2608.0.0.dylib",
+        "sha256": "9fd4b8ed238ea97d37a273e257b329d48996d4b7f72bbb161d0d271b46a4252a",
+        "bytes": 111056
+      },
+      {
+        "path": "sumo_data/.libs/libarrow_acero.2500.1.0.dylib",
+        "sha256": "f57026b8213329a187074b8d49428ad54b54123c546f4a3a5a0df256b902e048",
+        "bytes": 1086272
+      },
+      {
+        "path": "sumo_data/.libs/libjson-c.5.5.0.dylib",
+        "sha256": "fef7b4c4d428ba4f224358194615748f0c67e8edc4e1e40447f968d58cbcac30",
+        "bytes": 111936
+      },
+      {
+        "path": "sumo_data/.libs/libgeos_c.1.21.0.dylib",
+        "sha256": "9459b61a3bd12fe3fe7fdb689c5ec6eca7d669fc6845a24d3fe34fb7b59f6ed8",
+        "bytes": 368768
+      },
+      {
+        "path": "sumo_data/.libs/libgeos.3.15.0.dylib",
+        "sha256": "713a0ad590642bff3133cabf630b173be11c1e5ef9729e19354ff312bdde1057",
+        "bytes": 2432768
+      },
+      {
+        "path": "sumo_data/.libs/libxml2.16.dylib",
+        "sha256": "d252ab7a407bf43b449eeb81fbae912ed1b5f283d67d7361228e8a434a25da9f",
+        "bytes": 998832
+      },
+      {
+        "path": "sumo_data/.libs/libarrow_dataset.2500.1.0.dylib",
+        "sha256": "77b23e0f7c50a7d0ff2281820c551920fc4326fac47f04d8efa112f73326f4d9",
+        "bytes": 1189728
+      },
+      {
+        "path": "sumo_data/.libs/libfreexl.1.dylib",
+        "sha256": "1d50707298f55fdd6dfb5bbdc63b0a7ff0e65fa507c03990e09068491ff6c01a",
+        "bytes": 104496
+      },
+      {
+        "path": "sumo_data/.libs/libminizip.1.dylib",
+        "sha256": "39c2d0451599d4ecb99a566ac3dd6013db9cfdd8a9456d57b9ee15cb8617e52d",
+        "bytes": 90080
+      },
+      {
+        "path": "sumo_data/.libs/libodbc.2.dylib",
+        "sha256": "13a7c560bb2b2646617a2e75315723e2cc354363bcc2201c7aeb07b9d3e479e2",
+        "bytes": 377168
+      },
+      {
+        "path": "sumo_data/.libs/libltdl.7.dylib",
+        "sha256": "da2865aabddbed7b32de70f16ffa7b56055aef2cea38d61f629f596aab1cde0a",
+        "bytes": 90048
+      },
+      {
+        "path": "sumo_data/.libs/libsqlite3.3.53.4.dylib",
+        "sha256": "3e0171737608ffae9b6783234a215cd1b1df6ae5e4db1d2cf3d75d79593a5cc5",
+        "bytes": 1203568
+      },
+      {
+        "path": "sumo_data/.libs/libspatialite.8.dylib",
+        "sha256": "98e47c00e841874c6760217f9697c2b1ce9007c04cb15e9b872d673f7e124075",
+        "bytes": 7148240
+      },
+      {
+        "path": "sumo_data/.libs/librttopo.1.dylib",
+        "sha256": "06a403dc7287e1ef328c7b2e66896c773f638d8c12181cd6d09ba49fb775b7a6",
+        "bytes": 400608
+      },
+      {
+        "path": "sumo_data/.libs/libpcre2-8.0.dylib",
+        "sha256": "9bfff51c07e5cc85de4d4ee789b3b890a487ba0148b959a0cc996daa7a757f96",
+        "bytes": 554864
+      },
+      {
+        "path": "sumo_data/.libs/liburiparser.1.2.2.dylib",
+        "sha256": "d7c1e32a29b67c3e58ead2455219b53dcf78faadb5cabd73222e4f6ee3cf6ac4",
+        "bytes": 143920
+      },
+      {
+        "path": "sumo_data/.libs/libkmlengine.1.3.0.dylib",
+        "sha256": "c0d5d20eb8f0bf0d46734663fcb97359f4e95dc065b193b24b24150b2bf98398",
+        "bytes": 171904
+      },
+      {
+        "path": "sumo_data/.libs/libkmlbase.1.3.0.dylib",
+        "sha256": "135e830bda02ac51604183f290b741bb36ac67994adbf31ef610d1c7f8db7ac8",
+        "bytes": 151728
+      },
+      {
+        "path": "sumo_data/.libs/libkmldom.1.3.0.dylib",
+        "sha256": "03a58b9634dc5ea0db801284234259ea9ffe3c1535d92285a39f6040b21ded5a",
+        "bytes": 428032
+      },
+      {
+        "path": "sumo_data/.libs/libjxl_threads.0.12.0.dylib",
+        "sha256": "7034aa6c3f3266dc94cf49fce144973e53427686bf75dee4ce219e3ce6cd9acb",
+        "bytes": 53888
+      },
+      {
+        "path": "sumo_data/.libs/libjxl.0.12.0.dylib",
+        "sha256": "e89f2e30e2b1531bdca2f214d028c4fa92eef16aed29b494d18856a4dace468f",
+        "bytes": 1423280
+      },
+      {
+        "path": "sumo_data/.libs/libhwy.1.4.0.dylib",
+        "sha256": "392e5cfc1ec45c408acc8e39419c3dc3086df445c093c3eef32358ccc3eb0c2d",
+        "bytes": 89392
+      },
+      {
+        "path": "sumo_data/.libs/libjxl_cms.0.12.0.dylib",
+        "sha256": "e58512deafb3e67dadbb6cc68e35789eb452bebe8bc7364a9062344e9e339d2c",
+        "bytes": 103824
+      },
+      {
+        "path": "sumo_data/.libs/liblcms2.2.dylib",
+        "sha256": "c9a5e5b0332f0d5d1ffd6a0b8df21cbf3317c2e41a21d5de9c26787e4c26088f",
+        "bytes": 342272
+      },
+      {
+        "path": "sumo_data/.libs/libIex-3_5.34.3.5.2.dylib",
+        "sha256": "d72e8cf5c1a5ab00148c7722406c320a83c893118072fa2afb20a716b50a44e1",
+        "bytes": 550640
+      },
+      {
+        "path": "sumo_data/.libs/libImath-3_2.30.3.2.3.dylib",
+        "sha256": "5396d8b44bc51adb7cdca7b2f3606d9067a7929ee306070c42f625270b004182",
+        "bytes": 356640
+      },
+      {
+        "path": "sumo_data/.libs/libOpenEXRUtil-3_5.34.3.5.2.dylib",
+        "sha256": "2fe3e44419ca37c6281990f2b6562a40430c3d3d55221038f211d0e3605b087b",
+        "bytes": 192048
+      },
+      {
+        "path": "sumo_data/.libs/libIlmThread-3_5.34.3.5.2.dylib",
+        "sha256": "3839ed463df95d1122c78b61b1b0d1166022115f681979bf409f07818c516ef7",
+        "bytes": 60480
+      },
+      {
+        "path": "sumo_data/.libs/libOpenEXRCore-3_5.34.3.5.2.dylib",
+        "sha256": "6b11a1fa21bfd72dabd7640eea9314184ad71eda3f29be969d6753b20603f4ee",
+        "bytes": 338688
+      },
+      {
+        "path": "sumo_data/.libs/libopenjph.0.32.0.dylib",
+        "sha256": "a3fb045e6f305e21c723e66dc24192e084bd344cf015ce5dcfeb88c070101b61",
+        "bytes": 324384
+      },
+      {
+        "path": "sumo_data/.libs/libdeflate.0.dylib",
+        "sha256": "40ef071c84224b737d9d93ce597a851d5f985b2b0b46b347d26eba3b4951a9ec",
+        "bytes": 102944
+      },
+      {
+        "path": "sumo_data/.libs/libOpenEXR-3_5.34.3.5.2.dylib",
+        "sha256": "5d6c2eae98693900fd7bf58de9e89397c91793b290fe78b6094ac2aa88b8d05d",
+        "bytes": 935456
+      },
+      {
+        "path": "sumo_data/.libs/libopenjp2.2.5.4.dylib",
+        "sha256": "fdfd1c3f72638d7c6986b7bd42d865029776c6d98821dbfdb6ac02a910949be0",
+        "bytes": 317728
+      },
+      {
+        "path": "sumo_data/.libs/libpq.5.dylib",
+        "sha256": "675aa22a7189d7b41e869213af0637a3a4bc49d1fb62ab01dc6a777cad72f5e8",
+        "bytes": 339632
+      },
+      {
+        "path": "sumo_data/.libs/libgssapi_krb5.2.2.dylib",
+        "sha256": "04f85d750bd3f8b4f889730b2be03cf1a1374d780160f6e26247382f13d078f9",
+        "bytes": 298080
+      },
+      {
+        "path": "sumo_data/.libs/libkrb5support.1.1.dylib",
+        "sha256": "de62cfdb0e716a40ab2dca2e40e66b312af582ea79b1fad3375075aab5d294a4",
+        "bytes": 92928
+      },
+      {
+        "path": "sumo_data/.libs/libcom_err.3.0.dylib",
+        "sha256": "2e211a28b42f9c0fe451151ac62dad1c7877871929e40f45cdfb7092bc8c20ee",
+        "bytes": 69616
+      },
+      {
+        "path": "sumo_data/.libs/libk5crypto.3.1.dylib",
+        "sha256": "3012c1983120d8d37e817a857cf05fa78321f8effb0605e1aae83932ecb48543",
+        "bytes": 191216
+      },
+      {
+        "path": "sumo_data/.libs/libkrb5.3.3.dylib",
+        "sha256": "88dc90e54bd37d5006728a7368308c66fb39e87c6220fb82033b53dec173acbe",
+        "bytes": 671808
+      },
+      {
+        "path": "sumo_data/.libs/libhdf5.320.2.0.dylib",
+        "sha256": "2807dc3cb22a1d7a0489f0958c344d194e253d1aa6d67f42396e300e0be3f243",
+        "bytes": 3826112
+      },
+      {
+        "path": "sumo_data/.libs/libaec.0.1.7.dylib",
+        "sha256": "dc86153ce1e6c363d0a509049642f11bdecaa541e173906761ec62dc4d9d6663",
+        "bytes": 69280
+      },
+      {
+        "path": "sumo_data/.libs/libsz.2.0.1.dylib",
+        "sha256": "f447a924f618d7a0a232bb61447f80e48e5cd8dd81f3c8273936067b76121b99",
+        "bytes": 69664
+      },
+      {
+        "path": "sumo_data/.libs/libcfitsio.4.7.0.dylib",
+        "sha256": "4af02aaa738f902c74b41ede5149f036cf49bec4fea98080a91c455766ccfb48",
+        "bytes": 1178176
+      },
+      {
+        "path": "sumo_data/.libs/libblosc.1.21.6.dylib",
+        "sha256": "a98c0c7aa0cca1f953430146b07d525471d7911abbc68b65607c5d7ec745fd73",
+        "bytes": 666944
+      },
+      {
+        "path": "sumo_data/.libs/libnetcdf.22.dylib",
+        "sha256": "bfe4bba43c12d8e79744fc728295f5eee5bc7f262849e679b9c3f70620cd6306",
+        "bytes": 1299392
+      },
+      {
+        "path": "sumo_data/.libs/libhdf5_hl.320.0.3.dylib",
+        "sha256": "f1299fbb01cb6505d9114e31e76a22e835f0d370c4cb7b739e44206883a7f901",
+        "bytes": 171792
+      },
+      {
+        "path": "sumo_data/.libs/libgif.7.2.0.dylib",
+        "sha256": "19918df115e68592a734f47fb24aecb1c92414f2215ef2f160b144a1d1cdc4b0",
+        "bytes": 72368
+      },
+      {
+        "path": "sumo_data/.libs/libpoppler.165.0.0.dylib",
+        "sha256": "f63739b18f1ffe1563f7c73738b3efcfbfbfee7051539319501b5ffff940ed2d",
+        "bytes": 2978176
+      },
+      {
+        "path": "sumo_data/.libs/libharfbuzz.0.dylib",
+        "sha256": "189f979d50458977799c9de1ee505436cf75cda1ebbcd2440263d489b9330664",
+        "bytes": 935648
+      },
+      {
+        "path": "sumo_data/.libs/libgraphite2.3.3.1.dylib",
+        "sha256": "fec389e56f810a9fda523f9811080128c7dee4f780da20f5f01e42f366e20927",
+        "bytes": 122960
+      },
+      {
+        "path": "sumo_data/.libs/libglib-2.0.0.dylib",
+        "sha256": "4c5d34ad14921a52fdaed322367d1ea885fec11005585f4ceddb1e16d798bdcf",
+        "bytes": 1237248
+      },
+      {
+        "path": "sumo_data/.libs/libharfbuzz-subset.0.dylib",
+        "sha256": "cce11cf4b943e73f72c6f6f5ee10dbbe3765b43b4c5826b2251ee0e3e8cffb46",
+        "bytes": 923616
+      },
+      {
+        "path": "sumo_data/.libs/libgpgme.45.dylib",
+        "sha256": "a66e9afe3262ae11f1537f5a0704313919c7e14fc072eb42ae8ec64c4dd50665",
+        "bytes": 330768
+      },
+      {
+        "path": "sumo_data/.libs/libgpg-error.0.dylib",
+        "sha256": "6e1ff55f5837824b728b475429bacea17b4cf659c93ce2df7f6d9f20d0e0920f",
+        "bytes": 194912
+      },
+      {
+        "path": "sumo_data/.libs/libassuan.9.dylib",
+        "sha256": "9d12ab05013a95756719c3ec1ea604098ecb7e108193c7453af3948e4aec6dab",
+        "bytes": 114624
+      },
+      {
+        "path": "sumo_data/.libs/libnspr4.dylib",
+        "sha256": "dceed7bd23dd1690316acb7167eaae562dcbd529dcb39e004e65176be80d3746",
+        "bytes": 240032
+      },
+      {
+        "path": "sumo_data/.libs/libplc4.dylib",
+        "sha256": "22ea60e78011ae469abee1950f1c6978fb8de0d68199e52b48a666f931c3584d",
+        "bytes": 71056
+      },
+      {
+        "path": "sumo_data/.libs/libplds4.dylib",
+        "sha256": "2623e76ec7ca53e1dbe9f50ed9331685567233821de73a74b5ca8151be415d2f",
+        "bytes": 69920
+      },
+      {
+        "path": "sumo_data/.libs/libssl3.dylib",
+        "sha256": "90e456a22532a2d4f4b2d0815d8ee70ff759f5c57494bdc4d1c055952b1541b3",
+        "bytes": 344960
+      },
+      {
+        "path": "sumo_data/.libs/libnssutil3.dylib",
+        "sha256": "e79e6facfd84a51691e2b816c44e440f38bef439da57be7229d5e20b4872cadf",
+        "bytes": 205984
+      },
+      {
+        "path": "sumo_data/.libs/libnss3.dylib",
+        "sha256": "7b3abfbc1d15da82d60f4eb833933be5ae2d005c3519dc0212636d03a5869cea",
+        "bytes": 1013920
+      },
+      {
+        "path": "sumo_data/.libs/libsmime3.dylib",
+        "sha256": "61bf8d96d8315730714639c6b817eb56c3ec36aa02ea875de3e1b7d8e5395e89",
+        "bytes": 166032
+      },
+      {
+        "path": "sumo_data/.libs/libgpgmepp.7.2.0.dylib",
+        "sha256": "c140351ebd3cf5f906dfca0ab3ce25b079f56ada028564754b20a7ea1416d187",
+        "bytes": 333408
+      },
+      {
+        "path": "sumo_data/.libs/libLerc.4.dylib",
+        "sha256": "6d155d4fb155fea72a32acccf042e278916d33bcf68e9f6e13fecabf71b03d34",
+        "bytes": 404272
+      },
+      {
+        "path": "sumo_data/.libs/libheif.1.23.6.dylib",
+        "sha256": "99de7fd7046f25f449cde72909ff0d73c684b658a9b83eb5f8194d50ab837a56",
+        "bytes": 1253232
+      },
+      {
+        "path": "sumo_data/.libs/libaom.3.15.1.dylib",
+        "sha256": "400ccc1276a86e73ecabf55c57208bed8de4d1f7df74b2b9e28d4e62eecab410",
+        "bytes": 4015264
+      },
+      {
+        "path": "sumo_data/.libs/libvmaf.3.dylib",
+        "sha256": "63c1c66d02e2b7176fb0e7bc2be69d45f5cf8a93ea8ea20ee17e1608627ff316",
+        "bytes": 906320
+      },
+      {
+        "path": "sumo_data/.libs/libde265.0.2.3.dylib",
+        "sha256": "c48ff0e8763e39f87f380553785a6b31f714aefcaf07024f05b392bd1339ef31",
+        "bytes": 313520
+      },
+      {
+        "path": "sumo_data/.libs/libx265.217.dylib",
+        "sha256": "ac6c7c1931dd7d243847bafd8a9954bffb14fd82996928e7f233c0931d1ce457",
+        "bytes": 7414752
+      },
+      {
+        "path": "sumo_data/.libs/libgeotiff.5.dylib",
+        "sha256": "a9aa70471d3ff36ea2ec99a3b5412aac82db054f92c15363df681aeb9c847082",
+        "bytes": 193776
+      },
+      {
+        "path": "sumo_data/.libs/libSFCGAL.2.3.0.dylib",
+        "sha256": "4561dbe3dafcc33d9e1302c818d617073b8f50932d9b9478718e11f49d816f98",
+        "bytes": 8523328
+      },
+      {
+        "path": "sumo_data/.libs/libboost_container.dylib",
+        "sha256": "0adc59f1e9e408d884424346a8e07870402c43920851cfb5baba454b6f763aa4",
+        "bytes": 115216
+      },
+      {
+        "path": "sumo_data/.libs/libboost_date_time.dylib",
+        "sha256": "e55436eb5489c4a3b47a788de7c59d99c56ef2c98240a2ac87cb508390f20953",
+        "bytes": 35024
+      },
+      {
+        "path": "sumo_data/.libs/libboost_chrono.dylib",
+        "sha256": "00ba85aab3d72a6b186c6fe8753d75457d3114dc1fed03424b33464c4e9e8277",
+        "bytes": 73408
+      },
+      {
+        "path": "sumo_data/.libs/libboost_atomic.dylib",
+        "sha256": "d223a31bcd11961ae7e2eb8889b5af3f1e10114d11077feac37bb6d519ed3bc6",
+        "bytes": 87280
+      },
+      {
+        "path": "sumo_data/.libs/libboost_thread.dylib",
+        "sha256": "ce78c0d279c29f6f0f126e7e30b5bab76fde75cab7aab7a66dab16f877ddfc31",
+        "bytes": 111392
+      },
+      {
+        "path": "sumo_data/.libs/libgmp.10.dylib",
+        "sha256": "9a090b2bc273163f336137caf535d6d0abde95a9f40319f1dfc0d58166d3467f",
+        "bytes": 448336
+      },
+      {
+        "path": "sumo_data/.libs/libmpfr.6.dylib",
+        "sha256": "0f8fced7b7c6a0d3630d0875a5723d9dc5d827d970515ed7221a99bffb10b953",
+        "bytes": 449536
+      },
+      {
+        "path": "sumo_data/.libs/libgmpxx.4.dylib",
+        "sha256": "e448faeaa32dcc6b423d7aeef1966a45b6d546aab55696593cfc5e486e4353ea",
+        "bytes": 80752
+      },
+      {
+        "path": "sumo_data/.libs/libboost_serialization.dylib",
+        "sha256": "8e1032fc8d22d39be822f89cd7d3cb09cf0972b3c39a6a675b2fc7ab86fd53a8",
+        "bytes": 281504
+      },
+      {
+        "path": "sumo_data/.libs/libqhull_r.8.0.2.dylib",
+        "sha256": "e954c2bcbcbd43a5f21ee009a84cf02ac4e0eea083bec1238864fa4bc6a765b7",
+        "bytes": 424048
+      },
+      {
+        "path": "sumo_data/.libs/libodbcinst.2.dylib",
+        "sha256": "6173d270d3e3507b1804edb3c5fe0956c2d1b229240a02a21d70e84c37540604",
+        "bytes": 108352
+      },
+      {
+        "path": "sumo_data/.libs/libarchive.13.dylib",
+        "sha256": "a1d0629bb578e75e3b5e0a9ee43f1a5ebf3efcb6f54c7946d4d625677f4c0f62",
+        "bytes": 659376
+      },
+      {
+        "path": "sumo_data/.libs/libb2.1.dylib",
+        "sha256": "804cb6868e537dd48884ddcdcbc462936391b267833b49a7e297b91e4d98bc2e",
+        "bytes": 85840
+      },
+      {
+        "path": "sumo/bin/sumo",
+        "sha256": "efd699c59e0cac7473e036b265d88691f2027c62ed3a6a40eabfe8e2cd4f970b",
+        "bytes": 8114432
+      },
+      {
+        "path": "sumo_data/.libs/libboost_context.dylib",
+        "sha256": "78a2b074b65c845b8419e92039a0ae8fda9b57950abd548c9b7f98661c9ebb78",
+        "bytes": 52816
+      },
+      {
+        "path": "sumo_data/.libs/libboost_filesystem.dylib",
+        "sha256": "eb00ceb3c18ef08539638b76da421391d84126a966b919ee7e930e4789085837",
+        "bytes": 181216
+      },
+      {
+        "path": "sumo_data/.libs/libjupedsim.dylib",
+        "sha256": "c91f8a6b00fa43eb88f42f8f214ca2bc7a6e8d68dcc41abd0efddfe26c193ae0",
+        "bytes": 929344
+      },
+      {
+        "path": "sumo_data/.libs/libboost_process.dylib",
+        "sha256": "b5df1fd9fde1a3c6588a53c9f71c95c65ab68543712711e4c2bc9d9dfdedfc34",
+        "bytes": 113872
+      }
+    ],
+    "versions": {
+      "sumo": {
+        "status": "passed",
+        "stdout": "Eclipse SUMO sumo 1.28.0\n Build features: Darwin-24.6.0 arm64 AppleClang 17.0.0.17000013 Release FMI Proj GUI FMT Intl SWIG Parquet Eigen GDAL GL2PS JuPedSim\n Copyright (C) 2001-2026 German Aerospace Center (DLR) and others; https://sumo.dlr.de\n\nEclipse SUMO sumo 1.28.0 is part of SUMO.\nThis program and the accompanying materials\nare made available under the terms of the Eclipse Public License v2.0\nwhich accompanies this distribution, and is available at\nhttp://www.eclipse.org/legal/epl-v20.html\nThis program may also be made available under the following Secondary\nLicenses when the conditions for such availability set forth in the Eclipse\nPublic License 2.0 are satisfied: GNU General Public License, version 2\nor later which is available at\nhttps://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html\nSPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later\n",
+        "wallMilliseconds": 32056
+      },
+      "netconvert": {
+        "status": "passed",
+        "stdout": "Eclipse SUMO netconvert 1.28.0\n Build features: Darwin-24.6.0 arm64 AppleClang 17.0.0.17000013 Release FMI Proj GUI FMT Intl SWIG Parquet Eigen GDAL GL2PS JuPedSim\n Copyright (C) 2001-2026 German Aerospace Center (DLR) and others; https://sumo.dlr.de\n\nEclipse SUMO netconvert 1.28.0 is part of SUMO.\nThis program and the accompanying materials\nare made available under the terms of the Eclipse Public License v2.0\nwhich accompanies this distribution, and is available at\nhttp://www.eclipse.org/legal/epl-v20.html\nThis program may also be made available under the following Secondary\nLicenses when the conditions for such availability set forth in the Eclipse\nPublic License 2.0 are satisfied: GNU General Public License, version 2\nor later which is available at\nhttps://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html\nSPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later\n",
+        "wallMilliseconds": 62072
+      },
+      "duarouter": {
+        "status": "passed",
+        "stdout": "Eclipse SUMO duarouter 1.28.0\n Build features: Darwin-24.6.0 arm64 AppleClang 17.0.0.17000013 Release FMI Proj GUI FMT Intl SWIG Parquet Eigen GDAL GL2PS JuPedSim\n Copyright (C) 2001-2026 German Aerospace Center (DLR) and others; https://sumo.dlr.de\n\nEclipse SUMO duarouter 1.28.0 is part of SUMO.\nThis program and the accompanying materials\nare made available under the terms of the Eclipse Public License v2.0\nwhich accompanies this distribution, and is available at\nhttp://www.eclipse.org/legal/epl-v20.html\nThis program may also be made available under the following Secondary\nLicenses when the conditions for such availability set forth in the Eclipse\nPublic License 2.0 are satisfied: GNU General Public License, version 2\nor later which is available at\nhttps://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html\nSPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later\n",
+        "wallMilliseconds": 482
+      }
+    },
+    "startupTimeoutMs": 120000
+  },
+  "gates": {
+    "execution": "passed",
+    "conservationAndClock": "passed",
+    "boundaries": "passed",
+    "incrementalRead": "passed"
+  },
+  "runs": [
+    {
+      "name": "road",
+      "jobSha256": "bda1904dccd62ff91e52f19db54eb13bf3db408e65c90a5128207e8111a950ba",
+      "resultSha256": "1390fa849afbc6bff45721fb4f91dae3d57f8f0b6f903f0b94575b2ffea065a1",
+      "metrics": {
+        "road": {
+          "planned": 3,
+          "inserted": 3,
+          "arrived": 3,
+          "activeOrUnfinished": 0,
+          "pendingInsertion": [],
+          "notYetDue": [],
+          "peakActive": 3
+        }
+      },
+      "timings": {
+        "stepSeconds": 0.00909037608653307,
+        "readSeconds": 0.08223229701980017,
+        "routeSeconds": 0.00022133399033918977,
+        "actionSeconds": 0,
+        "rulesSeconds": 0.0002784162061288953,
+        "snapshotSeconds": 0.00025153488968499005,
+        "writeSeconds": 0.012570876977406442,
+        "wallSeconds": 1.1196401249908376
+      },
+      "eventCount": 6,
+      "blockBytes": 27412,
+      "maxBufferedBlockBytes": 2853,
+      "pythonPeakTracedBytes": 212760,
+      "liveBeforeCompletion": true,
+      "maxReadMilliseconds": 0.46070800000006784,
+      "maxLocalVisibilityMilliseconds": 12.199951171875,
+      "memorySamples": [],
+      "pidsAbsent": true
+    },
+    {
+      "name": "evacuation",
+      "jobSha256": "1d9492d1f327549ae8653badf33c2832360753d77031383a083679df237dbfd1",
+      "resultSha256": "ad503fdada6e061ca50e0c92ae92de6911ad0eb29d312814bf4739264e4ed9a3",
+      "metrics": {
+        "road": {
+          "planned": 5,
+          "inserted": 5,
+          "arrived": 3,
+          "activeOrUnfinished": 2,
+          "pendingInsertion": [],
+          "notYetDue": [],
+          "peakActive": 5
+        },
+        "service": {
+          "totalTravelers": 6,
+          "states": {
+            "completed": 2,
+            "connecting": 3,
+            "not_arrived": 1
+          },
+          "missedConnections": 3,
+          "dispatchedTrips": 3,
+          "unit": "person",
+          "window": "arrived through finalTime; unfinished retained",
+          "hubDepartures": 5,
+          "completedJourneys": 2
+        }
+      },
+      "timings": {
+        "stepSeconds": 0.0093063339299988,
+        "readSeconds": 0.13018191809533164,
+        "routeSeconds": 0.0004982080135960132,
+        "actionSeconds": 0.0010362079774495214,
+        "rulesSeconds": 0.0036174611013848335,
+        "snapshotSeconds": 0.012112454161979258,
+        "writeSeconds": 0.016500416037160903,
+        "wallSeconds": 1.1929643339826725
+      },
+      "eventCount": 55,
+      "blockBytes": 166123,
+      "maxBufferedBlockBytes": 9673,
+      "pythonPeakTracedBytes": 245067,
+      "liveBeforeCompletion": true,
+      "maxReadMilliseconds": 0.5053750000001855,
+      "maxLocalVisibilityMilliseconds": 14.028076171875,
+      "memorySamples": [],
+      "pidsAbsent": true
+    },
+    {
+      "name": "repeat",
+      "jobSha256": "7368a05457be783db75b0235a170270a9b4538d89be5da856433a293300636f4",
+      "resultSha256": "1365f7bfaddb55a99fe440ce8c0011582272126e1030a77e64cad9592fbdcdfe",
+      "metrics": {
+        "road": {
+          "planned": 5,
+          "inserted": 5,
+          "arrived": 3,
+          "activeOrUnfinished": 2,
+          "pendingInsertion": [],
+          "notYetDue": [],
+          "peakActive": 5
+        },
+        "service": {
+          "totalTravelers": 6,
+          "states": {
+            "completed": 2,
+            "connecting": 3,
+            "not_arrived": 1
+          },
+          "missedConnections": 3,
+          "dispatchedTrips": 3,
+          "unit": "person",
+          "window": "arrived through finalTime; unfinished retained",
+          "hubDepartures": 5,
+          "completedJourneys": 2
+        }
+      },
+      "timings": {
+        "stepSeconds": 0.009288663044571877,
+        "readSeconds": 0.1335591237002518,
+        "routeSeconds": 0.0005293340072967112,
+        "actionSeconds": 0.0010476659808773547,
+        "rulesSeconds": 0.0035199676058255136,
+        "snapshotSeconds": 0.012072579935193062,
+        "writeSeconds": 0.016554124129470438,
+        "wallSeconds": 1.1958182090020273
+      },
+      "eventCount": 55,
+      "blockBytes": 166043,
+      "maxBufferedBlockBytes": 9669,
+      "pythonPeakTracedBytes": 245051,
+      "liveBeforeCompletion": true,
+      "maxReadMilliseconds": 0.4140419999998812,
+      "maxLocalVisibilityMilliseconds": 12.97314453125,
+      "memorySamples": [],
+      "pidsAbsent": true
+    },
+    {
+      "name": "capacity-variant",
+      "jobSha256": "e49021dcc819ae51a05d457f729e1ec7243901ae39200e1b6974d540828091d2",
+      "resultSha256": "ccd88795258b0a768860b96e42b0639cc0a42ed2efe15b718c4be8598e2b1592",
+      "metrics": {
+        "road": {
+          "planned": 5,
+          "inserted": 5,
+          "arrived": 3,
+          "activeOrUnfinished": 2,
+          "pendingInsertion": [],
+          "notYetDue": [],
+          "peakActive": 5
+        },
+        "service": {
+          "totalTravelers": 6,
+          "states": {
+            "completed": 3,
+            "connecting": 2,
+            "not_arrived": 1
+          },
+          "missedConnections": 2,
+          "dispatchedTrips": 3,
+          "unit": "person",
+          "window": "arrived through finalTime; unfinished retained",
+          "hubDepartures": 5,
+          "completedJourneys": 3
+        }
+      },
+      "timings": {
+        "stepSeconds": 0.009364048979477957,
+        "readSeconds": 0.13319666185998358,
+        "routeSeconds": 0.0005052079795859754,
+        "actionSeconds": 0.0010029160184785724,
+        "rulesSeconds": 0.0035609607002697885,
+        "snapshotSeconds": 0.012232833018060774,
+        "writeSeconds": 0.01636933596455492,
+        "wallSeconds": 1.1958249579765834
+      },
+      "eventCount": 56,
+      "blockBytes": 167358,
+      "maxBufferedBlockBytes": 9679,
+      "pythonPeakTracedBytes": 245945,
+      "liveBeforeCompletion": true,
+      "maxReadMilliseconds": 0.5979590000006283,
+      "maxLocalVisibilityMilliseconds": 13.37109375,
+      "memorySamples": [],
+      "pidsAbsent": true
+    },
+    {
+      "name": "cutoff-equality",
+      "jobSha256": "dc7792527a6f97512fa270f4fd4b8f7037fb18f68164e00a39d4f9685e513209",
+      "resultSha256": "2bf80680f71fce25d5de8f0022a933e59d76224d70c9045791e5c0b360d024b7",
+      "metrics": {
+        "road": {
+          "planned": 5,
+          "inserted": 5,
+          "arrived": 3,
+          "activeOrUnfinished": 2,
+          "pendingInsertion": [],
+          "notYetDue": [],
+          "peakActive": 5
+        },
+        "service": {
+          "totalTravelers": 6,
+          "states": {
+            "completed": 3,
+            "connecting": 2,
+            "not_arrived": 1
+          },
+          "missedConnections": 2,
+          "dispatchedTrips": 3,
+          "unit": "person",
+          "window": "arrived through finalTime; unfinished retained",
+          "hubDepartures": 5,
+          "completedJourneys": 3
+        }
+      },
+      "timings": {
+        "stepSeconds": 0.008205507067032158,
+        "readSeconds": 0.11521066789282486,
+        "routeSeconds": 0.0002748749975580722,
+        "actionSeconds": 0.0007204569701571018,
+        "rulesSeconds": 0.003161878150422126,
+        "snapshotSeconds": 0.011018872784916312,
+        "writeSeconds": 0.016597787995124236,
+        "wallSeconds": 1.1708647500199731
+      },
+      "eventCount": 56,
+      "blockBytes": 167578,
+      "maxBufferedBlockBytes": 9876,
+      "pythonPeakTracedBytes": 245782,
+      "liveBeforeCompletion": true,
+      "maxReadMilliseconds": 0.2705000000005384,
+      "maxLocalVisibilityMilliseconds": 12.43798828125,
+      "memorySamples": [],
+      "pidsAbsent": true
+    },
+    {
+      "name": "network-v2",
+      "jobSha256": "9b98fd6ca7cde315dbf2cfdcdb4296a22fb39b3971adc1c40643e0028edb1b15",
+      "resultSha256": "6a0a43d9e4d7d2eb0a1c3673a6ae6c11a39ee7583ba11890903414f5e5de1fdb",
+      "metrics": {
+        "road": {
+          "planned": 3,
+          "inserted": 3,
+          "arrived": 3,
+          "activeOrUnfinished": 0,
+          "pendingInsertion": [],
+          "notYetDue": [],
+          "peakActive": 3
+        }
+      },
+      "timings": {
+        "stepSeconds": 0.009160627407254651,
+        "readSeconds": 0.08265805020346306,
+        "routeSeconds": 0.0005981249851174653,
+        "actionSeconds": 0,
+        "rulesSeconds": 0.00032517584622837603,
+        "snapshotSeconds": 0.00026883711689151824,
+        "writeSeconds": 0.012488418928114697,
+        "wallSeconds": 1.1249298750190064
+      },
+      "eventCount": 6,
+      "blockBytes": 28595,
+      "maxBufferedBlockBytes": 2897,
+      "pythonPeakTracedBytes": 212905,
+      "liveBeforeCompletion": true,
+      "maxReadMilliseconds": 0.43475000000034925,
+      "maxLocalVisibilityMilliseconds": 12.5400390625,
+      "memorySamples": [],
+      "pidsAbsent": true
+    },
+    {
+      "name": "representative",
+      "jobSha256": "8e0003db7388290357f4ba3b2bc785721d7c0a113f377acce8fbc78591beef0f",
+      "resultSha256": "b2410c9d8251225637d43751fd0c91387c7e76b2730138942dadcfa03bd4eb27",
+      "metrics": {
+        "road": {
+          "planned": 122,
+          "inserted": 74,
+          "arrived": 70,
+          "activeOrUnfinished": 4,
+          "pendingInsertion": [
+            "road-100",
+            "road-101",
+            "road-102",
+            "road-103",
+            "road-104",
+            "road-105",
+            "road-106",
+            "road-107",
+            "road-108",
+            "road-109",
+            "road-110",
+            "road-111",
+            "road-112",
+            "road-113",
+            "road-114",
+            "road-115",
+            "road-116",
+            "road-117",
+            "road-118",
+            "road-119",
+            "road-72",
+            "road-73",
+            "road-74",
+            "road-75",
+            "road-76",
+            "road-77",
+            "road-78",
+            "road-79",
+            "road-80",
+            "road-81",
+            "road-82",
+            "road-83",
+            "road-84",
+            "road-85",
+            "road-86",
+            "road-87",
+            "road-88",
+            "road-89",
+            "road-90",
+            "road-91",
+            "road-92",
+            "road-93",
+            "road-94",
+            "road-95",
+            "road-96",
+            "road-97",
+            "road-98",
+            "road-99"
+          ],
+          "notYetDue": [],
+          "peakActive": 44
+        },
+        "service": {
+          "totalTravelers": 100,
+          "states": {
+            "completed": 2,
+            "connecting": 3,
+            "waiting": 95
+          },
+          "missedConnections": 3,
+          "dispatchedTrips": 3,
+          "unit": "person",
+          "window": "arrived through finalTime; unfinished retained",
+          "hubDepartures": 5,
+          "completedJourneys": 2
+        }
+      },
+      "timings": {
+        "stepSeconds": 0.040874713158700615,
+        "readSeconds": 1.2380450713972095,
+        "routeSeconds": 0.0005367920093704015,
+        "actionSeconds": 0.0009640809439588338,
+        "rulesSeconds": 0.023654289107071236,
+        "snapshotSeconds": 0.3212650432542432,
+        "writeSeconds": 0.16348866088083014,
+        "wallSeconds": 2.8333062499877997
+      },
+      "eventCount": 286,
+      "blockBytes": 4725335,
+      "maxBufferedBlockBytes": 102244,
+      "pythonPeakTracedBytes": 1524623,
+      "liveBeforeCompletion": true,
+      "maxReadMilliseconds": 0.5838330000005953,
+      "maxLocalVisibilityMilliseconds": 21.1650390625,
+      "memorySamples": [
+        {
+          "computedTime": 9,
+          "native": {
+            "rssBytes": 43450368,
+            "parentMarkersAbsent": true
+          },
+          "python": {
+            "rssBytes": 60424192,
+            "parentMarkersAbsent": true
+          }
+        },
+        {
+          "computedTime": 99,
+          "native": {
+            "rssBytes": 43761664,
+            "parentMarkersAbsent": true
+          },
+          "python": {
+            "rssBytes": 62898176,
+            "parentMarkersAbsent": true
+          }
+        },
+        {
+          "computedTime": 199,
+          "native": {
+            "rssBytes": 43810816,
+            "parentMarkersAbsent": true
+          },
+          "python": {
+            "rssBytes": 63078400,
+            "parentMarkersAbsent": true
+          }
+        },
+        {
+          "computedTime": 299,
+          "native": {
+            "rssBytes": 43827200,
+            "parentMarkersAbsent": true
+          },
+          "python": {
+            "rssBytes": 63078400,
+            "parentMarkersAbsent": true
+          }
+        },
+        {
+          "computedTime": 399,
+          "native": {
+            "rssBytes": 43843584,
+            "parentMarkersAbsent": true
+          },
+          "python": {
+            "rssBytes": 63078400,
+            "parentMarkersAbsent": true
+          }
+        },
+        {
+          "computedTime": 499,
+          "native": {
+            "rssBytes": 43859968,
+            "parentMarkersAbsent": true
+          },
+          "python": {
+            "rssBytes": 63176704,
+            "parentMarkersAbsent": true
+          }
+        }
+      ],
+      "pidsAbsent": true
+    }
+  ],
+  "conversionCases": [
+    {
+      "name": "execution-override",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "output-override",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "wrong-units",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "missing-units",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "wrong-timezone",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "ambiguous-dst",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "invalid-date",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "invalid-clock",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "numeric-coercion",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "invalid-seed",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "boolean-seed",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "oversized-horizon",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "unknown-field",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "road-with-passengers",
+      "nodeRejected": true,
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "id-mapping",
+      "pythonRejectedBeforeEngine": true
+    },
+    {
+      "name": "xml-indirect-reference",
+      "nodeRejectedBeforeEngine": true
+    },
+    {
+      "name": "symlink",
+      "nodeRejectedBeforeEngine": true
+    }
+  ],
+  "failures": [
+    {
+      "name": "cancelled",
+      "trigger": "cancel",
+      "termination": "cancelled",
+      "engineExited": true,
+      "engineExitCode": 0,
+      "diagnostics": [
+        "raw_vehicle_count_mismatch"
+      ],
+      "finalTime": 12,
+      "publishedThrough": 12,
+      "error": "Analysis cancelled",
+      "pidsAbsent": true
+    },
+    {
+      "name": "engine-fault",
+      "trigger": "fault",
+      "termination": "unknown",
+      "engineExited": true,
+      "engineExitCode": -9,
+      "diagnostics": [
+        "raw_output_incomplete"
+      ],
+      "finalTime": 12,
+      "publishedThrough": 8,
+      "error": "{\"protocol\": \"transportx-simulation-error\", \"version\": 1, \"code\": \"simulation_result_unknown\", \"phase\": \"execution\", \"message\": \"engine_completion_unconfirmed\"}",
+      "pidsAbsent": true
+    }
+  ],
+  "checks": {
+    "nodeTestBudget": 40,
+    "nodeTestsPassed": 40,
+    "typecheckConfigurationsPassed": 6,
+    "finalTargetedScenariosPassed": 2
+  },
+  "p1InitialBudgets": {
+    "durationSeconds": 600,
+    "backgroundVehicles": 120,
+    "travelers": 100,
+    "stepSeconds": 1,
+    "decisionSeconds": 1,
+    "sampleSeconds": 2,
+    "blockSeconds": 10,
+    "wallSeconds": 60,
+    "nativePreparationSeconds": 120,
+    "maxOutputBytes": 67108864,
+    "maxChunkReadBytes": 2097152,
+    "maxIndexBytes": 524288,
+    "localReadMilliseconds": 50,
+    "localVisibilityMilliseconds": 1000
+  },
+  "pending": [
+    "P1 product authorization, durable Run confirmation, independent Module, real Pi/model task and Simulation Canvas",
+    "P2 feedback policy, paired multi-seed comparison, replay and reports",
+    "P3 real Hongqiao calibration deferred by user; no empirical benefit claims",
+    "P4 Windows x64 native evidence, clean-machine packaging, installation, signing and transitive license closure",
+    "Cold startup variability and native footprint; RSS is sampled, UI performance is unmeasured"
+  ]
+}

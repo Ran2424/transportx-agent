@@ -125,6 +125,8 @@ Host 通过 `TRANSPORTX_FONT_DIR` 注入内置思源黑体、思源宋体和 Jet
 
 发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely、ezdxf。
 
+`ProcessRunner` 与 `PythonRunner` 默认合并父环境；可信调用方可显式指定 `envMode: 'replace'`，仅向子进程提供批准的环境。交通仿真 P0 探针使用该模式并核验嵌套 SUMO 的环境与退出。探针位于 `scripts/simulation/`，尚不是生产仿真 Module、Host 服务或 Simulation Canvas，验证范围见 [P0 记录](<交通仿真与优化能力升级 P0 记录.md>)。
+
 ### 2.7 React Workspace 与 Browser Kernel
 
 Canvas 打开后与对话列并排，分隔条可调整对话列宽度；Canvas 顶部的具名标签承载当前任务的地图、视频和文档。`pi-canvas` 1.0 Presentation Envelope 统一 `present / focus / update / clear` 生命周期、受控资源引用、`viewId`、`revision` 与每次呈现意图的 `presentationId`；Projection Core 兼容旧 Geo / Video Tool Result。受信任的 Adapter Registry 负责领域 payload、target、延迟 Renderer 和显式 Context，Canvas Shell 只管理标签与生命周期，不动态加载 Module 提供的前端代码。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。

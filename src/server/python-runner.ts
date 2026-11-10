@@ -5,6 +5,7 @@ export type PythonRunOptions = {
   cwd: string;
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  envMode?: 'merge' | 'replace';
   signal?: AbortSignal;
   maxBuffer?: number;
 };
@@ -24,6 +25,7 @@ export class PythonRunner {
     return this.runner.run(this.executable, [script, ...args], {
       cwd: opts.cwd,
       env: { ...opts.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      envMode: opts.envMode,
       timeoutMs: opts.timeoutMs ?? 120_000,
       maxBuffer: opts.maxBuffer ?? 4 * 1024 * 1024,
       signal: opts.signal,

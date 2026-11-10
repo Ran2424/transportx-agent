@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "scope": "P0 measured wheel sources; not a production runtime manifest",
+  "wheelTag": "macosx_15_0_arm64",
+  "artifacts": [
+    {
+      "name": "eclipse-sumo",
+      "version": "1.28.0",
+      "url": "https://files.pythonhosted.org/packages/d9/3d/a05bfded39ae2edfec9bf49b1f1bef1ba40b3dde7f7c661c4a1300949e2f/eclipse_sumo-1.28.0-py3-none-macosx_15_0_arm64.whl",
+      "sha256": "bf9babaa01976356255a91a7fe715b285663c22fd6035b19bfb7e9bf46fff348"
+    },
+    {
+      "name": "traci",
+      "version": "1.28.0",
+      "url": "https://files.pythonhosted.org/packages/9a/a1/a95328ff82da409b46d5ed2723b70dff6a5445776ad95c34b5d1a84de7f2/traci-1.28.0-py2.py3-none-any.whl",
+      "sha256": "cbc88b5b38b60c0dba4939f9171615a97bd12dd113c5bc7730d76dfe2db73881"
+    },
+    {
+      "name": "sumolib",
+      "version": "1.28.0",
+      "url": "https://files.pythonhosted.org/packages/97/3c/bb2ba08247793748be59bf93759d1452ed1201e6f143dc98fc51511c87d4/sumolib-1.28.0-py2.py3-none-any.whl",
+      "sha256": "eda134defdcc39b966756cc00828ecbabfc35e0631326971f2fe1dea8acd9239"
+    },
+    {
+      "name": "sumo-data",
+      "version": "1.28.0",
+      "url": "https://files.pythonhosted.org/packages/d5/95/8c5650c55da61caab4282bceec8a2c475a57ffb1fa6672799161464dbf22/sumo_data-1.28.0-py3-none-macosx_15_0_arm64.whl",
+      "sha256": "6d488fba4f9f0398964dae165c32a21545a1cde71cde1755cca0ab398ec6a8f6"
+    }
+  ]
+}
