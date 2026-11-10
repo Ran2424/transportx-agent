@@ -22,3 +22,19 @@ GitHub Actions 的 `Linux x64 test package` 工作流使用 Ubuntu 22.04 x64，�
 4. 关闭应用后确认 Host 退出，再验证重启与卸载；保留用户任务资料。
 
 不要为启动应用替换系统 glibc、关闭沙箱或使用 root 运行。遇到动态库或沙箱错误时保留终端输出，按具体系统环境修复。
+
+## 麒麟服务器 V10 的 RPM 测试包
+
+银河麒麟高级服务器 V10 使用 RPM/DNF，DEB 不作为其安装入口。保留现有 Linux x64 构建，在 Linux 主机准备好相同运行时后，显式选择 RPM：
+
+```bash
+TRANSPORTX_PYTHON_RUNTIME_DIR="<python-runtime-directory>" npm run desktop:pack -- --linux rpm --x64 --publish=never
+```
+
+构建机需要 `rpmbuild`（Ubuntu 构建机的 `rpm` 软件包）。RPM 依赖与压缩配置由 `platform-profile.mjs` 提供；不转换 DEB，也不改变默认 DEB 目标。
+
+`Linux x64 test package` 工作流的手动输入 `build_rpm=true` 会在原有 DEB 验收后，使用同次 Linux 构建的 `linux-unpacked` 原生生成 RPM，记录 SHA-256、依赖与安装脚本，并在 Rocky Linux 8 容器检查 RPM 安装、系统动态库、内置 Node/Python、桌面入口与卸载。此容器检查没有启动完整图形应用，不代替麒麟 VNC 实机、沙箱、中文绘图、PDF 和内网模型验收。
+
+安装验证由独立可复用的 `Linux RPM installation validation` 工作流执行，先核对原始 RPM 的 SHA-256，再验证并记录镜像摘要与 glibc 版本。需要重跑验证时，在 `Linux x64 test package` 手动填写原构建的 `validate_rpm_run_id` 即可使用相同 artifact，无需重新构建；验证记录独立输出为 `transportx-linux-x64-rpm-validation`。管道保留容器失败退出码，并要求实际输出通过标记。
+
+目标机先核对哈希并执行 `rpm -Uvh --test <package.rpm>`；缺少依赖时准备匹配麒麟版本的离线 RPM，不使用 `--nodeps`。依赖满足后由管理员安装，再由 VNC 桌面普通用户启动 `transportx-agent`。不得以 root 或 `--no-sandbox` 启动应用。RPM 测试包不上传官网或正式更新源。

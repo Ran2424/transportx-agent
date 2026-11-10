@@ -1,18 +1,29 @@
 name: Linux x64 test package
 on:
   workflow_dispatch:
+    inputs:
+      build_rpm:
+        description: 'Also build a native x64 RPM and check installation on Rocky Linux 8'
+        type: boolean
+        default: false
+      validate_rpm_run_id:
+        description: 'Only validate the RPM artifact from this existing workflow run ID'
+        type: string
+        default: ''
   pull_request:
     paths:
       - .github/workflows/linux-package.yml
       - desktop/**
       - scripts/desktop-smoke.mjs
 permissions:
+  actions: read
   contents: read
 concurrency:
   group: linux-package-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   package:
+    if: inputs.validate_rpm_run_id == ''
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -71,6 +82,26 @@ jobs:
           sudo apt-get remove -y transportx-agent
           test ! -e '/opt/TransportX Agent/transportx-agent'
           test ! -e /usr/bin/transportx-agent
+      - name: Install RPM build tools
+        if: inputs.build_rpm == true
+        run: sudo apt-get install -y rpm
+      - name: Build native RPM from the Linux packaged application
+        if: inputs.build_rpm == true
+        run: node node_modules/electron-builder/cli.js --config desktop/electron-builder.yml --linux rpm --x64 --prepackaged release/linux-unpacked --publish=never
+      - name: Record RPM metadata, dependencies and installation scripts
+        if: inputs.build_rpm == true
+        run: |
+          {
+            echo "Source: $GITHUB_SHA"
+            rpm -qpi release/*-linux-x64.rpm
+            echo 'RPM requirements:'
+            rpm -qpR release/*-linux-x64.rpm
+            echo 'RPM scripts:'
+            rpm -qp --scripts release/*-linux-x64.rpm
+          } > release/linux-x64-rpm-metadata.txt
+          cat release/linux-x64-rpm-metadata.txt
+          cd release
+          sha256sum *-linux-x64.rpm > SHA256SUMS-linux-x64-rpm.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -81,3 +112,20 @@ jobs:
             release/*-linux-x64.deb
             release/SHA256SUMS-linux-x64.txt
             release/linux-x64-validation.txt
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.build_rpm == true
+        with:
+          name: transportx-linux-x64-rpm-test
+          compression-level: 0
+          retention-days: 14
+          path: |
+            release/*-linux-x64.rpm
+            release/SHA256SUMS-linux-x64-rpm.txt
+            release/linux-x64-rpm-metadata.txt
+            release/linux-x64-validation.txt
+  rpm-validation:
+    needs: package
+    if: always() && ((inputs.build_rpm == true && needs.package.result == 'success') || inputs.validate_rpm_run_id != '')
+    uses: ./.github/workflows/linux-rpm-validation.yml
+    with:
+      build_run_id: ${{ inputs.validate_rpm_run_id || github.run_id }}
