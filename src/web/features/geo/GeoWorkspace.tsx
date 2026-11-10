@@ -6,6 +6,7 @@ import { useSessionState } from '../../app/store-hooks';
 import { appKernel } from '../../app/composition-root';
 import { FeatureEmpty } from '../../components/FeatureEmpty';
 import { geoContextStore } from './geo-context-store';
+import { GeoLegendPanel } from './GeoLegendPanel';
 
 type GeoInteractionEvent =
   | { type: 'draft_changed'; draft: GeoClientContextV1 | null }
@@ -18,21 +19,23 @@ type GeoRuntime = {
   setLayerVisibility(layerId: string, visible: boolean): void;
   setInteractionMode(mode: 'browse' | GeoContextMode, options?: { forRequest?: boolean; targetLayerIds?: string[]; maxFeatures?: number }): void;
   clearUserDraft(): void;
-  captureScreenshot(expectedRevision: number): Promise<string>;
+  captureScreenshot(expectedRevision: number, language?: string): Promise<string>;
   getUserDraft(): GeoClientContextV1 | null;
   subscribe(listener: (event: GeoInteractionEvent) => void): () => void;
   fitToData(): void;
   resize(): void;
   destroy(): void;
 };
-type RuntimeModule = { createGeoMapRuntime(container: HTMLElement, onError: (message: string) => void): GeoRuntime };
+type RuntimeModule = { createGeoMapRuntime(container: HTMLElement, onError: (message: string) => void, stage?: HTMLElement): GeoRuntime };
 
 const MODES: Array<'browse' | GeoContextMode> = ['browse', 'feature', 'point', 'rectangle', 'viewport'];
 
 export function GeoWorkspace({ session, active, envelope: selected, onContextChange }: { session: ConversationView; active: boolean; envelope: VisualizationEnvelope; onContextChange?(target: unknown, selection?: unknown): void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const sessions = useSessionState();
   const [runtime, setRuntime] = useState<GeoRuntime | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [mode, setMode] = useState<'browse' | GeoContextMode>('browse');
   const [draft, setDraft] = useState<GeoClientContextV1 | null>(null);
   const [notice, setNotice] = useState('');
@@ -55,7 +58,7 @@ export function GeoWorkspace({ session, active, envelope: selected, onContextCha
           await appKernel.commands.geo.respondScreenshot(session.id, screenshotRequest.requestId, { status: 'failed', reason: 'scene_revision_changed' });
           return;
         }
-        const dataUrl = await runtime.captureScreenshot(selected.revision);
+        const dataUrl = await runtime.captureScreenshot(selected.revision, i18n.language);
         const result = await appKernel.commands.geo.respondScreenshot(session.id, screenshotRequest.requestId, { status: 'captured', dataUrl }) as { filename?: string };
         if (result.filename) setScreenshotNotice(t('geo.screenshotSaved', { filename: result.filename }));
       } catch (cause) {
@@ -148,7 +151,7 @@ export function GeoWorkspace({ session, active, envelope: selected, onContextCha
       const result = await appKernel.commands.geo.saveScreenshot(session.id, {
         visualizationId: selected.visualizationId,
         sceneRevision: selected.revision,
-        dataUrl: await runtime.captureScreenshot(selected.revision),
+        dataUrl: await runtime.captureScreenshot(selected.revision, i18n.language),
       });
       setScreenshotNotice(t('geo.screenshotSaved', { filename: result.filename }));
     } catch (cause) { setNotice(t('geo.screenshotFailed', { error: (cause as Error).message })); }
@@ -168,12 +171,14 @@ export function GeoWorkspace({ session, active, envelope: selected, onContextCha
       <button type="button" disabled={!draft || busy || !!request} onClick={() => void attachDraft()}>{t('geo.attach')}</button>
       <small>rev {selected.revision}</small>
     </div>
-    <GeoMap key={`${session.id}:${selected.visualizationId}`} envelope={selected} sessionId={session.id} active={active} onReady={setRuntime} onEvent={handleRuntimeEvent} />
+    <div className="geo-map-stage" ref={stageRef}>
+      <GeoMap key={`${session.id}:${selected.visualizationId}`} envelope={selected} sessionId={session.id} active={active} onReady={setRuntime} onEvent={handleRuntimeEvent} />
+      <GeoLegendPanel key={`legend:${session.id}:${selected.visualizationId}`} scene={selected.scene} stageRef={stageRef} disabled={!runtime} onVisibility={(layerId, visible) => runtime?.setLayerVisibility(layerId, visible)} />
+    </div>
     {draft ? <div className="geo-context-tray" role="status"><strong>{t(`geo.mode.${draft.mode}`)}</strong><span>{draft.summary}</span><small>{t('geo.contextMeta', { revision: draft.sceneRevision, count: draft.visibleLayerIds.length })}</small><button type="button" onClick={() => runtime?.clearUserDraft()}>{t('geo.clear')}</button>{request ? <button type="button" disabled={busy} onClick={() => void submitRequest()}>{t('geo.submit')}</button> : <button type="button" disabled={busy} onClick={() => void attachDraft()}>{t('geo.attach')}</button>}</div> : null}
     {screenshotNotice ? <p className="geo-notice" role="status">{screenshotNotice}</p> : null}
     {notice ? <p className="geo-error" role="alert">{notice}</p> : null}
-    <div className="geo-layers" role="group" aria-label={t('geo.layers')} tabIndex={0}>{[...selected.scene.layers].reverse().map((layer) => <GeoLayer key={`${selected.visualizationId}:${layer.id}`} layer={layer} onVisibility={(visible) => runtime?.setLayerVisibility(layer.id, visible)} />)}</div>
-    {selected.scene.metadata.description ? <p className="geo-description" role="region" aria-label={t('geo.description')} tabIndex={0}>{selected.scene.metadata.description}</p> : null}
+    {selected.scene.metadata.description ? <div className={`geo-description${descriptionOpen ? ' is-expanded' : ''}`} role="region" aria-label={t('geo.description')}><p>{selected.scene.metadata.description}</p><button type="button" aria-expanded={descriptionOpen} onClick={() => setDescriptionOpen(!descriptionOpen)}>{t(descriptionOpen ? 'geo.collapseDescription' : 'geo.expandDescription')}</button></div> : null}
   </div>;
 }
 
@@ -208,7 +213,7 @@ function GeoMap({ envelope, sessionId, active, onReady, onEvent }: { envelope: V
     void import('../../../public/visualization/geo/geo-runtime-entry.js').then(async (module: RuntimeModule) => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       if (disposed || !container.current) return;
-      const instance = module.createGeoMapRuntime(container.current, setError);
+      const instance = module.createGeoMapRuntime(container.current, setError, container.current.parentElement!);
       runtime.current = instance; unsubscribe = instance.subscribe((event) => latestEvent.current(event));
       await instance.apply(latestEnvelope.current, sessionId);
       if (!disposed && runtime.current === instance) { onReady(instance); resize(); }
@@ -219,11 +224,4 @@ function GeoMap({ envelope, sessionId, active, onReady, onEvent }: { envelope: V
   useEffect(() => { if (active && runtime.current) { setError(''); void runtime.current.apply(envelope, sessionId).then(resize).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))); } }, [active, envelope, sessionId]);
   useEffect(() => { if (!active) return; resize(); const timer = window.setTimeout(resize, 260); return () => window.clearTimeout(timer); }, [active, runtimeKey]);
   return <><div ref={container} className="geo-map" aria-label={t('geo.map')} />{error ? <p className="geo-error">{t('geo.loadFailed', { error })}</p> : null}</>;
-}
-
-function GeoLayer({ layer, onVisibility }: { layer: NonNullable<VisualizationEnvelope['scene']>['layers'][number]; onVisibility(visible: boolean): void }) {
-  const [visibilityOverride, setVisibilityOverride] = useState<boolean | null>(null);
-  const visible = visibilityOverride ?? layer.visible !== false;
-  const title = layer.title || layer.id;
-  return <label className={!visible ? 'is-muted' : ''}><input type="checkbox" checked={visible} onChange={(event) => { setVisibilityOverride(event.target.checked); onVisibility(event.target.checked); }} /><span title={title}>{title}</span><small>{layer.type}</small></label>;
 }

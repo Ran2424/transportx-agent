@@ -1,0 +1,81 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Legend disabled."
+    }
+  ],
+  "details": {
+    "visualization": {
+      "protocol": "pi-visualization",
+      "version": "1.0",
+      "kind": "geo",
+      "visualizationId": "legend_check",
+      "revision": 2,
+      "operation": "patch",
+      "scene": {
+        "view": {
+          "mode": "bounds",
+          "bounds": [
+            121.42,
+            31.17,
+            121.48,
+            31.22
+          ],
+          "padding": 30
+        },
+        "basemap": {
+          "id": "none"
+        },
+        "sources": [
+          {
+            "id": "data",
+            "type": "geojson-inline",
+            "data": {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "id": "one",
+                  "properties": {},
+                  "geometry": {
+                    "type": "Point",
+                    "coordinates": [
+                      121.45,
+                      31.19
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "layers": [
+          {
+            "id": "classes",
+            "sourceId": "data",
+            "type": "circle",
+            "title": "分类点位",
+            "encoding": {
+              "color": {
+                "mode": "constant",
+                "value": "#2563eb"
+              }
+            }
+          }
+        ],
+        "controls": {
+          "legend": false
+        },
+        "metadata": {
+          "title": "地图图例验收",
+          "description": "关闭图例后保留地图与图层开关。"
+        }
+      },
+      "summary": {
+        "title": "地图图例验收"
+      },
+      "generatedAt": "2026-11-10T00:00:01.000Z"
+    }
+  }
+}

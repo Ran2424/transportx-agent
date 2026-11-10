@@ -1,6 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import type { GeoChart, GeoLayer, GeoVisualValue } from '../../../contracts/geo.js';
 import { geoChartImagePrefix } from './geo-chart-images.js';
+import { geoLayerDefaults } from './geo-legend.js';
 
 type Expression = unknown;
 type LayerSpec = maplibregl.LayerSpecification;
@@ -103,9 +104,10 @@ function chartLabel(chart: GeoChart): Expression {
 export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: boolean): { specs: LayerSpec[]; interactiveId: string } {
   const id = geoRuntimeLayerId(layer.id);
   const base = layerBase(layer, id, sourceId);
+  const defaults = geoLayerDefaults(layer.type, darkBasemap);
   if (layer.type === 'circle') {
-    const radius = compile(layer.encoding.radius, 6);
-    const color = compile(layer.encoding.color, '#2563eb');
+    const radius = compile(layer.encoding.radius, defaults.radius);
+    const color = compile(layer.encoding.color, defaults.color);
     return {
       interactiveId: id,
       specs: [
@@ -126,16 +128,16 @@ export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: 
           paint: {
             'circle-color': selectedColor(color),
             'circle-radius': interactiveSize(radius, 1.5, 2),
-            'circle-opacity': compile(layer.encoding.opacity, 0.96),
-            'circle-stroke-color': compile(layer.encoding.strokeColor, darkBasemap ? '#0f172a' : '#ffffff'),
-            'circle-stroke-width': interactiveSize(compile(layer.encoding.strokeWidth, 2), 0.8, 1),
+            'circle-opacity': compile(layer.encoding.opacity, defaults.opacity),
+            'circle-stroke-color': compile(layer.encoding.strokeColor, defaults.strokeColor),
+            'circle-stroke-width': interactiveSize(compile(layer.encoding.strokeWidth, defaults.strokeWidth), 0.8, 1),
           },
         } as LayerSpec,
       ],
     };
   }
   if (layer.type === 'line') {
-    const width = compile(layer.encoding.width, 3.5);
+    const width = compile(layer.encoding.width, defaults.width);
     const layout = { visibility: layer.visible === false ? 'none' : 'visible', 'line-cap': 'round', 'line-join': 'round' } as const;
     return {
       interactiveId: id,
@@ -156,9 +158,9 @@ export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: 
           type: 'line',
           layout,
           paint: {
-            'line-color': selectedColor(compile(layer.encoding.color, '#2563eb')),
+            'line-color': selectedColor(compile(layer.encoding.color, defaults.color)),
             'line-width': interactiveSize(width, 1.2, 1.8),
-            'line-opacity': compile(layer.encoding.opacity, 0.94),
+            'line-opacity': compile(layer.encoding.opacity, defaults.opacity),
             'line-blur': 0.1,
             ...(layer.encoding.dash ? { 'line-dasharray': compile(layer.encoding.dash, [2, 1]) } : {}),
           },
@@ -172,9 +174,9 @@ export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: 
       ...base,
       type: 'fill',
       paint: {
-        'fill-color': selectedColor(compile(layer.encoding.color, '#60a5fa')),
-        'fill-opacity': interactiveOpacity(compile(layer.encoding.opacity, 0.5)),
-        'fill-outline-color': compile(layer.encoding.outlineColor, '#ffffff'),
+        'fill-color': selectedColor(compile(layer.encoding.color, defaults.color)),
+        'fill-opacity': interactiveOpacity(compile(layer.encoding.opacity, defaults.opacity)),
+        'fill-outline-color': compile(layer.encoding.outlineColor, defaults.outlineColor),
       },
     } as LayerSpec],
   };
@@ -252,7 +254,7 @@ export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: 
       layout: {
         ...base.layout as object,
         'text-field': textField,
-        'text-size': compile(layer.encoding.size, 12),
+        'text-size': compile(layer.encoding.size, defaults.size),
         'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
         'text-radial-offset': 0.85,
         'text-justify': 'auto',
@@ -262,9 +264,9 @@ export function compileGeoLayer(layer: GeoLayer, sourceId: string, darkBasemap: 
         'text-optional': true,
       },
       paint: {
-        'text-color': selectedColor(compile(layer.encoding.color, darkBasemap ? '#f8fafc' : '#172033')),
-        'text-halo-color': compile(layer.encoding.haloColor, darkBasemap ? '#111827' : '#ffffff'),
-        'text-halo-width': compile(layer.encoding.haloWidth, 1.6),
+        'text-color': selectedColor(compile(layer.encoding.color, defaults.color)),
+        'text-halo-color': compile(layer.encoding.haloColor, defaults.haloColor),
+        'text-halo-width': compile(layer.encoding.haloWidth, defaults.haloWidth),
         'text-halo-blur': 0.25,
       },
     } as unknown as LayerSpec],

@@ -16,6 +16,7 @@ import { prepareComposerContextSmoke, composerSelectionSmoke } from './harness/c
 import { capabilitySmoke } from './harness/capability-smoke.mjs';
 import { moduleLanguageSmoke } from './harness/module-language-smoke.mjs';
 import { piQueueSmoke } from './harness/pi-queue-smoke.mjs';
+import { geoLegendSmoke } from './harness/geo-legend-smoke.mjs';
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -289,7 +290,7 @@ try {
     image.onerror = () => reject(new Error('Saved Geo screenshot is not a readable image'));
     image.src = dataUrl;
   }), screenshotDataUrl);
-  assert.ok(screenshotSize.height > mapBox.height + 40, 'Geo screenshot should include the legend and description below the map');
+  assert.ok(screenshotSize.height > mapBox.height && screenshotSize.height < mapBox.height + 100, 'Geo screenshot overlays the legend on the map and adds only the description below it');
   assert.ok(screenshotSize.nonBackground > 100, 'Geo screenshot contains rendered colored road features, not just a PNG header or legend');
   const screenshotNotice = page.locator('.canvas-panel:not([hidden]) .geo-notice');
   await screenshotNotice.waitFor({ timeout: 10_000 });
@@ -476,8 +477,7 @@ try {
   await restoredBanner.getByRole('button', { name: '取消' }).click();
   await page.locator('.assistant-message', { hasText: '刷新后的地图请求已正确结束' }).waitFor({ timeout: 10_000 });
   console.log('Geo smoke: restored request cancelled.');
-
-
+  await geoLegendSmoke(page, composer);
 
   if (!process.argv.includes('--web')) await softwareUpdateSmoke(browser, baseUrl);
   await workspaceCleanupSmoke(page);
