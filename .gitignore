@@ -60,39 +60,26 @@ test/baselines/screenshots/*.png
 
 # 发布文档、网页使用指南与 README 产品截图
 /docs/*
+!/docs/README.md
 !/docs/ARCHITECTURE.md
 !/docs/CHANGELOG.md
 !/docs/RELEASE.md
-!/docs/STYLE_UPGRADE_REVIEW_2026-10-12.md
 !/docs/releases/
-!/docs/软件更新功能开发 PLAN.md
-!/docs/引用依据模块升级 PLAN.md
-!/docs/Tool 与插件架构优化 PLAN.md
-!/docs/Tool 与插件架构优化 P0 记录.md
-!/docs/Tool 与插件架构优化 P1 记录.md
-!/docs/Tool 与插件架构优化 P2 记录.md
-!/docs/Tool 与插件架构优化 P3 记录.md
-!/docs/Tool 与插件架构优化 P4 记录.md
 !/docs/交通仿真与优化能力升级 PLAN.md
-!/docs/Agent 主动启用工具与动态加载 PLAN.md
 !/docs/工作区与会话机制整改 PLAN.md
 !/docs/工作区与会话机制整改 P0 记录.md
 !/docs/工作台视觉优化 PLAN.md
 !/docs/guide/
 !/docs/images/
 /docs/images/*
-!/docs/images/architecture-overview-zh.png
 !/docs/images/architecture-overview-zh-workbench.svg
 !/docs/images/architecture-overview-zh-workbench.png
-!/docs/images/architecture-overview-zh-workbench-v1.svg
-!/docs/images/architecture-overview-zh-workbench-v1.png
 !/docs/images/product-task-setup.png
 !/docs/images/product-map-selection.png
 !/docs/images/product-monthly-report.png
 !/docs/images/product-event-traffic.png
 !/docs/images/product-bike-transfer.png
 !/docs/images/product-holiday-ridehail.png
-!/docs/images/product-home.png
 !/docs/images/product-video-preview.gif
 !/docs/videos/
 /docs/videos/*

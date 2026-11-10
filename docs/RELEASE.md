@@ -1,14 +1,14 @@
 # 版本开发与发布规范
 
-本项目持续维护。每个版本有一份开发记录、一个源码提交和按平台保存的验收证据；功能合并不等于安装包已经发布。原始更新设计见 [软件更新计划](软件更新功能开发%20PLAN.md)。
+本项目持续维护。每个发布版本有一份开发记录、固定的源码来源和按平台保存的验收证据；功能合并不等于安装包已经发布。当前更新实现见 [架构说明](ARCHITECTURE.md#24-electron-main)。
 
 ## 版本与范围
 
-采用 SemVer `MAJOR.MINOR.PATCH`。新增向后兼容能力升 minor；修复而不改变契约升 patch；不兼容的 API、模块契约或数据格式升 major。文档和开发工具变更记入 Unreleased，不单独要求发客户端版本。Module 独立遵守相同规则，平台版本变化不自动提高 Module 版本。
+采用 SemVer `MAJOR.MINOR.PATCH`。新增向后兼容能力升 minor；修复而不改变契约升 patch；不兼容的 API、模块契约或数据格式升 major。当前平台版本尚未正式发布时，后续变更（含文档与开发工具）归入该版本的 `## <version> - 未发布`，不另建 Unreleased，也不因每次修改提升平台版本。Module 独立遵守相同规则，平台版本变化不自动提高 Module 版本。
 
-新版本从当前 main 建 `codex/<feature>` 分支。先复制 [版本开发模板](releases/TEMPLATE.md) 为 `docs/releases/<version>.md`，写清用户问题、范围、非目标、验收条件、兼容性和依赖。每项验收都有对应行为和证据，不以“测试通过”代替用户流程验证。保持工作区中的用户文件，不用 reset 或删除文件清理 main。
+较大改动从当前 main 建 `codex/<feature>` 分支，经 PR 合并；小型修复与小幅功能按项目约定可直接提交 main。准备发布时复制 [版本开发模板](releases/TEMPLATE.md) 为 `docs/releases/<version>.md`，写清用户问题、范围、非目标、验收条件、兼容性和依赖。每项验收都有对应行为和证据，不以“测试通过”代替用户流程验证。保持工作区中的用户文件，不用 reset 或删除文件清理 main。
 
-本次新增主程序更新能力，下一目标版本为 **3.23.0**。版本号在发布准备时同步 `package.json`、锁文件根版本及 `src/server/config.ts`；开发内容先进入 CHANGELOG 的 Unreleased。正式发布时移入带 `YYYY-MM-DD` 日期的版本段，采用 Added / Changed / Fixed / Security / Removed，每种分类只出现一次。已发布版本号和带版本号的资产不可复用或覆盖。
+当前源码版本为 **3.24.2（未发布）**。版本号同步维护 `package.json`、锁文件根版本及 `src/server/config.ts`。正式发布时将当前段的“未发布”替换为实际 `YYYY-MM-DD`，采用 Added / Changed / Fixed / Security / Removed 分类；任一平台正式发布后即冻结该版本段。内部测试打包、提交或合并不算正式发布。已发布版本号和带版本号的资产不可复用或覆盖。
 
 ## 状态与合并门槛
 
@@ -25,7 +25,7 @@
 
 `platform-profile.mjs` 声明更新目录和产物命名，electron-builder 从该声明生成 `app-update.yml` 与 `latest*.yml`。Mac 同时生成 DMG 和 ZIP；Windows 使用 NSIS。应用只在打包后检查更新，默认不下载、不在普通退出时安装。说明来自 CHANGELOG，渲染为纯文本。
 
-正式包要求 Developer ID 与公证，或 Authenticode 与可信时间戳。缺少证书时可以构建内部测试包、验证代码和 UI，但禁止开放正式清单。当前 v3.22.0 没有更新器，需要用户手动安装支持更新的首版。
+正式包默认要求 Developer ID 与公证，或 Authenticode 与可信时间戳。测试包不等于正式签名验收；已发布版本的签名例外及验证范围见对应发布记录。3.22.0 及更早版本没有更新器，需要手动安装支持更新的首版。
 
 构建生成的 runtime manifest 记录源码 SHA、工作区是否有未提交变更和依赖锁文件 SHA-256，并随应用携带。正式发布工具拒绝构建来源与当前干净提交、版本或依赖锁不一致的产物记录；验收时同时核对安装包内该记录与资产哈希。
 
@@ -34,11 +34,11 @@
 npm run desktop:pack
 
 # 校验明确的版本和平台文件；默认不上传。
-npm run release:oss -- --version 3.23.0 --platform mac
-npm run release:oss -- --version 3.23.0 --platform win
+npm run release:oss -- --version 3.24.2 --platform mac
+npm run release:oss -- --version 3.24.2 --platform win
 
 # 对应平台真实升级验收完成后才发布。
-npm run release:oss -- --version 3.23.0 --platform mac --publish
+npm run release:oss -- --version 3.24.2 --platform mac --publish
 ```
 
 发布工具要求 ossutil 2.x，从本地配置或环境读取 RAM 身份，凭据不得放入仓库。只允许向 `transportx-agent` Bucket 的 releases/updates 前缀发布。发布时要求 `release/acceptance-<version>-<profile>.json`，格式见 [验收模板](releases/acceptance.template.json)。此记录是人工验收证据索引，不能通过填 `true` 替代实际签名与升级测试；哈希必须来自已验收资产。
@@ -47,7 +47,7 @@ npm run release:oss -- --version 3.23.0 --platform mac --publish
 
 下载缓存恢复使用锁定的 electron-updater 6.8.3 校验器，缓存缺失或损坏时不会自动下载。`desktop/update-cache.ts` 隔离了该版本的内部方法适配；升级此依赖必须运行缓存命中、损坏、缺失和后续用户下载测试，并在两平台验收。
 
-发布完成还要在已安装客户端检查线上版本并完成升级，记录日志、应用版本和用户数据目录验证结果。GitHub Release、官网和手动下载目录沿用 [设计计划第 9 节](软件更新功能开发%20PLAN.md) 的发布要求。
+发布完成还要在已安装客户端检查线上版本并完成升级，记录日志、应用版本和用户数据目录验证结果。GitHub Release、官网和手动下载目录使用已核验的同一组资产、校验值和说明，官网只开放已验收平台的入口。
 
 ## 升级与维护证据
 
@@ -65,3 +65,7 @@ npm run release:oss -- --version 3.23.0 --platform mac --publish
 无数据格式变化时不引入迁移层。有格式变化时单独定义版本化迁移、备份、原子替换和失败恢复，并评估人工降级可读性。坏版本撤回清单只能阻止尚未升级的用户发现；已升级用户使用更高版本修复。保留历史包供人工恢复，首版不承诺自动回滚。
 
 每次发布指定维护责任人和问题反馈入口，记录更新失败、证书到期与 OSS 流量费用的跟进项。仅在用户请求监控时建立自动化，不自动把维护规范变成周期任务。
+
+## 独立 Module 更新
+
+Module 网络更新尚未交付。实现前需确定包含 ID、精确版本、平台兼容范围、下载地址、大小和 SHA-256 的目录清单，以及发布者信任机制；下载后复用现有安装、预览与信任流程。新版本影响新会话，不能覆盖旧目录、替换冻结计划引用的版本，或在 Pi 执行时切换 Extension。

@@ -71,7 +71,7 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 - **CHANGELOG 归集**：当前平台版本的安装包尚未正式发布时，所有后续变更（含文档与开发工具）追加到 `docs/CHANGELOG.md` 的当前版本段，标为 `## <version> - 未发布`；不另建 `Unreleased`，不因每次改动提升平台版本。正式发布时填写实际发布日期并冻结该段；发布后的新变更开启下一版本段。内部测试打包、源码提交或 PR 合并不算正式发布；任一平台正式发布后，该版本即冻结。Module 仍遵守独立版本纪律。
 - **提交策略**：小型修复与小幅功能改动可直接提交 `main`；涉及新能力、架构调整或多环节联动的较大改动走「分支 → PR → 合并」流程（参考 PR #12 的 Video Capability）。
 - **安全边界**：模块安装拒绝符号链接与路径逃逸；文件/Geo/Citation 资源按会话目录与 SHA-256 校验；Markdown 安全渲染；鉴权 Cookie 与 WebSocket 断连处理均有测试覆盖。
-- **跨平台维护纪律**：所有 OS 相关的事实（python 入口与架构校验、ffmpeg 文件名 / chmod / 架构探测、签名环境变量、安装器 / 卸载器形为、安装器静默参数、release metadata）都集中于 [`desktop/scripts/platform-profile.mjs`](desktop/scripts/platform-profile.mjs)。`desktop/electron-builder.yml` 仅负责用 `extends:` 组合 [`electron-builder.common.yml`](desktop/electron-builder.common.yml) + [`electron-builder.mac.yml`](desktop/electron-builder.mac.yml) + [`electron-builder.win.yml`](desktop/electron-builder.win.yml) + [`electron-builder.linux.yml`](desktop/electron-builder.linux.yml)。增减新 OS 仅意味着：（1）在 `platform-profile.mjs` 增一条 profile；（2）新增一份 `electron-builder.<os>.yml` fragment 并在主文件 `extends` 中加入；（3）如果 profile.signing.hostArchRequired 不是 `x64/arm64`、或 ffmpeg/python 入口不一致，更新 [`test/desktop-runtime.test.ts`](test/desktop-runtime.test.ts) 的 snapshot 子例。**不允许在任何业务文件（`src/server/**`、`desktop/main.ts`、`desktop/agent-host-supervisor.ts`、`scripts/**`）重新引入 `process.platform === '...'` 分支、`path.sep` 拼接的边界判定、或 `.exe` 字符串拼接**；一律走现成 helper：`isWithin`（来自 `src/server/util/path.ts`）、`toPosixPath` / `relativePosixPath`（同上）。磁盘序列化一律 POSIX；内存判定一律 `path.relative`；混合写法在 review 阶段会被打回。同一 `npm run desktop:pack` 命令会根据 `process.platform` 自动走对应 profile，无需为 Windows 维护独立脚本。
+- **跨平台维护纪律**：所有 OS 相关的事实（python 入口与架构校验、ffmpeg 文件名 / chmod / 架构探测、签名环境变量、安装器 / 卸载器形为、安装器静默参数、release metadata）都集中于 [`desktop/scripts/platform-profile.mjs`](desktop/scripts/platform-profile.mjs)。`desktop/electron-builder.yml` 仅负责用 `extends:` 组合 [`electron-builder.common.yml`](desktop/electron-builder.common.yml) + [`electron-builder.mac.yml`](desktop/electron-builder.mac.yml) + [`electron-builder.win.yml`](desktop/electron-builder.win.yml) + [`electron-builder.linux.yml`](desktop/electron-builder.linux.yml)。增减新 OS 仅意味着：（1）在 `platform-profile.mjs` 增一条 profile；（2）新增一份 `electron-builder.<os>.yml` fragment 并在主文件 `extends` 中加入；（3）如果 profile.signing.hostArchRequired 不是 `x64/arm64`、或 ffmpeg/python 入口不一致，更新 [`test/suites/desktop-runtime.test.ts`](test/suites/desktop-runtime.test.ts) 的 snapshot 子例。**不允许在任何业务文件（`src/server/**`、`desktop/main.ts`、`desktop/agent-host-supervisor.ts`、`scripts/**`）重新引入 `process.platform === '...'` 分支、`path.sep` 拼接的边界判定、或 `.exe` 字符串拼接**；一律走现成 helper：`isWithin`（来自 `src/server/util/path.ts`）、`toPosixPath` / `relativePosixPath`（同上）。磁盘序列化一律 POSIX；内存判定一律 `path.relative`；混合写法在 review 阶段会被打回。同一 `npm run desktop:pack` 命令会根据 `process.platform` 自动走对应 profile，无需为 Windows 维护独立脚本。
 
 ## 发布流程
 
@@ -103,13 +103,14 @@ npm run test:pi-smoke             # 真实本机 Pi RPC 冒烟（不纳入默认
 1. 在 `desktop/scripts/platform-profile.mjs` 增加一个 PLATFORM_PROFILES 条目，镜像 mac/win 的 schema（python / ffmpeg / signing / release）。在 `PROCESS_PLATFORM_TO_BUILDER` 中加 `linux: 'linux'`（或你期望的键）。
 2. 新增 `desktop/electron-builder.<os>.yml`，仅含 `<os>:` 顶层 section + 安装器 segment；并在 `desktop/electron-builder.yml` 的 `extends` 列表中加上。
 3. （仅以 ffmpeg / Python 为 source native binary 的 OS）安装 `desktop/scripts/check-desktop-release.mjs` 中所需的签名检测分支或删除不适用分支。
-4. 同步 [`test/desktop-runtime.test.ts`](test/desktop-runtime.test.ts) 的 `PLATFORM_PROFILES` 子例（添加条目、赢 OS-特定约定），保证后续回归被防住。
+4. 同步 [`test/suites/desktop-runtime.test.ts`](test/suites/desktop-runtime.test.ts) 的 `PLATFORM_PROFILES` 子例（添加条目、赢 OS-特定约定），保证后续回归被防住。
 5. 考虑是否需要安装器冒烟（mac/win 使用 NSIS / DMG；Linux 可使用 `scripts/desktop-smoke.mjs` 默认会验证已打包产物）。
 
 完成后，所有运行时脚本、`package.json` 与 React 代码不需要任何改动。
 
 ## 文档索引
 
+- [docs/README.md](docs/README.md) — 当前说明、后续计划、发布与验收入口
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 系统边界、依赖方向与模块职责（架构权威）
 - [docs/CHANGELOG.md](docs/CHANGELOG.md) — 按 Keep a Changelog 维护的发布历史
 - [工作台视觉优化 PLAN](<docs/工作台视觉优化 PLAN.md>) — Light / Dark / Sand 三主题视觉规则、实施阶段与验收标准（待实施）

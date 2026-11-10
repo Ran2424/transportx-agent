@@ -1,17 +1,17 @@
 # TransportX Agent 架构
 
-- 源码版本：3.24.1（未发布）；最近正式发布为 3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
+- 源码版本：3.24.2（未发布）；最近正式发布为 3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-10-31
-- 打包 Profile：macOS arm64（DMG + ZIP 更新包）、Windows x64（NSIS）与实验性 Linux x64（DEB 测试包，尚未通过 UOS 实机验收或正式发布）
+- 更新日期：2026-11-10
+- 打包 Profile：macOS arm64（DMG + ZIP 更新包）、Windows x64（NSIS）与实验性 Linux x64（默认 DEB、显式选择 RPM 的测试构建，目标系统实机验收与正式发布另行记录）
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
 
-模型推理由配置的 Provider 提供，可使用远程 API 或本地服务；仓库没有自研模型推理引擎。本文以当前源码、Module manifest 和打包配置为依据，历史方案仅用于了解背景。正式发布状态与源码实现分开记录，见 [CHANGELOG](CHANGELOG.md) 与 [发布记录](releases/3.23.0.md)。
+模型推理由配置的 Provider 提供，可使用远程 API 或本地服务；仓库没有自研模型推理引擎。本文以当前源码、Module manifest 和打包配置为依据，历史方案仅用于了解背景。正式发布状态与源码实现分开记录，见 [CHANGELOG](CHANGELOG.md) 与 [发布记录](releases/3.24.0.md)。
 
 阅读顺序：第 2 节看进程与技术栈，第 3 节看执行闭环与功能位置，第 5 节看模块装配和依赖，第 4、6、7 节看状态与资源边界。
 
-工作区/会话整改正在集成分支实施；下文描述当前源码，完整 A/B 门槛及跨平台交付尚未完成。范围见 [整改 PLAN](<工作区与会话机制整改 PLAN.md>)，验证状态见 [P0 记录](<工作区与会话机制整改 P0 记录.md>)。
+工作区/会话核心整改已合入 main。后续高级预览、管理体验与验收约束见 [整改 PLAN](<工作区与会话机制整改 PLAN.md>)，历史实施证据见 [P0 记录](<工作区与会话机制整改 P0 记录.md>)；两者中的阶段快照不覆盖本文和当前源码。
 
 ## 1. 项目目录速览
 
@@ -45,7 +45,7 @@ pi-tau-traffic/
 
 ![TransportX Agent 整体架构与执行流程](./images/architecture-overview-zh-workbench.png)
 
-[可编辑 SVG](./images/architecture-overview-zh-workbench.svg) · [上一版图](./images/architecture-overview-zh-workbench-v1.png) · [原始架构图](./images/architecture-overview-zh.png)
+[可编辑 SVG](./images/architecture-overview-zh-workbench.svg)
 
 实线表示运行时请求、调用或结果；虚线表示模块装配。图中的 Host 边框表示会话与资源管理边界：Pi RPC 是 Host 启动的独立进程，Python 可由 Pi 工具或 Host 领域服务调用；Module 不是独立服务。当前 Supervisor 在 macOS 使用 `utilityProcess.fork`，Windows 使用 Electron 可执行文件配合 `ELECTRON_RUN_AS_NODE=1` 启动 Node 子进程。CLI 自行启动 Host 子进程；Web 模式直接运行 Host，均使用同一组会话与领域服务。Pi 的基础工具读写任务文件，部分 Extension 直接发布资源或持久化状态；Host 负责对外提供经过校验的文件与资源。文件与资产的具体边界见第 3.4、4、6 节。
 
@@ -53,7 +53,7 @@ pi-tau-traffic/
 
 Workbench 采用 Eager Registration + Lazy Activation：计划内 Extension 初始化时完整注册，新的受管会话首请求只开放上述四工具与 `manage_capabilities`。管理工具以 discover/inspect/status 只读查询，以 enable(moduleId) 开放该模块全部来源和契约核对合格的工具；Module 依赖只影响装配，不传播 active。归属通过 Host 已核验 Plan 的精确入口与 Pi sourceInfo 的 realpath 相等派生，独立包不需进入核心工具表。Pi 仍是唯一 Registry 与 Agent Runtime，enable 不安装模块、不启动业务、不授予执行权限。
 
-`transportx-tool-activation/v1` custom entry 是唯一开放状态恢复记录：assembly 保存初始化成员，enable 保存本分支成功意图；启动、reload、恢复与分支导航从有效分支重建，压缩不依赖模型记忆，不重放业务。成员漂移拒绝启用，需新会话装配；运行中晚注册不支持，已有核对点诊断不兼容，不增加监听器。新安装/更新不改变已有计划；冻结旧计划没有该模块时不注入额外 Extension。Bridge 在开放事件重新采样，inactive 且来源/Schema 合格为待启用，执行和授权仍由原工具/Host 判断。实测及边界见 [验收记录](<Module 工具按需启用验收.md>)。
+`transportx-tool-activation/v1` custom entry 是唯一开放状态恢复记录：assembly 保存初始化成员，enable 保存本分支成功意图；启动、reload、恢复与分支导航从有效分支重建，压缩不依赖模型记忆，不重放业务。成员漂移拒绝启用，需新会话装配；运行中晚注册不支持，已有核对点诊断不兼容，不增加监听器。新安装/更新不改变已有计划；冻结旧计划没有该模块时不注入额外 Extension。Bridge 在开放事件重新采样，inactive 且来源/Schema 合格为待启用，执行和授权仍由原工具/Host 判断。历史实测数据见 [验收数据](acceptance/module-tool-activation.json)。
 
 ### 2.2 技术栈分工
 
@@ -118,6 +118,8 @@ Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一
 ### 2.6 Pi、Python 与 ffmpeg
 
 开发启动 `npm run desktop:dev` 和 `./start.sh` 会读取项目根目录的可选 `.env.local`，其中可设置 `TAU_PYTHON_COMMAND` 为目标环境的解释器绝对路径；已导出的同名环境变量优先，未配置时仍使用 PATH 中的 `python3`。`.env.local` 不入 Git，可参考 `.env.example`，不修改全局 shell PATH。Host 将选定解释器传给 Pi 的同名变量及会话上下文；脚本、依赖探测和 `-m pip` 应使用同一解释器。正式安装包不读取此开发配置，继续使用内置运行时机制。
+
+Host 通过 `TRANSPORTX_FONT_DIR` 注入内置思源黑体、思源宋体和 JetBrains Mono 的原生字体目录，桌面包将其解包为 Python 可读取的物理路径。浏览器字体从本地 WOFF2 加载；消息与报告中文使用宋体、控件中文使用黑体，英文和数字优先调用系统 Times New Roman，缺失时回退内置字体。PDF 在渲染进程嵌入字体并等待加载，不通过 Host IPC 传递字体 Base64。
 
 会话运行生命周期由 Host 内部管理，用户不需要手动激活。打开会话、查看地图/视频/引用/文档、保存选区上下文和导出地图截图使用持久会话上下文，不启动 Pi；发送消息或执行模型设置、压缩等操作时按需启动 Pi RPC 进程，空闲运行实例可由 Host 复用或切换。界面只呈现发送、生成、等待交互及失败等任务状态，不以“已保存/已激活”区分历史会话与运行实例。工作区存在未完成任务或交互时，切换执行必须由用户确认，运行诊断页保留进程与租约信息。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
@@ -247,9 +249,9 @@ Canvas 是共享视图底层，不等同于 Document，也不承接领域计算�
 - 附件先上传到任务工作区，再以 `attachmentIds` 关联后续消息；服务端再次校验归属、状态、真实路径和文件存在性后才向 Pi 提供上下文。
 - File、Preview、Geo 和 Spatial Analysis 以活动 Session cwd 为边界。Citation/Video 还可读取会话计划中明确解析的 Knowledge/Data 资产根目录，并将派生资源发布到当前任务。模块资产不必复制进 cwd；边界校验不能简化成“只允许读取 cwd”。
 - 用户可从地图提交要素、点位、矩形或当前视野四类 Geo Context，并显式附到下一轮消息。Agent 通过 `inspect_map_context` 读取本轮上下文，也可用 `request_geo_input` 等待用户在指定地图 revision 上补充输入；提交、取消、超时、中止和地图失效都有明确终态。
-- 地图截图由工作台按当前画面、图例和说明生成 PNG，再写入当前任务目录。截图不扩大资源访问范围。
+- Geo 1.9.0 的地图浮层显示已开启图层的符号、指标、连续色带及完整分类或大小图例，图层显隐在设置中管理；浮层可折叠、拖动、键盘移动和调整尺寸。截图按当前图层显隐生成完整阅读图例，遵守 `legend` 开关；空间不足时提示调整，不截断分类。地图说明附在 PNG 下方，再写入当前任务目录。截图不扩大资源访问范围。
 - Spatial Analysis 只处理当前会话的 GeoJSON，使用受控 Python 生成 WGS84 GeoJSON 与包含输入、参数、计数和哈希的 manifest，再发布到 Geo 界面。
-- Spatial Extension 1.2.0 将 Pi `toolCallId` 与 AbortSignal 传给原 Host 路由（调用 ID 不授予权限）；130 秒客户端时限覆盖既有 120 秒 Python 时限。Host 保留最终语义/资源校验，输入拒绝不创建成果目录，正常响应关闭不触发取消。结果校验后原子写入 manifest，可选 Citation 失败继续返回 warning。客户端不重试；丢响应、协议无法确认或未确认取消返回 `spatial_result_unknown`，Pi `tool_result` 将其标记为错误，保留已有成功结果的 `tau-spatial-analysis` 格式。工作台显示“结果未知”，本轮有未确认分析时不提供整轮准备重试；已确认取消单独显示。尚无持久 Invocation 查询或跨 Host 重启的重复保护，需核验任务内已有 manifest/文件，不能据没有 HTTP 响应推断未提交。
+- Spatial Extension 1.4.0 将 Pi `toolCallId` 与 AbortSignal 传给原 Host 路由（调用 ID 不授予权限）；130 秒客户端时限覆盖既有 120 秒 Python 时限。Host 保留最终语义/资源校验，输入拒绝不创建成果目录，正常响应关闭不触发取消。结果校验后原子写入 manifest，可选 Citation 失败继续返回 warning。客户端不重试；丢响应、协议无法确认或未确认取消返回 `spatial_result_unknown`，Pi `tool_result` 将其标记为错误，保留已有成功结果的 `tau-spatial-analysis` 格式。工作台显示“结果未知”，本轮有未确认分析时不提供整轮准备重试；已确认取消单独显示。持久执行确认与重启核验见下文 Spatial L3 说明；丢失响应时通过 `tau_spatial_execution` 查询既有事实，不自动重算。
 - Video 资源与指标由 Agent Host 使用当前会话冻结的 Video Capability ffmpeg/ffprobe 处理；发布版不得依赖系统 `PATH`。
 
 ### 3.5 引用登记、交付成果与版本读取
@@ -302,7 +304,7 @@ Kernel 通过分页列表和按 Evidence ID 查询详情。列表包含来源元
 - 可靠命令的 pending/unknown 记录不会因 TTL 淘汰。完成记录保留 10 分钟或 200 条容量范围，Host 重启不保证去重；未知结果禁止自动重发，不提供无条件 exactly-once。
 - Snapshot 表示当前分支及 live overlay。每次 Host 启动生成 UUID，WS 事件递增 revision；客户端以请求代次和连接代次拒绝迟到结果，回放快照读取期间更新的事件。缓冲超限拒绝快照并安排后续校正。
 - activate、close、迁移和删除共用工作区运行门禁，短元数据 Writer 租约只覆盖读改写提交；静态校验、信任和 RPC 握手期间取消不会在迟到结果后启动 Pi。删除必须等待 Writer 和受管作业停止，停止失败保留文件。Host 最多 32 个运行实例、4 个受管作业/分析进程，每会话最多 2 作业；这些限制不覆盖 Pi bash 自行启动的全部进程。
-- 同一 Agent 目录只允许一个 Host；正常退出通过 IPC 释放租约，异常退出后仅在确认 owner PID 已退出时自动回收。owner 文件按 nonce 分代，回收者只能删除已检查的那一代；兼容旧 owner.json，缺失、损坏或进程状态无法确认时拒绝接管；settings/models/附件索引损坏拒绝覆盖并保全证据。资源策略、恢复步骤与兼容范围见 [整改 ADR](ADR-架构整改边界.md)。
+- 同一 Agent 目录只允许一个 Host；正常退出通过 IPC 释放租约，异常退出后核对上一代 Host、Pi 与受管进程，仅在确认退出、PID 已复用或跨开机代次时恢复。owner 文件按 nonce 分代，回收者只能删除已检查的那一代；身份不明、租约元数据损坏或同次开机未记录 PID 时拒绝接管，恢复过程不发送终止信号。settings/models/附件索引损坏拒绝覆盖并保全证据。
 
 ### 4.2 历史引用迁移与会话恢复
 
@@ -492,7 +494,7 @@ desktop/electron-builder.yml
 
 macOS 产物包含 DMG、供自动更新使用的 ZIP、`latest-mac.yml`、blockmap、SHA-256 与安装说明；Windows 产物包含 NSIS setup、`latest.yml` 与校验文件。正式发行的签名预检要求 macOS Developer ID + 公证、Windows Authenticode + 可信时间戳；已发布版本的实际签名状态以对应发布记录为准。
 
-Linux x64 仅提供实验性 DEB 构建，不要求 macOS/Windows 签名凭据；Actions 在 Linux 主机上验证实际安装包、内置 Python、桌面启动与卸载，并检查 x64 ELF 的 glibc 2.28 基线。安装包只作为 CI 测试产物保存，未上传官网或正式更新源，UOS 实机验收仍待完成；当前不提供 Linux Video Capability。构建与目标机验收见 [Linux x64 测试安装包](releases/linux-x64-test.md)。
+Linux x64 默认提供实验性 DEB 构建，也可显式生成麒麟 V10 原生 RPM；RPM 依赖集中在平台 profile，CI 复用同次 Linux 应用产物并在 Rocky Linux 8 验证安装、内置运行时与卸载。不要求 macOS/Windows 签名凭据；DEB Actions 验证实际安装包、内置 Python、桌面启动与卸载，并检查 x64 ELF 的 glibc 2.28 基线。安装包只作为 CI 测试产物保存，未上传官网或正式更新源，UOS 与麒麟实机验收仍待完成；当前不提供 Linux Video Capability。构建与目标机验收见 [Linux x64 测试安装包](releases/linux-x64-test.md)。
 
 Video Capability 同时显式设置 `TRANSPORTX_VIDEO_MODULE_DIR` 与 `TRANSPORTX_FFMPEG_RUNTIME_DIR` 后运行 `npm run video:pack`，独立生成 `release/modules/transportx-video-<version>-<platform>-<arch>.zip`。该步骤编译自包含 Extension，复制并实际启动 ffmpeg/ffprobe 完成版本和架构检查，再将路径、版本、架构、SHA-256 与许可证说明写入归档中的 Module manifest。ffmpeg runtime 没有仓库或个人开发目录的隐式默认值；源码目录不可代替平台专属 ZIP 安装。
 
@@ -533,7 +535,7 @@ Geo runtime ────────────────> contracts + MapLib
 
 Citation 升级与边界回归分别落在 [citation-utils.test.ts](../test/suites/citation-utils.test.ts)、[desktop-launch.test.ts](../test/suites/desktop-launch.test.ts)、[http-routes.test.ts](../test/suites/http-routes.test.ts)；覆盖迁移备份、保留历史 ID、Host 就绪前迁移、单 Writer、损坏注册表恢复拦截、引用版本错误与分次登记。Canvas 的身份、revision、Context 与 Adapter 校验在 [canvas-service.test.ts](../test/suites/canvas-service.test.ts)，浏览器加载与定位在 [document-smoke.mjs](../scripts/harness/document-smoke.mjs)。这些检查合并在现有场景内，不增加测试注册层。
 
-历史整改的测试证据见 [执行计划](架构整改执行计划.md)，各版本对外验收与签名状态见 `docs/releases/` 和 CHANGELOG。默认套件、fake Pi 浏览器、真实 Pi + 本地模拟 Provider、目标 OS 实机和签名发布各自证明不同边界；通过本地回归不代表正式安装包已发布或签名验收完成。
+各版本对外验收与签名状态见 `docs/releases/` 和 CHANGELOG；已完成整改的阶段记录可从 Git 历史查询。默认套件、fake Pi 浏览器、真实 Pi + 本地模拟 Provider、目标 OS 实机和签名发布各自证明不同边界；通过本地回归不代表正式安装包已发布或签名验收完成。
 
 ## 开发与发布记录
 
@@ -547,12 +549,12 @@ Spatial L3 的执行确认保存于用户数据根 `executions/spatial/<owner-ha
 
 Module Authoring 1.2.0 提供 `tau_module_package`：inspect 只读取并验证当前任务内的模块目录，install 调用原 Module Installer / Native Trust 决定，不执行包代码。独立的 session service token 与已选择的 Module 限定该入口；没有开放任意 Host 代码或 RPC 网关。Agent 沿制作 Skill 保留用户程序、核查依赖/样例、生成目录包，再在用户请求安装时发起安装；凭据通过外部配置，缺依赖或配置时交付草稿并说明未执行。安装影响新任务；禁用影响新选择，显式恢复的已受信任旧任务仍按原精确版本运行；卸载须先关闭占用任务，已有历史与成果不删除。
 
-分阶段证据见 [P0 记录](<Tool 与插件架构优化 P0 记录.md>)、[P1 记录](<Tool 与插件架构优化 P1 记录.md>)、[P2 记录](<Tool 与插件架构优化 P2 记录.md>)、[P3 记录](<Tool 与插件架构优化 P3 记录.md>)。初版制作与生命周期证据见 [P4 记录](<Tool 与插件架构优化 P4 记录.md>)。目标平台正式发布验收单独记录，不等同于初版跑通。
+工具与插件初版改造已完成，阶段记录不再作为现行文档入口。目标平台正式发布验收单独记录，不等同于初版跑通。
 
 
 ### CAD 可选能力
 
-`com.transportx.cad` 1.2.0 随应用提供，未列入 Workbench 默认依赖；新任务选项展示默认依赖闭包外的内置 Capability，按精确版本显式选择。恢复旧计划不会自动加入 CAD。其 Module 贡献 Skill、Extension、Python 引擎与 Canvas View 声明；平台提供固定 CadService、受审核的 Adapter/Renderer，以及包含 ezdxf 的 Python runtime。这不等同于第三方 ZIP 可以动态安装任意 Host 服务或前端代码。
+`com.transportx.cad` 1.4.0 随应用提供，未列入 Workbench 默认依赖；新任务选项展示默认依赖闭包外的内置 Capability，按精确版本显式选择。恢复旧计划不会自动加入 CAD。其 Module 贡献 Skill、Extension、Python 引擎与 Canvas View 声明；平台提供固定 CadService、受审核的 Adapter/Renderer，以及包含 ezdxf 的 Python runtime。这不等同于第三方 ZIP 可以动态安装任意 Host 服务或前端代码。
 
 四个工具 `cad_inspect` / `cad_draw` / `cad_verify` / `cad_execution` 使用现有生成契约、批准的 Host 输入校验、bundle 和按需启用流程；Canvas 作为模块依赖只参与装配，不传播工具 active。工具由 Pi 预注册；Node Host 维护受控资源与执行确认，PythonRunner 按结构化参数调用引擎。Canvas 1.4.0 支持从工作区或 Agent 打开同一 DXF；首次打开按原始字节建立 r1 快照，重新打开复用图纸，不增加 revision，未知单位可查看，编辑需明确单位。
 

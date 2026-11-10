@@ -5,6 +5,7 @@
 - 核查基线：main `6aa8d19`，平台 3.23.2 未发布；#89/#92 的三平台 CI 通过，不代表新安装包已发布或全部真实用户历史已验证。
 - 问题来源：[#41 同一工作文件夹持续工作](https://github.com/Ran2424/transportx-agent/issues/41)、[#87 改名与目录名称](https://github.com/Ran2424/transportx-agent/issues/87)、[#88 空会话与残留目录](https://github.com/Ran2424/transportx-agent/issues/88)，以及用户补充的整改意见。
 - 当前架构权威：[ARCHITECTURE.md](ARCHITECTURE.md)。本文保留设计约束，完成与待办以 P0 记录的最新进展为准；历史阶段表不是完成声明。
+- 阅读提示（2026-11-10）：本文保留 2026-10-26 的方案与阶段划分。后续代码已将会话运行生命周期改为内部按需准备，工作区内新建会话使用显式高级配置，不再自动继承工作区默认配置；当前行为以架构说明、CHANGELOG 和源码为准。
 - 本次修订：唯一新 API 保留，启动改为“全局安全就绪 + 工作区独立迁移就绪”；异常历史不阻塞无关工作区。补充主分支原子切换、精确备份/空间预检、历史资源链接投影、客户端失败安全及锁异常恢复；T1–T4 和各批次实施结果见 P0 记录，不以设计表格代替运行验收。
 
 ## 1. 决策与范围
@@ -35,7 +36,7 @@
 |---|---|---|
 | 新建会话总是分配时间戳子目录；cwd 表示父目录 | [session-workspace.ts](../src/server/session-workspace.ts)、[sessions.ts](../src/server/sessions.ts) 的 create | 将目录分配与会话创建拆开；已有目录只通过已登记的 workspaceId 复用 |
 | 创建目录、保存计划后启动 Pi，成功才加入 live map | [sessions.ts](../src/server/sessions.ts) | 持久会话提交先于 Pi 启动；启动失败仍可见、可重试 |
-| 历史按 cwd 聚合，只收录有用户消息的 JSONL | [session-history-handler.ts](../src/server/session-history-handler.ts)、[session-history-reader.ts](../src/server/session-history-reader.ts) | 已登记会话由 Manifest 列表驱动；JSONL 仅提供消息与摘要，不决定会话是否存在 |
+| 历史按 cwd 聚合，只收录有用户消息的 JSONL | 原 `session-history-handler.ts`（已移除）、[session-history-reader.ts](../src/server/session-history-reader.ts) | 已登记会话由 Manifest 列表驱动；JSONL 仅提供消息与摘要，不决定会话是否存在 |
 | 一个 cwd 只有一份 resolved-session-plan*.json | [session-assembly.ts](../src/server/session-assembly.ts) | 每条会话保存独立计划，并按会话定位加载 |
 | Pi 实例构造时生成 id；恢复会产生新的运行标识 | [sessions.ts](../src/server/sessions.ts)、[session-metadata.ts](../src/server/session-metadata.ts) | 增加持久 conversationId，不将 live id 当作长期身份 |
 | 附件元数据和消息关联写入同一份 attachments.json | [session-attachments.ts](../src/server/session-attachments.ts) | 保留共享文件库，拆出按会话保存的消息关联 |
@@ -578,7 +579,7 @@ catalog/全局标记损坏时先核对备份、Manifest、源清单和墓碑；�
 
 ## 9. 分阶段实施与验收
 
-所有条目均为待验收。本次只修订方案，不改运行代码、执行迁移或提升版本。实现走分支 → PR；Module 实际改动仍独立升版本。
+以下为原实施阶段和验收标准，不表示所有条目仍未交付。核心 PR 已合入 main，实际实施范围和证据见 P0 记录及 CHANGELOG；高级预览、管理体验与未完成的平台验收分别跟进。后续实现走分支 → PR；Module 实际改动仍独立升版本。
 
 开发顺序为“技术验证 → PR 1（新结构/API/迁移器）→ PR 2A（核心多会话与全部客户端）→ PR 2B（高级预览）→ PR 3（管理体验）”。PR 1 可以单独评审，但不能单独合入可发布的 main；PR 1/2A 先合入同一集成分支，完成构建、兼容方向、迁移及端到端验收后，通过一次完整合并进入 main。主分支、可发布标签及安装包不得出现“新服务端 + 旧客户端”的中间状态，不为开发阶段增设旧 API 转发器。
 

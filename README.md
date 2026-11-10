@@ -108,6 +108,7 @@ The desktop app is built with Electron and React. A local Node.js Agent Host own
 
 | Guide | Covers |
 |---|---|
+| [Documentation index](./docs/README.md) | Current guides, active plans, release records, and validation evidence |
 | [Architecture](./docs/ARCHITECTURE.md) | Process boundaries, data flow, resource model, and security constraints |
 | [Changelog](./docs/CHANGELOG.md) | Releases and compatibility changes |
 
