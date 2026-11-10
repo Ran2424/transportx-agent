@@ -4,7 +4,7 @@
 
 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/)，项目版本遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。日期采用 ISO 8601（`YYYY-MM-DD`）。
 
-## 3.24.1 - 未发布
+## 3.24.2 - 未发布
 
 ### Added
 
