@@ -46,3 +46,7 @@ Their upstream license texts and copyright notices are distributed with the corr
 ## PDF.js
 
 PDF previews use Mozilla PDF.js (`pdfjs-dist`, Apache-2.0). Its license is included with the locally bundled runtime assets at `pdfjs/LICENSE`; font and WebAssembly notices are retained in the corresponding asset directories.
+
+## Bundled typefaces
+
+The workbench includes Adobe Source Han Sans SC, Adobe Source Han Serif SC and JetBrains Mono under the SIL Open Font License 1.1. Font binaries, original copyright/license texts and pinned upstream sources are distributed in `dist/web/fonts/`; see `src/web/public/fonts/README.md` in the source tree. These assets load locally without installing fonts or contacting a font service.

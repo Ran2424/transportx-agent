@@ -1,4 +1,7 @@
 const crypto = require('node:crypto');
+const path = require('node:path');
+import { REACT_STATIC_DIR } from './config.js';
+import { embedReportFonts } from './report-fonts.js';
 
 type UtilityParentPort = {
   on(event: 'message', listener: (event: { data: unknown }) => void): void;
@@ -41,7 +44,7 @@ function documentHtml(title: string, reportHtml: string) {
 <style>
   @page { size: A4; margin: 18mm 16mm 20mm; }
   * { box-sizing: border-box; }
-  html { color: #242321; background: #fff; font-family: "Songti SC", "Noto Serif CJK SC", "Microsoft YaHei", sans-serif; }
+  html { color: #242321; background: #fff; font-family: "Times New Roman", "TransportX Serif", serif; }
   body { margin: 0; font-size: 10.5pt; line-height: 1.75; }
   article { max-width: none; margin: 0; }
   h1, h2, h3, h4 { break-after: avoid; margin: 1.45em 0 .55em; line-height: 1.3; color: #171614; }
@@ -49,7 +52,7 @@ function documentHtml(title: string, reportHtml: string) {
   p, ul, ol, blockquote { margin: 0 0 .85em; }
   li { break-inside: avoid; }
   blockquote { padding: .55em 1em; border-left: 2px solid #bd6842; color: #5c5854; }
-  code { padding: .12em .35em; border-radius: 3px; background: #f3f0eb; font: 8.5pt/1.45 ui-monospace, monospace; }
+  code { padding: .12em .35em; border-radius: 3px; background: #f3f0eb; font: 8.5pt/1.45 "TransportX Mono", "TransportX Sans", monospace; }
   pre { overflow: hidden; padding: 10px; border: 1px solid #ddd7cf; background: #f7f5f1; white-space: pre-wrap; }
   pre code { padding: 0; background: transparent; }
   .table-wrapper { margin: 1em 0; overflow: visible; }
@@ -96,14 +99,15 @@ export async function renderReportPdf(title: string, reportHtml: string) {
       return /^(?:about:|data:)/.test(url) ? route.continue() : route.abort();
     });
     const page = await context.newPage();
-    await page.setContent(html, { waitUntil: 'load' });
+    await page.setContent(await embedReportFonts(html, path.join(REACT_STATIC_DIR, 'fonts')), { waitUntil: 'load' });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await page.emulateMedia({ media: 'print' });
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
       displayHeaderFooter: true,
       headerTemplate: '<span></span>',
-      footerTemplate: '<div style="width:100%;padding:0 16mm;color:#999;font-size:7px;text-align:right"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
+      footerTemplate: '<div style="width:100%;padding:0 16mm;color:#999;font-family:Times New Roman,serif;font-size:7px;text-align:right"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
       margin: { top: '18mm', right: '16mm', bottom: '20mm', left: '16mm' },
     });
     await context.close();

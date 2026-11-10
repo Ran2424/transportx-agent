@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { documentSmoke, officeRefreshSmoke } from './harness/document-smoke.mjs';
-import { feedbackSmoke, composerSmoke, conversationStyleSmoke } from './harness/feedback-smoke.mjs';
+import { bundledFontSmoke, feedbackSmoke, composerSmoke, conversationStyleSmoke } from './harness/feedback-smoke.mjs';
 import { softwareUpdateSmoke } from './harness/software-update-smoke.mjs';
 import { localModelSmoke } from './harness/local-model-smoke.mjs';
 import { workspaceCleanupSmoke } from './harness/workspace-cleanup-smoke.mjs';
@@ -64,6 +64,7 @@ try {
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await page.locator('[data-testid="agent-status"]:is([data-state="connected"], [data-state="streaming"])').waitFor();
+  await bundledFontSmoke(page);
 
   await page.getByRole('button', { name: '打开工作区' }).first().click();
   const dialog = page.getByRole('dialog', { name: '打开工作区' });

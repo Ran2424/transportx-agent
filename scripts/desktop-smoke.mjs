@@ -113,20 +113,27 @@ try {
   });
   if (!codecSupport.h264 || codecSupport.h264 === 'no') throw new Error(`Packaged renderer cannot play H.264 MP4: ${JSON.stringify(codecSupport)}`);
   console.log(`[desktop-smoke] renderer video codec support OK (${codecSupport.h264})`);
-  const oversizedDataUrlPayload = 'A'.repeat(1_500_000);
+  // This report plus the bundled font data exceeded the 50 MiB IPC limit.
+  const oversizedDataUrlPayload = 'A'.repeat(6 * 1024 * 1024);
   const pdfResponse = await fetch(`${new URL(window.url()).origin}/api/reports/pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...protocolHeaders },
-    body: JSON.stringify({ title: '桌面打包验证', html: `<article data-payload="${oversizedDataUrlPayload}"><h1>TransportX</h1><p>Desktop PDF bridge</p></article>` }),
+    body: JSON.stringify({ title: '桌面打包验证', html: `<article data-payload="${oversizedDataUrlPayload}"><h1>TransportX 桌面验证</h1><p>Desktop PDF bridge 2026</p></article>` }),
   });
   const pdf = Buffer.from(await pdfResponse.arrayBuffer());
   if (!pdfResponse.ok || pdf.subarray(0, 4).toString() !== '%PDF') throw new Error(`Desktop PDF bridge failed: ${pdfResponse.status} ${pdf.toString('utf8', 0, 200)}`);
+  if (!pdf.toString('latin1').includes('SourceHanSerifSCVF')) throw new Error('Desktop PDF bridge did not embed the bundled report font');
+  const hasTimesNewRoman = await window.evaluate(async () => {
+    try { await new FontFace('Times availability probe', 'local("Times New Roman")').load(); return true; }
+    catch { return false; }
+  });
+  if (hasTimesNewRoman && !pdf.toString('latin1').includes('TimesNewRoman')) throw new Error('Desktop PDF bridge did not use system Times New Roman');
   const downloadsDir = path.join(temporaryHome, 'Downloads');
   await app.evaluate(({ app }, value) => app.setPath('downloads', value), downloadsDir);
   const downloadedPdfPath = await window.evaluate(async (origin) => {
     const response = await fetch(`${origin}/api/reports/pdf/download`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' },
-      body: JSON.stringify({ title: '桌面下载验证', html: '<article><h1>TransportX</h1><p>Desktop download test</p></article>' }),
+      body: JSON.stringify({ title: '桌面下载验证', html: `<article data-payload="${'A'.repeat(6 * 1024 * 1024)}"><h1>TransportX</h1><p>Desktop download test</p></article>` }),
     });
     const { url } = await response.json();
     return await window.transportxDesktop.download(url);

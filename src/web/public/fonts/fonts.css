@@ -1,0 +1,32 @@
+/* Bundled fonts only: do not use local(), which can select a different version. */
+@font-face {
+  font-family: "TransportX Sans";
+  src: url("./SourceHanSansSC-VF.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 250 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TransportX Serif";
+  src: url("./SourceHanSerifSC-VF.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 250 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TransportX Mono";
+  src: url("./JetBrainsMono-VF.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "TransportX Mono";
+  src: url("./JetBrainsMono-Italic-VF.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 100 800;
+  font-display: swap;
+}

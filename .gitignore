@@ -42,6 +42,7 @@ references/pi-development-guide.md
 .plans/
 scenario/
 .tau/
+/tmp/
 /logs/
 evals/
 eval-results/

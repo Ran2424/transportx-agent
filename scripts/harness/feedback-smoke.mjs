@@ -231,6 +231,52 @@ export async function composerSmoke(page, baseUrl) {
   console.log('Composer smoke: IME events, delivery conditions, isolated drafts/uploads, refresh recovery, source preview/reuse, rejected prompts and late acknowledgement isolation passed.');
 }
 
+export async function bundledFontSmoke(page) {
+  const hasTimesNewRoman = await page.evaluate(async () => {
+    try { await new FontFace('Times availability probe', 'local("Times New Roman")').load(); return true; }
+    catch { return false; }
+  });
+  // Inspect rendered glyphs: a matching CSS family alone does not prove the font loaded.
+  await page.evaluate(async () => {
+    const probe = document.createElement('div');
+    probe.id = 'bundled-font-probe';
+    probe.className = 'message-content';
+    probe.style.cssText = 'position:fixed;left:-10000px;top:0';
+    probe.innerHTML = '<span id="font-ui" style="font-family:var(--tx-font-ui)">交通分析</span><span id="font-body">交通分析</span><strong id="font-bold">交通分析</strong><span id="font-latin-ui" style="font-family:var(--tx-font-ui)">Agent 2026</span><span id="font-latin-body">Agent 2026</span><strong id="font-latin-bold">Agent 2026</strong><em id="font-latin-italic">Agent 2026</em><code id="font-code">const flow = 123;</code><code id="font-cjk">交通流量</code><code id="font-italic" style="font-style:italic">const flow = 123;</code>';
+    document.body.append(probe);
+    await document.fonts.ready;
+  });
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument');
+    const latinBody = hasTimesNewRoman ? 'Times New Roman' : 'Source Han Serif SC VF';
+    const latinUi = hasTimesNewRoman ? 'Times New Roman' : 'Source Han Sans SC VF';
+    for (const [id, expected, custom = true] of [
+      ['font-ui', 'Source Han Sans SC VF'], ['font-body', 'Source Han Serif SC VF'], ['font-bold', 'Source Han Serif SC VF'],
+      ['font-latin-ui', latinUi, !hasTimesNewRoman], ['font-latin-body', latinBody, !hasTimesNewRoman],
+      ['font-latin-bold', latinBody, !hasTimesNewRoman], ['font-latin-italic', latinBody, !hasTimesNewRoman],
+      ['font-code', 'JetBrains Mono'], ['font-cjk', 'Source Han Sans SC VF'], ['font-italic', 'JetBrains Mono'],
+    ]) {
+      const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: `#${id}` });
+      const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+      assert.ok(fonts.length > 0, `${id} has rendered glyphs`);
+      assert.ok(fonts.every((font) => font.isCustomFont === custom && font.familyName === expected), `${id} uses ${expected}: ${JSON.stringify(fonts)}`);
+    }
+    const widths = await page.evaluate(() => {
+      const context = document.createElement('canvas').getContext('2d');
+      context.font = `16px ${getComputedStyle(document.documentElement).getPropertyValue('--tx-font-mono')}`;
+      return ['iiii', 'WWWW', '0000'].map((text) => context.measureText(text).width);
+    });
+    assert.ok(widths.every((width) => Math.abs(width - widths[0]) < .01), 'code letters and digits have equal advance widths');
+  } finally {
+    await cdp.detach();
+    await page.locator('#bundled-font-probe').evaluate((node) => node.remove());
+  }
+  console.log(`Fonts: bundled CJK/code, ${hasTimesNewRoman ? 'system Times New Roman' : 'bundled Latin fallback'}, bold, italic and monospaced advances passed.`);
+}
+
 export async function conversationStyleSmoke(page) {
   const directory = '.plans/style-upgrade-phase-one/validation';
   fs.mkdirSync(directory, { recursive: true });

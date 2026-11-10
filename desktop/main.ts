@@ -1,6 +1,7 @@
 const { hostPlatform } = require('../bin/host-platform.js');
 const { createDiagnosticLogger } = require('../bin/diagnostic-log.js');
 const { toPosixPath } = require('../bin/util/path.js');
+const { embedReportFonts } = require('../bin/report-fonts.js');
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -88,14 +89,16 @@ async function renderPdf(_title: string, html: string) {
     callback({ cancel: details.url !== reportUrl && !/^(?:about:|data:)/.test(details.url) });
   });
   try {
-    await fs.promises.writeFile(reportPath, html, 'utf8');
+    await fs.promises.writeFile(reportPath, await embedReportFonts(html, path.join(app.getAppPath(), 'dist', 'web', 'fonts')), 'utf8');
     await window.loadFile(reportPath);
+    // The isolated world can await fonts while report scripts remain disabled.
+    await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: 'document.fonts.ready.then(() => undefined)' }]);
     return await window.webContents.printToPDF({
       pageSize: 'A4',
       printBackground: true,
       displayHeaderFooter: true,
       headerTemplate: '<span></span>',
-      footerTemplate: '<div style="width:100%;padding:0 16mm;color:#999;font-size:7px;text-align:right"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
+      footerTemplate: '<div style="width:100%;padding:0 16mm;color:#999;font-family:Times New Roman,serif;font-size:7px;text-align:right"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
       margins: { top: 0.71, right: 0.63, bottom: 0.79, left: 0.63 },
     });
   } finally {

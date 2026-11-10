@@ -309,6 +309,16 @@ test('Desktop Host starts, serves health, releases its lease and rejects a secon
       assert.equal(launch.args[launch.args.indexOf('--system-prompt') + 1], ['PI_SYSTEM.md', hostPlatform.systemPrompt].map((file) => fs.readFileSync(path.join(promptRoot, file), 'utf8').trim()).join('\n\n'));
       assert.equal(launch.env.TAU_VIDEO_TOKEN, 'video-token');
       assert.equal(launch.env.TAU_CANVAS_TOKEN, 'canvas-token');
+      const { REACT_STATIC_DIR } = require('../../bin/config.js');
+      const { preferUnpackedPath } = require('../../bin/session-assembly.js');
+      assert.equal(launch.env.TRANSPORTX_FONT_DIR, preferUnpackedPath(path.join(REACT_STATIC_DIR, 'fonts', 'native')));
+      for (const filename of ['SourceHanSansSC-Regular.otf', 'SourceHanSerifSC-Regular.otf', 'JetBrainsMono-Regular.ttf']) {
+        assert.ok(fs.statSync(path.join(launch.env.TRANSPORTX_FONT_DIR, filename)).size > 100_000, 'injected plotting fonts are present');
+      }
+      const archivedFonts = path.join(root, 'TransportX 测试.app', 'resources', 'app.asar', 'dist', 'web', 'fonts', 'native');
+      const physicalFonts = path.join(root, 'TransportX 测试.app', 'resources', 'app.asar.unpacked', 'dist', 'web', 'fonts', 'native');
+      fs.mkdirSync(physicalFonts, { recursive: true });
+      assert.equal(preferUnpackedPath(archivedFonts), physicalFonts, 'packaged font paths preserve spaces and Unicode');
       assert.deepEqual(JSON.parse(launch.env.TRANSPORTX_DATA_ASSETS_JSON), { 'data:roads': '/assets/roads' });
       assert.deepEqual(JSON.parse(launch.env.TRANSPORTX_KNOWLEDGE_ASSETS_JSON), { 'knowledge:rules': '/assets/rules' });
     }
