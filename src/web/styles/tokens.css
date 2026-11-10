@@ -38,10 +38,11 @@
   --tx-control-lg: 36px;
 
   /* 字体 */
-  --tx-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --tx-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --tx-font-display: "Iowan Old Style", "Baskerville", Georgia, serif;
-  --tx-font-brand: "Bauhaus 93", Futura, "Arial Rounded MT Bold", sans-serif;
+  --tx-font-ui: "Times New Roman", "TransportX Sans", sans-serif;
+  --tx-font-body: "Times New Roman", "TransportX Serif", serif;
+  --tx-font-mono: "TransportX Mono", "TransportX Sans", monospace;
+  --tx-font-display: var(--tx-font-body);
+  --tx-font-brand: var(--tx-font-ui);
 
   /* 工作台面板状态切换：克制、连贯，避免打断分析节奏 */
   --tx-motion-panel: 320ms;
@@ -83,7 +84,7 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-mono: var(--tx-font-mono);
 }
 
 /* ============================================================

@@ -233,6 +233,8 @@ export async function conversationLayoutSmoke(page) {
         const threadStyle = getComputedStyle(thread);
         return {
           messageWidth: node.clientWidth,
+          threadWidth: thread.clientWidth,
+          columnWidth: node.closest('.conversation-workspace').clientWidth,
           available: thread.clientWidth - parseFloat(threadStyle.paddingLeft) - parseFloat(threadStyle.paddingRight),
           paragraphWidth: node.querySelector('p').clientWidth,
           tableWidth: node.querySelector('.table-wrapper').clientWidth,
@@ -251,7 +253,10 @@ export async function conversationLayoutSmoke(page) {
         assert.ok(metrics.scrollWidth <= metrics.viewportWidth + 1, 'tables and code do not overflow the conversation');
         assert.ok(metrics.codeScroll > metrics.codeWidth, 'long code scrolls locally');
         if (mode === 'narrow') assert.ok(metrics.tableScroll > metrics.tableWidth, 'wide table scrolls locally');
-        if (mode === 'wide') assert.ok(metrics.paragraphWidth < metrics.tableWidth - 100, 'wide tables are independent of the prose reading limit');
+        assert.ok(Math.abs(metrics.paragraphWidth - metrics.tableWidth) <= 1, 'paragraphs and tables share one content width');
+        assert.ok(Math.abs(metrics.paragraphWidth - metrics.codeWidth) <= 2, 'code blocks share the content width');
+        const expectedWidth = metrics.columnWidth <= 600 ? metrics.columnWidth : Math.min(metrics.columnWidth * .92, 1040);
+        assert.ok(Math.abs(metrics.threadWidth - expectedWidth) <= 2, 'content width follows the conversation panel instead of the window');
       }
       await page.evaluate(() => { for (let node = document.querySelector('.conversation-pane'); node; node = node.parentElement) node.scrollLeft = 0; });
       assert.equal(await page.locator('.workspace-header').evaluate((node) => node.getBoundingClientRect().left), 0, 'comparison screenshot keeps the whole workbench in frame');

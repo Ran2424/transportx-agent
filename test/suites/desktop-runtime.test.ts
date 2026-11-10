@@ -10,6 +10,7 @@ test('Desktop updates, shutdown and packaged runtimes enforce lifecycle and plat
   const builder = require('js-yaml').load(fs.readFileSync(path.join(process.cwd(), 'desktop/electron-builder.common.yml'), 'utf8'));
   assert.ok(builder.asarUnpack.includes('modules/**'), 'native module browsing needs complete physical module folders');
   assert.ok(builder.asarUnpack.includes('src/contracts/**'), 'unpacked extensions retain their relative contract imports');
+  assert.ok(builder.asarUnpack.includes('dist/web/fonts/native/**'), 'external Python can read physical plotting fonts');
   assert.ok(builder.asarUnpack.includes('dist/module-extensions/**'), 'remapped bundled entries must also be unpacked by their source path');
   const { CORE_TOOL_BINDINGS, coreModulePath } = require('../../bin/contracts/tool-interface.js');
   for (const moduleId of Object.keys(CORE_TOOL_BINDINGS)) {

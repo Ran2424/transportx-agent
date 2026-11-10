@@ -2,8 +2,8 @@
 @import "./styles/tokens.css";
 
 @theme {
-  --font-sans: "Avenir Next", "Helvetica Neue", sans-serif;
-  --font-display: "Iowan Old Style", "Baskerville", Georgia, serif;
+  --font-sans: var(--tx-font-ui);
+  --font-display: var(--tx-font-display);
 }
 
 /* ============================================================
@@ -675,7 +675,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 /* ============================================================
    Conversation Workspace
    ============================================================ */
-.conversation-workspace { --conversation-content-max-width: 1040px; container-type: inline-size; min-height: 0; flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: transparent; }
+.conversation-workspace { --conversation-content-max-width: min(92cqw, 1040px); container-type: inline-size; min-height: 0; flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: transparent; }
 .conversation-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; scroll-behavior: auto; }
 .conversation-thread { width: 100%; min-width: 0; max-width: var(--conversation-content-max-width); margin: 0 auto; padding: var(--space-6) var(--space-6) var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
 .execution-group { min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
@@ -688,10 +688,10 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .working-toggle.is-active .working-label { color: transparent; background: linear-gradient(110deg, var(--text-working) 35%, color-mix(in srgb, var(--text-working) 12%, transparent) 50%, var(--text-working) 65%); background-size: 240% 100%; background-clip: text; -webkit-background-clip: text; animation: working-shimmer 2s linear infinite; }
 @keyframes working-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .working-toggle.is-active .working-label { animation: none; background: none; color: var(--text-working); } }
-@container (max-width: 600px) { .conversation-thread { padding-inline: var(--space-4); } }
+@container (max-width: 600px) { .conversation-thread { max-width: 100%; padding-inline: var(--space-4); } }
 .compaction-status { width: fit-content; display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; color: var(--text-secondary); background: var(--selection-bg); border-left: 2px solid var(--status-info); font-size: 11px; }
 .conversation-message { min-width: 0; max-width: min(860px, 88%); margin: 0; flex: 0 0 auto; color: var(--text-primary); position: relative; }
-.message-content { min-width: 0; max-width: 100%; font-size: 14.5px; line-height: 1.72; overflow-wrap: anywhere; }
+.message-content { min-width: 0; max-width: 100%; font-family: var(--tx-font-body); font-size: 14.5px; line-height: 1.72; overflow-wrap: anywhere; }
 .message-content .table-wrapper, .message-content .katex-display { max-width: 100%; overflow-x: auto; }
 .message-content img { max-width: 100%; height: auto; }
 .message-content p { margin: 0 0 8px; }
@@ -713,7 +713,18 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .message-content a { color: var(--link-fg); }
 .user-message { width: auto; margin-left: auto; padding: 10px 16px; border: 1px solid color-mix(in srgb, var(--selection-border) 16%, transparent); border-radius: var(--tx-radius-lg) var(--tx-radius-lg) var(--tx-radius-sm) var(--tx-radius-lg); color: var(--text-primary); background: color-mix(in srgb, var(--interactive-primary-bg) 11%, var(--surface-raised)); font-weight: 500; }
 .assistant-message { width: 100%; max-width: 100%; padding: var(--space-4) 0 0; }
-.assistant-prose > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) { max-width: 72ch; }
+.assistant-prose { width: 100%; min-width: 0; line-height: 1.8; }
+.assistant-prose > :is(p, ul, ol, blockquote, pre, .table-wrapper) { margin-block: 0 14px; }
+.assistant-prose > :is(h1, h2, h3, h4, h5, h6) { margin-block: 24px 10px; font-weight: 700; line-height: 1.4; }
+.assistant-prose > h1 { font-size: 21px; }
+.assistant-prose > h2 { font-size: 18px; }
+.assistant-prose > h3 { font-size: 16px; }
+.assistant-prose > :first-child { margin-top: 0; }
+.assistant-prose > :last-child { margin-bottom: 0; }
+.assistant-prose li + li { margin-top: 4px; }
+.assistant-prose li > :is(ul, ol) { margin-block: 6px 0; }
+.assistant-prose th, .assistant-prose td { min-width: 9em; padding: 9px 12px; vertical-align: top; line-height: 1.65; }
+.assistant-prose th { background: var(--surface-sidebar); }
 .assistant-message .message-content { padding: 6px 0; }
 .assistant-label { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: var(--selection-fg); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .assistant-label .streaming-beacon { width: 6px; height: 6px; }
@@ -1032,7 +1043,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .file-preview-resize.is-ne::after { right: 4px; top: 4px; border-width: 1px 1px 0 0; }
 .file-preview-resize.is-se::after { right: 4px; bottom: 4px; border-width: 0 1px 1px 0; }
 .file-preview-resize.is-sw::after { left: 4px; bottom: 4px; border-width: 0 0 1px 1px; }
-.file-preview-report { max-width: 760px; margin: 0 auto; color: var(--text-primary); font-size: 14px; line-height: 1.8; }
+.file-preview-report { max-width: 760px; margin: 0 auto; color: var(--text-primary); font-family: var(--tx-font-body); font-size: 14px; line-height: 1.8; }
 .file-preview-report h1, .file-preview-report h2, .file-preview-report h3, .file-preview-report h4 { margin: 26px 0 10px; line-height: 1.25; }
 .file-preview-report h1 { font-size: 27px; }
 .file-preview-report h2 { font-size: 21px; }

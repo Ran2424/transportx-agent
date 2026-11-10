@@ -9,6 +9,8 @@ asar: true
 asarUnpack:
   - modules/**
   - src/contracts/**
+  # External Python needs real font files rather than paths inside app.asar.
+  - dist/web/fonts/native/**
   # FileSet unpack matching uses its source path, before remapping to modules/.
   - dist/module-extensions/**
 afterPack: desktop/scripts/after-pack.cjs

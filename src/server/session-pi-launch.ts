@@ -1,9 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-import { APP_PATHS, PI_COMMAND_ARGS, PI_AGENT_DIR, PYTHON_COMMAND, SESSIONS_DIR } from './config.js';
+import { APP_PATHS, PI_COMMAND_ARGS, PI_AGENT_DIR, PYTHON_COMMAND, REACT_STATIC_DIR, SESSIONS_DIR } from './config.js';
 import { assertPiResourceBoundary, piProcessEnv } from './pi-runtime.js';
-import { planExtensions, planPromptPath, planSkills, type ResolvedSessionPlan } from './session-assembly.js';
+import { planExtensions, planPromptPath, planSkills, preferUnpackedPath, type ResolvedSessionPlan } from './session-assembly.js';
 import { loadProjectPrompt, loadSystemPrompt } from './session-prompt.js';
 import type { SessionService } from './session-service.js';
 import { projectAdapter } from './project-adapter.js';
@@ -72,6 +72,7 @@ export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
       PI_CODING_AGENT_SESSION_DIR: SESSIONS_DIR,
       TAU_DISABLED: '1',
       TAU_PYTHON_COMMAND: PYTHON_COMMAND,
+      TRANSPORTX_FONT_DIR: preferUnpackedPath(path.join(REACT_STATIC_DIR, 'fonts', 'native')),
       TRANSPORTX_SESSION_MODULES_JSON: JSON.stringify(sessionModules(plan)),
       TAU_MODULE_ENDPOINT: input.endpoints.moduleAuthoring,
       TAU_MODULE_SESSION_ID: input.sessionId,

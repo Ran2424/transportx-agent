@@ -38,7 +38,9 @@ export async function renderReport(source: string, view: DocumentView, citations
     if (replacement.kind === 'mermaid') {
       try {
         const mermaid = (await import('mermaid')).default;
-        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral', suppressErrorRendering: true });
+        const fontFamily = getComputedStyle(document.documentElement).getPropertyValue('--tx-font-ui').trim();
+        await document.fonts.load(`16px ${fontFamily}`);
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral', fontFamily, suppressErrorRendering: true });
         value = `<div class="file-preview-mermaid">${(await mermaid.render(`chart-${replacement.token}`, value)).svg}</div>`;
       } catch {
         const pre = document.createElement('pre');
