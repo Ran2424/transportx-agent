@@ -45,6 +45,7 @@ export function diagnoseTool(contract: ToolInterfaceContract, selected: Resolved
       case 'traffic.run': { const traffic = parseTrafficToolResult(details.result); return traffic?.operation === 'run' && traffic.run?.state === 'ended' && traffic.run.termination === 'completed'; }
       case 'traffic.execution': return parseTrafficToolResult(details.result)?.operation === 'execution';
       case 'traffic.query': return parseTrafficToolResult(details.result)?.operation === 'query';
+      case 'traffic.experiment': return parseTrafficToolResult(details.result)?.operation === 'experiment';
       case 'cad.inspect': return parseCadInspectResultStructured(details.result).ok;
       case 'cad.verify': return parseCadVerifyResultStructured(details.result).ok;
       case 'cad.execution': return typeof details.operationId === 'string' && ['running', 'succeeded', 'failed', 'cancelled', 'unknown'].includes(String(details.state));

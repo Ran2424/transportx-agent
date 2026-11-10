@@ -2,7 +2,7 @@
 
 - 源码版本：3.24.2（未发布）；最近正式发布为 3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-11-10
+- 更新日期：2026-11-11
 - 打包 Profile：macOS arm64（DMG + ZIP 更新包）、Windows x64（NSIS）与实验性 Linux x64（默认 DEB、显式选择 RPM 的测试构建，目标系统实机验收与正式发布另行记录）
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
@@ -126,6 +126,8 @@ Host 通过 `TRANSPORTX_FONT_DIR` 注入内置思源黑体、思源宋体和 Jet
 发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely、ezdxf。
 
 `ProcessRunner` 与 `PythonRunner` 默认合并父环境；可信调用方可显式指定 `envMode: 'replace'`，仅向子进程提供批准的环境。交通仿真使用该模式，Python/SUMO 对按两个进程额度计入既有全局上限；复用会话 Job 与受管进程，不另设调度器。P0 探针及历史范围见 [P0 记录](<交通仿真与优化能力升级 P0 记录.md>)；计算入口现由独立 Traffic Simulation Module 携带，产品闭环验收状态见 [P1 记录](<交通仿真与优化能力升级 P1 记录.md>)。
+
+Traffic Simulation 的有限多方式模型仍由同一 Python/TraCI 入口执行；节点、泊位、车队、旅客、班表与当前队列反馈均为冻结输入，实际离站和返场以 SUMO 观测确认。Host 的 `SimulationService` 维护所属会话的场景、Run 和有界实验清单，逐个 Run 复用现有 Job；只接受两个方案、至多三个相同种子配对，不另建实验调度器。比较 JSON 与 Markdown 按内容哈希冻结，保留失败、取消、unknown 和未完成样本。Simulation Canvas 经现有 Kernel 按需读取完整块，与普通 Geo 共用地图原语，独立保存观看状态；报告打开复用 Document Canvas。实现及验收边界见 [P2 记录](<交通仿真与优化能力升级 P2 记录.md>)；合成软件验收不代表真实场景校准或跨平台分发通过。
 
 ### 2.7 React Workspace 与 Browser Kernel
 

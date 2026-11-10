@@ -25,7 +25,9 @@ export function createSimulationJob(request: unknown, trusted: { network: string
   const bytes = fs.readFileSync(network);
   if (bytes.length > 2 * 1024 * 1024 || /<!DOCTYPE|<!ENTITY|<include\b|\b(?:file|href)\s*=/i.test(bytes.toString('utf8'))) throw new Error('network_indirect_reference');
   const hash = simulationDigest(bytes);
-  const code = ['compute.py', 'engine.py', 'model.py', 'blocks.py'].map((name) => ({ name, sha256: simulationDigest(fs.readFileSync(path.join(trusted.implementationRoot, name))) }));
+  const names = ['compute.py', 'engine.py', 'model.py', 'blocks.py'];
+  if (fs.existsSync(path.join(trusted.implementationRoot, 'multimodal.py'))) names.push('multimodal.py');
+  const code = names.map((name) => ({ name, sha256: simulationDigest(fs.readFileSync(path.join(trusted.implementationRoot, name))) }));
   return {
     protocol: 'transportx-simulation-job', version: 2, runId: trusted.runId,
     implementation: { version: trusted.implementationVersion, sha256: simulationDigest(JSON.stringify(code)) }, scenario, provenance: trusted.provenance,
@@ -85,15 +87,100 @@ export function verifySimulationResult(root: string, job: SimulationJob, jobSha2
   const rows = [...raw.matchAll(/<tripinfo\s+id="([^"]+)"[^>]*\bdepart="([^"]+)"[^>]*\barrival="([^"]+)"/g)], road = result.metrics.road;
   const plannedIds = Array.from({ length: job.scenario.backgroundCount }, (_value, i) => `road-${i}`);
   if (job.scenario.model === 'evacuation') plannedIds.push('bus-0', 'car-0');
+  if (job.scenario.model === 'multimodal') plannedIds.push(...job.scenario.coordination!.fleet.map(vehicle => vehicle.id));
   if (!raw.includes('</tripinfos>') || road.planned !== plannedIds.length || rows.length !== road.planned || new Set(rows.map((row) => row[1])).size !== road.planned || rows.some((row) => !plannedIds.includes(row[1])) || rows.filter((row) => Number(row[2]) >= 0).length !== road.inserted || rows.filter((row) => Number(row[3]) >= 0).length !== road.arrived || road.planned !== road.inserted + road.pendingInsertion.length + road.notYetDue.length) throw new Error('raw_counts_mismatch');
-  if (job.scenario.model === 'evacuation') {
+  if (job.scenario.model !== 'road') {
     const last = published.blocks.at(-1)!.block.frames.at(-1)!;
     if (!last.travelers || !result.metrics.service) throw new Error('service_missing');
     const states: Record<string, number> = {};
     for (const person of Object.values(last.travelers)) states[person.state] = (states[person.state] || 0) + 1;
-    if (job.scenario.service!.travelers.some((person) => !last.travelers![person.id])) throw new Error('traveler_id_mismatch');
+    const travelers = job.scenario.model === 'evacuation' ? job.scenario.service!.travelers : job.scenario.coordination!.travelers;
+    if (travelers.some((person) => !last.travelers![person.id])) throw new Error('traveler_id_mismatch');
     const metrics = result.metrics.service;
-    if (Object.values(last.travelers).length !== job.scenario.service!.travelers.length || Object.entries(states).some(([key, count]) => metrics.states[key] !== count) || Object.keys(states).length !== Object.keys(metrics.states).length || (states.completed || 0) !== metrics.completedJourneys || new Set(events.filter((event) => event.type === 'boarded').map((event) => event.objectId)).size !== metrics.hubDepartures) throw new Error('service_counts_mismatch');
+    if (Object.values(last.travelers).length !== travelers.length || Object.entries(states).some(([key, count]) => metrics.states[key] !== count) || Object.keys(states).length !== Object.keys(metrics.states).length || (states.completed || 0) !== metrics.completedJourneys || new Set(events.filter((event) => event.type === 'boarded').map((event) => event.objectId)).size !== metrics.hubDepartures) throw new Error('service_counts_mismatch');
+    if (job.scenario.model === 'multimodal') {
+      const arrived = travelers.filter(person => person.time <= result.finalTime);
+      const wait = arrived.reduce((sum, person) => sum + (last.travelers![person.id].hubDeparture ?? result.finalTime) - person.time, 0);
+      const boarded = events.filter(event => event.type === 'boarded');
+      if (boarded.length !== new Set(boarded.map(event => event.objectId)).size || metrics.arrivedTravelers !== arrived.length || metrics.hubWaitPersonSeconds !== wait || metrics.meanHubWaitSeconds !== (arrived.length ? wait / arrived.length : null)) throw new Error('service_wait_mismatch');
+      const observed = [...raw.matchAll(/<tripinfo\s+([^>]+)>/g)].map(row => Object.fromEntries([...row[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]))).filter(row => Number(row.depart) >= 0);
+      const loss = observed.reduce((sum, row) => sum + Number(row.timeLoss), 0);
+      if (!Number.isFinite(loss) || loss < 0 || road.timeLossVehicleSeconds !== loss || road.observedVehicleSeconds !== observed.reduce((sum, row) => sum + Number(row.duration), 0) || road.meanTimeLossSeconds !== (observed.length ? loss / observed.length : null)) throw new Error('road_time_loss_mismatch');
+      if (job.implementation.version === '0.3.0' && (!metrics.waiting || !metrics.journeys || !metrics.fleet || !metrics.byRoute || !metrics.nodes)) throw new Error('service_statistics_missing');
+      if (metrics.waiting) {
+        const mean = (values: number[]) => values.length ? values.reduce((sum, n) => sum + n, 0) / values.length : null;
+        const p90 = (values: number[]) => values.length ? [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.9) - 1] : null;
+        const people = new Map(travelers.map(person => [person.id, { state: 'not_arrived', at: 0, waiting: 0 }]));
+        const fleet = new Map(job.scenario.coordination!.fleet.map(vehicle => [vehicle.id, { trips: 0, boarded: 0, busy: 0, busyStart: null as number | null, departure: null as number | null, turnarounds: [] as number[] }]));
+        const change = (id: string, state: string, time: number) => {
+          const person = people.get(id);
+          if (!person || time < person.at) throw new Error('service_event_state_invalid');
+          if (['waiting', 'blocked', 'boarding', 'connecting'].includes(person.state)) person.waiting += time - person.at;
+          person.state = state; person.at = time;
+        };
+        for (const event of events) {
+          if (event.type === 'action_reserved') {
+            for (const id of event.travelers || []) change(id, 'boarding', event.time);
+            const vehicle = event.vehicle && fleet.get(event.vehicle);
+            if (!vehicle || vehicle.busyStart !== null) throw new Error('fleet_reservation_conflict');
+            vehicle.busyStart = event.time;
+          }
+          const state = ({ traveler_arrived: 'waiting', arrival_blocked: 'blocked', boarded: 'riding', transfer_ready: 'connecting', metro_boarded: 'external', journey_completed: 'completed' } as Record<string, string>)[event.type];
+          if (state) change(event.objectId, state, event.time);
+          if (event.type === 'alighted') {
+            const route = job.scenario.coordination!.routes.find(route => route.id === event.routeId);
+            if (!route) throw new Error('service_route_event_invalid');
+            change(event.objectId, route.mode === 'bus' ? 'walking' : 'external', event.time);
+          }
+          if (event.type === 'boarded') {
+            const vehicle = event.vehicle && fleet.get(event.vehicle);
+            if (!vehicle || last.travelers![event.objectId].hubDeparture !== event.time) throw new Error('fleet_boarding_mismatch');
+            vehicle.boarded++;
+          }
+          if (event.type === 'journey_completed' && last.travelers![event.objectId].completedAt !== event.time) throw new Error('journey_timestamp_mismatch');
+          if (event.type === 'metro_boarded' && last.travelers![event.objectId].metroBoardedAt !== event.time) throw new Error('metro_timestamp_mismatch');
+          const vehicle = fleet.get(event.objectId);
+          if (vehicle && event.type === 'departure_observed') { vehicle.trips++; vehicle.departure = event.time; }
+          if (vehicle && event.type === 'vehicle_available' && vehicle.busyStart !== null) {
+            if (vehicle.departure === null) throw new Error('fleet_return_without_departure');
+            vehicle.busy += event.time - vehicle.busyStart; vehicle.turnarounds.push(event.time - vehicle.departure); vehicle.busyStart = null; vehicle.departure = null;
+          }
+        }
+        for (const [id, person] of people) {
+          change(id, person.state, result.finalTime);
+          if (last.travelers![id].waitSeconds !== person.waiting || last.travelers![id].state !== person.state) throw new Error('traveler_wait_event_mismatch');
+        }
+        const waits = arrived.map(person => people.get(person.id)!.waiting), completed = arrived.filter(person => last.travelers![person.id].state === 'completed').map(person => last.travelers![person.id].completedAt! - person.time), censored = arrived.map(person => (last.travelers![person.id].completedAt ?? result.finalTime) - person.time);
+        if (metrics.waiting.allWaitPersonSeconds !== waits.reduce((sum, n) => sum + n, 0) || metrics.waiting.meanAllWaitSeconds !== mean(waits) || metrics.waiting.p90AllWaitSeconds !== p90(waits) || metrics.waiting.p90HubWaitSeconds !== p90(arrived.map(person => (last.travelers![person.id].hubDeparture ?? result.finalTime) - person.time)) || metrics.waiting.censoredPeople !== arrived.filter(person => last.travelers![person.id].hubDeparture === undefined).length) throw new Error('wait_distribution_mismatch');
+        const journeys = metrics.journeys!;
+        if (journeys.completedCount !== completed.length || journeys.arrivedCount !== arrived.length || journeys.meanCompletedSeconds !== mean(completed) || journeys.p90CompletedSeconds !== p90(completed) || journeys.meanCensoredSeconds !== mean(censored) || journeys.p90CensoredSeconds !== p90(censored)) throw new Error('journey_distribution_mismatch');
+        const lastMisses = job.scenario.coordination!.travelers.filter(person => {
+          const route = job.scenario.coordination!.routes.find(route => route.id === person.route)!;
+          if (route.mode !== 'bus' || person.time > result.finalTime) return false;
+          const lastDeparture = Math.max(...job.scenario.coordination!.metro.filter(train => train.node === route.target && train.destination === person.destination).map(train => train.time));
+          return lastDeparture <= result.finalTime && !events.some(event => event.type === 'metro_boarded' && event.objectId === person.id);
+        });
+        if (metrics.lastServiceMisses !== lastMisses.length || events.filter(event => event.type === 'last_connection_missed').length !== lastMisses.length || lastMisses.some(person => !events.some(event => event.type === 'last_connection_missed' && event.objectId === person.id))) throw new Error('last_service_misses_mismatch');
+        for (const [id, observedFleet] of fleet) {
+          const actual = metrics.fleet![id], busy = observedFleet.busy + (observedFleet.busyStart === null ? 0 : result.finalTime - observedFleet.busyStart);
+          if (!actual || actual.loadFactor !== (observedFleet.trips ? observedFleet.boarded / (actual.capacity * observedFleet.trips) : null)) throw new Error('fleet_load_factor_mismatch');
+          if (!actual || actual.capacity !== job.scenario.coordination!.fleet.find(vehicle => vehicle.id === id)!.capacity || actual.observedTrips !== observedFleet.trips || actual.passengersBoarded !== observedFleet.boarded || actual.busySeconds !== busy || actual.busyFraction !== busy / result.finalTime || JSON.stringify(actual.completedTurnaroundSeconds) !== JSON.stringify(observedFleet.turnarounds) || actual.meanCompletedTurnaroundSeconds !== mean(observedFleet.turnarounds) || actual.censoredTurnaroundSeconds !== (observedFleet.departure === null ? null : result.finalTime - observedFleet.departure)) throw new Error('fleet_utilization_mismatch');
+        }
+        for (const route of job.scenario.coordination!.routes) {
+          const all = job.scenario.coordination!.travelers.filter(person => person.route === route.id), seen = all.filter(person => person.time <= result.finalTime), actual = metrics.byRoute![route.id];
+          const routeStates: Record<string, number> = {};
+          for (const person of all) routeStates[last.travelers![person.id].state] = (routeStates[last.travelers![person.id].state] || 0) + 1;
+          const hub = seen.map(person => (last.travelers![person.id].hubDeparture ?? result.finalTime) - person.time), waiting = seen.map(person => people.get(person.id)!.waiting);
+          if (!actual || actual.totalTravelers !== all.length || actual.arrivedTravelers !== seen.length || actual.completedJourneys !== (routeStates.completed || 0) || Object.keys(actual.states).length !== Object.keys(routeStates).length || Object.entries(routeStates).some(([state, count]) => actual.states[state] !== count) || actual.meanHubWaitSeconds !== mean(hub) || actual.p90HubWaitSeconds !== p90(hub) || actual.meanAllWaitSeconds !== mean(waiting) || actual.p90AllWaitSeconds !== p90(waiting)) throw new Error('route_statistics_mismatch');
+        }
+        for (const node of job.scenario.coordination!.nodes) {
+          const actual = metrics.nodes![node.id];
+          if (!actual || actual.waitingCapacity !== node.waitingCapacity || ['waiting', 'walking', 'connecting', 'blocked'].some(state => actual[state as 'waiting'] !== Object.values(last.travelers!).filter(person => person.state === state && person.location === (state === 'blocked' ? `upstream:${node.id}` : node.id)).length)) throw new Error('node_statistics_mismatch');
+        }
+        const duration = observed.reduce((sum, row) => sum + Number(row.duration), 0);
+        if (road.meanObservedDurationSeconds !== (observed.length ? duration / observed.length : null) || road.meanTrafficWaitingSeconds !== mean(observed.map(row => Number(row.waitingTime))) || road.aggregateSpeedMetersPerSecond !== (duration ? observed.reduce((sum, row) => sum + Number(row.routeLength), 0) / duration : null)) throw new Error('road_statistics_mismatch');
+      }
+    }
   }
   return { result, ...published, events };
 }

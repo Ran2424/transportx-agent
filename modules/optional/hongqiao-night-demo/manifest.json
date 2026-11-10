@@ -2,7 +2,7 @@
   "manifestVersion":2,
   "id":"com.transportx.hongqiao-night-demo",
   "name":"Hongqiao Night Synthetic Demo",
-  "version":"0.1.0",
+  "version":"0.2.0",
   "type":"module",
   "platformVersion":">=3.24.2 <4.0.0",
   "dependencies":["com.transportx.traffic-simulation"],

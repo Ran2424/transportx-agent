@@ -21,6 +21,7 @@ export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
     { toolId: 'traffic.run', piName: 'traffic_run', file: 'run-contract.json', execution: 'host' },
     { toolId: 'traffic.execution', piName: 'traffic_execution', file: 'execution-contract.json', execution: 'host' },
     { toolId: 'traffic.query', piName: 'traffic_query_results', file: 'query-contract.json', execution: 'host' },
+    { toolId: 'traffic.experiment', piName: 'traffic_experiment', file: 'experiment-contract.json', execution: 'host' },
   ],
   'com.transportx.tool-activation': [
     { toolId: 'capabilities.manage', piName: 'manage_capabilities', file: 'tool-contract.json', execution: 'pi-local' },

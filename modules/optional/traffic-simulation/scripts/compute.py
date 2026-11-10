@@ -11,6 +11,7 @@ import time
 import xml.etree.ElementTree as ET
 from blocks import Blocks, atomic, digest
 from model import Ledger, validate_service
+from multimodal import Ledger as MultimodalLedger, validate as validate_multimodal
 
 
 def integer(value, low, high):
@@ -20,9 +21,9 @@ def integer(value, low, high):
 def validate(job):
     if set(job) != {'protocol', 'version', 'runId', 'provenance', 'implementation', 'scenario', 'network', 'mapping', 'execution'} or job['protocol'] != 'transportx-simulation-job' or type(job['version']) is not int or job['version'] != 2:
         raise ValueError('job_version')
-    code = [{'name': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())} for name in ['compute.py', 'engine.py', 'model.py', 'blocks.py']]
+    code = [{'name': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())} for name in ['compute.py', 'engine.py', 'model.py', 'blocks.py', 'multimodal.py']]
     from blocks import encode
-    if job['implementation'] != {'version': '0.1.1', 'sha256': digest(encode(code))}:
+    if job['implementation'] != {'version': '0.3.0', 'sha256': digest(encode(code))}:
         raise ValueError('implementation_version')
     provenance = job['provenance']
     if set(provenance) != {'kind', 'description', 'validDate', 'modelValidation'} or provenance['kind'] not in ['synthetic', 'assumed', 'observed', 'operating-plan'] or provenance['modelValidation'] != 'not_calibrated' or not isinstance(provenance['description'], str) or not 1 <= len(provenance['description']) <= 2000:
@@ -31,7 +32,9 @@ def validate(job):
     fields = {'schemaVersion', 'model', 'networkVersion', 'serviceDate', 'timezone', 'startTime', 'durationSeconds', 'seed', 'stepSeconds', 'decisionSeconds', 'sampleSeconds', 'blockSeconds', 'units', 'backgroundCount'}
     if scenario.get('model') == 'evacuation':
         fields.add('service')
-    if set(scenario) != fields or type(scenario['schemaVersion']) is not int or scenario['schemaVersion'] != 1 or scenario['model'] not in ['road', 'evacuation']:
+    if scenario.get('model') == 'multimodal':
+        fields.add('coordination')
+    if set(scenario) != fields or type(scenario['schemaVersion']) is not int or scenario['schemaVersion'] != 1 or scenario['model'] not in ['road', 'evacuation', 'multimodal']:
         raise ValueError('scenario_fields')
     if not isinstance(scenario['networkVersion'], str) or not 1 <= len(scenario['networkVersion']) <= 160:
         raise ValueError('network_version')
@@ -49,6 +52,8 @@ def validate(job):
         raise ValueError('sampling_unsupported')
     if 'service' in scenario:
         validate_service(scenario['service'])
+    if 'coordination' in scenario:
+        validate_multimodal(scenario['coordination'])
     network, mapping, execution = job['network'], job['mapping'], job['execution']
     if set(network) != {'path', 'sha256', 'version'} or network['version'] != scenario['networkVersion']:
         raise ValueError('network_version')
@@ -75,6 +80,17 @@ def validate(job):
             raise ValueError('mapping_invalid')
     elif 'edges' in mapping:
         raise ValueError('mapping_invalid')
+    if scenario['model'] == 'multimodal':
+        lanes = {edge.attrib['id']: edge.findall('lane') for edge in net.findall('edge')}
+        connections = {(row.get('from'), row.get('to')) for row in net.findall('connection')}
+        for node in scenario['coordination']['nodes']:
+            for berth in node['berths']:
+                if node['edge'] not in lanes or berth['lane'] >= len(lanes[node['edge']]) or berth['position'] > float(lanes[node['edge']][berth['lane']].get('length')) - 5:
+                    raise ValueError('service_berth_outside_lane')
+        for route in scenario['coordination']['routes']:
+            for key in ['outbound', 'inbound']:
+                if not set(route[key]) <= edges or any(pair not in connections for pair in zip(route[key], route[key][1:])):
+                    raise ValueError('service_route_disconnected')
     if not {'outputRoot', 'sumo', 'wallSeconds', 'maxOutputBytes'} <= set(execution) or not set(execution) <= {'outputRoot', 'sumo', 'wallSeconds', 'maxOutputBytes', 'projData'} or not integer(execution['wallSeconds'], 1, 60) or not integer(execution['maxOutputBytes'], 1, 64 * 1024 * 1024):
         raise ValueError('execution_budget')
     for key in ['outputRoot', 'sumo'] + (['projData'] if 'projData' in execution else []):
@@ -92,7 +108,7 @@ def run(job, job_sha256):
     started, rules_seconds, snapshot_seconds = time.perf_counter(), 0.0, 0.0
     blocks, engine = Blocks(job), None
     scenario = job['scenario']
-    ledger = Ledger(scenario['service']) if scenario['model'] == 'evacuation' else None
+    ledger = Ledger(scenario['service']) if scenario['model'] == 'evacuation' else MultimodalLedger(scenario['coordination']) if scenario['model'] == 'multimodal' else None
     cancelled = False
 
     def stop(_signum, _frame):
@@ -160,6 +176,14 @@ def run(job, job_sha256):
     if diagnostics and termination == 'completed':
         termination, failure = 'failed', diagnostics[0]
     metrics = {'road': {'planned': len(engine.scheduled), 'inserted': len(engine.departed), 'arrived': len(engine.arrived), 'activeOrUnfinished': len(engine.active), 'pendingInsertion': sorted(engine.pending), 'notYetDue': sorted(engine.not_due), 'peakActive': engine.peak_active}}
+    if scenario['model'] == 'multimodal' and not diagnostics:
+        observed = [row for row in records if float(row.attrib['depart']) >= 0]
+        loss = sum(float(row.attrib['timeLoss']) for row in observed)
+        elapsed = sum(float(row.attrib['duration']) for row in observed)
+        metrics['road'].update(timeLossVehicleSeconds=loss, observedVehicleSeconds=elapsed, meanTimeLossSeconds=loss / len(observed) if observed else None,
+                               meanObservedDurationSeconds=elapsed / len(observed) if observed else None,
+                               meanTrafficWaitingSeconds=sum(float(row.attrib['waitingTime']) for row in observed) / len(observed) if observed else None,
+                               aggregateSpeedMetersPerSecond=sum(float(row.attrib['routeLength']) for row in observed) / elapsed if elapsed else None)
     if ledger:
         metrics['service'] = ledger.metrics()
     atomic(blocks.root, 'metrics.json', metrics)

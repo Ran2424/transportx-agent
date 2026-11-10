@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import type { ConversationView } from '../../../public/app-types.js';
 import { Icon } from '../../components/icons';
 import type { CanvasState, CanvasView } from './canvas-state';
-import type { DocumentPosition } from './document-state';
+import type { DocumentPosition, DocumentRequest } from './document-state';
 import { rendererForCanvasView } from './renderer-registry';
 import type { AppKernel } from '../../../public/kernel/app-kernel.js';
 
-export function AgentCanvas({ kernel, session, views, state, documentPositions, onActivate, onCloseTab, onClose, onShareContext }: {
+export function AgentCanvas({ kernel, session, views, state, documentPositions, onActivate, onCloseTab, onClose, onShareContext, onOpenDocument }: {
   kernel: AppKernel;
   session: ConversationView | null;
   views: CanvasView[];
@@ -17,6 +17,7 @@ export function AgentCanvas({ kernel, session, views, state, documentPositions, 
   onCloseTab(id: string): void;
   onClose(): void;
   onShareContext(input: { viewId: string; revision: number; target?: unknown; selection?: unknown }): Promise<void>;
+  onOpenDocument?(request: DocumentRequest): void;
 }) {
   const { t } = useTranslation();
   const tabList = useRef<HTMLDivElement>(null);
@@ -43,7 +44,7 @@ export function AgentCanvas({ kernel, session, views, state, documentPositions, 
   useEffect(() => {
     if (state.open) tabList.current?.querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [state.activeId, state.open]);
-  useEffect(() => { setContextStatus('idle'); }, [state.activeId, activePresentation?.revision]);
+  useEffect(() => { setContextStatus('idle'); }, [state.activeId, activePresentation?.revision, JSON.stringify(contextDrafts[state.activeId ?? ''])]);
   function navigate(event: KeyboardEvent, index: number) {
     const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
     if (next < 0) return;
@@ -69,7 +70,7 @@ export function AgentCanvas({ kernel, session, views, state, documentPositions, 
       {session && tabs.map((view) => {
         const Renderer = rendererForCanvasView(view);
         return <div className="canvas-panel" role="tabpanel" id={`canvas-panel-${view.id}`} aria-labelledby={`canvas-tab-${view.id}`} key={view.id} hidden={view.id !== state.activeId}>
-          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer kernel={kernel} onAttachContext={shareContext} contextStatus={contextStatus} session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onContextChange={(target, selection) => updateContext(view.id, view.canvas?.revision, target, selection)} /></Suspense> : null}
+          {Renderer ? <Suspense fallback={<p className="document-notice">{t('workspace.reading')}</p>}><Renderer kernel={kernel} onAttachContext={shareContext} contextStatus={contextStatus} session={session} view={view} active={state.open && view.id === state.activeId} documentPositions={documentPositions} onOpenDocument={onOpenDocument} onContextChange={(target, selection) => updateContext(view.id, view.canvas?.revision, target, selection)} /></Suspense> : null}
         </div>;
       })}
     </div>

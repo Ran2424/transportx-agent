@@ -1,0 +1,56 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.traffic-simulation",
+  "toolId": "traffic.experiment",
+  "piName": "traffic_experiment",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "traffic-experiment-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "prepare"
+          },
+          {
+            "type": "string",
+            "const": "query"
+          }
+        ]
+      },
+      "baselineScenarioId": {
+        "type": "string",
+        "pattern": "^scenario_[a-f0-9]{32}$"
+      },
+      "variantScenarioId": {
+        "type": "string",
+        "pattern": "^scenario_[a-f0-9]{32}$"
+      },
+      "seeds": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "minItems": 1,
+        "maxItems": 3
+      },
+      "experimentId": {
+        "type": "string",
+        "pattern": "^experiment_[a-f0-9]{32}$"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-traffic",
+    "version": 1,
+    "detailsKind": "traffic-result"
+  }
+}

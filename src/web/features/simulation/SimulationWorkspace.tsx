@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Map as MapLibreMap, GeoJSONSourceSpecification } from 'maplibre-gl';
 import { createSharedMap, applySharedMapView, setSharedGeoJSON } from '../../../public/visualization/shared-map';
-import type { SimulationCanvasPayload, SimulationRunSummary, SimulationIndex, SimulationFrame, SimulationGeometry, SimulationQuery, SimulationBlock } from '../../../contracts/simulation';
+import type { SimulationCanvasPayload, SimulationRunSummary, SimulationIndex, SimulationFrame, SimulationGeometry, SimulationQuery, SimulationBlock, SimulationExperiment } from '../../../contracts/simulation';
 import type { CanvasRendererProps } from '../../platform/canvas/renderers/types';
 
 const message = (error: unknown) => error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
-const stateLabels: Record<string, string> = { prepared: '已受理', running: '计算中', finalizing: '确认中', ended: '已结束', unknown: '结果待确认', waiting: '候车', boarding: '登乘', riding: '车上', walking: '步行接续', connecting: '等待接续', external: '外部行程', completed: '完成全链', not_arrived: '尚未到达' };
+const stateLabels: Record<string, string> = { prepared: '已受理', running: '计算中', finalizing: '确认中', ended: '已结束', unknown: '结果待确认', waiting: '候车', blocked: '上游受阻', boarding: '登乘', riding: '车上', walking: '步行接续', connecting: '等待接续', external: '外部行程', completed: '完成全链', not_arrived: '尚未到达', inserting: '等待入网', available: '可用', commanded: '发车待确认', outbound: '去程', return_commanded: '返场待确认', returning: '返场' };
 
-export function SimulationWorkspace({ kernel, session, active, payload, onContextChange }: CanvasRendererProps & { payload: SimulationCanvasPayload }) {
+export function SimulationWorkspace({ kernel, session, active, payload, onContextChange, onOpenDocument }: CanvasRendererProps & { payload: SimulationCanvasPayload }) {
   const runId = payload.runId, sessionId = session.id;
   const [run, setRun] = useState<SimulationRunSummary>();
   const [index, setIndex] = useState<SimulationIndex | null>(null);
   const [geometry, setGeometry] = useState<SimulationGeometry>();
   const [frame, setFrame] = useState<SimulationFrame>();
   const [query, setQuery] = useState<SimulationQuery>();
+  const [experiment, setExperiment] = useState<SimulationExperiment>();
   const [time, setTime] = useState(0), [playing, setPlaying] = useState(false), [speed, setSpeed] = useState(1);
   const [selected, setSelected] = useState(''), [error, setError] = useState(''), [refresh, setRefresh] = useState(0);
   const [mapReady, setMapReady] = useState(false);
@@ -25,6 +26,13 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
   const subscribeRuntime = useCallback((changed: () => void) => kernel.stores.runtime.subscribe(changed), [kernel]);
   const connection = useSyncExternalStore(subscribeRuntime, () => kernel.stores.runtime.get().connection);
   const commands = kernel.commands.simulation;
+
+  useEffect(() => {
+    if (!active || !payload.experimentId) return;
+    const controller = new AbortController();
+    void commands.experiment(sessionId, payload.experimentId, controller.signal).then(value => { if (!controller.signal.aborted && value.experimentId === payload.experimentId) setExperiment(value); }).catch(cause => { if (!controller.signal.aborted) setError(message(cause)); });
+    return () => controller.abort();
+  }, [active, sessionId, payload.experimentId, notice?.runUpdatedAt, connection, refresh, commands]);
 
   useEffect(() => {
     if (!active) return;
@@ -144,13 +152,24 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
     <div className="simulation-coverage">已计算 {run?.latestComputedTime ?? '—'} s · 已发布 {available} s · 观看 {frame?.time ?? '—'} s · {index?.final ? '输出覆盖完整' : '部分输出'} · 轨迹采样 2 s</div>
     <div className="simulation-details">
       <label>对象 <select aria-label="仿真查询对象" value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">全场景</option>{geometry?.features.filter((item) => item.properties.nodeId).map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}{Object.keys(geometry?.routes || {}).map((id) => <option key={id} value={id}>{id}</option>)}{Object.keys(frame?.vehicles || {}).map((id) => <option key={id} value={id}>{id}</option>)}{Object.keys(frame?.travelers || {}).map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
-      <dl className="simulation-counts">{Object.entries(counts).map(([state, count]) => <div key={state}><dt>{stateLabels[state] || state}</dt><dd>{count}</dd></div>)}</dl>
+      <p>全场景同刻人数</p><dl className="simulation-counts">{Object.entries(counts).map(([state, count]) => <div key={state}><dt>{stateLabels[state] || state}</dt><dd>{count}</dd></div>)}</dl>
       {query?.vehicle ? <p>{query.vehicle.id} · {query.vehicle.edge} · {query.vehicle.speed.toFixed(2)} m/s{query.vehicle.lanePositionMeters === undefined ? '' : ` · 车道沿程 ${query.vehicle.lanePositionMeters.toFixed(2)} m`}</p> : null}
-      {query?.node ? <p>{query.node.id} · 候车 {query.node.waiting} · 等待接续 {query.node.connecting}</p> : null}
+      {query?.fleet ? <p>车队 · {stateLabels[query.fleet.state] || query.fleet.state} · 当前载客 {query.fleet.occupants.length}/{query.fleet.capacity ?? '—'} · 已确认发车 {query.fleet.observedTrips ?? '—'} 趟 · 已确认返场 {query.fleet.turnarounds?.length ?? '—'} 次{query.fleet.route ? ` · ${query.fleet.route}` : ''}</p> : null}
+      {query?.node ? <p>{query.node.id} · 候车 {query.node.waiting} · 等待接续 {query.node.connecting}{query.node.blocked === undefined ? '' : ` · 上游受阻 ${query.node.blocked} · 候车容量 ${query.node.waitingCapacity} · 预留泊位 ${query.node.reservedBerths}`}</p> : null}
       {query?.route ? <p>{query.route.id} · 车辆 {query.route.vehicles.join(', ') || '无'} · {query.route.edgeIds.join(' → ')}</p> : null}
+      {query?.route?.countsByState ? <p>线路同刻人数 · {Object.entries(query.route.countsByState).map(([state, count]) => `${stateLabels[state] || state} ${count}`).join(' · ')}</p> : null}
       {query?.traveler ? <p>{query.traveler.id} · {stateLabels[query.traveler.state] || query.traveler.state} · {query.traveler.location || '尚未到达'}</p> : null}
+      {query?.traveler?.waitSeconds === undefined ? null : <p>已发生等待 {query.traveler.waitSeconds} s · 含枢纽与接续候车、受阻及登乘，排除步行和在途</p>}
       <details><summary>截至该时刻的事件（{query?.events.length || 0}{query?.truncated ? '，已截断' : ''}）</summary><ol>{query?.events.map((event) => <li key={event.sequence}>{event.time} s · {event.objectId} · {event.type}</li>)}</ol></details>
     </div>
+    {experiment ? <details className="simulation-comparison" open data-testid="simulation-comparison">
+      <summary>配对实验 · 完整 {experiment.comparison.completePairs}/{experiment.comparison.plannedPairs} · {experiment.comparison.conclusionAvailable ? '合成差值可读' : '含未完成样本，不作收益结论'}</summary>
+      <p>变体减基线；枢纽候车均值含所有已到达者，未离站者截于末时刻。以下为终点比较，观看时刻仍以当前 Run 为准。</p>
+      <table><thead><tr><th>种子</th><th>状态</th><th>全链完成差（人）</th><th>枢纽候车差（s）</th><th>道路损失差（s）</th></tr></thead><tbody>{experiment.comparison.pairs.map(pair => <tr key={pair.seed}><td>{pair.seed}</td><td>{pair.status === 'complete' ? '完整' : '未完成'}</td><td>{pair.delta?.completedJourneys ?? '—'}</td><td>{pair.delta?.meanHubWaitSeconds.toFixed(2) ?? '—'}</td><td>{pair.delta?.meanRoadTimeLossSeconds.toFixed(2) ?? '—'}</td></tr>)}</tbody></table>
+      {experiment.comparison.pairs.some(pair => pair.delta?.meanAllWaitSeconds !== undefined) ? <><p>全程等待含接续候车，未完成者计入已发生时长；P90 为最近秩。车队占用含未返场截尾。</p><table><thead><tr><th>种子</th><th>全程等待均值差（s）</th><th>全程等待 P90 差（s）</th><th>错过末班差（人）</th><th>车队占用差（车秒）</th></tr></thead><tbody>{experiment.comparison.pairs.map(pair => <tr key={pair.seed}><td>{pair.seed}</td><td>{pair.delta?.meanAllWaitSeconds?.toFixed(2) ?? '—'}</td><td>{pair.delta?.p90AllWaitSeconds?.toFixed(2) ?? '—'}</td><td>{pair.delta?.lastServiceMisses ?? '—'}</td><td>{pair.delta?.fleetBusyVehicleSeconds ?? '—'}</td></tr>)}</tbody></table></> : null}
+      <ul>{experiment.slots.map(slot => <li key={slot.slot}>{slot.role === 'baseline' ? '基线' : '变体'} · seed {slot.seed} · {slot.run ? `${slot.run.runId} · ${stateLabels[slot.run.state]} / ${slot.run.termination || '待确认'}` : '尚未派发'}</li>)}</ul>
+      {experiment.artifact && onOpenDocument ? <button type="button" onClick={() => onOpenDocument({ sessionId, path: experiment.artifact!.reportPath, title: '合成交通实验比较' })}>打开冻结比较报告</button> : null}
+    </details> : null}
     {!index ? <p className="simulation-coverage">等待首个完整时间块。隐藏视图或暂停观看不会停止计算。</p> : null}
     {error || run?.error ? <p role="status" className="simulation-error">{error || run?.error?.message}</p> : null}
   </section>;

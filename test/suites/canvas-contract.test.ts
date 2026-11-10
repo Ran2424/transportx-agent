@@ -21,6 +21,34 @@ test('Canvas resources and adapter contracts accept valid presentations and reje
     generatedAt: '2026-09-23T10:00:00+08:00',
   };
 
+  // Finite service contracts reject conflicting resources and executable policy bags.
+  {
+    const { parseTrafficScenario, parseSimulationCanvasPayload, parseSimulationGeometry } = await import('../../src/contracts/simulation.ts');
+    const scenario = require('../../modules/optional/hongqiao-night-demo/assets/night-demo/multimodal-baseline.json');
+    assert.ok(parseTrafficScenario(scenario));
+    const berthConflict = structuredClone(scenario);
+    berthConflict.configuration.coordination.fleet[1].berth = berthConflict.configuration.coordination.fleet[0].berth;
+    assert.equal(parseTrafficScenario(berthConflict), null);
+    const wrongConnection = structuredClone(scenario);
+    wrongConnection.configuration.coordination.metro[0].destination = 'missing-destination';
+    assert.equal(parseTrafficScenario(wrongConnection), null);
+    const policyCode = structuredClone(scenario);
+    policyCode.configuration.coordination.policy = { kind: 'queue-threshold', threshold: 2, cooldownSeconds: 30, routes: ['route:bus-east'], code: 'unapproved.py' };
+    assert.equal(parseTrafficScenario(policyCode), null);
+    const wrongItinerary = structuredClone(scenario);
+    wrongItinerary.configuration.coordination.travelers[0].destination = 'wrong-direction';
+    assert.equal(parseTrafficScenario(wrongItinerary), null);
+    const reservedActionId = structuredClone(scenario);
+    reservedActionId.configuration.coordination.departures[0].id = 'feedback-route:bus-east-120';
+    assert.equal(parseTrafficScenario(reservedActionId), null, 'user IDs cannot collide with generated feedback action IDs');
+    const payload = { runId: `sim_${'a'.repeat(32)}`, scenarioId: `scenario_${'b'.repeat(32)}`, sourceKind: 'synthetic', modelValidation: 'not_calibrated', experimentId: `experiment_${'c'.repeat(32)}` };
+    assert.ok(parseSimulationCanvasPayload(payload));
+    assert.equal(parseSimulationCanvasPayload({ ...payload, experimentId: '../foreign' }), null);
+    const geometry = { type: 'FeatureCollection', routes: { 'route:road': ['edge-1'] }, features: [{ type: 'Feature', id: 'edge-1', properties: { edgeId: 'edge-1' }, geometry: { type: 'LineString', coordinates: [[121.3, 31.19], [121.31, 31.19]] } }] };
+    assert.ok(parseSimulationGeometry(geometry));
+    assert.equal(parseSimulationGeometry({ ...geometry, routes: { 'route:road': { id: 'route:ridehail-west' } } }), null, 'reject the route-object overwrite observed in the real model task');
+  }
+
   // Canvas presentation accepts bounded adapter data and safe resources
   {
     const { parseCanvasPresentationStructured, getCanvasPresentationFromToolResult } = await canvasContract();

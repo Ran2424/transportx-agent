@@ -60,7 +60,7 @@ class Engine:
         self.scheduled = {'road-' + str(i): i * 2 for i in range(scenario['backgroundCount'])}
         self.pending, self.active, self.not_due = set(), set(), set()
         self.peak_active = 0
-        self.fleet = scenario['model'] == 'evacuation'
+        self.fleet = scenario['model'] != 'road'
         self.roles = job['mapping'].get('edges', {})
         self.inverse_roles = {edge: role for role, edge in self.roles.items()}
         location = ET.parse(job['network']['path']).getroot().find('location')
@@ -72,7 +72,7 @@ class Engine:
         traci.route.add('road', road_route)
         for i in range(scenario['backgroundCount']):
             traci.vehicle.add('road-' + str(i), 'road', depart=str(i * 2), departLane='free', departSpeed='max')
-        if self.fleet:
+        if scenario['model'] == 'evacuation':
             self.scheduled.update({'bus-0': 0, 'car-0': 0})
             self.fleet_route = [self.roles[key] for key in ['hub', 'outbound', 'relay', 'inbound', 'hub']]
             traci.route.add('fleet', self.fleet_route)
@@ -81,6 +81,20 @@ class Engine:
             for i, vehicle in enumerate(['bus-0', 'car-0']):
                 traci.vehicle.add(vehicle, 'fleet', typeID='p0-shuttle' if i == 0 else 'DEFAULT_VEHTYPE', depart='0', departPos='20', departLane=str(i), departSpeed='0')
                 traci.vehicle.setStop(vehicle, self.roles['hub'], pos=20, laneIndex=i, duration=100000.0)
+        elif scenario['model'] == 'multimodal':
+            service = scenario['coordination']
+            nodes = {node['id']: node for node in service['nodes']}
+            traci.vehicletype.copy('DEFAULT_VEHTYPE', 'transportx-shuttle')
+            traci.vehicletype.setVehicleClass('transportx-shuttle', 'bus')
+            for vehicle in sorted(service['fleet'], key=lambda row: row['id']):
+                self.scheduled[vehicle['id']] = 0
+                route = next(route for route in service['routes'] if route['origin'] == vehicle['home'] and route['mode'] == vehicle['mode'])
+                route_id = 'fleet-' + vehicle['id']
+                traci.route.add(route_id, route['outbound'] + route['inbound'][1:])
+                node = nodes[vehicle['home']]
+                berth = node['berths'][vehicle['berth']]
+                traci.vehicle.add(vehicle['id'], route_id, typeID='transportx-shuttle' if vehicle['mode'] == 'bus' else 'DEFAULT_VEHTYPE', depart='0', departPos=str(berth['position']), departLane=str(berth['lane']), departSpeed='0')
+                traci.vehicle.setStop(vehicle['id'], node['edge'], pos=berth['position'], laneIndex=berth['lane'], duration=100000.0)
 
     def step(self):
         started = time.perf_counter()
@@ -125,6 +139,16 @@ class Engine:
         if kind == 'dispatch':
             traci.vehicle.setRoute(vehicle, self.fleet_route)
         traci.vehicle.setStop(vehicle, target, pos=20, laneIndex=0 if vehicle == 'bus-0' else 1, duration=100000.0)
+        traci.vehicle.resume(vehicle)
+        self.timings['actionSeconds'] += time.perf_counter() - started
+
+    def move_fleet(self, vehicle, edges, node, berth_index):
+        started = time.perf_counter()
+        if not traci.vehicle.getStopState(vehicle) & 1:
+            raise RuntimeError('engine_stop_unconfirmed')
+        berth = node['berths'][berth_index]
+        traci.vehicle.setRoute(vehicle, edges)
+        traci.vehicle.setStop(vehicle, node['edge'], pos=berth['position'], laneIndex=berth['lane'], duration=100000.0)
         traci.vehicle.resume(vehicle)
         self.timings['actionSeconds'] += time.perf_counter() - started
 

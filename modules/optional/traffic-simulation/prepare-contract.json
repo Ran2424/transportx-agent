@@ -3,8 +3,8 @@
   "moduleId": "com.transportx.traffic-simulation",
   "toolId": "traffic.prepare",
   "piName": "traffic_prepare_scenario",
-  "contractVersion": "1.0.0",
-  "semanticVersion": "traffic-prepare-v1",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "traffic-prepare-v2",
   "input": {
     "type": "object",
     "required": [
@@ -20,6 +20,31 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 200
+      },
+      "parentScenarioId": {
+        "type": "string",
+        "pattern": "^scenario_[a-f0-9]{32}$"
+      },
+      "interventions": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "departures"
+            },
+            {
+              "type": "string",
+              "const": "policy"
+            }
+          ]
+        },
+        "minItems": 1,
+        "maxItems": 2
+      },
+      "geoContextId": {
+        "type": "string",
+        "pattern": "^geoctx_[A-Za-z0-9_-]{12,64}$"
       }
     },
     "additionalProperties": false

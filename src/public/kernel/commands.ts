@@ -17,7 +17,7 @@ import type { ToolDiagnostic } from '../../contracts/tool-interface.ts';
 import { parseCitationEnvelope, parseCitationDetail, type CitationDetail, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 import type { CanvasContextV1, CanvasPresentationV1 } from '../../contracts/canvas.ts';
-import type { SimulationRunSummary, SimulationIndex, SimulationBlock, SimulationEvent, SimulationGeometry, SimulationQuery } from '../../contracts/simulation.ts';
+import type { SimulationRunSummary, SimulationIndex, SimulationBlock, SimulationEvent, SimulationGeometry, SimulationQuery, SimulationExperiment } from '../../contracts/simulation.ts';
 import type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 export type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 
@@ -235,6 +235,7 @@ export type CanvasCommands = {
 };
 
 export type SimulationCommands = {
+  experiment(sessionId: string, experimentId: string, signal?: AbortSignal): Promise<SimulationExperiment>;
   list(sessionId: string, signal?: AbortSignal): Promise<{ runs: Array<{ run: SimulationRunSummary; canvas: CanvasPresentationV1 }> }>;
   index(sessionId: string, runId: string, signal?: AbortSignal): Promise<{ run: SimulationRunSummary; index: SimulationIndex | null }>;
   chunk(sessionId: string, runId: string, sequence: number, signal?: AbortSignal): Promise<{ block: SimulationBlock; events: SimulationEvent[] }>;
@@ -246,6 +247,7 @@ export function createSimulationCommands(deps: CommandDeps): SimulationCommands 
   const get = <T>(sessionId: string, resource: string, signal?: AbortSignal) => httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/simulation-runs${resource}`, { signal }, { category: 'resource', sessionId }) as Promise<T>;
   const ref = (runId: string) => `/${encodeURIComponent(runId)}`;
   return {
+    experiment: (sessionId, experimentId, signal) => httpJson(deps.http, `/api/conversations/${encodeURIComponent(sessionId)}/simulation-experiments/${encodeURIComponent(experimentId)}`, { signal }, { category: 'resource', sessionId }) as Promise<SimulationExperiment>,
     list: (sessionId, signal) => get(sessionId, '', signal),
     index: (sessionId, runId, signal) => get(sessionId, `${ref(runId)}/index`, signal),
     chunk: (sessionId, runId, sequence, signal) => get(sessionId, `${ref(runId)}/chunks/${sequence}`, signal),

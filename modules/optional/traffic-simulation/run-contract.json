@@ -3,20 +3,27 @@
   "moduleId": "com.transportx.traffic-simulation",
   "toolId": "traffic.run",
   "piName": "traffic_run",
-  "contractVersion": "1.0.0",
-  "semanticVersion": "traffic-run-v1",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "traffic-run-v2",
   "input": {
     "type": "object",
-    "required": [
-      "scenarioId"
-    ],
     "properties": {
       "scenarioId": {
         "type": "string",
         "pattern": "^scenario_[a-f0-9]{32}$"
+      },
+      "experimentId": {
+        "type": "string",
+        "pattern": "^experiment_[a-f0-9]{32}$"
+      },
+      "slot": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 5
       }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "description": "Supply scenarioId for one standalone Run, or experimentId and the next slot for a frozen experiment. Never replace an existing/unknown slot."
   },
   "output": {
     "protocol": "transportx-traffic",

@@ -17,7 +17,7 @@ export const INTERNAL_SERVICE_PATHS = new Set([
   '/api/internal/spatial/analyze', '/api/internal/spatial/prepare', '/api/internal/spatial/execution', '/api/internal/geo/inspect', '/api/internal/geo/request', '/api/internal/geo/screenshot',
   '/api/internal/canvas/present', '/api/internal/canvas/inspect',
   '/api/internal/cad/execution', '/api/internal/cad/inspect', '/api/internal/cad/draw', '/api/internal/cad/verify',
-  '/api/internal/traffic/prepare', '/api/internal/traffic/run/prepare', '/api/internal/traffic/run', '/api/internal/traffic/execution', '/api/internal/traffic/query',
+  '/api/internal/traffic/prepare', '/api/internal/traffic/run/prepare', '/api/internal/traffic/run', '/api/internal/traffic/execution', '/api/internal/traffic/query', '/api/internal/traffic/experiment',
   '/api/internal/video/search', '/api/internal/video/present', '/api/internal/video/snapshot', '/api/internal/video/clip', '/api/internal/video/sample-frames',
 ]);
 

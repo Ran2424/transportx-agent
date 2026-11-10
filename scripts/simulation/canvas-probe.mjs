@@ -157,10 +157,16 @@ try {
     if (!input.executeVisibleProbe) await page.getByRole('button', { name: '收起画布', exact: true }).click();
     const hiddenAt = Date.now();
     let finished;
+    const indexObservations = [];
     const deadline = Date.now() + 120_000;
     while (Date.now() < deadline) {
       const listed = await request(`/api/conversations/${current.conversationId}/simulation-runs`);
       finished = listed.runs.find(({ run }) => run.runId === roadId)?.run;
+      const observation = await request(`/api/conversations/${current.conversationId}/simulation-runs/${roadId}/index`);
+      if (observation.index) {
+        assert.ok(observation.run.latestComputedTime >= observation.index.availableTime, 'Published output cannot exceed the computed-time projection');
+        indexObservations.push({ at: Date.now(), state: observation.run.state, computed: observation.run.latestComputedTime, published: observation.index.availableTime });
+      }
       const snapshot = await request(`/api/conversations/${current.conversationId}/snapshot`);
       if (finished?.state === 'ended' && !snapshot.runtime?.isStreaming) break;
       assert.notEqual(finished?.state, 'unknown', JSON.stringify(finished));
@@ -181,7 +187,7 @@ try {
     const firstVisible = marks.find(mark => mark.runId === roadId);
     const latency = firstVisible ? firstVisible.at - index.index.chunks[0].publishedWallNs / 1e6 : null;
     if (input.executeVisibleProbe) { assert.ok(latency >= 0 && latency < 1000, `Published state visibility: ${latency} ms`); assert.ok(firstVisible.at < index.index.chunks.at(-1).publishedWallNs / 1e6, 'State is visible before computation finishes'); }
-    roadRun = { run: finished, hiddenAt, finishedAt, backgroundReads, notifications, marks, publishedToFirstVisibleMs: latency };
+    roadRun = { run: finished, hiddenAt, finishedAt, backgroundReads, notifications, marks, publishedToFirstVisibleMs: latency, indexObservations };
     fs.writeFileSync(path.join(root, 'run-probe.json'), JSON.stringify(roadRun, null, 2));
     await request(`/api/conversations/${current.conversationId}/close`, { stopCurrent: true });
     await selectConversation(current);
