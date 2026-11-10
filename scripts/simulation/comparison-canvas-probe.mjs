@@ -31,7 +31,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ locale: 'zh-CN', viewport: { width: 1440, height: 1000 } });
 page.setDefaultTimeout(15_000);
 const errors = [], traffic = [], contexts = [];
-let citation;
+let citation, pendingFleet;
 page.on('pageerror', error => errors.push(String(error)));
 page.on('request', req => traffic.push({ at: Date.now(), path: new URL(req.url()).pathname, ...(new URL(req.url()).pathname === '/api/rpc' ? { command: req.postDataJSON()?.type } : {}) }));
 const viewer = id => page.locator(`[data-testid="simulation-workspace"][data-run-id="${id}"]`);
@@ -64,6 +64,13 @@ try {
   await page.screenshot({ path: path.join(root, 'corrected-citation.png') });
   await detail.getByRole('button', { name: '关闭', exact: true }).click();
   const baseline = runs[0], variant = runs[1];
+  await open(`simulation:${baseline.runId}`);
+  await page.waitForFunction(id => document.querySelector(`[data-run-id="${id}"]`)?.getAttribute('data-frame-time') === '0', baseline.runId);
+  pendingFleet = await request(`${prefix}/simulation-runs/${baseline.runId}/query?time=0&objectId=bus-a`);
+  assert.equal(pendingFleet.fleet.state, 'inserting'); assert.equal(pendingFleet.vehicle, undefined);
+  await viewer(baseline.runId).getByRole('combobox', { name: '仿真查询对象' }).selectOption('bus-a');
+  await viewer(baseline.runId).getByText('车队 · 等待入网', { exact: false }).waitFor();
+  await page.screenshot({ path: path.join(root, 'pending-fleet-0s.png') });
   await seek60(baseline);
   const panel = viewer(baseline.runId);
   for (const id of ['bus-a', 'node:pickup-a', 'route:bus-east']) {
@@ -115,7 +122,7 @@ try {
   const after = await request('/api/health'); assert.equal(after.liveSessionCount, 0);
   assert.deepEqual(errors, []);
   assert.ok(!traffic.some(item => /\/activate$/.test(item.path)), 'History viewing must not activate Pi');
-  const evidence = { protocol: 'transportx-comparison-canvas-probe', version: 1, conversationId: conversation.id, experiment, runs, contexts, citation, geoDraftRetained: draft, readonlyHistoryWithoutPi: true, healthBefore: before, healthAfter: after, pageErrors: errors, traffic };
+  const evidence = { protocol: 'transportx-comparison-canvas-probe', version: 1, conversationId: conversation.id, experiment, runs, contexts, citation, pendingFleet, geoDraftRetained: draft, readonlyHistoryWithoutPi: true, healthBefore: before, healthAfter: after, pageErrors: errors, traffic };
   fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify({ completePairs: 3, sameTimeContexts: contexts.length, reportOpened: true, geoRetained: true, noPi: true }));
 } catch (error) {

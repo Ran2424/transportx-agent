@@ -53,7 +53,10 @@
     "legacyFailureCases": 2,
     "nodeTests": 40,
     "typecheckConfigurations": 6,
-    "webSmoke": "passed"
+    "webSmoke": "passed",
+    "pendingFleetQueryableWithoutFabricatedRoadPosition": true,
+    "repeatPairedDeltasIdentical": true,
+    "historyWithoutConfiguredModelCredentials": true
   },
   "experiment": {
     "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
@@ -2054,6 +2057,36 @@
       "path": "tmp/simulation-p2-cleanup.json",
       "sha256": "a6ee84ba487193efce62100d93352b2e12807daea36584938a7521769900c27a",
       "bytes": 176
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-regression.log",
+      "sha256": "65680a111331982e18ad0b7954eed1bf67fb65b54bdb9fecc186c0627833a528",
+      "bytes": 79321
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-typecheck.log",
+      "sha256": "e920187f9e74724c545a4b69151cac3a4f2882e672e9eb7929ed083394184997",
+      "bytes": 698
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-web.log",
+      "sha256": "5e9d6d0caa9268e8d14cc5da9756f25959a472db321bb39530c563704934caf7",
+      "bytes": 60002
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-canvas/evidence.json",
+      "sha256": "d0488ea2bbb3b5c13921fedeaeeab7681c39bc39e9c0615e8f29d7b612c3b8db",
+      "bytes": 159394
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-host/evidence.json",
+      "sha256": "beb67f09f123f0fda5b05900a551761a7a6ac8d223dd3de836881aba396edd77",
+      "bytes": 194441
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-cleanup.json",
+      "sha256": "d4e81cbb5623aeb098bf4c2cf78dc2395c537ec8744e824eb10c1741a0c04c8c",
+      "bytes": 138
     }
   ],
   "sourceFiles": [
@@ -2074,8 +2107,8 @@
     },
     {
       "path": "src/server/simulation-service.ts",
-      "sha256": "ab9c37a048e55536aba2639039a5e1817f7121bd9b59e5d1f031b956c723ea97",
-      "bytes": 52279
+      "sha256": "5e83a6ae285d7abcd977978de79231c96dcb18fc7e4dc583201ebdea24329c8f",
+      "bytes": 52358
     },
     {
       "path": "src/server/api-routes.ts",
@@ -2084,8 +2117,8 @@
     },
     {
       "path": "src/web/features/simulation/SimulationWorkspace.tsx",
-      "sha256": "8f3025b8c2ea3416410bdcda65d136394f57567fe3777753d1d3fac7385d8727",
-      "bytes": 17086
+      "sha256": "938e897aa39fb1042d14821b05c98757b95ff6430af3e4d8da62033516cba2b9",
+      "bytes": 17141
     },
     {
       "path": "src/web/platform/canvas/AgentCanvas.tsx",
@@ -2125,8 +2158,64 @@
       "auth.json",
       "models.json"
     ],
-    "historyAndModulesPreserved": true
+    "historyAndModulesPreserved": true,
+    "followup": {
+      "ownedElectronPid": 21131,
+      "liveSessionsBeforeStop": 0,
+      "noCredentialCopiesRestored": true,
+      "historyAndModulesPreserved": true
+    }
   },
   "implementationCommit": "8cc5f46",
-  "pullRequest": "https://github.com/Ran2424/transportx-agent/pull/108"
+  "pullRequest": "https://github.com/Ran2424/transportx-agent/pull/108",
+  "pendingFleetRegression": {
+    "query": {
+      "runId": "sim_94a31a096479a2836fd40dacd8c43c67",
+      "requestedTime": 0,
+      "time": 0,
+      "frameSequence": 0,
+      "partial": false,
+      "units": {
+        "time": "s",
+        "distance": "m",
+        "speed": "m/s"
+      },
+      "coordinateSystems": {
+        "position": "sumo-network-xy",
+        "positionGeo": "WGS84-longitude-latitude-degrees"
+      },
+      "countsByState": {
+        "waiting": 8,
+        "not_arrived": 8
+      },
+      "events": [],
+      "truncated": false,
+      "fleet": {
+        "id": "bus-a",
+        "mode": "bus",
+        "capacity": 2,
+        "home": "node:pickup-a",
+        "berth": 0,
+        "state": "inserting",
+        "occupants": [],
+        "trip": null,
+        "route": null,
+        "observedTrips": 0,
+        "passengersBoarded": 0,
+        "busySeconds": 0,
+        "turnarounds": []
+      }
+    },
+    "canvasEvidence": "tmp/simulation-p2-pending-fleet-canvas/evidence.json",
+    "repeatExperimentId": "experiment_71bd490e0cef7e861822b79c90d73846",
+    "repeatRunIds": [
+      "sim_b0335c20d0f0010f7021b782430d4b1a",
+      "sim_079323b75989c33ae12989d044159152",
+      "sim_6cc16f44415596df8e9c94be8e0a17e1",
+      "sim_c1f87f41eaf0d4317ffd6bfde0e08a3e",
+      "sim_590f1c7f44bba30adf8d5e45e9b215b2",
+      "sim_66a03282eeda2be63ce64db8c7cd9bd8"
+    ],
+    "noOriginalRunOrSlotReplaced": true
+  }
 }

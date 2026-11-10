@@ -48,6 +48,9 @@ for (const slot of planned.slots) {
   const prepared = service.prepareRun(session, input);
   assert.equal(service.prepareRun(session, input).runId, prepared.runId);
   const run = await service.run(session, { ...input, operationId: prepared.runId }, new AbortController().signal);
+  const inserting = service.query(session, { runId: run.runId, time: 0, objectId: 'bus-a' });
+  assert.equal(inserting.fleet?.state, 'inserting');
+  assert.equal(inserting.vehicle, undefined, 'Pending fleet has no fabricated road position');
   assert.equal(run.termination, 'completed', JSON.stringify(run)); assert.equal(run.seed, slot.seed);
   assert.equal(run.experimentSlot, slot.slot); assert.equal(run.experimentId, planned.experimentId);
   assert.throws(() => service.prepareRun(session, { ...input, toolCallId: 'replacement-' + slot.slot }), /already owns/);

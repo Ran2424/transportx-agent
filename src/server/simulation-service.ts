@@ -404,7 +404,10 @@ export class SimulationService {
     const limit = typeof body.limit === 'number' && Number.isInteger(body.limit) && body.limit >= 1 && body.limit <= 200 ? body.limit : 100;
     const result: SimulationQuery = { runId, requestedTime, time: frame.time, frameSequence: sequence, partial: !index.final, units: { time: 's', distance: 'm', speed: 'm/s' }, coordinateSystems: { position: 'sumo-network-xy', positionGeo: 'WGS84-longitude-latitude-degrees' }, countsByState, events: relevant.slice(-limit), truncated: relevant.length > limit };
     if (objectId) {
-      if (frame.vehicles[objectId]) { result.vehicle = { id: objectId, ...frame.vehicles[objectId] }; if (frame.fleet?.[objectId]) result.fleet = { id: objectId, ...frame.fleet[objectId] }; }
+      if (frame.vehicles[objectId] || frame.fleet?.[objectId]) {
+        if (frame.vehicles[objectId]) result.vehicle = { id: objectId, ...frame.vehicles[objectId] };
+        if (frame.fleet?.[objectId]) result.fleet = { id: objectId, ...frame.fleet[objectId] };
+      }
       else if (frame.travelers?.[objectId]) result.traveler = frame.travelers[objectId];
       else if (objectId.startsWith('route:')) {
         const edgeIds = this.geometry(session, runId).routes[objectId];
