@@ -1,4 +1,4 @@
-import maplibregl, { type Map as MapLibreMap, type GeoJSONSource, type GeoJSONSourceSpecification } from 'maplibre-gl';
+import maplibregl, { type Map as MapLibreMap, type GeoJSONSource, type GeoJSONSourceSpecification, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { GeoSceneSnapshot, GeoView } from '../../contracts/geo.js';
 
@@ -7,11 +7,16 @@ const BASEMAP_STYLES = {
   light: 'https://tiles.openfreemap.org/styles/positron',
   dark: 'https://tiles.openfreemap.org/styles/dark',
 };
+export function sharedMapStyle(basemap: GeoSceneSnapshot['basemap'], background = '#f7f8fa'): StyleSpecification | string {
+  return basemap.id === 'none'
+    ? { version: 8, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': background } }] }
+    : BASEMAP_STYLES[basemap.id];
+}
+
 export function createSharedMap(container: HTMLElement, basemap: GeoSceneSnapshot['basemap'], center: [number, number], zoom: number, background?: string) {
-  const backgrounds = { default: '#eef3f8', light: '#f4f6f8', dark: '#17202b', none: '#f7f8fa' };
   return new maplibregl.Map({
     container, center, zoom,
-    style: basemap.id === 'none' ? { version: 8, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': background || backgrounds[basemap.id] } }] } : BASEMAP_STYLES[basemap.id],
+    style: sharedMapStyle(basemap, background),
     attributionControl: basemap.id === 'none' ? false : { compact: true },
     localIdeographFontFamily: '"Noto Sans CJK SC", "PingFang SC", sans-serif',
     dragRotate: false, pitchWithRotate: false,

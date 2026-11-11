@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Marker, type Map as MapLibreMap, type GeoJSONSourceSpecification } from 'maplibre-gl';
-import { createSharedMap, applySharedMapView, setSharedGeoJSON } from '../../../public/visualization/shared-map';
+import { AttributionControl, Marker, type Map as MapLibreMap, type GeoJSONSourceSpecification, type StyleSpecification } from 'maplibre-gl';
+import { createSharedMap, applySharedMapView, setSharedGeoJSON, sharedMapStyle } from '../../../public/visualization/shared-map';
 import type { SimulationCanvasPayload, SimulationRunSummary, SimulationIndex, SimulationFrame, SimulationGeometry, SimulationQuery, SimulationBlock, SimulationExperiment } from '../../../contracts/simulation';
 import type { CanvasRendererProps } from '../../platform/canvas/renderers/types';
 import { projectMapFrame } from './map-frame';
 
 const message = (error: unknown) => error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
+const isSimulationSource = (id: string) => id === 'simulation-network' || id === 'simulation-vehicles';
+const hasBasemap = (map: MapLibreMap) => Object.keys(map.getStyle().sources).some(id => !isSimulationSource(id));
 const stateLabels: Record<string, string> = { prepared: '已受理', running: '计算中', finalizing: '确认中', ended: '已结束', unknown: '结果待确认', waiting: '候车', blocked: '上游受阻', boarding: '登乘', riding: '车上', walking: '步行接续', connecting: '等待接续', external: '外部行程', completed: '完成全链', not_arrived: '尚未到达', inserting: '等待入网', available: '可用', commanded: '发车待确认', outbound: '去程', return_commanded: '返场待确认', returning: '返场' };
 
 export function SimulationWorkspace({ kernel, session, active, payload, onContextChange, onOpenDocument }: CanvasRendererProps & { payload: SimulationCanvasPayload }) {
@@ -19,6 +21,7 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
   const [time, setTime] = useState(0), [playing, setPlaying] = useState(false), [speed, setSpeed] = useState(1);
   const [selected, setSelected] = useState(''), [error, setError] = useState(''), [refresh, setRefresh] = useState(0);
   const [mapReady, setMapReady] = useState(false);
+  const [showOsm, setShowOsm] = useState(false), [basemapStatus, setBasemapStatus] = useState('');
   const container = useRef<HTMLDivElement>(null), mapRef = useRef<MapLibreMap | null>(null);
   const mapMarkers = useRef(new Map<string, Marker>());
   const mapFrame = useMemo(() => frame && geometry && projectMapFrame(frame, geometry), [frame, geometry]);
@@ -109,29 +112,30 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
     const coordinates = (corridor.length ? corridor : geometry.features).flatMap((feature) => feature.geometry.type === 'Point' ? [feature.geometry.coordinates] : feature.geometry.coordinates);
     const center = coordinates[0]; if (!center) return;
     const map = createSharedMap(container.current, { id: 'none' }, center, 15, color('--surface-canvas'));
+    map.addControl(new AttributionControl({ compact: false }));
     mapRef.current = map;
     const resize = new ResizeObserver(() => map.resize()); resize.observe(container.current);
     const paint = () => {
-      map.setPaintProperty('background', 'background-color', color('--surface-canvas'));
-      map.setPaintProperty('network', 'line-color', color('--text-tertiary'));
-      map.setPaintProperty('nodes', 'circle-color', color('--surface-raised'));
-      map.setPaintProperty('nodes', 'circle-stroke-color', color('--text-secondary'));
-      map.setPaintProperty('vehicles', 'circle-color', ['case', ['boolean', ['get', 'car'], false], color('--interactive-primary-bg'), color('--text-secondary')]);
-      map.setPaintProperty('vehicles', 'circle-stroke-color', color('--surface-canvas'));
+      if (!hasBasemap(map)) map.setPaintProperty('background', 'background-color', color('--surface-canvas'));
+      map.setPaintProperty('simulation-network', 'line-color', color('--text-tertiary'));
+      map.setPaintProperty('simulation-nodes', 'circle-color', color('--surface-raised'));
+      map.setPaintProperty('simulation-nodes', 'circle-stroke-color', color('--text-secondary'));
+      map.setPaintProperty('simulation-vehicles', 'circle-color', ['case', ['boolean', ['get', 'car'], false], color('--interactive-primary-bg'), color('--text-secondary')]);
+      map.setPaintProperty('simulation-vehicles', 'circle-stroke-color', color('--surface-canvas'));
     };
-    const theme = new MutationObserver(() => { if (map.getLayer('vehicles')) paint(); });
+    const theme = new MutationObserver(() => { if (map.getLayer('simulation-vehicles')) paint(); });
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     map.once('load', () => {
-      setSharedGeoJSON(map, 'network', geometry as GeoJSONSourceSpecification['data']);
-      setSharedGeoJSON(map, 'vehicles', { type: 'FeatureCollection', features: [] });
-      map.addLayer({ id: 'network', source: 'network', type: 'line', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-width': 2 } });
-      map.addLayer({ id: 'nodes', source: 'network', type: 'circle', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 4, 'circle-stroke-width': 2 } });
-      map.addLayer({ id: 'vehicles', source: 'vehicles', type: 'circle', paint: { 'circle-radius': 5, 'circle-stroke-width': 1 } });
+      setSharedGeoJSON(map, 'simulation-network', geometry as GeoJSONSourceSpecification['data']);
+      setSharedGeoJSON(map, 'simulation-vehicles', { type: 'FeatureCollection', features: [] });
+      map.addLayer({ id: 'simulation-network', source: 'simulation-network', type: 'line', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-width': 2 } });
+      map.addLayer({ id: 'simulation-nodes', source: 'simulation-network', type: 'circle', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 4, 'circle-stroke-width': 2 } });
+      map.addLayer({ id: 'simulation-vehicles', source: 'simulation-vehicles', type: 'circle', paint: { 'circle-radius': 5, 'circle-stroke-width': 1 } });
       paint();
       const xs = coordinates.map((point) => point[0]), ys = coordinates.map((point) => point[1]);
       applySharedMapView(map, { mode: 'bounds', bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] }, 0);
       map.on('click', (event) => {
-        const picked = map.queryRenderedFeatures(event.point, { layers: ['vehicles', 'nodes'] })[0];
+        const picked = map.queryRenderedFeatures(event.point, { layers: ['simulation-vehicles', 'simulation-nodes'] })[0];
         if (picked) setSelected(String(picked.properties?.id || picked.properties?.nodeId));
       });
       setMapReady(true);
@@ -147,8 +151,42 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const background = container.current && getComputedStyle(container.current).getPropertyValue('--surface-canvas').trim();
+    const base = sharedMapStyle({ id: showOsm ? 'default' : 'none' }, background || undefined);
+    const apply = (next: StyleSpecification) => {
+      const current = map.getStyle();
+      map.setStyle({
+        ...next,
+        sources: { ...next.sources, ...Object.fromEntries(Object.entries(current.sources).filter(([id]) => isSimulationSource(id))) },
+        layers: [...next.layers, ...current.layers.filter(layer => 'source' in layer && isSimulationSource(layer.source))],
+      });
+    };
+    if (typeof base !== 'string') {
+      if (hasBasemap(map)) apply(base);
+      return;
+    }
+    const controller = new AbortController();
+    setBasemapStatus('正在加载 OpenStreetMap 底图…');
+    void fetch(base, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) }).then(response => {
+      if (!response.ok) throw new Error(String(response.status));
+      return response.json() as Promise<StyleSpecification>;
+    }).then(style => {
+      if (controller.signal.aborted) return;
+      apply(style);
+      setBasemapStatus('');
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      setBasemapStatus('OpenStreetMap 底图未能加载，仿真仍可回放。');
+      setShowOsm(false);
+    });
+    return () => controller.abort();
+  }, [mapReady, showOsm]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !mapReady || !mapFrame || !active) return;
-    setSharedGeoJSON(map, 'vehicles', mapFrame.vehicles);
+    setSharedGeoJSON(map, 'simulation-vehicles', mapFrame.vehicles);
     const markers = mapMarkers.current;
     const visible = new Set(mapFrame.markers.map(({ kind, id }) => `${kind}:${id}`));
     for (const [key, marker] of markers) {
@@ -179,7 +217,11 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
 
   const available = index?.availableTime || 0, counts = query?.countsByState || {};
   return <section className="simulation-workspace" data-testid="simulation-workspace" data-run-id={runId} data-frame-time={frame?.time ?? ''}>
-    <div className="simulation-status"><span>{run ? stateLabels[run.state] : '读取运行记录'}{run?.termination ? ` · ${run.termination}` : ''}</span><button type="button" onClick={() => setRefresh((value) => value + 1)}>重取索引</button></div>
+    <div className="simulation-status"><span>{run ? stateLabels[run.state] : '读取运行记录'}{run?.termination ? ` · ${run.termination}` : ''}</span><div className="simulation-status-actions">
+      <button type="button" aria-pressed={showOsm} disabled={!mapReady} onClick={() => { setBasemapStatus(''); setShowOsm(value => !value); }}>OpenStreetMap 底图</button>
+      <button type="button" onClick={() => setRefresh((value) => value + 1)}>重取索引</button>
+    </div></div>
+    {basemapStatus ? <p className="simulation-coverage" role="status">{basemapStatus}</p> : null}
     <div className="simulation-provenance">{payload.sourceKind === 'synthetic' ? '合成示例' : payload.sourceKind} · 未校准 · 不用于推断真实运营收益</div>
     <div className="simulation-map" ref={container} aria-label="交通仿真地图" />
     <ul className="simulation-legend" aria-label="仿真地图图例">
