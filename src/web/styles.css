@@ -1508,6 +1508,15 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .simulation-status button, .simulation-timeline button, .simulation-comparison button, .simulation-workspace select { min-height: var(--control-compact); padding: 0 var(--space-2); color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font: inherit; }
 .simulation-provenance { padding: var(--space-2) var(--space-3); color: var(--status-warning); background: var(--surface-sidebar); }
 .simulation-map { position: relative; flex: 1 1 45%; min-height: 180px; }
+.simulation-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); list-style: none; margin: 0; padding: var(--space-2) var(--space-3); border-block: 1px solid var(--border-default); color: var(--text-secondary); font-size: 11px; }
+.simulation-legend li { display: inline-flex; align-items: center; gap: var(--space-1); }
+.simulation-legend i { display: inline-block; flex: none; font-style: normal; }
+.simulation-legend-car { width: 10px; height: 10px; border-radius: 50%; background: var(--interactive-primary-bg); }
+.simulation-legend-bus { width: 15px; height: 9px; border: 2px solid var(--status-info); border-radius: var(--radius-sm); }
+.simulation-legend-people { color: var(--status-success); font-weight: 700; }
+.simulation-marker { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--space-1); border: 2px solid currentColor; background: var(--surface-raised); font: inherit; font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; }
+.simulation-marker--bus { color: var(--status-info); border-radius: var(--radius-sm); }
+.simulation-marker--people { color: var(--status-success); border-radius: 999px; }
 .simulation-timeline input { min-width: 40px; flex: 1; accent-color: var(--interactive-primary-bg); }
 .simulation-timeline output { white-space: nowrap; font-family: var(--font-mono); }
 .simulation-coverage { padding: var(--space-2) var(--space-3); color: var(--text-secondary); font-size: var(--text-2xs); }

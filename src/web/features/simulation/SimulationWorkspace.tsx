@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { Map as MapLibreMap, GeoJSONSourceSpecification } from 'maplibre-gl';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Marker, type Map as MapLibreMap, type GeoJSONSourceSpecification } from 'maplibre-gl';
 import { createSharedMap, applySharedMapView, setSharedGeoJSON } from '../../../public/visualization/shared-map';
 import type { SimulationCanvasPayload, SimulationRunSummary, SimulationIndex, SimulationFrame, SimulationGeometry, SimulationQuery, SimulationBlock, SimulationExperiment } from '../../../contracts/simulation';
 import type { CanvasRendererProps } from '../../platform/canvas/renderers/types';
+import { projectMapFrame } from './map-frame';
 
 const message = (error: unknown) => error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
 const stateLabels: Record<string, string> = { prepared: '已受理', running: '计算中', finalizing: '确认中', ended: '已结束', unknown: '结果待确认', waiting: '候车', blocked: '上游受阻', boarding: '登乘', riding: '车上', walking: '步行接续', connecting: '等待接续', external: '外部行程', completed: '完成全链', not_arrived: '尚未到达', inserting: '等待入网', available: '可用', commanded: '发车待确认', outbound: '去程', return_commanded: '返场待确认', returning: '返场' };
@@ -19,6 +20,8 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
   const [selected, setSelected] = useState(''), [error, setError] = useState(''), [refresh, setRefresh] = useState(0);
   const [mapReady, setMapReady] = useState(false);
   const container = useRef<HTMLDivElement>(null), mapRef = useRef<MapLibreMap | null>(null);
+  const mapMarkers = useRef(new Map<string, Marker>());
+  const mapFrame = useMemo(() => frame && geometry && projectMapFrame(frame, geometry), [frame, geometry]);
   const cache = useRef(new Map<number, SimulationBlock>()), contextCallback = useRef(onContextChange);
   contextCallback.current = onContextChange;
   const subscribeSession = useCallback((changed: () => void) => kernel.stores.session.subscribe(changed), [kernel]);
@@ -101,23 +104,29 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
   useEffect(() => {
     if (!container.current || !geometry) return;
     const css = getComputedStyle(container.current), color = (name: string) => css.getPropertyValue(name).trim();
-    const coordinates = geometry.features.flatMap((feature) => feature.geometry.type === 'Point' ? [feature.geometry.coordinates] : feature.geometry.coordinates);
+    const routeEdges = new Set(Object.values(geometry.routes).flat());
+    const corridor = geometry.features.filter(({ properties }) => properties.nodeId || properties.edgeId && routeEdges.has(properties.edgeId));
+    const coordinates = (corridor.length ? corridor : geometry.features).flatMap((feature) => feature.geometry.type === 'Point' ? [feature.geometry.coordinates] : feature.geometry.coordinates);
     const center = coordinates[0]; if (!center) return;
     const map = createSharedMap(container.current, { id: 'none' }, center, 15, color('--surface-canvas'));
     mapRef.current = map;
     const resize = new ResizeObserver(() => map.resize()); resize.observe(container.current);
     const paint = () => {
       map.setPaintProperty('background', 'background-color', color('--surface-canvas'));
-      for (const [layer, property, token] of [['network', 'line-color', '--text-tertiary'], ['nodes', 'circle-color', '--status-info'], ['vehicles', 'circle-color', '--interactive-primary-bg']] as const) map.setPaintProperty(layer, property, color(token));
+      map.setPaintProperty('network', 'line-color', color('--text-tertiary'));
+      map.setPaintProperty('nodes', 'circle-color', color('--surface-raised'));
+      map.setPaintProperty('nodes', 'circle-stroke-color', color('--text-secondary'));
+      map.setPaintProperty('vehicles', 'circle-color', ['case', ['boolean', ['get', 'car'], false], color('--interactive-primary-bg'), color('--text-secondary')]);
+      map.setPaintProperty('vehicles', 'circle-stroke-color', color('--surface-canvas'));
     };
-    const theme = new MutationObserver(() => { if (map.isStyleLoaded()) paint(); });
+    const theme = new MutationObserver(() => { if (map.getLayer('vehicles')) paint(); });
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     map.once('load', () => {
       setSharedGeoJSON(map, 'network', geometry as GeoJSONSourceSpecification['data']);
       setSharedGeoJSON(map, 'vehicles', { type: 'FeatureCollection', features: [] });
-      map.addLayer({ id: 'network', source: 'network', type: 'line', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-width': 5 } });
-      map.addLayer({ id: 'nodes', source: 'network', type: 'circle', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 7 } });
-      map.addLayer({ id: 'vehicles', source: 'vehicles', type: 'circle', paint: { 'circle-radius': ['case', ['==', ['get', 'id'], 'bus-0'], 7, 4] } });
+      map.addLayer({ id: 'network', source: 'network', type: 'line', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-width': 2 } });
+      map.addLayer({ id: 'nodes', source: 'network', type: 'circle', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 4, 'circle-stroke-width': 2 } });
+      map.addLayer({ id: 'vehicles', source: 'vehicles', type: 'circle', paint: { 'circle-radius': 5, 'circle-stroke-width': 1 } });
       paint();
       const xs = coordinates.map((point) => point[0]), ys = coordinates.map((point) => point[1]);
       applySharedMapView(map, { mode: 'bounds', bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] }, 0);
@@ -128,21 +137,57 @@ export function SimulationWorkspace({ kernel, session, active, payload, onContex
       setMapReady(true);
     });
     map.on('error', (event) => setError(event.error?.message || '地图初始化失败'));
-    return () => { setMapReady(false); resize.disconnect(); theme.disconnect(); mapRef.current = null; map.remove(); };
+    const markers = mapMarkers.current;
+    return () => {
+      for (const marker of markers.values()) marker.remove();
+      markers.clear();
+      setMapReady(false); resize.disconnect(); theme.disconnect(); mapRef.current = null; map.remove();
+    };
   }, [geometry]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !frame || !active) return;
-    setSharedGeoJSON(map, 'vehicles', { type: 'FeatureCollection', features: Object.entries(frame.vehicles).flatMap(([id, vehicle]) => vehicle.positionGeo ? [{ type: 'Feature' as const, id, properties: { id }, geometry: { type: 'Point' as const, coordinates: vehicle.positionGeo } }] : []) });
-  }, [frame, mapReady, active]);
+    if (!map || !mapReady || !mapFrame || !active) return;
+    setSharedGeoJSON(map, 'vehicles', mapFrame.vehicles);
+    const markers = mapMarkers.current;
+    const visible = new Set(mapFrame.markers.map(({ kind, id }) => `${kind}:${id}`));
+    for (const [key, marker] of markers) {
+      if (visible.has(key)) continue;
+      marker.remove(); markers.delete(key);
+    }
+    for (const { id, kind, position, count } of mapFrame.markers) {
+      const key = `${kind}:${id}`;
+      let marker = markers.get(key);
+      if (!marker) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `simulation-marker simulation-marker--${kind}`;
+        button.addEventListener('click', event => { event.stopPropagation(); setSelected(id); });
+        marker = new Marker({ element: button, offset: kind === 'people' ? [0, -17] : [0, 0] }).setLngLat(position).addTo(map);
+        markers.set(key, marker);
+      } else marker.setLngLat(position);
+      const button = marker.getElement();
+      const label = kind === 'bus' ? `公交 ${id} · 载客 ${count} 人` : `${id} · 节点旅客 ${count} 人`;
+      if (button.title !== label) {
+        button.textContent = kind === 'bus' ? `公交 · ${count} 人` : `人 ${count}`;
+        button.title = label;
+        button.setAttribute('aria-label', label);
+      }
+    }
+  }, [mapFrame, mapReady, active]);
   useEffect(() => { if (active) mapRef.current?.resize(); }, [active]);
 
   const available = index?.availableTime || 0, counts = query?.countsByState || {};
   return <section className="simulation-workspace" data-testid="simulation-workspace" data-run-id={runId} data-frame-time={frame?.time ?? ''}>
     <div className="simulation-status"><span>{run ? stateLabels[run.state] : '读取运行记录'}{run?.termination ? ` · ${run.termination}` : ''}</span><button type="button" onClick={() => setRefresh((value) => value + 1)}>重取索引</button></div>
-    <div className="simulation-provenance">{payload.sourceKind === 'synthetic' ? '合成示例' : payload.sourceKind} · 未校准 · 不用于推断真实虹桥收益</div>
+    <div className="simulation-provenance">{payload.sourceKind === 'synthetic' ? '合成示例' : payload.sourceKind} · 未校准 · 不用于推断真实运营收益</div>
     <div className="simulation-map" ref={container} aria-label="交通仿真地图" />
+    <ul className="simulation-legend" aria-label="仿真地图图例">
+      <li><i className="simulation-legend-car" aria-hidden="true" />小汽车 {mapFrame?.cars ?? '—'}</li>
+      <li><i className="simulation-legend-bus" aria-hidden="true" />公交 {mapFrame?.buses ?? '—'} · 标注载客</li>
+      <li><i className="simulation-legend-people" aria-hidden="true">人</i>节点旅客</li>
+      <li>地铁接续{frame?.travelers && mapFrame ? ` · ${mapFrame.metroRiders} 人在途` : ''}（无列车坐标）</li>
+    </ul>
     <div className="simulation-timeline">
       <button type="button" disabled={!frame} onClick={() => setPlaying((value) => !value)}>{playing ? '暂停观看' : '播放'}</button>
       <input aria-label="仿真观看时刻" type="range" min={0} max={available} step={1} value={time} onChange={(event) => { setPlaying(false); setTime(Number(event.target.value)); }} />
