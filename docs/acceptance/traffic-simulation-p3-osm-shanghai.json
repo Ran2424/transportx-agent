@@ -416,5 +416,51 @@
     "P3 real operational calibration and validation on independent dates",
     "Physical metro motion in the TransportX service ledger",
     "P4 clean-platform distribution and signing"
-  ]
+  ],
+  "agentPlatform": {
+    "conversationId": "conv_c5c1e233-9c43-4393-8e06-a88d654e300d",
+    "runId": "sim_579a13a5a0a3611a7b43db5a53f9728b",
+    "realModel": "deepseek/deepseek-v4-flash",
+    "convertedFromRawOsm": true,
+    "importTimeoutRecoveredWithoutExtraRun": true,
+    "singleRun": true,
+    "surfaces": {
+      "geoLayers": [
+        "OSM roads",
+        "observed road trajectory",
+        "observed physical metro trajectory"
+      ],
+      "simulationFrameSeconds": 390,
+      "reportTitle": "上海 OSM 复现报告"
+    },
+    "historyReadableWithoutPi": true,
+    "reproductionPackageVerified": true,
+    "evidence": {
+      "path": "tmp/simulation-p3-agent-demo/agent-presentation.json",
+      "sha256": "3c3bfa81b635eeacd61561fe84f76e11f22bed98d6da5bd8185103b14c6bbfeb",
+      "bytes": 2453
+    },
+    "files": [
+      {
+        "path": "tmp/simulation-p3-agent-demo/run-evidence.json",
+        "sha256": "f19afda7478dc91bdad3e52e4b28e79fc3dfe237f5ff4987127c6e76e69f31c4",
+        "bytes": 14301
+      },
+      {
+        "path": "tmp/simulation-p3-agent-demo/shanghai-osm-3km-reproduction.zip",
+        "sha256": "e3f46e973f8509ed7475d4ad3e46001f23cd04a788a41e72c070f965e9616a7a",
+        "bytes": 1030579
+      },
+      {
+        "path": "tmp/simulation-p3-agent-demo/workspace/上海 OSM 复现报告.md",
+        "sha256": "e4da25cc2006b3ccd8d4e401109a9915d2a3cdcfe3c68af44a86f32a87a2664b",
+        "bytes": 2342
+      },
+      {
+        "path": "tmp/simulation-p3-agent-demo/workspace/import-result.json",
+        "sha256": "3bfb60d8c0a92123bd7cde5524cfeb6d9cc36e4f104c014a6ff527877f04dd74",
+        "bytes": 526
+      }
+    ]
+  }
 }
