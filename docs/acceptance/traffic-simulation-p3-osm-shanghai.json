@@ -1,0 +1,420 @@
+{
+  "protocol": "transportx-simulation-p3-osm-technical-acceptance",
+  "version": 1,
+  "date": "2026-11-11",
+  "status": "shanghai_osm_technical_probe_passed_p3_calibration_pending",
+  "baseCommit": "51d1e44",
+  "scope": {
+    "platform": "macOS arm64",
+    "sumo": "1.28.0",
+    "trafficModule": "0.3.0",
+    "location": "上海南站—龙漕路附近",
+    "sourceGeometry": "public OpenStreetMap snapshot",
+    "operations": "synthetic",
+    "modelValidation": "not_calibrated"
+  },
+  "source": {
+    "url": "https://api.openstreetmap.org/api/0.6/map?bbox=121.422,31.150,121.450,31.179",
+    "requestBboxWgs84": [
+      121.422,
+      31.15,
+      121.45,
+      31.179
+    ],
+    "raw": {
+      "path": "tmp/simulation-p3-osm-input/shanghai-south.osm.xml",
+      "sha256": "ebf7f2233dcf974af0bcb063816528c15424e705213e3167732bc08f1e3821aa",
+      "bytes": 6826712
+    },
+    "attribution": "© OpenStreetMap contributors, ODbL — https://www.openstreetmap.org/copyright",
+    "line3Relation": "6817178",
+    "sourceNodes": 22348,
+    "sourceWays": 3277
+  },
+  "import": {
+    "networkEdges": 645,
+    "subwayEdges": 89,
+    "network": {
+      "bytes": 1360026,
+      "sha256": "8ccb507b8669cc03af4646cdef17c7a72fae173850e40497e1c6d7de6d834413"
+    },
+    "netconvert": {
+      "bytes": 4226096,
+      "sha256": "7d7a8ba64a76c78f2395bf7d6cae9f72cfdad4bd8ed751776a8f29b4c68db62a"
+    },
+    "args": [
+      "--osm-files",
+      "/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/tmp/simulation-p3-osm-input/shanghai-south.osm.xml",
+      "--output-file",
+      "corridor.net.xml",
+      "--geometry.remove",
+      "true",
+      "--keep-edges.by-type",
+      "highway.primary,highway.primary_link,highway.secondary,highway.secondary_link,highway.tertiary,highway.tertiary_link,highway.residential,highway.unclassified,railway.subway",
+      "--output.street-names",
+      "true",
+      "--no-turnarounds",
+      "true",
+      "--xml-validation",
+      "never"
+    ],
+    "paths": {
+      "road": {
+        "edges": [
+          "1268580660",
+          "232038582#1",
+          "1206018580",
+          "1206018581",
+          "1210496345",
+          "1206018582#0",
+          "1206018582#1",
+          "1206018582#2",
+          "1322916824",
+          "1247062395",
+          "1211521655",
+          "1131957512",
+          "1334955928",
+          "1131957511#0",
+          "766165344#0",
+          "766165344#2",
+          "1077027673",
+          "546374400#1"
+        ],
+        "meters": 2983.6899999999996,
+        "start": [
+          "1268580660",
+          0,
+          395
+        ],
+        "stop": [
+          "546374400#1",
+          1,
+          394.8
+        ]
+      },
+      "return": {
+        "edges": [
+          "546374400#1",
+          "1327041857",
+          "1077019234",
+          "47012908#0",
+          "47012908#2",
+          "1327041856",
+          "1225879509#0",
+          "1225879509#2",
+          "1068943360",
+          "1075145733#0",
+          "1075145733#2",
+          "92190561",
+          "1327579132#0",
+          "230493752#2",
+          "1075157488#1",
+          "1268580677",
+          "1268580674",
+          "1268580667",
+          "1268580660"
+        ],
+        "meters": 2658.2699999999995,
+        "start": [
+          "546374400#1",
+          1,
+          394.8
+        ],
+        "stop": [
+          "1268580660",
+          0,
+          395
+        ]
+      },
+      "rail": {
+        "edges": [
+          "93881218#0",
+          "93881218#1",
+          "321205032#2",
+          "321205032#3",
+          "321205032#4"
+        ],
+        "meters": 3038.2499999999995,
+        "start": [
+          "93881218#0",
+          0,
+          160.9
+        ],
+        "stop": [
+          "321205032#4",
+          0,
+          1693.4
+        ]
+      }
+    }
+  },
+  "physical": {
+    "vehicles": [
+      {
+        "id": "metro-0",
+        "mode": "metro",
+        "departSeconds": 35,
+        "arrivalSeconds": 223,
+        "durationSeconds": 188,
+        "routeMeters": 3130.49,
+        "stopSeconds": 8,
+        "trajectorySamples": 94
+      },
+      {
+        "id": "car-0",
+        "mode": "car",
+        "departSeconds": 24,
+        "arrivalSeconds": 521,
+        "durationSeconds": 497,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 249
+      },
+      {
+        "id": "bus-0",
+        "mode": "bus",
+        "departSeconds": 0,
+        "arrivalSeconds": 527,
+        "durationSeconds": 527,
+        "routeMeters": 3215.59,
+        "stopSeconds": 8,
+        "trajectorySamples": 264
+      },
+      {
+        "id": "car-1",
+        "mode": "car",
+        "departSeconds": 28,
+        "arrivalSeconds": 588,
+        "durationSeconds": 560,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 280
+      },
+      {
+        "id": "car-2",
+        "mode": "car",
+        "departSeconds": 32,
+        "arrivalSeconds": 677,
+        "durationSeconds": 645,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 323
+      },
+      {
+        "id": "car-3",
+        "mode": "car",
+        "departSeconds": 36,
+        "arrivalSeconds": 680,
+        "durationSeconds": 644,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 322
+      },
+      {
+        "id": "car-4",
+        "mode": "car",
+        "departSeconds": 40,
+        "arrivalSeconds": 768,
+        "durationSeconds": 728,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 364
+      },
+      {
+        "id": "car-5",
+        "mode": "car",
+        "departSeconds": 44,
+        "arrivalSeconds": 771,
+        "durationSeconds": 727,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 364
+      },
+      {
+        "id": "car-6",
+        "mode": "car",
+        "departSeconds": 48,
+        "arrivalSeconds": 858,
+        "durationSeconds": 810,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 405
+      },
+      {
+        "id": "car-7",
+        "mode": "car",
+        "departSeconds": 52,
+        "arrivalSeconds": 860,
+        "durationSeconds": 808,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 404
+      },
+      {
+        "id": "car-8",
+        "mode": "car",
+        "departSeconds": 56,
+        "arrivalSeconds": 948,
+        "durationSeconds": 892,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 446
+      },
+      {
+        "id": "car-9",
+        "mode": "car",
+        "departSeconds": 60,
+        "arrivalSeconds": 951,
+        "durationSeconds": 891,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 446
+      },
+      {
+        "id": "car-10",
+        "mode": "car",
+        "departSeconds": 64,
+        "arrivalSeconds": 1038,
+        "durationSeconds": 974,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 487
+      },
+      {
+        "id": "car-11",
+        "mode": "car",
+        "departSeconds": 68,
+        "arrivalSeconds": 1041,
+        "durationSeconds": 973,
+        "routeMeters": 3215.59,
+        "stopSeconds": 0,
+        "trajectorySamples": 487
+      }
+    ],
+    "endSeconds": 1500,
+    "collisions": 0,
+    "teleports": 0,
+    "repeatIdenticalParsedNetworkTripsStopsAndSampleCounts": true
+  },
+  "host": {
+    "networkSha256": "8ccb507b8669cc03af4646cdef17c7a72fae173850e40497e1c6d7de6d834413",
+    "runId": "sim_374784de3ec2263c94790763a059f689",
+    "computedSeconds": 600,
+    "road": {
+      "planned": 13,
+      "inserted": 13,
+      "arrived": 6,
+      "activeOrUnfinished": 7,
+      "pendingInsertion": [],
+      "notYetDue": [],
+      "peakActive": 13,
+      "timeLossVehicleSeconds": 5189.1900000000005,
+      "observedVehicleSeconds": 6675,
+      "meanTimeLossSeconds": 399.1684615384616,
+      "meanObservedDurationSeconds": 513.4615384615385,
+      "meanTrafficWaitingSeconds": 335.53846153846155,
+      "aggregateSpeedMetersPerSecond": 5.678701123595506
+    },
+    "alightedAtSeconds": 286,
+    "metroBoardedAtSeconds": 390,
+    "journeysCompletedAtSeconds": 578,
+    "states": {
+      "completed": 3,
+      "connecting": 1
+    },
+    "lastConnectionMisses": 1,
+    "files": [
+      {
+        "path": "traffic-simulation/runs/sim_374784de3ec2263c94790763a059f689/result.json",
+        "sha256": "0f04c2d6b3bf102c3569033b4e2bb9585bba1c0334e9582ad57ed2225adcf294"
+      },
+      {
+        "path": "traffic-simulation/runs/sim_374784de3ec2263c94790763a059f689/index.json",
+        "sha256": "bbf1bd64db617e610fc30b1d31b16ab76a706a907342df6c42a3ff4892ac5d35"
+      },
+      {
+        "path": "traffic-simulation/runs/sim_374784de3ec2263c94790763a059f689/tripinfo.xml",
+        "sha256": "f7d83ddf99edf356e4e240c13f8224d5baa26e08cfc30c4e306f492ce250ffb1"
+      }
+    ],
+    "lateTimetable": {
+      "runId": "sim_4c31ba53a5eccab246ccae9139b5a737",
+      "metroBoardedAtSeconds": 590,
+      "states": {
+        "external": 3,
+        "connecting": 1
+      },
+      "completedJourneys": 0
+    }
+  },
+  "checks": {
+    "actualNetconvert": true,
+    "actualBusMetroAndCarsInSameSumoRun": true,
+    "actualStopsAndTrajectorySamples": true,
+    "realTransportXHostAndTraCI": true,
+    "productionFilesChanged": false,
+    "nodeTestRegistrationCount": 40
+  },
+  "evidence": [
+    {
+      "path": "tmp/simulation-p3-shanghai-verified/physical-evidence.json",
+      "sha256": "c78674e4fcf937d7129ccbd367efc56a5c6da446e94e21616a8f3718a5c83ef8",
+      "bytes": 15660
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-verified/netconvert.log",
+      "sha256": "2536afac961ac26e471160614ca48162b420fd838aef9fdadf988769bfd5be39",
+      "bytes": 11113
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-verified/tripinfo.xml",
+      "sha256": "28b8b8d3b5a4acf09af33ad6891ca240efbc08720c92dbcd26a72cac75d2a931",
+      "bytes": 7180
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-verified/stops.xml",
+      "sha256": "60f00f3c3e6cff931337655b602754ef8c6a9ef48461e86e0341e83798f604aa",
+      "bytes": 1863
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-verified/trajectory.xml",
+      "sha256": "dd6337a8e08e394eb8904947f240c2b673ee7dcb05e771b052ae902c5818dfd6",
+      "bytes": 718811
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-verified/shanghai-osm-corridor.png",
+      "sha256": "dbd66b204ad8e516ecf7939b729461bc3edbb8fcb22d660337d8485fda26246d",
+      "bytes": 305533
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-repeat/physical-evidence.json",
+      "sha256": "23071768306102d8f95ac939c4a9335c3822c7a1b3d82fb02a6440e590a0b2f5",
+      "bytes": 15660
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-host-complete/host-evidence.json",
+      "sha256": "4e830aa887155ed71facc94a08cb6b0425e3ac947f579b0c37b60a6b471aeec3",
+      "bytes": 12308
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-host-complete/workspace/scenario.json",
+      "sha256": "51c29a2bca2584796f60aa6f9e2588db39f6f2ef18d5b76cb532eedef66264a8",
+      "bytes": 4932
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-host-first/host-evidence.json",
+      "sha256": "6b60648ac34cd9acc34a44bf5ecf663bc2b8ee51bd2a64c1b31eaf32655e6b22",
+      "bytes": 11842
+    },
+    {
+      "path": "tmp/simulation-p3-shanghai-host-first/workspace/scenario.json",
+      "sha256": "a2e52fd44dc2de71d818f5fe9b5d5e06b87687e3de13ac3cd47dd9b8dbd2e45a",
+      "bytes": 4932
+    }
+  ],
+  "notPassed": [
+    "P3 real operational calibration and validation on independent dates",
+    "Physical metro motion in the TransportX service ledger",
+    "P4 clean-platform distribution and signing"
+  ]
+}

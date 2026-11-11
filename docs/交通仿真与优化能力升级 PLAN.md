@@ -3,6 +3,8 @@
 > 状态：P0 在已测范围内通过，见 [P0 记录](<交通仿真与优化能力升级 P0 记录.md>) 和 [证据摘要](acceptance/traffic-simulation-p0.json)。P1、P2 在合成场景与 macOS arm64 已测范围内通过，见 [P1 记录](<交通仿真与优化能力升级 P1 记录.md>) / [证据](acceptance/traffic-simulation-p1.json) 及 [P2 记录](<交通仿真与优化能力升级 P2 记录.md>) / [证据](acceptance/traffic-simulation-p2.json)。Windows SUMO 实机、P3 校准与 P4 成品分发仍未通过；P5 保持后续范围。
 >
 > 本次实施范围调整（用户确认，2026-11-10）：先用示例小场景验收，不做真实虹桥场景测试。P3 的真实数据校准暂缓，不标为完成；示例输出始终标注合成输入、未校准，不推断真实虹桥收益。P0–P2 仍按门槛推进，P4 按目标平台证据验收，P5 保持后续范围。
+
+> 2026-11-11 补充：按用户要求完成上海南站—龙漕路附近约 3 km 的公开 OSM 路网与合成运营技术测试，见 [P3 记录](<交通仿真与优化能力升级 P3 记录.md>) 与 [证据](acceptance/traffic-simulation-p3-osm-shanghai.json)。P3 的真实运营校准和独立日期验证仍未通过。
 >
 > 初稿：2026-10-22；本次修订：2026-11-10。源码架构基线为 3.24.2（未发布），实际接入以 [ARCHITECTURE.md](ARCHITECTURE.md) 与源码为准，最低兼容平台版本在实现后确定。
 >
