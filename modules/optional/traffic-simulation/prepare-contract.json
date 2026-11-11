@@ -3,8 +3,8 @@
   "moduleId": "com.transportx.traffic-simulation",
   "toolId": "traffic.prepare",
   "piName": "traffic_prepare_scenario",
-  "contractVersion": "1.1.0",
-  "semanticVersion": "traffic-prepare-v2",
+  "contractVersion": "1.2.0",
+  "semanticVersion": "traffic-prepare-v3",
   "input": {
     "type": "object",
     "required": [
@@ -36,6 +36,10 @@
             {
               "type": "string",
               "const": "policy"
+            },
+            {
+              "type": "string",
+              "const": "railTimetable"
             }
           ]
         },

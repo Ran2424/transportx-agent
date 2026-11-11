@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { parseTrafficScenario, parseSimulationCanvasTarget, parseSimulationGeometry, SIMULATION_MODULE_ID, SIMULATION_CANVAS_ADAPTER_ID, type TrafficScenario, type SimulationRunSummary, type SimulationQuery, type SimulationGeometry, type ScenarioVariant, type SimulationExperiment } from '../contracts/simulation.js';
+import { parseTrafficScenario, parseSimulationCanvasTarget, parseSimulationGeometry, SIMULATION_MODULE_ID, SIMULATION_CANVAS_ADAPTER_ID, type TrafficScenario, type SimulationRunSummary, type SimulationQuery, type SimulationNetworkView, type ScenarioVariant, type SimulationExperiment } from '../contracts/simulation.js';
 import type { CanvasPresentationV1 } from '../contracts/canvas.js';
 import type { GeoClientContextV1 } from '../contracts/geo.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
@@ -105,7 +105,7 @@ export class SimulationService {
     const networkSha256 = sha256File(network);
     let variant: ScenarioVariant | undefined;
     if (body.parentScenarioId !== undefined) {
-      if (typeof body.parentScenarioId !== 'string' || !Array.isArray(body.interventions) || !body.interventions.length || body.interventions.length > 2 || new Set(body.interventions).size !== body.interventions.length || body.interventions.some(field => !['departures', 'policy'].includes(field))) throw fail('traffic_variant_invalid', 'Declare the parent and exact changed service fields.', 400);
+      if (typeof body.parentScenarioId !== 'string' || !Array.isArray(body.interventions) || !body.interventions.length || body.interventions.length > 2 || new Set(body.interventions).size !== body.interventions.length || body.interventions.some(field => !['departures', 'policy', 'railTimetable'].includes(field)) || body.interventions.includes('railTimetable') && body.interventions.length !== 1) throw fail('traffic_variant_invalid', 'Declare the parent and exact changed service fields.', 400);
       const parent = this.scenario(session, body.parentScenarioId);
       if (parent.inputContextSha256) {
         const frozen = readSimulationJson<GeoClientContextV1>(path.join(this.artifact(session, 'scenarios', parent.scenarioId), 'input-context.json'));
@@ -114,7 +114,18 @@ export class SimulationService {
       } else if (inputContext) throw fail('traffic_variant_incomparable', 'Do not add a different selection to a variant.');
       const expected = structuredClone(parent.document.configuration), actual = structuredClone(config);
       if (expected.model !== 'multimodal' || actual.model !== 'multimodal' || networkSha256 !== parent.networkSha256 || !isDeepStrictEqual(document.network.mapping, parent.document.network.mapping) || !isDeepStrictEqual(document.provenance, parent.document.provenance)) throw fail('traffic_variant_incomparable', 'Variants require the same frozen network, demand source and model.');
-      for (const field of body.interventions as Array<'departures' | 'policy'>) {
+      for (const field of body.interventions as ScenarioVariant['interventions']) {
+        if (field === 'railTimetable') {
+          if (!expected.rail || !actual.rail || expected.rail.stops.length !== actual.rail.stops.length) throw fail('traffic_variant_incomparable', 'Choose the same physical metro service.');
+          if (isDeepStrictEqual(expected.rail, actual.rail)) throw fail('traffic_variant_unchanged', 'Adjust a timetable value.');
+          actual.rail.insertTime = expected.rail.insertTime;
+          for (const [i, stop] of actual.rail.stops.entries()) {
+            const { arrival, departure, minDwell } = expected.rail.stops[i];
+            Object.assign(stop, { arrival, departure, minDwell });
+          }
+          actual.coordination!.metro[0].time = expected.coordination!.metro[0].time;
+          continue;
+        }
         if (isDeepStrictEqual(actual.coordination![field], expected.coordination![field])) throw fail('traffic_variant_unchanged', 'Each declared intervention must change its named input.');
         Object.assign(actual.coordination!, { [field]: expected.coordination![field] });
       }
@@ -133,12 +144,22 @@ export class SimulationService {
     const frozenNetwork = path.join(output, 'network.net.xml'); fs.copyFileSync(network, frozenNetwork);
     writeJsonAtomic(path.join(output, 'scenario.json'), document);
     try {
-      const { stdout } = await this.runner.run(containedFile(module.packageRoot, path.join(module.packageRoot, 'scripts/inspect_network.py')), [frozenNetwork, JSON.stringify(document.network.mapping), config.model, path.join(output, 'geometry.json'), JSON.stringify(config.coordination ? { nodes: config.coordination.nodes, routes: config.coordination.routes } : null)], { cwd: session.cwd, signal, envMode: 'replace', env: { PYTHONPATH: runtime.pythonPath }, timeoutMs: 120_000, maxBuffer: 32 * 1024 });
+      const coordination = config.coordination;
+      const input = coordination ? { nodes: coordination.nodes, routes: coordination.routes, ...(config.rail ? { rail: config.rail, durationSeconds: config.durationSeconds, fleet: coordination.fleet, metro: coordination.metro } : {}) } : null;
+      const { stdout } = await this.runner.run(containedFile(module.packageRoot, path.join(module.packageRoot, 'scripts/inspect_network.py')), [frozenNetwork, JSON.stringify(document.network.mapping), config.model, path.join(output, 'geometry.json'), JSON.stringify(input)], { cwd: session.cwd, signal, envMode: 'replace', env: { PYTHONPATH: runtime.pythonPath }, timeoutMs: 120_000, maxBuffer: 32 * 1024 });
       const inspected = JSON.parse(stdout);
       if (inspected.protocol !== 'transportx-network-inspection' || inspected.networkSha256 !== networkSha256 || sha256File(network) !== networkSha256 || sha256File(frozenNetwork) !== networkSha256 || inspected.geometry?.sha256 !== sha256File(path.join(output, 'geometry.json'))) throw fail('traffic_preparation_changed', 'Network changed during preparation.');
       const geometry = parseSimulationGeometry(readSimulationJson(path.join(output, 'geometry.json')));
       if (!geometry || !isDeepStrictEqual(geometry.routes['route:road'], document.network.mapping.roadRoute)) throw fail('traffic_geometry_invalid', 'Prepared geometry or route mappings are invalid.');
-      if (config.coordination && (!isDeepStrictEqual(geometry.features.filter(feature => feature.properties.nodeId).map(feature => feature.id).sort(), config.coordination.nodes.map(node => node.id).sort()) || !isDeepStrictEqual(Object.keys(geometry.routes).sort(), ['route:road', ...config.coordination.routes.map(route => route.id)].sort()))) throw fail('traffic_model_unsupported', 'This module did not prepare the declared service nodes and routes. Use the corrected multimodal module.');
+      if (config.coordination) {
+        const nodeIds = [...config.coordination.nodes.map(node => node.id), ...(config.rail?.stops.map(stop => stop.platformId) ?? [])].sort();
+        const routeIds = ['route:road', ...config.coordination.routes.map(route => route.id), ...(config.rail ? [config.rail.lineId] : [])].sort();
+        if (!isDeepStrictEqual(geometry.features.filter(feature => feature.properties.nodeId).map(feature => feature.id).sort(), nodeIds)
+            || !isDeepStrictEqual(Object.keys(geometry.routes).sort(), routeIds)
+            || config.rail && !isDeepStrictEqual(geometry.routes[config.rail.lineId], config.rail.edges)) {
+          throw fail('traffic_model_unsupported', 'This module did not prepare the declared service nodes and routes.');
+        }
+      }
       this.plan(session, true);
       if (inputContext) {
         const corners = inputContext.geometry?.type === 'Polygon' ? inputContext.geometry.coordinates[0] : undefined;
@@ -375,7 +396,18 @@ export class SimulationService {
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
   }
   chunk(session: SimulationSession, runId: string, sequence: number) { return readSimulationChunk(this.artifact(session, 'runs', runId), this.index(session, runId), sequence); }
-  geometry(session: SimulationSession, runId: string): SimulationGeometry { const run = this.load<RunRecord>(session, runId); this.scenario(session, run.scenarioId); const geometry = parseSimulationGeometry(readSimulationJson(path.join(this.artifact(session, 'scenarios', run.scenarioId), 'geometry.json'))); if (!geometry) throw fail('traffic_geometry_invalid', 'Frozen geometry is invalid.'); return geometry; }
+  geometry(session: SimulationSession, runId: string): SimulationNetworkView {
+    const run = this.load<RunRecord>(session, runId), scenario = this.scenario(session, run.scenarioId);
+    const geometry = parseSimulationGeometry(readSimulationJson(path.join(this.artifact(session, 'scenarios', run.scenarioId), 'geometry.json')));
+    if (!geometry) throw fail('traffic_geometry_invalid', 'Frozen geometry is invalid.');
+    const serviceRoutes = scenario.document.configuration.coordination?.routes.map(({ id, mode, origin, target }) => ({ id, mode, origin, target })) ?? [];
+    const nodes = new Set(geometry.features.flatMap(feature => feature.properties.nodeId ? [feature.properties.nodeId] : []));
+    if (serviceRoutes.some(route => !geometry.routes[route.id] || !nodes.has(route.origin) || !nodes.has(route.target))) {
+      throw fail('traffic_geometry_invalid', 'Frozen service routes or stations do not match the geometry.');
+    }
+    const { rail, startTime, serviceDate, durationSeconds } = scenario.document.configuration;
+    return { ...geometry, serviceRoutes, ...(rail ? { rail, startTime, serviceDate, durationSeconds } : {}) };
+  }
   presentation(session: SimulationSession, runId: string): CanvasPresentationV1 {
     const record = this.load<RunRecord>(session, runId), scenario = this.scenario(session, record.scenarioId);
     if (!this.plan(session).module.canvasViews.some((view) => view.adapterId === SIMULATION_CANVAS_ADAPTER_ID && view.kind === 'simulation' && view.protocolVersion === '1.0')) throw fail('traffic_adapter_unavailable', 'Simulation adapter is not selected.');
@@ -389,20 +421,29 @@ export class SimulationService {
     const frame = block.frames.find((item) => item.time === query.time) || block.start;
     return { runId, scenarioId: run.scenarioId, networkSha256: scenario.networkSha256, jobSha256: run.jobSha256, frameSha256: simulationDigest(JSON.stringify(frame)), query, ...(run.experimentId ? { experimentId: run.experimentId, experimentSlot: run.experimentSlot, seed: run.seed } : {}) };
   }
-  query(session: SimulationSession, body: { runId?: unknown; time?: unknown; objectId?: unknown; limit?: unknown }): SimulationQuery {
+  query(session: SimulationSession, body: { runId?: unknown; time?: unknown; objectId?: unknown; limit?: unknown; eventSequence?: unknown }): SimulationQuery {
     const runId = String(body.runId), index = this.index(session, runId), requestedTime = body.time === undefined ? index.availableTime : body.time;
     if (typeof requestedTime !== 'number' || !Number.isFinite(requestedTime) || requestedTime < 0 || requestedTime > index.availableTime) throw fail('traffic_time_unavailable', 'Requested time has not been published.', 400);
     const sequence = index.chunks.reduce((found, item, i) => item.from <= requestedTime ? i : found, -1);
-    const { block } = this.chunk(session, runId, sequence), frame = [...block.frames].reverse().find((item) => item.time <= requestedTime) || (block.start.time <= requestedTime ? block.start : undefined);
+    const root = this.artifact(session, 'runs', runId);
+    const current = readSimulationChunk(root, index, sequence), block = current.block;
+    const frame = [...block.frames].reverse().find(item => item.time <= requestedTime) || (block.start.time <= requestedTime ? block.start : undefined);
     if (!frame) throw fail('traffic_time_unavailable', 'No complete frame exists at this time.');
     const countsByState: Record<string, number> = {};
     for (const person of Object.values(frame.travelers || {})) countsByState[person.state] = (countsByState[person.state] || 0) + 1;
     const objectId = typeof body.objectId === 'string' && body.objectId.length <= 160 ? body.objectId : undefined;
-    const events = index.chunks.slice(0, sequence + 1).flatMap((_entry, i) => this.chunk(session, runId, i).events);
+    const events = index.chunks.slice(0, sequence).flatMap((_entry, i) => readSimulationChunk(root, index, i).events).concat(current.events);
     const routeVehicle = (id: string) => objectId === 'route:shuttle' ? id === 'bus-0' : objectId === 'route:ridehail' ? id === 'car-0' : objectId === 'route:road' && id.startsWith('road-');
-    const relevant = events.filter((event) => event.time <= frame.time && (!objectId || event.objectId === objectId || event.nodeId === objectId || event.routeId === objectId || event.vehicle === objectId || event.service === objectId || event.travelers?.includes(objectId) || routeVehicle(event.objectId) || event.vehicle && routeVehicle(event.vehicle)));
+    const relevant = events.filter((event) => event.time <= requestedTime && (!objectId || event.objectId === objectId || event.nodeId === objectId || event.routeId === objectId || event.vehicle === objectId || event.service === objectId || event.travelers?.includes(objectId) || routeVehicle(event.objectId) || event.vehicle && routeVehicle(event.vehicle)));
+    const event = body.eventSequence === undefined ? undefined : relevant.find((item) => item.sequence === body.eventSequence && item.time === requestedTime);
+    if (body.eventSequence !== undefined && !event) throw fail('traffic_event_unavailable', 'The selected event does not match this Run, time and object.', 404);
     const limit = typeof body.limit === 'number' && Number.isInteger(body.limit) && body.limit >= 1 && body.limit <= 200 ? body.limit : 100;
-    const result: SimulationQuery = { runId, requestedTime, time: frame.time, frameSequence: sequence, partial: !index.final, units: { time: 's', distance: 'm', speed: 'm/s' }, coordinateSystems: { position: 'sumo-network-xy', positionGeo: 'WGS84-longitude-latitude-degrees' }, countsByState, events: relevant.slice(-limit), truncated: relevant.length > limit };
+    const throughFrame = events.filter(item => item.time <= frame.time);
+    const insertedVehicles = new Set(throughFrame.filter(item => item.type === 'vehicle_inserted').map(item => item.objectId)).size;
+    const missedConnections = new Set(throughFrame.filter(item => item.type === 'connection_missed').map(item => item.objectId)).size;
+    const result: SimulationQuery = { runId, requestedTime, time: frame.time, frameSequence: sequence, partial: !index.final, units: { time: 's', distance: 'm', speed: 'm/s' }, coordinateSystems: { position: 'sumo-network-xy', positionGeo: 'WGS84-longitude-latitude-degrees' }, countsByState, insertedVehicles, ...(frame.travelers ? { missedConnections } : {}), events: relevant.slice(-limit), ...(event ? { event } : {}), truncated: relevant.length > limit };
+    const railEvents = events.filter(item => item.time <= requestedTime && (item.type === 'metro_arrived' || item.type === 'metro_departed'));
+    if (railEvents.length) result.railEvents = railEvents;
     if (objectId) {
       if (frame.vehicles[objectId] || frame.fleet?.[objectId]) {
         if (frame.vehicles[objectId]) result.vehicle = { id: objectId, ...frame.vehicles[objectId] };
@@ -410,20 +451,26 @@ export class SimulationService {
       }
       else if (frame.travelers?.[objectId]) result.traveler = frame.travelers[objectId];
       else if (objectId.startsWith('route:')) {
-        const edgeIds = this.geometry(session, runId).routes[objectId];
+        const geometry = this.geometry(session, runId), edgeIds = geometry.routes[objectId];
         if (!edgeIds) throw fail('traffic_object_unavailable', 'Route is unavailable.', 404);
-        result.route = { id: objectId, edgeIds, vehicles: Object.keys(frame.vehicles).filter((id) => routeVehicle(id) || frame.fleet?.[id]?.route === objectId) };
+        result.route = { id: objectId, edgeIds, vehicles: Object.keys(frame.vehicles).filter((id) => routeVehicle(id) || frame.fleet?.[id]?.route === objectId || geometry.rail?.lineId === objectId && geometry.rail.trainId === id) };
+        const run = this.load<RunRecord>(session, runId), service = this.scenario(session, run.scenarioId).document.configuration.coordination;
+        if (service?.routes.some(route => route.id === objectId)) result.route.departures = service.departures.filter(item => item.route === objectId).map(({ id, time, vehicle }) => ({ id, time, vehicle }));
         const people = Object.values(frame.travelers || {}).filter(person => 'route' in person && person.route === objectId);
         if (people.length) result.route.countsByState = people.reduce((counts, person) => { counts[person.state] = (counts[person.state] || 0) + 1; return counts; }, {} as Record<string, number>);
       }
       else if (objectId.startsWith('node:')) {
-        const record = this.load<RunRecord>(session, runId), service = this.scenario(session, record.scenarioId).document.configuration.coordination;
+        const record = this.load<RunRecord>(session, runId), { coordination: service, rail } = this.scenario(session, record.scenarioId).document.configuration;
         const node = service?.nodes.find(node => node.id === objectId);
-        if (node) result.node = { id: objectId, waiting: Object.values(frame.travelers || {}).filter(p => p.location === objectId && p.state === 'waiting').length, connecting: Object.values(frame.travelers || {}).filter(p => p.location === objectId && p.state === 'connecting').length, walking: Object.values(frame.travelers || {}).filter(p => p.location === objectId && p.state === 'walking').length, blocked: Object.values(frame.travelers || {}).filter(p => p.location === `upstream:${objectId}` && p.state === 'blocked').length, waitingCapacity: node.waitingCapacity, reservedBerths: Object.values(frame.fleet || {}).filter(v => ['boarding', 'commanded', 'outbound', 'return_commanded'].includes(v.state) && service!.routes.some(route => route.id === v.route && route.target === objectId)).length };
+        if (node) result.node = { id: objectId, waiting: Object.values(frame.travelers || {}).filter(p => p.location === objectId && p.state === 'waiting').length, connecting: Object.values(frame.travelers || {}).filter(p => p.location === objectId && p.state === 'connecting').length, walking: Object.values(frame.travelers || {}).filter(p => p.location === objectId && p.state === 'walking').length, blocked: Object.values(frame.travelers || {}).filter(p => p.location === `upstream:${objectId}` && p.state === 'blocked').length, waitingCapacity: node.waitingCapacity, reservedBerths: Object.values(frame.fleet || {}).filter(v => ['boarding', 'commanded', 'outbound', 'return_commanded'].includes(v.state) && service!.routes.some(route => route.id === v.route && route.target === objectId)).length, metro: service?.metro.filter(item => item.node === objectId).map(({ id, time, capacity }) => ({ id, time, capacity })) };
         else if (frame.travelers && ['node:hub', 'node:relay'].includes(objectId)) result.node = { id: objectId, waiting: Object.values(frame.travelers).filter(p => p.location === objectId.slice(5) && p.state === 'waiting').length, connecting: Object.values(frame.travelers).filter(p => p.location === objectId.slice(5) && p.state === 'connecting').length };
+        else if (rail?.stops.some(stop => stop.platformId === objectId)) result.platformId = objectId;
         else throw fail('traffic_object_unavailable', 'Node does not exist in this scenario.', 404);
       }
-      else throw fail('traffic_object_unavailable', 'Object does not exist in this published frame.', 404);
+      else if (!event) {
+        const record = this.load<RunRecord>(session, runId);
+        if (this.scenario(session, record.scenarioId).document.configuration.rail?.trainId !== objectId) throw fail('traffic_object_unavailable', 'Object does not exist in this published frame.', 404);
+      }
     }
     return result;
   }

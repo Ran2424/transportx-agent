@@ -62,7 +62,7 @@ import { removeExecutionMetadata } from './util/execution-owner.js';
 import { RpcCommandLedger } from './rpc-command-ledger.js';
 import { SpatialAnalysisService } from './spatial-analysis-service.js';
 import { CadService } from './cad-service.js';
-import { preferUnpackedPath } from './session-assembly.js';
+import { dependsOnBuiltinSimulation, preferUnpackedPath } from './session-assembly.js';
 import { VideoService } from './video-service.js';
 import { verifyChecksumFile } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
@@ -289,15 +289,17 @@ function currentSessionOptions() {
   return {
     schemaVersion: 1,
     modules: [
-      ...MODULE_INSTALLER.catalog(),
+      ...MODULE_INSTALLER.catalog().filter((entry) => !platformModuleIds.has(entry.id)),
       ...platformModules.filter((module) => module.origin === 'builtin' && module.enabled && module.manifest.type === 'capability' && !defaultModuleIds.has(module.manifest.id)).map((module) => ({ id: module.manifest.id, version: module.manifest.version, manifest: module.manifest, source: { manifestPath: module.manifestPath, packageRoot: module.packageRoot, origin: module.origin } })),
     ].map((entry) => {
       const runtime = moduleRuntimeCompatible(entry.manifest);
       let dependenciesCompatible = false;
+      let requiresExplicitSelection = entry.source.origin === 'builtin';
       try {
         const selectedSources = MODULE_INSTALLER.sourcesForSelectionsWithDependencies([{ id: entry.id, version: entry.version }], platformModuleIds);
         const selectionRegistry = new ModuleRegistry(MODULE_REGISTRY.platformVersion).load([...platformSources, ...selectedSources]);
         dependenciesCompatible = selectionRegistry.errors.length === 0 && selectionRegistry.get(entry.id)?.enabled === true;
+        if (dependenciesCompatible && !requiresExplicitSelection) requiresExplicitSelection = dependsOnBuiltinSimulation(selectionRegistry, entry.id);
       } catch {}
       const compatible = runtime.compatible && dependenciesCompatible;
       return {
@@ -309,7 +311,7 @@ function currentSessionOptions() {
         origin: entry.source.origin,
         compatible,
         enabledForNewSessions: compatible && (entry.source.origin === 'builtin' || enabled.has(entry.id)),
-        selectedByDefault: compatible && enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
+        selectedByDefault: compatible && !requiresExplicitSelection && enabled.has(entry.id) && defaultVersions.has(`${entry.id}:${entry.version}`),
         dependencies: entry.manifest.dependencies,
         assets: (entry.manifest.contributes?.assets || []).map((asset) => {
           const assetPath = path.resolve((ASSET_OVERRIDES as Record<string, string>)[asset.id] || path.resolve(entry.source.packageRoot!, asset.path));

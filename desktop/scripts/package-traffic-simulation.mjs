@@ -12,9 +12,11 @@ if (!dependencies) throw new Error('TRANSPORTX_SIMULATION_DEPS must explicitly n
 const profile = getSimulationProbeProfile();
 const source = path.resolve('dist/tool-modules/traffic-simulation');
 const manifest = JSON.parse(fs.readFileSync(path.join(source, 'manifest.json'), 'utf8'));
-const stage = path.resolve('desktop/build/traffic-simulation');
+const builtin = process.argv.includes('--builtin');
+const stage = path.resolve(builtin ? 'desktop/build/traffic-simulation-native' : 'desktop/build/traffic-simulation');
 fs.rmSync(stage, { recursive: true, force: true }); fs.mkdirSync(stage, { recursive: true });
-const packageRoot = path.join(stage, manifest.id, manifest.version);
+const packageRoot = builtin ? path.resolve('desktop/build/builtin-modules/traffic-simulation') : path.join(stage, manifest.id, manifest.version);
+if (builtin) fs.rmSync(packageRoot, { recursive: true, force: true });
 fs.cpSync(source, packageRoot, { recursive: true });
 fs.copyFileSync(path.resolve('LICENSE'), path.join(packageRoot, 'LICENSE'));
 const runtimeBuild = path.join(stage, 'native'); fs.mkdirSync(runtimeBuild);
@@ -42,6 +44,10 @@ manifest.contributes.nativeRuntimes = [{ id: 'sumo', kind: 'sumo', platform: pro
   integrityFile: entry(checksum), notices: relative(path.join(nativeRoot, 'notices', 'eclipse_sumo-1.28.0.dist-info', 'LICENSE')) }];
 fs.writeFileSync(path.join(packageRoot, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 const { validateModulePackage } = require('../../bin/module-installer.js'); validateModulePackage(packageRoot, manifest);
+if (builtin) {
+  console.log(`Prepared built-in Traffic Simulation ${manifest.version} at ${packageRoot}`);
+  process.exit(0);
+}
 const release = path.resolve('release/modules'); fs.mkdirSync(release, { recursive: true });
 const output = path.join(release, `transportx-traffic-simulation-${manifest.version}-${process.platform}-${process.arch}.zip`);
 await new Promise((resolve, reject) => {

@@ -8,10 +8,11 @@ import { parseSessionProfileStructured, type SessionProfileV1 } from '../contrac
 import { APP_PATHS, BUILTIN_MODULE_MANIFESTS, LOCAL_MODULE_MANIFESTS, TAU_SETTINGS, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE, saveTauSetting } from './config.js';
 
 export const MODULE_INSTALLER = new ModuleInstaller(APP_PATHS.modulesDir);
+const builtinIds = new Set(BUILTIN_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
 export function moduleSources() {
   return [
     ...BUILTIN_MODULE_MANIFESTS,
-    ...MODULE_INSTALLER.sourcesForEnabledModules(TAU_SETTINGS.enabledModuleIds),
+    ...MODULE_INSTALLER.sourcesForEnabledModules(TAU_SETTINGS.enabledModuleIds).filter((source) => !builtinIds.has(source.moduleId!)),
     ...LOCAL_MODULE_MANIFESTS,
   ];
 }
@@ -25,7 +26,6 @@ export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RES
 export function sessionAssemblerForProfile(profile: SessionProfileV1) {
   const parsed = parseSessionProfileStructured(profile);
   if (!parsed.ok) throw new Error(parsed.diagnostics.map((item) => item.message).join('; '));
-  const builtinIds = new Set(BUILTIN_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
   const externalIds = new Set(LOCAL_MODULE_MANIFESTS.map(({ manifestPath }) => JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id as string));
   const allowed = new Set([...builtinIds, ...externalIds, ...TAU_SETTINGS.enabledModuleIds]);
   for (const selection of parsed.value.modules.selected) if (!allowed.has(selection.id)) throw new Error(`Selected Module is not enabled for new tasks: ${selection.id}`);

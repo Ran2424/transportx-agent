@@ -21,9 +21,9 @@ def integer(value, low, high):
 def validate(job):
     if set(job) != {'protocol', 'version', 'runId', 'provenance', 'implementation', 'scenario', 'network', 'mapping', 'execution'} or job['protocol'] != 'transportx-simulation-job' or type(job['version']) is not int or job['version'] != 2:
         raise ValueError('job_version')
-    code = [{'name': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())} for name in ['compute.py', 'engine.py', 'model.py', 'blocks.py', 'multimodal.py']]
+    code = [{'name': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())} for name in ['compute.py', 'engine.py', 'model.py', 'blocks.py', 'multimodal.py', 'rail.py']]
     from blocks import encode
-    if job['implementation'] != {'version': '0.3.0', 'sha256': digest(encode(code))}:
+    if job['implementation'] != {'version': '0.6.0', 'sha256': digest(encode(code))}:
         raise ValueError('implementation_version')
     provenance = job['provenance']
     if set(provenance) != {'kind', 'description', 'validDate', 'modelValidation'} or provenance['kind'] not in ['synthetic', 'assumed', 'observed', 'operating-plan'] or provenance['modelValidation'] != 'not_calibrated' or not isinstance(provenance['description'], str) or not 1 <= len(provenance['description']) <= 2000:
@@ -34,6 +34,8 @@ def validate(job):
         fields.add('service')
     if scenario.get('model') == 'multimodal':
         fields.add('coordination')
+        if 'rail' in scenario:
+            fields.add('rail')
     if set(scenario) != fields or type(scenario['schemaVersion']) is not int or scenario['schemaVersion'] != 1 or scenario['model'] not in ['road', 'evacuation', 'multimodal']:
         raise ValueError('scenario_fields')
     if not isinstance(scenario['networkVersion'], str) or not 1 <= len(scenario['networkVersion']) <= 160:
@@ -81,6 +83,9 @@ def validate(job):
     elif 'edges' in mapping:
         raise ValueError('mapping_invalid')
     if scenario['model'] == 'multimodal':
+        if 'rail' in scenario:
+            from rail import validate_rail
+            validate_rail(scenario['rail'], scenario['coordination'], scenario['durationSeconds'], network['path'])
         lanes = {edge.attrib['id']: edge.findall('lane') for edge in net.findall('edge')}
         connections = {(row.get('from'), row.get('to')) for row in net.findall('connection')}
         for node in scenario['coordination']['nodes']:
@@ -108,7 +113,8 @@ def run(job, job_sha256):
     started, rules_seconds, snapshot_seconds = time.perf_counter(), 0.0, 0.0
     blocks, engine = Blocks(job), None
     scenario = job['scenario']
-    ledger = Ledger(scenario['service']) if scenario['model'] == 'evacuation' else MultimodalLedger(scenario['coordination']) if scenario['model'] == 'multimodal' else None
+    rail = scenario.get('rail')
+    ledger = Ledger(scenario['service']) if scenario['model'] == 'evacuation' else MultimodalLedger(scenario['coordination'], rail) if scenario['model'] == 'multimodal' else None
     cancelled = False
 
     def stop(_signum, _frame):
@@ -139,7 +145,10 @@ def run(job, job_sha256):
                 emit('vehicle_inserted', vid)
             for vid in sorted(arrived):
                 emit('vehicle_removed', vid)
-            if ledger:
+            if rail:
+                changes = engine.metro.observe(t, vehicles.get(rail['trainId']), emit)
+                ledger.update(t, vehicles, emit, changes)
+            elif ledger:
                 ledger.update(t, vehicles, emit)
             rules_seconds += time.perf_counter() - now
             if ledger:
@@ -175,9 +184,10 @@ def run(job, job_sha256):
         diagnostics.append('raw_output_incomplete')
     if diagnostics and termination == 'completed':
         termination, failure = 'failed', diagnostics[0]
-    metrics = {'road': {'planned': len(engine.scheduled), 'inserted': len(engine.departed), 'arrived': len(engine.arrived), 'activeOrUnfinished': len(engine.active), 'pendingInsertion': sorted(engine.pending), 'notYetDue': sorted(engine.not_due), 'peakActive': engine.peak_active}}
+    rail_ids = {rail['trainId']} if rail else set()
+    metrics = {'road': {'planned': len(set(engine.scheduled) - rail_ids), 'inserted': len(engine.departed - rail_ids), 'arrived': len(engine.arrived - rail_ids), 'activeOrUnfinished': len(engine.active - rail_ids), 'pendingInsertion': sorted(engine.pending - rail_ids), 'notYetDue': sorted(engine.not_due - rail_ids), 'peakActive': engine.peak_active}}
     if scenario['model'] == 'multimodal' and not diagnostics:
-        observed = [row for row in records if float(row.attrib['depart']) >= 0]
+        observed = [row for row in records if float(row.attrib['depart']) >= 0 and row.attrib['id'] not in rail_ids]
         loss = sum(float(row.attrib['timeLoss']) for row in observed)
         elapsed = sum(float(row.attrib['duration']) for row in observed)
         metrics['road'].update(timeLossVehicleSeconds=loss, observedVehicleSeconds=elapsed, meanTimeLossSeconds=loss / len(observed) if observed else None,

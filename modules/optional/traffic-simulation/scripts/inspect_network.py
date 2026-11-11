@@ -42,6 +42,9 @@ def inspect(network, mapping, model, output, service=None):
             if edge.getLaneNumber() < 2 or edge.getLength() < 30:
                 raise ValueError('service_berths_unsupported')
     if model == 'multimodal':
+        if service.get('rail'):
+            from rail import validate_rail
+            validate_rail(service['rail'], service, service['durationSeconds'], network)
         for node in service['nodes']:
             if not net.hasEdge(node['edge']):
                 raise ValueError('service_node_edge_missing')
@@ -59,7 +62,10 @@ def inspect(network, mapping, model, output, service=None):
         coordinates = [list(net.convertXY2LonLat(x, y)) for x, y in edge.getShape()]
         if len(coordinates) < 2 or any(not -180 <= lon <= 180 or not -90 <= lat <= 90 for lon, lat in coordinates):
             raise ValueError('network_geography_invalid')
-        features.append({'type': 'Feature', 'id': edge.getID(), 'properties': {'edgeId': edge.getID()},
+        properties = {'edgeId': edge.getID()}
+        if edge.getType():
+            properties['networkType'] = edge.getType()
+        features.append({'type': 'Feature', 'id': edge.getID(), 'properties': properties,
                          'geometry': {'type': 'LineString', 'coordinates': coordinates}})
     routes = {'route:road': mapping['roadRoute']}
     if model == 'evacuation':
@@ -75,6 +81,14 @@ def inspect(network, mapping, model, output, service=None):
             x, y = positionAtShapeOffset(net.getEdge(node['edge']).getLane(berth['lane']).getShape(), berth['position'])
             features.append({'type': 'Feature', 'id': node['id'], 'properties': {'nodeId': node['id']},
                              'geometry': {'type': 'Point', 'coordinates': list(net.convertXY2LonLat(x, y))}})
+        rail = service.get('rail')
+        if rail:
+            routes[rail['lineId']] = rail['edges']
+            for stop in rail['stops']:
+                lane = net.getEdge(stop['edge']).getLane(stop['lane'])
+                x, y = positionAtShapeOffset(lane.getShape(), stop['position'])
+                features.append({'type': 'Feature', 'id': stop['platformId'], 'properties': {'nodeId': stop['platformId']},
+                                 'geometry': {'type': 'Point', 'coordinates': list(net.convertXY2LonLat(x, y))}})
     geometry = {'type': 'FeatureCollection', 'features': features, 'routes': routes}
     if len(features) > 5000 or len(encode(geometry)) > 2 * 1024 * 1024:
         raise ValueError('network_geometry_budget')

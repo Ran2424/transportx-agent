@@ -102,7 +102,7 @@ def validate(service):
 
 
 class Ledger:
-    def __init__(self, service):
+    def __init__(self, service, rail=None):
         self.service = service
         self.nodes = {node['id']: node for node in service['nodes']}
         self.routes = {route['id']: route for route in service['routes']}
@@ -112,6 +112,7 @@ class Ledger:
         self.handled, self.missed, self.last_missed = set(), set(), set()
         self.last_feedback, self.actions = {}, []
         self.trips, self.time = 0, 0
+        self.rail, self.rail_closed = rail, None
 
     def at_berth(self, actual, node_id, berth):
         node, position = self.nodes[node_id], self.nodes[node_id]['berths'][berth]
@@ -123,7 +124,7 @@ class Ledger:
     def node_count(self, node_id):
         return sum(p['location'] == node_id and p['state'] in ['waiting', 'walking', 'connecting'] for p in self.people.values())
 
-    def update(self, time, road, emit):
+    def update(self, time, road, emit, rail_changes=()):
         for p in self.people.values():
             if p['state'] in ['waiting', 'blocked', 'boarding', 'connecting']:
                 p['waitSeconds'] += time - self.time
@@ -172,7 +173,7 @@ class Ledger:
                 vehicle.update(state='available', trip=None, route=None)
                 emit('vehicle_available', vid, nodeId=vehicle['home'])
         for pid, p in sorted(self.people.items()):
-            if p['state'] in ['walking', 'external'] and time >= p['ready']:
+            if p['state'] in ['walking', 'external'] and not p.get('railPassenger') and time >= p['ready']:
                 if p['state'] == 'walking':
                     p['state'] = 'connecting'
                     emit('transfer_ready', pid, nodeId=p['location'], routeId=p['route'])
@@ -222,28 +223,51 @@ class Ledger:
                 v['state'] = 'commanded'
                 route = self.routes[v['route']]
                 self.actions.append((vid, route['outbound'], route['target'], v['targetBerth'], 'dispatch'))
-        for train in sorted(self.service['metro'], key=lambda row: (row['time'], row['id'])):
-            if train['time'] > time or train['id'] in self.handled:
-                continue
-            self.handled.add(train['id'])
-            queue = sorted((p for p in self.people.values() if p['state'] == 'connecting' and p['location'] == train['node'] and p['destination'] == train['destination']), key=lambda p: (p['ready'], p['id']))
-            for p in queue[:train['capacity']]:
-                p.update(state='external', location=train['id'], ready=time + train['externalSeconds'], metroBoardedAt=time)
-                emit('metro_boarded', p['id'], service=train['id'], nodeId=train['node'], routeId=p['route'])
-            for p in queue[train['capacity']:]:
-                self.missed.add(p['id'])
-                emit('connection_missed', p['id'], service=train['id'], nodeId=train['node'], routeId=p['route'], reason='capacity')
+        if self.rail:
+            train = self.service['metro'][0]
+            for kind, stop, observed in rail_changes:
+                if kind == 'metro_departed' and stop == self.rail['boardingStop']:
+                    self.rail_closed = observed
+                    self.board_metro(train, time, observed, emit)
+                if kind == 'metro_arrived' and stop == len(self.rail['stops']) - 1:
+                    for p in self.people.values():
+                        if p['state'] == 'external' and p.get('railPassenger'):
+                            p.update(state='completed', location=p['destination'], completedAt=time)
+                            emit('journey_completed', p['id'], routeId=p['route'], service=train['id'], vehicle=self.rail['trainId'])
+        else:
+            for train in sorted(self.service['metro'], key=lambda row: (row['time'], row['id'])):
+                if train['time'] > time or train['id'] in self.handled:
+                    continue
+                self.handled.add(train['id'])
+                self.board_metro(train, time, time, emit)
         for pid, p in sorted(self.people.items()):
             route = self.routes[p['route']]
             trains = [train for train in self.service['metro'] if train['node'] == route['target'] and train['destination'] == p['destination']]
-            if p['state'] == 'connecting' and time >= max(train['time'] for train in trains) and pid not in self.missed:
+            last_time = self.rail_closed if self.rail else max((train['time'] for train in trains), default=None)
+            if p['state'] == 'connecting' and last_time is not None and time >= last_time and pid not in self.missed:
                 self.missed.add(pid)
                 emit('connection_missed', pid, nodeId=p['location'], routeId=p['route'], reason='last_service_closed')
-            if route['mode'] == 'bus' and p['time'] <= time and time >= max(train['time'] for train in trains) and 'metroBoardedAt' not in p and pid not in self.last_missed:
+            if route['mode'] == 'bus' and p['time'] <= time and last_time is not None and time >= last_time and 'metroBoardedAt' not in p and pid not in self.last_missed:
                 self.last_missed.add(pid)
                 self.missed.add(pid)
                 emit('last_connection_missed', pid, nodeId=route['target'], routeId=p['route'], reason='last_service_closed')
         self.check()
+
+    def board_metro(self, train, time, observed, emit):
+        queue = sorted((p for p in self.people.values() if p['state'] == 'connecting' and p['location'] == train['node']
+                        and p['destination'] == train['destination'] and p['ready'] <= observed), key=lambda p: (p['ready'], p['id']))
+        for p in queue[:train['capacity']]:
+            p.update(state='external', location=train['id'], metroBoardedAt=time)
+            details = {}
+            if self.rail:
+                p['railPassenger'] = True
+                details = {'vehicle': self.rail['trainId'], 'observedTime': observed}
+            else:
+                p['ready'] = time + train['externalSeconds']
+            emit('metro_boarded', p['id'], service=train['id'], nodeId=train['node'], routeId=p['route'], **details)
+        for p in queue[train['capacity']:]:
+            self.missed.add(p['id'])
+            emit('connection_missed', p['id'], service=train['id'], nodeId=train['node'], routeId=p['route'], reason='capacity')
 
     def apply(self, engine, emit):
         for vid, edges, node, berth, kind in self.actions:
@@ -252,6 +276,8 @@ class Ledger:
         self.actions.clear()
 
     def check(self):
+        if self.rail and sum(p['state'] == 'external' and bool(p.get('railPassenger')) for p in self.people.values()) > self.service['metro'][0]['capacity']:
+            raise RuntimeError('metro_capacity')
         occupants = [pid for v in self.vehicles.values() for pid in v['occupants']]
         if len(occupants) != len(set(occupants)) or sorted(occupants) != sorted(pid for pid, p in self.people.items() if p['state'] in ['boarding', 'riding']):
             raise RuntimeError('traveler_conservation')

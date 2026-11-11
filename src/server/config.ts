@@ -72,6 +72,8 @@ export const HOST = TAU_SETTINGS.host;
 export const REACT_STATIC_DIR = process.env.TAU_REACT_STATIC_DIR || findReactWebDir();
 export const PROJECT_SYSTEM_PROMPT_PATH = path.resolve(APP_PATHS.appRoot, 'src', 'server', 'prompts', 'PI_SYSTEM.md');
 export const DEFAULT_DOMAIN_ID = process.env.TAU_DOMAIN_ID || 'com.transportx.workbench';
+const builtinSimulationManifest = path.join(APP_PATHS.resourcesDir === APP_PATHS.appRoot
+  ? path.join(APP_PATHS.appRoot, 'desktop', 'build') : APP_PATHS.resourcesDir, 'builtin-modules', 'traffic-simulation', 'manifest.json');
 export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/web-bridge/manifest.json',
   'modules/capabilities/tool-activation/manifest.json',
@@ -86,8 +88,9 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/official/module-authoring/manifest.json',
   'modules/official/cli/manifest.json',
   'modules/official/workbench/manifest.json',
+  ...(DESKTOP_MODE && fs.existsSync(builtinSimulationManifest) ? [builtinSimulationManifest] : []),
 ].map((manifestPath) => {
-  const absolutePath = path.join(APP_PATHS.appRoot, manifestPath);
+  const absolutePath = path.resolve(APP_PATHS.appRoot, manifestPath);
   return { manifestPath: absolutePath, packageRoot: path.dirname(absolutePath), origin: 'builtin' as const };
 });
 export const LOCAL_MODULE_MANIFESTS = String(process.env.TAU_MODULE_MANIFESTS || '')

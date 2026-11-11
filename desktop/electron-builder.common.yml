@@ -49,3 +49,5 @@ extraResources:
     to: runtime-manifest.json
   - from: desktop/build/runtimes/python
     to: runtimes/python
+  - from: desktop/build/builtin-modules
+    to: builtin-modules

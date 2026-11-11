@@ -62,6 +62,7 @@
     "desktop:dir:allow-unsigned": "node desktop/scripts/check-desktop-release.mjs --allow-unsigned && npm run build && node desktop/scripts/prepare-runtime.mjs && electron-builder --config desktop/electron-builder.yml --dir",
     "video:pack": "node desktop/scripts/package-video-capability.mjs",
     "simulation:pack": "npm run build:server && node desktop/scripts/package-traffic-simulation.mjs",
+    "simulation:stage": "npm run build:server && node desktop/scripts/package-traffic-simulation.mjs --builtin",
     "dev:web": "node scripts/copy-cad-worker.mjs && node scripts/copy-pdf-runtime.mjs && vite --config vite.config.ts",
     "prepare": "npm run build",
     "typecheck": "npm run typecheck:server && npm run typecheck:web && npm run typecheck:react && npm run typecheck:extensions && npm run typecheck:desktop && npm run typecheck:test",

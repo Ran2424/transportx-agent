@@ -21,6 +21,8 @@ class Engine:
                         '--tripinfo-output.write-unfinished', 'true', '--tripinfo-output.write-undeparted', 'true', '--error-log', os.path.join(root, 'sumo-errors.log')]
         if execution.get('projData'):
             os.environ['PROJ_DATA'] = execution['projData']
+        if scenario.get('rail'):
+            self.command += ['--stop-output', os.path.join(root, 'stops.xml')]
         port = getFreeSocketPort()
         self.command += ['--remote-port', str(port)]
         self.stdout = open(os.path.join(root, 'sumo.log'), 'w')
@@ -60,6 +62,7 @@ class Engine:
         self.scheduled = {'road-' + str(i): i * 2 for i in range(scenario['backgroundCount'])}
         self.pending, self.active, self.not_due = set(), set(), set()
         self.peak_active = 0
+        self.metro = None
         self.fleet = scenario['model'] != 'road'
         self.roles = job['mapping'].get('edges', {})
         self.inverse_roles = {edge: role for role, edge in self.roles.items()}
@@ -95,6 +98,10 @@ class Engine:
                 berth = node['berths'][vehicle['berth']]
                 traci.vehicle.add(vehicle['id'], route_id, typeID='transportx-shuttle' if vehicle['mode'] == 'bus' else 'DEFAULT_VEHTYPE', depart='0', departPos=str(berth['position']), departLane=str(berth['lane']), departSpeed='0')
                 traci.vehicle.setStop(vehicle['id'], node['edge'], pos=berth['position'], laneIndex=berth['lane'], duration=100000.0)
+        if scenario.get('rail'):
+            from rail import MetroTrain
+            self.metro = MetroTrain(scenario['rail'])
+            self.scheduled[self.metro.id] = scenario['rail']['insertTime']
 
     def step(self):
         started = time.perf_counter()
@@ -114,12 +121,13 @@ class Engine:
             x, y = traci.vehicle.getPosition(vid)
             vehicles[vid] = {'edge': traci.vehicle.getRoadID(vid), 'lane': traci.vehicle.getLaneID(vid),
                              'position': [x, y], 'lanePositionMeters': traci.vehicle.getLanePosition(vid),
-                             'speed': traci.vehicle.getSpeed(vid), 'stopped': bool(traci.vehicle.getStopState(vid) & 1)}
+                             'speed': traci.vehicle.getSpeed(vid), 'heading': traci.vehicle.getAngle(vid),
+                             'stopped': bool(traci.vehicle.getStopState(vid) & 1)}
             vehicles[vid]['edgeRole'] = self.inverse_roles.get(vehicles[vid]['edge'])
             if self.geographic:
                 vehicles[vid]['positionGeo'] = list(traci.simulation.convertGeo(x, y))
         self.active = set(vehicles)
-        self.peak_active = max(self.peak_active, len(vehicles))
+        self.peak_active = max(self.peak_active, len(vehicles) - int(self.metro is not None and self.metro.id in vehicles))
         self.pending = set(traci.simulation.getPendingVehicles())
         computed = traci.simulation.getTime()
         if computed != expected_time:

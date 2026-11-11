@@ -87,6 +87,11 @@ assert.equal(completed.length, 3);
 assert.ok(completed.every(e => e.time === metroTime + externalSeconds && boarded.some(b => b.objectId === e.objectId)));
 const geometry = service.geometry(session, run.runId);
 assert.deepEqual(geometry.routes['route:road'], road.edges);
+assert.deepEqual(geometry.serviceRoutes, [{ id: routeId, mode: 'bus', origin, target }]);
+assert.deepEqual(atBoarding.node.metro, [{ id: 'metro-service', time: metroTime, capacity: 3 }]);
+const routeAtBoarding = service.query(session, { runId: run.runId, time: metroTime, objectId: routeId });
+assert.deepEqual(routeAtBoarding.route.departures, [{ id: 'bus-service', time: 5, vehicle: 'bus-shanghai' }]);
+assert.equal(atBoarding.missedConnections, 1);
 assert.equal(service.presentation(session, run.runId).kind, 'simulation');
 const files = ['result.json', 'index.json', 'tripinfo.xml'].map(name => {
   const relative = `traffic-simulation/runs/${run.runId}/${name}`;
@@ -94,7 +99,7 @@ const files = ['result.json', 'index.json', 'tripinfo.xml'].map(name => {
 });
 fs.writeFileSync(path.join(root, 'host-evidence.json'), JSON.stringify({
   scope: 'Actual Host/Python/TraCI/SUMO; no live Pi or browser. Metro is a bounded timetable handoff in this Run.',
-  prepared, run, files, alighted, boarded, failed, completed, atBoarding, networkGeometryFeatures: geometry.features.length,
+  prepared, run, files, alighted, boarded, failed, completed, atBoarding, routeAtBoarding, serviceRoutes: geometry.serviceRoutes, networkGeometryFeatures: geometry.features.length,
 }, null, 2) + '\n');
 console.log(JSON.stringify({ runId: run.runId, termination: run.termination, alightedAt: alighted[0].time, metroBoarded: boarded.length,
   lastConnectionMissed: failed.length, completedJourneys: run.metrics.service.completedJourneys, finalTime: index.availableTime }));

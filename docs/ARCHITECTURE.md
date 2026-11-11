@@ -129,6 +129,8 @@ Host 通过 `TRANSPORTX_FONT_DIR` 注入内置思源黑体、思源宋体和 Jet
 
 Traffic Simulation 的有限多方式模型仍由同一 Python/TraCI 入口执行；节点、泊位、车队、旅客、班表与当前队列反馈均为冻结输入，实际离站和返场以 SUMO 观测确认。Host 的 `SimulationService` 维护所属会话的场景、Run 和有界实验清单，逐个 Run 复用现有 Job；只接受两个方案、至多三个相同种子配对，不另建实验调度器。比较 JSON 与 Markdown 按内容哈希冻结，保留失败、取消、unknown 和未完成样本。Simulation Canvas 经现有 Kernel 按需读取完整块，与普通 Geo 共用地图原语，独立保存观看状态；报告打开复用 Document Canvas。实现及验收边界见 [P2 记录](<交通仿真与优化能力升级 P2 记录.md>)；合成软件验收不代表真实场景校准或跨平台分发通过。
 
+实体地铁由场景显式选择，复用同一 Run、SUMO 进程和时间块。TraCI 提供列车位置及实际停站，Python 旅客账本按已确认的离站和终点到站处理接续，Host 按 SUMO 原始停站输出复核。Canvas 的班表变更通过 Agent 和已有场景准备工具冻结为新 Variant。单列车验收范围见 [P3–P4 实施记录](<交通仿真与优化能力升级 P3–P4 实施记录.md>)。
+
 ### 2.7 React Workspace 与 Browser Kernel
 
 Canvas 打开后与对话列并排，分隔条可调整对话列宽度；Canvas 顶部的具名标签承载当前任务的地图、视频和文档。`pi-canvas` 1.0 Presentation Envelope 统一 `present / focus / update / clear` 生命周期、受控资源引用、`viewId`、`revision` 与每次呈现意图的 `presentationId`；Projection Core 兼容旧 Geo / Video Tool Result。受信任的 Adapter Registry 负责领域 payload、target、延迟 Renderer 和显式 Context，Canvas Shell 只管理标签与生命周期，不动态加载 Module 提供的前端代码。关闭标签不删除成果；切换标签不重复挂载视图，隐藏视频暂停。
@@ -385,11 +387,12 @@ Workbench 默认装配上述十个直接依赖；CLI Domain 无依赖，使用 `
 | `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖；Geo 依赖 Canvas，Spatial Analysis 依赖 Geo + Citation |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
 | `capabilities/cad` | DXF 协作工具、按需 Skill 与受控 Python 引擎 | 官方可选 Capability，依赖 Canvas，默认不选择 |
+| `optional/traffic-simulation` | 仿真工具、Skill、计算脚本和 SUMO 运行时 | 桌面构建装入目标运行时后注册为官方可选 Capability，新任务显式选择 |
 | 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
 
 配置与路径读取位于 config；Registry、Installer、AssetResolver 与 Assembler 的实例装配位于 [platform-composition.ts](../src/server/platform-composition.ts)。server-main 是组合根，向 Manager 注入已有装配器、工作区创建、启动函数、spawn 与服务 endpoint；sessions 不再在 import 时创建全局 Manager。内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
 
-当前配置注册 13 个内置模块（两个 Domain、十个 Workbench 直接依赖与一个可选 CAD Capability）。Task 的 manifest、Extension、历史协议和能力握手字段均已删除；旧 Task 模块不再随源码及新安装包提供。
+基础配置注册 13 个内置模块，包括两个 Domain、十个 Workbench 直接依赖与可选的 CAD。包含匹配运行时的桌面构建额外注册 Traffic Simulation。已有会话按原冻结来源与版本恢复。
 
 ### 5.4 从包到会话
 

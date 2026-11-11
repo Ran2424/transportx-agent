@@ -17,7 +17,7 @@ import type { ToolDiagnostic } from '../../contracts/tool-interface.ts';
 import { parseCitationEnvelope, parseCitationDetail, type CitationDetail, type CitationEnvelope } from '../../contracts/citation.ts';
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo.ts';
 import type { CanvasContextV1, CanvasPresentationV1 } from '../../contracts/canvas.ts';
-import type { SimulationRunSummary, SimulationIndex, SimulationBlock, SimulationEvent, SimulationGeometry, SimulationQuery, SimulationExperiment } from '../../contracts/simulation.ts';
+import type { SimulationRunSummary, SimulationIndex, SimulationBlock, SimulationEvent, SimulationNetworkView, SimulationQuery, SimulationExperiment } from '../../contracts/simulation.ts';
 import type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 export type { AddLocalModelInput, LocalModelConnection, LocalModelConnectionInput } from '../../contracts/local-model.ts';
 
@@ -239,8 +239,8 @@ export type SimulationCommands = {
   list(sessionId: string, signal?: AbortSignal): Promise<{ runs: Array<{ run: SimulationRunSummary; canvas: CanvasPresentationV1 }> }>;
   index(sessionId: string, runId: string, signal?: AbortSignal): Promise<{ run: SimulationRunSummary; index: SimulationIndex | null }>;
   chunk(sessionId: string, runId: string, sequence: number, signal?: AbortSignal): Promise<{ block: SimulationBlock; events: SimulationEvent[] }>;
-  geometry(sessionId: string, runId: string, signal?: AbortSignal): Promise<SimulationGeometry>;
-  query(sessionId: string, runId: string, time: number, objectId?: string, signal?: AbortSignal): Promise<SimulationQuery>;
+  geometry(sessionId: string, runId: string, signal?: AbortSignal): Promise<SimulationNetworkView>;
+  query(sessionId: string, runId: string, time: number, objectId?: string, signal?: AbortSignal, eventSequence?: number): Promise<SimulationQuery>;
 };
 
 export function createSimulationCommands(deps: CommandDeps): SimulationCommands {
@@ -252,7 +252,7 @@ export function createSimulationCommands(deps: CommandDeps): SimulationCommands 
     index: (sessionId, runId, signal) => get(sessionId, `${ref(runId)}/index`, signal),
     chunk: (sessionId, runId, sequence, signal) => get(sessionId, `${ref(runId)}/chunks/${sequence}`, signal),
     geometry: (sessionId, runId, signal) => get(sessionId, `${ref(runId)}/geometry`, signal),
-    query: (sessionId, runId, time, objectId, signal) => get(sessionId, `${ref(runId)}/query?${new URLSearchParams({ time: String(time), ...(objectId ? { objectId } : {}) })}`, signal),
+    query: (sessionId, runId, time, objectId, signal, eventSequence) => get(sessionId, `${ref(runId)}/query?${new URLSearchParams({ time: String(time), ...(objectId ? { objectId } : {}), ...(eventSequence === undefined ? {} : { eventSequence: String(eventSequence) }) })}`, signal),
   };
 }
 

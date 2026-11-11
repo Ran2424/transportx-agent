@@ -20,6 +20,7 @@ import { verifyChecksumFile, sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 import { readModuleToolContracts } from './tool-contracts.js';
 import { canonicalToolSchema } from '../contracts/tool-interface.js';
+import { SIMULATION_MODULE_ID } from '../contracts/simulation.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
 
@@ -160,6 +161,11 @@ export function planPromptPath(plan: ResolvedSessionPlan) {
   return plan.modules.flatMap((module) => module.entrypoints.filter((entry) => entry.kind === 'prompt').map((entry) => entry.path))[0];
 }
 
+export function dependsOnBuiltinSimulation(registry: ModuleRegistry, id: string) {
+  const simulation = registry.get(SIMULATION_MODULE_ID);
+  return simulation?.origin === 'builtin' && simulation.enabled && registry.dependencyOrder(id).includes(simulation);
+}
+
 export class SessionAssembler {
   constructor(
     private registry: ModuleRegistry,
@@ -179,7 +185,7 @@ export class SessionAssembler {
         if (module.manifest.version !== selection.version) throw new Error(`Selected Module version is unavailable: ${selection.id}@${selection.version}`);
         return module;
       })
-      : this.registry.enabled().filter((module) => module.origin !== 'builtin');
+      : this.registry.enabled().filter((module) => module.origin !== 'builtin' && !dependsOnBuiltinSimulation(this.registry, module.manifest.id));
     for (const module of selected) {
       for (const dependency of this.registry.dependencyOrder(module.manifest.id)) {
         if (included.has(dependency.manifest.id)) continue;

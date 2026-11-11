@@ -116,7 +116,7 @@ export class CanvasService {
       const target = validateTarget(SIMULATION_CANVAS_ADAPTER_ID, input.target);
       if (input.target !== undefined && !target) throw serviceError('Simulation Canvas target is invalid.');
       if (target) this.simulation?.freeze(session, resource.resourceId, target);
-      return { ...canvas, operation: requestedOperation(input.operation, 'present'), ...(target !== undefined ? { target } : {}) };
+      return { ...canvas, presentationId: crypto.randomUUID(), generatedAt: new Date().toISOString(), operation: requestedOperation(input.operation, 'present'), ...(target !== undefined ? { target } : {}) };
     }
     if (input.adapterId !== CAD_CANVAS_ADAPTER_ID || !input.resource) return this.present(session, input);
     const declaration = session.resolvedSessionPlan?.modules.flatMap((module) => module.canvasViews).find((view) => view.adapterId === CAD_CANVAS_ADAPTER_ID);
@@ -155,6 +155,7 @@ export class CanvasService {
       const rawTarget = input.target === undefined ? previous.target : input.target;
       const target = validateTarget(previous.adapterId, rawTarget);
       if (rawTarget !== undefined && !target) throw serviceError('Canvas target is invalid for this adapter.');
+      if (previous.adapterId === SIMULATION_CANVAS_ADAPTER_ID && target && operation !== 'clear') this.simulation?.freeze(session, previous.viewId.slice('simulation:'.length), target);
       if (previous.adapterId === CAD_CANVAS_ADAPTER_ID && target && parseCadCanvasTarget(target)?.units !== parseCadCanvasPayload(previous.payload)?.units) throw serviceError('CAD target units differ from drawing units.');
       return { ...previous, revision: previous.revision + (operation === 'update' && previous.adapterId === DOCUMENT_CANVAS_ADAPTER_ID ? 1 : 0), presentationId: crypto.randomUUID(), operation, ...(target !== undefined ? { target } : {}), generatedAt: new Date().toISOString() };
     }

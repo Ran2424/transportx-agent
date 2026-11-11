@@ -27,6 +27,7 @@ export function createSimulationJob(request: unknown, trusted: { network: string
   const hash = simulationDigest(bytes);
   const names = ['compute.py', 'engine.py', 'model.py', 'blocks.py'];
   if (fs.existsSync(path.join(trusted.implementationRoot, 'multimodal.py'))) names.push('multimodal.py');
+  if (fs.existsSync(path.join(trusted.implementationRoot, 'rail.py'))) names.push('rail.py');
   const code = names.map((name) => ({ name, sha256: simulationDigest(fs.readFileSync(path.join(trusted.implementationRoot, name))) }));
   return {
     protocol: 'transportx-simulation-job', version: 2, runId: trusted.runId,
@@ -78,17 +79,39 @@ export function verifySimulationResult(root: string, job: SimulationJob, jobSha2
     const target = path.join(root, file.path);
     if (fs.lstatSync(target).isSymbolicLink() || fs.statSync(target).size !== file.bytes || simulationDigest(fs.readFileSync(target)) !== file.sha256) throw new Error('result_integrity');
   }
-  const required = ['index.json', 'metrics.json', 'started.json', 'tripinfo.xml', ...published.index.chunks.flatMap((entry) => [entry.path, entry.events.path])];
+  const rail = job.scenario.rail;
+  const required = ['index.json', 'metrics.json', 'started.json', 'tripinfo.xml', ...(rail ? ['stops.xml'] : []), ...published.index.chunks.flatMap((entry) => [entry.path, entry.events.path])];
   if (new Set(result.files.map((file) => file.path)).size !== result.files.length || required.some((name) => !result.files.some((file) => file.path === name))) throw new Error('result_files_missing');
   if (JSON.stringify(readSimulationJson(path.join(root, 'metrics.json'))) !== JSON.stringify(result.metrics)) throw new Error('metrics_mismatch');
   const events = published.blocks.flatMap((entry) => entry.events);
   if (events.some((event, i) => event.sequence !== i) || events.length !== result.eventCount || !published.index.final || published.index.availableTime !== result.finalTime) throw new Error('result_coverage');
   const raw = fs.readFileSync(path.join(root, 'tripinfo.xml'), 'utf8');
-  const rows = [...raw.matchAll(/<tripinfo\s+id="([^"]+)"[^>]*\bdepart="([^"]+)"[^>]*\barrival="([^"]+)"/g)], road = result.metrics.road;
+  const trips = [...raw.matchAll(/<tripinfo\s+id="([^"]+)"[^>]*\bdepart="([^"]+)"[^>]*\barrival="([^"]+)"/g)], road = result.metrics.road;
+  const rows = trips.filter(row => row[1] !== rail?.trainId);
   const plannedIds = Array.from({ length: job.scenario.backgroundCount }, (_value, i) => `road-${i}`);
   if (job.scenario.model === 'evacuation') plannedIds.push('bus-0', 'car-0');
   if (job.scenario.model === 'multimodal') plannedIds.push(...job.scenario.coordination!.fleet.map(vehicle => vehicle.id));
-  if (!raw.includes('</tripinfos>') || road.planned !== plannedIds.length || rows.length !== road.planned || new Set(rows.map((row) => row[1])).size !== road.planned || rows.some((row) => !plannedIds.includes(row[1])) || rows.filter((row) => Number(row[2]) >= 0).length !== road.inserted || rows.filter((row) => Number(row[3]) >= 0).length !== road.arrived || road.planned !== road.inserted + road.pendingInsertion.length + road.notYetDue.length) throw new Error('raw_counts_mismatch');
+  if (!raw.includes('</tripinfos>') || road.planned !== plannedIds.length || rows.length !== road.planned || new Set(rows.map((row) => row[1])).size !== road.planned || rows.some((row) => !plannedIds.includes(row[1])) || rows.filter((row) => Number(row[2]) >= 0).length !== road.inserted || rows.filter((row) => Number(row[3]) >= 0).length !== road.arrived || road.planned !== road.inserted + road.pendingInsertion.length + road.notYetDue.length || rail && trips.length !== rows.length + 1) throw new Error('raw_counts_mismatch');
+  const railDeparture = rail && events.find(event => event.type === 'metro_departed' && event.nodeId === rail.stops[rail.boardingStop].platformId);
+  if (rail) {
+    const stops = fs.readFileSync(path.join(root, 'stops.xml'), 'utf8');
+    const physical = [...stops.matchAll(/<stopinfo\s+([^>]+)>/g)]
+      .map(row => Object.fromEntries([...row[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]])))
+      .filter(row => row.id === rail.trainId);
+    const arrivalEvents = events.filter(event => event.type === 'metro_arrived');
+    const departures = events.filter(event => event.type === 'metro_departed');
+    if (!stops.includes('</stops>') || physical.length !== departures.length || physical.length > rail.stops.length) throw new Error('rail_stop_count_mismatch');
+    for (const [i, observed] of physical.entries()) {
+      const plan = rail.stops[i], arrival = arrivalEvents[i], departure = departures[i];
+      if (observed.lane !== `${plan.edge}_${plan.lane}` || arrival?.nodeId !== plan.platformId || departure?.nodeId !== plan.platformId
+          || arrival.observedTime !== Number(observed.started) || departure.observedTime !== Number(observed.ended)
+          || departure.observedTime < plan.departure || departure.observedTime - arrival.observedTime < plan.minDwell) throw new Error('rail_stop_observation_mismatch');
+    }
+    const boarded = events.filter(event => event.type === 'metro_boarded');
+    const capacity = job.scenario.coordination!.metro[0].capacity;
+    if (boarded.length > capacity || boarded.length !== new Set(boarded.map(event => event.objectId)).size
+        || boarded.some(event => !railDeparture || event.time !== railDeparture.time || event.observedTime !== railDeparture.observedTime || event.vehicle !== rail.trainId || event.service !== rail.serviceId)) throw new Error('rail_boarding_mismatch');
+  }
   if (job.scenario.model !== 'road') {
     const last = published.blocks.at(-1)!.block.frames.at(-1)!;
     if (!last.travelers || !result.metrics.service) throw new Error('service_missing');
@@ -103,10 +126,10 @@ export function verifySimulationResult(root: string, job: SimulationJob, jobSha2
       const wait = arrived.reduce((sum, person) => sum + (last.travelers![person.id].hubDeparture ?? result.finalTime) - person.time, 0);
       const boarded = events.filter(event => event.type === 'boarded');
       if (boarded.length !== new Set(boarded.map(event => event.objectId)).size || metrics.arrivedTravelers !== arrived.length || metrics.hubWaitPersonSeconds !== wait || metrics.meanHubWaitSeconds !== (arrived.length ? wait / arrived.length : null)) throw new Error('service_wait_mismatch');
-      const observed = [...raw.matchAll(/<tripinfo\s+([^>]+)>/g)].map(row => Object.fromEntries([...row[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]))).filter(row => Number(row.depart) >= 0);
+      const observed = [...raw.matchAll(/<tripinfo\s+([^>]+)>/g)].map(row => Object.fromEntries([...row[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]))).filter(row => Number(row.depart) >= 0 && row.id !== rail?.trainId);
       const loss = observed.reduce((sum, row) => sum + Number(row.timeLoss), 0);
       if (!Number.isFinite(loss) || loss < 0 || road.timeLossVehicleSeconds !== loss || road.observedVehicleSeconds !== observed.reduce((sum, row) => sum + Number(row.duration), 0) || road.meanTimeLossSeconds !== (observed.length ? loss / observed.length : null)) throw new Error('road_time_loss_mismatch');
-      if (job.implementation.version === '0.3.0' && (!metrics.waiting || !metrics.journeys || !metrics.fleet || !metrics.byRoute || !metrics.nodes)) throw new Error('service_statistics_missing');
+      if (['0.3.0', '0.4.0', '0.5.0', '0.6.0'].includes(job.implementation.version) && (!metrics.waiting || !metrics.journeys || !metrics.fleet || !metrics.byRoute || !metrics.nodes)) throw new Error('service_statistics_missing');
       if (metrics.waiting) {
         const mean = (values: number[]) => values.length ? values.reduce((sum, n) => sum + n, 0) / values.length : null;
         const p90 = (values: number[]) => values.length ? [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.9) - 1] : null;
@@ -157,7 +180,7 @@ export function verifySimulationResult(root: string, job: SimulationJob, jobSha2
         const lastMisses = job.scenario.coordination!.travelers.filter(person => {
           const route = job.scenario.coordination!.routes.find(route => route.id === person.route)!;
           if (route.mode !== 'bus' || person.time > result.finalTime) return false;
-          const lastDeparture = Math.max(...job.scenario.coordination!.metro.filter(train => train.node === route.target && train.destination === person.destination).map(train => train.time));
+          const lastDeparture = rail ? railDeparture?.observedTime ?? Infinity : Math.max(...job.scenario.coordination!.metro.filter(train => train.node === route.target && train.destination === person.destination).map(train => train.time));
           return lastDeparture <= result.finalTime && !events.some(event => event.type === 'metro_boarded' && event.objectId === person.id);
         });
         if (metrics.lastServiceMisses !== lastMisses.length || events.filter(event => event.type === 'last_connection_missed').length !== lastMisses.length || lastMisses.some(person => !events.some(event => event.type === 'last_connection_missed' && event.objectId === person.id))) throw new Error('last_service_misses_mismatch');

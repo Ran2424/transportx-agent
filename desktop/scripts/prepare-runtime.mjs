@@ -101,3 +101,8 @@ const manifest = {
 };
 fs.writeFileSync(path.join(buildRoot, 'runtime-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`Prepared TransportX runtime: Pi ${piPkg.version}, Python ${manifest.python.version}`);
+fs.mkdirSync(path.join(buildRoot, 'builtin-modules'), { recursive: true });
+if (process.env.TRANSPORTX_SIMULATION_DEPS) {
+  const simulation = spawnSync(process.execPath, ['desktop/scripts/package-traffic-simulation.mjs', '--builtin'], { cwd: root, stdio: 'inherit' });
+  if (simulation.status !== 0) throw new Error('Could not prepare the built-in Traffic Simulation runtime', { cause: simulation.error });
+}

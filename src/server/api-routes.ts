@@ -148,7 +148,7 @@ export function createApiRouter(services: ApiRouteServices) {
       const value = !resource ? { runs: deps.traffic.list(session).map((run) => ({ run, canvas: deps.traffic.presentation(session, run.runId) })) }
         : resource === 'index' ? { run: { ...deps.traffic.queryExecution(session, { runId }), ...(index ? { latestComputedTime: index.computedTime, availableFrameTime: index.availableTime } : {}) }, index }
         : resource === 'geometry' ? deps.traffic.geometry(session, runId)
-        : resource === 'query' ? deps.traffic.query(session, { runId, ...(url.searchParams.has('time') ? { time: Number(url.searchParams.get('time')) } : {}), ...(url.searchParams.has('objectId') ? { objectId: url.searchParams.get('objectId') } : {}) })
+        : resource === 'query' ? deps.traffic.query(session, { runId, ...(url.searchParams.has('time') ? { time: Number(url.searchParams.get('time')) } : {}), ...(url.searchParams.has('objectId') ? { objectId: url.searchParams.get('objectId') } : {}), ...(url.searchParams.has('eventSequence') ? { eventSequence: Number(url.searchParams.get('eventSequence')) } : {}) })
         : deps.traffic.chunk(session, runId, Number(resource.split('/')[1]));
       deps.json(res, 200, value);
     } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }

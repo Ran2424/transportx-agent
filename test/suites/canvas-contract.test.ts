@@ -23,7 +23,7 @@ test('Canvas resources and adapter contracts accept valid presentations and reje
 
   // Finite service contracts reject conflicting resources and executable policy bags.
   {
-    const { parseTrafficScenario, parseSimulationCanvasPayload, parseSimulationGeometry } = await import('../../src/contracts/simulation.ts');
+    const { parseTrafficScenario, parseSimulationCanvasPayload, parseSimulationCanvasTarget, parseSimulationGeometry } = await import('../../src/contracts/simulation.ts');
     const scenario = require('../../modules/optional/hongqiao-night-demo/assets/night-demo/multimodal-baseline.json');
     assert.ok(parseTrafficScenario(scenario));
     const berthConflict = structuredClone(scenario);
@@ -46,6 +46,11 @@ test('Canvas resources and adapter contracts accept valid presentations and reje
     assert.equal(parseSimulationCanvasPayload({ ...payload, experimentId: '../foreign' }), null);
     const geometry = { type: 'FeatureCollection', routes: { 'route:road': ['edge-1'] }, features: [{ type: 'Feature', id: 'edge-1', properties: { edgeId: 'edge-1' }, geometry: { type: 'LineString', coordinates: [[121.3, 31.19], [121.31, 31.19]] } }] };
     assert.ok(parseSimulationGeometry(geometry));
+    const typed = { ...geometry, features: [{ ...geometry.features[0], properties: { edgeId: 'edge-1', networkType: 'highway.primary' } }] };
+    assert.deepEqual(parseSimulationGeometry(typed), typed);
+    assert.equal(parseSimulationGeometry({ ...geometry, features: [{ ...typed.features[0], properties: { edgeId: 'edge-1', networkType: 2 } }] }), null);
+    assert.deepEqual(parseSimulationCanvasTarget({ time: 1, objectId: 'bus-shanghai', eventSequence: 4 }), { time: 1, objectId: 'bus-shanghai', eventSequence: 4 });
+    assert.equal(parseSimulationCanvasTarget({ time: 1, eventSequence: 4.5 }), null);
     assert.equal(parseSimulationGeometry({ ...geometry, routes: { 'route:road': { id: 'route:ridehail-west' } } }), null, 'reject the route-object overwrite observed in the real model task');
   }
 
