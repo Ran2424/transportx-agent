@@ -9,6 +9,6 @@ export type ProjectAuth = {
 
 export type ProjectAdapter = {
   createAuth(paths: AppPaths, env: NodeJS.ProcessEnv): ProjectAuth | null;
-  configureModels(registry: Pick<ExtensionAPI, 'registerProvider'>): void;
+  configureModels(registry: Pick<ExtensionAPI, 'registerProvider'>, agentDir: string): void | Promise<void>;
   piExtensions(appRoot: string): string[];
 };

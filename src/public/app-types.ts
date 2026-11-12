@@ -19,6 +19,8 @@ export type SessionSnapshot = {
   hostGeneration?: string;
   revision?: number;
   streamingMessage?: AppMessage | null;
+  workingElapsedMs?: number | null;
+  workingDurationMs?: number;
   retry?: import('../contracts/run-feedback.ts').RetryState | null;
   outcome?: import('../contracts/run-feedback.ts').RunOutcome | null;
   activeToolEvents?: AppEvent[];
@@ -110,6 +112,7 @@ export type WorkspaceView = {
   /** Standalone workspaces hold conversations that were moved out of ordinary workspaces. */
   kind?: 'workspace' | 'standalone';
   directoryOwnership?: 'external';
+  hiddenFromSidebar?: boolean;
   migrationItemId: string | null;
   error: { code: string; message: string } | null;
   deletion?: import('../contracts/workspace.js').WorkspaceCatalogEntryV1['deletion'];
@@ -143,6 +146,7 @@ export type MessageContentBlock = {
 };
 
 export type AppMessage = {
+  workingDurationMs?: number;
   stopReason?: string;
   errorMessage?: string;
   id?: string;
@@ -162,6 +166,8 @@ export type AppMessage = {
 };
 
 export type AppEvent = {
+  workingStartedAt?: number | null;
+  workingDurationMs?: number;
   type?: string;
   sessionId?: string;
   session?: LiveSession;

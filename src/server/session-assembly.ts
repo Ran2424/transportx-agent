@@ -12,7 +12,8 @@ import {
   type SessionProfileV1,
 } from '../contracts/index.js';
 import type { Executable } from './runtime-resolver.js';
-import type { ModuleRegistry, RegisteredModule } from './module-registry.js';
+import { modulePlatformCompatible, type ModuleRegistry, type RegisteredModule } from './module-registry.js';
+import type { BuiltinModuleArchive } from './builtin-module-archive.js';
 import type { AssetResolver, ResolvedAsset } from './asset-resolver.js';
 import { verifyChecksumFile, sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
@@ -127,6 +128,21 @@ export function planPromptPath(plan: ResolvedSessionPlan) {
   return plan.modules.flatMap((module) => module.entrypoints.filter((entry) => entry.kind === 'prompt').map((entry) => entry.path))[0];
 }
 
+function rebaseModule(module: ResolvedPlanModule, packageRoot: string, assets: ResolvedSessionPlan['assets']) {
+  const oldRoot = preferUnpackedPath(module.packageRoot);
+  const relocate = (file: string) => {
+    const source = preferUnpackedPath(file);
+    if (isWithin(oldRoot, source)) return path.resolve(packageRoot, path.relative(oldRoot, source));
+    if (isWithin(module.packageRoot, file)) return path.resolve(packageRoot, path.relative(module.packageRoot, file));
+    throw new SessionPlanError('module_content_mismatch', 'Builtin entry escapes its original package root.', [{ moduleId: module.id, path: file }]);
+  };
+  for (const asset of assets) if (asset.moduleId === module.id) {
+    if (isWithin(module.packageRoot, asset.path) || isWithin(oldRoot, asset.path)) asset.path = relocate(asset.path);
+    if (asset.integrityFile && (isWithin(module.packageRoot, asset.integrityFile) || isWithin(oldRoot, asset.integrityFile))) asset.integrityFile = relocate(asset.integrityFile);
+  }
+  return { ...module, packageRoot, entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: relocate(entry.path) })), nativeRuntimes: module.nativeRuntimes.map((runtime) => ({ ...runtime, ffmpeg: { ...runtime.ffmpeg, path: relocate(runtime.ffmpeg.path) }, ffprobe: { ...runtime.ffprobe, path: relocate(runtime.ffprobe.path) } })) };
+}
+
 export class SessionAssembler {
   constructor(
     private registry: ModuleRegistry,
@@ -134,6 +150,8 @@ export class SessionAssembler {
     private platformVersion: string,
     private pi: Executable,
     private python: Executable,
+    private builtinArchive?: BuiltinModuleArchive,
+    private builtinBundleDirectory?: (packageRoot: string) => string,
   ) {}
 
   assemble(domainId: string, workspace: string, requestedProfile?: SessionProfileV1): ResolvedSessionPlan {
@@ -185,21 +203,35 @@ export class SessionAssembler {
     };
   }
 
+  archiveBuiltins(plan: ResolvedSessionPlan) {
+    const archive = this.builtinArchive;
+    if (archive) plan.modules = plan.modules.map((module) => {
+      if (module.origin !== 'builtin') return module;
+      const root = archive.freeze(module, preferUnpackedPath(module.packageRoot), this.builtinBundleDirectory?.(module.packageRoot));
+      return rebaseModule(module, root, plan.assets);
+    });
+    return plan;
+  }
+
   verify(plan: ResolvedSessionPlan, workspace = plan.workspace) {
     if (path.relative(fs.realpathSync(plan.workspace), fs.realpathSync(workspace)) !== '') throw new SessionPlanError('workspace_mismatch', 'Resolved session plan belongs to another workspace.', [{ expected: path.resolve(workspace), actual: path.resolve(plan.workspace) }]);
     for (let index = 0; index < plan.modules.length; index++) {
       let module = plan.modules[index];
       const builtin = module.origin === 'builtin' ? this.registry.get(module.id) : undefined;
-      if (builtin?.origin === 'builtin' && builtin.packageRoot !== module.packageRoot) {
-        const oldRoot = module.packageRoot;
-        const relocate = (file: string) => {
-          if (!isWithin(oldRoot, file)) throw new SessionPlanError('module_content_mismatch', 'Builtin entry escapes its original package root.', [{ moduleId: module.id, path: file }]);
-          return resolvePackagePath(builtin.packageRoot, path.relative(oldRoot, file), 'Builtin entry');
-        };
-        module = { ...module, packageRoot: builtin.packageRoot, entrypoints: module.entrypoints.map((entry) => ({ ...entry, path: relocate(entry.path) })), nativeRuntimes: module.nativeRuntimes.map((runtime) => ({ ...runtime, ffmpeg: { ...runtime.ffmpeg, path: relocate(runtime.ffmpeg.path) }, ffprobe: { ...runtime.ffprobe, path: relocate(runtime.ffprobe.path) } })) };
-        plan.modules[index] = module;
+      if (module.origin === 'builtin' && !this.builtinArchive?.contains(module.packageRoot)) {
+        const archived = this.builtinArchive?.find(module);
+        const currentRoot = builtin?.origin === 'builtin' && builtin.manifest.version === module.version ? preferUnpackedPath(builtin.packageRoot) : undefined;
+        const root = archived || (currentRoot && this.builtinArchive && builtin
+          ? this.builtinArchive.freeze(module, currentRoot, this.builtinBundleDirectory?.(builtin.packageRoot)) : currentRoot);
+        if (root && root !== module.packageRoot) plan.modules[index] = module = rebaseModule(module, root, plan.assets);
+        else if (!root && builtin?.origin === 'builtin' && builtin.packageRoot !== module.packageRoot) throw new SessionPlanError('module_version_missing', `Frozen Module version is unavailable: ${module.id}@${module.version}`, [{ moduleId: module.id, expected: module.version }]);
       }
       const manifest = frozenModuleManifest(module);
+      if (module.origin === 'builtin' && this.builtinArchive?.contains(module.packageRoot)) {
+        try { this.builtinArchive.verify(module); }
+        catch { throw new SessionPlanError('module_content_mismatch', `Cannot verify archived Module: ${module.id}@${module.version}`, [{ moduleId: module.id, path: module.packageRoot }]); }
+      }
+      if (!modulePlatformCompatible(manifest.platformVersion, this.platformVersion)) throw new SessionPlanError('module_incompatible', `Module ${module.id}@${module.version} is incompatible with platform ${this.platformVersion}.`);
       for (const entry of module.entrypoints) {
         if (!fs.existsSync(entry.path)) {
           throw new SessionPlanError('module_entrypoint_missing', `Module entrypoint is missing: ${module.id}@${module.version}`, [{ moduleId: module.id, path: entry.path }]);

@@ -1,9 +1,11 @@
 const fs = require('node:fs');
+import path from 'node:path';
 
 import { ModuleRegistry, moduleRuntimeCompatible } from './module-registry.js';
 import { AssetResolver } from './asset-resolver.js';
 import { SessionAssembler } from './session-assembly.js';
 import { ModuleInstaller } from './module-installer.js';
+import { BuiltinModuleArchive } from './builtin-module-archive.js';
 import { parseSessionProfileStructured, type SessionProfileV1 } from '../contracts/index.js';
 import { APP_PATHS, BUILTIN_MODULE_MANIFESTS, LOCAL_MODULE_MANIFESTS, TAU_SETTINGS, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE, saveTauSetting } from './config.js';
 
@@ -21,7 +23,11 @@ export const ASSET_OVERRIDES = {
   ...(process.env.TAU_DATA_ROOT && process.env.TAU_DATA_ASSET_ID ? { [process.env.TAU_DATA_ASSET_ID]: process.env.TAU_DATA_ROOT } : {}),
 };
 export const ASSET_RESOLVER = new AssetResolver(MODULE_REGISTRY, ASSET_OVERRIDES);
-export const SESSION_ASSEMBLER = new SessionAssembler(MODULE_REGISTRY, ASSET_RESOLVER, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE);
+export const BUILTIN_MODULE_ARCHIVE = new BuiltinModuleArchive(path.join(APP_PATHS.userDataDir, 'module-cache'));
+function sessionAssembler(registry: ModuleRegistry, assets: AssetResolver) {
+  return new SessionAssembler(registry, assets, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE, BUILTIN_MODULE_ARCHIVE, (root) => path.join(APP_PATHS.appRoot, 'dist/module-extensions', path.relative(path.join(APP_PATHS.appRoot, 'modules'), root)));
+}
+export const SESSION_ASSEMBLER = sessionAssembler(MODULE_REGISTRY, ASSET_RESOLVER);
 export function sessionAssemblerForProfile(profile: SessionProfileV1) {
   const parsed = parseSessionProfileStructured(profile);
   if (!parsed.ok) throw new Error(parsed.diagnostics.map((item) => item.message).join('; '));
@@ -45,7 +51,7 @@ export function sessionAssemblerForProfile(profile: SessionProfileV1) {
     const module = registry.get(selection.id)!;
     for (const asset of module.manifest.contributes?.assets || []) if ((asset.kind === 'data' || asset.kind === 'knowledge') && !assets.resolve(asset.id)) throw new Error(`Selected Module asset is not configured: ${asset.id}`);
   }
-  return new SessionAssembler(registry, assets, PLATFORM_VERSION, PI_EXECUTABLE, PYTHON_EXECUTABLE);
+  return sessionAssembler(registry, assets);
 }
 export function reloadModules() {
   MODULE_REGISTRY.reload(moduleSources());

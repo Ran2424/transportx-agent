@@ -52,11 +52,22 @@ export function workspaceCreationDigest(value: unknown): string {
   return crypto.createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
 
+/** A replacement directory with its own metadata is handled by recovery. */
+export function workspaceRegistrationMissing(directory: string) {
+  try {
+    if (!fs.lstatSync(directory).isDirectory() || path.relative(fs.realpathSync(directory), directory) !== '') return false;
+    fs.lstatSync(path.join(directory, '.tau'));
+    return false;
+  } catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
+}
+
 /** Persistence only: no Pi startup, migration discovery or deletion side effects. */
 export class WorkspaceStore {
   readonly catalogFile: string;
+  private readonly sidebarFile: string;
   constructor(readonly userDataDirectory: string, readonly sessionsDirectory: string) {
     this.catalogFile = path.join(userDataDirectory, 'workspaces.json');
+    this.sidebarFile = path.join(userDataDirectory, 'workspace-sidebar.json');
   }
   readCatalog(): WorkspaceCatalogV1 {
     if (!fs.existsSync(this.catalogFile)) throw failure('catalog_missing', 'Workspace catalog is missing; inventory or explicit recovery is required.');
@@ -75,14 +86,40 @@ export class WorkspaceStore {
     return mutateJson(this.catalogFile, async () => {
       const catalog = this.readCatalog();
       if (catalog.revision !== expectedRevision) throw failure('workspace_revision_conflict', 'Workspace catalog changed; reload before retrying.');
-      const tombstones = catalog.entries.filter((entry) => entry.state === 'deleted').map((entry) => structuredClone(entry));
+      const tombstones = catalog.entries.filter((entry) => entry.state === 'deleted' || entry.state === 'released').map((entry) => structuredClone(entry));
       update(catalog); catalog.revision++;
       for (const tombstone of tombstones) {
         const current = catalog.entries.find((entry) => entry.workspaceId === tombstone.workspaceId);
-        if (!current || workspaceCreationDigest(current) !== workspaceCreationDigest(tombstone)) throw failure('workspace_identity_conflict', 'Deleted workspace tombstones cannot be removed or replaced.');
+        if (!current || workspaceCreationDigest(current) !== workspaceCreationDigest(tombstone)) throw failure('workspace_identity_conflict', 'Removed workspace records cannot be removed or replaced.');
       }
       writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
       return catalog;
+    });
+  }
+  hiddenWorkspaces() {
+    try { return new Set(Object.entries(readJsonObject(this.sidebarFile)).filter(([, hidden]) => hidden === true).map(([id]) => id)); }
+    catch { return new Set<string>(); }
+  }
+  setSidebarVisibility(workspaceId: string, hidden: boolean) {
+    return mutateJson(this.sidebarFile, async () => {
+      const entry = this.readCatalog().entries.find((item) => item.workspaceId === workspaceId);
+      if (!entry || entry.state !== 'ready' || entry.kind === 'standalone') throw failure('workspace_missing', 'Workspace is unavailable.');
+      const ids = this.hiddenWorkspaces();
+      if (hidden) ids.add(workspaceId);
+      else ids.delete(workspaceId);
+      writeJsonAtomic(this.sidebarFile, Object.fromEntries([...ids].map((id) => [id, true])));
+    });
+  }
+  async releaseMissingWorkspace(workspaceId: string, historyKeys: string[]) {
+    const catalog = this.readCatalog();
+    if (catalog.entries.some((entry) => entry.workspaceId === workspaceId && entry.state === 'released')) return;
+    await this.editCatalog(catalog.revision, (value) => {
+      const entry = value.entries.find((entry) => entry.workspaceId === workspaceId);
+      if (!entry || entry.state !== 'ready' || entry.kind === 'standalone' || !workspaceRegistrationMissing(entry.path)) throw failure('workspace_revision_conflict', 'Workspace registration changed. Refresh the workspace list.');
+      const parent = path.dirname(entry.path);
+      if (!fs.statSync(parent).isDirectory() || path.relative(fs.realpathSync(parent), parent) !== '') throw failure('workspace_missing', 'The parent directory must be accessible before releasing its workspace.', 404);
+      entry.state = 'released';
+      entry.releasedHistoryKeys = historyKeys;
     });
   }
   reserveWorkspace(requestId: string, inputSha256: string, allocate: (catalog: WorkspaceCatalogV1) => string, directoryOwnership?: 'external') {
@@ -108,7 +145,7 @@ export class WorkspaceStore {
         if (previous.kind !== 'standalone' || previous.path !== canonical) throw failure('workspace_identity_conflict', 'Standalone reservation differs from its identity.');
         return previous;
       }
-      if (catalog.entries.some((entry) => isWithin(entry.path, canonical) || isWithin(canonical, entry.path))) throw failure('workspace_identity_conflict', 'Standalone workspace overlaps an existing workspace or deletion tombstone.');
+      if (catalog.entries.some((entry) => entry.state !== 'released' && (isWithin(entry.path, canonical) || isWithin(canonical, entry.path)))) throw failure('workspace_identity_conflict', 'Standalone workspace overlaps an existing workspace or deletion tombstone.');
       const entry: WorkspaceCatalogEntryV1 = { workspaceId, path: canonical, creationRequestId: null, creationInputSha256: null, state: 'creating', kind: 'standalone', deletion: null };
       catalog.entries.push(entry); catalog.revision++;
       writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
@@ -123,7 +160,7 @@ export class WorkspaceStore {
         if (previous.path !== canonical || previous.creationRequestId !== null || !['creating', 'ready'].includes(previous.state)) throw failure('workspace_identity_conflict', 'Migration reservation differs from its inventory identity.');
         return previous;
       }
-      if (catalog.entries.some((entry) => isWithin(entry.path, canonical) || isWithin(canonical, entry.path))) throw failure('workspace_identity_conflict', 'Migration overlaps an existing workspace or deletion tombstone.');
+      if (catalog.entries.some((entry) => entry.state !== 'released' && (isWithin(entry.path, canonical) || isWithin(canonical, entry.path)))) throw failure('workspace_identity_conflict', 'Migration overlaps an existing workspace or deletion tombstone.');
       catalog.entries.push({ workspaceId, path: canonical, creationRequestId: null, creationInputSha256: null, state: 'creating', deletion: null }); catalog.revision++;
       writeJsonAtomic(this.catalogFile, validated(parseWorkspaceCatalogStructured(catalog)));
       return catalog.entries.at(-1)!;
@@ -131,13 +168,13 @@ export class WorkspaceStore {
   }
   private entry(workspaceId: string, allowCreating = false): WorkspaceCatalogEntryV1 {
     const entry = this.readCatalog().entries.find((item) => item.workspaceId === workspaceId);
-    if (!entry || entry.state === 'deleted') throw failure('workspace_missing', 'Workspace is not registered.', 404);
+    if (!entry || entry.state === 'deleted' || entry.state === 'released') throw failure('workspace_missing', 'Workspace is not registered.', 404);
     if (entry.state !== 'ready' && !(allowCreating && entry.state === 'creating')) throw failure('workspace_migration_required', 'Workspace is not ready; open its migration report.');
     if (!fs.existsSync(entry.path)) throw failure('workspace_missing', 'Registered workspace directory is missing.', 404);
     const real = fs.realpathSync(entry.path);
     if (path.relative(real, entry.path) !== '' || !fs.statSync(real).isDirectory()) throw failure('workspace_identity_conflict', 'Registered workspace path no longer identifies its canonical directory.');
     for (const other of this.readCatalog().entries) {
-      if (other.workspaceId === workspaceId || other.state === 'deleted') continue;
+      if (other.workspaceId === workspaceId || other.state === 'deleted' || other.state === 'released') continue;
       const otherPath = fs.existsSync(other.path) ? fs.realpathSync(other.path) : path.resolve(other.path);
       if (isWithin(real, otherPath) || isWithin(otherPath, real)) throw failure('workspace_identity_conflict', 'Registered workspaces overlap or alias the same directory.');
     }
@@ -146,6 +183,7 @@ export class WorkspaceStore {
   readWorkspace(workspaceId: string) {
     const entry = this.entry(workspaceId);
     const file = workspaceMetadataPath(entry.path, '.tau/workspace.json');
+    if (workspaceRegistrationMissing(entry.path)) throw failure('workspace_missing', 'Registered workspace metadata is missing.', 404);
     const manifest = validated(parseWorkspaceManifestStructured(readJsonObject(file)));
     if (manifest.id !== workspaceId) throw failure('workspace_identity_conflict', 'Workspace manifest ID differs from its catalog entry.');
     return { directory: entry.path, manifest };

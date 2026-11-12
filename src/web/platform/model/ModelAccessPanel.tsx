@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { CHATGPT_PLAN_PROVIDER } from '../../../contracts/chatgpt-plan.js';
 import type { ModelRecord } from '../../../public/app-types.js';
 import type { ModelProviderAccess } from '../../../public/kernel/commands.js';
 import { Button } from '../../components/ui/button';
@@ -88,7 +89,11 @@ export function ModelAccessPanel({ models, modelProviders, modelsLoading, busy, 
           {modelsLoading ? <div className="settings-loading" aria-label={t('settings.loadingModels')}><span /></div> : connectedProviders.length ? <>
             <div className="model-access-toolbar"><label><Icon name="search" /><input value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder={t('settings.searchModelsPlaceholder')} aria-label={t('settings.searchModels')} /></label><select value={modelCapability} onChange={(event) => setModelCapability(event.target.value as typeof modelCapability)} aria-label={t('settings.filterModels')}><option value="all">{t('settings.filter.all')}</option><option value="reasoning">{t('settings.model.reasoning')}</option><option value="images">{t('settings.model.images')}</option></select></div>
             {filteredProviders.length ? <div className="model-provider-list">{filteredProviders.map((provider) => {
-              const providerSource = provider.metadata?.custom ? t('settings.providerSource.custom') : t('settings.providerSource.pi');
+              const methods = provider.metadata?.authMethods;
+              const credentialType = provider.metadata?.credentialType;
+              const isSubscription = provider.id === CHATGPT_PLAN_PROVIDER || credentialType === 'oauth'
+                || (!credentialType && methods?.includes('oauth') && !methods.includes('api_key'));
+              const providerSource = t(isSubscription ? 'model.setup.subscriptionConnection' : 'model.setup.apiConnection');
               const credentialSource = provider.metadata?.credentialStored ? t('settings.providerCredential.local') : t('settings.providerCredential.external');
               return <article className="model-provider" key={provider.id}>
                 <header className="model-provider-heading">

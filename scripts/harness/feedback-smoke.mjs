@@ -327,7 +327,7 @@ export async function conversationStyleSmoke(page) {
     assert.ok(samples.some((sample) => sample.selector === '.composer-send:not(:disabled)'));
     assert.ok(samples.some((sample) => sample.selector === '.citation-disclosure > summary > span:first-child'), 'real citation counts are checked');
     for (const sample of samples) {
-      if (sample.size < 11 || sample.contrast < 4.5) failures.push(`${theme} ${sample.selector}: ${sample.size}px, ${sample.contrast.toFixed(2)}:1`);
+      if (sample.size < 12 || sample.contrast < 4.5) failures.push(`${theme} ${sample.selector}: ${sample.size}px, ${sample.contrast.toFixed(2)}:1`);
     }
     evidence.push({ theme, samples });
     await page.screenshot({ path: `${directory}/conversation-${theme}.png`, animations: 'disabled' });

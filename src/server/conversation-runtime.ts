@@ -123,7 +123,7 @@ export class ConversationRuntime {
           lease,
           isCurrent: (source) => this.current(source),
           isReady: (source) => this.current(source) && !!this.instances.get(source.conversationId)?.started,
-          sync: (source) => { void this.sync(source); },
+          sync: (source) => this.sync(source),
           closed: async (source) => {
             if (!this.current(source)) return;
             const instance = this.instances.get(source.conversationId)!;

@@ -20,6 +20,7 @@ type TimingIndex = {
   schemaVersion: 1;
   updatedAt: string;
   records: Record<string, TimingRecord>;
+  working?: Record<string, number>;
 };
 
 type TimingMessage = {
@@ -41,6 +42,7 @@ function messageKey(message: TimingMessage): string {
 }
 
 function toolKey(toolCallId: string) { return `tool:${toolCallId}`; }
+function workingKey(message: TimingMessage) { return `working:${message.timestamp ?? ''}:${messageKey(message)}`; }
 
 function emptyIndex(): TimingIndex {
   return { schemaVersion: SCHEMA_VERSION, updatedAt: new Date(0).toISOString(), records: {} };
@@ -50,7 +52,9 @@ function readIndex(directory: string): TimingIndex {
   const parsed = readJsonObject(indexPath(directory), emptyIndex()) as Partial<TimingIndex>;
   if (parsed.schemaVersion !== SCHEMA_VERSION || !parsed.records || typeof parsed.records !== 'object' || Array.isArray(parsed.records)) throw Object.assign(new Error('Timing metadata is corrupt.'), { code: 'metadata_corrupt', status: 409 });
   if (!Object.values(parsed.records).every((record) => record && ['thinking', 'tool'].includes(record.kind) && typeof record.sourceId === 'string' && !!record.sourceId && [record.startedAt, record.endedAt, record.durationMs].every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0))) throw Object.assign(new Error('Timing metadata record is corrupt.'), { code: 'metadata_corrupt', status: 409 });
-  return { schemaVersion: SCHEMA_VERSION, updatedAt: String(parsed.updatedAt || ''), records: parsed.records };
+  const working = parsed.working && typeof parsed.working === 'object' && !Array.isArray(parsed.working)
+    ? Object.fromEntries(Object.entries(parsed.working).filter(([, value]) => Number.isFinite(value) && value >= 0)) : undefined;
+  return { schemaVersion: SCHEMA_VERSION, updatedAt: String(parsed.updatedAt || ''), records: parsed.records, working };
 }
 
 function writeIndex(directory: string, index: TimingIndex) {
@@ -99,6 +103,12 @@ export class TimingMetricsStore {
     this.persist();
   }
 
+  recordWorking<T extends TimingMessage>(message: T, durationMs: number): T {
+    (this.index.working ??= {})[workingKey(message)] = durationMs;
+    this.persist();
+    return { ...message, workingDurationMs: durationMs };
+  }
+
   enrichToolResult<T extends TimingMessage>(message: T): T {
     if (!message.toolCallId) return message;
     const record = this.index.records[toolKey(message.toolCallId)];
@@ -111,10 +121,12 @@ export class TimingMetricsStore {
       if (!message) return entry;
 
       let enriched = message;
-      if (message.role === 'assistant' && Array.isArray(message.content) && message.content.some((block) => block.type === 'thinking')) {
-        const existing = message.content.find((block) => block.type === 'thinking' && typeof block.durationMs === 'number');
+      if (message.role === 'assistant') {
+        const existing = Array.isArray(message.content) ? message.content.find((block) => block.type === 'thinking' && typeof block.durationMs === 'number') : undefined;
         const exact = this.index.records[messageKey(message)];
         if (exact?.kind === 'thinking') enriched = attachThinking(enriched, exact.startedAt, typeof existing?.durationMs === 'number' ? existing.durationMs : exact.durationMs);
+        const working = this.index.working?.[workingKey(message)];
+        if (working !== undefined) enriched = { ...enriched, workingDurationMs: working };
       } else if (message.role === 'toolResult' && message.toolCallId) {
         const exact = this.index.records[toolKey(message.toolCallId)];
         if (exact?.kind === 'tool') enriched = attachTool(enriched, exact.startedAt, message.durationMs ?? exact.durationMs);

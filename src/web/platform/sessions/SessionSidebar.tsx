@@ -32,13 +32,27 @@ export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSe
   const [menu, setMenu] = useState<(Target & { x: number; y: number }) | null>(null);
   const [rename, setRename] = useState<Target | null>(null), [renameValue, setRenameValue] = useState(''), [saving, setSaving] = useState(false);
   const [move, setMove] = useState<Target | null>(null), [moveTarget, setMoveTarget] = useState(''), [moving, setMoving] = useState(false);
-  const regularWorkspaces = workspaces.filter((workspace) => workspace.kind !== 'standalone');
+  const regularWorkspaces = workspaces.filter((workspace) => workspace.kind !== 'standalone' && !workspace.hiddenFromSidebar);
+  const removedWorkspaces = workspaces.filter((workspace) => workspace.hiddenFromSidebar);
   const standaloneRows = workspaces.filter((workspace) => workspace.kind === 'standalone').flatMap((workspace) => workspace.conversations.map((item) => ({ workspace, item })));
   const moveDestinations = move ? [
     ...(move.workspace.kind === 'standalone' ? [] : [{ value: 'standalone', label: t('workspaceFlow.moveOutOption') }]),
     ...regularWorkspaces.filter((workspace) => workspace.availability === 'ready' && workspace.id !== move.workspace.id).map((workspace) => ({ value: workspace.id, label: workspace.name })),
   ] : [];
   async function refresh() { setLoading(true); try { await appKernel.commands.session.list(); setError(''); } catch (cause) { setError((cause as Error).message); } finally { setLoading(false); } }
+  async function setWorkspaceHidden(workspace: WorkspaceView, hidden: boolean) {
+    const running = workspace.conversations.some(({ record, runtime }) => sessions.find((session) => session.id === record.id)?.isStreaming ?? runtime?.isStreaming);
+    if (hidden && running && !window.confirm(t('workspaceFlow.removeRunning'))) return;
+    setError('');
+    try { await appKernel.commands.session.setWorkspaceSidebarVisibility(workspace.id, hidden); }
+    catch (cause) { setError((cause as Error).message); }
+  }
+  async function releaseMissingWorkspace(workspace: WorkspaceView) {
+    if (!window.confirm(t('workspaceFlow.releaseMissingCopy', { path: workspace.path }))) return;
+    setError('');
+    try { await appKernel.commands.session.releaseMissingWorkspace(workspace.id); }
+    catch (cause) { setError((cause as Error).message); }
+  }
   function openMove(target: Target) {
     const destinations = target.workspace.kind === 'standalone'
       ? regularWorkspaces.filter((workspace) => workspace.availability === 'ready')
@@ -110,7 +124,7 @@ export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSe
                   {workspace.availability === 'ready' && <button className="icon-button" type="button" aria-label={t('workspaceFlow.newIn', { name: workspace.name })} onClick={() => onNewSession(workspace)}><Icon name="plus" /></button>}
                   <button className="icon-button" type="button" aria-label={t('workspaceFlow.actions', { name: workspace.name })} onClick={(event) => setMenu({ workspace, x: event.clientX, y: event.clientY })}>⋯</button>
                 </div>
-                {workspace.availability !== 'ready' && <button type="button" className="session-empty is-error" onClick={() => workspace.availability === 'deleting' ? onDelete(workspace) : onDiagnostics(workspace)}>{workspace.availability === 'deleting' ? t('workspaceFlow.continueDelete') : `${workspace.availability === 'isolated' ? t('workspaceFlow.isolated') : t('workspaceFlow.needsMigration')} · ${t('workspaceFlow.inspectDetails')}`}</button>}
+                {workspace.availability !== 'ready' && <button type="button" className="session-empty is-error" onClick={() => workspace.availability === 'deleting' ? onDelete(workspace) : workspace.error?.code === 'workspace_missing' ? void refresh() : onDiagnostics(workspace)}>{workspace.availability === 'deleting' ? t('workspaceFlow.continueDelete') : workspace.error?.code === 'workspace_missing' ? `${t('workspaceFlow.directoryUnavailable')} · ${t('workspaceFlow.recheckDirectory')}` : `${workspace.availability === 'isolated' ? t('workspaceFlow.isolated') : t('workspaceFlow.needsMigration')} · ${t('workspaceFlow.inspectDetails')}`}</button>}
                 {expanded && rows.map(({ record, runtime, lastConversationAt, hasMessages }) => <button className={`session-row${record.id === activeSessionId ? ' is-active' : ''}`} type="button" key={record.id} aria-disabled={record.state === 'deleting'} onClick={() => record.state === 'deleting' ? onDelete(workspace, record) : onSelect(record.id)} onContextMenu={(event) => { event.preventDefault(); setMenu({ workspace, record, x: event.clientX, y: event.clientY }); }}>
                   <span className="session-row-main"><strong>{record.name}</strong><small>{record.state === 'deleting' ? t('workspaceFlow.unfinishedDelete') : record.state === 'start-failed' ? t('workspaceFlow.startFailed') : lastConversationAt ? relativeTime(lastConversationAt) : t(hasMessages === false ? 'workspaceFlow.noMessages' : 'workspaceFlow.unknownActivity')}</small></span>
                   {(sessions.find((view) => view.id === record.id)?.isStreaming ?? runtime?.isStreaming) && <span className="session-row-meta"><i className="streaming-beacon" /></span>}
@@ -132,6 +146,7 @@ export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSe
               </section>;
             })()}
             {!loading && !error && !regularWorkspaces.length && !standaloneRows.length && <div className="session-empty">{t('workspaceFlow.empty')}</div>}
+            {removedWorkspaces.length > 0 && <details className="removed-workspaces"><summary>{t('workspaceFlow.readdWorkspace')}</summary>{removedWorkspaces.map((workspace) => <div key={workspace.id}><span title={workspace.path}>{workspace.name}</span><Button type="button" variant="quiet" onClick={() => void setWorkspaceHidden(workspace, false)}>{t('workspaceFlow.restoreWorkspace')}</Button></div>)}</details>}
           </div>}
         </section>
       </div>
@@ -140,7 +155,9 @@ export function SessionSidebar({ open, dataReady, sessions, workspaces, activeSe
       {menu.workspace.availability === 'ready' && menu.record?.state !== 'deleting' && <button type="button" role="menuitem" onClick={() => { setRename(menu); setRenameValue(menu.record?.name || menu.workspace.name); setError(''); setMenu(null); }}>{t(menu.record ? 'workspaceFlow.renameConversation' : 'workspaceFlow.renameWorkspace')}</button>}
       {menu.record && menu.record.state !== 'deleting' && menu.workspace.availability === 'ready' && <button type="button" role="menuitem" onClick={() => { openMove(menu); setMenu(null); }}>{t(menu.workspace.kind === 'standalone' ? 'workspaceFlow.moveIntoWorkspace' : 'workspaceFlow.moveConversation')}</button>}
       <button type="button" role="menuitem" onClick={() => { onDiagnostics(menu.workspace); setMenu(null); }}>{t('workspaceFlow.diagnostics')}</button>
-      {(menu.workspace.kind !== 'standalone' && menu.workspace.directoryOwnership !== 'external' || menu.record) && (menu.workspace.availability === 'ready' || menu.workspace.availability === 'deleting' || menu.workspace.availability === 'isolated') && <button type="button" role="menuitem" onClick={() => { onDelete(menu.workspace, menu.record); setMenu(null); }}>{menu.workspace.availability === 'isolated' ? t('workspaceFlow.deleteIsolated') : menu.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')}</button>}
+      {!menu.record && menu.workspace.kind !== 'standalone' && (menu.workspace.availability === 'ready' || menu.workspace.error?.code === 'workspace_missing') && <button type="button" role="menuitem" onClick={() => { if (menu.workspace.availability === 'ready' && menu.workspace.directoryOwnership !== 'external') onDelete(menu.workspace); else void setWorkspaceHidden(menu.workspace, true); setMenu(null); }}>{t(menu.workspace.availability === 'ready' && menu.workspace.directoryOwnership !== 'external' ? 'workspaceFlow.removeWorkspace' : 'workspaceFlow.removeFromSidebar')}</button>}
+      {!menu.record && menu.workspace.kind !== 'standalone' && menu.workspace.error?.code === 'workspace_missing' && <button type="button" role="menuitem" onClick={() => { void releaseMissingWorkspace(menu.workspace); setMenu(null); }}>{t('workspaceFlow.releaseMissing')}</button>}
+      {(menu.workspace.kind !== 'standalone' && menu.workspace.directoryOwnership !== 'external' && menu.workspace.availability !== 'ready' || menu.record) && (menu.workspace.availability === 'ready' || menu.workspace.availability === 'deleting' || menu.workspace.availability === 'isolated') && <button type="button" role="menuitem" data-destructive onClick={() => { onDelete(menu.workspace, menu.record); setMenu(null); }}>{menu.workspace.availability === 'isolated' ? t('workspaceFlow.deleteIsolated') : menu.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')}</button>}
     </div>}
     <Dialog open={!!rename} onOpenChange={(next) => { if (!next && !saving) setRename(null); }} title={rename?.record ? t('workspaceFlow.renameConversation') : t('workspaceFlow.renameWorkspace')} className="confirmation-dialog" footer={<><DialogClose asChild><Button type="button" variant="quiet" disabled={saving}>{t('common.cancel')}</Button></DialogClose><Button type="button" variant="primary" disabled={!renameValue.trim() || saving} onClick={() => void saveName()}>{t('common.save')}</Button></>}>
       <label className="field-label"><span>{t('workspaceFlow.fieldName')}</span><input value={renameValue} maxLength={120} autoFocus onChange={(event) => setRenameValue(event.target.value)} /></label>{error && <p className="form-error">{error}</p>}

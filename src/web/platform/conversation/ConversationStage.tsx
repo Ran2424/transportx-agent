@@ -4,7 +4,7 @@ import { BrandMark } from '../../components/BrandMark';
 import { Button } from '../../components/ui/button';
 import { ConversationWorkspace } from './ConversationWorkspace';
 
-export function ConversationStage({ session, loading, onNewSession, onActivate, showThinking, expandThinking }: { session: ConversationView | null; loading: boolean; onNewSession(): void; onActivate(id: string): Promise<void>; showThinking: boolean; expandThinking: boolean }) {
+export function ConversationStage({ session, loading, onNewSession, onActivate, showThinking, expandThinking, moduleFailure, onContinue }: { session: ConversationView | null; loading: boolean; onNewSession(): void; onActivate(id: string): Promise<void>; showThinking: boolean; expandThinking: boolean; moduleFailure?: string; onContinue(): void }) {
   const { t } = useTranslation();
   if (loading) {
     return <main className="conversation-stage" aria-busy="true"><div className="stage-loader"><span /><strong>{t('welcome.syncing')}</strong><small>{t('welcome.syncingDetail')}</small></div></main>;
@@ -23,5 +23,5 @@ export function ConversationStage({ session, loading, onNewSession, onActivate, 
     );
   }
 
-  return <div className="conversation-persistent-stage"><ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} onActivate={onActivate} /></div>;
+  return <div className="conversation-persistent-stage">{moduleFailure && <div className="conversation-continuation" role="status"><span>{moduleFailure}</span><Button type="button" variant="outline" onClick={onContinue}>{t('workspaceFlow.createContinuation')}</Button></div>}<ConversationWorkspace key={session.id} sessionId={session.id} showThinking={showThinking} expandThinking={expandThinking} onActivate={onActivate} /></div>;
 }

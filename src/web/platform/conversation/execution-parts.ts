@@ -3,7 +3,7 @@ import type { ToolData } from './tool-projection';
 
 export type ExecutionActivity = { id: string; tool?: ToolData; thinking?: { text: string; active: boolean; startedAt: number | null; durationMs: number | null } };
 export type ExecutionPart = { kind: 'message'; entry: SessionEntry; index: number; streaming?: boolean } | { kind: 'activity'; activity: ExecutionActivity };
-type ExecutionRow = Extract<ExecutionPart, { kind: 'message' }> | { kind: 'execution'; id: string; activities: ExecutionActivity[]; startedAt: number | null };
+type ExecutionRow = Extract<ExecutionPart, { kind: 'message' }> | { kind: 'execution'; id: string; activities: ExecutionActivity[]; startedAt: number | null; durationMs?: number };
 
 // Visible messages are boundaries; streaming text and its final entry occupy the same boundary.
 export function groupExecutionParts(parts: ExecutionPart[], pending = false, runStartedAt: number | null = null): ExecutionRow[] {
@@ -18,6 +18,12 @@ export function groupExecutionParts(parts: ExecutionPart[], pending = false, run
         startedAt = typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : null;
         afterPrompt = true;
       } else {
+        const durationMs = part.entry.message?.workingDurationMs;
+        const previous = rows.at(-1);
+        if (durationMs !== undefined) {
+          if (previous?.kind === 'execution') previous.durationMs = durationMs;
+          else if (durationMs >= 180) rows.push({ kind: 'execution', id: `execution-${messages}`, activities: [], startedAt, durationMs });
+        }
         startedAt = null;
         afterPrompt = false;
       }

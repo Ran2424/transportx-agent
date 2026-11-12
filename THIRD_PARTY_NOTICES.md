@@ -6,6 +6,8 @@ Project-owned changes are licensed under [AGPL-3.0-only](./LICENSE).
 
 The bundled `@earendil-works/pi-coding-agent` 0.80.10 resource loader has a local patch, applied by `scripts/patch-pi-resource-discovery.mjs`: when all automatic resource categories are disabled, it skips package discovery before loading explicit resources. This prevents automatic package-manager commands during TransportX startup/reload. Pi's own license and notices remain in the dependency; its Registry, Agent Loop, RPC and Extension execution are retained.
 
+The same script updates Pi's credential reader for the TransportX ChatGPT subscription provider. Pi reads that credential under its existing lock so running sessions observe sign-in, sign-out, and token renewal performed in another process.
+
 ## MIT license for upstream-derived code
 
 MIT License

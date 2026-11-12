@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {
   parseWorkspaceMigrationStructured, type WorkspaceMigrationScopeV1, type WorkspaceMigrationStateV1,
-  type WorkspaceMigrationItemV1, type WorkspaceMigrationHistoryV1,
+  type WorkspaceMigrationItemV1, type WorkspaceMigrationHistoryV1, type WorkspaceCatalogV1,
 } from '../contracts/index.js';
 import { WorkspaceStore, workspaceMetadataPath, workspaceCreationDigest } from './workspace-store.js';
 import { acquireWriteLease, assertHostWriter, readJsonObject, writeJsonAtomic } from './util/json-storage.js';
@@ -16,6 +16,13 @@ const overlap = (left: string, right: string) => isWithin(left, right) || isWith
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 4096);
 const withinWorkspaceRoots = (directory: string, scopes: WorkspaceMigrationScopeV1[]) => scopes.some((scope) => scope.workspaceRoots.some((root) => isWithin(root, directory)));
 const scopedItem = (item: WorkspaceMigrationItemV1, scopes: WorkspaceMigrationScopeV1[]) => item.kind === 'workspace' ? withinWorkspaceRoots(item.path, scopes) : item.protectedPaths.length === 0 || item.protectedPaths.some((directory) => withinWorkspaceRoots(directory, scopes));
+
+function activeInventoryItems(items: WorkspaceMigrationItemV1[], catalog: WorkspaceCatalogV1) {
+  const released = catalog.entries.filter((entry) => entry.state === 'released');
+  return items.filter((item) => !released.some((entry) => entry.workspaceId === item.workspaceId
+    || item.kind === 'path' && item.error?.code === 'workspace_metadata_unavailable' && item.path === entry.path
+    || item.kind === 'history' && entry.releasedHistoryKeys?.includes(relativePosixPath(item.sessionsDirectory, item.path))));
+}
 
 /** Canonicalize an existing prefix without creating missing scope directories. */
 function location(value: string): string {
@@ -89,7 +96,10 @@ export class WorkspaceMigration {
     if (!parsed.ok) throw failure('metadata_corrupt', parsed.diagnostics[0].message);
     if (parsed.value.report !== toPosixPath(this.reportFile)) throw failure('metadata_corrupt', 'Migration report path differs from this inventory.');
     if (!parsed.value.scopes.some((scope) => workspaceCreationDigest(scope) === workspaceCreationDigest(this.scope))) throw failure('system_not_ready', 'This configured scope has not been inventoried.');
-    return { ...parsed.value, items: parsed.value.items.filter((item) => scopedItem(item, parsed.value.scopes)) };
+    let items = parsed.value.items;
+    try { items = activeInventoryItems(items, this.store.readCatalog()); }
+    catch { /* Keep the inventory readable in diagnostics when the catalog is unavailable. */ }
+    return { ...parsed.value, items: items.filter((item) => scopedItem(item, parsed.value.scopes)) };
   }
   includesWorkspace(directory: string, scopes = this.read().scopes) { return withinWorkspaceRoots(directory, scopes); }
   private assertWriter() {
@@ -196,7 +206,7 @@ export class WorkspaceMigration {
       const catalog = this.store.readCatalog();
       const scopes = prior?.scopes || [];
       if (!scopes.some((scope) => workspaceCreationDigest(scope) === workspaceCreationDigest(this.scope))) scopes.push(this.scope);
-      let state: WorkspaceMigrationStateV1 = { schemaVersion: 1, targetWorkspaceSchema: 1, revision: prior?.revision || 0, scopes, systemReadiness: 'initializing', phase: 'inventory', items: prior?.items || [], report: toPosixPath(this.reportFile), updatedAt: new Date().toISOString() };
+      let state: WorkspaceMigrationStateV1 = { schemaVersion: 1, targetWorkspaceSchema: 1, revision: prior?.revision || 0, scopes, systemReadiness: 'initializing', phase: 'inventory', items: activeInventoryItems(prior?.items || [], catalog), report: toPosixPath(this.reportFile), updatedAt: new Date().toISOString() };
       state = this.save(state); // Other Hosts recheck this state before business writes.
       const drafts: WorkspaceMigrationItemV1[] = [];
       const previous = (kind: WorkspaceMigrationItemV1['kind'], target: string, sessionsDirectory: string) => state.items.find((item) => item.kind === kind && item.path === target && item.sessionsDirectory === sessionsDirectory);
@@ -225,6 +235,10 @@ export class WorkspaceMigration {
       }
       for (const entry of catalog.entries) {
         if (entry.deletion) for (const key of entry.deletion.historyKeys) for (const scope of scopes) registeredKeys.add(`${scope.sessionsDirectory}\n${key}`);
+        if (entry.state === 'released') {
+          for (const key of entry.releasedHistoryKeys || []) for (const scope of scopes) registeredKeys.add(`${scope.sessionsDirectory}\n${key}`);
+          continue;
+        }
         if (entry.state === 'deleted' || entry.state === 'deleting') continue;
         if (entry.creationRequestId === null && !withinWorkspaceRoots(entry.path, scopes)) continue;
         const migrating = state.items.find((item) => item.kind === 'workspace' && item.workspaceId === entry.workspaceId && item.path === entry.path);
@@ -254,7 +268,7 @@ export class WorkspaceMigration {
           if (state.items.some((item) => item.state === 'isolated' && item.kind !== 'workspace' && item.sessionsDirectory === root && item.path === toPosixPath(source.file))) continue;
           try {
             const header = historyHeader(root, source.key);
-            const registered = catalog.entries.find((entry) => entry.path === header.cwd);
+            const registered = catalog.entries.find((entry) => entry.state !== 'released' && entry.path === header.cwd);
             if (!withinWorkspaceRoots(header.cwd, scopes) && !registered?.creationRequestId) continue;
             if (registered) {
               const migrating = drafts.find((item) => item.workspaceId === registered.workspaceId && item.kind === 'workspace' && item.stage !== 'published' && item.sessionsDirectory === root);

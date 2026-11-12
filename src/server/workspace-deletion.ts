@@ -102,7 +102,7 @@ export class WorkspaceDeletion {
       if (entry.deletion && identity !== entry.deletion.rootIdentity) throw failure('workspace_identity_conflict', 'The directory was replaced after deletion froze.');
     }
     const overlap = (directory: string) => isWithin(entry.path, directory) || isWithin(directory, entry.path);
-    for (const other of this.options.store.readCatalog().entries) if (other.workspaceId !== entry.workspaceId && other.state !== 'deleted' && overlap(fs.existsSync(other.path) ? fs.realpathSync(other.path) : other.path)) throw failure('workspace_busy', 'Another registered workspace overlaps the deletion root.');
+    for (const other of this.options.store.readCatalog().entries) if (other.workspaceId !== entry.workspaceId && other.state !== 'deleted' && other.state !== 'released' && overlap(fs.existsSync(other.path) ? fs.realpathSync(other.path) : other.path)) throw failure('workspace_busy', 'Another registered workspace overlaps the deletion root.');
     for (const root of new Set(this.options.historyDirectories())) for (const source of historySources(root, () => {})) {
       try {
         const header = historyHeader(root, source.key);
@@ -125,6 +125,7 @@ export class WorkspaceDeletion {
   workspace(id: string, input: Input) {
     this.input(input); this.options.assertSystemReady();
     const initial = this.entry(id);
+    if (initial.state === 'released') throw failure('workspace_missing', 'Workspace registration has been released.');
     if (initial.directoryOwnership === 'external') throw failure('workspace_directory_external', 'Existing project folders cannot be deleted by the application. Delete individual conversations instead.');
     if (initial.kind === 'standalone') throw failure('workspace_system_managed', 'Standalone conversation storage is managed by conversation moves, not workspace deletion.');
     if (initial.deletion && initial.deletion.requestId !== input.requestId) throw failure('workspace_revision_conflict', 'A different request owns this workspace deletion.');

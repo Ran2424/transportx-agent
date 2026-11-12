@@ -33,6 +33,8 @@ export function registerWorkspaceApi<T extends Services>(router: ServerRouter<T>
     .get('/api/workspaces', endpoint(({ deps }) => deps.workspaces.index()))
     .get(/^\/api\/workspaces\/([^/]+)$/, endpoint((context) => context.deps.workspaces.workspace(id(context))))
     .patch(/^\/api\/workspaces\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.editWorkspace(id(context), await readInput(context.req, context.deps))))
+    .patch(/^\/api\/workspaces\/([^/]+)\/sidebar$/, endpoint(async (context) => context.deps.workspaces.setSidebarVisibility(id(context), (await readInput(context.req, context.deps)).hidden)))
+    .post(/^\/api\/workspaces\/([^/]+)\/release$/, endpoint((context) => context.deps.workspaces.releaseMissingWorkspace(id(context))))
     .post('/api/conversations', endpoint(async ({ req, deps }) => deps.workspaces.options.creation.create(await readInput(req, deps))))
     .get('/api/conversations/search', endpoint(({ url, deps }) => deps.workspaces.search(url.searchParams.get('q') || '')))
     .get(/^\/api\/conversations\/([^/]+)\/(?:snapshot|history)$/, endpoint((context) => context.deps.workspaces.snapshot(id(context))))

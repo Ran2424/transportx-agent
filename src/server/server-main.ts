@@ -13,7 +13,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JsonRecord, RpcCommand, RpcResponse, StatusError } from './types.js';
 import { acquireWriteLease } from './util/json-storage.js';
 import { APP_PATHS, ARGS, AUTH_CONFIGURED, PROJECT_AUTH, DEFAULT_DOMAIN_ID, DESKTOP_MODE, FFMPEG_EXECUTABLES, HOST, MIME_TYPES, PI_AGENT_DIR, PI_COMMAND, PI_COMMAND_ARGS, PORT, PYTHON_EXECUTABLE, REACT_STATIC_DIR, SESSIONS_DIR, TAU_SETTINGS, expandHome, loadTauSettings, parseArgs, saveTauSetting } from './config.js';
-import { ASSET_OVERRIDES, ASSET_RESOLVER, MODULE_INSTALLER, MODULE_REGISTRY, SESSION_ASSEMBLER, reloadModules, setModuleEnabled, sessionAssemblerForProfile } from './platform-composition.js';
+import { ASSET_OVERRIDES, ASSET_RESOLVER, BUILTIN_MODULE_ARCHIVE, MODULE_INSTALLER, MODULE_REGISTRY, SESSION_ASSEMBLER, reloadModules, setModuleEnabled, sessionAssemblerForProfile } from './platform-composition.js';
 import { buildSessionPiLaunch } from './session-pi-launch.js';
 import { BUILTIN_MODULE_MANIFESTS } from './config.js';
 import { ModuleTrustStore, confirmDesktopModuleTrust, ensureSessionModuleTrust } from './module-trust.js';
@@ -80,7 +80,7 @@ const diagnoseCommand = boundedDiagnostics(200);
 const moduleTrust = new ModuleTrustStore(path.join(APP_PATHS.settingsDir, 'module-trust.json'), (request) => DESKTOP_MODE ? confirmDesktopModuleTrust(request) : Promise.resolve(false));
 const liveManager = new LiveSessionManager({
   command: PI_COMMAND, launch: async (input) => {
-    await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust);
+    await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust, BUILTIN_MODULE_ARCHIVE);
     return buildSessionPiLaunch(input);
   }, spawn,
   endpoints: { citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '', cad: '' },
@@ -105,9 +105,12 @@ const rpcCommandLedger = new RpcCommandLedger<RpcResponse>(200, 10 * 60_000, (re
 const updatePreparation = new UpdatePreparation();
 const workspaceStore = new WorkspaceStore(APP_PATHS.userDataDir, SESSIONS_DIR);
 const workspaceMigration = new WorkspaceMigration(workspaceStore, { agentDir: PI_AGENT_DIR, workspaceRoots: [...new Set([APP_PATHS.scenarioDir, TAU_SETTINGS.projectsDir].filter((value): value is string => !!value))], recoverTransfers: () => workspaceTransfer.recover() });
-const workspaceGate = new WorkspaceRuntimeGate(PYTHON_EXECUTABLE.command, APP_PATHS.logsDir, process.env.TAU_RUNTIME_COORDINATION_DIR ? path.resolve(process.env.TAU_RUNTIME_COORDINATION_DIR) : undefined);
+const workspaceGate = new WorkspaceRuntimeGate(PYTHON_EXECUTABLE.command, APP_PATHS.logsDir, process.env.TAU_RUNTIME_COORDINATION_DIR ? path.resolve(process.env.TAU_RUNTIME_COORDINATION_DIR) : undefined, workspaceStore);
 const migrationRunner = new WorkspaceMigrationRunner(workspaceMigration, workspaceGate, PYTHON_EXECUTABLE.command);
-const assembleWorkspacePlan = (configuration: { domainId: string; profile: import('../contracts/index.js').SessionProfileV1 }, directory: string) => sessionAssemblerForProfile(configuration.profile).assemble(configuration.domainId, directory, configuration.profile);
+const assembleWorkspacePlan = (configuration: { domainId: string; profile: import('../contracts/index.js').SessionProfileV1 }, directory: string) => {
+  const assembler = sessionAssemblerForProfile(configuration.profile);
+  return assembler.archiveBuiltins(assembler.assemble(configuration.domainId, directory, configuration.profile));
+};
 const validateWorkspaceModel = async (spec: string) => {
   const { model } = parseModelSpecToModel(spec);
   if (!model || !(await getAvailableModels()).some((candidate: { provider?: string; id?: string }) => candidate.provider === model.provider && candidate.id === model.id)) throw Object.assign(new Error('Selected model is unavailable. Choose a configured model.'), { code: 'model_unavailable', status: 400 });

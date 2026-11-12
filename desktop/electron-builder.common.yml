@@ -33,6 +33,7 @@ files:
   - "!modules/capabilities/geo/extensions/pi-geo-visualization/index.ts"
   - "!modules/capabilities/interaction/extensions/pi-user-interaction/index.ts"
   - "!modules/capabilities/tool-activation/extensions/pi-tool-activation/index.ts"
+  - "!modules/capabilities/web-bridge/extensions/pi-web-bridge/index.ts"
   - from: dist/module-extensions
     to: modules
   - src/contracts/**

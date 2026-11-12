@@ -73,6 +73,7 @@ export type ModelProviderAccess = {
   name: string;
   connected: boolean;
   credentialStored: boolean;
+  credentialType?: 'api_key' | 'oauth';
   custom?: boolean;
   baseUrl?: string;
   api?: PiModelApi;
@@ -176,6 +177,8 @@ export type SessionCommands = {
   deleteConversation(conversationId: string, input: DeletionRequest): Promise<void>;
   updateWorkspace(workspaceId: string, input: Record<string, unknown>): Promise<void>;
   deleteWorkspace(workspaceId: string, input: DeletionRequest): Promise<void>;
+  setWorkspaceSidebarVisibility(workspaceId: string, hidden: boolean): Promise<void>;
+  releaseMissingWorkspace(workspaceId: string): Promise<void>;
   deleteIsolatedWorkspace(workspaceId: string, input: DeletionRequest): Promise<void>;
   migration(path?: string, input?: Record<string, unknown>): Promise<unknown>;
 };
@@ -185,6 +188,7 @@ export type PlatformCommands = {
   refreshModels(sessionId?: string): Promise<{ models: Array<ModelRecord | string>; errors: ModelRefreshError[] }>;
   getModelProviders(): Promise<ModelProviderAccess[]>;
   connectModelProvider(provider: string, apiKey: string): Promise<ModelProviderAccess>;
+  chatGPTSignIn(action: 'start' | 'status' | 'cancel', attemptId?: string, newAccount?: boolean): Promise<import('../../contracts/chatgpt-plan.js').ChatGPTSignIn>;
   disconnectModelProvider(provider: string): Promise<void>;
   getSessionOptions(): Promise<SessionOptions>;
   addModel(input: AddModelInput): Promise<{ provider: string; modelId: string; reference: string }>;
@@ -264,15 +268,16 @@ async function httpJson(
     // Non-JSON body; status decides success below.
   }
   if (!response.ok) {
-    const errorPayload = data as { error?: string; code?: string; report?: string; itemId?: string; conversationId?: string } | null;
+    const errorPayload = data as { error?: string; code?: string; report?: string; itemId?: string; conversationId?: string; details?: { workspaceId?: string; path?: string; relationship?: string } } | null;
     const message = errorPayload?.error ?? `HTTP ${response.status}`;
+    const conflict = errorPayload?.code === 'workspace_identity_conflict' ? errorPayload.details : undefined;
     throw appError({
       code: errorPayload?.code || 'http_error',
       category: context.category,
       message,
       sessionId: context.sessionId,
       retryable: response.status >= 500,
-      diagnostics: { status: response.status, path, ...(errorPayload?.report ? { report: errorPayload.report } : {}), ...(errorPayload?.itemId ? { itemId: errorPayload.itemId } : {}), ...(errorPayload?.conversationId ? { conversationId: errorPayload.conversationId } : {}) },
+      diagnostics: { status: response.status, path, ...(errorPayload?.report ? { report: errorPayload.report } : {}), ...(errorPayload?.itemId ? { itemId: errorPayload.itemId } : {}), ...(errorPayload?.conversationId ? { conversationId: errorPayload.conversationId } : {}), ...(conflict?.workspaceId && conflict.path && conflict.relationship ? { conflictingWorkspaceId: conflict.workspaceId, conflictingPath: conflict.path, relationship: conflict.relationship } : {}) },
     });
   }
   // RPC envelopes carry both `success` and `error`; those are interpreted by
@@ -485,6 +490,14 @@ export function createSessionCommands(deps: CommandDeps): SessionCommands {
     async deleteConversation(id, input) { await httpJson(deps.http, `/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE', body: input }, context); },
     async updateWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}`, { method: 'PATCH', body: input }, context); },
     async deleteWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}/delete`, { method: 'POST', body: input }, context); },
+    async setWorkspaceSidebarVisibility(id, hidden) {
+      await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}/sidebar`, { method: 'PATCH', body: { hidden } }, context);
+      await commands.list();
+    },
+    async releaseMissingWorkspace(id) {
+      await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}/release`, { method: 'POST', body: {} }, context);
+      await commands.list();
+    },
     async deleteIsolatedWorkspace(id, input) { await httpJson(deps.http, `/api/workspaces/${encodeURIComponent(id)}/migration/delete`, { method: 'POST', body: input }, context); },
     async migration(path = '/api/migration', input) { return httpJson(deps.http, path, input ? { method: 'POST', body: input } : undefined, context); },
   };
@@ -601,6 +614,10 @@ export function createPlatformCommands(deps: CommandDeps): PlatformCommands {
     async connectModelProvider(provider, apiKey) {
       const data = await rpcCommand(deps, { type: 'connect_model_provider', provider, apiKey });
       return (data as { data: { provider: ModelProviderAccess } }).data.provider;
+    },
+    async chatGPTSignIn(action, attemptId, newAccount) {
+      const result = await rpcCommand(deps, { type: 'chatgpt_sign_in', action, attemptId, newAccount });
+      return (result as { data: { signIn: import('../../contracts/chatgpt-plan.js').ChatGPTSignIn } }).data.signIn;
     },
 
     async disconnectModelProvider(provider) {
