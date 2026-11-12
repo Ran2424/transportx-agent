@@ -51,7 +51,7 @@ export class WorkspaceHost {
     const session = this.boundRuntime(id, target.manifest.id);
     if (session) return session;
     const history = this.options.store.inspectHistory(target.directory, target.conversation);
-    return { id, conversationId: id, cwd: target.directory, citationRegistryId: target.manifest.citationRegistryId, entries: history.sessionFile ? readSessionBranch(history.sessionFile) : [], resolvedSessionPlan: target.conversation.plan ? this.options.store.readPlan(target.directory, target.conversation) : null };
+    return { id, conversationId: id, workspaceId: target.manifest.id, sessionFile: history.sessionFile, cwd: target.directory, citationRegistryId: target.manifest.citationRegistryId, entries: history.sessionFile ? readSessionBranch(history.sessionFile) : [], resolvedSessionPlan: target.conversation.plan ? this.options.store.readPlan(target.directory, target.conversation) : null };
   }
   private boundRuntime(id: string, workspaceId: string) { return [...this.options.sessions.sessions.values()].find((session) => session.conversationId === id && session.workspaceId === workspaceId && !session.terminating && session.lifecycle?.isReady(session)); }
   async workspace(id: string) {

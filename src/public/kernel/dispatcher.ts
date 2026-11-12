@@ -137,6 +137,9 @@ export function createDispatcher(stores: KernelStores): Dispatch {
       case 'session/geoInteractionUpdated':
         stores.session.geoInteractionUpdated(action.sessionId, action.request, action.response);
         break;
+      case 'session/simulationIndexUpdated':
+        stores.session.simulationIndexUpdated(action.sessionId, action.canvas, action.indexRevision, action.runUpdatedAt);
+        break;
       case 'session/geoScreenshotUpdated':
         stores.session.geoScreenshotUpdated(action.sessionId, action.request, action.requestId);
         break;

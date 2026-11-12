@@ -1,0 +1,5 @@
+# P0 macOS arm64 wheels only. Install with --require-hashes into an explicit --target.
+eclipse-sumo==1.28.0 --hash=sha256:bf9babaa01976356255a91a7fe715b285663c22fd6035b19bfb7e9bf46fff348
+traci==1.28.0 --hash=sha256:cbc88b5b38b60c0dba4939f9171615a97bd12dd113c5bc7730d76dfe2db73881
+sumolib==1.28.0 --hash=sha256:eda134defdcc39b966756cc00828ecbabfc35e0631326971f2fe1dea8acd9239
+sumo-data==1.28.0 --hash=sha256:6d488fba4f9f0398964dae165c32a21545a1cde71cde1755cca0ab398ec6a8f6

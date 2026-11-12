@@ -1,0 +1,41 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.traffic-simulation",
+  "toolId": "traffic.query",
+  "piName": "traffic_query_results",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "traffic-query-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "runId"
+    ],
+    "properties": {
+      "runId": {
+        "type": "string",
+        "pattern": "^sim_[a-f0-9]{32}$"
+      },
+      "time": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 600
+      },
+      "objectId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-traffic",
+    "version": 1,
+    "detailsKind": "traffic-result"
+  }
+}

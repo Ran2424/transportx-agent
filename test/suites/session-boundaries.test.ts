@@ -971,6 +971,46 @@ test('Session close, history deletion and process cancellation preserve writer o
       await manager.runJob('c', async () => { });
     }
 
+    // P0 conversion checks are shared with the real SUMO probe, without consuming another test node.
+    {
+      const { validateScenario } = require('../../scripts/simulation/job.mjs');
+      const fixtures = path.join(process.cwd(), 'test/fixtures/simulation');
+      const valid = JSON.parse(fs.readFileSync(path.join(fixtures, 'road.json'), 'utf8'));
+      assert.deepEqual(validateScenario(valid), valid);
+      assert.deepEqual(validateScenario(JSON.parse(fs.readFileSync(path.join(fixtures, 'evacuation.json'), 'utf8'))).model, 'evacuation');
+      for (const entry of JSON.parse(fs.readFileSync(path.join(fixtures, 'conversion-cases.json'), 'utf8'))) {
+        const input = { ...structuredClone(valid), ...entry.patch };
+        if (entry.delete) delete input[entry.delete];
+        assert.throws(() => validateScenario(input), undefined, entry.name);
+      }
+    }
+
+    // Explicit replacement removes Host secrets from children and nested children; legacy callers merge.
+    {
+      const { ProcessRunner } = require('../../bin/process-runner.js');
+      const { PythonRunner } = require('../../bin/python-runner.js');
+      const runner = new ProcessRunner();
+      const key = 'TRANSPORTX_TEST_PARENT_SECRET';
+      const previous = process.env[key];
+      process.env[key] = 'parent-only';
+      const probe = `const {execFileSync}=require('node:child_process');process.stdout.write(JSON.stringify([process.env.${key}||null,process.env.EXPLICIT_CHILD,execFileSync(process.execPath,['-e','process.stdout.write(process.env.${key}||"absent")'],{encoding:'utf8'})]));`;
+      try {
+        const result = await runner.run({ command: process.execPath, args: [] }, ['-e', probe], { envMode: 'replace', env: { EXPLICIT_CHILD: 'allowed' }, timeoutMs: 10000, maxBuffer: 4096 });
+        assert.deepEqual(JSON.parse(result.stdout), [null, 'allowed', 'absent']);
+        const merged = await runner.run({ command: process.execPath, args: [] }, ['-e', probe], { env: { EXPLICIT_CHILD: 'allowed' }, timeoutMs: 10000, maxBuffer: 4096 });
+        assert.deepEqual(JSON.parse(merged.stdout), ['parent-only', 'allowed', 'parent-only']);
+        // Use the Node executable to inspect exactly the env forwarded by PythonRunner without requiring Python in CI.
+        const python = new PythonRunner({ command: process.execPath, args: ['-e'] });
+        const forwarded = await python.run('process.stdout.write(JSON.stringify(process.env))', [], { cwd: process.cwd(), envMode: 'replace', env: { EXPLICIT_CHILD: 'allowed' } });
+        const environment = JSON.parse(forwarded.stdout);
+        assert.equal(environment[key], undefined);
+        assert.equal(environment.EXPLICIT_CHILD, 'allowed');
+        assert.equal(environment.PYTHONUTF8, '1');
+      } finally {
+        if (previous === undefined) delete process.env[key]; else process.env[key] = previous;
+      }
+    }
+
     // real controlled processes enforce global capacity and release it after confirmed abort
     {
       const { ProcessRunner } = require('../../bin/process-runner.js');
@@ -989,6 +1029,14 @@ test('Session close, history deletion and process cancellation preserve writer o
       assert.equal(runner.activeCount, 0);
       const result = await other.run(executable, ['-e', "process.stdout.write('done')"], { timeoutMs: 10000, maxBuffer: 1024 });
       assert.equal(result.stdout, 'done');
+      const weightedController = new AbortController();
+      const weighted = runner.run(executable, ['-e', 'setInterval(()=>{},1000)'], { ...options, signal: weightedController.signal, processWeight: 2 });
+      const weightedOutcome = assert.rejects(weighted, /cancelled/);
+      assert.equal(runner.activeCount, 2, 'one Python/SUMO pair reserves two global process slots');
+      await assert.rejects(other.run(executable, ['-e', ''], { ...options, processWeight: 3 }), /capacity/);
+      await assert.rejects(other.run(executable, ['-e', ''], { ...options, processWeight: 0 }), /weight/);
+      weightedController.abort(); await weightedOutcome;
+      assert.equal(runner.activeCount, 0);
     }
 
     // abort stops a descendant Writer even when its parent exits first

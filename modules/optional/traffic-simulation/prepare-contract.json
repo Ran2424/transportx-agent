@@ -1,0 +1,61 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.traffic-simulation",
+  "toolId": "traffic.prepare",
+  "piName": "traffic_prepare_scenario",
+  "contractVersion": "1.2.0",
+  "semanticVersion": "traffic-prepare-v3",
+  "input": {
+    "type": "object",
+    "required": [
+      "inputPath"
+    ],
+    "properties": {
+      "inputPath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      },
+      "assetId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "parentScenarioId": {
+        "type": "string",
+        "pattern": "^scenario_[a-f0-9]{32}$"
+      },
+      "interventions": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "departures"
+            },
+            {
+              "type": "string",
+              "const": "policy"
+            },
+            {
+              "type": "string",
+              "const": "railTimetable"
+            }
+          ]
+        },
+        "minItems": 1,
+        "maxItems": 2
+      },
+      "geoContextId": {
+        "type": "string",
+        "pattern": "^geoctx_[A-Za-z0-9_-]{12,64}$"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-traffic",
+    "version": 1,
+    "detailsKind": "traffic-result"
+  }
+}

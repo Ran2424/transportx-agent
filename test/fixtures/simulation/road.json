@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "road",
+  "networkVersion": "synthetic-loop/v1",
+  "serviceDate": "2026-11-10",
+  "timezone": "Asia/Shanghai",
+  "startTime": "23:59:30",
+  "durationSeconds": 200,
+  "seed": 7,
+  "stepSeconds": 1,
+  "decisionSeconds": 1,
+  "sampleSeconds": 2,
+  "blockSeconds": 10,
+  "units": { "time": "s", "distance": "m", "speed": "m/s" },
+  "backgroundCount": 3
+}

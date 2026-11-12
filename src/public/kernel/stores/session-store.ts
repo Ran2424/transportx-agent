@@ -9,12 +9,14 @@ import type { LiveSession, ConversationView, ConversationViewUpdate, WorkspaceIn
 import { createStore, type Store, type StoreListener } from '../store.js';
 import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../../contracts/geo.js';
 import { parsePiMessageQueue } from '../../../contracts/pi-rpc.js';
+import type { CanvasPresentationV1 } from '../../../contracts/canvas.js';
 
 export type SessionStoreState = {
   sessions: ConversationView[];
   runtimes: Record<string, LiveSession>;
   workspaces: WorkspaceView[];
   indexLoaded: boolean;
+  simulationBySession?: Record<string, { canvas: CanvasPresentationV1; indexRevision: number; runUpdatedAt: string }>;
   activeSessionId: string | null;
   streamingBySession: Record<string, boolean>;
   compactingBySession: Record<string, boolean>;
@@ -34,6 +36,14 @@ export class SessionStore {
 
   subscribe(listener: StoreListener<SessionStoreState>): () => void {
     return this.store.subscribe(listener);
+  }
+
+  simulationIndexUpdated(sessionId: string, canvas: CanvasPresentationV1, indexRevision: number, runUpdatedAt: string) {
+    this.store.set((prev) => {
+      const previous = prev.simulationBySession?.[sessionId];
+      if (previous && (previous.canvas.generatedAt > canvas.generatedAt || previous.canvas.viewId === canvas.viewId && (previous.indexRevision > indexRevision || previous.indexRevision === indexRevision && previous.runUpdatedAt >= runUpdatedAt))) return prev;
+      return { ...prev, simulationBySession: { ...prev.simulationBySession, [sessionId]: { canvas, indexRevision, runUpdatedAt } } };
+    });
   }
 
   indexReceived(index: WorkspaceIndex) {

@@ -37,6 +37,21 @@ test('Canvas focus, document identity and content survive updates and navigation
     assert.equal(state.open, true);
   }
 
+  // A final tool_result confirms an early Run presentation without reopening its hidden viewer.
+  {
+    const { projectCanvas, syncCanvas, closeCanvasTab, openCanvasResource, withCanvasDocuments, EMPTY_CANVAS } = await canvasApi();
+    const runId = `sim_${'a'.repeat(32)}`;
+    const canvas = { protocol: 'pi-canvas', version: '1.0', presentationId: `simulation:${runId}`, adapterId: 'com.transportx.traffic-simulation.canvas', kind: 'simulation', viewId: `simulation:${runId}`, revision: 1, operation: 'present', title: '合成运行', resources: [{ scope: 'capability', moduleId: 'com.transportx.traffic-simulation', resourceId: runId }], payload: { runId, scenarioId: `scenario_${'b'.repeat(32)}`, sourceKind: 'synthetic', modelValidation: 'not_calibrated' }, generatedAt: '2026-11-10T00:00:00Z' };
+    const early = openCanvasResource(EMPTY_CANVAS, canvas as any);
+    const hidden = { ...early, open: false };
+    const final = projectCanvas([{ message: { toolCallId: 'run', details: { canvas } } }] as any, []);
+    assert.equal(syncCanvas(hidden, withCanvasDocuments(final, hidden)).open, false, 'final confirmation of an early-presented Run must not reopen a hidden viewer');
+    const closed = closeCanvasTab(early, canvas.viewId);
+    assert.equal(syncCanvas(closed, withCanvasDocuments(final, closed)).open, false, 'closed Run tabs stay closed on final tool_result');
+    const focus = projectCanvas([{ message: { toolCallId: 'focus', details: { canvas: { ...canvas, operation: 'focus', presentationId: 'explicit-focus' } } } }] as any, []);
+    assert.equal(syncCanvas(closed, withCanvasDocuments(focus, closed)).open, true, 'a distinct explicit focus still opens the Run');
+  }
+
   // closing and selecting tabs survives unchanged snapshots; explicit Agent focus reopens a tab without a new revision
   {
     const { projectCanvas, syncCanvas, closeCanvasTab, activateCanvas, EMPTY_CANVAS } = await canvasApi();

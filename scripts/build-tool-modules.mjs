@@ -3,15 +3,16 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import { generateToolContracts } from './generate-tool-contracts.mjs';
 import { coreToolContracts } from '../src/contracts/tool-definitions.mts';
+import { coreModulePath } from '../src/contracts/tool-interface.ts';
 
 generateToolContracts();
 const root = process.cwd();
 const packages = path.join(root, 'dist/tool-modules');
 const extensions = path.join(root, 'dist/module-extensions');
 for (const output of [packages, extensions]) fs.rmSync(output, { recursive: true, force: true });
-for (const moduleId of new Set(['com.transportx.web-bridge', ...coreToolContracts.map((contract) => contract.moduleId)])) {
-  const directory = moduleId.slice('com.transportx.'.length);
-  const category = moduleId === 'com.transportx.module-authoring' ? 'official' : 'capabilities';
+const modulePaths = new Set(['capabilities/web-bridge', ...coreToolContracts.map((contract) => coreModulePath(contract.moduleId))]);
+for (const modulePath of modulePaths) {
+  const [category, directory] = modulePath.split('/');
   const source = path.join(root, 'modules', category, directory);
   const target = path.join(packages, directory);
   fs.cpSync(source, target, { recursive: true, filter: (file) => !['__pycache__', '.DS_Store'].includes(path.basename(file)) && !file.endsWith('.pyc') });

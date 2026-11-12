@@ -113,6 +113,14 @@ export function validateModulePackage(packageRoot: string, manifest: ModuleManif
     }
   }
   for (const runtime of manifest.contributes?.nativeRuntimes || []) {
+    if (runtime.kind === 'sumo') {
+      const checksum = resolvePackageEntry(packageRoot, runtime.integrityFile.path, 'SUMO integrity file');
+      if (sha256File(checksum) !== runtime.integrityFile.sha256) throw new Error('SUMO integrity file checksum mismatch');
+      verifyChecksumFile(packageRoot, checksum);
+      const pythonPath = resolvePackageEntry(packageRoot, runtime.pythonPath, 'SUMO Python clients');
+      if (!fs.statSync(pythonPath).isDirectory()) throw new Error('SUMO Python clients must be a directory');
+      if (!fs.statSync(resolvePackageEntry(packageRoot, runtime.projData, 'SUMO projection data')).isDirectory()) throw new Error('SUMO projection data must be a directory');
+    }
     for (const [name, executable] of Object.entries(runtime.executables)) {
       const executablePath = resolvePackageEntry(packageRoot, executable.path, `Native runtime executable ${runtime.id}/${name}`);
       if (!fs.statSync(executablePath).isFile()) throw new Error(`Native runtime executable must be a file: ${runtime.id}/${name}`);

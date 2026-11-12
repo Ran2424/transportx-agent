@@ -1,0 +1,462 @@
+{
+  "schemaVersion": 1,
+  "title": "双疏运点固定班表（合成）",
+  "provenance": {
+    "kind": "synthetic",
+    "description": "Synthetic two pickup points, east/west destinations, finite shuttle/ridehail fleet and last connections. Fixed choices, geometry and all operational parameters are assumptions; not Hongqiao observation.",
+    "validDate": "2026-11-10",
+    "modelValidation": "not_calibrated"
+  },
+  "network": {
+    "path": "network.net.xml",
+    "version": "night-demo/1",
+    "mapping": {
+      "version": 1,
+      "roadRoute": [
+        "hub",
+        "out",
+        "relay",
+        "back"
+      ]
+    }
+  },
+  "configuration": {
+    "schemaVersion": 1,
+    "model": "multimodal",
+    "networkVersion": "night-demo/1",
+    "serviceDate": "2026-11-10",
+    "timezone": "Asia/Shanghai",
+    "startTime": "23:59:30",
+    "durationSeconds": 600,
+    "seed": 7,
+    "stepSeconds": 1,
+    "decisionSeconds": 1,
+    "sampleSeconds": 2,
+    "blockSeconds": 10,
+    "units": {
+      "time": "s",
+      "distance": "m",
+      "speed": "m/s"
+    },
+    "backgroundCount": 12,
+    "coordination": {
+      "version": 2,
+      "nodes": [
+        {
+          "id": "node:pickup-a",
+          "role": "pickup",
+          "edge": "hub",
+          "waitingCapacity": 4,
+          "berths": [
+            {
+              "lane": 0,
+              "position": 20
+            },
+            {
+              "lane": 1,
+              "position": 20
+            }
+          ]
+        },
+        {
+          "id": "node:pickup-b",
+          "role": "pickup",
+          "edge": "relay",
+          "waitingCapacity": 4,
+          "berths": [
+            {
+              "lane": 0,
+              "position": 20
+            },
+            {
+              "lane": 1,
+              "position": 20
+            }
+          ]
+        },
+        {
+          "id": "node:east",
+          "role": "transfer",
+          "edge": "out",
+          "waitingCapacity": 2,
+          "berths": [
+            {
+              "lane": 0,
+              "position": 20
+            },
+            {
+              "lane": 1,
+              "position": 20
+            }
+          ]
+        },
+        {
+          "id": "node:west",
+          "role": "transfer",
+          "edge": "back",
+          "waitingCapacity": 2,
+          "berths": [
+            {
+              "lane": 0,
+              "position": 20
+            },
+            {
+              "lane": 1,
+              "position": 20
+            }
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "id": "route:bus-east",
+          "mode": "bus",
+          "origin": "node:pickup-a",
+          "target": "node:east",
+          "destination": "east",
+          "outbound": [
+            "hub",
+            "out"
+          ],
+          "inbound": [
+            "out",
+            "relay",
+            "back",
+            "hub"
+          ],
+          "transferSeconds": 5,
+          "externalSeconds": 20
+        },
+        {
+          "id": "route:ridehail-east",
+          "mode": "ridehail",
+          "origin": "node:pickup-a",
+          "target": "node:east",
+          "destination": "east",
+          "outbound": [
+            "hub",
+            "out"
+          ],
+          "inbound": [
+            "out",
+            "relay",
+            "back",
+            "hub"
+          ],
+          "transferSeconds": 5,
+          "externalSeconds": 20
+        },
+        {
+          "id": "route:bus-west",
+          "mode": "bus",
+          "origin": "node:pickup-b",
+          "target": "node:west",
+          "destination": "west",
+          "outbound": [
+            "relay",
+            "back"
+          ],
+          "inbound": [
+            "back",
+            "hub",
+            "out",
+            "relay"
+          ],
+          "transferSeconds": 5,
+          "externalSeconds": 20
+        },
+        {
+          "id": "route:ridehail-west",
+          "mode": "ridehail",
+          "origin": "node:pickup-b",
+          "target": "node:west",
+          "destination": "west",
+          "outbound": [
+            "relay",
+            "back"
+          ],
+          "inbound": [
+            "back",
+            "hub",
+            "out",
+            "relay"
+          ],
+          "transferSeconds": 5,
+          "externalSeconds": 20
+        }
+      ],
+      "fleet": [
+        {
+          "id": "bus-a",
+          "mode": "bus",
+          "capacity": 2,
+          "home": "node:pickup-a",
+          "berth": 0
+        },
+        {
+          "id": "ridehail-a",
+          "mode": "ridehail",
+          "capacity": 1,
+          "home": "node:pickup-a",
+          "berth": 1
+        },
+        {
+          "id": "bus-b",
+          "mode": "bus",
+          "capacity": 2,
+          "home": "node:pickup-b",
+          "berth": 0
+        },
+        {
+          "id": "ridehail-b",
+          "mode": "ridehail",
+          "capacity": 1,
+          "home": "node:pickup-b",
+          "berth": 1
+        }
+      ],
+      "boardingSeconds": 2,
+      "travelers": [
+        {
+          "id": "a-1-bus-0",
+          "time": 0,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "a-1-bus-1",
+          "time": 0,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "a-1-bus-2",
+          "time": 0,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "a-1-bus-3",
+          "time": 5,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "a-1-bus-4",
+          "time": 90,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "a-1-bus-5",
+          "time": 90,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "a-0-car-0",
+          "time": 0,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:ridehail-east"
+        },
+        {
+          "id": "a-0-car-1",
+          "time": 5,
+          "origin": "node:pickup-a",
+          "destination": "east",
+          "route": "route:ridehail-east"
+        },
+        {
+          "id": "b-1-bus-0",
+          "time": 0,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "b-1-bus-1",
+          "time": 0,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "b-1-bus-2",
+          "time": 0,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "b-1-bus-3",
+          "time": 5,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "b-1-bus-4",
+          "time": 90,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "b-1-bus-5",
+          "time": 90,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "b-0-car-0",
+          "time": 0,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:ridehail-west"
+        },
+        {
+          "id": "b-0-car-1",
+          "time": 5,
+          "origin": "node:pickup-b",
+          "destination": "west",
+          "route": "route:ridehail-west"
+        }
+      ],
+      "departures": [
+        {
+          "id": "trip-bus-a-5",
+          "time": 5,
+          "vehicle": "bus-a",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "trip-bus-a-200",
+          "time": 200,
+          "vehicle": "bus-a",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "trip-bus-a-400",
+          "time": 400,
+          "vehicle": "bus-a",
+          "route": "route:bus-east"
+        },
+        {
+          "id": "trip-ridehail-a-5",
+          "time": 5,
+          "vehicle": "ridehail-a",
+          "route": "route:ridehail-east"
+        },
+        {
+          "id": "trip-ridehail-a-200",
+          "time": 200,
+          "vehicle": "ridehail-a",
+          "route": "route:ridehail-east"
+        },
+        {
+          "id": "trip-ridehail-a-400",
+          "time": 400,
+          "vehicle": "ridehail-a",
+          "route": "route:ridehail-east"
+        },
+        {
+          "id": "trip-bus-b-5",
+          "time": 5,
+          "vehicle": "bus-b",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "trip-bus-b-200",
+          "time": 200,
+          "vehicle": "bus-b",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "trip-bus-b-400",
+          "time": 400,
+          "vehicle": "bus-b",
+          "route": "route:bus-west"
+        },
+        {
+          "id": "trip-ridehail-b-5",
+          "time": 5,
+          "vehicle": "ridehail-b",
+          "route": "route:ridehail-west"
+        },
+        {
+          "id": "trip-ridehail-b-200",
+          "time": 200,
+          "vehicle": "ridehail-b",
+          "route": "route:ridehail-west"
+        },
+        {
+          "id": "trip-ridehail-b-400",
+          "time": 400,
+          "vehicle": "ridehail-b",
+          "route": "route:ridehail-west"
+        }
+      ],
+      "metro": [
+        {
+          "id": "metro-east-70",
+          "time": 70,
+          "node": "node:east",
+          "destination": "east",
+          "capacity": 1,
+          "externalSeconds": 20
+        },
+        {
+          "id": "metro-east-230",
+          "time": 230,
+          "node": "node:east",
+          "destination": "east",
+          "capacity": 2,
+          "externalSeconds": 20
+        },
+        {
+          "id": "metro-east-470",
+          "time": 470,
+          "node": "node:east",
+          "destination": "east",
+          "capacity": 2,
+          "externalSeconds": 20
+        },
+        {
+          "id": "metro-west-70",
+          "time": 70,
+          "node": "node:west",
+          "destination": "west",
+          "capacity": 2,
+          "externalSeconds": 20
+        },
+        {
+          "id": "metro-west-230",
+          "time": 230,
+          "node": "node:west",
+          "destination": "west",
+          "capacity": 2,
+          "externalSeconds": 20
+        },
+        {
+          "id": "metro-west-470",
+          "time": 470,
+          "node": "node:west",
+          "destination": "west",
+          "capacity": 2,
+          "externalSeconds": 20
+        }
+      ],
+      "policy": {
+        "kind": "fixed"
+      }
+    }
+  }
+}

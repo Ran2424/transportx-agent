@@ -11,7 +11,8 @@ export type CanvasView =
   | DocumentView
   | { id: string; kind: 'geo'; title: string; envelope: VisualizationEnvelope; canvas?: CanvasPresentationV1 }
   | { id: string; kind: 'video'; title: string; item: VideoSceneItemV1; revision: number; compareItem?: VideoSceneItemV1; canvas?: CanvasPresentationV1 }
-  | { id: string; kind: 'cad'; title: string; revision: number; canvas: CanvasPresentationV1; previewPath?: string };
+  | { id: string; kind: 'cad'; title: string; revision: number; canvas: CanvasPresentationV1; previewPath?: string }
+  | { id: string; kind: 'simulation'; title: string; revision: number; canvas: CanvasPresentationV1 };
 export type CanvasContent = { views: CanvasView[]; presentation: { key: string; id: string } | null; cleared?: Record<string, string> };
 export type CanvasState = { tabIds: string[]; activeId: string | null; open: boolean; presentationKey: string | null; documents: DocumentView[]; resources?: CanvasView[] };
 export const EMPTY_CANVAS: CanvasState = { tabIds: [], activeId: null, open: false, presentationKey: null, documents: [] };
@@ -119,12 +120,13 @@ export function syncCanvas(state: CanvasState, content: CanvasContent): CanvasSt
   let next = { ...state, tabIds, activeId: tabIds.includes(state.activeId ?? '') ? state.activeId : tabIds.at(-1) ?? null, open: state.open && tabIds.length > 0 };
   const target = content.presentation;
   if (target && target.key !== state.presentationKey) {
+    const alreadyPresented = state.resources?.some((view) => view.kind === 'simulation' && view.id === target.id && target.key === `canvas:${view.canvas.presentationId}`);
     next.presentationKey = target.key;
     // A new Agent navigation takes over this version's manually opened view.
     next.documents = state.documents.filter((view) => view.id !== target.id);
     // Restore existing results on first load; later publications open their own tab.
-    if (state.presentationKey === null) next.tabIds = [...new Set([...next.tabIds, ...content.views.filter((view) => view.kind !== 'document').map((view) => view.id)])];
-    if (available.has(target.id)) next = activateCanvas(next, target.id);
+    if (state.presentationKey === null && !alreadyPresented) next.tabIds = [...new Set([...next.tabIds, ...content.views.filter((view) => view.kind !== 'document').map((view) => view.id)])];
+    if (available.has(target.id) && !alreadyPresented) next = activateCanvas(next, target.id);
   }
   return JSON.stringify(next) === JSON.stringify(state) ? state : next;
 }

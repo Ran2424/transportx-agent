@@ -25,6 +25,7 @@ export * from './attachments.ts';
 export * from './session-profile.ts';
 export * from './resolved-session-plan.ts';
 export * from './spatial.ts';
+export * from './simulation.ts';
 export * from './video.ts';
 export * from './canvas.ts';
 export * from './canvas-cad.ts';

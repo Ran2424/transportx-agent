@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Entirely synthetic technical fixture; local metres, no claim of Hongqiao geometry. -->
+<nodes>
+  <node id="h" x="0" y="0" type="priority"/>
+  <node id="a" x="200" y="0" type="priority"/>
+  <node id="r" x="200" y="100" type="priority"/>
+  <node id="b" x="0" y="100" type="priority"/>
+</nodes>

@@ -1,0 +1,2221 @@
+{
+  "protocol": "transportx-simulation-p2-acceptance",
+  "version": 1,
+  "status": "passed_in_measured_scope",
+  "date": "2026-11-11",
+  "scope": {
+    "platform": "macOS arm64 developer environment",
+    "python": "3.10",
+    "sumo": "1.28.0",
+    "module": "0.3.0",
+    "demo": "0.2.0",
+    "model": "deepseek/deepseek-v4-flash",
+    "input": "synthetic",
+    "modelValidation": "not_calibrated",
+    "nodes": 4,
+    "routes": 4,
+    "finiteFleet": 4,
+    "travelers": 16,
+    "backgroundVehicles": 12,
+    "durationSeconds": 600,
+    "seeds": [
+      7,
+      11,
+      13
+    ]
+  },
+  "checks": {
+    "nativeTrustInstallAndFrozenVersion": true,
+    "actualPiGeoContextPreparationSixRunsAndReport": true,
+    "realSumoConservationAndActionConfirmation": true,
+    "feedbackOnlyCurrentObservation": true,
+    "declaredInterventionAndCommonConditions": true,
+    "pairedBoundedSequentialExecution": true,
+    "unknownCannotBeReplacedOrFollowedUntilConfirmed": true,
+    "faultSlotRetainedWithoutAutomaticRetry": true,
+    "independentEventAndTripinfoMetricReplay": true,
+    "sameTimeQueryAndFrozenContexts": 3,
+    "comparisonTablesMatchFrozenMetrics": true,
+    "reportOpenedInExistingDocumentCanvas": true,
+    "correctedCitationDetailVerified": true,
+    "geoDraftRetained": true,
+    "pauseViewingDoesNotPauseComputation": true,
+    "actualHostRestart": true,
+    "historyPiStarts": 0,
+    "hiddenBrowserFrameReads": 0,
+    "lateResponseIsolation": {
+      "sha256": "844881cb27178b98f651681e315376b6806396b33606233bfb9c0b065d76135a",
+      "bytes": 105007,
+      "delivered": true
+    },
+    "legacyModelNormalCases": 7,
+    "legacyConversionCases": 17,
+    "legacyFailureCases": 2,
+    "nodeTests": 40,
+    "typecheckConfigurations": 6,
+    "webSmoke": "passed",
+    "pendingFleetQueryableWithoutFabricatedRoadPosition": true,
+    "repeatPairedDeltasIdentical": true,
+    "historyWithoutConfiguredModelCredentials": true
+  },
+  "experiment": {
+    "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
+    "conversationId": "conv_a69bb74c-a624-4019-afca-e43c5770336d",
+    "baselineScenarioId": "scenario_a650f704705ff252bffca5ad371597c8",
+    "variantScenarioId": "scenario_c2848a6ba304221574746b4326b96c21",
+    "seeds": [
+      7,
+      11,
+      13
+    ],
+    "budget": {
+      "totalRuns": 6,
+      "totalSimulatedSeconds": 3600,
+      "maxOutputBytes": 402653184
+    },
+    "comparison": {
+      "plannedPairs": 3,
+      "completePairs": 3,
+      "conclusionAvailable": true,
+      "pairs": [
+        {
+          "seed": 7,
+          "baselineRunId": "sim_94a31a096479a2836fd40dacd8c43c67",
+          "variantRunId": "sim_9581b77b10d37e21ecb82ac84d517c5f",
+          "status": "complete",
+          "delta": {
+            "completedJourneys": 2,
+            "meanHubWaitSeconds": -56.25,
+            "meanRoadTimeLossSeconds": 7.368750000000002,
+            "meanAllWaitSeconds": -67.625,
+            "p90AllWaitSeconds": -92,
+            "p90HubWaitSeconds": -100,
+            "meanCensoredJourneySeconds": -44,
+            "dispatchedTrips": 0,
+            "fleetBusyVehicleSeconds": 254,
+            "lastServiceMisses": -2
+          }
+        },
+        {
+          "seed": 11,
+          "baselineRunId": "sim_2f40dc0ab153999ec617eca2f31e1143",
+          "variantRunId": "sim_b920c2a7ad929915b718d4d010a69ff2",
+          "status": "complete",
+          "delta": {
+            "completedJourneys": 2,
+            "meanHubWaitSeconds": -67.5,
+            "meanRoadTimeLossSeconds": 6.667499999999997,
+            "meanAllWaitSeconds": -69.875,
+            "p90AllWaitSeconds": -100,
+            "p90HubWaitSeconds": -100,
+            "meanCensoredJourneySeconds": -43.875,
+            "dispatchedTrips": 0,
+            "fleetBusyVehicleSeconds": 259,
+            "lastServiceMisses": -2
+          }
+        },
+        {
+          "seed": 13,
+          "baselineRunId": "sim_55df18fc164e60223fe640b2397214e3",
+          "variantRunId": "sim_1f5c4f5f11fcdde5bd408410f9cc534b",
+          "status": "complete",
+          "delta": {
+            "completedJourneys": 2,
+            "meanHubWaitSeconds": -56.25,
+            "meanRoadTimeLossSeconds": 7.829375000000002,
+            "meanAllWaitSeconds": -68,
+            "p90AllWaitSeconds": -94,
+            "p90HubWaitSeconds": -100,
+            "meanCensoredJourneySeconds": -43.875,
+            "dispatchedTrips": 0,
+            "fleetBusyVehicleSeconds": 267,
+            "lastServiceMisses": -2
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "manifestPath": "traffic-simulation/experiments/experiment_dd0110706f91e250b504e4a0d320739a/comparison-99a6401c2ab467e441403c0969091bb5c3cf103ee6549b1169e9cb7bc645bf4e.json",
+      "manifestSha256": "99a6401c2ab467e441403c0969091bb5c3cf103ee6549b1169e9cb7bc645bf4e",
+      "reportPath": "traffic-simulation/experiments/experiment_dd0110706f91e250b504e4a0d320739a/report-99a6401c2ab467e441403c0969091bb5c3cf103ee6549b1169e9cb7bc645bf4e.md",
+      "reportSha256": "abf4516c1be479939bf6db6bbcfa54ef439c9dcb8c501de3a2b1e8a17982e325"
+    },
+    "runs": [
+      {
+        "runId": "sim_94a31a096479a2836fd40dacd8c43c67",
+        "scenarioId": "scenario_a650f704705ff252bffca5ad371597c8",
+        "state": "ended",
+        "createdAt": "2026-11-10T17:15:42.783Z",
+        "updatedAt": "2026-11-10T17:15:59.382Z",
+        "latestComputedTime": 600,
+        "availableFrameTime": 600,
+        "sourceKind": "synthetic",
+        "modelValidation": "not_calibrated",
+        "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
+        "experimentSlot": 0,
+        "seed": 7,
+        "termination": "completed",
+        "metrics": {
+          "road": {
+            "planned": 16,
+            "inserted": 16,
+            "arrived": 12,
+            "activeOrUnfinished": 4,
+            "pendingInsertion": [],
+            "notYetDue": [],
+            "peakActive": 16,
+            "timeLossVehicleSeconds": 346.36999999999995,
+            "observedVehicleSeconds": 3363,
+            "meanTimeLossSeconds": 21.648124999999997,
+            "meanObservedDurationSeconds": 210.1875,
+            "meanTrafficWaitingSeconds": 0.5,
+            "aggregateSpeedMetersPerSecond": 4.03775498067202
+          },
+          "service": {
+            "totalTravelers": 16,
+            "states": {
+              "completed": 12,
+              "connecting": 4
+            },
+            "missedConnections": 5,
+            "lastServiceMisses": 4,
+            "dispatchedTrips": 10,
+            "hubDepartures": 16,
+            "completedJourneys": 12,
+            "arrivedTravelers": 16,
+            "hubWaitPersonSeconds": 2498,
+            "meanHubWaitSeconds": 156.125,
+            "waiting": {
+              "allWaitPersonSeconds": 4200,
+              "meanAllWaitSeconds": 262.5,
+              "p90AllWaitSeconds": 437,
+              "p90HubWaitSeconds": 313,
+              "censoredPeople": 0,
+              "definition": "waiting + upstream blocked + boarding + connecting; walking and travel excluded; all arrived people, unfinished censored at finalTime; P90 nearest rank"
+            },
+            "journeys": {
+              "completedCount": 12,
+              "arrivedCount": 16,
+              "meanCompletedSeconds": 256.4166666666667,
+              "p90CompletedSeconds": 490,
+              "meanCensoredSeconds": 319.8125,
+              "p90CensoredSeconds": 510,
+              "definition": "arrival to completion; completed-only statistics explicitly conditional; censored statistics retain every arrival at finalTime"
+            },
+            "byRoute": {
+              "route:bus-east": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 173.83333333333334,
+                "p90HubWaitSeconds": 313,
+                "meanAllWaitSeconds": 330.1666666666667,
+                "p90AllWaitSeconds": 437
+              },
+              "route:ridehail-east": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              },
+              "route:bus-west": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 173.83333333333334,
+                "p90HubWaitSeconds": 313,
+                "meanAllWaitSeconds": 301.1666666666667,
+                "p90AllWaitSeconds": 437
+              },
+              "route:ridehail-west": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              }
+            },
+            "nodes": {
+              "node:pickup-a": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:pickup-b": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:east": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              },
+              "node:west": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              }
+            },
+            "fleet": {
+              "bus-a": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 287,
+                "busyFraction": 0.47833333333333333,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  79,
+                  79,
+                  120
+                ],
+                "meanCompletedTurnaroundSeconds": 92.66666666666667,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-a": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 177,
+                "busyFraction": 0.295,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  87,
+                  84
+                ],
+                "meanCompletedTurnaroundSeconds": 85.5,
+                "censoredTurnaroundSeconds": null
+              },
+              "bus-b": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 319,
+                "busyFraction": 0.5316666666666666,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  89,
+                  92,
+                  129
+                ],
+                "meanCompletedTurnaroundSeconds": 103.33333333333333,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-b": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 168,
+                "busyFraction": 0.28,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  79,
+                  83
+                ],
+                "meanCompletedTurnaroundSeconds": 81,
+                "censoredTurnaroundSeconds": null
+              }
+            },
+            "fleetDefinition": "busy from boarding reservation until actual return availability, censored at finalTime; fraction divides by elapsed simulation window; turnaround from actual departure to actual return availability; loadFactor is observed boardings / (observed trips * capacity), not road occupancy",
+            "unit": "person",
+            "units": {
+              "totalTravelers": "person",
+              "states": "person",
+              "missedConnections": "person",
+              "lastServiceMisses": "person",
+              "dispatchedTrips": "trip",
+              "hubDepartures": "person",
+              "completedJourneys": "person",
+              "arrivedTravelers": "person",
+              "hubWaitPersonSeconds": "person*s",
+              "meanHubWaitSeconds": "s",
+              "waiting.allWaitPersonSeconds": "person*s",
+              "waiting.meanAllWaitSeconds": "s",
+              "waiting.p90AllWaitSeconds": "s",
+              "waiting.p90HubWaitSeconds": "s",
+              "journeys.meanCompletedSeconds": "s",
+              "journeys.p90CompletedSeconds": "s",
+              "journeys.meanCensoredSeconds": "s",
+              "journeys.p90CensoredSeconds": "s",
+              "fleet.busySeconds": "s",
+              "fleet.busyFraction": "fraction",
+              "fleet.loadFactor": "fraction",
+              "fleet.completedTurnaroundSeconds": "s",
+              "fleet.censoredTurnaroundSeconds": "s"
+            },
+            "window": "All arrivals through finalTime; hub wait includes boarding and upstream blockage, right-censored at finalTime for travelers not departed; unfinished retained"
+          }
+        }
+      },
+      {
+        "runId": "sim_9581b77b10d37e21ecb82ac84d517c5f",
+        "scenarioId": "scenario_c2848a6ba304221574746b4326b96c21",
+        "state": "ended",
+        "createdAt": "2026-11-10T17:16:00.764Z",
+        "updatedAt": "2026-11-10T17:16:04.455Z",
+        "latestComputedTime": 600,
+        "availableFrameTime": 600,
+        "sourceKind": "synthetic",
+        "modelValidation": "not_calibrated",
+        "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
+        "experimentSlot": 1,
+        "seed": 7,
+        "termination": "completed",
+        "metrics": {
+          "road": {
+            "planned": 16,
+            "inserted": 16,
+            "arrived": 12,
+            "activeOrUnfinished": 4,
+            "pendingInsertion": [],
+            "notYetDue": [],
+            "peakActive": 16,
+            "timeLossVehicleSeconds": 464.27,
+            "observedVehicleSeconds": 3363,
+            "meanTimeLossSeconds": 29.016875,
+            "meanObservedDurationSeconds": 210.1875,
+            "meanTrafficWaitingSeconds": 7.625,
+            "aggregateSpeedMetersPerSecond": 3.941745465358311
+          },
+          "service": {
+            "totalTravelers": 16,
+            "states": {
+              "completed": 14,
+              "connecting": 2
+            },
+            "missedConnections": 3,
+            "lastServiceMisses": 2,
+            "dispatchedTrips": 10,
+            "hubDepartures": 16,
+            "completedJourneys": 14,
+            "arrivedTravelers": 16,
+            "hubWaitPersonSeconds": 1598,
+            "meanHubWaitSeconds": 99.875,
+            "waiting": {
+              "allWaitPersonSeconds": 3118,
+              "meanAllWaitSeconds": 194.875,
+              "p90AllWaitSeconds": 345,
+              "p90HubWaitSeconds": 213,
+              "censoredPeople": 0,
+              "definition": "waiting + upstream blocked + boarding + connecting; walking and travel excluded; all arrived people, unfinished censored at finalTime; P90 nearest rank"
+            },
+            "journeys": {
+              "completedCount": 14,
+              "arrivedCount": 16,
+              "meanCompletedSeconds": 242.35714285714286,
+              "p90CompletedSeconds": 485,
+              "meanCensoredSeconds": 275.8125,
+              "p90CensoredSeconds": 510,
+              "definition": "arrival to completion; completed-only statistics explicitly conditional; censored statistics retain every arrival at finalTime"
+            },
+            "byRoute": {
+              "route:bus-east": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 103.83333333333333,
+                "p90HubWaitSeconds": 213,
+                "meanAllWaitSeconds": 260.1666666666667,
+                "p90AllWaitSeconds": 337
+              },
+              "route:ridehail-east": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              },
+              "route:bus-west": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 6
+                },
+                "completedJourneys": 6,
+                "meanHubWaitSeconds": 93.83333333333333,
+                "p90HubWaitSeconds": 153,
+                "meanAllWaitSeconds": 190.83333333333334,
+                "p90AllWaitSeconds": 345
+              },
+              "route:ridehail-west": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              }
+            },
+            "nodes": {
+              "node:pickup-a": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:pickup-b": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:east": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              },
+              "node:west": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 2
+              }
+            },
+            "fleet": {
+              "bus-a": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 586,
+                "busyFraction": 0.9766666666666667,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  79,
+                  201
+                ],
+                "meanCompletedTurnaroundSeconds": 140,
+                "censoredTurnaroundSeconds": 297
+              },
+              "ridehail-a": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 175,
+                "busyFraction": 0.2916666666666667,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  87,
+                  82
+                ],
+                "meanCompletedTurnaroundSeconds": 84.5,
+                "censoredTurnaroundSeconds": null
+              },
+              "bus-b": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 278,
+                "busyFraction": 0.4633333333333333,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  89,
+                  91,
+                  89
+                ],
+                "meanCompletedTurnaroundSeconds": 89.66666666666667,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-b": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 166,
+                "busyFraction": 0.27666666666666667,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  79,
+                  81
+                ],
+                "meanCompletedTurnaroundSeconds": 80,
+                "censoredTurnaroundSeconds": null
+              }
+            },
+            "fleetDefinition": "busy from boarding reservation until actual return availability, censored at finalTime; fraction divides by elapsed simulation window; turnaround from actual departure to actual return availability; loadFactor is observed boardings / (observed trips * capacity), not road occupancy",
+            "unit": "person",
+            "units": {
+              "totalTravelers": "person",
+              "states": "person",
+              "missedConnections": "person",
+              "lastServiceMisses": "person",
+              "dispatchedTrips": "trip",
+              "hubDepartures": "person",
+              "completedJourneys": "person",
+              "arrivedTravelers": "person",
+              "hubWaitPersonSeconds": "person*s",
+              "meanHubWaitSeconds": "s",
+              "waiting.allWaitPersonSeconds": "person*s",
+              "waiting.meanAllWaitSeconds": "s",
+              "waiting.p90AllWaitSeconds": "s",
+              "waiting.p90HubWaitSeconds": "s",
+              "journeys.meanCompletedSeconds": "s",
+              "journeys.p90CompletedSeconds": "s",
+              "journeys.meanCensoredSeconds": "s",
+              "journeys.p90CensoredSeconds": "s",
+              "fleet.busySeconds": "s",
+              "fleet.busyFraction": "fraction",
+              "fleet.loadFactor": "fraction",
+              "fleet.completedTurnaroundSeconds": "s",
+              "fleet.censoredTurnaroundSeconds": "s"
+            },
+            "window": "All arrivals through finalTime; hub wait includes boarding and upstream blockage, right-censored at finalTime for travelers not departed; unfinished retained"
+          }
+        }
+      },
+      {
+        "runId": "sim_2f40dc0ab153999ec617eca2f31e1143",
+        "scenarioId": "scenario_a650f704705ff252bffca5ad371597c8",
+        "state": "ended",
+        "createdAt": "2026-11-10T17:16:05.475Z",
+        "updatedAt": "2026-11-10T17:16:09.383Z",
+        "latestComputedTime": 600,
+        "availableFrameTime": 600,
+        "sourceKind": "synthetic",
+        "modelValidation": "not_calibrated",
+        "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
+        "experimentSlot": 2,
+        "seed": 11,
+        "termination": "completed",
+        "metrics": {
+          "road": {
+            "planned": 16,
+            "inserted": 16,
+            "arrived": 12,
+            "activeOrUnfinished": 4,
+            "pendingInsertion": [],
+            "notYetDue": [],
+            "peakActive": 16,
+            "timeLossVehicleSeconds": 365.25,
+            "observedVehicleSeconds": 3372,
+            "meanTimeLossSeconds": 22.828125,
+            "meanObservedDurationSeconds": 210.75,
+            "meanTrafficWaitingSeconds": 0.5625,
+            "aggregateSpeedMetersPerSecond": 4.025462633451958
+          },
+          "service": {
+            "totalTravelers": 16,
+            "states": {
+              "completed": 12,
+              "connecting": 4
+            },
+            "missedConnections": 5,
+            "lastServiceMisses": 4,
+            "dispatchedTrips": 10,
+            "hubDepartures": 16,
+            "completedJourneys": 12,
+            "arrivedTravelers": 16,
+            "hubWaitPersonSeconds": 2498,
+            "meanHubWaitSeconds": 156.125,
+            "waiting": {
+              "allWaitPersonSeconds": 4214,
+              "meanAllWaitSeconds": 263.375,
+              "p90AllWaitSeconds": 437,
+              "p90HubWaitSeconds": 313,
+              "censoredPeople": 0,
+              "definition": "waiting + upstream blocked + boarding + connecting; walking and travel excluded; all arrived people, unfinished censored at finalTime; P90 nearest rank"
+            },
+            "journeys": {
+              "completedCount": 12,
+              "arrivedCount": 16,
+              "meanCompletedSeconds": 256.75,
+              "p90CompletedSeconds": 490,
+              "meanCensoredSeconds": 320.0625,
+              "p90CensoredSeconds": 510,
+              "definition": "arrival to completion; completed-only statistics explicitly conditional; censored statistics retain every arrival at finalTime"
+            },
+            "byRoute": {
+              "route:bus-east": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 173.83333333333334,
+                "p90HubWaitSeconds": 313,
+                "meanAllWaitSeconds": 329.5,
+                "p90AllWaitSeconds": 437
+              },
+              "route:ridehail-east": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              },
+              "route:bus-west": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 173.83333333333334,
+                "p90HubWaitSeconds": 313,
+                "meanAllWaitSeconds": 304.1666666666667,
+                "p90AllWaitSeconds": 439
+              },
+              "route:ridehail-west": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              }
+            },
+            "nodes": {
+              "node:pickup-a": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:pickup-b": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:east": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              },
+              "node:west": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              }
+            },
+            "fleet": {
+              "bus-a": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 294,
+                "busyFraction": 0.49,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  80,
+                  83,
+                  122
+                ],
+                "meanCompletedTurnaroundSeconds": 95,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-a": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 185,
+                "busyFraction": 0.30833333333333335,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  89,
+                  90
+                ],
+                "meanCompletedTurnaroundSeconds": 89.5,
+                "censoredTurnaroundSeconds": null
+              },
+              "bus-b": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 276,
+                "busyFraction": 0.46,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  75,
+                  75,
+                  117
+                ],
+                "meanCompletedTurnaroundSeconds": 89,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-b": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 184,
+                "busyFraction": 0.30666666666666664,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  90,
+                  88
+                ],
+                "meanCompletedTurnaroundSeconds": 89,
+                "censoredTurnaroundSeconds": null
+              }
+            },
+            "fleetDefinition": "busy from boarding reservation until actual return availability, censored at finalTime; fraction divides by elapsed simulation window; turnaround from actual departure to actual return availability; loadFactor is observed boardings / (observed trips * capacity), not road occupancy",
+            "unit": "person",
+            "units": {
+              "totalTravelers": "person",
+              "states": "person",
+              "missedConnections": "person",
+              "lastServiceMisses": "person",
+              "dispatchedTrips": "trip",
+              "hubDepartures": "person",
+              "completedJourneys": "person",
+              "arrivedTravelers": "person",
+              "hubWaitPersonSeconds": "person*s",
+              "meanHubWaitSeconds": "s",
+              "waiting.allWaitPersonSeconds": "person*s",
+              "waiting.meanAllWaitSeconds": "s",
+              "waiting.p90AllWaitSeconds": "s",
+              "waiting.p90HubWaitSeconds": "s",
+              "journeys.meanCompletedSeconds": "s",
+              "journeys.p90CompletedSeconds": "s",
+              "journeys.meanCensoredSeconds": "s",
+              "journeys.p90CensoredSeconds": "s",
+              "fleet.busySeconds": "s",
+              "fleet.busyFraction": "fraction",
+              "fleet.loadFactor": "fraction",
+              "fleet.completedTurnaroundSeconds": "s",
+              "fleet.censoredTurnaroundSeconds": "s"
+            },
+            "window": "All arrivals through finalTime; hub wait includes boarding and upstream blockage, right-censored at finalTime for travelers not departed; unfinished retained"
+          }
+        }
+      },
+      {
+        "runId": "sim_b920c2a7ad929915b718d4d010a69ff2",
+        "scenarioId": "scenario_c2848a6ba304221574746b4326b96c21",
+        "state": "ended",
+        "createdAt": "2026-11-10T17:16:11.003Z",
+        "updatedAt": "2026-11-10T17:16:14.670Z",
+        "latestComputedTime": 600,
+        "availableFrameTime": 600,
+        "sourceKind": "synthetic",
+        "modelValidation": "not_calibrated",
+        "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
+        "experimentSlot": 3,
+        "seed": 11,
+        "termination": "completed",
+        "metrics": {
+          "road": {
+            "planned": 16,
+            "inserted": 16,
+            "arrived": 12,
+            "activeOrUnfinished": 4,
+            "pendingInsertion": [],
+            "notYetDue": [],
+            "peakActive": 16,
+            "timeLossVehicleSeconds": 471.92999999999995,
+            "observedVehicleSeconds": 3372,
+            "meanTimeLossSeconds": 29.495624999999997,
+            "meanObservedDurationSeconds": 210.75,
+            "meanTrafficWaitingSeconds": 7.5625,
+            "aggregateSpeedMetersPerSecond": 3.9266399762752076
+          },
+          "service": {
+            "totalTravelers": 16,
+            "states": {
+              "completed": 14,
+              "connecting": 2
+            },
+            "missedConnections": 3,
+            "lastServiceMisses": 2,
+            "dispatchedTrips": 10,
+            "hubDepartures": 16,
+            "completedJourneys": 14,
+            "arrivedTravelers": 16,
+            "hubWaitPersonSeconds": 1418,
+            "meanHubWaitSeconds": 88.625,
+            "waiting": {
+              "allWaitPersonSeconds": 3096,
+              "meanAllWaitSeconds": 193.5,
+              "p90AllWaitSeconds": 337,
+              "p90HubWaitSeconds": 213,
+              "censoredPeople": 0,
+              "definition": "waiting + upstream blocked + boarding + connecting; walking and travel excluded; all arrived people, unfinished censored at finalTime; P90 nearest rank"
+            },
+            "journeys": {
+              "completedCount": 14,
+              "arrivedCount": 16,
+              "meanCompletedSeconds": 242.78571428571428,
+              "p90CompletedSeconds": 485,
+              "meanCensoredSeconds": 276.1875,
+              "p90CensoredSeconds": 510,
+              "definition": "arrival to completion; completed-only statistics explicitly conditional; censored statistics retain every arrival at finalTime"
+            },
+            "byRoute": {
+              "route:bus-east": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 103.83333333333333,
+                "p90HubWaitSeconds": 213,
+                "meanAllWaitSeconds": 259.8333333333333,
+                "p90AllWaitSeconds": 337
+              },
+              "route:ridehail-east": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              },
+              "route:bus-west": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 6
+                },
+                "completedJourneys": 6,
+                "meanHubWaitSeconds": 63.833333333333336,
+                "p90HubWaitSeconds": 93,
+                "meanAllWaitSeconds": 187.5,
+                "p90AllWaitSeconds": 327
+              },
+              "route:ridehail-west": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              }
+            },
+            "nodes": {
+              "node:pickup-a": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:pickup-b": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:east": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              },
+              "node:west": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 2
+              }
+            },
+            "fleet": {
+              "bus-a": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 578,
+                "busyFraction": 0.9633333333333334,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  80,
+                  192
+                ],
+                "meanCompletedTurnaroundSeconds": 136,
+                "censoredTurnaroundSeconds": 297
+              },
+              "ridehail-a": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 181,
+                "busyFraction": 0.3016666666666667,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  89,
+                  86
+                ],
+                "meanCompletedTurnaroundSeconds": 87.5,
+                "censoredTurnaroundSeconds": null
+              },
+              "bus-b": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 255,
+                "busyFraction": 0.425,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  75,
+                  74,
+                  97
+                ],
+                "meanCompletedTurnaroundSeconds": 82,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-b": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 184,
+                "busyFraction": 0.30666666666666664,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  90,
+                  88
+                ],
+                "meanCompletedTurnaroundSeconds": 89,
+                "censoredTurnaroundSeconds": null
+              }
+            },
+            "fleetDefinition": "busy from boarding reservation until actual return availability, censored at finalTime; fraction divides by elapsed simulation window; turnaround from actual departure to actual return availability; loadFactor is observed boardings / (observed trips * capacity), not road occupancy",
+            "unit": "person",
+            "units": {
+              "totalTravelers": "person",
+              "states": "person",
+              "missedConnections": "person",
+              "lastServiceMisses": "person",
+              "dispatchedTrips": "trip",
+              "hubDepartures": "person",
+              "completedJourneys": "person",
+              "arrivedTravelers": "person",
+              "hubWaitPersonSeconds": "person*s",
+              "meanHubWaitSeconds": "s",
+              "waiting.allWaitPersonSeconds": "person*s",
+              "waiting.meanAllWaitSeconds": "s",
+              "waiting.p90AllWaitSeconds": "s",
+              "waiting.p90HubWaitSeconds": "s",
+              "journeys.meanCompletedSeconds": "s",
+              "journeys.p90CompletedSeconds": "s",
+              "journeys.meanCensoredSeconds": "s",
+              "journeys.p90CensoredSeconds": "s",
+              "fleet.busySeconds": "s",
+              "fleet.busyFraction": "fraction",
+              "fleet.loadFactor": "fraction",
+              "fleet.completedTurnaroundSeconds": "s",
+              "fleet.censoredTurnaroundSeconds": "s"
+            },
+            "window": "All arrivals through finalTime; hub wait includes boarding and upstream blockage, right-censored at finalTime for travelers not departed; unfinished retained"
+          }
+        }
+      },
+      {
+        "runId": "sim_55df18fc164e60223fe640b2397214e3",
+        "scenarioId": "scenario_a650f704705ff252bffca5ad371597c8",
+        "state": "ended",
+        "createdAt": "2026-11-10T17:16:15.930Z",
+        "updatedAt": "2026-11-10T17:16:19.631Z",
+        "latestComputedTime": 600,
+        "availableFrameTime": 600,
+        "sourceKind": "synthetic",
+        "modelValidation": "not_calibrated",
+        "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
+        "experimentSlot": 4,
+        "seed": 13,
+        "termination": "completed",
+        "metrics": {
+          "road": {
+            "planned": 16,
+            "inserted": 16,
+            "arrived": 12,
+            "activeOrUnfinished": 4,
+            "pendingInsertion": [],
+            "notYetDue": [],
+            "peakActive": 16,
+            "timeLossVehicleSeconds": 349.38,
+            "observedVehicleSeconds": 3341,
+            "meanTimeLossSeconds": 21.83625,
+            "meanObservedDurationSeconds": 208.8125,
+            "meanTrafficWaitingSeconds": 0.5,
+            "aggregateSpeedMetersPerSecond": 4.061260101765938
+          },
+          "service": {
+            "totalTravelers": 16,
+            "states": {
+              "completed": 12,
+              "connecting": 4
+            },
+            "missedConnections": 5,
+            "lastServiceMisses": 4,
+            "dispatchedTrips": 10,
+            "hubDepartures": 16,
+            "completedJourneys": 12,
+            "arrivedTravelers": 16,
+            "hubWaitPersonSeconds": 2498,
+            "meanHubWaitSeconds": 156.125,
+            "waiting": {
+              "allWaitPersonSeconds": 4198,
+              "meanAllWaitSeconds": 262.375,
+              "p90AllWaitSeconds": 437,
+              "p90HubWaitSeconds": 313,
+              "censoredPeople": 0,
+              "definition": "waiting + upstream blocked + boarding + connecting; walking and travel excluded; all arrived people, unfinished censored at finalTime; P90 nearest rank"
+            },
+            "journeys": {
+              "completedCount": 12,
+              "arrivedCount": 16,
+              "meanCompletedSeconds": 257.4166666666667,
+              "p90CompletedSeconds": 490,
+              "meanCensoredSeconds": 320.5625,
+              "p90CensoredSeconds": 510,
+              "definition": "arrival to completion; completed-only statistics explicitly conditional; censored statistics retain every arrival at finalTime"
+            },
+            "byRoute": {
+              "route:bus-east": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 173.83333333333334,
+                "p90HubWaitSeconds": 313,
+                "meanAllWaitSeconds": 330.8333333333333,
+                "p90AllWaitSeconds": 437
+              },
+              "route:ridehail-east": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              },
+              "route:bus-west": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 173.83333333333334,
+                "p90HubWaitSeconds": 313,
+                "meanAllWaitSeconds": 300.1666666666667,
+                "p90AllWaitSeconds": 437
+              },
+              "route:ridehail-west": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              }
+            },
+            "nodes": {
+              "node:pickup-a": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:pickup-b": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:east": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              },
+              "node:west": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              }
+            },
+            "fleet": {
+              "bus-a": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 271,
+                "busyFraction": 0.45166666666666666,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  71,
+                  76,
+                  115
+                ],
+                "meanCompletedTurnaroundSeconds": 87.33333333333333,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-a": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 181,
+                "busyFraction": 0.3016666666666667,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  89,
+                  86
+                ],
+                "meanCompletedTurnaroundSeconds": 87.5,
+                "censoredTurnaroundSeconds": null
+              },
+              "bus-b": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 332,
+                "busyFraction": 0.5533333333333333,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  96,
+                  96,
+                  131
+                ],
+                "meanCompletedTurnaroundSeconds": 107.66666666666667,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-b": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 209,
+                "busyFraction": 0.34833333333333333,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  101,
+                  102
+                ],
+                "meanCompletedTurnaroundSeconds": 101.5,
+                "censoredTurnaroundSeconds": null
+              }
+            },
+            "fleetDefinition": "busy from boarding reservation until actual return availability, censored at finalTime; fraction divides by elapsed simulation window; turnaround from actual departure to actual return availability; loadFactor is observed boardings / (observed trips * capacity), not road occupancy",
+            "unit": "person",
+            "units": {
+              "totalTravelers": "person",
+              "states": "person",
+              "missedConnections": "person",
+              "lastServiceMisses": "person",
+              "dispatchedTrips": "trip",
+              "hubDepartures": "person",
+              "completedJourneys": "person",
+              "arrivedTravelers": "person",
+              "hubWaitPersonSeconds": "person*s",
+              "meanHubWaitSeconds": "s",
+              "waiting.allWaitPersonSeconds": "person*s",
+              "waiting.meanAllWaitSeconds": "s",
+              "waiting.p90AllWaitSeconds": "s",
+              "waiting.p90HubWaitSeconds": "s",
+              "journeys.meanCompletedSeconds": "s",
+              "journeys.p90CompletedSeconds": "s",
+              "journeys.meanCensoredSeconds": "s",
+              "journeys.p90CensoredSeconds": "s",
+              "fleet.busySeconds": "s",
+              "fleet.busyFraction": "fraction",
+              "fleet.loadFactor": "fraction",
+              "fleet.completedTurnaroundSeconds": "s",
+              "fleet.censoredTurnaroundSeconds": "s"
+            },
+            "window": "All arrivals through finalTime; hub wait includes boarding and upstream blockage, right-censored at finalTime for travelers not departed; unfinished retained"
+          }
+        }
+      },
+      {
+        "runId": "sim_1f5c4f5f11fcdde5bd408410f9cc534b",
+        "scenarioId": "scenario_c2848a6ba304221574746b4326b96c21",
+        "state": "ended",
+        "createdAt": "2026-11-10T17:16:20.441Z",
+        "updatedAt": "2026-11-10T17:16:23.848Z",
+        "latestComputedTime": 600,
+        "availableFrameTime": 600,
+        "sourceKind": "synthetic",
+        "modelValidation": "not_calibrated",
+        "experimentId": "experiment_dd0110706f91e250b504e4a0d320739a",
+        "experimentSlot": 5,
+        "seed": 13,
+        "termination": "completed",
+        "metrics": {
+          "road": {
+            "planned": 16,
+            "inserted": 16,
+            "arrived": 12,
+            "activeOrUnfinished": 4,
+            "pendingInsertion": [],
+            "notYetDue": [],
+            "peakActive": 16,
+            "timeLossVehicleSeconds": 474.65000000000003,
+            "observedVehicleSeconds": 3341,
+            "meanTimeLossSeconds": 29.665625000000002,
+            "meanObservedDurationSeconds": 208.8125,
+            "meanTrafficWaitingSeconds": 8.375,
+            "aggregateSpeedMetersPerSecond": 3.9630559712660878
+          },
+          "service": {
+            "totalTravelers": 16,
+            "states": {
+              "completed": 14,
+              "connecting": 2
+            },
+            "missedConnections": 3,
+            "lastServiceMisses": 2,
+            "dispatchedTrips": 10,
+            "hubDepartures": 16,
+            "completedJourneys": 14,
+            "arrivedTravelers": 16,
+            "hubWaitPersonSeconds": 1598,
+            "meanHubWaitSeconds": 99.875,
+            "waiting": {
+              "allWaitPersonSeconds": 3110,
+              "meanAllWaitSeconds": 194.375,
+              "p90AllWaitSeconds": 343,
+              "p90HubWaitSeconds": 213,
+              "censoredPeople": 0,
+              "definition": "waiting + upstream blocked + boarding + connecting; walking and travel excluded; all arrived people, unfinished censored at finalTime; P90 nearest rank"
+            },
+            "journeys": {
+              "completedCount": 14,
+              "arrivedCount": 16,
+              "meanCompletedSeconds": 243.35714285714286,
+              "p90CompletedSeconds": 485,
+              "meanCensoredSeconds": 276.6875,
+              "p90CensoredSeconds": 510,
+              "definition": "arrival to completion; completed-only statistics explicitly conditional; censored statistics retain every arrival at finalTime"
+            },
+            "byRoute": {
+              "route:bus-east": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 4,
+                  "connecting": 2
+                },
+                "completedJourneys": 4,
+                "meanHubWaitSeconds": 103.83333333333333,
+                "p90HubWaitSeconds": 213,
+                "meanAllWaitSeconds": 260.8333333333333,
+                "p90AllWaitSeconds": 337
+              },
+              "route:ridehail-east": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              },
+              "route:bus-west": {
+                "totalTravelers": 6,
+                "arrivedTravelers": 6,
+                "states": {
+                  "completed": 6
+                },
+                "completedJourneys": 6,
+                "meanHubWaitSeconds": 93.83333333333333,
+                "p90HubWaitSeconds": 153,
+                "meanAllWaitSeconds": 188.83333333333334,
+                "p90AllWaitSeconds": 343
+              },
+              "route:ridehail-west": {
+                "totalTravelers": 2,
+                "arrivedTravelers": 2,
+                "states": {
+                  "completed": 2
+                },
+                "completedJourneys": 2,
+                "meanHubWaitSeconds": 103,
+                "p90HubWaitSeconds": 198,
+                "meanAllWaitSeconds": 103,
+                "p90AllWaitSeconds": 198
+              }
+            },
+            "nodes": {
+              "node:pickup-a": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:pickup-b": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 4
+              },
+              "node:east": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 2,
+                "blocked": 0,
+                "waitingCapacity": 2
+              },
+              "node:west": {
+                "waiting": 0,
+                "walking": 0,
+                "connecting": 0,
+                "blocked": 0,
+                "waitingCapacity": 2
+              }
+            },
+            "fleet": {
+              "bus-a": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 562,
+                "busyFraction": 0.9366666666666666,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  71,
+                  185
+                ],
+                "meanCompletedTurnaroundSeconds": 128,
+                "censoredTurnaroundSeconds": 297
+              },
+              "ridehail-a": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 181,
+                "busyFraction": 0.3016666666666667,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  89,
+                  86
+                ],
+                "meanCompletedTurnaroundSeconds": 87.5,
+                "censoredTurnaroundSeconds": null
+              },
+              "bus-b": {
+                "capacity": 2,
+                "observedTrips": 3,
+                "passengersBoarded": 6,
+                "busySeconds": 311,
+                "busyFraction": 0.5183333333333333,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  96,
+                  95,
+                  111
+                ],
+                "meanCompletedTurnaroundSeconds": 100.66666666666667,
+                "censoredTurnaroundSeconds": null
+              },
+              "ridehail-b": {
+                "capacity": 1,
+                "observedTrips": 2,
+                "passengersBoarded": 2,
+                "busySeconds": 206,
+                "busyFraction": 0.3433333333333333,
+                "loadFactor": 1,
+                "completedTurnaroundSeconds": [
+                  101,
+                  99
+                ],
+                "meanCompletedTurnaroundSeconds": 100,
+                "censoredTurnaroundSeconds": null
+              }
+            },
+            "fleetDefinition": "busy from boarding reservation until actual return availability, censored at finalTime; fraction divides by elapsed simulation window; turnaround from actual departure to actual return availability; loadFactor is observed boardings / (observed trips * capacity), not road occupancy",
+            "unit": "person",
+            "units": {
+              "totalTravelers": "person",
+              "states": "person",
+              "missedConnections": "person",
+              "lastServiceMisses": "person",
+              "dispatchedTrips": "trip",
+              "hubDepartures": "person",
+              "completedJourneys": "person",
+              "arrivedTravelers": "person",
+              "hubWaitPersonSeconds": "person*s",
+              "meanHubWaitSeconds": "s",
+              "waiting.allWaitPersonSeconds": "person*s",
+              "waiting.meanAllWaitSeconds": "s",
+              "waiting.p90AllWaitSeconds": "s",
+              "waiting.p90HubWaitSeconds": "s",
+              "journeys.meanCompletedSeconds": "s",
+              "journeys.p90CompletedSeconds": "s",
+              "journeys.meanCensoredSeconds": "s",
+              "journeys.p90CensoredSeconds": "s",
+              "fleet.busySeconds": "s",
+              "fleet.busyFraction": "fraction",
+              "fleet.loadFactor": "fraction",
+              "fleet.completedTurnaroundSeconds": "s",
+              "fleet.censoredTurnaroundSeconds": "s"
+            },
+            "window": "All arrivals through finalTime; hub wait includes boarding and upstream blockage, right-censored at finalTime for travelers not departed; unfinished retained"
+          }
+        }
+      }
+    ]
+  },
+  "inputContext": {
+    "contextId": "geoctx_000aeb20a4354e32bd2758ad43ffe54f",
+    "sceneRevision": 17,
+    "mode": "viewport",
+    "sha256": "5442caf4153565c04d0133f22e8b69cccb2c1aa68c481897944a4850ba57d7bf"
+  },
+  "faultExperiment": {
+    "experimentId": "experiment_2b9c1af7a1b0bbd09b3b8cb144d258e6",
+    "comparison": {
+      "plannedPairs": 1,
+      "completePairs": 0,
+      "conclusionAvailable": false,
+      "pairs": [
+        {
+          "seed": 17,
+          "baselineRunId": "sim_4f14332b77dfd03cb0995e36837c2b36",
+          "variantRunId": "sim_4f11e94a09d3155552c65590df61ad0c",
+          "status": "incomplete"
+        }
+      ]
+    },
+    "slots": [
+      {
+        "slot": 0,
+        "role": "baseline",
+        "seed": 17,
+        "runId": "sim_4f14332b77dfd03cb0995e36837c2b36",
+        "state": "ended",
+        "termination": "cancelled"
+      },
+      {
+        "slot": 1,
+        "role": "variant",
+        "seed": 17,
+        "runId": "sim_4f11e94a09d3155552c65590df61ad0c",
+        "state": "ended",
+        "termination": "completed"
+      }
+    ]
+  },
+  "liveViewing": {
+    "paused": [
+      {
+        "at": 1794330967015,
+        "runId": "sim_2f40dc0ab153999ec617eca2f31e1143",
+        "time": "0"
+      },
+      {
+        "at": 1794330973097,
+        "runId": "sim_b920c2a7ad929915b718d4d010a69ff2",
+        "time": "0"
+      }
+    ],
+    "runningIndexObservations": 25
+  },
+  "indexProjectionRegression": {
+    "runId": "sim_df65481d624d0c09ec00133f36af8fb7",
+    "observations": [
+      {
+        "at": 1794331697725,
+        "state": "running",
+        "computed": 59,
+        "published": 58
+      },
+      {
+        "at": 1794331698096,
+        "state": "running",
+        "computed": 99,
+        "published": 98
+      },
+      {
+        "at": 1794331698463,
+        "state": "running",
+        "computed": 149,
+        "published": 148
+      },
+      {
+        "at": 1794331698839,
+        "state": "running",
+        "computed": 189,
+        "published": 188
+      },
+      {
+        "at": 1794331699203,
+        "state": "running",
+        "computed": 229,
+        "published": 228
+      },
+      {
+        "at": 1794331699580,
+        "state": "running",
+        "computed": 259,
+        "published": 258
+      },
+      {
+        "at": 1794331699953,
+        "state": "running",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331700558,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331700956,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331701331,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331701708,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331702094,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331702472,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331702845,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331703225,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331703598,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331703973,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331704343,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      },
+      {
+        "at": 1794331704720,
+        "state": "ended",
+        "computed": 600,
+        "published": 600
+      }
+    ]
+  },
+  "representative": {
+    "backgroundVehicles": 120,
+    "travelers": 100,
+    "durationSeconds": 600,
+    "metrics": {
+      "road": {
+        "planned": 124,
+        "inserted": 92,
+        "arrived": 86,
+        "activeOrUnfinished": 6,
+        "pendingInsertion": [
+          "road-100",
+          "road-101",
+          "road-102",
+          "road-103",
+          "road-104",
+          "road-105",
+          "road-106",
+          "road-107",
+          "road-108",
+          "road-109",
+          "road-110",
+          "road-111",
+          "road-112",
+          "road-113",
+          "road-114",
+          "road-115",
+          "road-116",
+          "road-117",
+          "road-118",
+          "road-119",
+          "road-88",
+          "road-89",
+          "road-90",
+          "road-91",
+          "road-92",
+          "road-93",
+          "road-94",
+          "road-95",
+          "road-96",
+          "road-97",
+          "road-98",
+          "road-99"
+        ],
+        "notYetDue": [],
+        "peakActive": 66,
+        "timeLossVehicleSeconds": 10572.660000000003,
+        "observedVehicleSeconds": 18058,
+        "meanTimeLossSeconds": 114.92021739130439,
+        "meanObservedDurationSeconds": 196.2826086956522,
+        "meanTrafficWaitingSeconds": 62.92391304347826,
+        "aggregateSpeedMetersPerSecond": 3.032264370362166
+      },
+      "service": {
+        "totalTravelers": 100,
+        "states": {
+          "completed": 6,
+          "waiting": 8,
+          "connecting": 2,
+          "blocked": 84
+        },
+        "missedConnections": 71,
+        "lastServiceMisses": 70,
+        "dispatchedTrips": 4,
+        "hubDepartures": 8,
+        "completedJourneys": 6,
+        "arrivedTravelers": 100,
+        "hubWaitPersonSeconds": 52284,
+        "meanHubWaitSeconds": 522.84,
+        "waiting": {
+          "allWaitPersonSeconds": 53280,
+          "meanAllWaitSeconds": 532.8,
+          "p90AllWaitSeconds": 582,
+          "p90HubWaitSeconds": 582,
+          "censoredPeople": 92,
+          "definition": "waiting + upstream blocked + boarding + connecting; walking and travel excluded; all arrived people, unfinished censored at finalTime; P90 nearest rank"
+        },
+        "journeys": {
+          "completedCount": 6,
+          "arrivedCount": 100,
+          "meanCompletedSeconds": 379.5,
+          "p90CompletedSeconds": 488,
+          "meanCensoredSeconds": 537.5,
+          "p90CensoredSeconds": 584,
+          "definition": "arrival to completion; completed-only statistics explicitly conditional; censored statistics retain every arrival at finalTime"
+        },
+        "byRoute": {
+          "route:bus-east": {
+            "totalTravelers": 40,
+            "arrivedTravelers": 40,
+            "states": {
+              "completed": 4,
+              "waiting": 2,
+              "blocked": 34
+            },
+            "completedJourneys": 4,
+            "meanHubWaitSeconds": 512.55,
+            "p90HubWaitSeconds": 582,
+            "meanAllWaitSeconds": 519.7,
+            "p90AllWaitSeconds": 582
+          },
+          "route:ridehail-east": {
+            "totalTravelers": 12,
+            "arrivedTravelers": 12,
+            "states": {
+              "waiting": 2,
+              "blocked": 10
+            },
+            "completedJourneys": 0,
+            "meanHubWaitSeconds": 553.5,
+            "p90HubWaitSeconds": 593,
+            "meanAllWaitSeconds": 553.5,
+            "p90AllWaitSeconds": 593
+          },
+          "route:bus-west": {
+            "totalTravelers": 36,
+            "arrivedTravelers": 36,
+            "states": {
+              "completed": 2,
+              "connecting": 2,
+              "waiting": 2,
+              "blocked": 30
+            },
+            "completedJourneys": 2,
+            "meanHubWaitSeconds": 516.5,
+            "p90HubWaitSeconds": 575,
+            "meanAllWaitSeconds": 536.2222222222222,
+            "p90AllWaitSeconds": 575
+          },
+          "route:ridehail-west": {
+            "totalTravelers": 12,
+            "arrivedTravelers": 12,
+            "states": {
+              "waiting": 2,
+              "blocked": 10
+            },
+            "completedJourneys": 0,
+            "meanHubWaitSeconds": 545.5,
+            "p90HubWaitSeconds": 585,
+            "meanAllWaitSeconds": 545.5,
+            "p90AllWaitSeconds": 585
+          }
+        },
+        "nodes": {
+          "node:pickup-a": {
+            "waiting": 4,
+            "walking": 0,
+            "connecting": 0,
+            "blocked": 44,
+            "waitingCapacity": 4
+          },
+          "node:pickup-b": {
+            "waiting": 4,
+            "walking": 0,
+            "connecting": 0,
+            "blocked": 40,
+            "waitingCapacity": 4
+          },
+          "node:east": {
+            "waiting": 0,
+            "walking": 0,
+            "connecting": 0,
+            "blocked": 0,
+            "waitingCapacity": 2
+          },
+          "node:west": {
+            "waiting": 0,
+            "walking": 0,
+            "connecting": 2,
+            "blocked": 0,
+            "waitingCapacity": 2
+          }
+        },
+        "fleet": {
+          "bus-a": {
+            "capacity": 2,
+            "observedTrips": 2,
+            "passengersBoarded": 4,
+            "busySeconds": 349,
+            "busyFraction": 0.5816666666666667,
+            "loadFactor": 1,
+            "completedTurnaroundSeconds": [
+              258,
+              85
+            ],
+            "meanCompletedTurnaroundSeconds": 171.5,
+            "censoredTurnaroundSeconds": null
+          },
+          "ridehail-a": {
+            "capacity": 1,
+            "observedTrips": 0,
+            "passengersBoarded": 0,
+            "busySeconds": 0,
+            "busyFraction": 0,
+            "loadFactor": null,
+            "completedTurnaroundSeconds": [],
+            "meanCompletedTurnaroundSeconds": null,
+            "censoredTurnaroundSeconds": null
+          },
+          "bus-b": {
+            "capacity": 2,
+            "observedTrips": 2,
+            "passengersBoarded": 4,
+            "busySeconds": 386,
+            "busyFraction": 0.6433333333333333,
+            "loadFactor": 1,
+            "completedTurnaroundSeconds": [
+              183
+            ],
+            "meanCompletedTurnaroundSeconds": 183,
+            "censoredTurnaroundSeconds": 197
+          },
+          "ridehail-b": {
+            "capacity": 1,
+            "observedTrips": 0,
+            "passengersBoarded": 0,
+            "busySeconds": 0,
+            "busyFraction": 0,
+            "loadFactor": null,
+            "completedTurnaroundSeconds": [],
+            "meanCompletedTurnaroundSeconds": null,
+            "censoredTurnaroundSeconds": null
+          }
+        },
+        "fleetDefinition": "busy from boarding reservation until actual return availability, censored at finalTime; fraction divides by elapsed simulation window; turnaround from actual departure to actual return availability; loadFactor is observed boardings / (observed trips * capacity), not road occupancy",
+        "unit": "person",
+        "units": {
+          "totalTravelers": "person",
+          "states": "person",
+          "missedConnections": "person",
+          "lastServiceMisses": "person",
+          "dispatchedTrips": "trip",
+          "hubDepartures": "person",
+          "completedJourneys": "person",
+          "arrivedTravelers": "person",
+          "hubWaitPersonSeconds": "person*s",
+          "meanHubWaitSeconds": "s",
+          "waiting.allWaitPersonSeconds": "person*s",
+          "waiting.meanAllWaitSeconds": "s",
+          "waiting.p90AllWaitSeconds": "s",
+          "waiting.p90HubWaitSeconds": "s",
+          "journeys.meanCompletedSeconds": "s",
+          "journeys.p90CompletedSeconds": "s",
+          "journeys.meanCensoredSeconds": "s",
+          "journeys.p90CensoredSeconds": "s",
+          "fleet.busySeconds": "s",
+          "fleet.busyFraction": "fraction",
+          "fleet.loadFactor": "fraction",
+          "fleet.completedTurnaroundSeconds": "s",
+          "fleet.censoredTurnaroundSeconds": "s"
+        },
+        "window": "All arrivals through finalTime; hub wait includes boarding and upstream blockage, right-censored at finalTime for travelers not departed; unfinished retained"
+      }
+    },
+    "timings": {
+      "stepSeconds": 0.12525579292559996,
+      "readSeconds": 4.0497116561746225,
+      "routeSeconds": 0.00022299998090602458,
+      "actionSeconds": 0.001370583922835067,
+      "rulesSeconds": 0.39101091370685026,
+      "snapshotSeconds": 0.5352806556620635,
+      "writeSeconds": 0.3578665801032912,
+      "wallSeconds": 5.5803539589978755
+    },
+    "workerMatchesPackagedSource": true
+  },
+  "reportReview": {
+    "initialCitationSyntaxAndDurationWordingRequiredCorrection": true,
+    "runCallsBeforeAndAfterCorrection": 6,
+    "noFrozenResultChanges": true,
+    "correctedCitationEvidenceId": "e_31a26d9fda1c382ff037c5905ad85579a4ab95a17c6e07e723cf0a735d5c7e3f",
+    "interpretedReport": {
+      "path": "/Users/ran/WorkSpace/3 Code Project/pi-tau-traffic/tmp/simulation-p1-desktop/projects/20261111-004404-仿真-P2-多方式配对验收/P2-多方式配对比较报告.md",
+      "sha256": "b15c97486a8b02ba64bbf43b1c64979e414c20512b51bc1099aff58d66e70eb5",
+      "bytes": 9598
+    }
+  },
+  "package": {
+    "path": "release/modules/transportx-traffic-simulation-0.3.0-darwin-arm64.zip",
+    "sha256": "72edccce6c186be0ab88b48b9f307bc5bb1658616b6b2246c8a503572b19d301",
+    "bytes": 121699558
+  },
+  "evidenceFiles": [
+    {
+      "path": "tmp/simulation-p2-experiment-030/evidence.json",
+      "sha256": "b92b9b943084c59beefa32785ac488eb1a9fe1429d782fd4484d39c2892d6ee4",
+      "bytes": 186644
+    },
+    {
+      "path": "tmp/simulation-p2-statistics-final/evidence.json",
+      "sha256": "603ad575ec76d5c6077f0dfb0d318ed566f250e2a630fa57635c3485eeb414ed",
+      "bytes": 105674
+    },
+    {
+      "path": "tmp/simulation-p2-legacy-030/evidence.json",
+      "sha256": "98e2d7d0420a35c7e6628f2ca470997b286e4a931797d9585045fee6ae090344",
+      "bytes": 360415
+    },
+    {
+      "path": "tmp/simulation-p2-native-completed-030.json",
+      "sha256": "3b1ccc93746f0b3dfc9ae89110d7b0fe830b3eadc5cf0caa2681e18fc5982c2a",
+      "bytes": 1095182
+    },
+    {
+      "path": "tmp/simulation-p2-native-corrected-030.json",
+      "sha256": "0359823377f5c00aaf0d1a21a4e44fcdb53037f5d96b96d6b6afdbbea1c4c3fd",
+      "bytes": 1214279
+    },
+    {
+      "path": "tmp/simulation-p2-live-viewing.json",
+      "sha256": "a9ace1da34e1f8113a54bd62d23e098f4f34f9d34b466cb2fb73082ae9c43167",
+      "bytes": 3791
+    },
+    {
+      "path": "tmp/simulation-p2-canvas-accepted/evidence.json",
+      "sha256": "8b18f3c21c1a634d08b212326b2fd6c8380c5f15a335654ea009c9c980a781d1",
+      "bytes": 158331
+    },
+    {
+      "path": "tmp/simulation-p2-legacy-canvas-final/evidence.json",
+      "sha256": "6a12366b5f8c8a6e85daf2f9281a2d1a9700eff2b37945403762310dab7dd6d8",
+      "bytes": 64822
+    },
+    {
+      "path": "tmp/simulation-p2-final-regression.log",
+      "sha256": "08e663248d03443e2e03327b2b21a67d5a4a85a7350780d17f7bc69e4c373e07",
+      "bytes": 79340
+    },
+    {
+      "path": "tmp/simulation-p2-final-web.log",
+      "sha256": "707499b15705eaa5ec9f4ac2ad2591adb12135a25b7410779359fb01870ef67d",
+      "bytes": 60002
+    },
+    {
+      "path": "tmp/simulation-p2-typecheck-after-ui.log",
+      "sha256": "e920187f9e74724c545a4b69151cac3a4f2882e672e9eb7929ed083394184997",
+      "bytes": 698
+    },
+    {
+      "path": "tmp/simulation-p2-cleanup.json",
+      "sha256": "a6ee84ba487193efce62100d93352b2e12807daea36584938a7521769900c27a",
+      "bytes": 176
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-regression.log",
+      "sha256": "65680a111331982e18ad0b7954eed1bf67fb65b54bdb9fecc186c0627833a528",
+      "bytes": 79321
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-typecheck.log",
+      "sha256": "e920187f9e74724c545a4b69151cac3a4f2882e672e9eb7929ed083394184997",
+      "bytes": 698
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-web.log",
+      "sha256": "5e9d6d0caa9268e8d14cc5da9756f25959a472db321bb39530c563704934caf7",
+      "bytes": 60002
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-canvas/evidence.json",
+      "sha256": "d0488ea2bbb3b5c13921fedeaeeab7681c39bc39e9c0615e8f29d7b612c3b8db",
+      "bytes": 159394
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-host/evidence.json",
+      "sha256": "beb67f09f123f0fda5b05900a551761a7a6ac8d223dd3de836881aba396edd77",
+      "bytes": 194441
+    },
+    {
+      "path": "tmp/simulation-p2-pending-fleet-cleanup.json",
+      "sha256": "d4e81cbb5623aeb098bf4c2cf78dc2395c537ec8744e824eb10c1741a0c04c8c",
+      "bytes": 138
+    }
+  ],
+  "sourceFiles": [
+    {
+      "path": "src/contracts/simulation.ts",
+      "sha256": "8fc9a9282b1e0098dcd4e5f0ceed79db12975eb2b0d723789a2a45c643fe4e94",
+      "bytes": 21137
+    },
+    {
+      "path": "src/contracts/simulation-multimodal.ts",
+      "sha256": "054c07d6ce9feeb9c8f1037c9ac766525f874917aa0a1635582cdeb2b8d9b08c",
+      "bytes": 7114
+    },
+    {
+      "path": "src/server/simulation-job.ts",
+      "sha256": "96b1a7e63ace1a42fbb99e3dccc88077471db9a1a63b626d943fa1402daafb29",
+      "bytes": 20705
+    },
+    {
+      "path": "src/server/simulation-service.ts",
+      "sha256": "5e83a6ae285d7abcd977978de79231c96dcb18fc7e4dc583201ebdea24329c8f",
+      "bytes": 52358
+    },
+    {
+      "path": "src/server/api-routes.ts",
+      "sha256": "68a4589b1c958452ffaa58441a4cff560bc9407ff458a9bd1e5b708314ee36e0",
+      "bytes": 42278
+    },
+    {
+      "path": "src/web/features/simulation/SimulationWorkspace.tsx",
+      "sha256": "938e897aa39fb1042d14821b05c98757b95ff6430af3e4d8da62033516cba2b9",
+      "bytes": 17141
+    },
+    {
+      "path": "src/web/platform/canvas/AgentCanvas.tsx",
+      "sha256": "e42a58789ba10fe51908946526c5084a70e9bf4cb583f8944c6dfbf2733a230f",
+      "bytes": 6303
+    },
+    {
+      "path": "modules/optional/traffic-simulation/scripts/compute.py",
+      "sha256": "f0b3d2bf25980756fbf47be92a8902514ebb6828debdb048a5aa2ac42d6a5d1e",
+      "bytes": 14114
+    },
+    {
+      "path": "modules/optional/traffic-simulation/scripts/engine.py",
+      "sha256": "90bfe3f80906c1319c5be21885175bfc559e45f791f43489b11d2dccc66e8b5c",
+      "bytes": 10030
+    },
+    {
+      "path": "modules/optional/traffic-simulation/scripts/multimodal.py",
+      "sha256": "08efc3dc58951f75d07d20ca15583242cd108208fd6d510607655276f776e447",
+      "bytes": 24046
+    },
+    {
+      "path": "modules/optional/traffic-simulation/scripts/inspect_network.py",
+      "sha256": "cd08cb416ad8aafa60476d0a93ae316b68a1e43a3555bfb63a19ff2703041677",
+      "bytes": 5569
+    }
+  ],
+  "notPassed": [
+    "P3 independent-date real-world calibration deferred by user",
+    "P4 clean macOS arm64 / Windows x64 desktop distribution, complete transitive license audit and signing",
+    "P5 automatic optimization and online control"
+  ],
+  "cleanup": {
+    "ownedElectronPid": 17234,
+    "liveSessionsBeforeStop": 0,
+    "copiedCredentialFilesRemoved": [
+      "auth.json",
+      "models.json"
+    ],
+    "historyAndModulesPreserved": true,
+    "followup": {
+      "ownedElectronPid": 21131,
+      "liveSessionsBeforeStop": 0,
+      "noCredentialCopiesRestored": true,
+      "historyAndModulesPreserved": true
+    }
+  },
+  "implementationCommit": "8cc5f46",
+  "pullRequest": "https://github.com/Ran2424/transportx-agent/pull/108",
+  "pendingFleetRegression": {
+    "query": {
+      "runId": "sim_94a31a096479a2836fd40dacd8c43c67",
+      "requestedTime": 0,
+      "time": 0,
+      "frameSequence": 0,
+      "partial": false,
+      "units": {
+        "time": "s",
+        "distance": "m",
+        "speed": "m/s"
+      },
+      "coordinateSystems": {
+        "position": "sumo-network-xy",
+        "positionGeo": "WGS84-longitude-latitude-degrees"
+      },
+      "countsByState": {
+        "waiting": 8,
+        "not_arrived": 8
+      },
+      "events": [],
+      "truncated": false,
+      "fleet": {
+        "id": "bus-a",
+        "mode": "bus",
+        "capacity": 2,
+        "home": "node:pickup-a",
+        "berth": 0,
+        "state": "inserting",
+        "occupants": [],
+        "trip": null,
+        "route": null,
+        "observedTrips": 0,
+        "passengersBoarded": 0,
+        "busySeconds": 0,
+        "turnarounds": []
+      }
+    },
+    "canvasEvidence": "tmp/simulation-p2-pending-fleet-canvas/evidence.json",
+    "repeatExperimentId": "experiment_71bd490e0cef7e861822b79c90d73846",
+    "repeatRunIds": [
+      "sim_b0335c20d0f0010f7021b782430d4b1a",
+      "sim_079323b75989c33ae12989d044159152",
+      "sim_6cc16f44415596df8e9c94be8e0a17e1",
+      "sim_c1f87f41eaf0d4317ffd6bfde0e08a3e",
+      "sim_590f1c7f44bba30adf8d5e45e9b215b2",
+      "sim_66a03282eeda2be63ce64db8c7cd9bd8"
+    ],
+    "noOriginalRunOrSlotReplaced": true
+  }
+}

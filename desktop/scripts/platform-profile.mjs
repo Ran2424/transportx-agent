@@ -27,6 +27,23 @@ export function getPlatformProfile(builderPlatform = builderPlatformFor()) {
   return profile;
 }
 
+// Development evidence only; this does not declare a distributable SUMO runtime.
+export function getSimulationProbeProfile(platform = process.platform) {
+  const profiles = {
+    darwin: {
+      executable: (name) => name,
+      wheelTag: 'macosx_15_0_arm64',
+      startupTimeoutMs: 120000,
+      projDataRelative: ['sumo_data', 'data', 'proj'],
+      dependencyCommand: 'otool', dependencyArgs: (file) => ['-L', file],
+      processCommand: 'ps', processArgs: (pid) => ['eww', '-p', String(pid), '-o', 'rss=,command='],
+      architectureCommand: 'file', architectureArgs: (file) => [file],
+    },
+  };
+  if (!profiles[platform]) throw new Error(`SUMO P0 native probe is not verified for ${platform}`);
+  return profiles[platform];
+}
+
 // `pythonEntry` is the entry path RELATIVE to the staged runtime directory.
 // `archCheck` receives platform.machine() output and returns true on success.
 // `archErrorMessage` is the human-readable architecture requirement (used in

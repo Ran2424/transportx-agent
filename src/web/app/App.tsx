@@ -134,6 +134,34 @@ export function App({ account }: { account?: ReactNode } = {}) {
     });
   }, [activeSession?.id]);
   useEffect(() => { updateCanvas((state) => syncCanvas(state, canvasContent)); }, [canvasContent, updateCanvas]);
+  const simulationSeen = useRef(new Set<string>());
+  useEffect(() => {
+    for (const [id, notice] of Object.entries(sessionState.simulationBySession || {})) {
+      const key = `${id}:${notice.canvas.viewId}`;
+      if (simulationSeen.current.has(key)) continue;
+      simulationSeen.current.add(key);
+      setCanvases((current) => ({ ...current, [id]: openCanvasResource(current[id] ?? EMPTY_CANVAS, notice.canvas) }));
+    }
+  }, [sessionState.simulationBySession]);
+  useEffect(() => {
+    if (!activeSession) return;
+    const id = activeSession.id, controller = new AbortController();
+    void kernel.commands.simulation.list(id, controller.signal).then(({ runs }) => {
+      if (controller.signal.aborted) return;
+      for (const { canvas: presentation } of runs) {
+        const key = `${id}:${presentation.viewId}`;
+        if (simulationSeen.current.has(key)) continue;
+        simulationSeen.current.add(key);
+        setCanvases((current) => {
+          const previous = current[id] ?? EMPTY_CANVAS;
+          const restored = openCanvasResource(previous, presentation);
+          const hasNavigation = previous.presentationKey !== null || previous.tabIds.length > 0 || (previous.resources?.length ?? 0) > 0;
+          return { ...current, [id]: hasNavigation ? { ...restored, tabIds: previous.tabIds, activeId: previous.activeId, open: previous.open } : restored };
+        });
+      }
+    }).catch(() => { /* Conversations without this selected module have no Simulation resources. */ });
+    return () => controller.abort();
+  }, [activeSession?.id]);
   useEffect(() => {
     const liveIds = new Set(sessionState.sessions.map((session) => session.id));
     for (const id of Object.keys(documentPositions.current)) if (!liveIds.has(id)) delete documentPositions.current[id];
@@ -462,7 +490,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => openNewSession()} onActivate={ensureConversationRuntime} showThinking={showThinking} expandThinking={expandThinking} moduleFailure={moduleFailure && moduleFailure.id === activeSession?.id ? moduleFailure.message : undefined} onContinue={openContinuation} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
-      canvas={<AgentCanvas key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; const view = canvasContent.views.find((view) => view.id === input.viewId && view.canvas?.revision === input.revision); canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input), view?.title); }} />}
+      canvas={<AgentCanvas onOpenDocument={openDocument} kernel={kernel} key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; const view = canvasContent.views.find((view) => view.id === input.viewId && view.canvas?.revision === input.revision); canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input), view?.title); }} />}
       canvasOpen={canvas.open}
       settings={settingsOpen ? <SettingsPage theme={theme} onThemeChange={setTheme} showThinking={showThinking} onShowThinkingChange={setShowThinking} expandThinking={expandThinking} onExpandThinkingChange={setExpandThinking} session={activeSession} onEnsureRuntime={ensureConversationRuntime} onAddModel={() => openModelSetup('settings')} section={settingsSection} onSectionChange={setSettingsSection} onBack={() => setSettingsOpen(false)} /> : null}
       settingsOpen={settingsOpen}

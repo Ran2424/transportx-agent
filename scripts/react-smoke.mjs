@@ -479,6 +479,26 @@ try {
   console.log('Geo smoke: restored request cancelled.');
   await geoLegendSmoke(page, composer);
 
+  const recoveryPage = await browser.newPage({ locale: 'zh-CN', storageState: await page.context().storageState() });
+  try {
+    const rendererAsset = /\/assets\/GeoCanvasRenderer-[^/]+\.js$/;
+    await recoveryPage.route(rendererAsset, route => route.fulfill({ status: 404 }));
+    await recoveryPage.goto(baseUrl);
+    const mapTab = recoveryPage.getByRole('tab', { name: '地图图例验收', exact: true });
+    await mapTab.click();
+    const reload = recoveryPage.getByRole('button', { name: '重新加载工作台', exact: true });
+    await reload.waitFor();
+    await recoveryPage.locator('.user-message', { hasText: 'geo-legend-check' }).waitFor();
+    await recoveryPage.unroute(rendererAsset);
+    await reload.click();
+    await mapTab.click();
+    await recoveryPage.locator('.canvas-panel:not([hidden]) canvas.maplibregl-canvas').waitFor();
+    assert.equal(await reload.count(), 0);
+    console.log('Canvas smoke: missing renderer stays inside the tab and reload restores the saved conversation and map.');
+  } finally {
+    await recoveryPage.close();
+  }
+
   if (!process.argv.includes('--web')) await softwareUpdateSmoke(browser, baseUrl);
   await workspaceCleanupSmoke(page);
   const oldBusiness = requestedUrls.filter((value) => /^\/api\/(live-sessions|sessions|session-history|file|files)(?:\/|$)/.test(new URL(value).pathname));

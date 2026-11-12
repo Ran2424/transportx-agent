@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "model": "evacuation",
+  "networkVersion": "synthetic-loop/v1",
+  "serviceDate": "2026-11-10",
+  "timezone": "Asia/Shanghai",
+  "startTime": "23:59:30",
+  "durationSeconds": 200,
+  "seed": 7,
+  "stepSeconds": 1,
+  "decisionSeconds": 1,
+  "sampleSeconds": 2,
+  "blockSeconds": 10,
+  "units": {
+    "time": "s",
+    "distance": "m",
+    "speed": "m/s"
+  },
+  "backgroundCount": 3,
+  "service": {
+    "busCapacity": 2,
+    "boardingSeconds": 2,
+    "transferSeconds": 5,
+    "externalSeconds": 20,
+    "departures": [
+      {
+        "id": "bus-a",
+        "time": 5,
+        "vehicle": "bus-0"
+      },
+      {
+        "id": "bus-b",
+        "time": 5,
+        "vehicle": "bus-0"
+      },
+      {
+        "id": "bus-c",
+        "time": 100,
+        "vehicle": "bus-0"
+      },
+      {
+        "id": "bus-empty",
+        "time": 190,
+        "vehicle": "bus-0"
+      }
+    ],
+    "metro": [
+      {
+        "id": "last-metro",
+        "time": 65,
+        "capacity": 1
+      }
+    ],
+    "travelers": [
+      {
+        "id": "a",
+        "time": 0,
+        "mode": "bus",
+        "destination": "east"
+      },
+      {
+        "id": "b",
+        "time": 5,
+        "mode": "bus",
+        "destination": "east"
+      },
+      {
+        "id": "c",
+        "time": 5,
+        "mode": "bus",
+        "destination": "east"
+      },
+      {
+        "id": "d",
+        "time": 0,
+        "mode": "ridehail",
+        "destination": "west"
+      },
+      {
+        "id": "e",
+        "time": 100,
+        "mode": "bus",
+        "destination": "east"
+      },
+      {
+        "id": "f",
+        "time": 210,
+        "mode": "bus",
+        "destination": "east"
+      }
+    ]
+  }
+}

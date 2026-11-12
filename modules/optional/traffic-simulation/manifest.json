@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.traffic-simulation",
+  "name": "Traffic Simulation",
+  "version": "0.6.0",
+  "type": "capability",
+  "platformVersion": ">=3.24.2 <4.0.0",
+  "dependencies": ["com.transportx.canvas", "com.transportx.geo", "com.transportx.citation", "com.transportx.document"],
+  "entrypoints": { "piExtensions": ["extensions/pi-traffic-simulation/index.ts"], "skills": ["skill/SKILL.md"] },
+  "contributes": {
+    "requiredNativeRuntimes": ["sumo"],
+    "nativeRuntimes": [],
+    "canvasViews": [{"adapterId":"com.transportx.traffic-simulation.canvas","kind":"simulation","protocolVersion":"1.0"}],
+    "artifactTypes": ["traffic.scenario", "traffic.run"]
+  },
+  "presentation": {"defaultLocale":"zh-CN","locales":{"zh-CN":{"name":"交通仿真","description":"使用 SUMO/TraCI 执行有限交通实验，查看车辆、服务事件与可核验结果。","features":["冻结场景输入与运行条件","在仿真画布中查看运行与历史结果","查询同一时刻的对象状态与事件"]},"en-US":{"name":"Traffic Simulation","description":"Run bounded SUMO/TraCI experiments and inspect vehicles, service events and verified results."}}}
+}

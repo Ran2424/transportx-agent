@@ -4,12 +4,14 @@ import { DOCUMENT_CANVAS_ADAPTER_ID, GEO_CANVAS_ADAPTER_ID, VIDEO_CANVAS_ADAPTER
 import type { CanvasView } from './canvas-state';
 import { canvasAdapterForView } from './adapter-registry';
 import type { CanvasRendererProps } from './renderers/types';
+import { SIMULATION_CANVAS_ADAPTER_ID } from '../../../contracts/simulation';
 
 const loaders: Record<string, () => Promise<{ default: ComponentType<CanvasRendererProps> }>> = {
   [DOCUMENT_CANVAS_ADAPTER_ID]: () => import('./renderers/DocumentCanvasRenderer'),
   [GEO_CANVAS_ADAPTER_ID]: () => import('./renderers/GeoCanvasRenderer'),
   [VIDEO_CANVAS_ADAPTER_ID]: () => import('./renderers/VideoCanvasRenderer'),
   [CAD_CANVAS_ADAPTER_ID]: () => import('./renderers/CadCanvasRenderer'),
+  [SIMULATION_CANVAS_ADAPTER_ID]: () => import('./renderers/SimulationCanvasRenderer'),
 };
 const renderers = new Map<string, LazyExoticComponent<ComponentType<CanvasRendererProps>>>();
 

@@ -71,6 +71,8 @@ for (const [id, versions] of [['smoke.alpha', ['1.0.0', '2.0.0']], ['smoke.beta'
   }
 }
 // This harness owns these inert fixtures; production trust checks stay enabled.
+// ModuleTrustStore imports the PDF channel, which loads config/settings once.
+// Persist the fixture selection before that first import.
 fs.writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify({ tau: { enabledModuleIds: ['smoke.alpha', 'smoke.beta'] } }));
 const { ModuleTrustStore } = require(path.join(REPO_ROOT, 'bin/module-trust.js'));
 await new ModuleTrustStore(path.join(agentDir, 'settings/module-trust.json'), async () => true).ensure(fixtureModuleRoots);

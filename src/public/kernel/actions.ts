@@ -16,6 +16,7 @@ import type {
   SessionEntry,
   SessionSnapshot,
 } from '../app-types.js';
+import type { CanvasPresentationV1 } from '../../contracts/canvas.js';
 import type { AppError } from '../../contracts/errors.ts';
 import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../contracts/geo.ts';
 
@@ -59,6 +60,7 @@ export type AppAction =
   | { type: 'session/compactionEnded'; sessionId: string }
   | { type: 'session/geoInteractionUpdated'; sessionId: string; request?: GeoInteractionRequestV1; response?: GeoInteractionResponseV1 }
   | { type: 'session/geoScreenshotUpdated'; sessionId: string; request?: GeoScreenshotRequestV1; requestId?: string }
+  | { type: 'session/simulationIndexUpdated'; sessionId: string; canvas: CanvasPresentationV1; indexRevision: number; runUpdatedAt: string }
   // conversation
   | { type: 'conversation/retryStarted'; sessionId: string; retry: import('../../contracts/run-feedback.ts').RetryState }
   | { type: 'conversation/retryEnded'; sessionId: string; outcome: import('../../contracts/run-feedback.ts').RunOutcome | null }

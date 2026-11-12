@@ -2,7 +2,7 @@
 
 - 源码版本：3.24.2（未发布）；最近正式发布为 3.24.0（2026-10-28 已发布 macOS arm64 与用户提供的 Windows x64 包；平台来源差异见 [发布记录](releases/3.24.0.md)）
 - 文档状态：当前实现的架构权威
-- 更新日期：2026-11-10
+- 更新日期：2026-11-11
 - 打包 Profile：macOS arm64（DMG + ZIP 更新包）、Windows x64（NSIS）与实验性 Linux x64（默认 DEB、显式选择 RPM 的测试构建，目标系统实机验收与正式发布另行记录）
 
 TransportX Agent 是面向交通分析的桌面工作台。Agent 与分析人员共享同一份 GIS 上下文，领域能力按任务装配。项目采用单仓库、单 npm 包和模块化单体架构：Electron 管理桌面生命周期，Node Agent Host 是唯一业务后端，Pi 框架负责模型调用循环与工具执行，Python 执行分析脚本，React 提供图形工作台。CLI 是共用后端的终端客户端。
@@ -124,6 +124,12 @@ Host 通过 `TRANSPORTX_FONT_DIR` 注入内置思源黑体、思源宋体和 Jet
 会话运行生命周期由 Host 内部管理，用户不需要手动激活。打开会话、查看地图/视频/引用/文档、保存选区上下文和导出地图截图使用持久会话上下文，不启动 Pi；发送消息或执行模型设置、压缩等操作时按需启动 Pi RPC 进程，空闲运行实例可由 Host 复用或切换。界面只呈现发送、生成、等待交互及失败等任务状态，不以“已保存/已激活”区分历史会话与运行实例。工作区存在未完成任务或交互时，切换执行必须由用户确认，运行诊断页保留进程与租约信息。Session Assembly 将本任务精确解析出的模型、Extension、Skill、Prompt、Module Asset 根目录和工作目录传入 Pi。Pi 的历史 Session JSONL 是已完成对话的事实来源。
 
 发布版基础安装包使用随包 Pi 与 Python 3.10，不包含 Video Skill、Video Extension、ffmpeg 或 ffprobe。ffmpeg/ffprobe 只由平台专属的可安装 Video Capability Module 提供。开发模式保留显式运行时覆盖用于测试，不构成发布版依赖。Host 的空间分析作业经 `PythonRunner` 控制工作目录、UTF-8、超时、取消与进程回收。通用数据查询和制图也可以由 Pi 的 `bash` 工具按 Skill 指引调用 Python，这条链路不经过 `PythonRunner`；不能将所有脚本执行描述为 Host 领域服务或操作系统级沙箱。发布版不依赖开发机 Conda 或系统 Python。内置 Python 要求包含 `ssl`、`sqlite3`、PyYAML、NumPy、Matplotlib、Pandas、PyProj、Shapely、ezdxf。
+
+`ProcessRunner` 与 `PythonRunner` 默认合并父环境；可信调用方可显式指定 `envMode: 'replace'`，仅向子进程提供批准的环境。交通仿真使用该模式，Python/SUMO 对按两个进程额度计入既有全局上限；复用会话 Job 与受管进程，不另设调度器。P0 探针及历史范围见 [P0 记录](<交通仿真与优化能力升级 P0 记录.md>)；计算入口现由独立 Traffic Simulation Module 携带，产品闭环验收状态见 [P1 记录](<交通仿真与优化能力升级 P1 记录.md>)。
+
+Traffic Simulation 的有限多方式模型仍由同一 Python/TraCI 入口执行；节点、泊位、车队、旅客、班表与当前队列反馈均为冻结输入，实际离站和返场以 SUMO 观测确认。Host 的 `SimulationService` 维护所属会话的场景、Run 和有界实验清单，逐个 Run 复用现有 Job；只接受两个方案、至多三个相同种子配对，不另建实验调度器。比较 JSON 与 Markdown 按内容哈希冻结，保留失败、取消、unknown 和未完成样本。Simulation Canvas 经现有 Kernel 按需读取完整块，与普通 Geo 共用地图原语，独立保存观看状态；报告打开复用 Document Canvas。实现及验收边界见 [P2 记录](<交通仿真与优化能力升级 P2 记录.md>)；合成软件验收不代表真实场景校准或跨平台分发通过。
+
+实体地铁由场景显式选择，复用同一 Run、SUMO 进程和时间块。TraCI 提供列车位置及实际停站，Python 旅客账本按已确认的离站和终点到站处理接续，Host 按 SUMO 原始停站输出复核。Canvas 的班表变更通过 Agent 和已有场景准备工具冻结为新 Variant。单列车验收范围见 [P3–P4 实施记录](<交通仿真与优化能力升级 P3–P4 实施记录.md>)。
 
 ### 2.7 React Workspace 与 Browser Kernel
 
@@ -291,7 +297,7 @@ Kernel 通过分页列表和按 Evidence ID 查询详情。列表包含来源元
 | 地图交互上下文与等待请求 | Session Snapshot、Geo Interaction Service | Pi Geo 工具、Browser Kernel、React Geo Workspace |
 | 模型定义与密钥 | 用户目录 `models.json`、`auth.json` | Agent Host、Pi；密钥不返回前端 |
 | Module 声明与完整性 | Module `manifest.json`、`integrityFile` | Registry、Installer、Session Assembly |
-| Module Native Runtime | Module `manifest.json` 中的 `nativeRuntimes` | Installer、Session Assembly、Video Service |
+| Module Native Runtime | Module `manifest.json` 中的 `nativeRuntimes` | Installer、Session Assembly、Video / Simulation Service |
 | 基础打包运行时 | `runtime-manifest.json` | Electron Supervisor、Runtime Resolver |
 
 `src/contracts/` 必须保持纯粹：不依赖 Node、Electron、React、DOM 或 MapLibre。任何跨层字段先定义契约和解析规则，再实现服务端、Kernel、UI 适配。
@@ -331,7 +337,7 @@ Module 是统一安装与版本冻结单元，manifest 的 `type` 分为 `domain
 | Skill | `SKILL.md` 工作方法，可附参考文件和脚本 | `entrypoints.skills` → Pi `--skill`；本身不是可执行工具 |
 | Extension | TypeScript/JavaScript 扩展，在 Pi 进程中注册工具或监听事件 | `entrypoints.piExtensions` → Pi `--extension` |
 | Data / Knowledge / Template | 数据库、知识原文/索引、报告模板等文件资产 | `contributes.assets` → Asset Resolver → 会话计划和 Prompt |
-| Native Runtime | 平台与架构专属可执行文件；当前实现为 ffmpeg/ffprobe 组合 | `contributes.nativeRuntimes` → 安装/装配校验 → Video Service |
+| Native Runtime | 平台与架构专属可执行文件；ffmpeg/ffprobe 组合及 SUMO/netconvert/duarouter、Python 客户端与投影数据 | `contributes.nativeRuntimes` → 安装/装配校验 → 对应批准 Host 服务 |
 | Canvas View | Module 声明使用的平台内置受信任 Adapter；不包含前端代码 | `contributes.canvasViews` → Resolved Session Plan → Canvas Host 校验与 Adapter Registry |
 | Session Profile | 用户对任务范围与模块版本的选择 | 装配输入；不是执行进程 |
 | ResolvedSessionPlan v3 | 已解析的 Domain、模块版本、入口、资产与运行时清单 | 保存到任务 `.tau/`；用于启动、恢复和完整性校验 |
@@ -381,11 +387,12 @@ Workbench 默认装配上述十个直接依赖；CLI Domain 无依赖，使用 `
 | `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖；Geo 依赖 Canvas，Spatial Analysis 依赖 Geo + Citation |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
 | `capabilities/cad` | DXF 协作工具、按需 Skill 与受控 Python 引擎 | 官方可选 Capability，依赖 Canvas，默认不选择 |
+| `optional/traffic-simulation` | 仿真工具、Skill、计算脚本和 SUMO 运行时 | 桌面构建装入目标运行时后注册为官方可选 Capability，新任务显式选择 |
 | 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
 
 配置与路径读取位于 config；Registry、Installer、AssetResolver 与 Assembler 的实例装配位于 [platform-composition.ts](../src/server/platform-composition.ts)。server-main 是组合根，向 Manager 注入已有装配器、工作区创建、启动函数、spawn 与服务 endpoint；sessions 不再在 import 时创建全局 Manager。内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
 
-当前配置注册 13 个内置模块（两个 Domain、十个 Workbench 直接依赖与一个可选 CAD Capability）。Task 的 manifest、Extension、历史协议和能力握手字段均已删除；旧 Task 模块不再随源码及新安装包提供。
+基础配置注册 13 个内置模块，包括两个 Domain、十个 Workbench 直接依赖与可选的 CAD。包含匹配运行时的桌面构建额外注册 Traffic Simulation。已有会话按原冻结来源与版本恢复。
 
 ### 5.4 从包到会话
 
