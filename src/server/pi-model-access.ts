@@ -1,6 +1,8 @@
 const path = require('node:path');
 import { assertHostWriter, readJsonObject } from './util/json-storage.js';
 import { piModelRuntime } from './pi-model-runtime.js';
+import { CHATGPT_PLAN_PROVIDER } from '../contracts/chatgpt-plan.js';
+import { chatGPTAuthorization, type ChatGPTCredential } from './chatgpt-oauth.js';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent' with { 'resolution-mode': 'import' };
 
 export type PiModelProviderAccess = {
@@ -8,6 +10,7 @@ export type PiModelProviderAccess = {
   name: string;
   connected: boolean;
   credentialStored: boolean;
+  credentialType?: 'api_key' | 'oauth';
   custom: boolean;
   baseUrl?: string;
   api?: string;
@@ -16,7 +19,7 @@ export type PiModelProviderAccess = {
   modelCount: number;
 };
 
-function summarizeProvider(runtime: ModelRuntime, agentDir: string, providerId: string, storedProviderIds: Set<string>): PiModelProviderAccess {
+function summarizeProvider(runtime: ModelRuntime, agentDir: string, providerId: string, credentialType?: PiModelProviderAccess['credentialType']): PiModelProviderAccess {
   const provider = runtime.getProvider(providerId);
   if (!provider) throw new Error(`未知模型供应商：${providerId}`);
   const status = runtime.getProviderAuthStatus(providerId);
@@ -28,7 +31,8 @@ function summarizeProvider(runtime: ModelRuntime, agentDir: string, providerId: 
     id: provider.id,
     name: provider.name || provider.id,
     connected: status.configured,
-    credentialStored: storedProviderIds.has(provider.id),
+    credentialStored: credentialType !== undefined,
+    ...(credentialType ? { credentialType } : {}),
     custom: !!configured,
     ...(configured?.baseUrl ? { baseUrl: configured.baseUrl } : {}),
     ...(configured?.api ? { api: configured.api } : {}),
@@ -46,9 +50,9 @@ function readModelsProvider(agentDir: string, providerId: string): { baseUrl?: s
 
 export async function listPiModelProviders(agentDir: string) {
   return piModelRuntime(agentDir)(async (runtime) => {
-    const storedProviderIds = new Set((await runtime.listCredentials()).map((item) => item.providerId));
+    const credentialTypes = new Map((await runtime.listCredentials()).map((item) => [item.providerId, item.type]));
     return runtime.getProviders()
-      .map((provider) => summarizeProvider(runtime, agentDir, provider.id, storedProviderIds))
+      .map((provider) => summarizeProvider(runtime, agentDir, provider.id, credentialTypes.get(provider.id)))
       .sort((left, right) => left.name.localeCompare(right.name));
   });
 }
@@ -115,8 +119,8 @@ export async function connectPiModelProvider(providerIdInput: string, apiKeyInpu
       notify() {},
     };
     await runtime.login(providerId, 'api_key', interaction);
-    const storedProviderIds = new Set((await runtime.listCredentials()).map((item) => item.providerId));
-    return summarizeProvider(runtime, agentDir, providerId, storedProviderIds);
+    const credential = (await runtime.listCredentials()).find((item) => item.providerId === providerId);
+    return summarizeProvider(runtime, agentDir, providerId, credential?.type);
   });
 }
 
@@ -131,6 +135,10 @@ export async function disconnectPiModelProvider(providerIdInput: string, agentDi
     if (!storedProviderIds.has(providerId)) {
       throw new Error(`供应商 ${provider.name} 使用环境变量或模型配置接入，无法在工作台中移除`);
     }
+    if (providerId === CHATGPT_PLAN_PROVIDER) {
+      const credential = readJsonObject(path.join(agentDir, 'auth.json'))[providerId] as ChatGPTCredential | undefined;
+      if (credential?.refresh) await chatGPTAuthorization(agentDir).revoke(credential).catch(() => {});
+    }
     await runtime.logout(providerId);
   });
 }
@@ -140,7 +148,8 @@ export async function ensurePiModelProviderConfigured(providerIdInput: string, a
   return piModelRuntime(agentDir)(async (runtime) => {
     const provider = runtime.getProvider(providerId);
     if (!provider) throw new Error(`未知模型供应商：${providerId}`);
-    if (!runtime.getProviderAuthStatus(providerId).configured) throw new Error(`供应商 ${provider.name} 尚未接入，请先填写 API Key`);
+    if (!runtime.getProviderAuthStatus(providerId).configured) throw new Error(providerId === CHATGPT_PLAN_PROVIDER
+      ? 'ChatGPT 订阅尚未接入，请先登录 ChatGPT。' : `供应商 ${provider.name} 尚未接入，请先填写 API Key`);
   });
 }
 

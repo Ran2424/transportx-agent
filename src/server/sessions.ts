@@ -10,7 +10,7 @@ const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
 import type { JsonRecord, LiveClient, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
-import { normalizeModel, parseModelSpecToModel } from './model-utils.js';
+import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import type { SessionService } from './session-service.js';
 import { readSessionFileEntries, SessionProjection } from './session-projection.js';
 import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
@@ -46,7 +46,7 @@ export type PersistentSessionLifecycle = {
   lease: WorkspaceRuntimeLease;
   isCurrent(session: PiRpcSession): boolean;
   isReady(session: PiRpcSession): boolean;
-  sync(session: PiRpcSession): void;
+  sync(session: PiRpcSession): Promise<unknown>;
   closed(session: PiRpcSession): Promise<void>;
 };
 
@@ -73,7 +73,7 @@ type PiRpcMessage = PiRpcPayload & {
   data?: PiRpcPayload;
   result?: PiRpcPayload;
   message?: PiMessage;
-  assistantMessageEvent?: { type?: string; delta?: string };
+  assistantMessageEvent?: { type?: string; delta?: string; contentIndex?: number; partial?: PiMessage; toolCall?: { type: string; id?: unknown; name?: unknown } };
 };
 
 function isoTimestamp(value: unknown) {
@@ -211,7 +211,9 @@ export class PiRpcSession {
   snapshot() {
     const snapshot = sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
     const geoInteraction = geoInteractionService.snapshot(this);
-    return { ...snapshot, ...this.manager.clock(), streamingMessage: this.streamingMessage, retry: this.retry, outcome: this.runOutcome, activeToolEvents: [...this.activeTools.values()], pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
+    return { ...snapshot, ...this.manager.clock(), streamingMessage: this.streamingMessage,
+      workingElapsedMs: this.eventTiming.workingElapsedMs ?? null, workingDurationMs: this.eventTiming.workingDurationMs,
+      retry: this.retry, outcome: this.runOutcome, activeToolEvents: [...this.activeTools.values()], pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
   }
 
   get entries() {
@@ -351,12 +353,14 @@ export class PiRpcSession {
   }
 
   handleResponse(resp: PiRpcMessage) {
-    this.transport.resolve(resp);
-    this.updateStateFromResponse(resp);
+    const synced = this.updateStateFromResponse(resp);
+    if (synced) void synced.then(() => this.transport.resolve(resp), (error) => this.transport.resolve({ ...resp, success: false, error: String(error) }));
+    else this.transport.resolve(resp);
     this.manager.broadcast({ type: 'event', sessionId: this.id, event: resp });
   }
 
   updateStateFromResponse(resp: PiRpcMessage) {
+    if (resp.success === false) return;
     const data: PiRpcPayload = resp.data || resp.result || resp;
     const command = resp.command || data.command;
     if (data.sessionFile) {
@@ -377,12 +381,18 @@ export class PiRpcSession {
     if (typeof data.autoCompactionEnabled === 'boolean') this.autoCompactionEnabled = data.autoCompactionEnabled;
     if (data.level) this.thinkingLevel = data.level;
     if (data.tokens) this.contextUsage = withUsageTotals(this.contextUsage, data.tokens);
-    if (command === 'set_model' || command === 'cycle_model') {
-      if (data.model) this.model = normalizeModel(data.model);
-      else if (data.provider && data.id) this.model = normalizeModel(data);
+    const switching = command === 'set_model' || command === 'cycle_model';
+    if (switching) {
+      const confirmed = normalizeModel(data.model ?? (data.provider && data.id ? data : null));
+      if (confirmed?.provider && confirmed.id) {
+        this.model = confirmed;
+        this.modelSpec = modelLabel(confirmed);
+        if (this.contextUsage) this.contextUsage = { ...this.contextUsage, contextWindow: confirmed.contextWindow, percent: undefined };
+      }
     }
+    const synced = this.lifecycle?.sync(this);
+    if (switching && synced) return synced.finally(() => this.touch(true));
     this.touch(true);
-    this.lifecycle?.sync(this);
   }
 
   handleEvent(event: PiRpcMessage) {
@@ -421,8 +431,15 @@ export class PiRpcSession {
     if (type === 'auto_retry_end' || type === 'agent_settled') this.retry = null;
     if (type === 'message_start' && event.message?.role === 'assistant') this.streamingMessage = event.message;
     if (type === 'message_update') {
-      const partial = event.message || (event.assistantMessageEvent as { partial?: PiMessage } | undefined)?.partial;
+      const update = event.assistantMessageEvent;
+      const partial = event.message || update?.partial;
       if (partial?.role === 'assistant') this.streamingMessage = partial;
+      if (update?.type?.startsWith('toolcall_')) {
+        const block = update.toolCall ?? (Array.isArray(partial?.content) ? partial.content[update.contentIndex ?? -1] : undefined);
+        if (block?.type === 'toolCall' && typeof block.id === 'string' && !this.activeTools.has(block.id)) {
+          this.activeTools.set(block.id, { type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', toolCall: { type: 'toolCall', id: block.id, name: block.name } } });
+        }
+      }
     }
     if (type === 'message_end' && event.message?.role === 'assistant') this.streamingMessage = null;
     rememberPublishedGeoResource(this, event);

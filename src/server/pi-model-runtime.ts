@@ -17,7 +17,9 @@ export function createPiModelRuntime(agentDir: string, options: Pick<CreateModel
       if (!runtime) {
         const { ModelRuntime } = await import('@earendil-works/pi-coding-agent');
         runtime = await ModelRuntime.create({ ...options, authPath: path.join(agentDir, 'auth.json'), modelsPath: path.join(agentDir, 'models.json'), allowModelNetwork: false });
-        projectAdapter.configureModels(runtime);
+        await projectAdapter.configureModels(runtime, agentDir);
+        // Pi starts provider refresh in the background on registration.
+        await runtime.refresh({ allowNetwork: false });
       } else if (signature !== next) await runtime.reloadConfig();
       const error = runtime.getError();
       if (error) throw new Error(error);

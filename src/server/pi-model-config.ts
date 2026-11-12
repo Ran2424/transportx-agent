@@ -5,6 +5,7 @@ const { createHash } = require('node:crypto');
 import { readJsonObject, writeJsonAtomic, mutateJson } from './util/json-storage.js';
 import type { JsonRecord } from './types.js';
 import type { AddLocalModelInput } from '../contracts/local-model.js';
+import { CHATGPT_PLAN_PROVIDER } from '../contracts/chatgpt-plan.js';
 import { localModelConnection } from './local-model-service.js';
 import { connectPiModelProvider, ensurePiModelProviderConfigured, removePiModelProviderCredential } from './pi-model-access.js';
 
@@ -46,6 +47,7 @@ function validated(input: AddPiModelPayload): AddPiModelInput {
   const apiKey = String(input.apiKey || '').trim();
   const name = String(input.name || '').trim();
   if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(provider)) throw new Error('Provider ID 只能包含小写字母、数字、点、下划线和连字符');
+  if (provider === CHATGPT_PLAN_PROVIDER) throw new Error('ChatGPT 订阅模型由账户授权提供。');
   if (!modelId || modelId.length > 200 || /[\x00-\x1f]/.test(modelId)) throw new Error('Model ID 无效');
   if (!PI_MODEL_APIS.includes(api)) throw new Error('不支持的 Pi API 类型');
   let endpoint: URL;

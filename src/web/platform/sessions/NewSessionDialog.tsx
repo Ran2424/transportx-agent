@@ -49,10 +49,13 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
   const [advanced, setAdvanced] = useState(mode !== 'create' || expandAdvanced);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [conflictingWorkspaceId, setConflictingWorkspaceId] = useState<string>();
   const [loadFailed, setLoadFailed] = useState(false);
   const [revisionConflict, setRevisionConflict] = useState(false);
   const [reload, setReload] = useState(0);
   const configurationOwner = useRef('');
+  const restoring = mode === 'create' && !!directory && workspace?.hiddenFromSidebar;
+  const conflictingWorkspace = workspaces.find((item) => item.id === conflictingWorkspaceId && item.availability === 'ready' && item.kind !== 'standalone');
 
   useEffect(() => {
     if (!open) return;
@@ -87,8 +90,9 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
 
   function selectFolder(value: string) {
     setDirectory(value);
+    setError(''); setConflictingWorkspaceId(undefined);
     const canonical = value.replaceAll('\\', '/').replace(/\/$/, '');
-    const registered = workspaces.find((item) => item.availability === 'ready' && item.kind !== 'standalone' && item.path === canonical);
+    const registered = workspaces.find((item) => item.availability === 'ready' && item.kind !== 'standalone' && item.path.replace(/\/$/, '') === canonical);
     if (registered) { onWorkspaceChange(registered); return; }
     if (workspace) onWorkspaceChange(null);
     if (!workspaceName.trim() || workspaceName === directory.replaceAll('\\', '/').replace(/\/$/, '').split('/').at(-1)) setWorkspaceName(canonical.split('/').at(-1) || '');
@@ -107,7 +111,13 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
     event?.preventDefault();
     setSubmitting(true);
     setError('');
+    setConflictingWorkspaceId(undefined);
     try {
+      if (restoring && workspace) {
+        await kernel.commands.session.setWorkspaceSidebarVisibility(workspace.id, false);
+        onOpenChange(false);
+        return;
+      }
       const selected = Object.entries(selectedModules).map(([id, version]) => ({ id, version }));
       const baseTask: SessionProfileV1['task'] = mode === 'confirmation' && workspace?.defaults?.profile?.task
         ? workspace.defaults.profile.task
@@ -140,9 +150,15 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
       onOpenChange(false);
       onCreated(session.id);
     } catch (cause) {
-      setError((cause as { message?: string })?.message || t('sessions.createFailed'));
+      const problem = cause as { code?: string; message?: string; diagnostics?: Record<string, unknown> };
+      const { conflictingPath, conflictingWorkspaceId: id, relationship } = problem.diagnostics || {};
+      if (typeof conflictingPath === 'string' && typeof id === 'string') {
+        setError(t(relationship === 'parent' ? 'workspaceFlow.overlapParent' : relationship === 'child' ? 'workspaceFlow.overlapChild' : 'workspaceFlow.overlapSame', { path: conflictingPath }));
+        setConflictingWorkspaceId(id);
+        await kernel.commands.session.list().catch(() => {});
+      } else setError(problem.message || t('sessions.createFailed'));
       setAdvanced(true);
-      setRevisionConflict((cause as { code?: string }).code === 'workspace_revision_conflict');
+      setRevisionConflict(problem.code === 'workspace_revision_conflict');
     } finally {
       setSubmitting(false);
     }
@@ -208,13 +224,13 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
       open={open}
       onOpenChange={onOpenChange}
       onEscapeKeyDown={event => { if (event.target instanceof Element && (event.target.closest('[role=listbox]') || event.target.closest('[aria-haspopup=listbox][aria-expanded=true]'))) event.preventDefault(); }}
-      title={mode === 'confirmation' ? t('workspaceFlow.confirmation') : workspace ? t('workspaceFlow.newConversation') : t('workspaceFlow.openWorkspace')}
+      title={restoring ? t('workspaceFlow.readdWorkspace') : mode === 'confirmation' ? t('workspaceFlow.confirmation') : workspace ? t('workspaceFlow.newConversation') : t('workspaceFlow.openWorkspace')}
       className="new-session-dialog"
       footer={null}
     >
       <form className="form-stack" onSubmit={submit}>
         {mode === 'create' ? <WorkspaceLocation workspace={workspace} workspaces={workspaces} locationMode={locationMode} directory={directory} parentDirectory={parentDirectory} name={workspaceName} nativePicker={!!desktop?.selectWorkspaceDirectory} busy={choosingDirectory || submitting} onWorkspaceChange={onWorkspaceChange} onLocationModeChange={setLocationMode} onDirectoryChange={selectFolder} onParentChange={setParentDirectory} onNameChange={setWorkspaceName} onChooseDirectory={() => void chooseDirectory()} /> : <p className="confirmation-dialog-copy">{workspace?.name}<br />{t('workspaceFlow.missingPlan')}</p>}
-        <div className="workspace-model-row"><MenuSelect compact portal label={t('sessions.model')} value={model} options={modelOptions} placeholder={loadingModels ? t('sessions.loadingModels') : t('sessions.noModels')} disabled={loadingModels || submitting} onChange={value => value === '__add_model__' ? onAddModel() : setModel(value)} /><small>{t('workspaceFlow.sessionModel')}</small></div>
+        {!restoring && <><div className="workspace-model-row"><MenuSelect compact portal label={t('sessions.model')} value={model} options={modelOptions} placeholder={loadingModels ? t('sessions.loadingModels') : t('sessions.noModels')} disabled={loadingModels || submitting} onChange={value => value === '__add_model__' ? onAddModel() : setModel(value)} /><small>{t('workspaceFlow.sessionModel')}</small></div>
         {!loadingModels && modelUnavailable && <div className="inline-error" role="alert">{t('workspaceFlow.modelUnavailable')}</div>}
         {moduleBlockers.length ? <div className="inline-error" role="alert">{moduleBlockers.join('；')}</div> : null}
         {unavailableModules.length ? <div className="inline-error" role="alert">{t('workspaceFlow.unavailableModules', { modules: unavailableModules.map(([id, version]) => `${id}@${version}`).join(', ') })}{unavailableModules.map(([id]) => <Button type="button" variant="quiet" key={id} onClick={() => setSelectedModules(current => { const next = { ...current }; delete next[id]; return next; })}>{t('workspaceFlow.removeSelection', { name: id })}</Button>)}</div> : null}
@@ -238,11 +254,11 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
           </div>
         </details>
           </div>
-        </details>
-        {error ? <div className="inline-error" role="alert">{error}{revisionConflict && workspace && <Button type="button" variant="quiet" onClick={async () => { try { await kernel.commands.session.list(); const current = kernel.stores.session.get().workspaces.find(item => item.id === workspace.id); if (current) { onWorkspaceChange(current); setRevisionConflict(false); setError(''); } } catch (cause) { setError((cause as Error).message); } }}>{t('workspaceFlow.reloadConfiguration')}</Button>}{loadFailed && <Button type="button" variant="quiet" onClick={() => setReload(value => value + 1)}>{t('common.retry')}</Button>}</div> : null}
+        </details></>}
+        {error ? <div className="inline-error" role="alert">{error}{conflictingWorkspace && <Button type="button" variant="quiet" onClick={() => { setDirectory(conflictingWorkspace.path); setLocationMode('folder'); setError(''); setConflictingWorkspaceId(undefined); onWorkspaceChange(conflictingWorkspace); }}>{t(conflictingWorkspace.hiddenFromSidebar ? 'workspaceFlow.readdWorkspace' : 'workspaceFlow.useRegisteredWorkspace')}</Button>}{revisionConflict && workspace && <Button type="button" variant="quiet" onClick={async () => { try { await kernel.commands.session.list(); const current = kernel.stores.session.get().workspaces.find(item => item.id === workspace.id); if (current) { onWorkspaceChange(current); setRevisionConflict(false); setError(''); } } catch (cause) { setError((cause as Error).message); } }}>{t('workspaceFlow.reloadConfiguration')}</Button>}{loadFailed && <Button type="button" variant="quiet" onClick={() => setReload(value => value + 1)}>{t('common.retry')}</Button>}</div> : null}
         <div className="form-actions">
           <DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose>
-          <Button type="submit" disabled={submitting || choosingDirectory || loadingModels || loadFailed || revisionConflict || !model || blocked || mode === 'create' && !workspace && (!workspaceName.trim() || locationMode === 'folder' && !directory.trim())}>{submitting ? t('common.saving') : mode === 'confirmation' ? t('workspaceFlow.confirmActivate') : workspace ? t('workspaceFlow.create') : t('workspaceFlow.enterWorkspace')}</Button>
+          <Button type="submit" disabled={submitting || choosingDirectory || !restoring && (loadingModels || loadFailed || revisionConflict || !model || blocked || mode === 'create' && !workspace && (!workspaceName.trim() || locationMode === 'folder' && !directory.trim()))}>{submitting ? t('common.saving') : restoring ? t('workspaceFlow.restoreWorkspace') : mode === 'confirmation' ? t('workspaceFlow.confirmActivate') : workspace ? t('workspaceFlow.create') : t('workspaceFlow.enterWorkspace')}</Button>
         </div>
       </form>
     </Dialog>

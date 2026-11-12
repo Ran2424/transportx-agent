@@ -1,6 +1,7 @@
 import { addLocalPiModel, addPiModel, deletePiModel, deletePiModelProvider, updatePiModel } from '../pi-model-config.js';
 import { connectPiModelProvider, disconnectPiModelProvider, listPiModelProviders, refreshPiModels } from '../pi-model-access.js';
 import { discoverLocalModels } from '../local-model-service.js';
+import { chatGPTSignIn } from '../chatgpt-sign-in.js';
 import type { AddLocalModelInput } from '../../contracts/local-model.js';
 import type { RpcHandlerRegistry } from '../rpc-handlers.js';
 import type { RpcCommand } from '../types.js';
@@ -35,6 +36,12 @@ export function createModelRpcHandlers(deps: ModelRpcDependencies): RpcHandlerRe
     get_model_providers: {
       handle: async (_command, reply) => {
         try { return reply.success({ providers: await listPiModelProviders(deps.agentDir) }); }
+        catch (error) { return reply.failure(deps.errorMessage(error)); }
+      },
+    },
+    chatgpt_sign_in: {
+      handle: async (command, reply) => {
+        try { return reply.success({ signIn: await chatGPTSignIn(deps.agentDir, command.action, command.attemptId, command.newAccount === true) }); }
         catch (error) { return reply.failure(deps.errorMessage(error)); }
       },
     },

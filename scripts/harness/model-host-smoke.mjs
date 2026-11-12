@@ -1,4 +1,4 @@
-import { nativeSnapshot } from './workspace-client.mjs';
+import { closeHostConversation, nativeSnapshot } from './workspace-client.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,6 +33,10 @@ export async function modelHostSmoke({ rpc, json, root, session, providerInputs 
     assert.equal(rejected.success, false, 'native config errors must not be hidden by Pi prompt ACK');
     assert.match(rejected.error, /contextWindow|Invalid|invalid|model/i);
   } finally { fs.writeFileSync(modelsPath, validConfig); }
-  assert.equal((await rpc({ type: 'set_model', sessionId: session.id, provider: 'probe', modelId: 'smoke' })).success, true);
-  return { currentSessionSynchronized: true, inferenceCalls: 0, conversationUnchanged: true, activeToolsPreserved: true, nativeErrorsReported: true };
+  await closeHostConversation(json, session.conversationId);
+  assert.equal((await json(`/api/conversations/${session.conversationId}/snapshot`)).conversation.modelSpec, 'probe/refreshed-model');
+  const reopened = (await json(`/api/conversations/${session.conversationId}/activate`, {})).runtime;
+  assert.equal(reopened.model.id, 'refreshed-model', 'reopening launches the last confirmed model');
+  assert.equal((await rpc({ type: 'set_model', sessionId: reopened.id, provider: 'probe', modelId: 'smoke' })).success, true);
+  return { currentSessionSynchronized: true, modelRestored: true, inferenceCalls: 0, conversationUnchanged: true, activeToolsPreserved: true, nativeErrorsReported: true };
 }

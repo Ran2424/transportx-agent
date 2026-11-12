@@ -14,6 +14,8 @@ import { projectUi } from './project-ui';
 import { ConfirmationDialog } from '../components/ui/confirmation-dialog';
 import { CommandPalette, type CommandItem } from '../platform/commands/CommandPalette';
 import { ConversationStage } from '../platform/conversation/ConversationStage';
+import { composerDraftStore } from '../platform/conversation/composer-draft-store';
+import { messageText } from '../../public/kernel/stores/conversation-store.js';
 import { toolExpansionStore } from '../platform/conversation/tool-expansion-store';
 import { projectTools } from '../platform/conversation/tool-projection';
 import { ExtensionDialogLayer } from '../platform/extension-ui/ExtensionDialogLayer';
@@ -92,9 +94,11 @@ export function App({ account }: { account?: ReactNode } = {}) {
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<{ workspace: WorkspaceView; record?: ConversationRecordV1; isolated?: boolean; input: DeletionRequest } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ workspace: WorkspaceView; record?: ConversationRecordV1; isolated?: boolean; deleteFiles?: boolean; input: DeletionRequest } | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [creationWorkspace, setCreationWorkspace] = useState<WorkspaceView | null>(null);
+  const [continuationDraft, setContinuationDraft] = useState('');
+  const [moduleFailure, setModuleFailure] = useState<{ id: string; message: string } | null>(null);
   const [creationMode, setCreationMode] = useState<'create' | 'confirmation'>('create');
   const [confirmationId, setConfirmationId] = useState<string>();
   const activationConfirmation = useRef<{ id: string; resolve(): void; reject(error: Error): void } | null>(null);
@@ -108,6 +112,8 @@ export function App({ account }: { account?: ReactNode } = {}) {
 
   const activeSession = sessionState.sessions.find((session) => session.id === sessionState.activeSessionId) || null;
   const deleteTargetName = deleteTarget?.record?.name || deleteTarget?.workspace.name || '';
+  const workspaceRemoval = !!deleteTarget && !deleteTarget.record && deleteTarget.workspace.availability === 'ready';
+  const hideWorkspaceOnly = workspaceRemoval && !deleteTarget?.deleteFiles;
   const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
   const activeCompacting = !!(activeSession && sessionState.compactingBySession[activeSession.id]);
   const canvas = activeSession ? canvases[activeSession.id] ?? EMPTY_CANVAS : EMPTY_CANVAS;
@@ -321,16 +327,33 @@ export function App({ account }: { account?: ReactNode } = {}) {
     setCreationSequence(value => value + 1);
     setCreationExpandAdvanced(!!workspace);
     setCreationWorkspace(workspace);
+    setContinuationDraft('');
     setCreationMode('create');
     setConfirmationId(undefined);
     setNewSessionOpen(true);
+  }
+  function openContinuation() {
+    if (!activeSession) return;
+    const workspace = sessionState.workspaces.find((item) => item.id === activeSession.workspaceId && item.availability === 'ready');
+    if (!workspace) return;
+    const recent = (kernel.stores.conversation.get().bySession[activeSession.id]?.snapshotEntries || []).flatMap(({ message }) => {
+      if (!message || message.role !== 'user' && message.role !== 'assistant') return [];
+      const text = messageText(message).trim();
+      return text ? [`${t(message.role === 'user' ? 'workspaceFlow.continuationUser' : 'workspaceFlow.continuationAssistant')}\n${text.slice(0, 1500)}${text.length > 1500 ? '…' : ''}`] : [];
+    }).slice(-8);
+    openNewSession(workspace);
+    const pending = composerDraftStore.getMessage(activeSession.id).trim();
+    setContinuationDraft([
+      ...(recent.length ? [t('workspaceFlow.continuationContext', { name: activeSession.sessionName }), ...recent] : []),
+      ...(pending ? [t('workspaceFlow.continuationRequest'), pending] : []),
+    ].join('\n\n'));
   }
   function openDiagnostics(workspace?: WorkspaceView) { setDiagnosticsWorkspace(workspace || null); setDiagnosticsOpen(true); }
   async function ensureConversationRuntime(id: string) {
     const current = kernel.stores.session.get();
     const target = current.sessions.find(item => item.id === id);
     if (current.activeSessionId !== id || !target) throw new Error(t('conversation.selectionChanged'));
-    if (target.liveSessionId) return;
+    if (target.liveSessionId) { setModuleFailure(null); return; }
     const workspace = current.workspaces.find(item => item.id === target.workspaceId);
     if (target.record?.plan === null && workspace) {
       await new Promise<void>((resolve, reject) => {
@@ -343,11 +366,14 @@ export function App({ account }: { account?: ReactNode } = {}) {
     }
     try { await kernel.commands.session.activate(id); }
     catch (cause) {
-      if ((cause as { code?: string }).code !== 'workspace_busy') throw cause;
+      const { code, message } = cause as { code?: string; message?: string };
+      if (code?.startsWith('module_') || code?.startsWith('asset_')) setModuleFailure({ id, message: message || '' });
+      if (code !== 'workspace_busy') throw cause;
       if (kernel.stores.session.get().activeSessionId !== id) throw new Error(t('conversation.selectionChanged'));
       if (!window.confirm(t('workspaceFlow.stopSwitch'))) throw new Error(t('conversation.activationCancelled'));
       await kernel.commands.session.activate(id, { stopCurrent: true });
     }
+    setModuleFailure(null);
     if (kernel.stores.session.get().activeSessionId !== id) throw new Error(t('conversation.selectionChanged'));
   }
   function changeCreationOpen(open: boolean) {
@@ -389,7 +415,8 @@ export function App({ account }: { account?: ReactNode } = {}) {
     if (!deleteTarget) return;
     const { workspace, record, input } = deleteTarget;
     try {
-      if (record) { await kernel.commands.session.deleteConversation(record.id, input); kernel.dispatch({ type: 'session/closed', sessionId: record.id }); }
+      if (hideWorkspaceOnly) await kernel.commands.session.setWorkspaceSidebarVisibility(workspace.id, true);
+      else if (record) { await kernel.commands.session.deleteConversation(record.id, input); kernel.dispatch({ type: 'session/closed', sessionId: record.id }); }
       else if (deleteTarget.isolated) { await kernel.commands.session.deleteIsolatedWorkspace(workspace.id, input); for (const view of kernel.stores.session.get().sessions.filter((item) => item.workspaceId === workspace.id)) kernel.dispatch({ type: 'session/closed', sessionId: view.id }); }
       else { await kernel.commands.session.deleteWorkspace(workspace.id, input); for (const view of kernel.stores.session.get().sessions.filter((item) => item.workspaceId === workspace.id)) kernel.dispatch({ type: 'session/closed', sessionId: view.id }); }
       setDeleteTarget(null); setSessionHistoryRevision((value) => value + 1);
@@ -461,7 +488,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
       header={<Header account={account} connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar onManageModules={() => { setSettingsSection('modules'); setSettingsOpen(true); }} open={sidebarOpen} dataReady={runtime.health?.dataState === 'ready'} sessions={sessionState.sessions} workspaces={sessionState.workspaces} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={(workspace) => openNewSession(workspace)} onSelect={(id) => void selectSession(id)} onDelete={requestDeletion} onDiagnostics={openDiagnostics} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} />}
-      conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => openNewSession()} onActivate={ensureConversationRuntime} showThinking={showThinking} expandThinking={expandThinking} />}
+      conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => openNewSession()} onActivate={ensureConversationRuntime} showThinking={showThinking} expandThinking={expandThinking} moduleFailure={moduleFailure && moduleFailure.id === activeSession?.id ? moduleFailure.message : undefined} onContinue={openContinuation} />}
       workspace={<WorkspaceDock open={filesOpen} session={activeSession} onClose={closeFiles} />}
       canvas={<AgentCanvas onOpenDocument={openDocument} kernel={kernel} key={activeSession?.id} session={activeSession} views={canvasContent.views} state={canvas} documentPositions={activeSession ? documentPositions.current[activeSession.id] ??= new Map() : new Map()} onActivate={(id) => updateCanvas((state) => activateCanvas(state, id))} onCloseTab={(id) => updateCanvas((state) => closeCanvasTab(state, id))} onClose={closeCanvas} onShareContext={async (input) => { if (!activeSession) return; const view = canvasContent.views.find((view) => view.id === input.viewId && view.canvas?.revision === input.revision); canvasContextStore.add(activeSession.id, await kernel.commands.canvas.createContext(activeSession.id, input), view?.title); }} />}
       canvasOpen={canvas.open}
@@ -469,15 +496,16 @@ export function App({ account }: { account?: ReactNode } = {}) {
       settingsOpen={settingsOpen}
       overlays={<>
         <projectUi.UpdateNotice onOpen={() => { setSettingsSection('general'); setSettingsOpen(true); }} />
-        <NewSessionDialog key={creationSequence} expandAdvanced={creationExpandAdvanced} open={newSessionOpen} onOpenChange={changeCreationOpen} workspace={creationWorkspace} workspaces={sessionState.workspaces} onWorkspaceChange={setCreationWorkspace} mode={creationMode} confirmationId={confirmationId} onCreated={(id) => { if (activationConfirmation.current?.id === id) { activationConfirmation.current.resolve(); activationConfirmation.current = null; return; } void selectSession(id); }} onAddModel={() => openModelSetup('new')} />
+        <NewSessionDialog key={creationSequence} expandAdvanced={creationExpandAdvanced} open={newSessionOpen} onOpenChange={changeCreationOpen} workspace={creationWorkspace} workspaces={sessionState.workspaces} onWorkspaceChange={setCreationWorkspace} mode={creationMode} confirmationId={confirmationId} onCreated={(id) => { if (activationConfirmation.current?.id === id) { activationConfirmation.current.resolve(); activationConfirmation.current = null; return; } if (continuationDraft) composerDraftStore.setMessage(id, continuationDraft); void selectSession(id); }} onAddModel={() => openModelSetup('new')} />
         <MigrationDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} workspace={diagnosticsWorkspace} />
         <ModelPickerDialog onEnsureRuntime={ensureConversationRuntime} open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
         <ExtensionDialogLayer pending={extensionUi.current} />
-        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolated') : deleteTarget?.record ? t('workspaceFlow.deleteConversation') : t('workspaceFlow.deleteWorkspace')} description={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolatedCopy', { name: deleteTargetName }) : deleteTarget?.record ? t('workspaceFlow.deleteConversationCopy', { name: deleteTargetName }) : t('workspaceFlow.deleteWorkspaceCopy', { name: deleteTargetName })} confirmLabel={t('workspaceFlow.confirmDelete')} onConfirm={() => void confirmDeleteSession()}>
+        <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolated') : deleteTarget?.record ? t('workspaceFlow.deleteConversation') : t(workspaceRemoval ? 'workspaceFlow.removeWorkspace' : 'workspaceFlow.deleteWorkspace')} description={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolatedCopy', { name: deleteTargetName }) : deleteTarget?.record ? t('workspaceFlow.deleteConversationCopy', { name: deleteTargetName }) : t(hideWorkspaceOnly ? 'workspaceFlow.removeWorkspaceCopy' : 'workspaceFlow.deleteWorkspaceCopy', { name: deleteTargetName })} confirmLabel={t(hideWorkspaceOnly ? 'workspaceFlow.removeFromSidebar' : 'workspaceFlow.confirmDelete')} destructive={!hideWorkspaceOnly} onConfirm={() => void confirmDeleteSession()}>
           <p className="confirmation-dialog-copy">{deleteTarget?.workspace.path}</p>
-          <label className="confirmation-dialog-workspace"><input type="checkbox" checked={deleteTarget?.input.stopCurrent === true} onChange={(event) => setDeleteTarget((current) => current ? { ...current, input: { ...current.input, stopCurrent: event.target.checked } } : null)} />{t('workspaceFlow.stopBeforeDelete')}</label>
+          {workspaceRemoval && deleteTarget?.workspace.directoryOwnership !== 'external' && <label className="confirmation-dialog-workspace"><input type="checkbox" checked={deleteTarget?.deleteFiles === true} onChange={(event) => setDeleteTarget((current) => current ? { ...current, deleteFiles: event.target.checked, input: { ...current.input, stopCurrent: false } } : null)} />{t('workspaceFlow.deleteWorkspaceFiles')}</label>}
+          {!hideWorkspaceOnly && <label className="confirmation-dialog-workspace"><input type="checkbox" checked={deleteTarget?.input.stopCurrent === true} onChange={(event) => setDeleteTarget((current) => current ? { ...current, input: { ...current.input, stopCurrent: event.target.checked } } : null)} />{t('workspaceFlow.stopBeforeDelete')}</label>}
           {deleteError && <p className="form-error">{deleteError}</p>}
         </ConfirmationDialog>
         {runtime.health?.dataState && runtime.health.dataState !== 'ready' && <div className="conversation-offline-bar" role="status"><span>{runtime.health.dataState === 'initializing' ? t('workspaceFlow.inventoryInitializing') : t('workspaceFlow.inventoryBlocked')}</span><button type="button" onClick={() => openDiagnostics()}>{t('workspaceFlow.openMigration')}</button></div>}

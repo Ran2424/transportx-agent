@@ -226,8 +226,13 @@ export function createEventNormalizer(options: { getActiveSessionId?: () => stri
         }
         return [{ type: 'session/runtimesReceived', runtimes: (raw.liveSessions ?? []) as LiveSession[] }];
       }
-      case 'event':
-        return normalizeRpcEvent(raw.sessionId, (raw.event ?? {}) as AppEvent);
+      case 'event': {
+        const event = (raw.event ?? {}) as AppEvent;
+        const actions = normalizeRpcEvent(raw.sessionId, event);
+        const sessionId = resolveSessionId(raw.sessionId);
+        if (sessionId && event.workingStartedAt !== undefined && event.type !== 'agent_settled') actions.push({ type: 'conversation/workingChanged', sessionId, startedAt: event.workingStartedAt, durationMs: event.workingDurationMs });
+        return actions;
+      }
       case 'live_session_created':
         return [{ type: 'session/runtimeReceived', runtime: raw.session as LiveSession }];
       case 'live_session_updated':

@@ -5,6 +5,7 @@ import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
 import { MenuSelect } from '../../components/ui/menu-select';
+import { ChatGPTPlanSetup } from './ChatGPTPlanSetup';
 
 type SetupMode = 'provider' | 'local' | 'custom';
 const localServices = { ollama: 'http://127.0.0.1:11434/v1', lmstudio: 'http://127.0.0.1:1234/v1', other: '' };
@@ -16,6 +17,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
 }) {
   const { t } = useTranslation();
   const kernel = appKernel;
+  const [connectionType, setConnectionType] = useState<'api' | 'subscription'>('api');
   const [mode, setMode] = useState<SetupMode>('provider');
   const [providers, setProviders] = useState<ModelProviderAccess[]>([]);
   const [provider, setProvider] = useState('');
@@ -42,6 +44,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
     setLocalConnection(null);
     if (!open) return;
     let current = true;
+    setConnectionType('api');
     setMode('provider');
     setApiKey('');
     setError('');
@@ -158,8 +161,13 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={t('model.setup.title')} className={`model-setup-dialog${mode === 'local' ? ' is-local' : ''}`}>
-      <div className="model-setup-mode" role="tablist" aria-label={t('model.setup.mode')}>
+    <Dialog open={open} onOpenChange={onOpenChange} title={t('model.setup.title')} className={`model-setup-dialog${connectionType === 'api' && mode === 'local' ? ' is-local' : ''}`}>
+      {['127.0.0.1', 'localhost', '[::1]'].includes(window.location.hostname) && <div className="model-setup-mode model-setup-connection" role="tablist" aria-label={t('model.setup.mode')}>
+        <button type="button" role="tab" disabled={saving} aria-selected={connectionType === 'api'} className={connectionType === 'api' ? 'is-active' : ''} onClick={() => setConnectionType('api')}>{t('model.setup.apiConnection')}</button>
+        <button type="button" role="tab" disabled={saving} aria-selected={connectionType === 'subscription'} className={connectionType === 'subscription' ? 'is-active' : ''} onClick={() => { setApiKey(''); setConnectionType('subscription'); }}>{t('model.setup.subscriptionConnection')}</button>
+      </div>}
+      {connectionType === 'subscription' ? <ChatGPTPlanSetup onConnected={() => onConfigured(t('model.chatgpt.plan'))} /> : <>
+      <div className="model-setup-mode" role="tablist" aria-label={t('model.setup.apiSource')}>
         <button type="button" role="tab" disabled={saving} aria-selected={mode === 'provider'} className={mode === 'provider' ? 'is-active' : ''} onClick={() => changeMode('provider')}>{t('model.setup.builtin')}</button>
         <button type="button" role="tab" disabled={saving} aria-selected={mode === 'local'} className={mode === 'local' ? 'is-active' : ''} onClick={() => changeMode('local')}>{t('model.setup.local')}</button>
         <button type="button" role="tab" disabled={saving} aria-selected={mode === 'custom'} className={mode === 'custom' ? 'is-active' : ''} onClick={() => changeMode('custom')}>{t('model.setup.custom')}</button>
@@ -220,7 +228,7 @@ export function ModelSetupDialog({ open, onOpenChange, onConfigured }: {
           <DialogClose asChild><Button type="button" variant="quiet">{t('common.cancel')}</Button></DialogClose>
           <Button type="submit" disabled={disabled}>{saving ? t('common.saving') : t(mode === 'provider' ? (selectedProvider?.connected ? 'model.setup.updateKey' : 'model.setup.connect') : 'model.setup.save')}</Button>
         </div>
-      </form>
+      </form></>}
     </Dialog>
   );
 }

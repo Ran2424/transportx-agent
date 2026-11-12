@@ -18,6 +18,34 @@ export async function localModelSmoke(page, baseUrl) {
     await page.getByRole('button', { name: 'Agent', exact: true }).click();
     await page.getByRole('button', { name: '添加模型', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '模型接入', exact: true });
+    const method = dialog.getByRole('tablist', { name: '接入方式', exact: true });
+    const apiConnection = method.getByRole('tab', { name: 'API 连接', exact: true });
+    const subscription = method.getByRole('tab', { name: '账户订阅', exact: true });
+    assert.equal(await apiConnection.getAttribute('aria-selected'), 'true');
+    await subscription.click();
+    await dialog.getByText('ChatGPT', { exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('tab', { name: '本地模型', exact: true }).count(), 0);
+    const signInRequests = [];
+    const authRoute = async (route) => {
+      const command = route.request().postDataJSON();
+      if (command?.type !== 'chatgpt_sign_in') return route.continue();
+      signInRequests.push(command.action);
+      await route.fulfill({ json: { success: true, data: { signIn: command.action === 'start'
+        ? { id: 'test-attempt', status: 'waiting', authorizationUrl: 'https://auth.openai.com/api/accounts/authorize?state=mock' }
+        : { id: 'test-attempt', status: 'connected' } } } });
+    };
+    await page.route('**/api/rpc', authRoute);
+    await page.evaluate(() => {
+      const original = window.open;
+      window.open = () => { window.open = original; return null; };
+    });
+    await dialog.getByRole('button', { name: '使用 ChatGPT 登录', exact: true }).click();
+    await dialog.getByRole('link', { name: '打开授权页面', exact: true }).waitFor();
+    await dialog.waitFor({ state: 'hidden' });
+    await page.unroute('**/api/rpc', authRoute);
+    assert.deepEqual(signInRequests, ['start', 'status']);
+    await page.getByRole('button', { name: '添加模型', exact: true }).click();
+    assert.equal(await apiConnection.getAttribute('aria-selected'), 'true');
     await dialog.getByRole('tab', { name: '本地模型', exact: true }).click();
     const endpoint = dialog.getByLabel('服务地址', { exact: true });
     const apiKey = dialog.getByLabel('API Key（可选）', { exact: true });
@@ -102,6 +130,8 @@ export async function localModelSmoke(page, baseUrl) {
     await page.unroute('**/api/rpc', refreshRoute);
     await picker.getByRole('button', { name: '保存', exact: true }).click();
     await picker.waitFor({ state: 'hidden' });
+    await page.locator('.model-trigger').filter({ hasText: 'smoke-local' }).waitFor();
+    await page.locator('.live-tab.is-active .live-tab-copy small').filter({ hasText: /smoke-local/i }).waitFor();
     // Restore the fixture model for the remaining smoke scenarios.
     const id = await page.evaluate(() => localStorage.getItem('tau-active-conversation-id'));
     const { runtime: active } = await browserJson(page, baseUrl, `/api/conversations/${id}/snapshot`);

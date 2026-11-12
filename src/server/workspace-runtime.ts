@@ -7,7 +7,7 @@ import { WORKSPACE_ID, CONVERSATION_ID } from '../contracts/index.js';
 import { acquireWriteLease, readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 import { toPosixPath, isWithin } from './util/path.js';
 import { platformDataRoot } from './host-platform.js';
-import { workspaceMetadataPath } from './workspace-store.js';
+import { workspaceMetadataPath, type WorkspaceStore } from './workspace-store.js';
 import { currentBootId, inspectProcess, inspectRecordedProcess, stopRecordedProcess, type ProcessIdentity } from './process-inspection.js';
 
 type RuntimeProcess = { id: string; kind: 'pi' | 'managed'; state: 'starting' | 'running' | 'stopped'; pid: number | null; identity: ProcessIdentity | null };
@@ -92,7 +92,7 @@ export class WorkspaceRuntimeLease {
 export class WorkspaceRuntimeGate {
   private queues = new Map<string, Promise<unknown>>();
   // The optional location isolates tests. Production does not derive this from per-Host overrides.
-  constructor(private pythonCommand: string, private logDirectory: string, private coordinationDirectory = path.join(platformDataRoot(process.platform, {}, os.userInfo().homedir), 'runtime-guards')) {}
+  constructor(private pythonCommand: string, private logDirectory: string, private coordinationDirectory = path.join(platformDataRoot(process.platform, {}, os.userInfo().homedir), 'runtime-guards'), private store?: Pick<WorkspaceStore, 'readCatalog'>) {}
   serialize<T>(directory: string, execute: () => Promise<T>): Promise<T> {
     const key = files(directory, this.coordinationDirectory).directory, previous = this.queues.get(key) || Promise.resolve();
     const operation = previous.catch(() => {}).then(execute); this.queues.set(key, operation);
@@ -134,7 +134,11 @@ export class WorkspaceRuntimeGate {
       catch (error) { throw Object.assign(error as Error, { code: 'workspace_busy' }); }
       try {
       const previous = readRuntime(location.file);
-      if (previous && (previous.directory !== toPosixPath(location.directory) || previous.workspaceId !== workspaceId)) throw failure('Runtime workspace identity changed.', 'workspace_identity_conflict');
+      if (previous && previous.directory !== toPosixPath(location.directory)) throw failure('Runtime workspace path changed.', 'workspace_identity_conflict');
+      if (previous && previous.workspaceId !== workspaceId) {
+        const released = previous.phase === 'stopped' && this.store?.readCatalog().entries.some((entry) => entry.workspaceId === previous.workspaceId && entry.state === 'released' && path.relative(entry.path, location.directory) === '');
+        if (!released) throw failure('Runtime workspace identity changed.', 'workspace_identity_conflict');
+      }
       if (previous && previous.phase !== 'stopped') {
         const host = inspectRecordedProcess(previous.host, this.pythonCommand);
         const hostStopped = host.state === 'exited' || host.state === 'replaced';

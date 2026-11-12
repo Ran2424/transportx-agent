@@ -9,8 +9,10 @@ export function useElapsedMilliseconds(startedAt: number | null, durationMs: num
     }
     let frame = 0;
     let displayedTenth = -1;
+    const baseline = Math.max(0, Date.now() - startedAt);
+    const baselineClock = performance.now();
     const update = () => {
-      const next = Math.max(0, Date.now() - startedAt);
+      const next = baseline + performance.now() - baselineClock;
       const tenth = Math.floor(next / 100);
       if (tenth !== displayedTenth) {
         displayedTenth = tenth;

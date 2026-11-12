@@ -11,13 +11,27 @@ export async function workspaceCleanupSmoke(page) {
     const snapshot = await browserJson(page, page.url().replace(/\/$/, ''), `/api/conversations/${session.id}/snapshot`);
     const historyFile = snapshot.snapshot.sessionFile;
     assert.ok(fs.existsSync(historyFile));
-    await page.reload({ waitUntil: 'networkidle' });
-    const title = deleteWorkspace ? '删除整个工作区' : '删除此会话';
-    if (deleteWorkspace) await page.getByRole('button', { name: `${name} 工作区操作`, exact: true }).click();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const title = deleteWorkspace ? '移除工作区' : '删除此会话';
+    const actions = page.getByRole('button', { name: `${name} 工作区操作`, exact: true });
+    if (deleteWorkspace) await actions.click();
     else await page.locator('.session-row').filter({ hasText: name }).click({ button: 'right' });
     await page.getByRole('menuitem', { name: title, exact: true }).click();
     const dialog = page.getByRole('dialog', { name: title, exact: true });
-    assert.equal(await dialog.getByRole('checkbox').isChecked(), false, 'execution stop requires an explicit choice');
+    if (deleteWorkspace) {
+      const deleteFiles = dialog.getByRole('checkbox', { name: '同时永久删除工作目录、文件和会话' });
+      assert.equal(await deleteFiles.isChecked(), false);
+      await dialog.getByRole('button', { name: '从侧边栏移除', exact: true }).click();
+      await actions.waitFor({ state: 'hidden' });
+      assert.ok(fs.existsSync(historyFile));
+      assert.equal(fs.readFileSync(path.toNamespacedPath(path.join(session.cwd, 'nul')), 'utf8'), 'bash error output');
+      await page.getByText('重新添加工作区', { exact: true }).click();
+      await page.locator('.removed-workspaces > div').filter({ hasText: name }).getByRole('button', { name: '恢复', exact: true }).click();
+      await actions.click();
+      await page.getByRole('menuitem', { name: title, exact: true }).click();
+      await deleteFiles.check();
+    }
+    assert.equal(await dialog.getByRole('checkbox', { name: '停止此工作区的执行和交互后删除' }).isChecked(), false, 'execution stop requires an explicit choice');
     await dialog.getByText(session.cwd, { exact: true }).waitFor();
     assert.equal(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth), true, 'the workspace path fits the dialog');
     const route = deleteWorkspace ? `/api/workspaces/${session.workspaceId}/delete` : `/api/conversations/${session.id}`;
@@ -28,7 +42,7 @@ export async function workspaceCleanupSmoke(page) {
     assert.equal(fs.existsSync(session.cwd), !deleteWorkspace);
     assert.equal(fs.existsSync(historyFile), false);
   }
-  console.log('Workspace cleanup smoke: default deletion, reserved-name files, explicit retention and history cleanup passed.');
+  console.log('Workspace cleanup smoke: default sidebar removal, restore, explicit directory deletion and history cleanup passed.');
   const logs = await page.evaluate(async () => {
     const result = await (await fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-TransportX-Protocol': '2' }, body: JSON.stringify({ type: 'get_platform_overview' }) })).json();
     return result.data.storage.logs;

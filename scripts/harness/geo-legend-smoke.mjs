@@ -58,11 +58,13 @@ export async function geoLegendSmoke(page, composer) {
   await handle.click();
   assert.equal(await expand.count(), 1, 'clicking the title collapses the panel');
   assert.equal(await stage.evaluate(node => node.clientHeight), Math.round(initial.height), 'collapse never resizes the map');
-  assert.ok((await display.boundingBox()).width <= 124, 'collapsed display is a small button');
+  assert.ok((await display.boundingBox()).width <= 136, 'collapsed display stays compact at the larger title size');
+  assert.equal(await handle.locator('strong').evaluate((node) => node.scrollWidth <= node.clientWidth), true, 'the collapsed legend title remains readable');
   await handle.press('Enter');
   assert.ok(Math.abs((await display.boundingBox()).height - resized.height) < 2, 'collapse and expand preserve a manually chosen height');
   const start = await handle.boundingBox();
   const scaleBefore = await stage.locator('.maplibregl-ctrl-scale').innerText();
+  assert.equal(await stage.locator('.maplibregl-ctrl-scale').evaluate((node) => getComputedStyle(node).fontSize), '12px');
   await page.mouse.move(start.x + 40, start.y + 15); await page.mouse.down();
   await page.mouse.move(start.x + 140, start.y + 95, { steps: 8 }); await page.mouse.up();
   assert.ok(await display.evaluate(node => node.offsetLeft > 70 && node.offsetTop > 50));
@@ -107,6 +109,7 @@ export async function geoLegendSmoke(page, composer) {
   const viewport = page.viewportSize();
   await page.setViewportSize({ width: 900, height: 900 });
   assert.equal(await display.evaluate(node => node.classList.contains('is-collapsed')), false, 'resizing the window preserves the expanded state');
+  assert.equal(await panel.locator('.geo-toolbar').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'map controls fit the narrower canvas');
   await stage.screenshot({ path: `${directory}/map-display-narrow.png` });
   await page.setViewportSize(viewport);
   if (await stage.locator('.maplibregl-ctrl-fullscreen').count()) {

@@ -214,6 +214,13 @@ test('Module assembly and resume resolve explicit capabilities and exact install
     assert.equal(relocated.version, geoPlan.version);
     assert.ok(relocated.entrypoints.every((entry: any) => entry.path.startsWith(originalRoot)));
 
+    const { BuiltinModuleArchive } = require('../../bin/builtin-module-archive.js');
+    const archive = new BuiltinModuleArchive(path.join(workspace, 'module-cache'));
+    const frozenAssembler = new SessionAssembler(modules, new AssetResolver(modules), '3.0.0', { command: 'node', args: [] }, { command: 'python', args: [] }, archive);
+    const archivedPlan = frozenAssembler.archiveBuiltins(frozenAssembler.assemble('com.transportx.workbench', workspace));
+    const archivedGeo = archivedPlan.modules.find((module: any) => module.id === geoPlan.id);
+    const archivedSkill = path.join(archivedGeo.packageRoot, 'skills/SKILL.md');
+
     try {
       // A platform update cannot silently substitute a different builtin version.
       const bumped = JSON.parse(originalManifest);
@@ -221,6 +228,15 @@ test('Module assembly and resume resolve explicit capabilities and exact install
       fs.writeFileSync(geoManifest, JSON.stringify(bumped));
       fs.writeFileSync(geoSkill, `${originalSkill}\n\nUpgraded in place.\n`);
       assert.throws(() => assembler.verify(structuredClone(plan)), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
+      assert.equal(frozenAssembler.verify(structuredClone(archivedPlan)).modules.find((module: any) => module.id === geoPlan.id).packageRoot, archivedGeo.packageRoot);
+      assert.equal(frozenAssembler.verify(structuredClone(plan)).modules.find((module: any) => module.id === geoPlan.id).packageRoot, archivedGeo.packageRoot, 'an unambiguous archived version restores a pre-archive plan');
+      assert.equal(fs.readFileSync(archivedSkill, 'utf8'), originalSkill);
+      modules.modules.set(geoPlan.id, { ...modules.get(geoPlan.id), manifest: bumped });
+      const upgradedPlan = frozenAssembler.archiveBuiltins(frozenAssembler.assemble('com.transportx.workbench', workspace));
+      assert.equal(upgradedPlan.modules.find((module: any) => module.id === geoPlan.id).version, '99.0.0');
+      fs.writeFileSync(archivedSkill, 'changed archived bytes');
+      assert.throws(() => frozenAssembler.verify(structuredClone(archivedPlan)), { code: 'module_content_mismatch' });
+      modules.modules.set(geoPlan.id, { ...modules.get(geoPlan.id), manifest: JSON.parse(originalManifest) });
 
       assert.throws(() => assembler.assemble('com.transportx.workbench', workspace), (error: any) => error instanceof SessionPlanError && error.code === 'module_version_missing');
 

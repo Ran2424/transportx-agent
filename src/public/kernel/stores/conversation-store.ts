@@ -24,6 +24,8 @@ export type LiveOverlay = {
   outcome: import('../../../contracts/run-feedback.ts').RunOutcome | null;
   runId: string | null;
   runStartedAt: number | null;
+  workingStartedAt?: number | null;
+  workingDurationMs?: number;
   optimisticPrompt: OptimisticPrompt | null;
   streamingText: string;
   streamingThinking: string;
@@ -174,11 +176,15 @@ export class ConversationStore {
     this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, runId, runStartedAt: conv.live.active ? conv.live.runStartedAt ?? Date.now() : Date.now(), active: true, retry: null, outcome: null } }));
   }
 
+  workingChanged(sessionId: string, startedAt: number | null, durationMs?: number) {
+    this.update(sessionId, (conv) => ({ ...conv, live: { ...conv.live, workingStartedAt: startedAt === null ? null : Date.now(), workingDurationMs: durationMs ?? conv.live.workingDurationMs } }));
+  }
+
   messageStarted(sessionId: string, message: AppMessage) {
     this.update(sessionId, (conv) => {
       if (message?.role === 'assistant') {
         // A new assistant message within the same run resets the buffers.
-        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: message.startedAt ?? Date.now(), thinkingDurationMs: null } };
+        return { ...conv, live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: message.startedAt ?? Date.now(), thinkingDurationMs: null, workingDurationMs: undefined } };
       }
       if (message?.role === 'user') {
         const text = messageText(message);
@@ -237,7 +243,7 @@ export class ConversationStore {
         finalMessage = withThinkingDuration(finalMessage, messageThinkingDurationMs(finalMessage) ?? currentThinkingDuration(conv.live));
         return {
           snapshotEntries: appendDedup(conv.snapshotEntries, { type: 'message', message: finalMessage }),
-          live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: null, thinkingDurationMs: null },
+          live: { ...conv.live, streamingText: '', streamingThinking: '', thinkingStartedAt: null, thinkingDurationMs: null, workingDurationMs: undefined },
         };
       }
       if (message) {
@@ -302,12 +308,15 @@ export class ConversationStore {
 
   /** A snapshot replaces the current branch and its transient overlay. */
   hydrate(sessionId: string, snapshot: SessionSnapshot) {
+    const workingElapsed = snapshot.workingElapsedMs;
     this.update(sessionId, (conv) => ({
       snapshotEntries: snapshot.entries ?? [],
       live: {
         ...emptyOverlay(),
         active: !!snapshot.isStreaming,
         runStartedAt: snapshot.isStreaming ? conv.live.runStartedAt : null,
+        workingStartedAt: workingElapsed === undefined ? conv.live.workingStartedAt : workingElapsed === null ? null : Date.now() - workingElapsed,
+        workingDurationMs: snapshot.workingDurationMs,
         retry: snapshot.retry ?? null,
         outcome: snapshot.outcome ?? null,
         streamingText: messageText(snapshot.streamingMessage ?? undefined),

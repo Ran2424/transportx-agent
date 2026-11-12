@@ -73,6 +73,7 @@ function composeScreenshot(
   const scale = mapCanvas.width / Math.max(1, cssWidth);
   const style = getComputedStyle(container);
   const fontFamily = screenshotColor(style, '--tx-font-ui', 'sans-serif');
+  const font = `${style.getPropertyValue('--font-size-secondary').trim() || '12px'} ${fontFamily}`;
   const surface = screenshotColor(style, '--surface-default', '#fbfbfa');
   const raised = screenshotColor(style, '--surface-raised', surface);
   const border = screenshotColor(style, '--border-default', 'rgba(36, 36, 36, 0.075)');
@@ -84,7 +85,7 @@ function composeScreenshot(
   const measureCanvas = document.createElement('canvas');
   const measure = measureCanvas.getContext('2d');
   if (!measure) throw new Error('Screenshot canvas is unavailable');
-  measure.font = `11px ${fontFamily}`;
+  measure.font = font;
   const items: Array<{ x: number; y: number; text?: string; heading?: boolean; symbol?: GeoLegendSymbol; ramp?: GeoLegendSection['ramp'] }> = [];
   let legendY = 30;
   const addText = (text: string, x = 12, width = legendWidth - 24, heading = false) => {
@@ -152,7 +153,7 @@ function composeScreenshot(
     ctx.save(); ctx.translate(legendX, legendTop);
     ctx.fillStyle = raised; ctx.beginPath(); ctx.roundRect(0, 0, legendWidth, legendHeight, 12); ctx.fill();
     ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.stroke();
-    ctx.font = `11px ${fontFamily}`; ctx.fillStyle = primary;
+    ctx.font = font; ctx.fillStyle = primary;
     ctx.fillText(language.startsWith('en') ? 'Map legend' : '地图图例', 12, 19);
     for (const item of items) {
       if (item.symbol) {
@@ -170,7 +171,7 @@ function composeScreenshot(
   if (descriptionLines.length) {
     ctx.fillStyle = surface; ctx.fillRect(0, cssHeight, cssWidth, descriptionHeight);
     ctx.strokeStyle = border; ctx.beginPath(); ctx.moveTo(0, cssHeight + 0.5); ctx.lineTo(cssWidth, cssHeight + 0.5); ctx.stroke();
-    ctx.font = `11px ${fontFamily}`; ctx.fillStyle = secondary;
+    ctx.font = font; ctx.fillStyle = secondary;
     descriptionLines.forEach((line, index) => ctx.fillText(line, 13, cssHeight + 19 + index * 18));
   }
   return output.toDataURL('image/png');
