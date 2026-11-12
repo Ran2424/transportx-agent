@@ -64,6 +64,7 @@ export function liveSessionMetadata(source: SessionMetadataSource, capabilities:
     conversationId: source.conversationId ?? null,
     modelSpec: source.modelSpec,
     model: source.model,
+    modelLabel: modelLabel(source.model, source.modelSpec),
     thinkingLevel: source.thinkingLevel,
     sessionFile: persistedFile(source),
     sessionName: source.sessionName,

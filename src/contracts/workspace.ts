@@ -26,7 +26,8 @@ export type WorkspaceManifestV1 = {
 };
 export type WorkspaceCatalogEntryV1 = {
   workspaceId: string; path: string; creationRequestId: string | null; creationInputSha256: string | null;
-  state: 'creating' | 'ready' | 'deleting' | 'deleted';
+  state: 'creating' | 'ready' | 'deleting' | 'deleted' | 'released';
+  releasedHistoryKeys?: string[];
   /** Reserved system workspace that only holds conversations moved out of ordinary workspaces. */
   kind?: 'standalone';
   /** Existing project directories are never owned for recursive deletion. */
@@ -153,16 +154,17 @@ export function parseWorkspaceCatalogStructured(value: unknown): WorkspaceParseR
       const ids = new Set(), paths = new Set(), requests = new Set();
       root.entries.forEach((value, index) => {
         const path = `catalog.entries[${index}]`;
-        const entry = fields(value, 'workspaceId path creationRequestId creationInputSha256 state deletion kind directoryOwnership', path, diagnostics);
+        const entry = fields(value, 'workspaceId path creationRequestId creationInputSha256 state deletion kind directoryOwnership releasedHistoryKeys', path, diagnostics);
         if (!entry) return;
         check(typeof entry.workspaceId === 'string' && WORKSPACE_ID.test(entry.workspaceId), `${path}.workspaceId`, diagnostics);
         check(text(entry.path, 4096) && /^(?:\/|[A-Za-z]:\/)/.test(String(entry.path)) && !String(entry.path).includes('\\') && !String(entry.path).split('/').some((part) => part === '.' || part === '..'), `${path}.path`, diagnostics);
         creation(entry, path, diagnostics);
-        check(oneOf(entry.state, ['creating', 'ready', 'deleting', 'deleted']), `${path}.state`, diagnostics);
+        check(oneOf(entry.state, ['creating', 'ready', 'deleting', 'deleted', 'released']), `${path}.state`, diagnostics);
         check(entry.kind === undefined || entry.kind === 'standalone', `${path}.kind`, diagnostics);
         check(entry.directoryOwnership === undefined || entry.directoryOwnership === 'external', `${path}.directoryOwnership`, diagnostics);
-        check(!ids.has(entry.workspaceId) && !paths.has(entry.path) && (entry.creationRequestId === null || !requests.has(entry.creationRequestId)), path, diagnostics, 'Catalog identity, path and creation request must be unique.');
-        ids.add(entry.workspaceId); paths.add(entry.path); if (entry.creationRequestId !== null) requests.add(entry.creationRequestId);
+        check(!ids.has(entry.workspaceId) && (entry.state === 'released' || !paths.has(entry.path)) && (entry.creationRequestId === null || !requests.has(entry.creationRequestId)), path, diagnostics, 'Catalog identity, reserved path and creation request must be unique.');
+        ids.add(entry.workspaceId); if (entry.state !== 'released') paths.add(entry.path); if (entry.creationRequestId !== null) requests.add(entry.creationRequestId);
+        check(entry.state === 'released' ? entry.kind === undefined && Array.isArray(entry.releasedHistoryKeys) && entry.releasedHistoryKeys.every(isWorkspaceHistoryKey) && new Set(entry.releasedHistoryKeys).size === entry.releasedHistoryKeys.length : entry.releasedHistoryKeys === undefined, `${path}.releasedHistoryKeys`, diagnostics);
         if (entry.deletion !== null) {
           const deletion = fields(entry.deletion, 'requestId manifestRevision rootIdentity conversationIds historyKeys invocationOwnerKeys error stage', `${path}.deletion`, diagnostics);
           if (deletion) { check(text(deletion.requestId) && integer(deletion.manifestRevision) && sha(deletion.rootIdentity) && Array.isArray(deletion.historyKeys) && deletion.historyKeys.every(isWorkspaceHistoryKey) && new Set(deletion.historyKeys).size === deletion.historyKeys.length && Array.isArray(deletion.invocationOwnerKeys) && deletion.invocationOwnerKeys.every(sha) && oneOf(deletion.stage, ['frozen', 'invocations-cleaned', 'history-cleaned', 'workspace-cleaned']) && oneOf(entry.state, ['deleting', 'deleted']), `${path}.deletion`, diagnostics); deletionError(deletion.error, `${path}.deletion.error`, diagnostics); }

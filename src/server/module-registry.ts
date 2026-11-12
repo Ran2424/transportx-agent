@@ -14,7 +14,7 @@ export type RegisteredModule = {
 };
 export type ModuleLoadError = { manifestPath: string; moduleId?: string; message: string; diagnostics?: ContractDiagnostic[] };
 
-function compatible(range: string, platformVersion: string) {
+export function modulePlatformCompatible(range: string, platformVersion: string) {
   const platformMajor = Number(platformVersion.split('.')[0]);
   const minimum = range.match(/>=\s*(\d+)/);
   const maximum = range.match(/<\s*(\d+)/);
@@ -63,7 +63,7 @@ export class ModuleRegistry {
       this.errors.push({ manifestPath, moduleId: result.value.id, message: `Duplicate module id: ${result.value.id}` });
       return;
     }
-    if (!compatible(result.value.platformVersion, this.platformVersion)) {
+    if (!modulePlatformCompatible(result.value.platformVersion, this.platformVersion)) {
       this.errors.push({ manifestPath, moduleId: result.value.id, message: `Module ${result.value.id} ${result.value.version} is incompatible with platform ${this.platformVersion}` });
       return;
     }

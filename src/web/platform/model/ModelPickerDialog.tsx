@@ -60,8 +60,7 @@ export function ModelPickerDialog({ open, onOpenChange, session, onAddModel, onE
       await onEnsureRuntime(session.id);
       await kernel.commands.agent.setModel({ sessionId: session.id, model });
       await kernel.commands.agent.setThinkingLevel({ sessionId: session.id, level: thinking });
-      const state = await kernel.commands.agent.getState(session.id);
-      kernel.dispatch({ type: 'session/updated', session: { id: session.id, model: state.model, thinkingLevel: state.thinkingLevel } });
+      await kernel.commands.agent.getState(session.id);
       onOpenChange(false);
     } catch (cause) {
       setError((cause as { message?: string })?.message || t('model.error.update'));

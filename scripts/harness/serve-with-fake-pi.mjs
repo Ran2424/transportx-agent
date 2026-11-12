@@ -71,9 +71,9 @@ for (const [id, versions] of [['smoke.alpha', ['1.0.0', '2.0.0']], ['smoke.beta'
   }
 }
 // This harness owns these inert fixtures; production trust checks stay enabled.
+fs.writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify({ tau: { enabledModuleIds: ['smoke.alpha', 'smoke.beta'] } }));
 const { ModuleTrustStore } = require(path.join(REPO_ROOT, 'bin/module-trust.js'));
 await new ModuleTrustStore(path.join(agentDir, 'settings/module-trust.json'), async () => true).ensure(fixtureModuleRoots);
-fs.writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify({ tau: { enabledModuleIds: ['smoke.alpha', 'smoke.beta'] } }));
 
 // ---- 预置会话文件：resume 基线（straight fixture，cwd 重写进临时任务目录） ----
 function sessionDirName(tag) { return `--tau-fake-${tag}--`; }

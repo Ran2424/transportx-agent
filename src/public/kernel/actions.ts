@@ -63,6 +63,7 @@ export type AppAction =
   | { type: 'conversation/retryStarted'; sessionId: string; retry: import('../../contracts/run-feedback.ts').RetryState }
   | { type: 'conversation/retryEnded'; sessionId: string; outcome: import('../../contracts/run-feedback.ts').RunOutcome | null }
   | { type: 'conversation/streamStarted'; sessionId: string; runId: string }
+  | { type: 'conversation/workingChanged'; sessionId: string; startedAt: number | null; durationMs?: number }
   | { type: 'conversation/messageStarted'; sessionId: string; runId: string | null; message: AppMessage }
   | { type: 'conversation/streamDelta'; sessionId: string; runId: string | null; channel: StreamChannel; delta: string }
   | { type: 'conversation/streamCompleted'; sessionId: string; message: AppMessage }

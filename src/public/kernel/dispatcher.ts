@@ -154,6 +154,9 @@ export function createDispatcher(stores: KernelStores): Dispatch {
       case 'conversation/messageStarted':
         stores.conversation.messageStarted(action.sessionId, action.message);
         break;
+      case 'conversation/workingChanged':
+        stores.conversation.workingChanged(action.sessionId, action.startedAt, action.durationMs);
+        break;
       case 'conversation/streamDelta':
         stores.conversation.streamDelta(action.sessionId, action.channel, action.delta);
         break;

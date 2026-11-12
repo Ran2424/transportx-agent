@@ -29,11 +29,11 @@ export async function workingDisplaySmoke(page) {
     await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
     const style = await initial.locator('.working-label').evaluate((node) => {
       const css = getComputedStyle(node);
-      return { gradient: css.backgroundImage, position: css.backgroundPosition, size: css.fontSize, weight: css.fontWeight, opacity: getComputedStyle(node.closest('button')).opacity };
+      return { gradient: css.backgroundImage, position: css.backgroundPosition, size: css.fontSize, weight: css.fontWeight, opacity: getComputedStyle(node.closest('button')).opacity, textColor: getComputedStyle(document.body).color };
     });
-    assert.ok(style.gradient.includes(theme === 'dark' ? '255, 255, 255' : '0, 0, 0'), 'Working uses neutral black/white according to the theme');
+    assert.ok(style.gradient.includes(style.textColor), 'Working uses the primary text color according to the theme');
     assert.ok(style.gradient.includes('0.12'), 'the moving sweep includes transparency');
-    assert.equal(style.size, '14px'); assert.equal(style.weight, '600'); assert.equal(style.opacity, '1');
+    assert.equal(style.size, '16px'); assert.equal(style.weight, '600'); assert.equal(style.opacity, '1');
     await page.waitForTimeout(120);
     assert.notEqual(await initial.locator('.working-label').evaluate((node) => getComputedStyle(node).backgroundPosition), style.position, 'the sweep actually moves');
     await initial.screenshot({ path: `${directory}/active-${theme}.png` });
@@ -42,8 +42,19 @@ export async function workingDisplaySmoke(page) {
   assert.ok(await seconds(initial) > initialSeconds, 'waiting for the first response continues counting');
   assert.equal(await page.locator('.compaction-status', { hasText: '等待模型响应' }).count(), 0);
   assert.doesNotMatch(await initial.innerText(), /—/);
-  await page.locator('.assistant-prose', { hasText: '我先确认轨道 GIS 资产里线路数据' }).waitFor();
-  await page.waitForTimeout(250);
+  const firstBody = page.locator('.assistant-prose', { hasText: '我先确认轨道 GIS 资产里线路数据' });
+  await firstBody.waitFor();
+  const layout = await firstBody.evaluate((node) => ({ size: getComputedStyle(node).fontSize, gap: node.getBoundingClientRect().top - node.closest('article').previousElementSibling.getBoundingClientRect().bottom }));
+  assert.equal(layout.size, '16px');
+  assert.equal(layout.gap, 4, 'collapsed Working and its prose stay together');
+  const preparing = page.locator('.assistant-message + .execution-group > .working-toggle.is-active').last();
+  await preparing.waitFor();
+  const nextGap = await preparing.evaluate((node) => node.getBoundingClientRect().top - node.parentElement.previousElementSibling.getBoundingClientRect().bottom);
+  assert.equal(nextGap, 16, 'the next Working segment has a larger gap above it');
+  const start = await seconds(preparing);
+  await page.reload();
+  await preparing.waitFor();
+  assert.ok(await seconds(preparing) >= start, 'refresh during streamed tool arguments preserves the execution clock');
   const toggle = page.locator('.working-toggle').last();
   assert.ok(await seconds(toggle) < await seconds(page.locator('.working-toggle').nth(await page.locator('.working-toggle').count() - 2)), 'the second Working segment starts its own clock instead of accumulating the first segment');
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
@@ -59,8 +70,10 @@ export async function workingDisplaySmoke(page) {
   const group = page.locator('.execution-group').last();
   const read = group.locator('[data-tool-call-id="working-read"]');
   await read.waitFor();
+  const preparingSeconds = await seconds(toggle);
   await read.click();
   await group.locator('.tool-state-label', { hasText: '已完成' }).first().waitFor();
+  assert.ok(await seconds(toggle) >= preparingSeconds, 'starting and finishing a write preserves its preparing time');
   assert.equal(await toggle.locator('.working-label').evaluate((node) => getComputedStyle(node).animationName), 'working-shimmer', 'Working remains active after the tool ends, while the model is waiting');
   const waitingSeconds = await seconds(toggle);
   await page.waitForTimeout(250);
@@ -101,7 +114,7 @@ export async function workingDisplaySmoke(page) {
   await composer.fill('Working-旧计时'); await composer.press('Enter');
   await page.locator('.assistant-prose', { hasText: '旧计时记录验收完成。' }).waitFor();
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor();
-  assert.equal((await page.locator('.working-toggle').last().innerText()).trim(), 'Working', 'missing historical timing omits the separator and placeholder');
+  assert.match(await page.locator('.working-toggle').last().innerText(), /Working\s*· \d+\.\d+ 秒/, 'live segment timing works even when a tool lacks historical timing');
   await composer.fill('Working-正文流式'); await composer.press('Enter');
   const streamedBody = page.locator('.assistant-prose', { hasText: '流式正文验收：' }).last();
   await streamedBody.waitFor();

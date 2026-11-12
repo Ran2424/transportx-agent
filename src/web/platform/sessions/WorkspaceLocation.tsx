@@ -21,7 +21,7 @@ export function WorkspaceLocation(props: Props) {
   const [editingPath, setEditingPath] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const { workspace, directory, name, locationMode } = props;
-  const recent = props.workspaces.filter(item => item.availability === 'ready' && item.kind !== 'standalone').sort((a, b) => {
+  const recent = props.workspaces.filter(item => item.availability === 'ready' && item.kind !== 'standalone' && !item.hiddenFromSidebar).sort((a, b) => {
     const activity = (item: WorkspaceView) => Math.max(Date.parse(item.createdAt || '') || 0, ...item.conversations.map(({ lastConversationAt }) => Date.parse(lastConversationAt || '') || 0));
     return activity(b) - activity(a);
   });

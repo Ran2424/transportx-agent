@@ -34,8 +34,11 @@ test('Session snapshots preserve authoritative metadata and independently config
   // live snapshots include Host clock, current partial message and active tools
   {
     const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
+    const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-clocked-'));
+    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
     const manager = new LiveSessionManager();
-    const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', id: 'clocked', cwd: '/tmp/clocked' });
+    const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', id: 'clocked', cwd });
     assert.equal(session.metadata().lastConversationAt, '', 'an empty runtime has no observed conversation activity');
     session.handleEvent({ type: 'agent_start' });
     assert.equal(session.metadata().lastConversationAt, '', 'activation is not a user or assistant message');
@@ -46,9 +49,11 @@ test('Session snapshots preserve authoritative metadata and independently config
     assert.ok(snapshot.revision >= 3);
     assert.equal(snapshot.streamingMessage.content[0].text, 'current partial');
     assert.equal(snapshot.activeToolEvents[0].toolCallId, 'call');
+    assert.ok(snapshot.workingElapsedMs >= 0);
     session.handleEvent({ type: 'tool_execution_end', toolCallId: 'call', result: {} });
     session.handleEvent({ type: 'message_end', message: { role: 'assistant', content: 'finished' } });
     assert.equal(session.snapshot().streamingMessage, null);
+    assert.equal(session.snapshot().workingElapsedMs, null);
     assert.equal(session.snapshot().activeToolEvents.length, 0);
     assert.notEqual(new LiveSessionManager().clock().hostGeneration, manager.clock().hostGeneration);
     const { buildAttachmentContext } = require('../../bin/contracts/attachments.js');

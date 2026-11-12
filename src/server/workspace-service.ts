@@ -22,6 +22,12 @@ type Options = {
   assertAllocationAllowed(directory: string): void;
 };
 const failure = (code: string, message: string, status = 409) => Object.assign(new Error(message), { code, status });
+function workspaceOverlap(entry: WorkspaceCatalogEntryV1, directory: string) {
+  const contains = isWithin(entry.path, directory), contained = isWithin(directory, entry.path);
+  return Object.assign(failure('workspace_identity_conflict', 'This folder overlaps a registered workspace; select that workspace instead.'), {
+    details: { workspaceId: entry.workspaceId, path: entry.path, relationship: contains && contained ? 'same' : contains ? 'parent' : 'child' },
+  });
+}
 
 /** Shared creation commits persistent identity before any caller may activate Pi. */
 export class WorkspaceService {
@@ -81,10 +87,11 @@ export class WorkspaceService {
       const directory = fs.realpathSync(requested);
       const data = fs.realpathSync(store.userDataDirectory), sessions = fs.existsSync(store.sessionsDirectory) ? fs.realpathSync(store.sessionsDirectory) : path.resolve(store.sessionsDirectory), projects = fs.existsSync(this.options.defaultParentDirectory) ? fs.realpathSync(this.options.defaultParentDirectory) : path.resolve(this.options.defaultParentDirectory);
       if (isWithin(directory, data) || isWithin(directory, sessions) || isWithin(sessions, directory) || isWithin(data, directory) && !isWithin(projects, directory)) throw failure('workspace_identity_conflict', 'Project directory overlaps private application data.');
-      this.options.assertAllocationAllowed(directory);
       const plan = this.options.assemble(configuration, directory);
       const entry = await store.reserveWorkspace(input.requestId, inputSha256, (catalog) => {
-        if (catalog.entries.some((item) => isWithin(item.path, directory) || isWithin(directory, item.path))) throw failure('workspace_identity_conflict', 'This folder overlaps a registered workspace; select that workspace instead.');
+        const conflict = catalog.entries.find((item) => item.state !== 'released' && (isWithin(item.path, directory) || isWithin(directory, item.path)));
+        if (conflict) throw workspaceOverlap(conflict, directory);
+        this.options.assertAllocationAllowed(directory);
         if (fs.existsSync(workspaceMetadataPath(directory, '.tau'))) throw failure('workspace_migration_required', 'This folder already has .tau metadata; use its registered workspace or migration report.');
         return directory;
       }, 'external');
@@ -98,9 +105,11 @@ export class WorkspaceService {
     const plan = this.options.assemble(configuration, parent);
     const prefix = workspaceDirectoryPrefix(target.name);
     const entry = await store.reserveWorkspace(input.requestId, inputSha256, (catalog) => {
+      const ancestor = catalog.entries.find((item) => item.state !== 'released' && isWithin(item.path, parent));
+      if (ancestor) throw workspaceOverlap(ancestor, path.join(parent, prefix));
       for (let index = 1; index <= 999; index++) {
         const candidate = path.join(parent, index === 1 ? prefix : `${prefix}-${index}`);
-        if (fs.existsSync(candidate) || catalog.entries.some((item) => isWithin(item.path, candidate) || isWithin(candidate, item.path))) continue;
+        if (fs.existsSync(candidate) || catalog.entries.some((item) => item.state !== 'released' && (isWithin(item.path, candidate) || isWithin(candidate, item.path)))) continue;
         this.options.assertAllocationAllowed(candidate); return candidate;
       }
       throw failure('workspace_identity_conflict', 'Cannot allocate a unique task directory.');
@@ -109,7 +118,7 @@ export class WorkspaceService {
   }
   private completeNew(entry: WorkspaceCatalogEntryV1, input: CreateConversationInput, inputSha256: string, draft?: ResolvedSessionPlanV3) {
     const { store } = this.options;
-    if (['deleting', 'deleted'].includes(entry.state)) return Promise.reject(failure('conversation_deleted', 'This creation request belongs to a deleted workspace.', 410));
+    if (['deleting', 'deleted', 'released'].includes(entry.state)) return Promise.reject(failure('conversation_deleted', 'This creation request belongs to a removed workspace.', 410));
     if (entry.state === 'ready') {
       const current = store.readWorkspace(entry.workspaceId);
       const conversation = current.manifest.conversations.find((record) => record.creationRequestId === input.requestId && record.creationInputSha256 === inputSha256);

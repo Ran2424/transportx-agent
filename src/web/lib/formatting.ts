@@ -36,7 +36,7 @@ export function formatModelOption(model: ModelRecord | string): { reference: str
 }
 
 export function compactModelLabel(session: ConversationView): string {
-  const raw = session.modelLabel || session.modelSpec || modelReference(session.model) || i18n.t('common.default');
+  const raw = modelReference(session.model) || session.modelSpec || session.modelLabel || i18n.t('common.default');
   return String(raw).replace(/^.*\//, '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
 }
 

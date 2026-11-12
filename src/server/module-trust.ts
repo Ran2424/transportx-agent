@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { parseModuleManifestStructured } from '../contracts/index.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
+import type { BuiltinModuleArchive } from './builtin-module-archive.js';
 import { preferUnpackedPath } from './session-assembly.js';
 import { readJsonObject, writeJsonAtomic } from './util/json-storage.js';
 import { isWithin, toPosixPath } from './util/path.js';
@@ -70,7 +71,7 @@ export async function confirmDesktopModuleTrust(request: ModuleTrustRequest) {
   });
 }
 
-export async function ensureSessionModuleTrust(plan: ResolvedSessionPlan, builtinManifests: string[], store: ModuleTrustStore) {
+export async function ensureSessionModuleTrust(plan: ResolvedSessionPlan, builtinManifests: string[], store: ModuleTrustStore, archive?: BuiltinModuleArchive) {
   const builtins = new Set(builtinManifests.map((file) => fs.realpathSync(path.dirname(preferUnpackedPath(file)))));
   const pending: string[] = [];
   for (const module of plan.modules) {
@@ -78,11 +79,9 @@ export async function ensureSessionModuleTrust(plan: ResolvedSessionPlan, builti
     if (descriptor.id !== module.id) throw new Error('Module identity differs from the session plan');
     const entries = new Set(descriptor.entrypoints.map((entry) => fs.realpathSync(preferUnpackedPath(path.join(descriptor.packageRoot, entry)))));
     for (const entry of module.entrypoints) if (!entries.has(fs.realpathSync(entry.path))) throw new Error(`Undeclared Module entrypoint: ${module.id}`);
-    // Neither a stored origin label nor a familiar module id grants the exception.
-    if (!builtins.has(descriptor.packageRoot)) {
-      if (descriptor.version !== module.version) throw new Error('Module version differs from the session plan');
-      pending.push(descriptor.packageRoot);
-    }
+    if (descriptor.version !== module.version) throw new Error('Module version differs from the session plan');
+    if (module.origin === 'builtin' && archive?.contains(module.packageRoot)) archive.verify(module);
+    else if (!builtins.has(descriptor.packageRoot)) pending.push(descriptor.packageRoot);
   }
   await store.ensure(pending);
 }

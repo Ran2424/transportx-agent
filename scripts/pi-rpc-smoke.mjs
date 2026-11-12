@@ -25,12 +25,21 @@ await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
 fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: {
   'traffic-smoke': { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'local-smoke-only', models: [{ id: 'smoke', reasoning: false, input: ['text'], contextWindow: 8192, maxTokens: 128, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] },
 } }));
+const planCredentials = { 'openai-chatgpt': {
+  type: 'oauth', access: 'offline-test-token', refresh: 'offline-test-refresh', expires: Date.now() + 60_000,
+  clientId: 'oaiapp_test', scope: 'chatgpt.tokens.use.direct', catalogAt: Date.now(), models: [{
+    provider: 'openai-chatgpt', api: 'openai-responses', baseUrl: 'https://api.openai.com/v1', id: 'plan-test',
+    name: 'Plan test', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 16384,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  }],
+} };
 const command = process.env.TAU_PI_COMMAND || process.execPath;
 const child = spawn(command, [
   ...(process.env.TAU_PI_COMMAND ? [] : [path.resolve('node_modules/@earendil-works/pi-coding-agent/dist/cli.js')]),
   '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--approve',
   '--extension', path.resolve('modules/capabilities/interaction/extensions/pi-user-interaction/index.ts'),
   '--extension', path.resolve('modules/capabilities/web-bridge/extensions/pi-web-bridge/index.ts'),
+  '--extension', path.resolve('bin/chatgpt-pi-extension.js'),
 ], {
   cwd: process.cwd(),
   env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, TAU_DISABLED: '1' },
@@ -97,6 +106,13 @@ try {
   const commands = await waitFor((line) => line.type === 'response' && line.id === 'commands');
   assert.equal(commands.success, true);
   assert.ok(!commands.data?.commands?.some((candidate) => candidate.name === 'task'));
+  assert.ok(commands.data?.commands?.some((candidate) => candidate.name === 'transportx_reload_models' && candidate.source === 'extension'));
+  fs.writeFileSync(path.join(agentDir, 'auth.json'), JSON.stringify(planCredentials));
+  send({ id: 'reload-plan', type: 'prompt', message: '/transportx_reload_models plan-test' });
+  assert.equal((await waitFor((line) => line.type === 'response' && line.id === 'reload-plan')).success, true);
+  send({ id: 'plan-models', type: 'get_available_models' });
+  const planModels = await waitFor((line) => line.type === 'response' && line.id === 'plan-models');
+  assert.ok(planModels.data?.models?.some((model) => model.provider === 'openai-chatgpt' && model.id === 'plan-test'), stderr);
   send({ id: 'smoke-model', type: 'set_model', provider: 'traffic-smoke', modelId: 'smoke' });
   assert.equal((await waitFor((line) => line.id === 'smoke-model')).success, true);
   send({ id: 'initial', type: 'prompt', message: 'initial message' });
