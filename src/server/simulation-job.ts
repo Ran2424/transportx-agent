@@ -129,7 +129,7 @@ export function verifySimulationResult(root: string, job: SimulationJob, jobSha2
       const observed = [...raw.matchAll(/<tripinfo\s+([^>]+)>/g)].map(row => Object.fromEntries([...row[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]))).filter(row => Number(row.depart) >= 0 && row.id !== rail?.trainId);
       const loss = observed.reduce((sum, row) => sum + Number(row.timeLoss), 0);
       if (!Number.isFinite(loss) || loss < 0 || road.timeLossVehicleSeconds !== loss || road.observedVehicleSeconds !== observed.reduce((sum, row) => sum + Number(row.duration), 0) || road.meanTimeLossSeconds !== (observed.length ? loss / observed.length : null)) throw new Error('road_time_loss_mismatch');
-      if (['0.3.0', '0.4.0', '0.5.0', '0.6.0'].includes(job.implementation.version) && (!metrics.waiting || !metrics.journeys || !metrics.fleet || !metrics.byRoute || !metrics.nodes)) throw new Error('service_statistics_missing');
+      if (['0.3.0', '0.4.0', '0.5.0', '0.6.0', '0.6.1'].includes(job.implementation.version) && (!metrics.waiting || !metrics.journeys || !metrics.fleet || !metrics.byRoute || !metrics.nodes)) throw new Error('service_statistics_missing');
       if (metrics.waiting) {
         const mean = (values: number[]) => values.length ? values.reduce((sum, n) => sum + n, 0) / values.length : null;
         const p90 = (values: number[]) => values.length ? [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.9) - 1] : null;

@@ -14,7 +14,8 @@ const { parseTrafficToolResult } = require('../../bin/contracts/simulation.js');
 const { parseCanvasPresentation } = require('../../bin/contracts/canvas.js');
 const python = process.env.TAU_PYTHON_COMMAND;
 const packageRoot = process.env.TRANSPORTX_SIMULATION_MODULE;
-if (!python || !packageRoot) throw new Error('Explicit TAU_PYTHON_COMMAND and TRANSPORTX_SIMULATION_MODULE are required.');
+const demoRoot = process.env.TRANSPORTX_SIMULATION_DEMO_MODULE;
+if (!python || !packageRoot || !demoRoot) throw new Error('Set TAU_PYTHON_COMMAND, TRANSPORTX_SIMULATION_MODULE and TRANSPORTX_SIMULATION_DEMO_MODULE.');
 const root = path.resolve(process.argv[2] || 'tmp/simulation-p1-service');
 assert.equal(fs.existsSync(root), false, 'Use a new evidence directory'); fs.mkdirSync(root, { recursive: true });
 const workspace = path.join(root, 'workspace'), histories = path.join(root, 'histories');
@@ -22,7 +23,7 @@ fs.mkdirSync(workspace); fs.mkdirSync(histories);
 // Actual installer and assembler: no fabricated Module plan, runtime or engine.
 const installer = new ModuleInstaller(path.join(root, 'installed'));
 installer.install(path.resolve(packageRoot));
-installer.install(path.resolve('modules/optional/hongqiao-night-demo'));
+installer.install(path.resolve(demoRoot));
 const registry = new ModuleRegistry('3.24.2').load([...BUILTIN_MODULE_MANIFESTS, ...installer.sources()]);
 const executable = { command: python, args: [], version: '3.10' };
 const assembler = new SessionAssembler(registry, new AssetResolver(registry), '3.24.2', { command: process.execPath, args: [], version: '0.80.10' }, executable);
@@ -74,10 +75,10 @@ assert.equal(road.metrics.service, undefined);
 assert.throws(() => service.query(session, { runId: road.runId, time: 60, objectId: 'node:hub' }), /does not exist/);
 // Same actual engine, larger but still measured synthetic profile: interrupt only
 // after a complete block has been published, rather than cancelling before spawn.
-const sample = JSON.parse(fs.readFileSync(path.resolve('modules/optional/hongqiao-night-demo/assets/night-demo/scenario.json'), 'utf8'));
+const sample = JSON.parse(fs.readFileSync(path.join(demoRoot, 'assets/night-demo/scenario.json'), 'utf8'));
 sample.network.path = 'sample-network.net.xml'; sample.configuration.durationSeconds = 600; sample.configuration.backgroundCount = 120;
 sample.configuration.service.travelers = Array.from({ length: 100 }, (_, i) => ({ id: `person-${i}`, time: i, mode: i % 2 ? 'ridehail' : 'bus', destination: i % 2 ? 'west' : 'east' }));
-fs.copyFileSync(path.resolve('modules/optional/hongqiao-night-demo/assets/night-demo/network.net.xml'), path.join(workspace, sample.network.path));
+fs.copyFileSync(path.join(demoRoot, 'assets/night-demo/network.net.xml'), path.join(workspace, sample.network.path));
 fs.writeFileSync(path.join(workspace, 'large-example.json'), JSON.stringify(sample));
 const large = await service.prepareScenario(session, { inputPath: 'large-example.json' });
 const earlyController = new AbortController(), earlyRequest = { scenarioId: large.scenarioId, toolCallId: 'cancel-after-native-start' };

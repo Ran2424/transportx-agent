@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- Synthetic geographic placement, not actual Hongqiao roads. -->
-<nodes>
-  <node id="h" x="121.3000" y="31.1900" type="priority"/>
-  <node id="a" x="121.3021" y="31.1900" type="priority"/>
-  <node id="r" x="121.3021" y="31.1909" type="priority"/>
-  <node id="b" x="121.3000" y="31.1909" type="priority"/>
-</nodes>

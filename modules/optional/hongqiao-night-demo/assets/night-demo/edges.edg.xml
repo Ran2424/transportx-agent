@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<edges>
-  <edge id="hub" from="h" to="a" numLanes="2" speed="10"/>
-  <edge id="out" from="a" to="r" numLanes="2" speed="10"/>
-  <edge id="relay" from="r" to="b" numLanes="2" speed="10"/>
-  <edge id="back" from="b" to="h" numLanes="2" speed="10"/>
-</edges>
