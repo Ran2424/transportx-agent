@@ -16,3 +16,5 @@ The probe prints its evidence directory. It builds a synthetic network, relocate
 To repeat computation against a previously verified relocated runtime, set `TRANSPORTX_SIMULATION_RUNTIME` to that directory instead of installing again. Its adjacent `runtime-evidence.json` and native file hashes must verify. This reuses the measured runtime and does not constitute another cold relocation test.
 
 Keep the generated evidence directories under `tmp/`; they contain raw tripinfo, frozen jobs, metrics, complete blocks, event ranges, indexes and manifests. The committed acceptance JSON records hashes and summaries without committing native binaries or developer interpreter paths.
+
+The Hongqiao demo can be kept locally in `modules/optional/hongqiao-night-demo`. Set `TRANSPORTX_SIMULATION_DEMO_MODULE` to the demo directory when running the service, experiment or multimodal probes. Set the same variable for `npm run simulation:pack` to also produce a separate demo ZIP. The desktop build and the default simulation probe use no local demo module.

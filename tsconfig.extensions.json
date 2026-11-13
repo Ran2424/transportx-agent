@@ -14,5 +14,6 @@
     "modules/**/extensions/**/*.ts",
     "src/contracts/**/*.ts",
     "src/contracts/**/*.mts"
-  ]
+  ],
+  "exclude": ["modules/optional"]
 }

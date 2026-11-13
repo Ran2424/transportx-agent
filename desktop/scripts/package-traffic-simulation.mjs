@@ -57,7 +57,12 @@ await new Promise((resolve, reject) => {
   zip.outputStream.pipe(stream); stream.on('close', resolve); stream.on('error', reject); zip.outputStream.on('error', reject);
 });
 fs.writeFileSync(output + '.sha256', `${sha256File(output)}  ${path.basename(output)}\n`);
-const demoRoot = path.resolve('modules/optional/hongqiao-night-demo');
+const demoSource = process.env.TRANSPORTX_SIMULATION_DEMO_MODULE;
+if (!demoSource) {
+  console.log(JSON.stringify({ packageRoot, zip: output, version: manifest.version, bytes: fs.statSync(output).size, sha256: sha256File(output), scope: 'development package; P4 signing and license closure acceptance pending' }));
+  process.exit(0);
+}
+const demoRoot = path.resolve(demoSource);
 const demoManifest = JSON.parse(fs.readFileSync(path.join(demoRoot, 'manifest.json'), 'utf8'));
 validateModulePackage(demoRoot, demoManifest);
 const demoOutput = path.join(release, `transportx-hongqiao-night-demo-${demoManifest.version}.zip`);

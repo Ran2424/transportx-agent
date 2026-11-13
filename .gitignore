@@ -98,6 +98,7 @@ test/baselines/screenshots/*.png
 
 # 用户本地可安装模块不写入仓库
 modules/installable/
+/modules/optional/
 
 # CAD generated assets
 test/cad/out/

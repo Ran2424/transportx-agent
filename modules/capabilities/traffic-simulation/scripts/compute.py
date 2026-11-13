@@ -23,7 +23,7 @@ def validate(job):
         raise ValueError('job_version')
     code = [{'name': name, 'sha256': digest(Path(__file__).with_name(name).read_bytes())} for name in ['compute.py', 'engine.py', 'model.py', 'blocks.py', 'multimodal.py', 'rail.py']]
     from blocks import encode
-    if job['implementation'] != {'version': '0.6.0', 'sha256': digest(encode(code))}:
+    if job['implementation'] != {'version': '0.6.1', 'sha256': digest(encode(code))}:
         raise ValueError('implementation_version')
     provenance = job['provenance']
     if set(provenance) != {'kind', 'description', 'validDate', 'modelValidation'} or provenance['kind'] not in ['synthetic', 'assumed', 'observed', 'operating-plan'] or provenance['modelValidation'] != 'not_calibrated' or not isinstance(provenance['description'], str) or not 1 <= len(provenance['description']) <= 2000:

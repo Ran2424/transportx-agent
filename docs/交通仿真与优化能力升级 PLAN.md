@@ -17,7 +17,7 @@
 
 | 已实现能力 | 当前行为与代码入口 |
 |---|---|
-| 计算与运营模型 | 独立 [Traffic Simulation 模块](../modules/optional/traffic-simulation) 共用 Python/TraCI 入口执行纯道路、最小疏散和有限多方式场景。SUMO 提供道路运动、停靠、离站与返场观测。运营账本记录旅客、节点容量、泊位、公交与网约车周转、有限地铁班次和接续。公交阈值反馈读取当时已到达的队列 |
+| 计算与运营模型 | 独立 [Traffic Simulation 模块](../modules/capabilities/traffic-simulation) 共用 Python/TraCI 入口执行纯道路、最小疏散和有限多方式场景。SUMO 提供道路运动、停靠、离站与返场观测。运营账本记录旅客、节点容量、泊位、公交与网约车周转、有限地铁班次和接续。公交阈值反馈读取当时已到达的队列 |
 | Agent 工具与 Run | [SimulationService](../src/server/simulation-service.ts) 管理会话归属、冻结场景、Run、实验与结果读取。五个现行工具和作业契约见第 3.2 节 |
 | 回放与证据 | [Simulation Canvas](../src/web/features/simulation/SimulationWorkspace.tsx) 独立读取已发布完整块，轨迹按 2 s 采样。支持运行中观看、暂停、拖动、倍速、历史恢复、车辆/节点/线路及旅客查询，按 Run、时刻和对象冻结上下文。Canvas 展示配对结果，冻结报告通过 Document 打开 |
 | 地图表达 | 仿真路网、普通小汽车圆点、公交载客标记、节点旅客数及地铁接续人数可见。可选 OpenStreetMap 底图叠加在仿真路网下方，切换保留视角、时刻与选中对象。地图和普通 Geo 共享渲染基础，分别管理各自视图 |

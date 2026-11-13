@@ -387,12 +387,12 @@ Workbench 默认装配上述十个直接依赖；CLI Domain 无依赖，使用 `
 | `capabilities/geo`、`spatial-analysis` | 地图和空间分析 Skill/Extension；空间计算 Python 脚本 | Workbench 基础依赖；Geo 依赖 Canvas，Spatial Analysis 依赖 Geo + Citation |
 | `official/traffic-report`、`official/module-authoring` | 报告模板资产、模块编写 Skill | Workbench 基础依赖 |
 | `capabilities/cad` | DXF 协作工具、按需 Skill 与受控 Python 引擎 | 官方可选 Capability，依赖 Canvas，默认不选择 |
-| `optional/traffic-simulation` | 仿真工具、Skill、计算脚本和 SUMO 运行时 | 桌面构建装入目标运行时后注册为官方可选 Capability，新任务显式选择 |
+| `capabilities/traffic-simulation` | 仿真工具、Skill 与计算脚本 | 桌面构建装入匹配 SUMO 运行时后注册为官方可选 Capability，新任务显式选择 |
 | 用户安装包 | Video、交通数据、知识库、图表风格、演示数据等可选能力 | 由设置页安装到用户目录，按 manifest 依赖装配 |
 
 配置与路径读取位于 config；Registry、Installer、AssetResolver 与 Assembler 的实例装配位于 [platform-composition.ts](../src/server/platform-composition.ts)。server-main 是组合根，向 Manager 注入已有装配器、工作区创建、启动函数、spawn 与服务 endpoint；sessions 不再在 import 时创建全局 Manager。内置注册以 [config.ts](../src/server/config.ts) 的 `BUILTIN_MODULE_MANIFESTS` 为准。用户安装后位于 `<user-data>/modules/<id>/<version>/`。仓库中的 `modules/installable/` 仅作为本地用户模块暂存目录，默认被 Git 忽略，不属于平台源码；`TAU_MODULE_MANIFESTS` 另提供开发用 external 来源，不等于用户已安装包。
 
-基础配置注册 13 个内置模块，包括两个 Domain、十个 Workbench 直接依赖与可选的 CAD。包含匹配运行时的桌面构建额外注册 Traffic Simulation。已有会话按原冻结来源与版本恢复。
+基础配置注册 13 个内置模块，包括两个 Domain、十个 Workbench 直接依赖与可选的 CAD。包含匹配运行时的桌面构建额外注册 Traffic Simulation。已有会话按原冻结来源与版本恢复。`modules/optional/` 用于本地示例等可选模块，由 Git 和常规发行包忽略。
 
 ### 5.4 从包到会话
 

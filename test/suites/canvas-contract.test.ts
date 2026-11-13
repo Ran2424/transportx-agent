@@ -24,7 +24,33 @@ test('Canvas resources and adapter contracts accept valid presentations and reje
   // Finite service contracts reject conflicting resources and executable policy bags.
   {
     const { parseTrafficScenario, parseSimulationCanvasPayload, parseSimulationCanvasTarget, parseSimulationGeometry } = await import('../../src/contracts/simulation.ts');
-    const scenario = require('../../modules/optional/hongqiao-night-demo/assets/night-demo/multimodal-baseline.json');
+    const scenario = {
+      schemaVersion: 1, title: 'Synthetic contract test',
+      provenance: { kind: 'synthetic', description: 'Contract test', validDate: '2026-01-01', modelValidation: 'not_calibrated' },
+      network: { path: 'network.net.xml', version: 'test', mapping: { version: 1, roadRoute: ['pickup', 'transfer'] } },
+      configuration: {
+        schemaVersion: 1, model: 'multimodal', networkVersion: 'test', serviceDate: '2026-01-01',
+        timezone: 'Asia/Shanghai', startTime: '23:00:00', durationSeconds: 600, seed: 1, backgroundCount: 0,
+        stepSeconds: 1, decisionSeconds: 1, sampleSeconds: 2, blockSeconds: 10,
+        units: { time: 's', distance: 'm', speed: 'm/s' },
+        coordination: {
+          version: 2, boardingSeconds: 5,
+          nodes: [
+            { id: 'node:pickup', role: 'pickup', edge: 'pickup', waitingCapacity: 10, berths: [{ lane: 0, position: 20 }, { lane: 1, position: 20 }] },
+            { id: 'node:transfer', role: 'transfer', edge: 'transfer', waitingCapacity: 10, berths: [{ lane: 0, position: 20 }] },
+          ],
+          routes: [{ id: 'route:bus-east', mode: 'bus', origin: 'node:pickup', target: 'node:transfer', destination: 'east', outbound: ['pickup', 'transfer'], inbound: ['transfer', 'pickup'], transferSeconds: 20, externalSeconds: 60 }],
+          fleet: [
+            { id: 'bus-a', mode: 'bus', capacity: 4, home: 'node:pickup', berth: 0 },
+            { id: 'bus-b', mode: 'bus', capacity: 4, home: 'node:pickup', berth: 1 },
+          ],
+          travelers: [{ id: 'traveler-a', time: 0, origin: 'node:pickup', destination: 'east', route: 'route:bus-east' }],
+          departures: [{ id: 'departure-a', time: 10, vehicle: 'bus-a', route: 'route:bus-east' }],
+          metro: [{ id: 'metro-a', time: 100, node: 'node:transfer', destination: 'east', capacity: 4, externalSeconds: 60 }],
+          policy: { kind: 'fixed' },
+        },
+      },
+    };
     assert.ok(parseTrafficScenario(scenario));
     const berthConflict = structuredClone(scenario);
     berthConflict.configuration.coordination.fleet[1].berth = berthConflict.configuration.coordination.fleet[0].berth;
@@ -33,8 +59,13 @@ test('Canvas resources and adapter contracts accept valid presentations and reje
     wrongConnection.configuration.coordination.metro[0].destination = 'missing-destination';
     assert.equal(parseTrafficScenario(wrongConnection), null);
     const policyCode = structuredClone(scenario);
-    policyCode.configuration.coordination.policy = { kind: 'queue-threshold', threshold: 2, cooldownSeconds: 30, routes: ['route:bus-east'], code: 'unapproved.py' };
-    assert.equal(parseTrafficScenario(policyCode), null);
+    const queuePolicy = { kind: 'queue-threshold', threshold: 2, cooldownSeconds: 30, routes: ['route:bus-east'] };
+    policyCode.configuration.coordination.policy = queuePolicy;
+    assert.ok(parseTrafficScenario(policyCode));
+    assert.equal(parseTrafficScenario({
+      ...policyCode,
+      configuration: { ...policyCode.configuration, coordination: { ...policyCode.configuration.coordination, policy: { ...queuePolicy, code: 'unapproved.py' } } },
+    }), null);
     const wrongItinerary = structuredClone(scenario);
     wrongItinerary.configuration.coordination.travelers[0].destination = 'wrong-direction';
     assert.equal(parseTrafficScenario(wrongItinerary), null);

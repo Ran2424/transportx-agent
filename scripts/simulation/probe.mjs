@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const { PythonRunner } = require('../../bin/python-runner.js');
 const { ProcessRunner } = require('../../bin/process-runner.js');
 const fixture = path.resolve('test/fixtures/simulation');
-const script = path.resolve('modules/optional/traffic-simulation/scripts/compute.py');
+const script = path.resolve('modules/capabilities/traffic-simulation/scripts/compute.py');
 const python = process.env.TAU_PYTHON_COMMAND;
 const dependencies = process.env.TRANSPORTX_SIMULATION_DEPS;
 if (!python || (!dependencies && !process.env.TRANSPORTX_SIMULATION_RUNTIME)) throw new Error('Set TAU_PYTHON_COMMAND and an explicit dependency directory or verified runtime');

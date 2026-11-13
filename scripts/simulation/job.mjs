@@ -17,7 +17,7 @@ export function validateScenario(value) {
   return structuredClone(parsed);
 }
 export function createJob(request, trusted) {
-  const implementationRoot = fileURLToPath(new URL('../../modules/optional/traffic-simulation/scripts', import.meta.url));
+  const implementationRoot = fileURLToPath(new URL('../../modules/capabilities/traffic-simulation/scripts', import.meta.url));
   return io.createSimulationJob(request, { ...trusted, implementationRoot, implementationVersion: readJson(path.join(implementationRoot, '..', 'manifest.json')).version,
     mapping: { version: 1, roadRoute: ['hub', 'out', 'relay', 'back'], ...(request.model === 'evacuation' ? { edges: { hub: 'hub', outbound: 'out', relay: 'relay', inbound: 'back' } } : {}) },
     provenance: { kind: 'synthetic', description: 'P0/P1 technical probe', validDate: request.serviceDate, modelValidation: 'not_calibrated' },

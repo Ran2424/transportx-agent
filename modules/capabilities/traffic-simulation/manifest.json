@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "com.transportx.traffic-simulation",
   "name": "Traffic Simulation",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "capability",
   "platformVersion": ">=3.24.2 <4.0.0",
   "dependencies": ["com.transportx.canvas", "com.transportx.geo", "com.transportx.citation", "com.transportx.document"],
