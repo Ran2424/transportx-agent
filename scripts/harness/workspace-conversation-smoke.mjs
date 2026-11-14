@@ -203,10 +203,15 @@ try {
     assert.equal(Object.keys(restored.resourceLinks).length, 2);
     assert.ok(!JSON.stringify(Object.values(restored.resourceLinks)).includes('must-not-be-replayed'));
     assert.equal(await (await fetch(base + restored.resourceLinks[reportUrl])).text(), 'Historical source opened through the new file API.');
-    await page.evaluate((id) => localStorage.setItem('tau-active-conversation-id', id), legacyRecord.id);
     const legacyRequests = [];
     page.on('request', (request) => legacyRequests.push(new URL(request.url()).pathname));
-    await page.reload({ waitUntil: 'networkidle' });
+    const legacyRow = page.locator('.session-row').filter({ has: page.getByText(legacyRecord.name, { exact: true }) });
+    const [legacySnapshot] = await Promise.all([
+      page.waitForResponse((response) => new URL(response.url()).pathname === `/api/conversations/${legacyRecord.id}/snapshot`),
+      legacyRow.click(),
+    ]);
+    assert.equal(legacySnapshot.status(), 200);
+    assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')), legacyRecord.id);
     const restoredLink = page.getByRole('link', { name: '历史报告', exact: true });
     await restoredLink.waitFor();
     await page.getByTitle('原计划缺失；发送前需确认当前配置', { exact: true }).waitFor();
