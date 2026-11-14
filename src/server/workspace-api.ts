@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WorkspaceHost } from './workspace-host.js';
 import type { ServerRouter, RouteContext } from './router.js';
-import type { MigrationSourceDecision, IsolatedMigrationDeletion } from './workspace-migration-runner.js';
 
 type Services = {
   workspaces: WorkspaceHost;
@@ -12,6 +11,7 @@ type Services = {
   servePreview(res: ServerResponse, file: string): void;
   serveRawFile(req: IncomingMessage, res: ServerResponse, file: string, download: boolean): void;
   openNative(file: string): Promise<void>;
+  assertNative(req: IncomingMessage): void;
 };
 
 export function registerWorkspaceApi<T extends Services>(router: ServerRouter<T>) {
@@ -28,35 +28,34 @@ export function registerWorkspaceApi<T extends Services>(router: ServerRouter<T>
     return input;
   };
   const id = (context: RouteContext<T>) => decodeURIComponent(context.params[0]);
-  const source = (context: RouteContext<T>) => { const found = context.deps.workspaces.options.migration.read().items.find((item) => item.workspaceId === id(context)); if (!found) throw Object.assign(new Error('Workspace has no migration source.'), { code: 'workspace_missing', status: 404 }); return found.id; };
   router
     .get('/api/workspaces', endpoint(({ deps }) => deps.workspaces.index()))
     .get(/^\/api\/workspaces\/([^/]+)$/, endpoint((context) => context.deps.workspaces.workspace(id(context))))
     .patch(/^\/api\/workspaces\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.editWorkspace(id(context), await readInput(context.req, context.deps))))
     .patch(/^\/api\/workspaces\/([^/]+)\/sidebar$/, endpoint(async (context) => context.deps.workspaces.setSidebarVisibility(id(context), (await readInput(context.req, context.deps)).hidden)))
     .post(/^\/api\/workspaces\/([^/]+)\/release$/, endpoint((context) => context.deps.workspaces.releaseMissingWorkspace(id(context))))
-    .post('/api/conversations', endpoint(async ({ req, deps }) => deps.workspaces.options.creation.create(await readInput(req, deps))))
+    .post('/api/conversations', endpoint(async ({ req, deps }) => deps.workspaces.create(await readInput(req, deps))))
     .get('/api/conversations/search', endpoint(({ url, deps }) => deps.workspaces.search(url.searchParams.get('q') || '')))
     .get(/^\/api\/conversations\/([^/]+)\/(?:snapshot|history)$/, endpoint((context) => context.deps.workspaces.snapshot(id(context))))
     .post(/^\/api\/conversations\/([^/]+)\/activate$/, endpoint(async (context) => context.deps.workspaces.activate(id(context), await readInput(context.req, context.deps))))
-    .post(/^\/api\/conversations\/([^/]+)\/close$/, endpoint(async (context) => { const body = await readInput(context.req, context.deps); return context.deps.workspaces.options.runtime.close(id(context), body.stopCurrent === true); }))
+    .post(/^\/api\/conversations\/([^/]+)\/close$/, endpoint(async (context) => { const body = await readInput(context.req, context.deps); return context.deps.workspaces.closeConversation(id(context), body.stopCurrent === true); }))
     .post(/^\/api\/conversations\/([^/]+)\/move$/, endpoint(async (context) => context.deps.workspaces.moveConversation(id(context), await readInput(context.req, context.deps))))
     .patch(/^\/api\/conversations\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.renameConversation(id(context), await readInput(context.req, context.deps))))
-    .delete(/^\/api\/conversations\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.options.deletion.conversation(id(context), await readInput(context.req, context.deps) as never)))
-    .post(/^\/api\/workspaces\/([^/]+)\/delete$/, endpoint(async (context) => context.deps.workspaces.options.deletion.workspace(id(context), await readInput(context.req, context.deps) as never)))
-    .post(/^\/api\/workspaces\/([^/]+)\/migration\/delete$/, endpoint(async (context) => context.deps.workspaces.options.runner.deleteIsolated(source(context), await readInput(context.req, context.deps) as unknown as IsolatedMigrationDeletion)))
+    .delete(/^\/api\/conversations\/([^/]+)$/, endpoint(async (context) => context.deps.workspaces.deleteConversation(id(context), await readInput(context.req, context.deps) as never)))
+    .post(/^\/api\/workspaces\/([^/]+)\/delete$/, endpoint(async (context) => context.deps.workspaces.deleteWorkspace(id(context), await readInput(context.req, context.deps) as never)))
+    .post(/^\/api\/workspaces\/([^/]+)\/migration\/delete$/, endpoint(async (context) => context.deps.workspaces.deleteIsolatedWorkspace(id(context), await readInput(context.req, context.deps) as never)))
     .get('/api/migration', endpoint(({ deps }) => deps.workspaces.migrationStatus()))
-    .get(/^\/api\/migration\/items\/([^/]+)$/, endpoint((context) => context.deps.workspaces.options.runner.report(id(context))))
-    .post('/api/migration/resume', endpoint(async ({ deps }) => { await deps.workspaces.options.migration.initialize(); void deps.workspaces.startConversions().catch(() => {}); return { accepted: true, migration: deps.workspaces.options.migration.status() }; }))
-    .post('/api/migration/resolve', endpoint(async ({ req, deps }) => { const body = await readInput(req, deps); if (typeof body.itemId !== 'string') throw new Error('A migration itemId is required.'); return deps.workspaces.options.runner.resolveSource(body.itemId, body as unknown as MigrationSourceDecision); }))
-    .get(/^\/api\/workspaces\/([^/]+)\/migration$/, endpoint((context) => context.deps.workspaces.options.runner.report(source(context))))
-    .post(/^\/api\/workspaces\/([^/]+)\/migration\/resolve$/, endpoint(async (context) => { const body = await readInput(context.req, context.deps), runner = context.deps.workspaces.options.runner; return typeof body.sourceId === 'string' ? runner.resolvePrivate(source(context), body as never) : runner.resolveSource(source(context), body as unknown as MigrationSourceDecision); }))
-    .get(/^\/api\/workspaces\/([^/]+)\/runtime-diagnostics$/, endpoint((context) => { const entry = context.deps.workspaces.options.store.readCatalog().entries.find((entry) => entry.workspaceId === id(context)); const item = context.deps.workspaces.options.migration.read().items.find((item) => item.workspaceId === id(context)); if (!entry && !item) throw new Error('Workspace is unavailable.'); return context.deps.workspaces.options.gate.diagnostics(entry?.path || item!.path); }))
-    .post(/^\/api\/workspaces\/([^/]+)\/runtime-recovery$/, endpoint(async (context) => { const body = await readInput(context.req, context.deps), { store, migration, gate } = context.deps.workspaces.options; migration.assertSystemReady(); const entry = store.readCatalog().entries.find((entry) => entry.workspaceId === id(context)), item = migration.read().items.find((item) => item.workspaceId === id(context)); if (!entry && !item || typeof body.generation !== 'string' || !['recheck', 'stop-owned'].includes(String(body.action))) throw new Error('A current runtime generation and recovery action are required.'); return gate.recover(entry?.path || item!.path, body.generation, body.action as 'recheck' | 'stop-owned'); }))
+    .get(/^\/api\/migration\/items\/([^/]+)$/, endpoint((context) => context.deps.workspaces.migrationReport(id(context))))
+    .post('/api/migration/resume', endpoint(({ deps }) => deps.workspaces.resumeMigration()))
+    .post('/api/migration/resolve', endpoint(async ({ req, deps }) => { const body = await readInput(req, deps); if (typeof body.itemId !== 'string') throw new Error('A migration itemId is required.'); return deps.workspaces.resolveMigrationSource(body.itemId, body as never); }))
+    .get(/^\/api\/workspaces\/([^/]+)\/migration$/, endpoint((context) => context.deps.workspaces.workspaceMigrationReport(id(context))))
+    .post(/^\/api\/workspaces\/([^/]+)\/migration\/resolve$/, endpoint(async (context) => context.deps.workspaces.resolveWorkspaceMigration(id(context), await readInput(context.req, context.deps))))
+    .get(/^\/api\/workspaces\/([^/]+)\/runtime-diagnostics$/, endpoint((context) => context.deps.workspaces.runtimeDiagnostics(id(context))))
+    .post(/^\/api\/workspaces\/([^/]+)\/runtime-recovery$/, endpoint(async (context) => context.deps.workspaces.recoverRuntime(id(context), await readInput(context.req, context.deps))))
     .get(/^\/api\/conversations\/([^/]+)\/files$/, endpoint((context) => { const target = context.deps.workspaces.target(id(context)); context.deps.serveFiles(context.res, context.deps.workspaces.file(id(context), context.url.searchParams.get('path')), target.directory); }))
     .get(/^\/api\/conversations\/([^/]+)\/files\/content$/, endpoint((context) => context.deps.serveFileContent(context.res, context.deps.workspaces.file(id(context), context.url.searchParams.get('path')))))
     .get(/^\/api\/conversations\/([^/]+)\/files\/preview$/, endpoint((context) => context.deps.servePreview(context.res, context.deps.workspaces.file(id(context), context.url.searchParams.get('path')))))
     .get(/^\/api\/conversations\/([^/]+)\/files\/raw$/, endpoint((context) => context.deps.serveRawFile(context.req, context.res, context.deps.workspaces.file(id(context), context.url.searchParams.get('path')), context.url.searchParams.get('download') === '1')))
     .head(/^\/api\/conversations\/([^/]+)\/files\/raw$/, endpoint((context) => context.deps.serveRawFile(context.req, context.res, context.deps.workspaces.file(id(context), context.url.searchParams.get('path')), context.url.searchParams.get('download') === '1')))
-    .post(/^\/api\/conversations\/([^/]+)\/open$/, endpoint(async (context) => { const body = await readInput(context.req, context.deps); if (body.path !== undefined && typeof body.path !== 'string') throw new Error('Invalid file path.'); await context.deps.openNative(context.deps.workspaces.file(id(context), body.path as string | undefined)); return { opened: true }; }));
+    .post(/^\/api\/conversations\/([^/]+)\/open$/, endpoint(async (context) => { context.deps.assertNative(context.req); const body = await readInput(context.req, context.deps); if (body.path !== undefined && typeof body.path !== 'string') throw new Error('Invalid file path.'); await context.deps.openNative(context.deps.workspaces.file(id(context), body.path as string | undefined)); return { opened: true }; }));
 }

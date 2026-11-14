@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { GeoLayer, GeoSceneSnapshot } from '../../../contracts/geo.js';
+import type { GeoLayer, GeoSceneSnapshot } from '../../../contracts/geo-scene.js';
 import { geoLegendItems, geoLegendGroups, geoLegendCaption, drawGeoLegendRamp, drawGeoLegendSymbol, type GeoLegendSection, type GeoLegendSymbol } from '../../../public/visualization/geo/geo-legend.js';
 import { Icon } from '../../components/icons';
 

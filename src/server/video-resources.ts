@@ -4,7 +4,7 @@ const path = require('node:path');
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseVideoResourceManifestStructured } from '../contracts/index.js';
 import { isWithin } from './util/path.js';
-import { writeJson as sendJson } from './http/response.js';
+import { writeJson as sendJson, streamResponse } from './http/response.js';
 
 type VideoResourceSession = { cwd: string };
 type VideoResourceRouteDeps = { getSession(sessionId: string): VideoResourceSession | null | undefined; authorize(sessionId: string, resourceId: string): void };
@@ -104,7 +104,7 @@ function serveVideoResource(req: IncomingMessage, res: ServerResponse, session: 
         res.end();
         return;
       }
-      fs.createReadStream(realVideo, { start: rangeStart, end: rangeEnd }).pipe(res);
+      streamResponse(fs.createReadStream(realVideo, { start: rangeStart, end: rangeEnd }), res);
       return;
     }
 
@@ -113,7 +113,7 @@ function serveVideoResource(req: IncomingMessage, res: ServerResponse, session: 
       res.end();
       return;
     }
-    fs.createReadStream(realVideo).pipe(res);
+    streamResponse(fs.createReadStream(realVideo), res);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return sendJson(res, 404, { error: 'Video resource not found' });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PlatformOverview } from '../../../public/kernel/commands.js';
+import type { PlatformOverview } from '../../../public/kernel/platform-commands.js';
 import { appKernel } from '../../app/composition-root';
 import { useSessionState } from '../../app/store-hooks';
 import { projectUi } from '../../app/project-ui';

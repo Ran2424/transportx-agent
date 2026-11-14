@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ConversationView } from '../../../public/app-types.js';
 import { useTranslation } from 'react-i18next';
-import { GEO_CONTEXTS_PER_MESSAGE, type GeoClientContextV1, type GeoContextMode, type GeoInteractionRequestV1, type VisualizationEnvelope } from '../../../contracts/geo.js';
+import { GEO_CONTEXTS_PER_MESSAGE, type GeoClientContextV1, type GeoContextMode, type GeoInteractionRequestV1 } from '../../../contracts/geo-interaction.js';
+import { type VisualizationEnvelope } from '../../../contracts/geo.js';
 import { useSessionState } from '../../app/store-hooks';
 import { appKernel } from '../../app/composition-root';
 import { FeatureEmpty } from '../../components/FeatureEmpty';

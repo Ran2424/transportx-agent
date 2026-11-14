@@ -1,160 +1,32 @@
 import { citationResourceError } from './citation-resources.js';
 const fs = require('node:fs');
-const crypto = require('node:crypto');
 
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { JsonRecord, RpcCommand, RpcResponse } from './types.js';
-import type { LiveSessionManager, PiRpcSession } from './sessions.js';
+import type { ApiRouteServices } from './api-services.js';
+import type { CanvasService } from './canvas-service.js';
+import type { RpcCommand } from './types.js';
 import type { SessionAttachmentSource } from '../contracts/attachments.js';
 import { ServerRouter } from './router.js';
-import type { CitationService } from './citation-service.js';
-import type { SpatialAnalysisService } from './spatial-analysis-service.js';
-import type { VideoService } from './video-service.js';
 import { registerWorkspaceApi } from './workspace-api.js';
-import type { WorkspaceHost } from './workspace-host.js';
-import { serviceModuleIds, sessionServiceLabel, type SessionService } from './session-service.js';
+import { resolveServiceSession, resolveLiveSessionParam, resolveResourceContextParam, resolveConversationTargetParam, runRequestJob, withRequestSignal } from './api-context.js';
+import { registerSimulationApi } from './simulation-api.js';
+import { registerReportApi } from './report-api.js';
 import { validateToolRequest } from './tool-request.js';
-import type { GeoInteractionService } from './geo-interaction-service.js';
-import type { CanvasService } from './canvas-service.js';
 import { CadInvocations } from './cad-invocations.js';
 import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
-import type { CadService } from './cad-service.js';
-import type { SimulationService } from './simulation-service.js';
-
-type ApiRouteServices = {
-  beginOperation?(url: URL): () => void;
-  sessions: LiveSessionManager;
-  workspaces: WorkspaceHost;
-  snapshotSchemaVersion: number;
-  health(): JsonRecord;
-  conversationOverview(id: string): unknown;
-  sessionOptions(): JsonRecord;
-  json(res: ServerResponse, status: number, data: unknown): void;
-  errorMessage(error: unknown): string;
-  errorStatus(error: unknown): number;
-  readBody(req: IncomingMessage): Promise<RpcCommand>;
-  serveFiles(res: ServerResponse, path: string, root?: string): void;
-  serveFileContent(res: ServerResponse, path: string): void;
-  serveResources(res: ServerResponse, session: { entries: JsonRecord[]; send?: PiRpcSession['send'] }): Promise<void>;
-  servePreview(res: ServerResponse, path: string): void;
-  serveRawFile(req: IncomingMessage, res: ServerResponse, path: string, download: boolean): void;
-  openNative(path: string): Promise<void>;
-  handleRpc(command: RpcCommand): Promise<RpcResponse>;
-  renderReportPdf(title: string, html: string): Promise<Buffer>;
-  listAttachments(cwd: string): unknown[];
-  uploadAttachments(cwd: string, req: IncomingMessage, source: SessionAttachmentSource, conversationId: string): Promise<unknown[]>;
-  deleteAttachment(cwd: string, id: string): void;
-  citation: CitationService;
-  spatial: SpatialAnalysisService;
-  video: VideoService;
-  geo: GeoInteractionService;
-  canvas: CanvasService;
-  cad: CadService;
-  traffic: SimulationService;
-};
-
-export const REPORT_PDF_MAX_HTML_BYTES = 50 * 1024 * 1024;
 
 export function createApiRouter(services: ApiRouteServices) {
   const cadInvocations = new CadInvocations(path.join(PI_AGENT_DIR, 'executions', 'cad'), SESSIONS_DIR, services.cad);
   const spatialInvocations = new SpatialInvocations(path.join(PI_AGENT_DIR, 'executions', 'spatial'), SESSIONS_DIR, services.spatial);
   const router = new ServerRouter(services, services.beginOperation);
-  const pdfDownloads = new Map<string, { pdf: Buffer; filename: string; expiresAt: number; timer: ReturnType<typeof setTimeout> }>();
-  let renderingPdfs = 0;
-  const removePdf = (id: string) => {
-    const entry = pdfDownloads.get(id);
-    if (entry) clearTimeout(entry.timer);
-    pdfDownloads.delete(id);
-  };
-  const createPdf = async (req: IncomingMessage, deps: ApiRouteServices) => {
-    if (renderingPdfs >= 2) { req.resume(); throw Object.assign(new Error('PDF render capacity reached'), { status: 503 }); }
-    renderingPdfs++;
-    try {
-      const body = await deps.readBody(req);
-      const title = typeof body.title === 'string' ? body.title.trim().slice(0, 300) : '';
-      const html = typeof body.html === 'string' ? body.html : '';
-      if (!title || !html) {
-        const error = new Error('title and html required') as Error & { status?: number };
-        error.status = 400;
-        throw error;
-      }
-      if (Buffer.byteLength(html, 'utf8') > REPORT_PDF_MAX_HTML_BYTES) {
-        const error = new Error('Rendered report is too large') as Error & { status?: number };
-        error.status = 413;
-        throw error;
-      }
-      const pdf = await deps.renderReportPdf(title, html);
-      if (pdf.length > 32 * 1024 * 1024) throw Object.assign(new Error('Rendered PDF exceeds 32 MB'), { status: 413 });
-      return { pdf, filename: `${title.replace(/\.mdx?$/i, '') || 'report'}.pdf` };
-    } finally { renderingPdfs--; }
-  };
-  const withRequestSignal = async <T>(req: IncomingMessage, res: ServerResponse, execute: (signal: AbortSignal) => Promise<T>) => {
-    const controller = new AbortController();
-    const cancel = () => controller.abort();
-    req.once('aborted', cancel);
-    res.once('close', cancel);
-    try { return await execute(controller.signal); }
-    finally { req.off('aborted', cancel); res.off('close', cancel); }
-  };
-  const runJob = <T>(req: IncomingMessage, res: ServerResponse, session: PiRpcSession, execute: (signal: AbortSignal) => Promise<T>) => withRequestSignal(req, res, (signal) => services.sessions.runJob(session.id, execute, signal));
-  const runSimulation = (req: IncomingMessage, res: ServerResponse, session: PiRpcSession, request: { scenarioId?: unknown; toolCallId?: unknown; operationId?: unknown; experimentId?: unknown; slot?: unknown }) => {
-    const reserved = services.traffic.prepareRun(session, request);
-    if (reserved.state !== 'prepared') return Promise.resolve(reserved);
-    return withRequestSignal(req, res, (signal) => services.sessions.runJob(session.id, (jobSignal) => services.traffic.run(session, { ...request, operationId: reserved.runId }, jobSignal), signal, (jobId) => services.traffic.bindJob(session, reserved.runId, jobId)));
-  };
   registerWorkspaceApi(router);
-  for (const operation of ['prepare', 'run/prepare', 'run', 'execution', 'query', 'experiment'] as const) {
-    router.post(`/api/internal/traffic/${operation}`, async ({ req, res, deps }) => {
-      let body: RpcCommand = {};
-      try {
-        body = await deps.readBody(req);
-        const session = resolveServiceSession(res, body, deps, 'traffic'); if (!session) return;
-        const toolId = operation.startsWith('run') ? 'traffic.run' : operation === 'prepare' ? 'traffic.prepare' : `traffic.${operation}`;
-        const input = await validateToolRequest('com.transportx.traffic-simulation', body, toolId);
-        const request = { ...input, toolCallId: body.toolCallId, operationId: body.operationId };
-        if (operation === 'run/prepare') return deps.json(res, 200, { runId: deps.traffic.prepareRun(session, request).runId });
-        if (operation === 'experiment') {
-          if (input.action === 'prepare' && input.experimentId !== undefined || input.action === 'query' && (input.baselineScenarioId !== undefined || input.variantScenarioId !== undefined || input.seeds !== undefined || typeof input.experimentId !== 'string')) throw Object.assign(new Error('Supply preparation conditions or one existing experiment reference.'), { status: 400, code: 'traffic_experiment_input_invalid' });
-          const experiment = input.action === 'prepare' ? deps.traffic.prepareExperiment(session, input) : deps.traffic.experiment(session, String(input.experimentId));
-          return deps.json(res, 200, { result: { protocol: 'transportx-traffic', version: 1, operation: 'experiment', experiment }, toolCallId: body.toolCallId });
-        }
-        const result = operation === 'prepare'
-          ? { protocol: 'transportx-traffic', version: 1, operation: 'prepare', scenario: await runJob(req, res, session, (signal) => deps.traffic.prepareScenario(session, input, signal, input.geoContextId === undefined ? undefined : deps.geo.getContext(session, String(input.geoContextId)).context)) }
-          : operation === 'run'
-            ? { protocol: 'transportx-traffic', version: 1, operation: 'run', run: await runSimulation(req, res, session, request) }
-            : operation === 'execution'
-              ? { protocol: 'transportx-traffic', version: 1, operation: 'execution', run: input.action === 'cancel' ? deps.traffic.cancel(session, input) : deps.traffic.queryExecution(session, input) }
-              : { protocol: 'transportx-traffic', version: 1, operation: 'query', run: deps.traffic.queryExecution(session, { runId: input.runId }), query: deps.traffic.query(session, input) };
-        deps.json(res, 200, { result, toolCallId: body.toolCallId, ...('run' in result && result.run ? { canvas: deps.traffic.presentation(session, result.run.runId) } : {}) });
-      } catch (error) {
-        deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code, toolCallId: body.toolCallId, commit: operation === 'prepare' || operation === 'run/prepare' ? 'not_started' : 'unknown' });
-      }
-    });
-  }
-  router.get(/^\/api\/conversations\/([^/]+)\/simulation-experiments\/(experiment_[a-f0-9]{32})$/, ({ res, params, deps }) => {
-    const session = resolveResourceContextParam(res, params[0], deps); if (!session) return;
-    try { deps.json(res, 200, deps.traffic.experiment(session, params[1], false)); }
-    catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
-  });
-  router.get(/^\/api\/conversations\/([^/]+)\/simulation-runs(?:\/([^/]+)\/(index|geometry|query|chunks\/\d+))?$/, ({ res, params, url, deps }) => {
-    const session = resolveResourceContextParam(res, params[0], deps); if (!session) return;
-    try {
-      const runId = params[1] ? decodeURIComponent(params[1]) : '', resource = params[2];
-      const index = resource === 'index' ? deps.traffic.availableIndex(session, runId) : null;
-      const value = !resource ? { runs: deps.traffic.list(session).map((run) => ({ run, canvas: deps.traffic.presentation(session, run.runId) })) }
-        : resource === 'index' ? { run: { ...deps.traffic.queryExecution(session, { runId }), ...(index ? { latestComputedTime: index.computedTime, availableFrameTime: index.availableTime } : {}) }, index }
-        : resource === 'geometry' ? deps.traffic.geometry(session, runId)
-        : resource === 'query' ? deps.traffic.query(session, { runId, ...(url.searchParams.has('time') ? { time: Number(url.searchParams.get('time')) } : {}), ...(url.searchParams.has('objectId') ? { objectId: url.searchParams.get('objectId') } : {}), ...(url.searchParams.has('eventSequence') ? { eventSequence: Number(url.searchParams.get('eventSequence')) } : {}) })
-        : deps.traffic.chunk(session, runId, Number(resource.split('/')[1]));
-      deps.json(res, 200, value);
-    } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
-  });
+  registerSimulationApi(router, services);
+  registerReportApi(router);
   router
-    .get('/api/health', ({ res, deps }) => deps.json(res, 200, deps.health()))
+    .get('/api/health', ({ req, res, deps }) => { res.setHeader('Cache-Control', 'no-store'); deps.json(res, 200, deps.health(req)); })
     .get(/^\/api\/conversations\/([^/]+)\/overview$/, ({ res, params, deps }) => { try { deps.json(res, 200, deps.conversationOverview(decodeURIComponent(params[0]))); } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); } })
     .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))
     .get(/^\/api\/conversations\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
@@ -248,44 +120,6 @@ export function createApiRouter(services: ApiRouteServices) {
       if (!session) return;
       try { deps.json(res, 200, await deps.geo.respond(session, decodeURIComponent(params[1]), await deps.readBody(req))); }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), ...(error && typeof error === 'object' && 'code' in error ? { code: error.code } : {}) }); }
-    })
-    .post('/api/reports/pdf', async ({ req, res, deps }) => {
-      try {
-        const { pdf, filename } = await createPdf(req, deps);
-        res.writeHead(200, {
-          'Content-Type': 'application/pdf',
-          'Content-Length': String(pdf.length),
-          'Content-Disposition': `attachment; filename="report.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-          'Cache-Control': 'no-store',
-        });
-        res.end(pdf);
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .post('/api/reports/pdf/download', async ({ req, res, deps }) => {
-      try {
-        const { pdf, filename } = await createPdf(req, deps);
-        const now = Date.now();
-        for (const [id, entry] of pdfDownloads) if (entry.expiresAt <= now) removePdf(id);
-        const cachedBytes = () => [...pdfDownloads.values()].reduce((total, entry) => total + entry.pdf.length, 0);
-        while (pdfDownloads.size >= 8 || cachedBytes() + pdf.length > 64 * 1024 * 1024) removePdf(pdfDownloads.keys().next().value!);
-        const id = crypto.randomUUID();
-        const timer = setTimeout(() => removePdf(id), 5 * 60 * 1000);
-        timer.unref();
-        pdfDownloads.set(id, { pdf, filename, expiresAt: now + 5 * 60 * 1000, timer });
-        deps.json(res, 200, { url: `/api/reports/pdf/download/${id}` });
-      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
-    })
-    .get(/^\/api\/reports\/pdf\/download\/([a-f0-9-]+)$/, ({ res, params }) => {
-      const entry = pdfDownloads.get(params[0]);
-      if (!entry || entry.expiresAt <= Date.now()) { res.writeHead(404); res.end(); return; }
-      removePdf(params[0]);
-      res.writeHead(200, {
-        'Content-Type': 'application/pdf',
-        'Content-Length': String(entry.pdf.length),
-        'Content-Disposition': `attachment; filename="report.pdf"; filename*=UTF-8''${encodeURIComponent(entry.filename)}`,
-        'Cache-Control': 'no-store',
-      });
-      res.end(entry.pdf);
     })
     .post('/api/internal/modules/package', async ({ req, res, deps }) => {
       try {
@@ -411,7 +245,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const session = resolveServiceSession(res, body, deps, 'cad');
         if (!session) return;
         await validateToolRequest('com.transportx.cad', body, 'cad.inspect');
-        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.inspect(session, body, signal)), toolCallId: body.toolCallId });
+        deps.json(res, 200, { result: await runRequestJob(deps.sessions, req, res, session, (signal) => deps.cad.inspect(session, body, signal)), toolCallId: body.toolCallId });
       } catch (error) {
         const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
         const status = deps.errorStatus(error);
@@ -438,7 +272,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const session = resolveServiceSession(res, body, deps, 'cad');
         if (!session) return;
         await validateToolRequest('com.transportx.cad', body, 'cad.verify');
-        deps.json(res, 200, { result: await runJob(req, res, session, (signal) => deps.cad.verify(session, body, signal)), toolCallId: body.toolCallId });
+        deps.json(res, 200, { result: await runRequestJob(deps.sessions, req, res, session, (signal) => deps.cad.verify(session, body, signal)), toolCallId: body.toolCallId });
       } catch (error) {
         const failure = error as Error & { code?: string; phase?: string; commit?: string; operationId?: string };
         const status = deps.errorStatus(error);
@@ -498,7 +332,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.present(session, body, signal)));
+        deps.json(res, 200, await runRequestJob(deps.sessions, req, res, session, (signal) => deps.video.present(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/video/snapshot', async ({ req, res, deps }) => {
@@ -506,7 +340,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.snapshot(session, body, signal)));
+        deps.json(res, 200, await runRequestJob(deps.sessions, req, res, session, (signal) => deps.video.snapshot(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/video/clip', async ({ req, res, deps }) => {
@@ -514,7 +348,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.clip(session, body, signal)));
+        deps.json(res, 200, await runRequestJob(deps.sessions, req, res, session, (signal) => deps.video.clip(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/internal/video/sample-frames', async ({ req, res, deps }) => {
@@ -522,44 +356,17 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'video');
         if (!session) return;
-        deps.json(res, 200, await runJob(req, res, session, (signal) => deps.video.sampleFrames(session, body, signal)));
+        deps.json(res, 200, await runRequestJob(deps.sessions, req, res, session, (signal) => deps.video.sampleFrames(session, body, signal)));
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
     .post('/api/rpc', async ({ req, res, deps }) => {
-      try { deps.json(res, 200, await deps.handleRpc(await deps.readBody(req))); }
+      try {
+        const command = await deps.readBody(req);
+        if (command?.type === 'open_logs_directory' || command?.type === 'open_module_directory') deps.assertNative(req);
+        deps.json(res, 200, await deps.handleRpc(command));
+      }
       catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
     })
 ;
   return router;
-}
-
-function resolveServiceSession(res: ServerResponse, body: RpcCommand, services: ApiRouteServices, service: SessionService) {
-  const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-  const token = typeof body.token === 'string' ? body.token : '';
-  const session = services.sessions.get(sessionId);
-  if (!session || session.terminating || !session.resolvedSessionPlan?.modules?.some((module) => module.id === serviceModuleIds[service]) || !token || token !== session.serviceTokens[service]) { services.json(res, 403, { error: `${sessionServiceLabel[service]} host access denied` }); return null; }
-  try { if (!session.lifecycle?.isCurrent(session) || services.workspaces.target(session.conversationId).manifest.id !== session.workspaceId) throw new Error('Runtime binding changed.'); }
-  catch { services.json(res, 403, { error: `${sessionServiceLabel[service]} runtime binding denied` }); return null; }
-  return session;
-}
-
-function resolveLiveSessionParam(res: ServerResponse, value: string, services: ApiRouteServices) {
-  let id: string;
-  try { id = decodeURIComponent(value); }
-  catch { services.json(res, 400, { error: 'Malformed live session id' }); return null; }
-  try { return services.workspaces.live(id); }
-  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
-}
-
-function resolveResourceContextParam(res: ServerResponse, value: string, services: ApiRouteServices) {
-  let id: string;
-  try { id = decodeURIComponent(value); }
-  catch { services.json(res, 400, { error: 'Malformed conversation id' }); return null; }
-  try { return services.workspaces.resourceContext(id); }
-  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
-}
-
-function resolveConversationTargetParam(res: ServerResponse, value: string, services: ApiRouteServices) {
-  try { return services.workspaces.target(decodeURIComponent(value)); }
-  catch (error) { services.json(res, services.errorStatus(error), { error: services.errorMessage(error), code: (error as { code?: string }).code }); return null; }
 }

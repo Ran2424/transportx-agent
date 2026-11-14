@@ -1,4 +1,5 @@
-import type { GeoEnvelopeOperation, GeoSceneSnapshot } from '../../../contracts/geo.js';
+import type { GeoEnvelopeOperation } from '../../../contracts/geo.js';
+import type { GeoSceneSnapshot } from '../../../contracts/geo-scene.js';
 
 export type GeoSceneUpdatePlan = {
   rebuildMap: boolean;

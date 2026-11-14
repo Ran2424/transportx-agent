@@ -40,7 +40,7 @@ The read-only CAD Canvas uses the following third-party packages:
 - `@mlightcad/mtext-renderer` 0.13.4 — MIT
 - `@mlightcad/three-renderer` 1.7.6 — MIT
 - `three` 0.172.0 — MIT
-- `lodash-es` 4.17.21 — MIT
+- `lodash-es` 4.18.1 — MIT
 - `@velipso/polybool` 1.1.1 — 0BSD
 
 Their upstream license texts and copyright notices are distributed with the corresponding npm packages.

@@ -15,6 +15,13 @@ test('Pi transport acknowledges writes and reconciles timeouts, rejection and la
     assert.equal(transport.resolve({ type: 'response', id: outbound.id, success: true }), true);
     assert.equal((await pending).success, true);
     assert.equal(transport.resolve({ type: 'response', id: outbound.id, success: true }), false);
+    const saturated = { ...input, writableNeedDrain: true };
+    await assert.rejects(transport.send(saturated, { type: 'prompt' }), { code: 'pi_rpc_backpressure' });
+    assert.equal(writes.length, 1);
+    saturated.writableNeedDrain = false;
+    const retried = transport.send(saturated, { type: 'get_state', id: 'after-drain' });
+    assert.equal(transport.resolve({ id: 'after-drain', success: true }), true);
+    assert.equal((await retried).success, true);
   }
 
   // Pi RPC transport acknowledges extension replies on write and rejects pending requests together

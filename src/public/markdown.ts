@@ -256,6 +256,13 @@ function renderInline(text: string, citationNumbers?: Record<string, number>, im
     return `%%IIMAGE${index}%%`;
   });
 
+  // Format link labels without rewriting URLs before resource lookup and validation.
+  const linkUrls: string[] = [];
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => {
+    const index = linkUrls.push(url) - 1;
+    return `[${label}](%%LINKURL${index}%%)`;
+  });
+
   // Bold + italic
   text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
 
@@ -271,7 +278,10 @@ function renderInline(text: string, citationNumbers?: Record<string, number>, im
   text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
   // Links
-  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, url: string) => { const projected = projectResource(url); return legacyHostResource(projected) ? `${label} (${unavailable})` : safeUrl(projected) ? `<a href="${projected}" target="_blank" rel="noopener">${label}</a>` : label; });
+  text = text.replace(/\[([^\]]+)\]\(%%LINKURL(\d+)%%\)/g, (_match, label: string, index: string) => {
+    const projected = projectResource(linkUrls[Number(index)]);
+    return legacyHostResource(projected) ? `${label} (${unavailable})` : safeUrl(projected) ? `<a href="${projected}" target="_blank" rel="noopener">${label}</a>` : label;
+  });
 
   // Auto-link bare URLs
   text = text.replace(/(^|[^"'])(https?:\/\/[^\s<]+)/g, (_match, prefix: string, url: string) => { const projected = projectResource(url); return legacyHostResource(projected) ? `${prefix}${unavailable}` : `${prefix}<a href="${projected}" target="_blank" rel="noopener">${url}</a>`; });

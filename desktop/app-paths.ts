@@ -15,10 +15,10 @@ export function resolveDesktopUserDataDir(homeDir: string, electronDefault: stri
   return platformDataRoot(platform, env, path.resolve(homeDir));
 }
 
-export function resolveDesktopPaths(appRoot: string, resourcesDir: string, userDataDir: string): DesktopPaths {
+export function resolveDesktopPaths(appRoot: string, resourcesDir: string, userDataDir: string, isPackaged: boolean): DesktopPaths {
   return {
     appRoot: path.resolve(appRoot),
-    resourcesDir: path.resolve(resourcesDir),
+    resourcesDir: path.resolve(isPackaged ? resourcesDir : appRoot),
     userDataDir: path.resolve(userDataDir),
     logsDir: path.join(path.resolve(userDataDir), 'logs'),
     agentHostEntrypoint: path.join(path.resolve(appRoot), 'bin', 'tau.js'),

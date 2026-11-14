@@ -37,7 +37,7 @@ test('Geo modes, bounds, terminal responses and restored interactions remain val
 
     // Geo Context v1 accepts the four fixed input modes
     {
-      const contract = await import('../../src/contracts/geo.ts');
+      const contract = await import('../../src/contracts/geo-interaction.ts');
       const values = [
         { ...base('feature'), selection: { layerId: 'roads', featureIds: ['r1', 2] } },
         { ...base('point'), geometry: { type: 'Point', coordinates: [121.45, 31.2] } },
@@ -49,7 +49,7 @@ test('Geo modes, bounds, terminal responses and restored interactions remain val
 
     // Geo Context v1 rejects mixed fields, invalid coordinates, duplicates and limits
     {
-      const contract = await import('../../src/contracts/geo.ts');
+      const contract = await import('../../src/contracts/geo-interaction.ts');
       assert.equal(contract.parseGeoClientContextStructured({ ...base('feature'), selection: { layerId: 'roads', featureIds: ['r1'] }, geometry: { type: 'Point', coordinates: [1, 1] } }).ok, false);
       assert.equal(contract.parseGeoClientContextStructured({ ...base('point'), geometry: { type: 'Point', coordinates: [181, 1] } }).ok, false);
       assert.equal(contract.parseGeoClientContextStructured({ ...base('rectangle'), geometry: { type: 'Polygon', coordinates: [[[0, 0], [2, 0], [1, 2], [0, 2], [0, 0]]] } }).ok, false);
@@ -61,7 +61,7 @@ test('Geo modes, bounds, terminal responses and restored interactions remain val
 
     // Geo request and response contracts enforce feature-only fields and terminal reasons
     {
-      const contract = await import('../../src/contracts/geo.ts');
+      const contract = await import('../../src/contracts/geo-interaction.ts');
       const request = {
         version: 1,
         requestId: `georeq_${'b'.repeat(16)}`,

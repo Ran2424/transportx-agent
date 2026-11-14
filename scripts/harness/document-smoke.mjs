@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import * as XLSX from 'xlsx';
 
 export async function documentSmoke(page, browser) {
   const session = await page.evaluate(async () => (await (await fetch(`/api/conversations/${localStorage.getItem('tau-active-conversation-id')}/snapshot`)).json()).runtime);
@@ -29,6 +30,11 @@ export async function documentSmoke(page, browser) {
   fs.writeFileSync(path.join(cwd, 'canvas-evidence.pdf'), pdf);
   const sourceVersion = (id, name, bytes, mimeType) => ({ sourceVersionId: id, sourceKey: `session:${name}`, title: name, acquiredAt: new Date().toISOString(), content: { kind: 'file', scope: 'session', path: name, mimeType, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), size: Buffer.byteLength(bytes) } });
   fs.writeFileSync(path.join(cwd, 'canvas-counts.csv'), '站点,数量\n上海站,12\n上海南站,24\n虹桥站,36\n');
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['站点', '流量'], ['虹桥', 36]]), '交通');
+  for (const [extension, bookType] of [['xls', 'biff8'], ['ods', 'ods']]) {
+    fs.writeFileSync(path.join(cwd, `legacy-table.${extension}`), XLSX.write(workbook, { type: 'buffer', bookType }));
+  }
   const sources = [sourceVersion('canvas:report', 'canvas-report.md', report, 'text/markdown'), sourceVersion('canvas:source', 'canvas-source.md', source, 'text/markdown'), sourceVersion('canvas:pdf', 'canvas-evidence.pdf', pdf, 'application/pdf'), sourceVersion('canvas:chart', 'canvas-chart.svg', fs.readFileSync(path.join(cwd, 'canvas-chart.svg')), 'image/svg+xml'), sourceVersion('canvas:counts', 'canvas-counts.csv', fs.readFileSync(path.join(cwd, 'canvas-counts.csv')), 'text/csv')];
   sources[0].title = '2024-05-22订单清洗漏斗与运营指标分析报告：样本筛选、重复订单核验、异常数据处理及分时段统计口径说明';
   sources[3].title = '2024-05-22五档次运营指标均值总表及图表';
@@ -48,6 +54,14 @@ export async function documentSmoke(page, browser) {
   fs.writeFileSync(path.join(cwd, '.tau', 'citations.json'), JSON.stringify(registry));
 
   await page.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
+  for (const extension of ['xls', 'ods']) {
+    const filename = `legacy-table.${extension}`;
+    await dock.getByRole('button', { name: new RegExp(filename.replace('.', '\\.')) }).click();
+    const preview = page.locator('.file-preview-card', { hasText: filename });
+    await preview.getByRole('columnheader', { name: '流量', exact: true }).waitFor();
+    assert.deepEqual(await preview.getByRole('cell').allTextContents(), ['虹桥', '36']);
+    await preview.locator('.file-preview-header > button').click();
+  }
   await dock.getByRole('button', { name: /canvas-report.md/ }).click();
   await reader.locator('h1', { hasText: 'Canvas 报告' }).waitFor();
   assert.equal(await page.locator('.file-preview-card').count(), 0);
@@ -203,6 +217,9 @@ export async function documentSmoke(page, browser) {
   await page.setViewportSize({ width: 900, height: 760 });
   await page.waitForFunction(() => { const root = document.querySelector('.canvas-panel:not([hidden]) .document-pdf-scroll'); return root && root.scrollWidth <= root.clientWidth + 2; });
   await page.setViewportSize({ width: 1280, height: 900 });
+  // Select the page after the responsive check so the refresh assertion starts at a known page.
+  await pdfView.getByLabel('PDF 页码', { exact: true }).fill('2');
+  await expectPdfPage(2, [201, 221, 249]);
   await reader.getByRole('button', { name: '刷新文档', exact: true }).click();
   await expectPdfPage(2, [201, 221, 249]);
   await page.getByRole('tab', { name: 'canvas-report.md', exact: true }).first().click();

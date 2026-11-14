@@ -1,4 +1,4 @@
-import type { GeoLayer, GeoVisualValue } from '../../../contracts/geo.js';
+import type { GeoLayer, GeoVisualValue } from '../../../contracts/geo-scene.js';
 
 export type GeoLegendSymbol = {
   type: GeoLayer['type'];

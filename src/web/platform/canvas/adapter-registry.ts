@@ -14,7 +14,7 @@ import {
 import { parseGeoCanvasTarget, parseVideoCanvasTarget } from '../../../contracts/canvas-media.ts';
 import { parseVisualizationEnvelope } from '../../../contracts/geo.ts';
 import { parseVideoEnvelopeStructured, parseVideoTimestamp } from '../../../contracts/video.ts';
-import type { CanvasView } from './canvas-state.ts';
+import type { CanvasView } from './canvas-view.ts';
 import { documentPath } from './document-state.ts';
 import { SIMULATION_CANVAS_ADAPTER_ID, SIMULATION_MODULE_ID, parseSimulationCanvasPayload, parseSimulationCanvasTarget } from '../../../contracts/simulation.ts';
 

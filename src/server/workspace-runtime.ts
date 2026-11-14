@@ -41,9 +41,12 @@ export class WorkspaceRuntimeLease {
   private active = true;
   constructor(readonly directory: string, private file: string, private record: RuntimeRecord, private release: ReturnType<typeof acquireWriteLease>, private pythonCommand: string) {}
   get generation() { return this.record.generation; }
-  private change(update: (record: RuntimeRecord) => void) {
+  assertOwned() {
     this.release.assertOwned();
     if (!this.active || leases.get(this.directory) !== this) throw failure('Runtime generation is no longer active.', 'workspace_revision_conflict');
+  }
+  private change(update: (record: RuntimeRecord) => void) {
+    this.assertOwned();
     const current = readRuntime(this.file);
     if (current?.generation !== this.generation) throw failure('Runtime generation changed.', 'workspace_revision_conflict');
     const next = structuredClone(this.record); update(next); next.updatedAt = new Date().toISOString();

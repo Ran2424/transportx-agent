@@ -1,13 +1,12 @@
-// Inspect and relocate the actual native dependency closure. Never installs globally.
+// Inspect and relocate the native dependency closure shared by packaging and probes.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { getSimulationProbeProfile } from '../../desktop/scripts/platform-profile.mjs';
-import { sha256 } from './job.mjs';
+import { getSimulationProbeProfile } from './platform-profile.mjs';
 const require = createRequire(import.meta.url);
 const { ProcessRunner } = require('../../bin/process-runner.js');
-const { toPosixPath } = require('../../bin/util/path.js');
-const { isWithin } = require('../../bin/util/path.js');
+const { toPosixPath, isWithin } = require('../../bin/util/path.js');
+const { simulationDigest: sha256 } = require('../../bin/simulation-job.js');
 
 export function loadRuntime(directory) {
   const root = fs.realpathSync(directory);
@@ -85,13 +84,4 @@ export async function stageRuntime(dependencies, root) {
   evidence.architecture = architecture.stdout;
   save();
   return { sumo: binary, netconvert: path.join(relocated, 'sumo', 'bin', profile.executable('netconvert')), pythonPath: path.join(relocated, 'python'), evidence };
-}
-
-export async function inspectNativeProcess(pid) {
-  const profile = getSimulationProbeProfile();
-  const result = await new ProcessRunner().run({ command: profile.processCommand, args: [] }, profile.processArgs(pid), { envMode: 'replace', env: {}, timeoutMs: 5000, maxBuffer: 65536 });
-  const bytes = Number(result.stdout.trim().split(/\s+/)[0]) * 1024;
-  if (!Number.isFinite(bytes) || bytes <= 0) throw new Error('native_memory_probe');
-  if (result.stdout.includes('TRANSPORTX_TEST_PARENT_SECRET=') || result.stdout.includes('TAU_SESSION_TOKEN=')) throw new Error('native_environment_leak');
-  return { rssBytes: bytes, parentMarkersAbsent: true };
 }

@@ -1,18 +1,13 @@
 import type { SessionEntry } from '../../../public/app-types.js';
 import type { ToolExecution } from '../../../public/kernel/actions.js';
 import { getCanvasPresentationFromToolResult, type CanvasPresentationV1 } from '../../../contracts/canvas.ts';
-import { getVisualizationFromToolResult, type VisualizationEnvelope } from '../../../contracts/geo.ts';
-import { getVideoSceneFromToolResult, type VideoSceneItemV1 } from '../../../contracts/video.ts';
+import { getVisualizationFromToolResult } from '../../../contracts/geo.ts';
+import { getVideoSceneFromToolResult } from '../../../contracts/video.ts';
+import type { CanvasView } from './canvas-view.ts';
 import type { DocumentView } from './document-state.ts';
 import { getCanvasAdapter, type CanvasProjectionContext } from './adapter-registry.ts';
 import { GEO_CANVAS_ADAPTER_ID, VIDEO_CANVAS_ADAPTER_ID } from '../../../contracts/canvas-document.ts';
 
-export type CanvasView =
-  | DocumentView
-  | { id: string; kind: 'geo'; title: string; envelope: VisualizationEnvelope; canvas?: CanvasPresentationV1 }
-  | { id: string; kind: 'video'; title: string; item: VideoSceneItemV1; revision: number; compareItem?: VideoSceneItemV1; canvas?: CanvasPresentationV1 }
-  | { id: string; kind: 'cad'; title: string; revision: number; canvas: CanvasPresentationV1; previewPath?: string }
-  | { id: string; kind: 'simulation'; title: string; revision: number; canvas: CanvasPresentationV1 };
 export type CanvasContent = { views: CanvasView[]; presentation: { key: string; id: string } | null; cleared?: Record<string, string> };
 export type CanvasState = { tabIds: string[]; activeId: string | null; open: boolean; presentationKey: string | null; documents: DocumentView[]; resources?: CanvasView[] };
 export const EMPTY_CANVAS: CanvasState = { tabIds: [], activeId: null, open: false, presentationKey: null, documents: [] };

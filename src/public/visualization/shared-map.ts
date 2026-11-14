@@ -1,6 +1,6 @@
 import maplibregl, { type Map as MapLibreMap, type GeoJSONSource, type GeoJSONSourceSpecification, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { GeoSceneSnapshot, GeoView } from '../../contracts/geo.js';
+import type { GeoSceneSnapshot, GeoView } from '../../contracts/geo-scene.js';
 
 const BASEMAP_STYLES = {
   default: 'https://tiles.openfreemap.org/styles/positron',

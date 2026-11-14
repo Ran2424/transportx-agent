@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Stats } from 'node:fs';
 import { isWithin } from './util/path.js';
 import { INTERNAL_SERVICE_PATHS } from './session-service.js';
+import { streamResponse } from './http/response.js';
 
 type AuthResult = { ok: boolean };
 
@@ -42,7 +43,7 @@ function serveStaticFromRoot(res: ServerResponse, staticRootValue: string, reque
       return;
     }
     res.writeHead(200, { 'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
-    fs.createReadStream(filePath).pipe(res);
+    streamResponse(fs.createReadStream(filePath), res);
   });
 }
 

@@ -85,22 +85,23 @@ test('RPC dispatch validates pending contexts and enforces desktop installation 
       const fs = require('node:fs');
       const os = require('node:os');
       const path = require('node:path');
-      const { PiRpcSession, LiveSessionManager } = require('../../bin/sessions.js');
+      const { LiveSessionManager } = require('../../bin/live-session-manager.js');
+    const { PiRpcSession } = require('../../bin/sessions.js');
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-pending-message-'));
       t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
       const session = new PiRpcSession(new LiveSessionManager(), { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd });
       const pending = (commandId: string, text: string, canvasContextIds: string[]) => ({ commandId, text, attachmentIds: [], geoContextIds: [], canvasContextIds });
       session.registerPendingMessage(pending('first', 'first text', ['canvas-a']));
       session.registerPendingMessage(pending('second', 'second text', ['canvas-b']));
-      session.trackMessage({ role: 'user', content: 'second text', timestamp: 1 }, 'message_start');
+      session.events.trackMessage({ role: 'user', content: 'second text', timestamp: 1 }, 'message_start');
       assert.deepEqual(session.entries.at(-1).message.canvasContextIds, ['canvas-b']);
       assert.deepEqual(session.activeCanvasContextIds, ['canvas-b']);
       session.registerPendingMessage(pending('rejected', 'first text', ['canvas-a']));
       session.discardPendingMessage('rejected');
       assert.equal(session.pendingMessages[0].commandId, 'first');
-      session.trackMessage({ role: 'user', content: 'unrelated extension message', timestamp: 2 }, 'message_start');
+      session.events.trackMessage({ role: 'user', content: 'unrelated extension message', timestamp: 2 }, 'message_start');
       assert.equal(session.pendingMessages.length, 1);
-      session.trackMessage({ role: 'user', content: 'first text', timestamp: 3 }, 'message_start');
+      session.events.trackMessage({ role: 'user', content: 'first text', timestamp: 3 }, 'message_start');
       assert.deepEqual(session.entries.at(-1).message.canvasContextIds, ['canvas-a']);
       assert.equal(session.pendingMessages.length, 0);
     }

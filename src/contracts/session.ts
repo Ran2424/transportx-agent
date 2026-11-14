@@ -14,7 +14,7 @@
 import { asRecord, type JsonRecord } from './common.ts';
 import { SESSION_SNAPSHOT_SCHEMA_VERSION } from './version.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
-import { parseGeoInteractionRequestStructured, parseGeoScreenshotRequestStructured, type GeoInteractionRequestV1, type GeoScreenshotRequestV1 } from './geo.ts';
+import { parseGeoInteractionRequestStructured, parseGeoScreenshotRequestStructured, type GeoInteractionRequestV1, type GeoScreenshotRequestV1 } from './geo-interaction.ts';
 
 /**
  * Raw session row. The contract deliberately keeps this loose — it is the

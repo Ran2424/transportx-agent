@@ -11,7 +11,7 @@
 import type { ContractDiagnostic } from '../contracts/diagnostic.js';
 import type { CapabilityMismatchReason, RuntimeCapabilities } from '../contracts/capabilities.js';
 import type { ResolvedSessionPlanV3 } from '../contracts/resolved-session-plan.js';
-import type { GeoInteractionRequestV1, GeoScreenshotRequestV1 } from '../contracts/geo.js';
+import type { GeoInteractionRequestV1, GeoScreenshotRequestV1 } from '../contracts/geo-interaction.js';
 export type { SessionAttachment, SessionAttachmentKind, SessionAttachmentSource, SessionAttachmentStatus } from '../contracts/attachments.js';
 
 export type SessionSnapshot = {

@@ -1,20 +1,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CreateConversationInput, SessionProfileV1, ResolvedSessionPlanV3, WorkspaceDefaultsV1 } from '../contracts/index.js';
+import type { SessionProfileV1, ResolvedSessionPlanV3, WorkspaceDefaultsV1 } from '../contracts/index.js';
 import { WorkspaceStore, workspaceCreationDigest, workspaceMetadataPath, workspaceRegistrationMissing } from './workspace-store.js';
 import { WorkspaceMigration, historyHeader, historySources } from './workspace-migration.js';
-import { WorkspaceMigrationRunner } from './workspace-migration-runner.js';
+import { WorkspaceMigrationRunner, type MigrationSourceDecision, type IsolatedMigrationDeletion } from './workspace-migration-runner.js';
 import { WorkspaceRuntimeGate } from './workspace-runtime.js';
 import { WorkspaceService } from './workspace-service.js';
 import { WorkspaceDeletion } from './workspace-deletion.js';
 import { WorkspaceTransfer } from './workspace-transfer.js';
 import { ConversationRuntime } from './conversation-runtime.js';
-import type { LiveSessionManager } from './sessions.js';
+import type { LiveSessionManager } from './live-session-manager.js';
 import { readSessionSummary, searchSessionFile } from './session-history-reader.js';
 import { isWithin, relativePosixPath } from './util/path.js';
 import { asRecord } from '../contracts/common.js';
 import { historicalResourceLinks } from './historical-resource-links.js';
 import { readSessionBranch } from './session-projection.js';
+import { logHostError } from './diagnostic-log.js';
 
 type Configuration = { domainId: string; modelSpec: string; profile: SessionProfileV1 };
 type Options = {
@@ -31,7 +32,7 @@ const revision = (value: unknown): number => { if (!Number.isSafeInteger(value) 
 /** Persistent API authority. Agent execution requires a live runtime. */
 export class WorkspaceHost {
   private background: Promise<unknown> | null = null;
-  constructor(readonly options: Options) {}
+  constructor(private readonly options: Options) {}
   migrationStatus() { let inventory = null; try { inventory = this.options.migration.read(); } catch {} return { ...this.options.migration.status(), inventory }; }
   startConversions() {
     if (this.background) return this.background;
@@ -196,7 +197,53 @@ export class WorkspaceHost {
     });
     return { runtime: (await this.options.runtime.activate(id, input.stopCurrent === true)).metadata() };
   }
-  create(input: CreateConversationInput) { return this.options.creation.create(input); }
+  create(input: unknown) { return this.options.creation.create(input); }
+  closeConversation(id: string, stopCurrent: boolean) { return this.options.runtime.close(id, stopCurrent); }
+  deleteConversation(id: string, input: Parameters<WorkspaceDeletion['conversation']>[1]) { return this.options.deletion.conversation(id, input); }
+  deleteWorkspace(id: string, input: Parameters<WorkspaceDeletion['workspace']>[1]) { return this.options.deletion.workspace(id, input); }
+  private migrationSource(id: string) {
+    const item = this.options.migration.read().items.find((candidate) => candidate.workspaceId === id);
+    if (!item) throw problem('workspace_missing', 'Workspace has no migration source.', 404);
+    return item.id;
+  }
+  migrationReport(id: string) { return this.options.runner.report(id); }
+  workspaceMigrationReport(id: string) { return this.migrationReport(this.migrationSource(id)); }
+  deleteIsolatedWorkspace(id: string, input: IsolatedMigrationDeletion) { return this.options.runner.deleteIsolated(this.migrationSource(id), input); }
+  async resumeMigration() {
+    await this.options.migration.initialize();
+    void this.startConversions().catch((error) => logHostError('workspace_migration_failed', error));
+    return { accepted: true, migration: this.options.migration.status() };
+  }
+  resolveMigrationSource(id: string, input: MigrationSourceDecision) { return this.options.runner.resolveSource(id, input); }
+  resolveWorkspaceMigration(id: string, input: Record<string, unknown>) {
+    const source = this.migrationSource(id);
+    return typeof input.sourceId === 'string'
+      ? this.options.runner.resolvePrivate(source, input as unknown as Parameters<WorkspaceMigrationRunner['resolvePrivate']>[1])
+      : this.resolveMigrationSource(source, input as unknown as MigrationSourceDecision);
+  }
+  private runtimeDirectory(id: string) {
+    const entry = this.options.store.readCatalog().entries.find((item) => item.workspaceId === id);
+    const item = this.options.migration.read().items.find((source) => source.workspaceId === id);
+    return entry?.path || item?.path;
+  }
+  runtimeDiagnostics(id: string) {
+    const directory = this.runtimeDirectory(id);
+    if (!directory) throw new Error('Workspace is unavailable.');
+    return this.options.gate.diagnostics(directory);
+  }
+  recoverRuntime(id: string, input: Record<string, unknown>) {
+    this.options.migration.assertSystemReady();
+    const directory = this.runtimeDirectory(id);
+    if (!directory || typeof input.generation !== 'string' || (input.action !== 'recheck' && input.action !== 'stop-owned')) throw new Error('A current runtime generation and recovery action are required.');
+    return this.options.gate.recover(directory, input.generation, input.action);
+  }
+  withRuntimeWrite<T>(session: NonNullable<ReturnType<WorkspaceHost['live']>>, isAuthorized: () => boolean, write: () => T) {
+    return this.options.gate.serialize(session.cwd, async () => {
+      if (!isAuthorized()) return;
+      session.lifecycle!.lease.assertOwned();
+      return write();
+    });
+  }
   async moveConversation(id: string, input: Record<string, unknown>) {
     if (typeof input.target !== 'string') throw problem('invalid_move_input', 'Choose a registered workspace or the standalone destination.', 400);
     if (!this.options.transfer) throw problem('system_not_ready', 'Conversation transfer is unavailable in this Host.', 503);

@@ -1,5 +1,6 @@
 import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
-import type { GeoContextMode, GeoLayer, GeoPointV1, GeoRectangleV1 } from '../../../contracts/geo.js';
+import type { GeoContextMode, GeoPointV1, GeoRectangleV1 } from '../../../contracts/geo-interaction.js';
+import type { GeoLayer } from '../../../contracts/geo-scene.js';
 import { pointGeometry, rectangleGeometry, toggleFeatureIds, viewportSummary } from './geo-interaction-state.js';
 
 export type GeoInteractionMode = 'browse' | GeoContextMode;

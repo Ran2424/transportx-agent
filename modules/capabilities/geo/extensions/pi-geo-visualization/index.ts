@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import { assertCommandParams, styleCommandDiagnostic, styleCommandKey, type PresentCommand } from './command-validation.ts';
+import { MAX_BYTES, assertSceneResources, inspectGeoJson, isWithin, readResourceManifest, resourceDirectory } from './geojson-resource.ts';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +16,6 @@ import {
   parseGeoInteractionResponseStructured,
   parseVisualizationEnvelope,
   formatSceneValidationErrors,
-  type GeoJsonFeatureCollection,
   type GeoLayer,
   type GeoSceneSnapshot,
   type GeoSource,
@@ -24,10 +25,7 @@ import {
 } from '../../../../../src/contracts/index.ts';
 
 type SceneState = { revision: number; scene: GeoSceneSnapshot | null };
-type PresentCommand = { command: string; visualizationId: string; [key: string]: any };
 
-const MAX_BYTES = 100 * 1024 * 1024;
-const MAX_FEATURES = 50_000;
 const EXTENSION_RUNTIME_ID = 'pi-geo-visualization-command-v2';
 
 function canvasPresentation(envelope: VisualizationEnvelope) {
@@ -47,101 +45,6 @@ function canvasPresentation(envelope: VisualizationEnvelope) {
     resources,
     payload: envelope,
     generatedAt: envelope.generatedAt,
-  };
-}
-
-const COMMAND_REQUIRED_PARAMS: Record<string, string[]> = {
-  create_map: ['title', 'resourceId', 'layerType'],
-  add_layer: ['sourceId', 'layerId', 'layerType'],
-  set_constant: ['layerId', 'channel', 'value'],
-  set_step: ['layerId', 'channel', 'field', 'defaultValue', 'stops'],
-  set_continuous: ['layerId', 'channel', 'field', 'stops'],
-  set_categorical: ['layerId', 'channel', 'field', 'categories', 'fallback'],
-  set_popup: ['layerId', 'fields'],
-  set_camera: ['center', 'zoom'],
-  fit_bounds: ['bounds'],
-  set_visibility: ['layerId', 'visible'],
-  remove_layer: ['layerId'],
-  reorder_layers: ['layerIds'],
-  select: ['sourceId', 'featureIds'],
-  add_chart_layer: ['sourceId', 'layerId', 'chartType', 'valueFields'],
-  set_chart: ['layerId', 'chartType', 'valueFields'],
-};
-
-function assertCommandParams(params: PresentCommand) {
-  const required = COMMAND_REQUIRED_PARAMS[params.command] || [];
-  const missing = required.filter((name) => params[name] === undefined || params[name] === null || params[name] === '');
-  if (missing.length) throw new Error(`Missing parameters for command ${params.command}: ${missing.join(', ')}`);
-  if ((params.layerType === 'chart' || params.command === 'add_chart_layer' || params.command === 'set_chart') && params.chartType === 'bar' && !(params.maxValue > 0)) {
-    throw new Error('Bar charts require a positive maxValue.');
-  }
-  if (params.layerType === 'chart' && (!params.chartType || !params.valueFields?.length)) {
-    throw new Error('Chart layers require chartType and valueFields.');
-  }
-}
-
-function isWithin(root: string, target: string) {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function walkCoordinates(value: unknown, visitor: (lng: number, lat: number) => void): void {
-  if (!Array.isArray(value) || value.length === 0) return;
-  if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
-    visitor(value[0], value[1]);
-    return;
-  }
-  for (const child of value) walkCoordinates(child, visitor);
-}
-
-function inspectGeoJson(data: GeoJsonFeatureCollection, idField?: string) {
-  if (data.features.length > MAX_FEATURES) {
-    throw new Error(`GeoJSON has ${data.features.length} features; the limit is ${MAX_FEATURES}. Aggregate, simplify, or split the data before publication.`);
-  }
-  const types = new Set<string>();
-  const ids = new Set<string>();
-  const bounds: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const [featureIndex, feature] of data.features.entries()) {
-    const geometry = feature.geometry;
-    if (!geometry) continue;
-    types.add(geometry.type);
-    if (idField) {
-      const value = feature.properties?.[idField];
-      if (typeof value !== 'string' && typeof value !== 'number') throw new Error(`features[${featureIndex}].properties.${idField} is missing or is not a string/number`);
-      const key = String(value);
-      if (ids.has(key)) throw new Error(`features[${featureIndex}].properties.${idField} duplicates id value: ${key}`);
-      ids.add(key);
-    }
-    const visit = (lng: number, lat: number) => {
-      if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
-        throw new Error(`features[${featureIndex}] contains coordinates outside WGS84 longitude/latitude ranges`);
-      }
-      bounds[0] = Math.min(bounds[0], lng);
-      bounds[1] = Math.min(bounds[1], lat);
-      bounds[2] = Math.max(bounds[2], lng);
-      bounds[3] = Math.max(bounds[3], lat);
-    };
-    if (geometry.type === 'GeometryCollection') {
-      for (const child of geometry.geometries || []) walkCoordinates(child.coordinates, visit);
-    } else walkCoordinates(geometry.coordinates, visit);
-  }
-  return {
-    geometryTypes: Array.from(types).sort(),
-    bounds: bounds.every(Number.isFinite) ? bounds : null,
-  };
-}
-
-function resourceDirectory(cwd: string, resourceId: string) {
-  return path.join(cwd, '.tau', 'geo-resources', resourceId);
-}
-
-function readResourceManifest(cwd: string, resourceId: string) {
-  const manifestPath = path.join(resourceDirectory(cwd, resourceId), 'manifest.json');
-  if (!fs.existsSync(manifestPath)) throw new Error(`Geo resource not found: ${resourceId}`);
-  return JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
-    resourceId: string;
-    bounds?: [number, number, number, number] | null;
-    idField?: string;
   };
 }
 
@@ -212,35 +115,12 @@ function validatedScene(value: unknown, prefix: string) {
   return result.value;
 }
 
-function styleCommandKey(params: PresentCommand) {
-  if (!['set_constant', 'set_step', 'set_continuous', 'set_categorical'].includes(params.command)) return null;
-  return [params.visualizationId, params.command, params.layerId, params.channel].join('|');
-}
-
-function styleCommandDiagnostic(params: PresentCommand) {
-  if (params.command === 'set_constant') return `value=${JSON.stringify(params.value)} type=${typeof params.value}`;
-  if (params.command === 'set_categorical') {
-    const outputs = Array.isArray(params.categories) ? params.categories.map((item: { output?: unknown }) => `${JSON.stringify(item.output)}:${typeof item.output}`) : [];
-    return `outputs=[${outputs.join(', ')}] fallback=${JSON.stringify(params.fallback)}:${typeof params.fallback}`;
-  }
-  const outputs = Array.isArray(params.stops) ? params.stops.map((stop: { output?: unknown }) => `${JSON.stringify(stop.output)}:${typeof stop.output}`) : [];
-  return `outputs=[${outputs.join(', ')}]${params.command === 'set_step' ? ` default=${JSON.stringify(params.defaultValue)}:${typeof params.defaultValue}` : ''}`;
-}
-
 function updateLayer(scene: GeoSceneSnapshot, layerId: string, updater: (layer: GeoLayer) => GeoLayer) {
   const index = scene.layers.findIndex((layer) => layer.id === layerId);
   if (index < 0) throw new Error(`Layer not found: ${layerId}`);
   const layers = scene.layers.slice();
   layers[index] = updater(layers[index]);
   return { ...scene, layers };
-}
-
-function assertSceneResources(cwd: string, scene: GeoSceneSnapshot) {
-  for (const source of scene.sources) {
-    if (source.type !== 'geojson-resource') continue;
-    const manifest = path.join(resourceDirectory(cwd, source.resourceId), 'manifest.json');
-    if (!fs.existsSync(manifest)) throw new Error(`Geo resource not found: ${source.resourceId}`);
-  }
 }
 
 function contract(file: string) {

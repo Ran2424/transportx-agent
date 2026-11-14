@@ -59,4 +59,19 @@ test('Reliable command IDs prevent duplicate execution, payload conflicts and pr
     ledger.settle('one', { delivery: 'accepted' });
     assert.deepEqual(await ledger.run('one', execute), { delivery: 'accepted' });
   }
+
+  // Only confirmed retirement releases an unknown command's active capacity.
+  {
+    const ledger = new RpcCommandLedger(1, 60_000, (response: any) => response.delivery === 'unknown');
+    let calls = 0;
+    const execute = async () => { calls++; return { delivery: 'unknown' }; };
+    await ledger.run('lost', execute, 'payload', 'old-runtime');
+    await assert.rejects(ledger.run('lost', execute, 'payload', 'new-runtime'), { code: 'command_replay' });
+    await assert.rejects(ledger.run('fresh', execute, 'payload', 'new-runtime'), { code: 'command_capacity' });
+    ledger.retire('old-runtime');
+    ledger.settle('lost', { delivery: 'accepted' }, 'old-runtime');
+    await assert.rejects(ledger.run('lost', execute, 'payload', 'new-runtime'), { code: 'command_replay' });
+    await ledger.run('fresh', execute, 'payload', 'new-runtime');
+    assert.equal(calls, 2);
+  }
 });

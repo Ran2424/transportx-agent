@@ -4,7 +4,7 @@ type AuthRpcDependencies = {
   configured: boolean;
   required?: boolean;
   getEnabled(): boolean;
-  setEnabled(enabled: boolean): void;
+  setEnabled(enabled: boolean): boolean;
   notifyChanged(enabled: boolean): void;
   disconnectClients(): void;
 };
@@ -20,7 +20,8 @@ export function createAuthRpcHandlers(deps: AuthRpcDependencies): RpcHandlerRegi
         const wasEnabled = deps.getEnabled();
         const enabled = command.enabled === true;
         if (!enabled && deps.required) return reply.failure('Authentication is required for non-loopback listening');
-        deps.setEnabled(enabled);
+        if (enabled === wasEnabled) return reply.success({ enabled });
+        if (!deps.setEnabled(enabled)) return reply.failure('Unable to save authentication settings');
         deps.notifyChanged(enabled);
         if (!wasEnabled && enabled) deps.disconnectClients();
         return reply.success({ enabled });

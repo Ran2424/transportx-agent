@@ -1,4 +1,4 @@
-import type { PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
+import type { PlatformModule, PlatformOverview } from '../../../public/kernel/platform-commands.js';
 import type { TFunction } from 'i18next';
 import { moduleDisplayMetadata, modulePresentation, moduleSearchText } from '../../lib/module-presentation';
 

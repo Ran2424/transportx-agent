@@ -2,7 +2,7 @@ import { ModelAccessPanel } from '../model/ModelAccessPanel';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ConversationView, ModelRecord } from '../../../public/app-types.js';
-import type { ModelProviderAccess, PlatformModule, PlatformOverview } from '../../../public/kernel/commands.js';
+import type { ModelProviderAccess, PlatformModule, PlatformOverview } from '../../../public/kernel/platform-commands.js';
 import { appKernel } from '../../app/composition-root';
 import { Icon, type IconName } from '../../components/icons';
 import { Button } from '../../components/ui/button';

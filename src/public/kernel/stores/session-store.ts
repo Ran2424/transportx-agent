@@ -7,7 +7,7 @@
 
 import type { LiveSession, ConversationView, ConversationViewUpdate, WorkspaceIndex, WorkspaceView, SessionAttachment, SessionSnapshot } from '../../app-types.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
-import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../../contracts/geo.js';
+import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../../contracts/geo-interaction.js';
 import { parsePiMessageQueue } from '../../../contracts/pi-rpc.js';
 import type { CanvasPresentationV1 } from '../../../contracts/canvas.js';
 

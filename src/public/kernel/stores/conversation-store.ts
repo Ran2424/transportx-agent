@@ -12,7 +12,7 @@
 
 import type { AppMessage, MessageContentBlock, SessionEntry, SessionSnapshot } from '../../app-types.js';
 import { stripAttachmentContext } from '../../../contracts/attachments.js';
-import { stripGeoContextPrompt } from '../../../contracts/geo.js';
+import { stripGeoContextPrompt } from '../../../contracts/geo-interaction.js';
 import { stripCanvasContextPrompt } from '../../../contracts/canvas.js';
 import { createStore, type Store, type StoreListener } from '../store.js';
 

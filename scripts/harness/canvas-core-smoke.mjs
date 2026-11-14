@@ -44,7 +44,8 @@ export async function canvasCoreSmoke({ root, endpoint, json, rpc, until, trackR
     success(await execute('canvas_present', { ...present, resource: { scope: 'session-file', path: 'counts.csv' }, target: { kind: 'rows', start: 1, end: 2 } }));
     await page.locator('.canvas-panel:not([hidden]) table').getByText('24', { exact: true }).waitFor();
     success(await execute('canvas_present', { ...present, resource: { scope: 'session-file', path: 'report.pdf' }, target: { kind: 'page', number: 2 } }));
-    await page.locator('.canvas-panel:not([hidden]) iframe[src*="page=2"]').waitFor();
+    await page.waitForFunction(() => document.querySelector('.canvas-panel:not([hidden]) .document-pdf-toolbar input')?.value === '2');
+    await page.locator('.canvas-panel:not([hidden]) .page[data-page-number="2"] .textLayer').getByText('Canvas page 2', { exact: true }).waitFor();
 
     const citations = success(await execute('tau_resolve_citation', { sources: [{ path: 'report.md', locator: { kind: 'document', section: 'Conclusion' }, contentKind: 'source-only' }] })).citations;
     const pinned = success(await execute('canvas_present', { ...present, resource: { scope: 'capability', moduleId: 'com.transportx.citation', resourceId: citations.sources[0].sourceVersionId } })).canvas;

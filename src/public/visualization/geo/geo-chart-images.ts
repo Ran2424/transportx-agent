@@ -1,5 +1,5 @@
 import type { Map as MapLibreMap, MapStyleImageMissingEvent } from 'maplibre-gl';
-import type { GeoChart, GeoLayer } from '../../../contracts/geo.js';
+import type { GeoChart, GeoLayer } from '../../../contracts/geo-scene.js';
 
 const IMAGE_PREFIX = 'tau-chart-image-';
 const PIXEL_RATIO = 2;

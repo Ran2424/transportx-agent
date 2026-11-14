@@ -5,7 +5,8 @@
  */
 
 import type { AppAction } from './actions.js';
-import { createCommands, type HttpClient, type KernelCommands } from './commands.js';
+import { createCommands, type KernelCommands } from './commands.js';
+import type { HttpClient } from './command-transport.js';
 import { createDispatcher, type KernelStores } from './dispatcher.js';
 import { createEventNormalizer } from './event-normalizer.js';
 import { ConversationStore } from './stores/conversation-store.js';

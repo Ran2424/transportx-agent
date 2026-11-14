@@ -109,7 +109,7 @@ async function startHost(): Promise<HostHandle> {
   const pass = crypto.randomBytes(24).toString('base64url');
   const child = spawn(process.execPath, [path.join(__dirname, 'tau.js'), '--host', '127.0.0.1', '--port', '0', '--parent-pid', String(process.pid), '--ready-json'], {
     cwd: appRoot,
-    env: { ...process.env, TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER_DATA_DIR: userDataDir, PI_CODING_AGENT_DIR: piAgentDir, TAU_USER: user, TAU_PASS: pass },
+    env: { ...process.env, TAU_APP_ROOT: appRoot, TAU_RESOURCES_DIR: appRoot, TAU_USER_DATA_DIR: userDataDir, PI_CODING_AGENT_DIR: piAgentDir, TAU_USER: user, TAU_PASS: pass, TAU_TRUSTED_PROXY_IP: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';

@@ -67,6 +67,16 @@ for (const artifact of [complete.artifact]) {
   assert.equal(sha256File(path.join(workspace, artifact.manifestPath)), artifact.manifestSha256);
   assert.equal(sha256File(path.join(workspace, artifact.reportPath)), artifact.reportSha256);
 }
+const reportPath = path.join(workspace, complete.artifact.reportPath);
+const reportBytes = fs.readFileSync(reportPath);
+const restarted = new SimulationService(options);
+assert.deepEqual(restarted.experiment(session, planned.experimentId, false), complete);
+assert.deepEqual(fs.readFileSync(reportPath), reportBytes);
+fs.unlinkSync(reportPath);
+assert.equal(restarted.experiment(session, planned.experimentId, false).artifact, undefined);
+assert.equal(fs.existsSync(reportPath), false, 'query must not republish a missing comparison artifact');
+assert.deepEqual(restarted.experiment(session, planned.experimentId), complete);
+assert.deepEqual(fs.readFileSync(reportPath), reportBytes);
 evidence.completed = complete;
 fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify(evidence, null, 2));
 

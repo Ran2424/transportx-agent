@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { simulationResourceSmoke } from './simulation-resource-smoke.mjs';
 const require = createRequire(path.join(process.cwd(), 'package.json'));
 const { chromium } = require('playwright');
 const { WebSocket } = require('ws');
@@ -49,7 +50,7 @@ try {
     const b = second.data.conversation.id;
     assert.equal(second.data.directory, created.data.directory);
     assert.equal((await req('/api/conversations', input)).data.conversation.id, a, 'dedup precedes revisions');
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    browser = await chromium.launch({ channel: process.env.TAU_BROWSER_CHANNEL || 'chrome', headless: true });
     const page = await browser.newPage({ locale: 'zh-CN', viewport: { width: 1280, height: 900 } });
     const uiErrors = [];
     page.on('pageerror', e => uiErrors.push(String(e)));
@@ -64,12 +65,41 @@ try {
     fs.writeFileSync(historyFile, 'station,count\nA,31\n');
     await fileDock.getByRole('button', { name: '刷新文件', exact: true }).click();
     await fileDock.getByRole('button', { name: /history-visible.csv/ }).waitFor();
+    let releaseFiles;
+    const heldFiles = new Promise(resolve => { releaseFiles = resolve; });
+    let seenFiles;
+    const requestedFiles = new Promise(resolve => { seenFiles = resolve; });
+    const slowFiles = async route => {
+      seenFiles();
+      await heldFiles;
+      await route.fulfill({ json: { path: created.data.directory, items: [{ name: 'late-first-conversation.csv', path: '/late.csv', isDirectory: false }] } }).catch(() => {});
+    };
+    const firstFilesUrl = new RegExp(`/api/conversations/${a}/files(?:\\?|$)`);
+    await page.route(firstFilesUrl, slowFiles);
+    await fileDock.getByRole('button', { name: '刷新文件', exact: true }).click();
+    await requestedFiles;
     await page.locator('.session-row').filter({ hasText: '会话 B' }).click();
+    await fileDock.getByRole('button', { name: /history-visible.csv/ }).waitFor();
+    releaseFiles();
+    await page.unroute(firstFilesUrl, slowFiles);
+    assert.equal(await fileDock.getByRole('button', { name: /late-first-conversation.csv/ }).count(), 0);
+    const secondFilesUrl = new RegExp(`/api/conversations/${b}/files(?:\\?|$)`);
+    const failFiles = route => route.fulfill({ status: 503, json: { error: 'directory temporarily unavailable' } });
+    await page.route(secondFilesUrl, failFiles);
+    await fileDock.getByRole('button', { name: '刷新文件', exact: true }).click();
+    await fileDock.getByText('directory temporarily unavailable', { exact: true }).waitFor();
+    await page.unroute(secondFilesUrl, failFiles);
+    const retryFiles = fileDock.getByRole('button', { name: '重试', exact: true });
+    await retryFiles.focus();
+    await retryFiles.press('Enter');
     await fileDock.getByRole('button', { name: /history-visible.csv/ }).waitFor();
     fs.unlinkSync(historyFile);
     await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
     await fileDock.locator('.workspace-empty').waitFor();
     assert.equal((await req('/api/health')).data.liveSessionCount, 0, 'history browsing never spawns Pi');
+    await simulationResourceSmoke(page, a, b);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('.session-row').filter({ hasText: '会话 A' }).click();
     const readyLabel = await page.locator('.workspace-task-status').innerText();
     assert.equal(await page.locator('.model-trigger').isEnabled(), true, 'model selection is available before Pi starts');
     await page.locator('.model-trigger').click();
@@ -158,7 +188,7 @@ try {
     assert.equal((await req(`/api/conversations/${a}/files/content?path=shared.txt`)).status, 200);
     assert.equal((await req(`/api/conversations/${a}/files/content?path=.tau/workspace.json`)).status, 403);
     // A real Native history keeps its original bytes while proven old local file URLs use new addresses.
-    const legacyReport = path.join(ready.resumeCwd, 'historical-report.txt'), legacyImage = path.join(ready.resumeCwd, 'historical-image.svg');
+    const legacyReport = path.join(ready.resumeCwd, 'historical_report_with_markers.txt'), legacyImage = path.join(ready.resumeCwd, 'historical-image.svg');
     fs.writeFileSync(legacyReport, 'Historical source opened through the new file API.');
     fs.writeFileSync(legacyImage, '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="blue"/></svg>');
     const oldUrl = (file) => `http://127.0.0.1:3000/api/file/raw?${new URLSearchParams({ sessionId: 'untrusted-old-live', path: file, token: 'must-not-be-replayed' })}`;
@@ -173,10 +203,15 @@ try {
     assert.equal(Object.keys(restored.resourceLinks).length, 2);
     assert.ok(!JSON.stringify(Object.values(restored.resourceLinks)).includes('must-not-be-replayed'));
     assert.equal(await (await fetch(base + restored.resourceLinks[reportUrl])).text(), 'Historical source opened through the new file API.');
-    await page.evaluate((id) => localStorage.setItem('tau-active-conversation-id', id), legacyRecord.id);
     const legacyRequests = [];
     page.on('request', (request) => legacyRequests.push(new URL(request.url()).pathname));
-    await page.reload({ waitUntil: 'networkidle' });
+    const legacyRow = page.locator('.session-row').filter({ has: page.getByText(legacyRecord.name, { exact: true }) });
+    const [legacySnapshot] = await Promise.all([
+      page.waitForResponse((response) => new URL(response.url()).pathname === `/api/conversations/${legacyRecord.id}/snapshot`),
+      legacyRow.click(),
+    ]);
+    assert.equal(legacySnapshot.status(), 200);
+    assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')), legacyRecord.id);
     const restoredLink = page.getByRole('link', { name: '历史报告', exact: true });
     await restoredLink.waitFor();
     await page.getByTitle('原计划缺失；发送前需确认当前配置', { exact: true }).waitFor();
@@ -307,7 +342,9 @@ try {
     assert.equal((await req(`/api/conversations/${folderConversation}/snapshot`)).data.snapshot.entries.filter(entry => entry.message?.role === 'user').length, 0);
     assert.equal(await page.evaluate(() => localStorage.getItem('tau-active-conversation-id')), a);
     await page.unroute(`**/api/conversations/${folderConversation}/activate`, startupRoute);
-    await folderRow.click(); assert.equal(await composer.inputValue(), '首次发送自动启动'); await composer.press('Enter');
+    await folderRow.click();
+    await page.waitForFunction(() => document.querySelector('.conversation-composer textarea')?.value === '首次发送自动启动');
+    await composer.press('Enter');
     await page.waitForFunction(() => !document.querySelector('.composer-start-status'));
     assert.equal(startupCalls, 2);
     assert.equal((await req(`/api/conversations/${folderConversation}/snapshot`)).data.snapshot.entries.filter(entry => entry.message?.role === 'user').length, 1);

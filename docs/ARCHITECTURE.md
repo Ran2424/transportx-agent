@@ -80,6 +80,8 @@ Workbench 采用 Eager Registration + Lazy Activation：计划内 Extension 初�
 
 直接运行 `bin/tau.js` 默认监听 `127.0.0.1:3001`。非回环监听必须显式开启 remote 并配置、启用认证；监听期间不能关闭认证。参见 [config.ts](../src/server/config.ts)、[start.sh](../start.sh)、[transportx.ts](../src/server/transportx.ts)。
 
+Web 经反向代理部署时，设置 `TAU_REMOTE=1`、启用认证，并用 `TAU_TRUSTED_PROXY_IP` 指定一个代理的 TCP 对端 IP。代理应保留浏览器的 `Host`（含非默认端口），覆盖 `X-Forwarded-Proto` 为外部请求的 `http` 或 `https`，并限制谁能连接 Host。Host 仅接受该代理的协议头，按协议、主机和端口校验浏览器 Origin。认证启用时，匿名健康响应只含探针所需的状态和协议字段。桌面和 CLI 使用各自的直接回环连接。[运行与访问决策](adr-0002-runtime-recovery-and-host-access.md)
+
 ### 2.4 Electron Main
 
 `desktop/main.ts` 与 `desktop/agent-host-supervisor.ts` 只承担桌面壳职责：
@@ -108,6 +110,8 @@ Renderer 始终使用 `nodeIntegration: false`、`contextIsolation: true`、`san
 
 Electron 不复制上述业务逻辑；命令行/Web 开发模式也复用同一个 Agent Host。
 
+Host 组合根注入认证、会话运行和领域服务。HTTP 路由校验请求、调用工作区应用入口并写响应。Pi 子进程与 RPC 由 `PiRpcSession` 持有，`SessionEvents` 投影进程事件，`LiveSessionManager` 管理活跃实例和连接，`SessionJobs` 管理有界分析作业。架构检查和进程上限见 [ADR 0003](adr-0003-architecture-checks-and-runtime-bounds.md)。
+
 `workspace-host.ts` 与 `workspace-api.ts` 是持久工作区/会话的公开入口。`workspaceId` 标识共享目录，`conversationId` 标识历史、冻结计划和私有状态，Pi 的 `id` 只标识当前运行实例。创建保存记录和计划，不启动 Pi；读取 Snapshot 不要求运行实例。激活先校验目标计划与已知模型是否可用，再经 `ConversationRuntime` 与 `WorkspaceRuntimeGate` 取得排他权；忙碌、压缩、队列或交互不能静默丢弃。实际进程与作业停止、状态提交确认后才释放租约。`workspace-transfer.ts` 只负责会话跨工作区移动：standalone catalog 条目及其独立目录不出现在工作区分组中；Pi 历史保留原 history key，仅重写核验过的 header cwd，冻结计划只改 `workspace`，目标记录先提交、来源后移除，异常中断按 header 归属回收重复记录。
 
 公开接口使用 `/api/workspaces`、`/api/conversations` 与 `/api/migration`；文件、附件和领域资源使用 `/api/conversations/:conversationId/...`。旧 live 列表、路径恢复、按路径删除与通用文件路由已移除。内部 Extension token 通道、RPC 与事件仍携带实际 live ID，Host 复核其持久绑定与当前租约。高级服务无法证明当前计划/资产/发布归属时拒绝读取，不能用共享 cwd 或旧 live ID 授权。
@@ -130,6 +134,8 @@ Host 通过 `TRANSPORTX_FONT_DIR` 注入内置思源黑体、思源宋体和 Jet
 Traffic Simulation 的有限多方式模型仍由同一 Python/TraCI 入口执行；节点、泊位、车队、旅客、班表与当前队列反馈均为冻结输入，实际离站和返场以 SUMO 观测确认。Host 的 `SimulationService` 维护所属会话的场景、Run 和有界实验清单，逐个 Run 复用现有 Job；只接受两个方案、至多三个相同种子配对，不另建实验调度器。比较 JSON 与 Markdown 按内容哈希冻结，保留失败、取消、unknown 和未完成样本。Simulation Canvas 经现有 Kernel 按需读取完整块，与普通 Geo 共用地图原语，独立保存观看状态；报告打开复用 Document Canvas。实现及验收边界见 [P2 记录](<交通仿真与优化能力升级 P2 记录.md>)；合成软件验收不代表真实场景校准或跨平台分发通过。
 
 实体地铁由场景显式选择，复用同一 Run、SUMO 进程和时间块。TraCI 提供列车位置及实际停站，Python 旅客账本按已确认的离站和终点到站处理接续，Host 按 SUMO 原始停站输出复核。Canvas 的班表变更通过 Agent 和已有场景准备工具冻结为新 Variant。单列车验收范围见 [P3–P4 实施记录](<交通仿真与优化能力升级 P3–P4 实施记录.md>)。
+
+仿真 GET 只读已有 Run 状态与已发布证据。Agent 通过原 Run 引用调用 `traffic_execution` 恢复或取消，使用 `traffic_experiment` 生成冻结比较。恢复提交与工作区占用的释放顺序见 [ADR 0002](adr-0002-runtime-recovery-and-host-access.md)。
 
 ### 2.7 React Workspace 与 Browser Kernel
 
@@ -465,16 +471,19 @@ Workbench 默认装配上述十个直接依赖；CLI Domain 无依赖，使用 `
 ## 7. 安全边界
 
 1. 桌面和 CLI 的 Host 使用随机回环端口；Web 启动的绑定地址和认证受配置控制（见第 2.3 节）。HTTP/WebSocket 执行对应的同源与认证检查。
-2. 可靠命令使用 HTTP RPC，WebSocket 是事件通道，不接受副作用操作。
+2. 可靠命令使用 HTTP RPC，以持久会话 ID 和命令 ID 识别重复请求，并绑定 Live Session 代次。确认旧实例关闭后回收额度，在有界内存中保留拒绝跨代重放的记录。WebSocket 是事件通道。[命令恢复边界](adr-0002-runtime-recovery-and-host-access.md)
 3. Renderer 隔离 Node 与 Electron；Preload 能力按参数和调用方严格限制。
 4. Session cwd 与冻结计划中的资产根目录共同限定资源服务的访问范围；读取前验证真实路径、文件类型、哈希或资源清单。Pi 基础工具与可信 Module 代码并不因此获得操作系统级隔离。
 5. API Key 不返回 Renderer；模型配置采用原子替换及有效备份；密钥由 Pi AuthStorage 管理，不能将 models 的原子写入保证推广到 auth.json。
 6. 基础打包运行时在桌面启动前校验相对路径与 SHA-256；Module Installer 对 Native Runtime 执行路径和 SHA-256 校验，并拒绝不匹配当前平台/架构的能力模块。
 7. PDF 使用禁用 JavaScript 的临时隐藏窗口，阻断 `about:`/`data:` 以外的请求。
-8. Extension 内部 HTTP 按会话、服务 token、计划中对应 Capability 与停止状态独立校验；用户登录凭据不能代替服务 token。开启用户认证时内部工具通道继续使用该校验；项目认证还会在 WebSocket 存续期间复核登录状态。
+8. Extension 内部 HTTP 按会话、服务 token、计划中对应 Capability 与停止状态独立校验；用户登录凭据不能代替服务 token。开启用户认证时内部工具通道继续使用该校验。WebSocket 在发送初始状态和后续事件前复用 HTTP 登录判定，内置 Cookie 到期时关闭空闲连接。Basic 复核当前凭据，项目认证通过同步判定复核，空闲连接每 20 秒检查一次项目认证。撤销生效时间取决于项目认证何时能返回新状态。
 9. Markdown 使用共享安全渲染；SVG/HTML 文件响应设置 `nosniff` 与沙箱 CSP，网页引用 HTML 快照按纯文本提供。资源路由与本机打开入口各自校验授权，引用原件变化不会自动改用普通文件路由。
+10. 工作区文件、日志和模块目录的原生打开操作仅接受直接连接回环 Host 的回环客户端。项目认证和可信代理连接均无该权限。
 
 Module 是本机可信代码与数据包，而非操作系统级沙箱插件。若未来开放第三方市场，必须单独设计签名、权限与隔离模型。
+
+Host 按单用户工作站部署。连接同一 Host 的浏览器和设备共享会话与工作区信任域。面向互不信任用户的部署需要独立的身份、文件、执行进程和凭据隔离。认证生命周期设计见 [ADR 0001](adr-0001-host-event-authorization.md)。
 
 ## 8. 打包与平台 Profile
 

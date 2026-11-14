@@ -171,7 +171,7 @@ else {
 
   app.whenReady().then(async () => {
     logDesktop('info', 'desktop_started', { version: app.getVersion() });
-    const paths = resolveDesktopPaths(app.getAppPath(), process.resourcesPath, app.getPath('userData'));
+    const paths = resolveDesktopPaths(app.getAppPath(), process.resourcesPath, app.getPath('userData'), app.isPackaged);
     const logUpdate = createDiagnosticLogger(path.join(paths.logsDir, 'updates.log'));
     const { autoUpdater } = require('electron-updater');
     // Updater diagnostics can include complete URLs. Log only our state codes.

@@ -9,7 +9,7 @@
 import type { AppEvent, AppMessage, LiveSession, ConversationView, SessionEntry, SessionSnapshot } from '../app-types.js';
 import type { AppAction } from './actions.js';
 import { appError, type AppError } from '../../contracts/errors.ts';
-import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured, parseGeoScreenshotRequestStructured } from '../../contracts/geo.ts';
+import { parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured, parseGeoScreenshotRequestStructured } from '../../contracts/geo-interaction.ts';
 import { retryState, classifyFailure } from '../../contracts/run-feedback.ts';
 import { isPiExtensionDialogRequest, parsePiMessageQueue } from '../../contracts/pi-rpc.ts';
 import type { TransportSignal } from './transport.js';

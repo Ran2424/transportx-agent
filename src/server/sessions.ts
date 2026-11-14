@@ -1,46 +1,35 @@
 import { SessionModelSync } from './model-session-sync.js';
-import { rememberPublishedGeoResource } from './geo-resource-access.js';
-import { isPiExtensionDialogRequest, parsePiMessageQueue, type PiMessageQueue } from '../contracts/pi-rpc.js';
+import type { PiMessageQueue } from '../contracts/pi-rpc.js';
 import { boundedDiagnostics } from '../contracts/diagnostics.js';
 import { hostPlatform } from './host-platform.js';
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { WebSocket } = require('ws');
 
 import type { ChildProcess } from 'node:child_process';
-import type { JsonRecord, LiveClient, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
+import type { JsonRecord, ModelIdentity, RpcCommand, RpcResponse } from './types.js';
 import { modelLabel, normalizeModel, parseModelSpecToModel } from './model-utils.js';
 import type { SessionService } from './session-service.js';
-import { readSessionFileEntries, SessionProjection } from './session-projection.js';
-import { readAttachmentMessageRefs, recordAttachmentMessageRefs } from './session-attachments.js';
+import { SessionProjection } from './session-projection.js';
+import { readAttachmentMessageRefs } from './session-attachments.js';
 import { TimingMetricsStore } from './timing-metrics.js';
 import { PiRpcTransport } from './pi-rpc-transport.js';
-import { retryState, classifyFailure, messageOutcome, type RunOutcome, type RetryState } from '../contracts/run-feedback.js';
 import { signalProcessTree, terminateProcessTree } from './process-tree.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import type { SessionPiLaunchInput } from './session-pi-launch.js';
 import { makeSessionId } from './session-workspace.js';
 import { logHostEvent, logHostError } from './diagnostic-log.js';
-import { contextUsageAfterCompaction, mergeContextUsage, withUsageTotals } from './session-context-usage.js';
+import { mergeContextUsage, withUsageTotals } from './session-context-usage.js';
 import { SessionEventTiming } from './session-event-timing.js';
 import { liveSessionMetadata, sessionMetadata, sessionSnapshot } from './session-metadata.js';
-import { SessionCapabilityTracker, type CapabilityUpdate } from './session-capability-tracker.js';
+import { SessionCapabilityTracker } from './session-capability-tracker.js';
 import { inferSessionTitle, isGenericSessionName, sessionFileReadyForNameAppend } from './session-title.js';
-import {
-  PI_WEB_BRIDGE_ENTRY,
-  PI_RUNTIME_MINIMUM,
-  appError,
-  protocolError,
-  type CapabilityMismatchReason,
-  type ContractDiagnostic,
-} from '../contracts/index.js';
-import { stripAttachmentContext } from '../contracts/attachments.js';
-import { getVisualizationFromToolResult, stripGeoContextPrompt } from '../contracts/geo.js';
+import { PI_RUNTIME_MINIMUM } from '../contracts/index.js';
 import { geoInteractionService } from './geo-interaction-service.js';
 import { restoreCanvasContextMessage } from './canvas-service.js';
-import { stripCanvasContextPrompt } from '../contracts/canvas.js';
 import type { WorkspaceRuntimeLease } from './workspace-runtime.js';
+import type { PiSessionManager } from './pi-session-runtime.js';
+import { latestConversationTimestamp, SessionEvents, type PiRpcMessage, type PiRpcPayload } from './session-events.js';
 
 export type PersistentSessionLifecycle = {
   lease: WorkspaceRuntimeLease;
@@ -49,54 +38,6 @@ export type PersistentSessionLifecycle = {
   sync(session: PiRpcSession): Promise<unknown>;
   closed(session: PiRpcSession): Promise<void>;
 };
-
-type SpawnFn = (cmd: string, args: string[], opts: JsonRecord) => ChildProcess;
-type PiMessageContent = string | Array<{ type: string; text?: string; [key: string]: unknown }>;
-type PiMessage = { role?: string; content?: PiMessageContent; usage?: JsonRecord; model?: string; timestamp?: unknown; attachmentIds?: string[]; [key: string]: unknown };
-type PiRpcPayload = {
-  command?: string;
-  id?: string;
-  provider?: string;
-  model?: unknown;
-  thinkingLevel?: string;
-  level?: string;
-  sessionFile?: string;
-  sessionName?: string;
-  name?: string;
-  contextUsage?: JsonRecord;
-  tokens?: JsonRecord;
-  [key: string]: unknown;
-};
-type PiRpcMessage = PiRpcPayload & {
-  type?: string;
-  success?: boolean;
-  data?: PiRpcPayload;
-  result?: PiRpcPayload;
-  message?: PiMessage;
-  assistantMessageEvent?: { type?: string; delta?: string; contentIndex?: number; partial?: PiMessage; toolCall?: { type: string; id?: unknown; name?: unknown } };
-};
-
-function isoTimestamp(value: unknown) {
-  const date = typeof value === 'number' ? new Date(value) : typeof value === 'string' ? new Date(value) : null;
-  return date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
-}
-
-function conversationTimestamp(entry: JsonRecord) {
-  const message = entry.message as { role?: unknown; timestamp?: unknown } | undefined;
-  if (message?.role !== 'user' && message?.role !== 'assistant') return null;
-  return isoTimestamp(message.timestamp) || isoTimestamp(entry.timestamp);
-}
-
-function latestConversationTimestamp(entries: JsonRecord[]) {
-  let latest: string | null = null;
-  for (const entry of entries) {
-    const timestamp = conversationTimestamp(entry);
-    if (timestamp && (!latest || timestamp > latest)) latest = timestamp;
-  }
-  return latest;
-}
-
-
 
 export class PiRpcSession {
   readonly conversationId: string;
@@ -107,7 +48,7 @@ export class PiRpcSession {
   private historyIdentityError: Error | null = null;
   private exited = false;
   private readonly reservedSessionFile: string | null;
-  manager: LiveSessionManager;
+  manager: PiSessionManager;
   id: string;
   cwd: string;
   modelSpec: string;
@@ -149,12 +90,9 @@ export class PiRpcSession {
   eventTiming: SessionEventTiming;
   readonly modelSync = new SessionModelSync();
   private termination: Promise<void> | null = null;
-  private retry: RetryState | null = null;
-  private runOutcome: RunOutcome | null = null;
-  private streamingMessage: PiMessage | null = null;
-  private activeTools = new Map<string, PiRpcMessage>();
+  readonly events = new SessionEvents(this, () => this.lifecycle?.sync(this));
 
-  constructor(manager: LiveSessionManager, opts: { id?: string; cwd: string; conversationId: string; workspaceId?: string; lifecycle?: PersistentSessionLifecycle; citationRegistryId?: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
+  constructor(manager: PiSessionManager, opts: { id?: string; cwd: string; conversationId: string; workspaceId?: string; lifecycle?: PersistentSessionLifecycle; citationRegistryId?: string; modelSpec?: string; appendSystemPrompt?: string; sessionFile?: string | null; entries?: JsonRecord[]; sessionName?: string | null; piVersion?: string; resolvedSessionPlan?: ResolvedSessionPlan | null }) {
     this.manager = manager;
     this.id = opts.id || makeSessionId();
     this.cwd = opts.cwd;
@@ -197,7 +135,7 @@ export class PiRpcSession {
     this.citationRegistryId = opts.citationRegistryId || this.workspaceId || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.eventTiming = new SessionEventTiming(this.timingMetrics);
-    this.applyLatestBridgeEnvelope();
+    this.events.applyLatestBridgeEnvelope();
   }
 
   metadata() {
@@ -211,9 +149,9 @@ export class PiRpcSession {
   snapshot() {
     const snapshot = sessionSnapshot(this.projection.snapshot(), this, this.capabilityTracker.snapshot(), [...this.pendingExtensionUiRequests.values()]);
     const geoInteraction = geoInteractionService.snapshot(this);
-    return { ...snapshot, ...this.manager.clock(), streamingMessage: this.streamingMessage,
+    return { ...snapshot, ...this.manager.clock(), ...this.events.snapshot(),
       workingElapsedMs: this.eventTiming.workingElapsedMs ?? null, workingDurationMs: this.eventTiming.workingDurationMs,
-      retry: this.retry, outcome: this.runOutcome, activeToolEvents: [...this.activeTools.values()], pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
+      pendingExtensionUiRequests: [...this.pendingExtensionUiRequests.values()], ...(geoInteraction ? { geoInteraction } : {}) };
   }
 
   get entries() {
@@ -349,7 +287,7 @@ export class PiRpcSession {
       this.handleResponse(msg);
       return;
     }
-    this.handleEvent(msg);
+    this.events.handleEvent(msg);
   }
 
   handleResponse(resp: PiRpcMessage) {
@@ -368,7 +306,7 @@ export class PiRpcSession {
       if (this.sessionFile && path.resolve(this.sessionFile) !== path.resolve(data.sessionFile)) this.capabilityTracker.invalidateObservation(true);
       this.sessionFile = data.sessionFile;
       this.persistPendingSessionName();
-      this.reconcileProjection();
+      this.events.reconcileProjection();
     }
     if (data.sessionName && !this.workspaceId) this.setSessionName(data.sessionName);
     if (data.contextUsage) {
@@ -392,187 +330,8 @@ export class PiRpcSession {
     }
     const synced = this.lifecycle?.sync(this);
     if (switching && synced) return synced.finally(() => this.touch(true));
+    void synced?.catch((error) => logHostError('session_sync_failed', error, { sessionId: this.id }));
     this.touch(true);
-  }
-
-  handleEvent(event: PiRpcMessage) {
-    if (this.modelSync.consume(event)) return;
-    this.touch(false);
-    const type = event.type;
-    if (this.workspaceId && type === 'session_info_changed') event = { ...event, name: this.sessionName || undefined };
-    if (type === 'queue_update') {
-      const queue = parsePiMessageQueue(event);
-      if (queue) {
-        this.piQueue = {
-          steering: queue.steering.map((text) => this.messageText({ content: text })),
-          followUp: queue.followUp.map((text) => this.messageText({ content: text })),
-        };
-        event = { ...event, ...this.piQueue };
-      }
-    }
-    if (type === 'session_tree' || type === 'session_switch') this.capabilityTracker.invalidateObservation();
-    const now = Date.now();
-    if (type === 'thinking_level_changed') {
-      const level = typeof event.thinkingLevel === 'string' ? event.thinkingLevel : typeof event.level === 'string' ? event.level : '';
-      if (level) {
-        this.thinkingLevel = level;
-        this.touch(true);
-      }
-    }
-    this.eventTiming.apply(event, now);
-    if (type === 'agent_start' || type === 'auto_retry_start') this.runOutcome = null;
-    if (type === 'message_end' && event.message?.role === 'assistant') this.runOutcome = messageOutcome(event.message);
-    if (type === 'auto_retry_start') this.retry = retryState(event);
-    if (type === 'auto_retry_end') this.runOutcome = event.success ? null : /cancelled/i.test(String(event.finalError)) ? { status: 'cancelled' } : { status: 'failed', reason: classifyFailure(event.finalError) };
-    if (((type === 'message_end' && event.message?.role === 'assistant') || type === 'auto_retry_end') && this.runOutcome?.status === 'failed') {
-      const message = type === 'auto_retry_end' ? event.finalError : event.message?.errorMessage;
-      logHostEvent('error', 'pi_run_failed', { sessionId: this.id, reason: this.runOutcome.reason, message: typeof message === 'string' ? message : undefined });
-    }
-    if (type === 'auto_retry_end' || type === 'agent_settled') this.retry = null;
-    if (type === 'message_start' && event.message?.role === 'assistant') this.streamingMessage = event.message;
-    if (type === 'message_update') {
-      const update = event.assistantMessageEvent;
-      const partial = event.message || update?.partial;
-      if (partial?.role === 'assistant') this.streamingMessage = partial;
-      if (update?.type?.startsWith('toolcall_')) {
-        const block = update.toolCall ?? (Array.isArray(partial?.content) ? partial.content[update.contentIndex ?? -1] : undefined);
-        if (block?.type === 'toolCall' && typeof block.id === 'string' && !this.activeTools.has(block.id)) {
-          this.activeTools.set(block.id, { type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', toolCall: { type: 'toolCall', id: block.id, name: block.name } } });
-        }
-      }
-    }
-    if (type === 'message_end' && event.message?.role === 'assistant') this.streamingMessage = null;
-    rememberPublishedGeoResource(this, event);
-    if (typeof event.toolCallId === 'string') {
-      if (type === 'tool_execution_start') this.activeTools.set(event.toolCallId, event);
-      if (type === 'tool_execution_update') {
-        const previous = this.activeTools.get(event.toolCallId);
-        this.activeTools.set(event.toolCallId, { ...previous, ...event, type: 'tool_execution_start' });
-      }
-      if (type === 'tool_execution_end') this.activeTools.delete(event.toolCallId);
-    }
-    if (isPiExtensionDialogRequest(event) && typeof event.id === 'string' && event.id) this.pendingExtensionUiRequests.set(event.id, event);
-    if (type === 'agent_start' || type === 'turn_start') this.isStreaming = true;
-    if (type === 'compaction_start' || type === 'auto_compaction_start') this.isCompacting = true;
-    if (type === 'compaction_end' || type === 'auto_compaction_end') {
-      this.isCompacting = false;
-      const result = event.result && typeof event.result === 'object' ? event.result as JsonRecord : null;
-      this.contextUsage = contextUsageAfterCompaction(this.contextUsage, this.model?.contextWindow, result?.estimatedTokensAfter);
-      this.reconcileProjection();
-    }
-    if (type === 'agent_settled') {
-      this.lifecycle?.sync(this);
-      this.isStreaming = false;
-      this.streamingMessage = null;
-      this.activeTools.clear();
-      this.pendingExtensionUiRequests.clear();
-      // Pi has flushed by the time a run settles; retry the pending name write.
-      this.persistPendingSessionName();
-      this.send({ type: 'get_session_stats' }, { timeoutMs: 5000 }).catch(() => {});
-    }
-    if (event.contextUsage) this.contextUsage = event.contextUsage;
-    if (event.sessionFile) {
-      if (!this.acceptSessionFile(event.sessionFile)) return;
-      this.sessionFile = event.sessionFile;
-      this.persistPendingSessionName();
-    }
-    if (type === 'session_info_changed' && !this.workspaceId) {
-      this.sessionName = typeof event.name === 'string' ? event.name.trim() || null : null;
-      this.titleSet = !!this.sessionName;
-      this.pendingSessionNamePersistence = null;
-    }
-    if (type === 'session_name' && event.name) {
-      if (!this.workspaceId && !this.setSessionName(event.name)) return;
-      event.name = this.sessionName || event.name;
-    }
-
-    if ((type === 'message_start' || type === 'message_end') && event.message) {
-      this.trackMessage(event.message, type);
-    }
-    if (type === 'message_end' && event.message) {
-      const envelope = getVisualizationFromToolResult(event.message);
-      if (envelope) geoInteractionService.invalidateForEnvelope(this, envelope);
-    }
-    const appendedEntry = event.entry && typeof event.entry === 'object' && !Array.isArray(event.entry)
-      ? event.entry as JsonRecord
-      : null;
-    if (type === 'entry_appended' && appendedEntry?.type === 'custom') {
-      this.projection.append(appendedEntry);
-      if (appendedEntry.customType === PI_WEB_BRIDGE_ENTRY) this.applyBridgePayload(appendedEntry.data, typeof appendedEntry.id === 'string' ? appendedEntry.id : undefined);
-    }
-    // NOTE: the assistant `message_end` event carries `event.message.model` as
-    // a bare id describing WHICH model produced that message, not a selection
-    // change. Overwriting `this.model` with it downgraded the canonical
-    // {provider,id} object to a bare string and propagated to all clients via
-    // broadcastUpdated. Do NOT touch model identity here — only record usage.
-    if (type === 'message_end' && event.message?.role === 'assistant') {
-      if (event.message.usage) this.contextUsage = { ...(this.contextUsage || {}), usage: event.message.usage };
-    }
-    if (type === 'agent_settled') this.reconcileProjection();
-
-    this.manager.broadcast({ type: 'event', sessionId: this.id, event });
-    this.manager.broadcastUpdated(this.id);
-  }
-
-  applyBridgePayload(value: unknown, entryId?: string) {
-    this.applyCapabilityUpdate(this.capabilityTracker.applyPayload(value, entryId), true);
-  }
-
-  applyLatestBridgeEnvelope() {
-    this.applyCapabilityUpdate(this.capabilityTracker.applyLatest(this.projection.entries), false);
-  }
-
-  applyCapabilityUpdate(update: CapabilityUpdate, broadcastDiagnostics: boolean) {
-    if (update.kind === 'invalid') {
-      if (broadcastDiagnostics) this.manager.broadcastContractDiagnostic(this.id, update.diagnostics);
-      return;
-    }
-    if (update.kind === 'rejected') {
-      console.warn(`[Pi ${this.id}] ${update.diagnostic?.message ?? 'bridge revision regression ignored'}`);
-      return;
-    }
-    if (update.kind !== 'accepted') return;
-    if (update.envelope.model) this.model = update.envelope.model;
-    this.thinkingLevel = update.envelope.thinkingLevel;
-    if (update.mismatches.length) this.manager.broadcastCapabilityDiagnostic(this.id, update.mismatches);
-  }
-
-  reconcileProjection() {
-    if (!this.sessionFile || !fs.existsSync(this.sessionFile)) return false;
-    this.projection.replace(this.timingMetrics.enrichEntries(readSessionFileEntries(this.sessionFile).map(restoreCanvasContextMessage)));
-    const lastConversationAt = latestConversationTimestamp(this.projection.entries);
-    if (lastConversationAt) this.lastConversationAt = lastConversationAt;
-    this.applyLatestBridgeEnvelope();
-    return true;
-  }
-
-  trackMessage(message: PiMessage, eventType: string) {
-    if (message.role === 'user' || message.role === 'assistant') {
-      this.lastConversationAt = isoTimestamp(message.timestamp) || new Date().toISOString();
-    }
-    if (message.role === 'user' && eventType === 'message_start') {
-      const text = this.messageText(message);
-      if (text) this.userMessages.push(text.slice(0, 300));
-      const rawText = typeof message.content === 'string' ? message.content : (message.content || []).filter((block) => block.type === 'text').map((block) => block.text || '').join('\n');
-      const index = this.pendingMessages.findIndex((pending) => pending.text === rawText);
-      const pending = index < 0 ? null : this.pendingMessages.splice(index, 1)[0];
-      const attachmentIds = pending?.attachmentIds || [];
-      const geoContextIds = pending?.geoContextIds || [];
-      const canvasContextIds = pending?.canvasContextIds || [];
-      this.activeGeoContextIds = [...geoContextIds];
-      this.activeCanvasContextIds = [...canvasContextIds];
-      const enriched = attachmentIds.length || geoContextIds.length || canvasContextIds.length
-        ? { ...message, ...(attachmentIds.length ? { attachmentIds } : {}), ...(geoContextIds.length ? { geoContextIds } : {}), ...(canvasContextIds.length ? { canvasContextIds } : {}), content: typeof message.content === 'string' ? text : message.content?.map((block) => block.type === 'text' ? { ...block, text } : block) }
-        : (typeof message.content === 'string' && message.content !== text ? { ...message, content: text } : message);
-      if (attachmentIds.length) recordAttachmentMessageRefs(this.cwd, this.conversationId, { text, timestamp: typeof message.timestamp === 'number' ? message.timestamp : undefined, attachmentIds });
-      if (geoContextIds.length) geoInteractionService.recordMessageRefs(this, { text, timestamp: typeof message.timestamp === 'number' || typeof message.timestamp === 'string' ? message.timestamp : undefined, contextIds: geoContextIds });
-      this.projection.setMessageRefs(readAttachmentMessageRefs(this.cwd, this.conversationId));
-      this.projection.setGeoMessageRefs(geoInteractionService.readMessageRefs(this.cwd, this.conversationId));
-      this.projection.appendMessage(enriched as JsonRecord);
-      this.maybeTitle();
-    } else if (message.role !== 'user' && eventType === 'message_end') {
-      this.projection.appendMessage(message as JsonRecord);
-    }
   }
 
   registerPendingMessage(pending: PiRpcSession['pendingMessages'][number]) {
@@ -583,12 +342,6 @@ export class PiRpcSession {
   discardPendingMessage(commandId: string) {
     const index = this.pendingMessages.findIndex((pending) => pending.commandId === commandId);
     if (index >= 0) this.pendingMessages.splice(index, 1);
-  }
-
-  messageText(message: PiMessage) {
-    if (typeof message.content === 'string') return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content)));
-    if (Array.isArray(message.content)) return stripAttachmentContext(stripGeoContextPrompt(stripCanvasContextPrompt(message.content.filter((b) => b.type === 'text').map((b) => b.text || '').join('\n'))));
-    return '';
   }
 
   abortGeoInteraction() {
@@ -695,187 +448,12 @@ export class PiRpcSession {
     this.transport.rejectAll(Object.assign(new Error('Conversation activation was cancelled.'), { code: 'activation_cancelled', status: 409 }));
   }
 
-  private acceptSessionFile(file: string) {
+  acceptSessionFile(file: string) {
     if (!this.reservedSessionFile || path.resolve(file) === path.resolve(this.reservedSessionFile)) return true;
     this.historyIdentityError = Object.assign(new Error('Pi changed its reserved conversation history path.'), { code: 'history_identity_mismatch', status: 409 });
     logHostError('history_identity_mismatch', this.historyIdentityError, { sessionId: this.id, conversationId: this.conversationId });
-    const stop = this.manager.get(this.id) === this ? this.manager.delete(this.id, 'history_identity_mismatch') : this.terminate('history_identity_mismatch');
+    const stop = this.manager.isRegistered(this.id, this) ? this.manager.delete(this.id, 'history_identity_mismatch') : this.terminate('history_identity_mismatch');
     void stop.catch((error) => logHostError('persistent_session_stop_failed', error, { sessionId: this.id }));
     return false;
-  }
-}
-
-export type SessionManagerDependencies = {
-  command: string;
-  spawn: SpawnFn;
-  endpoints: Record<SessionService, string>;
-  launch(input: SessionPiLaunchInput): { args: string[]; env: NodeJS.ProcessEnv } | Promise<{ args: string[]; env: NodeJS.ProcessEnv }>;
-};
-
-export class LiveSessionManager {
-  sessions: Map<string, PiRpcSession>;
-  clients: Set<LiveClient>;
-  piVersion: string;
-  liveMetadataSignatures: Map<string, string>;
-  private closingSessions = new Map<string, Promise<boolean>>();
-  private jobs = new Map<string, Set<{ id: string; controller: AbortController; completion: Promise<unknown> }>>();
-  private readonly diagnose = boundedDiagnostics();
-  private startingSessions = 0;
-  private readonly hostGeneration = crypto.randomUUID();
-  private revision = 0;
-  clock() { return { hostGeneration: this.hostGeneration, revision: this.revision }; }
-
-  get runtime() {
-    if (!this.dependencies) throw new Error('Session runtime dependencies were not provided');
-    return this.dependencies;
-  }
-
-  constructor(private readonly dependencies?: SessionManagerDependencies) {
-    this.sessions = new Map();
-    this.clients = new Set();
-    this.piVersion = PI_RUNTIME_MINIMUM;
-    this.liveMetadataSignatures = new Map();
-  }
-  setPiVersion(version: string) { this.piVersion = version || PI_RUNTIME_MINIMUM; }
-  addClient(ws: LiveClient) { this.clients.add(ws); }
-  removeClient(ws: LiveClient) { this.clients.delete(ws); }
-  broadcast(data: unknown) {
-    this.revision++;
-    const payload = JSON.stringify({ ...(data as JsonRecord), ...this.clock() });
-    const bytes = Buffer.byteLength(payload);
-    for (const client of this.clients) {
-      if ((client.bufferedAmount || 0) + bytes > 8 * 1024 * 1024) {
-        client.terminate();
-        this.removeClient(client);
-        continue;
-      }
-      if (client.readyState === WebSocket.OPEN) client.send(payload);
-    }
-  }
-  broadcastUpdated(id: string) {
-    const s = this.sessions.get(id);
-    if (!s) return;
-    if (s.lifecycle && !s.lifecycle.isReady(s)) return;
-    const session = s.liveMetadata();
-    const signature = JSON.stringify(session);
-    if (this.liveMetadataSignatures.get(id) === signature) return;
-    this.liveMetadataSignatures.set(id, signature);
-    this.broadcast({ type: 'live_session_updated', session });
-  }
-  broadcastCapabilityDiagnostic(sessionId: string, mismatches: CapabilityMismatchReason[]) {
-    if (!mismatches.length) return;
-    const error = appError({
-      code: 'runtime_capability_drift',
-      category: 'protocol',
-      message: mismatches.map((m) => m.message).join('; '),
-      sessionId,
-      retryable: false,
-      diagnostics: {
-        count: mismatches.length,
-        firstCode: typeof mismatches[0]?.field === 'string' ? mismatches[0].field : 'unknown',
-      },
-    });
-    this.broadcast({ type: 'contract_diagnostic', sessionId, error, mismatches });
-  }
-  broadcastContractDiagnostic(sessionId: string, diagnostics: ContractDiagnostic[]) {
-    if (!diagnostics.length) return;
-    this.broadcast({
-      type: 'contract_diagnostic',
-      sessionId,
-      error: protocolError(diagnostics, sessionId),
-      diagnostics,
-    });
-  }
-  list() { return Array.from(this.sessions.values()).map((s) => s.metadata()); }
-  get(id: string) { return this.sessions.get(id); }
-  hasJobs(id: string) { return !!this.jobs.get(id)?.size; }
-  async startInstance(session: PiRpcSession) {
-    if (!session.lifecycle || !session.workspaceId) throw new Error('Persistent runtime ownership is required.');
-    if (this.sessions.size + this.startingSessions >= 32) throw Object.assign(new Error('Live session capacity reached'), { status: 503 });
-    this.startingSessions++;
-    try {
-      await session.start();
-      this.sessions.set(session.id, session);
-      return session;
-    } finally { this.startingSessions--; }
-  }
-  runJob<T>(id: string, execute: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, onJob?: (jobId: string) => void): Promise<T> {
-    const session = this.sessions.get(id);
-    if (!session || session.terminating) return Promise.reject(Object.assign(new Error('Session is closing or unavailable'), { status: 409 }));
-    const owned = this.jobs.get(id) || new Set();
-    const total = [...this.jobs.values()].reduce((count, jobs) => count + jobs.size, 0);
-    if (owned.size >= 2 || total >= 4) return Promise.reject(Object.assign(new Error('Analysis job capacity reached'), { status: 503 }));
-    const jobId = crypto.randomUUID();
-    onJob?.(jobId);
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    signal?.addEventListener('abort', abort, { once: true });
-    if (signal?.aborted) abort();
-    const job = { id: jobId, controller, completion: Promise.resolve() as Promise<unknown> };
-    owned.add(job);
-    this.jobs.set(id, owned);
-    const completion = Promise.resolve().then(() => {
-      if (controller.signal.aborted) throw new Error('Analysis cancelled');
-      return execute(controller.signal);
-    }).catch((error) => {
-      this.diagnose('analysis_job_failed', { sessionId: id, jobId: job.id });
-      throw error;
-    }).finally(() => {
-      signal?.removeEventListener('abort', abort);
-      owned.delete(job);
-      if (!owned.size) this.jobs.delete(id);
-    });
-    job.completion = completion;
-    return completion;
-  }
-  async cancelJobs(id: string) {
-    const jobs = [...(this.jobs.get(id) || [])];
-    if (!jobs.length) return;
-    for (const job of jobs) job.controller.abort();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const results = await Promise.race([
-        Promise.allSettled(jobs.map((job) => job.completion)),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error('Analysis jobs did not stop'), { code: 'process_stop_unconfirmed', status: 503 })), 5500); }),
-      ]);
-      const failed = results.find((result) => result.status === 'rejected' && result.reason?.code === 'process_stop_unconfirmed');
-      if (failed?.status === 'rejected') {
-        for (const job of jobs) this.diagnose('job_stop_unconfirmed', { sessionId: id, jobId: job.id });
-        throw failed.reason;
-      }
-    } finally { clearTimeout(timer); }
-  }
-  async delete(id: string, reason = 'closed_by_user') {
-    const closing = this.closingSessions.get(id);
-    if (closing) return closing;
-    const session = this.sessions.get(id);
-    if (!session) return false;
-    session.terminating = true;
-    const termination = (async () => {
-      await Promise.resolve();
-      await this.cancelJobs(id);
-      await session.terminate(reason);
-      session.isStreaming = false;
-      session.isCompacting = false;
-      await session.lifecycle?.closed(session);
-      const registered = this.sessions.delete(id);
-      this.liveMetadataSignatures.delete(id);
-      if (registered) this.broadcast({ type: 'live_session_closed', sessionId: id, reason });
-      return true;
-    })();
-    this.closingSessions.set(id, termination);
-    try { return await termination; }
-    finally { this.closingSessions.delete(id); }
-  }
-
-  removeExited(id: string, reason: string) {
-    if (!this.sessions.has(id)) return;
-    if (this.closingSessions.has(id)) return;
-    this.delete(id, reason).catch((error) => console.error(`[Pi ${id}] Cleanup failed:`, error));
-  }
-  async shutdown() {
-    const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.delete(id, 'server_shutdown')));
-    const errors = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map((result) => result.reason);
-    if (errors.length) throw new AggregateError(errors, 'Some session stops could not be confirmed.');
   }
 }
