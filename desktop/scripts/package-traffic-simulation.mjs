@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import yazl from 'yazl';
-import { stageRuntime } from '../../scripts/simulation/runtime.mjs';
+import { stageRuntime } from './sumo-runtime.mjs';
 import { getSimulationProbeProfile } from './platform-profile.mjs';
 const require = createRequire(import.meta.url);
 const { sha256File } = require('../../bin/asset-integrity.js');

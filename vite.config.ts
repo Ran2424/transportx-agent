@@ -18,8 +18,8 @@ export default defineConfig(({ command }) => {
       host: '127.0.0.1',
       port: 5173,
       proxy: {
-        '/api': { target: proxyTarget, changeOrigin: true },
-        '/ws': { target: webSocketTarget, changeOrigin: true, ws: true },
+        '/api': { target: proxyTarget },
+        '/ws': { target: webSocketTarget, ws: true },
       },
     },
     build: {

@@ -13,26 +13,27 @@ export function readJsonObject(file: string, fallback: Record<string, unknown> =
   }
 }
 
+export function replaceFileAtomic(file: string, bytes: string | Buffer) {
+  const temp = `${file}.${crypto.randomUUID()}.tmp`;
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(temp, 'wx', 0o600);
+    fs.writeFileSync(descriptor, bytes);
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temp, file);
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    fs.rmSync(temp, { force: true });
+  }
+}
+
 export function writeJsonAtomic(file: string, value: unknown) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const previous = fs.existsSync(file) ? (readJsonObject(file), fs.readFileSync(file)) : null;
-  const replace = (target: string, bytes: Buffer) => {
-    const temp = `${target}.${crypto.randomUUID()}.tmp`;
-    let descriptor: number | undefined;
-    try {
-      descriptor = fs.openSync(temp, 'wx', 0o600);
-      fs.writeFileSync(descriptor, bytes);
-      fs.fsyncSync(descriptor);
-      fs.closeSync(descriptor);
-      descriptor = undefined;
-      fs.renameSync(temp, target);
-    } finally {
-      if (descriptor !== undefined) fs.closeSync(descriptor);
-      fs.rmSync(temp, { force: true });
-    }
-  };
-  if (previous) replace(`${file}.bak`, previous);
-  replace(file, Buffer.from(`${JSON.stringify(value, null, 2)}\n`));
+  if (previous) replaceFileAtomic(`${file}.bak`, previous);
+  replaceFileAtomic(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 const NONCE_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;

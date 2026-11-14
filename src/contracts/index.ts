@@ -17,6 +17,8 @@ export * from './session.ts';
 export * from './workspace.ts';
 export * from './workspace-migration.ts';
 export * from './geo.ts';
+export * from './geo-scene.ts';
+export * from './geo-interaction.ts';
 export * from './citation.ts';
 export * from './bridge.ts';
 export * from './capabilities.ts';

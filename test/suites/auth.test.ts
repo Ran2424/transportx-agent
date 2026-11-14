@@ -37,7 +37,7 @@ test('Signed cookies, remote access and authentication changes enforce credentia
 
     // Host access rejects unsafe remote settings and accepts authenticated explicit remote mode
     {
-      const { validateHostAccess } = require('../../bin/host-access.js');
+      const { validateHostAccess, allowsHostOrigin, requestScheme, assertLocalNativeAccess } = require('../../bin/host-access.js');
       const local = { host: '127.0.0.1', user: '', pass: '' };
       validateHostAccess(local);
       validateHostAccess({ ...local, host: '::1' });
@@ -50,6 +50,18 @@ test('Signed cookies, remote access and authentication changes enforce credentia
       validateHostAccess({ host: '0.0.0.0', user: 'u', pass: 'p', remoteAccess: true });
       validateHostAccess({ host: '0.0.0.0', user: '', pass: '', remoteAccess: true, authEnabled: false }, true);
       assert.throws(() => validateHostAccess({ host: '0.0.0.0', user: '', pass: '' }, true), /Non-loopback/);
+      assert.throws(() => validateHostAccess(local, false, '127.0.0.1'), /requires/);
+      assert.throws(() => validateHostAccess(local, false, 'not-an-ip'), /IP address/);
+      validateHostAccess({ ...local, user: 'u', pass: 'p', remoteAccess: true }, false, '127.0.0.1');
+      const request = { headers: { host: 'example.test', origin: 'https://example.test', 'x-forwarded-proto': 'https' }, socket: { remoteAddress: '::ffff:127.0.0.1' } };
+      assert.equal(requestScheme(request, ''), 'http');
+      assert.equal(allowsHostOrigin(request, local.host, ''), false);
+      assert.equal(allowsHostOrigin(request, local.host, '127.0.0.1'), true);
+      assert.equal(allowsHostOrigin({ ...request, headers: { ...request.headers, origin: 'http://example.test' } }, local.host, '127.0.0.1'), false);
+      assert.throws(() => assertLocalNativeAccess(request, local.host, false, '127.0.0.1'), { code: 'native_operation_forbidden' });
+      assert.throws(() => assertLocalNativeAccess(request, '0.0.0.0', false, ''), { code: 'native_operation_forbidden' });
+      assert.throws(() => assertLocalNativeAccess(request, local.host, true, ''), { code: 'native_operation_forbidden' });
+      assertLocalNativeAccess(request, local.host, false, '');
     }
 
     // Auth RPC handler persists the new state and disconnects only when enabling
@@ -60,7 +72,7 @@ test('Signed cookies, remote access and authentication changes enforce credentia
       const handlers = createAuthRpcHandlers({
         configured: true,
         getEnabled: () => enabled,
-        setEnabled: (value: boolean) => { enabled = value; },
+        setEnabled: (value: boolean) => { enabled = value; return true; },
         notifyChanged: (value: boolean) => changes.push(value),
         disconnectClients: () => { disconnects += 1; },
       });
@@ -72,9 +84,18 @@ test('Signed cookies, remote access and authentication changes enforce credentia
       assert.equal(disconnects, 1);
     }
 
+    {
+      const handlers = createAuthRpcHandlers({
+        configured: true, getEnabled: () => true, setEnabled: () => false,
+        notifyChanged: () => assert.fail('uncommitted auth state must not be broadcast'),
+        disconnectClients: () => assert.fail('uncommitted auth state must not disconnect clients'),
+      });
+      assert.equal(handlers.set_auth.handle({ type: 'set_auth', enabled: false }, reply).success, false);
+    }
+
     // Auth RPC handler rejects state changes without configured credentials
     {
-      const handlers = createAuthRpcHandlers({ configured: false, getEnabled: () => false, setEnabled() { }, notifyChanged() { }, disconnectClients() { } });
+      const handlers = createAuthRpcHandlers({ configured: false, getEnabled: () => false, setEnabled: () => false, notifyChanged() { }, disconnectClients() { } });
       assert.deepEqual(handlers.set_auth.handle({ type: 'set_auth', enabled: true }, reply), {
         success: false,
         error: 'No credentials configured. Set tau.user and tau.pass in settings.json',

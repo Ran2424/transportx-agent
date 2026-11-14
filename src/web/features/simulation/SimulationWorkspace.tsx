@@ -1,56 +1,30 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { AttributionControl, Marker, type LngLatBounds, type Map as MapLibreMap, type GeoJSONSourceSpecification, type StyleSpecification } from 'maplibre-gl';
-import { createSharedMap, applySharedMapView, setSharedGeoJSON, sharedMapStyle } from '../../../public/visualization/shared-map';
-import { parseSimulationCanvasTarget, type SimulationCanvasPayload, type SimulationRunSummary, type SimulationIndex, type SimulationFrame, type SimulationNetworkView, type SimulationQuery, type SimulationBlock, type SimulationExperiment, type SimulationEvent } from '../../../contracts/simulation';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { parseSimulationCanvasTarget, type SimulationCanvasPayload, type SimulationEvent } from '../../../contracts/simulation';
 import type { CanvasRendererProps } from '../../platform/canvas/renderers/types';
 import { Icon } from '../../components/icons';
 import { projectMapFrame, roadSpeedSamples } from './map-frame';
 import { MetroTimetable } from './MetroTimetable';
 import { SimulationDetailsDrawer } from './SimulationDetailsDrawer';
 
-const message = (error: unknown) => error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
-const isSimulationSource = (id: string) => id === 'simulation-network' || id === 'simulation-vehicles' || id === 'simulation-road-speed';
-const hasBasemap = (map: MapLibreMap) => Object.keys(map.getStyle().sources).some(id => !isSimulationSource(id));
-const railTypes = ['railway.subway', 'railway.rail', 'railway.conventional', 'railway.highspeed', 'railway.light_rail', 'railway.tram'];
-const speedColorStops = [0, 30, 60] as const;
-const railLayer = 'simulation-rail';
-const routeLayer = 'simulation-routes';
-const speedLayer = 'simulation-road-speed';
-const relatedRoutesLayer = 'simulation-related-routes';
-const relatedNodesLayer = 'simulation-related-nodes';
-const activePlatformLayer = 'simulation-active-platform';
+import { useSimulationResources, simulationResourceLabels } from './useSimulationResources';
+import { speedColorStops, useSimulationMap } from './useSimulationMap';
+import { useSimulationPlayback } from './useSimulationPlayback';
 const stateLabels: Record<string, string> = { prepared: '已受理', running: '计算中', finalizing: '确认中', ended: '已结束', unknown: '结果待确认', waiting: '候车', blocked: '上游受阻', boarding: '登乘', riding: '车上', walking: '步行接续', connecting: '等待接续', external: '外部行程', completed: '完成全链', not_arrived: '尚未到达', inserting: '等待入网', available: '可用', commanded: '发车待确认', outbound: '去程', return_commanded: '返场待确认', returning: '返场' };
 const terminationLabels = { completed: '已完成', cancelled: '已取消', failed: '运行失败' };
 
 export function SimulationWorkspace({ kernel, session, view, active, payload, onContextChange, onOpenDocument }: CanvasRendererProps & { payload: SimulationCanvasPayload }) {
   const runId = payload.runId, sessionId = session.id;
   const frameLabelId = useId();
-  const [run, setRun] = useState<SimulationRunSummary>();
-  const [index, setIndex] = useState<SimulationIndex | null>(null);
-  const [geometry, setGeometry] = useState<SimulationNetworkView>();
-  const [loaded, setLoaded] = useState<{ time: number; frame: SimulationFrame; sampleSeconds: number }>();
-  const frame = loaded?.frame;
-  const [queryResult, setQueryResult] = useState<{ data: SimulationQuery; selected: string; eventSequence?: number }>();
-  const [experiment, setExperiment] = useState<SimulationExperiment>();
+  const [selected, setSelected] = useState('');
   const [time, setTime] = useState(0), [playing, setPlaying] = useState(false), [speed, setSpeed] = useState(1);
-  const [selected, setSelected] = useState(''), [error, setError] = useState(''), [refresh, setRefresh] = useState(0);
   const [eventSequence, setEventSequence] = useState<number>();
-  const currentFrame = loaded?.time === time ? frame : undefined;
-  const frameQuery = queryResult?.data.requestedTime === time && queryResult.data.time === currentFrame?.time ? queryResult.data : undefined;
-  const query = queryResult?.selected === selected && queryResult.eventSequence === eventSequence ? frameQuery : undefined;
   const [eventsOpen, setEventsOpen] = useState(false);
   const appliedPresentation = useRef('');
-  const locatedObject = useRef('');
-  const [mapReady, setMapReady] = useState(false);
-  const [mapBounds, setMapBounds] = useState<LngLatBounds>();
-  const [mapZoom, setMapZoom] = useState(15);
-  const [showRoads, setShowRoads] = useState(true), [showRoutes, setShowRoutes] = useState(true);
-  const [showVehicles, setShowVehicles] = useState(true), [showSpeeds, setShowSpeeds] = useState(false);
   const [selectedEdge, setSelectedEdge] = useState('');
-  const [showOsm, setShowOsm] = useState(false), [basemapStatus, setBasemapStatus] = useState('');
-  const container = useRef<HTMLDivElement>(null), mapRef = useRef<MapLibreMap | null>(null);
-  const resetBounds = useRef<[number, number, number, number] | null>(null);
-  const mapMarkers = useRef(new Map<string, Marker>());
+  const { run, index, geometry, loaded, frame, currentFrame, frameQuery, query, experiment, errors, pending, retry } = useSimulationResources({
+    kernel, sessionId, runId, experimentId: payload.experimentId, active, time, selected, eventSequence, onContextChange,
+  });
+  useSimulationPlayback(active, playing, speed, time, index?.availableTime, setTime, setPlaying);
   const mapFrame = useMemo(() => frame && geometry && projectMapFrame(frame, geometry), [frame, geometry]);
   const fleetRoute = currentFrame?.fleet?.[selected]?.route;
   const relatedRoutes = useMemo(() => geometry?.serviceRoutes?.filter(route =>
@@ -62,13 +36,6 @@ export function SimulationWorkspace({ kernel, session, view, active, payload, on
   const trainState = activePlatform ? '站台停靠' : train ? train.speed > 0 ? '区间行驶' : '区间停车' : undefined;
   const selectedRailEdge = selected === rail?.trainId ? train?.edge : undefined;
   const roadSamples = useMemo(() => loaded?.time === time && frame && geometry ? roadSpeedSamples(frame, geometry) : undefined, [frame, geometry, loaded, time]);
-  const cache = useRef(new Map<number, SimulationBlock>()), contextCallback = useRef(onContextChange);
-  contextCallback.current = onContextChange;
-  const subscribeSession = useCallback((changed: () => void) => kernel.stores.session.subscribe(changed), [kernel]);
-  const notice = useSyncExternalStore(subscribeSession, () => kernel.stores.session.get().simulationBySession?.[sessionId]);
-  const subscribeRuntime = useCallback((changed: () => void) => kernel.stores.runtime.subscribe(changed), [kernel]);
-  const connection = useSyncExternalStore(subscribeRuntime, () => kernel.stores.runtime.get().connection);
-  const commands = kernel.commands.simulation;
   const selectObject = useCallback((id: string) => { setSelectedEdge(''); setSelected(id); setEventSequence(undefined); }, []);
   const seekEvent = (event: SimulationEvent) => {
     setPlaying(false);
@@ -89,312 +56,9 @@ export function SimulationWorkspace({ kernel, session, view, active, payload, on
     setEventSequence(target.eventSequence);
   }, [active, index, selectObject, view.canvas]);
 
-  useEffect(() => {
-    if (!active || !payload.experimentId) return;
-    const controller = new AbortController();
-    void commands.experiment(sessionId, payload.experimentId, controller.signal).then(value => { if (!controller.signal.aborted && value.experimentId === payload.experimentId) setExperiment(value); }).catch(cause => { if (!controller.signal.aborted) setError(message(cause)); });
-    return () => controller.abort();
-  }, [active, sessionId, payload.experimentId, notice?.runUpdatedAt, connection, refresh, commands]);
-
-  useEffect(() => {
-    if (!active) return;
-    const controller = new AbortController();
-    void commands.index(sessionId, runId, controller.signal).then((value) => {
-      if (controller.signal.aborted || value.run.runId !== runId || value.index && value.index.runId !== runId) return;
-      setRun(value.run); setError('');
-      setIndex((previous) => previous && value.index && previous.revision > value.index.revision ? previous : value.index);
-    }).catch((cause) => { if (!controller.signal.aborted) setError(message(cause)); });
-    return () => controller.abort();
-  }, [active, sessionId, runId, notice?.canvas.viewId === `simulation:${runId}` ? notice.runUpdatedAt : '', connection, refresh, commands]);
-
-  useEffect(() => {
-    if (!active || geometry) return;
-    const controller = new AbortController();
-    void commands.geometry(sessionId, runId, controller.signal).then((value) => { if (!controller.signal.aborted) setGeometry(value); }).catch((cause) => { if (!controller.signal.aborted) setError(message(cause)); });
-    return () => controller.abort();
-  }, [active, sessionId, runId, geometry, commands, refresh]);
-
-  useEffect(() => {
-    if (!active || !index?.chunks.length) return;
-    const controller = new AbortController();
-    const sequence = index.chunks.reduce((found, entry, i) => entry.from <= time ? i : found, -1);
-    const apply = (block: SimulationBlock) => {
-      if (controller.signal.aborted || block.runId !== runId || block.networkSha256 !== index.networkSha256 || block.sequence !== sequence) return;
-      const next = [...block.frames].reverse().find((item) => item.time <= time) || block.start;
-      if (next.time <= time) setLoaded({ time, frame: next, sampleSeconds: block.sampleSeconds });
-    };
-    const cached = cache.current.get(sequence);
-    if (cached) apply(cached);
-    else void commands.chunk(sessionId, runId, sequence, controller.signal).then(({ block }) => {
-      if (controller.signal.aborted) return;
-      cache.current.set(sequence, block);
-      while (cache.current.size > 3) cache.current.delete(cache.current.keys().next().value!);
-      apply(block);
-    }).catch((cause) => { if (!controller.signal.aborted) setError(message(cause)); });
-    return () => controller.abort();
-  }, [active, time, index, runId, sessionId, commands]);
-
-  useEffect(() => {
-    if (!active) return;
-    contextCallback.current();
-    if (!frame || loaded?.time !== time) return;
-    const controller = new AbortController();
-    void commands.query(sessionId, runId, time, selected || undefined, controller.signal, eventSequence).then((value) => {
-      if (controller.signal.aborted || value.runId !== runId || value.time !== frame.time || value.requestedTime !== time) return;
-      setQueryResult({ data: value, selected, eventSequence }); setError('');
-      contextCallback.current({ time, ...(selected ? { objectId: selected } : {}), ...(eventSequence === undefined ? {} : { eventSequence }) });
-    }).catch((cause) => { if (!controller.signal.aborted) setError(message(cause)); });
-    return () => controller.abort();
-  }, [active, loaded, frame, selected, eventSequence, time, runId, sessionId, commands]);
-
-  useEffect(() => {
-    if (!playing || !active || !index) return;
-    let animation = 0, last = performance.now(), cursor = time;
-    const tick = (wall: number) => {
-      cursor += (wall - last) / 1000 * speed; last = wall;
-      const next = Math.min(index.availableTime, Math.floor(cursor / 2) * 2);
-      setTime((previous) => previous === next ? previous : next);
-      if (cursor >= index.availableTime) { setTime(index.availableTime); setPlaying(false); return; }
-      animation = requestAnimationFrame(tick);
-    };
-    animation = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animation);
-  }, [playing, active, speed, index]);
-
-  useEffect(() => {
-    if (!container.current || !geometry) return;
-    const css = getComputedStyle(container.current), color = (name: string) => css.getPropertyValue(name).trim();
-    const routeEdges = new Set(Object.values(geometry.routes).flat());
-    const serviceEdges = [...new Set(Object.entries(geometry.routes).filter(([id]) => id !== 'route:road' && id !== geometry.rail?.lineId).flatMap(([, edges]) => edges))];
-    const corridor = geometry.features.filter(({ properties }) => properties.nodeId || properties.edgeId && routeEdges.has(properties.edgeId));
-    const coordinates = (corridor.length ? corridor : geometry.features).flatMap((feature) => feature.geometry.type === 'Point' ? [feature.geometry.coordinates] : feature.geometry.coordinates);
-    const center = coordinates[0]; if (!center) return;
-    const map = createSharedMap(container.current, { id: 'none' }, center, 15, color('--surface-canvas'));
-    map.addControl(new AttributionControl({ compact: true }));
-    mapRef.current = map;
-    const target = container.current;
-    const resize = new ResizeObserver(() => { if (target.clientWidth && target.clientHeight) map.resize(); });
-    resize.observe(target);
-    const paint = () => {
-      if (!hasBasemap(map)) map.setPaintProperty('background', 'background-color', color('--surface-canvas'));
-      map.setPaintProperty('simulation-network', 'line-color', color('--text-tertiary'));
-      map.setPaintProperty(railLayer, 'line-color', ['match', ['get', 'networkType'], 'railway.subway', color('--status-info'),
-        'railway.highspeed', color('--interactive-primary-bg'), 'railway.conventional', color('--status-success'), color('--text-secondary')]);
-      map.setPaintProperty(routeLayer, 'line-color', color('--status-info'));
-      map.setPaintProperty(relatedRoutesLayer, 'line-color', color('--interactive-primary-bg'));
-      map.setPaintProperty(relatedNodesLayer, 'circle-color', color('--surface-raised'));
-      map.setPaintProperty(relatedNodesLayer, 'circle-stroke-color', color('--interactive-primary-bg'));
-      map.setPaintProperty(activePlatformLayer, 'circle-color', color('--surface-raised'));
-      map.setPaintProperty(activePlatformLayer, 'circle-stroke-color', color('--status-success'));
-      map.setPaintProperty(speedLayer, 'line-color', ['interpolate', ['linear'], ['get', 'kmh'], speedColorStops[0], color('--status-warning'), speedColorStops[1], color('--text-secondary'), speedColorStops[2], color('--status-info')]);
-      map.setPaintProperty('simulation-nodes', 'circle-color', color('--surface-raised'));
-      map.setPaintProperty('simulation-nodes', 'circle-stroke-color', color('--text-secondary'));
-      map.setPaintProperty('simulation-vehicles', 'circle-color', ['match', ['get', 'kind'], 'bus', color('--status-info'), 'ridehail', color('--status-warning'), 'car', color('--interactive-primary-bg'), color('--text-secondary')]);
-      map.setPaintProperty('simulation-vehicles', 'circle-stroke-color', color('--surface-canvas'));
-    };
-    const theme = new MutationObserver(() => { if (map.getLayer('simulation-vehicles')) paint(); });
-    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    map.once('load', () => {
-      setSharedGeoJSON(map, 'simulation-network', geometry as GeoJSONSourceSpecification['data']);
-      setSharedGeoJSON(map, 'simulation-vehicles', { type: 'FeatureCollection', features: [] });
-      setSharedGeoJSON(map, speedLayer, { type: 'FeatureCollection', features: [] });
-      map.addLayer({ id: 'simulation-network', source: 'simulation-network', type: 'line',
-        filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!', ['in', ['get', 'networkType'], ['literal', railTypes]]]],
-        paint: { 'line-opacity': 0.72, 'line-width': ['interpolate', ['linear'], ['zoom'], 12,
-          ['match', ['get', 'networkType'], ['highway.motorway', 'highway.trunk', 'highway.motorway_link', 'highway.trunk_link'], 3, 'highway.primary', 2, 1],
-          16, ['match', ['get', 'networkType'], ['highway.motorway', 'highway.trunk', 'highway.motorway_link', 'highway.trunk_link'], 5, 'highway.primary', 4, 'highway.secondary', 3, 'highway.tertiary', 2, 1.5]] } });
-      map.addLayer({ id: railLayer, source: 'simulation-network', type: 'line', filter: ['in', ['get', 'networkType'], ['literal', railTypes]],
-        paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.2, 16, ['match', ['get', 'networkType'], 'railway.highspeed', 3, 'railway.subway', 2.5, 2]],
-          'line-opacity': 0.64, 'line-dasharray': [2, 2] } });
-      map.addLayer({ id: routeLayer, source: 'simulation-network', type: 'line', filter: ['in', ['get', 'edgeId'], ['literal', serviceEdges]],
-        paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.3, 16, 2.6], 'line-opacity': 0.65 } });
-      map.addLayer({ id: speedLayer, source: speedLayer, type: 'line', paint: { 'line-width': 4 } });
-      map.addLayer({ id: relatedRoutesLayer, source: 'simulation-network', type: 'line', filter: ['==', ['get', 'edgeId'], ''],
-        paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 16, 4], 'line-opacity': 0.82 } });
-      map.addLayer({ id: 'simulation-nodes', source: 'simulation-network', type: 'circle', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 4, 'circle-stroke-width': 2 } });
-      map.addLayer({ id: relatedNodesLayer, source: 'simulation-network', type: 'circle', filter: ['==', ['get', 'nodeId'], ''], paint: { 'circle-radius': 7, 'circle-stroke-width': 3 } });
-      map.addLayer({ id: activePlatformLayer, source: 'simulation-network', type: 'circle', filter: ['==', ['get', 'nodeId'], ''], paint: { 'circle-radius': 16, 'circle-stroke-width': 3 } });
-      map.addLayer({ id: 'simulation-vehicles', source: 'simulation-vehicles', type: 'circle', paint: { 'circle-radius': ['match', ['get', 'kind'], 'bus', 6, 'ridehail', 5, 4], 'circle-stroke-width': 1 } });
-      paint();
-      const xs = coordinates.map((point) => point[0]), ys = coordinates.map((point) => point[1]);
-      resetBounds.current = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
-      applySharedMapView(map, { mode: 'bounds', bounds: resetBounds.current }, 0);
-      const updateBounds = () => { setMapBounds(map.getBounds()); setMapZoom(map.getZoom()); };
-      map.on('moveend', updateBounds);
-      updateBounds();
-      map.on('click', (event) => {
-        const picked = map.queryRenderedFeatures(event.point, { layers: ['simulation-vehicles', activePlatformLayer, relatedNodesLayer, 'simulation-nodes'] })[0];
-        if (picked) { selectObject(String(picked.properties?.id || picked.properties?.nodeId)); return; }
-        const [sample] = map.queryRenderedFeatures(event.point, { layers: [speedLayer] });
-        if (sample?.properties?.edgeId) { setSelectedEdge(String(sample.properties.edgeId)); return; }
-        const [routeEdge] = map.queryRenderedFeatures(event.point, { layers: [routeLayer] });
-        const route = geometry.serviceRoutes?.find(item => geometry.routes[item.id].includes(routeEdge?.properties?.edgeId));
-        if (route) { selectObject(route.id); return; }
-        const [track] = map.queryRenderedFeatures(event.point, { layers: [railLayer] });
-        if (geometry.rail?.edges.includes(track?.properties?.edgeId)) { selectObject(geometry.rail.lineId); return; }
-        const [road] = map.queryRenderedFeatures(event.point, { layers: ['simulation-network'] });
-        if (road?.properties?.edgeId) setSelectedEdge(String(road.properties.edgeId));
-      });
-      setMapReady(true);
-    });
-    map.on('error', (event) => setError(event.error?.message || '地图初始化失败'));
-    const markers = mapMarkers.current;
-    return () => {
-      for (const marker of markers.values()) marker.remove();
-      markers.clear();
-      setMapReady(false); resize.disconnect(); theme.disconnect(); mapRef.current = null; resetBounds.current = null; map.remove();
-    };
-  }, [geometry, selectObject]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
-    const background = container.current && getComputedStyle(container.current).getPropertyValue('--surface-canvas').trim();
-    const base = sharedMapStyle({ id: showOsm ? 'default' : 'none' }, background || undefined);
-    const apply = (next: StyleSpecification) => {
-      const current = map.getStyle();
-      map.setStyle({
-        ...next,
-        sources: { ...next.sources, ...Object.fromEntries(Object.entries(current.sources).filter(([id]) => isSimulationSource(id))) },
-        layers: [...next.layers, ...current.layers.filter(layer => 'source' in layer && isSimulationSource(layer.source))],
-      });
-    };
-    if (typeof base !== 'string') {
-      if (hasBasemap(map)) apply(base);
-      return;
-    }
-    const controller = new AbortController();
-    setBasemapStatus('正在加载 OpenStreetMap 底图…');
-    void fetch(base, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) }).then(response => {
-      if (!response.ok) throw new Error(String(response.status));
-      return response.json() as Promise<StyleSpecification>;
-    }).then(style => {
-      if (controller.signal.aborted) return;
-      apply(style);
-      setBasemapStatus('');
-    }).catch(() => {
-      if (controller.signal.aborted) return;
-      setBasemapStatus('OpenStreetMap 底图未能加载，仿真仍可回放。');
-      setShowOsm(false);
-    });
-    return () => controller.abort();
-  }, [mapReady, showOsm]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
-    for (const [id, visible] of [
-      ['simulation-network', showRoads], [railLayer, showRoutes], [routeLayer, showRoutes],
-      [relatedRoutesLayer, showRoutes], [relatedNodesLayer, showRoutes], [activePlatformLayer, showVehicles],
-      ['simulation-vehicles', showVehicles], [speedLayer, showSpeeds],
-    ] as const) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
-  }, [mapReady, showRoads, showRoutes, showVehicles, showSpeeds]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !geometry) return;
-    const railEdges = selectedRailEdge && relatedRail?.edges.includes(selectedRailEdge) ? [selectedRailEdge] : relatedRail?.edges ?? [];
-    const edgeIds = [...new Set([...relatedRoutes.flatMap(route => geometry.routes[route.id]), ...railEdges])];
-    const nodeIds = [...new Set([...relatedRoutes.flatMap(route => [route.origin, route.target]), ...(relatedRail?.stops.map(stop => stop.platformId) ?? [])])];
-    map.setFilter(relatedRoutesLayer, ['in', ['get', 'edgeId'], ['literal', edgeIds]]);
-    map.setFilter(relatedNodesLayer, ['in', ['get', 'nodeId'], ['literal', nodeIds]]);
-    map.setPaintProperty(railLayer, 'line-opacity', relatedRail || relatedRoutes.length ? 0.35 : 0.64);
-    map.setPaintProperty(routeLayer, 'line-opacity', relatedRail || relatedRoutes.length ? 0.35 : 0.65);
-  }, [mapReady, geometry, relatedRoutes, relatedRail, selectedRailEdge]);
-
-  useEffect(() => {
-    if (mapReady) mapRef.current?.setFilter(activePlatformLayer, ['==', ['get', 'nodeId'], activePlatform ?? '']);
-  }, [mapReady, activePlatform]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !geometry) return;
-    const features = !showSpeeds || !roadSamples ? [] : geometry.features.flatMap(feature => {
-      const sample = feature.properties.edgeId && roadSamples.get(feature.properties.edgeId);
-      if (!sample) return [];
-      return [{ ...feature, properties: { ...feature.properties, kmh: 3.6 * sample.totalMetersPerSecond / sample.vehicleIds.length } }];
-    });
-    setSharedGeoJSON(map, speedLayer, { type: 'FeatureCollection', features });
-  }, [mapReady, geometry, roadSamples, showSpeeds]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady || !mapFrame || !active) return;
-    setSharedGeoJSON(map, 'simulation-vehicles', { ...mapFrame.vehicles, features: mapFrame.vehicles.features.filter(feature => feature.properties.kind === 'vehicle') });
-    const markers = mapMarkers.current;
-    const routeIds = new Set(relatedRoutes.map(route => route.id));
-    const detailed = mapFrame.markers.filter(marker => marker.kind === 'people'
-      || showVehicles && mapBounds?.contains(marker.position));
-    const visible = new Set(detailed.map(({ kind, id }) => `${kind}:${id}`));
-    for (const [key, marker] of markers) {
-      if (visible.has(key)) continue;
-      marker.remove(); markers.delete(key);
-    }
-    for (const { id, kind, position, count, heading, people } of detailed) {
-      const key = `${kind}:${id}`;
-      let marker = markers.get(key);
-      if (!marker) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `simulation-marker simulation-marker--${kind}`;
-        if (kind !== 'people') {
-          const glyph = document.createElement('i');
-          glyph.className = `simulation-vehicle-icon simulation-vehicle-icon--${kind}`;
-          glyph.setAttribute('aria-hidden', 'true');
-          button.append(glyph);
-        }
-        button.append(document.createElement('span'));
-        button.addEventListener('click', event => { event.stopPropagation(); selectObject(id); });
-        marker = new Marker({ element: button, offset: kind === 'people' ? [0, -17] : [0, 0] }).setLngLat(position).addTo(map);
-        markers.set(key, marker);
-      } else marker.setLngLat(position);
-      const button = marker.getElement();
-      button.classList.toggle('simulation-marker--overview', mapZoom < 14 && (kind === 'car' || kind === 'ridehail'));
-      const routeId = currentFrame?.fleet?.[id]?.route;
-      button.toggleAttribute('data-related', selected !== id && (kind === 'metro' ? selected === relatedRail?.lineId || !!activePlatform && selected === activePlatform
-        : !!routeId && routeIds.has(routeId)));
-      button.setAttribute('aria-pressed', String(selected === id));
-      const type = kind === 'metro' ? '地铁' : kind === 'bus' ? '公交' : kind === 'ridehail' ? '网约车' : '小汽车';
-      const metroState = kind === 'metro' && trainState && train ? `${trainState}${activePlatform ? ` · ${activePlatform}` : ` · ${(train.speed * 3.6).toFixed(1)} km/h`}` : '';
-      const label = kind === 'people' ? `${id} · 节点旅客 ${count} 人 · ${people?.join(' · ')}` : `${type} ${id}${count === undefined ? '' : ` · 载客 ${count} 人`}${metroState ? ` · ${metroState}` : ''}`;
-      const glyph = button.querySelector('i');
-      if (glyph) {
-        glyph.toggleAttribute('data-heading', heading !== undefined);
-        glyph.style.rotate = heading === undefined ? '' : `${heading}deg`;
-      }
-      if (button.title !== label) {
-        button.querySelector('span')!.textContent = kind === 'metro' ? activePlatform ? '地铁 · 停站' : train ? `地铁 · ${train.speed > 0 ? `${(train.speed * 3.6).toFixed(1)} km/h` : '区间停车'}` : '地铁'
-          : kind === 'bus' ? `公交 · ${count ?? '—'} 人` : kind === 'people' ? people?.length === 1 ? `${people[0]} 人` : `旅客 ${count} 人` : '';
-        button.title = label;
-        button.setAttribute('aria-label', label);
-      }
-    }
-  }, [mapFrame, mapReady, active, selected, selectObject, mapBounds, mapZoom, showVehicles, train, trainState, activePlatform, currentFrame, relatedRoutes, relatedRail]);
-  useEffect(() => { if (active) mapRef.current?.resize(); }, [active]);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!active || !mapReady || !map || !query || !geometry) return;
-    if (!selected) { locatedObject.current = ''; return; }
-    const locationKey = `${selected}:${eventSequence ?? ''}`;
-    if (locatedObject.current === locationKey) return;
-    if (query.route?.id === selected && (geometry.serviceRoutes?.some(route => route.id === selected) || geometry.rail?.lineId === selected)) {
-      const edges = new Set(query.route.edgeIds);
-      const coordinates = geometry.features.flatMap(feature =>
-        feature.geometry.type === 'LineString' && feature.properties.edgeId && edges.has(feature.properties.edgeId) ? feature.geometry.coordinates : []);
-      if (coordinates.length) {
-        const xs = coordinates.map(point => point[0]), ys = coordinates.map(point => point[1]);
-        applySharedMapView(map, { mode: 'bounds', bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] }, 0);
-        locatedObject.current = locationKey;
-      }
-      return;
-    }
-    const nodeId = query.event?.nodeId ?? query.platformId ?? (query.node?.id === selected ? selected : undefined);
-    const node = nodeId && geometry.features.find(item => item.properties.nodeId === nodeId);
-    const position = node && node.geometry.type === 'Point' ? node.geometry.coordinates
-      : query.vehicle?.id === selected ? query.vehicle.positionGeo : undefined;
-    if (position) { map.panTo(position, { duration: 0 }); locatedObject.current = locationKey; }
-  }, [active, mapReady, query, geometry, selected, eventSequence]);
-
+  const { container, mapBounds, mapReady, showRoads, setShowRoads, showRoutes, setShowRoutes, showVehicles, setShowVehicles, showSpeeds, setShowSpeeds, showOsm, setShowOsm, basemapStatus, mapError, resetView, retryMap, zoomIn, zoomOut, setBasemapStatus } = useSimulationMap({
+    active, geometry, mapFrame, currentFrame, relatedRoutes, relatedRail, selectedRailEdge, activePlatform, train, trainState, roadSamples, selected, eventSequence, query, selectObject, setSelectedEdge,
+  });
   const available = index?.availableTime || 0, counts = frameQuery?.countsByState || {};
   const sample = roadSamples?.get(selectedEdge);
   const roadClass = geometry?.features.find(feature => feature.id === selectedEdge)?.properties.networkType;
@@ -450,11 +114,9 @@ export function SimulationWorkspace({ kernel, session, view, active, payload, on
       </div>
       {basemapStatus ? <p className="simulation-basemap-status" role="status">{basemapStatus}</p> : null}
       <div className="simulation-map-navigation" role="group" aria-label="地图视角">
-        <button type="button" aria-label="放大地图" title="放大地图" disabled={!mapReady} onClick={() => mapRef.current?.zoomIn()}><Icon name="plus" /></button>
-        <button type="button" aria-label="缩小地图" title="缩小地图" disabled={!mapReady} onClick={() => mapRef.current?.zoomOut()}><Icon name="minimize" /></button>
-        <button type="button" aria-label="重置地图视角" title="重置地图视角" disabled={!mapReady} onClick={() => {
-          if (mapRef.current && resetBounds.current) applySharedMapView(mapRef.current, { mode: 'bounds', bounds: resetBounds.current }, 0);
-        }}><Icon name="restore" /></button>
+        <button type="button" aria-label="放大地图" title="放大地图" disabled={!mapReady} onClick={zoomIn}><Icon name="plus" /></button>
+        <button type="button" aria-label="缩小地图" title="缩小地图" disabled={!mapReady} onClick={zoomOut}><Icon name="minimize" /></button>
+        <button type="button" aria-label="重置地图视角" title="重置地图视角" disabled={!mapReady} onClick={resetView}><Icon name="restore" /></button>
       </div>
       <details className="simulation-map-legend">
         <summary>图例<Icon name="chevron" /></summary>
@@ -489,18 +151,23 @@ export function SimulationWorkspace({ kernel, session, view, active, payload, on
         <output>{frame ? time : '—'} / {available} s</output>
         <select aria-label="回放速度" value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>{[1, 4, 16].map((value) => <option key={value} value={value}>{value}×</option>)}</select>
       </div>
-      <div className="simulation-progress">
-        <span>{run?.termination ? terminationLabels[run.termination] : run ? stateLabels[run.state] : '读取运行记录'}</span>
+      <div className="simulation-progress" aria-busy={pending.index || pending.chunk}>
+        <span>{run?.termination ? terminationLabels[run.termination] : run ? stateLabels[run.state] : errors.index ? '运行索引读取失败' : '读取运行记录'}</span>
         <span>已计算 {run?.latestComputedTime ?? '—'} s</span>
         <span>已发布 {available} s</span>
         <span id={frameLabelId} className={currentFrame?.time === time ? 'sr-only' : undefined}>{currentFrame ? `位置帧 ${currentFrame.time} s` : '位置帧待加载'}</span>
         {loaded ? <span>轨迹采样 {loaded.sampleSeconds} s</span> : null}
         <span>{index?.final ? '输出覆盖完整' : index ? '部分输出' : '等待首个完整时间块'}</span>
       </div>
-      {error || run?.error ? <div className="simulation-recovery">
-        <p role="status" className="simulation-error" title={error || run?.error?.message}>{error || run?.error?.message}</p>
-        <button type="button" onClick={() => setRefresh((value) => value + 1)}>重取索引</button>
-      </div> : null}
+      {Object.entries(errors).map(([resource, error]) => {
+        const kind = resource as keyof typeof simulationResourceLabels;
+        return error ? <div className="simulation-recovery" key={kind}>
+          <p role="status" className="simulation-error" title={error}>{simulationResourceLabels[kind]} · {error}</p>
+          <button type="button" disabled={pending[kind]} onClick={() => retry(kind)}>{pending[kind] ? '正在重试' : '重试'}{simulationResourceLabels[kind]}</button>
+        </div> : null;
+      })}
+      {mapError ? <div className="simulation-recovery"><p role="status" className="simulation-error">{mapError}</p><button type="button" onClick={retryMap}>重试地图</button></div> : null}
+      {run?.error ? <p role="status" className="simulation-error">{run.error.message}</p> : null}
     </div>
     <SimulationDetailsDrawer summary={drawerSummary}>
       {showSpeeds || selectedEdge ? <>
@@ -553,7 +220,7 @@ export function SimulationWorkspace({ kernel, session, view, active, payload, on
         <summary>{currentFrame ? `全场景统计 · 位置帧 ${currentFrame.time} s` : '全场景统计 · 位置帧待加载'}</summary>
         <p>视野内有坐标 {(currentFrame && inView) ?? '—'} · 在网 {currentFrame ? Object.keys(currentFrame.vehicles).length : '—'} · 登记车队 {currentFrame?.fleet ? Object.keys(currentFrame.fleet).length : '—'} · 累计入网 {frameQuery?.insertedVehicles ?? '—'}</p>
         {Object.keys(counts).length ? <dl className="simulation-counts" aria-label="全场景同刻人数">{Object.entries(counts).map(([state, count]) => <div key={state}><dt>{rail && state === 'external' ? '接续在途' : stateLabels[state] || state}</dt><dd>{count}</dd></div>)}</dl> : null}
-        {!error && !run?.error ? <button type="button" className="simulation-event-link" onClick={() => setRefresh(value => value + 1)}>重取索引</button> : null}
+        {!errors.index && !run?.error ? <button type="button" className="simulation-event-link" onClick={() => retry('index')}>重取索引</button> : null}
       </details>
       {finalMetrics ? <details className="simulation-scene-details">
         <summary>全程结果 · 0–{available} s</summary>

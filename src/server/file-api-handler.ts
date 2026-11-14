@@ -8,6 +8,7 @@ import type { JsonRecord } from './types.js';
 import type { PiRpcSession } from './sessions.js';
 import { latestPiWebBridgeEnvelope } from '../contracts/index.js';
 import { isWithin } from './util/path.js';
+import { streamResponse } from './http/response.js';
 
 type FileHandlersOptions = {
   expandHome(value: string): string;
@@ -104,7 +105,7 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
     const mimes: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon' };
     const mime = mimes[path.extname(filePath).toLowerCase().slice(1)];
     if (!mime) return options.json(res, 415, { error: 'Not a previewable image' });
-    try { if (!fs.statSync(filePath).isFile()) throw new Error('Not a file'); res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'private, no-store', ...resourceSecurityHeaders(mime) }); const stream = fs.createReadStream(filePath); stream.on('error', () => res.destroy()); stream.pipe(res); }
+    try { if (!fs.statSync(filePath).isFile()) throw new Error('Not a file'); res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'private, no-store', ...resourceSecurityHeaders(mime) }); streamResponse(fs.createReadStream(filePath), res); }
     catch (error) { options.json(res, 404, { error: options.errorMessage(error) }); }
   };
   const serveRawFile = (req: import('node:http').IncomingMessage, res: ServerResponse, filePath: string, download: boolean) => {
@@ -137,12 +138,12 @@ export function createFileApiHandlers(options: FileHandlersOptions) {
         }
         res.writeHead(206, { ...baseHeaders, 'Content-Range': `bytes ${rangeStart}-${rangeEnd}/${stat.size}`, 'Content-Length': rangeEnd - rangeStart + 1 });
         if (req.method === 'HEAD') { res.end(); return; }
-        fs.createReadStream(filePath, { start: rangeStart, end: rangeEnd }).pipe(res);
+        streamResponse(fs.createReadStream(filePath, { start: rangeStart, end: rangeEnd }), res);
         return;
       }
       res.writeHead(200, { ...baseHeaders, 'Content-Length': stat.size });
       if (req.method === 'HEAD') { res.end(); return; }
-      const stream = fs.createReadStream(filePath); stream.on('error', () => res.destroy()); stream.pipe(res);
+      streamResponse(fs.createReadStream(filePath), res);
     } catch (error) {
       options.json(res, (error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500, { error: options.errorMessage(error) });
     }

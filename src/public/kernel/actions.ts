@@ -18,7 +18,7 @@ import type {
 } from '../app-types.js';
 import type { CanvasPresentationV1 } from '../../contracts/canvas.js';
 import type { AppError } from '../../contracts/errors.ts';
-import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../contracts/geo.ts';
+import type { GeoInteractionRequestV1, GeoInteractionResponseV1, GeoScreenshotRequestV1 } from '../../contracts/geo-interaction.ts';
 
 export type ToolExecution = {
   toolCallId: string;

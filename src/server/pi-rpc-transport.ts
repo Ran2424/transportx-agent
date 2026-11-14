@@ -2,6 +2,7 @@ import type { PendingCommand, RpcCommand, RpcResponse } from './types.js';
 
 type WritableInput = {
   writable: boolean;
+  writableNeedDrain?: boolean;
   write(payload: string, callback: (error?: Error | null) => void): unknown;
 };
 
@@ -11,6 +12,9 @@ export class PiRpcTransport {
   private readonly late = new Map<string, (response: RpcResponse) => void>();
 
   send(input: WritableInput, command: RpcCommand, opts: { timeoutMs?: number; onLateResponse?: (response: RpcResponse) => void } = {}) {
+    if (input.writableNeedDrain || this.pending.size >= 200) {
+      return Promise.reject(Object.assign(new Error('Pi RPC capacity reached. Retry after pending writes settle.'), { code: 'pi_rpc_backpressure', status: 503 }));
+    }
     const id = command.id || `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const outbound = { ...command, id };
     delete outbound.sessionId;

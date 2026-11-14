@@ -2,36 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import {
-  GEO_CONTEXTS_PER_MESSAGE,
-  GEO_CONTEXT_MAX_FEATURES,
-  GEO_REQUEST_DEFAULT_TIMEOUT_SECONDS,
-  GEO_SCREENSHOT_TIMEOUT_SECONDS,
-  buildGeoContextPrompt,
-  getVisualizationFromToolResult,
-  stripGeoContextPrompt,
-  parseGeoClientContextStructured,
-  parseGeoInteractionRequestStructured,
-  parseGeoInteractionResponseStructured,
-  type GeoClientContextV1,
-  type GeoContextProvenanceV1,
-  type GeoContextReferenceV1,
-  type GeoInteractionRequestV1,
-  type GeoInteractionResponseReason,
-  type GeoInteractionResponseV1,
-  type GeoInteractionTerminalStatus,
-  type GeoScreenshotRequestV1,
-  type GeoJsonFeature,
-  type VisualizationEnvelope,
-} from '../contracts/geo.js';
+import { GEO_CONTEXTS_PER_MESSAGE, GEO_CONTEXT_MAX_FEATURES, GEO_REQUEST_DEFAULT_TIMEOUT_SECONDS, GEO_SCREENSHOT_TIMEOUT_SECONDS, buildGeoContextPrompt, stripGeoContextPrompt, parseGeoClientContextStructured, parseGeoInteractionRequestStructured, parseGeoInteractionResponseStructured, type GeoClientContextV1, type GeoContextProvenanceV1, type GeoContextReferenceV1, type GeoInteractionRequestV1, type GeoInteractionResponseReason, type GeoInteractionResponseV1, type GeoInteractionTerminalStatus, type GeoScreenshotRequestV1 } from '../contracts/geo-interaction.js';
+import { getVisualizationFromToolResult, type VisualizationEnvelope } from '../contracts/geo.js';
+import { type GeoJsonFeature } from '../contracts/geo-scene.js';
 import { stripAttachmentContext } from '../contracts/attachments.js';
 import { stripCanvasContextPrompt } from '../contracts/canvas.js';
 import type { JsonRecord } from './types.js';
 import { assertGeoResourceAccess } from './geo-resource-access.js';
 import { readVerifiedGeoResource } from './geo-resource-storage.js';
-import { isWithin } from './util/path.js';
-import { conversationStatePath } from './workspace-store.js';
-import { readJsonObject, writeJsonAtomic as writeMetadata } from './util/json-storage.js';
+import { contextDir, interactionRoot, readJson, readMessageRefMetadata, refsPath, requestDir, serviceError, writeJsonAtomic, writeScreenshot } from './geo-interaction-storage.js';
 
 const GEO_MODULE_ID = 'com.transportx.geo';
 const MAX_GEO_SCREENSHOT_BYTES = 10 * 1024 * 1024;
@@ -56,52 +35,6 @@ type ScreenshotResult =
   | { status: 'captured'; filename: string; relativePath: string; bytes: number }
   | { status: 'failed'; reason: ScreenshotFailureReason };
 type ScreenshotWaiter = { resolve(value: ScreenshotResult): void; timer: ReturnType<typeof setTimeout>; cleanup?(): void };
-
-function serviceError(message: string, status = 400, code?: string) {
-  const error = new Error(message) as Error & { status?: number; code?: string };
-  error.status = status;
-  if (code) error.code = code;
-  return error;
-}
-
-type GeoScope = Pick<GeoInteractionSession, 'cwd' | 'conversationId'>;
-function interactionRoot(scope: GeoScope) { return conversationStatePath(scope, 'geo-interactions'); }
-function contextDir(scope: GeoScope, contextId: string) { return path.join(interactionRoot(scope), 'contexts', contextId); }
-function requestDir(scope: GeoScope, requestId: string) { return path.join(interactionRoot(scope), 'requests', requestId); }
-function refsPath(scope: GeoScope) { return path.join(interactionRoot(scope), 'message-refs.json'); }
-
-function assertNoSymlink(target: string) {
-  try { if (fs.lstatSync(target).isSymbolicLink()) throw serviceError('Geo interaction storage cannot use symbolic links.', 403); }
-  catch (cause) { if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause; }
-}
-
-function ensureStoragePath(cwd: string, target: string) {
-  const sessionRoot = path.resolve(cwd);
-  const resolved = path.resolve(target);
-  if (!isWithin(sessionRoot, resolved)) throw serviceError('Geo interaction path escapes the session.', 403);
-  assertNoSymlink(path.join(cwd, '.tau'));
-  assertNoSymlink(resolved);
-  for (let cursor = path.dirname(resolved); cursor !== sessionRoot && isWithin(sessionRoot, cursor); cursor = path.dirname(cursor)) assertNoSymlink(cursor);
-  return resolved;
-}
-
-function writeJsonAtomic(cwd: string, target: string, value: unknown) {
-  const resolved = ensureStoragePath(cwd, target);
-  writeMetadata(resolved, value);
-}
-
-function readJson<T>(cwd: string, target: string): T | null {
-  try {
-    const resolved = ensureStoragePath(cwd, target);
-    const realSession = fs.realpathSync(cwd);
-    const realTarget = fs.realpathSync(resolved);
-    if (!isWithin(realSession, realTarget) || !fs.statSync(realTarget).isFile()) throw serviceError('Geo interaction file is outside the session.', 403);
-    return JSON.parse(fs.readFileSync(realTarget, 'utf8')) as T;
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw cause;
-  }
-}
 
 function randomId(prefix: 'geoctx_' | 'georeq_' | 'geoshot_') { return `${prefix}${crypto.randomBytes(12).toString('hex')}`; }
 
@@ -261,9 +194,7 @@ export class GeoInteractionService {
       throw serviceError(`Map screenshot must be a valid PNG no larger than ${MAX_GEO_SCREENSHOT_BYTES / 1024 / 1024} MiB.`, 413);
     }
     const filename = screenshotName(session.cwd);
-    const target = ensureStoragePath(session.cwd, path.join(session.cwd, filename));
-    assertNoSymlink(target);
-    fs.writeFileSync(target, image, { flag: 'wx', mode: 0o600 });
+    const target = writeScreenshot(session.cwd, filename, image);
     return { filename, path: target, bytes: image.length };
   }
 
@@ -329,7 +260,7 @@ export class GeoInteractionService {
   }
 
   readMessageRefs(cwd: string, conversationId: string): GeoMessageRef[] {
-    const value = readJsonObject(ensureStoragePath(cwd, refsPath({ cwd, conversationId })), { version: 1, refs: [] });
+    const value = readMessageRefMetadata({ cwd, conversationId });
     if (value.version !== 1 || !Array.isArray(value.refs)) throw serviceError('Geo message reference metadata is corrupt.', 409, 'metadata_corrupt');
     if (!value.refs.every((item) => !!item && typeof item === 'object' && typeof item.text === 'string' && Array.isArray(item.contextIds) && item.contextIds.every((id: unknown) => typeof id === 'string' && /^geoctx_[A-Za-z0-9_-]{12,64}$/.test(id)))) throw serviceError('Geo message reference metadata is corrupt.', 409, 'metadata_corrupt');
     return value.refs as GeoMessageRef[];

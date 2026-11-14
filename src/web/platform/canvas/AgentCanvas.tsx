@@ -2,7 +2,8 @@ import { Component, Suspense, useCallback, useEffect, useRef, useState, type Key
 import { useTranslation } from 'react-i18next';
 import type { ConversationView } from '../../../public/app-types.js';
 import { Icon } from '../../components/icons';
-import type { CanvasState, CanvasView } from './canvas-state';
+import type { CanvasState } from './canvas-state';
+import type { CanvasView } from './canvas-view';
 import type { DocumentPosition, DocumentRequest } from './document-state';
 import { rendererForCanvasView } from './renderer-registry';
 import type { AppKernel } from '../../../public/kernel/app-kernel.js';

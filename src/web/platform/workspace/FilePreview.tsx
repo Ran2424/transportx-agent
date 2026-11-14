@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel/commands.js';
+import type { WorkspaceFile, WorkspaceFileContent } from '../../../public/kernel/session-commands.js';
 import { appKernel } from '../../app/composition-root';
 import { Icon } from '../../components/icons';
 import i18n from '../../i18n';

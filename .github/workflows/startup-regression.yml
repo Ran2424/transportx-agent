@@ -38,7 +38,38 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
       - run: npm run test:budget
+      - run: npm run check:architecture
       - run: npm run typecheck
       - run: ${{ matrix.command }}
       - run: node scripts/desktop-startup-smoke.mjs
         if: runner.os != 'Linux'
+  web-and-audit:
+    runs-on: macos-latest
+    timeout-minutes: 12
+    env:
+      TAU_PYTHON_COMMAND: python
+      TAU_BROWSER_CHANNEL: chromium
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: python -m pip install -r desktop/python-requirements.txt
+      - run: npm ci --ignore-scripts
+      - name: Audit production lockfile
+        run: |
+          status=0
+          npm audit --omit=dev --audit-level=high --json > npm-audit.json || status=$?
+          node -e 'const report = require("./npm-audit.json"); if (report.error || !report.metadata) process.exit(1); console.log(report.metadata.vulnerabilities); if (report.metadata.vulnerabilities.high || report.metadata.vulnerabilities.critical) console.log("::warning::Production dependencies have high or critical findings. Review the audit artifact and the architecture plan.");'
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-dependency-audit
+          path: npm-audit.json
+      - run: npx playwright install chromium
+      - run: npm run test:web

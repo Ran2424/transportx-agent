@@ -18,6 +18,8 @@ import type { ResolvedSessionPlanV3 } from '../contracts/resolved-session-plan.j
 import { sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 import { VideoRunner } from './video-runner.js';
+import { resolveSafeDataFile } from './video-asset-files.js';
+import { readVideoMetrics } from './video-metrics.js';
 import type { VideoExecutables } from './runtime-resolver.js';
 
 const MAX_CLIP_SECONDS = 300;
@@ -58,7 +60,6 @@ export type VideoClipResult = {
 export type VideoSampledFrame = { timestamp: string; mimeType: 'image/jpeg'; dataBase64: string; bytes: number };
 
 export type VideoSampleFramesResult = { videoId: string; startTime: string; endTime: string; frames: VideoSampledFrame[]; totalBytes: number };
-export type VideoMetricsResult = { metrics: Array<{ id: string; label: string; unit: string; sampleIntervalSeconds: number; samples: Array<{ offsetSeconds: number; value: number }> }> };
 
 function requiredString(body: Record<string, unknown>, key: string, max = 1000) {
   const value = typeof body[key] === 'string' ? body[key].trim() : '';
@@ -86,45 +87,6 @@ function resourcesRoot(cwd: string) {
 
 function outputRoot(cwd: string) {
   return path.join(cwd, '.tau', 'video-output');
-}
-
-function resolveSafeDataFile(assetRoot: string, relativeFile: string) {
-  if (path.isAbsolute(relativeFile)) throw new Error(`Video file must be relative: ${relativeFile}`);
-  const root = fs.realpathSync(assetRoot);
-  const parts = relativeFile.split(/[\\/]+/);
-  let cursor = root;
-  for (const part of parts) {
-    if (!part || part === '.' || part === '..') throw new Error(`Unsafe video file path: ${relativeFile}`);
-    cursor = path.join(cursor, part);
-    if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw new Error(`Video files cannot use symbolic links: ${relativeFile}`);
-  }
-  const resolved = fs.realpathSync(path.resolve(root, relativeFile));
-  if (!isWithin(root, resolved) || !fs.statSync(resolved).isFile()) throw new Error(`Video file escapes the Data Root: ${relativeFile}`);
-  return resolved;
-}
-
-function parseVideoMetricSamples(csvText: string, sourceStartTime: string, recordingStartTime: string, durationSeconds: number, sampleIntervalSeconds: number): Array<{ offsetSeconds: number; value: number }> {
-  const sourceStart = parseVideoTimestamp(sourceStartTime);
-  const recordingStart = parseVideoTimestamp(recordingStartTime);
-  if (!sourceStart || !recordingStart) throw new Error('Video count source has invalid recording time metadata');
-  const [header, ...rows] = csvText.trim().split(/\r?\n/);
-  if (header !== 'relative_second,absolute_time,value') throw new Error('Video metric CSV has an unsupported header');
-  if (rows.length > 20_000) throw new Error('Video metric CSV exceeds the supported sample limit');
-  const samples: Array<{ offsetSeconds: number; value: number }> = [];
-  let previousOffset = -1;
-  for (const row of rows) {
-    const [relativeSecond, absoluteTime, rawValue, ...extra] = row.split(',');
-    const sourceOffset = Number(relativeSecond);
-    const value = Number(rawValue);
-    const timestamp = parseVideoTimestamp(absoluteTime);
-    if (extra.length || !Number.isInteger(sourceOffset) || sourceOffset < 0 || sourceOffset % sampleIntervalSeconds !== 0 || sourceOffset <= previousOffset || !Number.isFinite(value) || !timestamp || timestamp.epochMs !== sourceStart.epochMs + sourceOffset * 1000) {
-      throw new Error('Video metric CSV contains an invalid sample');
-    }
-    previousOffset = sourceOffset;
-    const offsetSeconds = (timestamp.epochMs - recordingStart.epochMs) / 1000;
-    if (offsetSeconds >= 0 && offsetSeconds <= durationSeconds) samples.push({ offsetSeconds, value });
-  }
-  return samples;
 }
 
 function sceneItemFromManifest(manifest: VideoResourceManifestV1, title: string, cameraId: string | undefined, initialSeekSeconds?: number): VideoSceneItemV1 {
@@ -363,22 +325,9 @@ export class VideoService {
     return { item: sceneItemFromManifest(resolved.manifest, resolved.title, resolved.cameraId, initialSeekSeconds) };
   }
 
-  metrics(session: VideoSessionContext, resourceId: string): VideoMetricsResult {
+  metrics(session: VideoSessionContext, resourceId: string) {
     const { manifest } = this.loadManifest(session, resourceId);
-    const record = this.findRecord(session, manifest.videoId);
-    const metrics = (record.entry.metrics ?? []).map((metric) => {
-      const metricPath = resolveSafeDataFile(record.assetRoot, metric.file);
-      const stat = fs.statSync(metricPath);
-      if (stat.size > 2 * 1024 * 1024) throw new Error(`Video metric exceeds the supported size limit: ${metric.id}`);
-      return {
-        id: metric.id,
-        label: metric.label,
-        unit: metric.unit,
-        sampleIntervalSeconds: metric.sampleIntervalSeconds,
-        samples: parseVideoMetricSamples(fs.readFileSync(metricPath, 'utf8'), record.entry.startTime, manifest.recordingStartTime, manifest.durationSeconds, metric.sampleIntervalSeconds),
-      };
-    });
-    return { metrics };
+    return readVideoMetrics(this.findRecord(session, manifest.videoId), manifest);
   }
 
   async snapshot(session: VideoSessionContext, body: Record<string, unknown>, signal?: AbortSignal): Promise<VideoSnapshotResult> {

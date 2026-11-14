@@ -1,5 +1,5 @@
 import maplibregl from 'maplibre-gl';
-import type { GeoChart, GeoLayer, GeoVisualValue } from '../../../contracts/geo.js';
+import type { GeoChart, GeoLayer, GeoVisualValue } from '../../../contracts/geo-scene.js';
 import { geoChartImagePrefix } from './geo-chart-images.js';
 import { geoLayerDefaults } from './geo-legend.js';
 

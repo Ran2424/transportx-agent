@@ -2,32 +2,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { parseTrafficScenario, parseSimulationCanvasTarget, parseSimulationGeometry, SIMULATION_MODULE_ID, SIMULATION_CANVAS_ADAPTER_ID, type TrafficScenario, type SimulationRunSummary, type SimulationQuery, type SimulationNetworkView, type ScenarioVariant, type SimulationExperiment } from '../contracts/simulation.js';
+import { parseTrafficScenario, parseSimulationCanvasTarget, parseSimulationGeometry, SIMULATION_MODULE_ID, SIMULATION_CANVAS_ADAPTER_ID, type SimulationRunSummary, type SimulationQuery, type SimulationNetworkView, type SimulationExperiment } from '../contracts/simulation.js';
+import { fail, resolveSimulationVariant, type ScenarioRecord } from './simulation-variant.js';
 import type { CanvasPresentationV1 } from '../contracts/canvas.js';
-import type { GeoClientContextV1 } from '../contracts/geo.js';
+import type { GeoClientContextV1 } from '../contracts/geo-interaction.js';
 import type { ResolvedSessionPlan } from './session-assembly.js';
 import { PythonRunner } from './python-runner.js';
 import type { Executable } from './runtime-resolver.js';
 import { executionOwner, executionOwnerKey, type OwnerSession } from './util/execution-owner.js';
-import { writeJsonAtomic } from './util/json-storage.js';
+import { replaceFileAtomic, writeJsonAtomic } from './util/json-storage.js';
 import { containedFile } from './util/resource-path.js';
 import { workspaceMetadataPath } from './workspace-store.js';
 import { sha256File } from './asset-integrity.js';
 import { inspectProcess, inspectRecordedProcess, type ProcessIdentity } from './process-inspection.js';
 import { createSimulationJob, readSimulationJson, readSimulationIndex, readSimulationChunk, verifySimulationResult, type SimulationJob, simulationDigest } from './simulation-job.js';
-
 export type SimulationSession = OwnerSession & { id: string; workspaceId: string | null; resolvedSessionPlan: ResolvedSessionPlan | null };
-type ScenarioRecord = { schemaVersion: 1; scenarioId: string; owner: string; moduleVersion: string; document: TrafficScenario; networkSha256: string; geometrySha256: string; variant?: ScenarioVariant; inputContextSha256?: string };
 type RunRecord = SimulationRunSummary & { schemaVersion: 1; owner: string; workspaceId: string; toolCallId: string; moduleVersion: string; jobId?: string; jobSha256?: string; resultSha256?: string; processes?: ProcessIdentity[] };
 type ExperimentRecord = Omit<SimulationExperiment, 'comparison' | 'artifact'> & { schemaVersion: 1; owner: string; workspaceId: string; moduleVersion: string };
 type RunRequest = { scenarioId?: unknown; toolCallId?: unknown; operationId?: unknown; experimentId?: unknown; slot?: unknown };
-const fail = (code: string, message: string, status = 409) => Object.assign(new Error(message), { code, status });
 const now = () => new Date().toISOString();
 const safeRelative = (value: unknown): string => {
   if (typeof value !== 'string' || !value.length || value.length > 1000 || path.isAbsolute(value) || value.split(/[\\/]/).some((part) => !part || part === '.' || part === '..' || part === '.tau')) throw fail('traffic_input_invalid', 'Use a relative scenario path within the selected data asset or workspace.', 400);
   return value;
 };
-
 /** Domain journal only: existing session Jobs own scheduling and managed processes. */
 export class SimulationService {
   private runner: PythonRunner;
@@ -64,8 +61,14 @@ export class SimulationService {
   private jobFile(session: SimulationSession, runId: string) { return this.file(session, runId).replace(/\.json$/, '.job.json'); }
   private load<T extends RunRecord | ScenarioRecord | ExperimentRecord>(session: SimulationSession, id: string): T {
     let record: T;
-    try { record = readSimulationJson<T>(this.file(session, id)); } catch { throw fail('traffic_reference_unavailable', 'Simulation reference is unavailable to this conversation.', 404); }
-    if (record.schemaVersion !== 1 || record.owner !== this.owner(session) || record.moduleVersion !== this.plan(session).module.version) throw fail('traffic_owner_mismatch', 'Simulation owner or frozen module version differs.');
+    const file = this.file(session, id);
+    try { record = readSimulationJson<T>(file); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw fail('traffic_reference_unavailable', 'Simulation reference is unavailable to this conversation.', 404);
+      throw fail('traffic_metadata_unreadable', 'Simulation metadata could not be read. Inspect the Host diagnostics.', 500);
+    }
+    if (!record || record.schemaVersion !== 1) throw fail('traffic_metadata_unreadable', 'Simulation metadata has an invalid version.', 500);
+    if (record.owner !== this.owner(session) || record.moduleVersion !== this.plan(session).module.version) throw fail('traffic_owner_mismatch', 'Simulation owner or frozen module version differs.');
     if ('workspaceId' in record && record.workspaceId !== session.workspaceId) throw fail('traffic_owner_mismatch', 'Run belongs to a different workspace.');
     return record;
   }
@@ -74,7 +77,9 @@ export class SimulationService {
   private pointer(workspaceId: string | null) { if (!workspaceId) throw fail('traffic_owner_mismatch', 'Workspace identity is required.'); return path.join(this.options.root, 'workspaces', `${simulationDigest(workspaceId)}.json`); }
   private release(record: RunRecord) {
     const pointer = this.pointer(record.workspaceId);
-    if (fs.existsSync(pointer) && readSimulationJson<{ runId: string }>(pointer).runId === record.runId) fs.rmSync(pointer);
+    if (!fs.existsSync(pointer)) return;
+    const reservation = readSimulationJson<{ owner: string; runId: string }>(pointer);
+    if (reservation.owner === record.owner && reservation.runId === record.runId) fs.rmSync(pointer);
   }
   private assertStopped(root: string, record: RunRecord) {
     const started = readSimulationJson<{ pythonPid: number; sumoPid: number }>(containedFile(root, path.join(root, 'started.json')));
@@ -103,37 +108,11 @@ export class SimulationService {
     const network = containedFile(root, workspaceMetadataPath(root, path.relative(root, path.resolve(path.dirname(source), safeRelative(document.network.path)))));
     if (fs.statSync(network).size > 2 * 1024 * 1024) throw fail('traffic_input_budget', 'Network exceeds 2 MiB.');
     const networkSha256 = sha256File(network);
-    let variant: ScenarioVariant | undefined;
-    if (body.parentScenarioId !== undefined) {
-      if (typeof body.parentScenarioId !== 'string' || !Array.isArray(body.interventions) || !body.interventions.length || body.interventions.length > 2 || new Set(body.interventions).size !== body.interventions.length || body.interventions.some(field => !['departures', 'policy', 'railTimetable'].includes(field)) || body.interventions.includes('railTimetable') && body.interventions.length !== 1) throw fail('traffic_variant_invalid', 'Declare the parent and exact changed service fields.', 400);
-      const parent = this.scenario(session, body.parentScenarioId);
-      if (parent.inputContextSha256) {
-        const frozen = readSimulationJson<GeoClientContextV1>(path.join(this.artifact(session, 'scenarios', parent.scenarioId), 'input-context.json'));
-        if (inputContext && !isDeepStrictEqual(inputContext, frozen)) throw fail('traffic_variant_incomparable', 'Variant Geo selection must equal its frozen parent.');
-        inputContext = frozen;
-      } else if (inputContext) throw fail('traffic_variant_incomparable', 'Do not add a different selection to a variant.');
-      const expected = structuredClone(parent.document.configuration), actual = structuredClone(config);
-      if (expected.model !== 'multimodal' || actual.model !== 'multimodal' || networkSha256 !== parent.networkSha256 || !isDeepStrictEqual(document.network.mapping, parent.document.network.mapping) || !isDeepStrictEqual(document.provenance, parent.document.provenance)) throw fail('traffic_variant_incomparable', 'Variants require the same frozen network, demand source and model.');
-      for (const field of body.interventions as ScenarioVariant['interventions']) {
-        if (field === 'railTimetable') {
-          if (!expected.rail || !actual.rail || expected.rail.stops.length !== actual.rail.stops.length) throw fail('traffic_variant_incomparable', 'Choose the same physical metro service.');
-          if (isDeepStrictEqual(expected.rail, actual.rail)) throw fail('traffic_variant_unchanged', 'Adjust a timetable value.');
-          actual.rail.insertTime = expected.rail.insertTime;
-          for (const [i, stop] of actual.rail.stops.entries()) {
-            const { arrival, departure, minDwell } = expected.rail.stops[i];
-            Object.assign(stop, { arrival, departure, minDwell });
-          }
-          actual.coordination!.metro[0].time = expected.coordination!.metro[0].time;
-          continue;
-        }
-        if (isDeepStrictEqual(actual.coordination![field], expected.coordination![field])) throw fail('traffic_variant_unchanged', 'Each declared intervention must change its named input.');
-        Object.assign(actual.coordination!, { [field]: expected.coordination![field] });
-      }
-      if (!isDeepStrictEqual(expected, actual)) throw fail('traffic_variant_incomparable', 'Demand, fleet, nodes, routes, dates, units and other common conditions must remain identical.');
-      variant = { parentScenarioId: body.parentScenarioId, interventions: body.interventions as ScenarioVariant['interventions'] };
-    } else if (body.interventions !== undefined) throw fail('traffic_variant_invalid', 'Interventions require a frozen parent.', 400);
+    const selection = resolveSimulationVariant(body, document, networkSha256, inputContext, (id) => this.scenario(session, id), (id) => path.join(this.artifact(session, 'scenarios', id), 'input-context.json'));
+    inputContext = selection.inputContext;
     if (inputContext && !['viewport', 'rectangle'].includes(inputContext.mode)) throw fail('traffic_selection_unsupported', 'Use an existing viewport or rectangular Geo context for the synthetic service area.', 400);
     const inputContextSha256 = inputContext ? simulationDigest(JSON.stringify(inputContext)) : undefined;
+    const { variant } = selection;
     const scenarioId = `scenario_${simulationDigest(JSON.stringify([this.owner(session), module.version, document, networkSha256, ...(variant ? [variant] : []), ...(inputContextSha256 ? [inputContextSha256] : [])])).slice(0, 32)}`;
     if (fs.existsSync(this.file(session, scenarioId))) { const record = this.scenario(session, scenarioId); return this.scenarioSummary(record); }
     const runtime = module.nativeRuntimes.find((item) => item.kind === 'sumo');
@@ -230,13 +209,13 @@ export class SimulationService {
     const manifestPath = `${relative}/comparison-${hash}.json`, reportPath = `${relative}/report-${hash}.md`;
     if (!materialize && (!fs.existsSync(workspaceMetadataPath(session.cwd, manifestPath)) || !fs.existsSync(workspaceMetadataPath(session.cwd, reportPath)))) return value;
     if (materialize) fs.mkdirSync(directory, { recursive: true });
-    if (!fs.existsSync(workspaceMetadataPath(session.cwd, manifestPath))) fs.writeFileSync(workspaceMetadataPath(session.cwd, manifestPath), bytes);
+    if (materialize && !fs.existsSync(workspaceMetadataPath(session.cwd, manifestPath))) replaceFileAtomic(workspaceMetadataPath(session.cwd, manifestPath), bytes);
     if (sha256File(workspaceMetadataPath(session.cwd, manifestPath)) !== hash) throw fail('traffic_comparison_changed', 'Existing comparison snapshot changed.');
     const lines = [`# 合成交通实验比较`, ``, `实验：${experimentId}；来源：${baseline.document.provenance.kind}；未校准，不用于推断真实虹桥收益。`, ``, `完整配对 ${completePairs}/${pairs.length}；计划 ${record.totalRuns} 个 Run、${record.totalSimulatedSeconds} 仿真秒。${completePairs === pairs.length ? '以下为相同种子的合成差值。' : '存在未完成样本，禁止给出正常收益结论；不自动补跑。'}`, ``, `差值为变体减基线。枢纽候车均值包含所有已到达旅客，未离站者截于末时刻；道路损失包括所有实际插入车辆，未完成和待插入数量见清单。`, ``, `| 种子 | 状态 | 完成全链差值（人） | 枢纽候车均值差值（秒） | 道路损失均值差值（秒） |`, `| --- | --- | --- | --- | --- |`, ...pairs.map(pair => `| ${pair.seed} | ${pair.status} | ${pair.delta?.completedJourneys ?? '—'} | ${pair.delta?.meanHubWaitSeconds.toFixed(3) ?? '—'} | ${pair.delta?.meanRoadTimeLossSeconds.toFixed(3) ?? '—'} |`), ``, `## Run 与证据`, ``, ...slots.map(slot => `- ${slot.role}, seed=${slot.seed}: ${slot.run ? `${slot.run.runId}，${slot.run.state}/${slot.run.termination || 'unconfirmed'}，场景 ${slot.scenarioId}` : `尚未派发，场景 ${slot.scenarioId}`}`), ``, `冻结比较清单：[comparison-${hash}.json](./comparison-${hash}.json)，SHA-256 ${hash}。配置、指标分母、全部状态与未完成样本以此清单为准。`, ``];
     if (pairs.some(pair => pair.delta?.meanAllWaitSeconds !== undefined)) lines.push('', '## 等待、出行及资源差值', '', '全程等待含枢纽与接续候车、上游受阻及登乘，排除步行和在途；未完成者计入已发生等待。P90 使用最近秩。截尾出行耗时保留全部到达者，不是完整出行时间预测。车队占用为预留登乘至实际返场可用的车秒，未返场者截于终点。', '', '| 种子 | 全程等待均值差（s） | 全程等待 P90 差（s） | 截尾出行均值差（s） | 错过末班差（人） | 实际趟次差 | 车队占用差（车秒） |', '| --- | --- | --- | --- | --- | --- | --- |', ...pairs.map(pair => `| ${pair.seed} | ${pair.delta?.meanAllWaitSeconds?.toFixed(3) ?? '—'} | ${pair.delta?.p90AllWaitSeconds?.toFixed(3) ?? '—'} | ${pair.delta?.meanCensoredJourneySeconds?.toFixed(3) ?? '—'} | ${pair.delta?.lastServiceMisses ?? '—'} | ${pair.delta?.dispatchedTrips ?? '—'} | ${pair.delta?.fleetBusyVehicleSeconds ?? '—'} |`), '', '分线路/方向/方式、节点积压、条件于完成者的耗时及每车周转/载客率详见冻结清单各 Run.metrics。道路 timeLoss 与 traffic waiting 排除计划停站；运行时长及总距离/总时长包含计划停站，不能直接作为纯道路拥堵程度。', '');
     lines.push('[SUMO TripInfo 指标定义](https://sumo.dlr.de/docs/Simulation/Output/TripInfo.html)', '');
     const report = lines.join('\n');
-    if (!fs.existsSync(workspaceMetadataPath(session.cwd, reportPath))) fs.writeFileSync(workspaceMetadataPath(session.cwd, reportPath), report);
+    if (materialize && !fs.existsSync(workspaceMetadataPath(session.cwd, reportPath))) replaceFileAtomic(workspaceMetadataPath(session.cwd, reportPath), report);
     if (sha256File(workspaceMetadataPath(session.cwd, reportPath)) !== simulationDigest(report)) throw fail('traffic_comparison_changed', 'Existing report snapshot changed.');
     value.artifact = { manifestPath, manifestSha256: hash, reportPath, reportSha256: simulationDigest(report) };
     return value;
@@ -262,7 +241,7 @@ export class SimulationService {
       const runId = String(body.operationId || readSimulationJson<{ runId: string }>(call).runId);
       const record = this.load<RunRecord>(session, runId);
       if (record.scenarioId !== scenario.scenarioId || record.toolCallId !== body.toolCallId || record.experimentId !== experiment?.experimentId || record.experimentSlot !== slot?.slot) throw fail('traffic_run_conflict', 'This Run is associated with different inputs or a different tool call.');
-      return this.summary(this.reconcile(session, record));
+      return this.summary(record);
     }
     const pointer = this.pointer(session.workspaceId);
     if (fs.existsSync(pointer)) throw fail('traffic_workspace_busy', 'An unfinished or unconfirmed Run owns this workspace. Query it before starting another.');
@@ -274,29 +253,63 @@ export class SimulationService {
     this.options.notify(session, this.summary(record), 0);
     return this.summary(record);
   }
-  private reconcile(session: SimulationSession, record: RunRecord) {
-    if (record.state === 'prepared' || record.termination === 'cancelled' || this.running.has(record.runId)) return record;
-    const root = this.artifact(session, 'runs', record.runId);
-    try {
-      const jobFile = this.jobFile(session, record.runId), job = readSimulationJson<SimulationJob>(jobFile);
-      if (!record.jobSha256 || sha256File(jobFile) !== record.jobSha256) throw new Error('job_integrity');
-      if (record.resultSha256 && sha256File(path.join(root, 'result.json')) !== record.resultSha256) throw new Error('committed_result_changed');
-      const { result } = verifySimulationResult(root, job, record.jobSha256);
-      this.assertStopped(root, record);
-      if (record.state === 'ended' && record.termination === 'completed' && record.resultSha256) return record;
-      record.resultSha256 = sha256File(path.join(root, 'result.json'));
-      record.state = 'ended'; record.termination = 'completed'; record.metrics = result.metrics; record.latestComputedTime = result.finalTime; record.availableFrameTime = result.finalTime; delete record.error;
-      this.save(session, record); this.release(record);
-    } catch {
-      record.state = 'unknown'; delete record.termination; delete record.metrics; record.error ||= { code: 'traffic_result_unknown', message: 'No final commit is confirmed. Preserve this Run and query it; do not dispatch a replacement automatically.' }; this.save(session, record);
-      if (!fs.existsSync(this.pointer(record.workspaceId))) writeJsonAtomic(this.pointer(record.workspaceId), { owner: record.owner, runId: record.runId });
+  private recover(session: SimulationSession, record: RunRecord) {
+    if (record.state === 'prepared' || this.running.has(record.runId)) return record;
+    if (record.state === 'ended') { this.release(record); return record; }
+    const reservation = this.pointer(record.workspaceId);
+    if (!fs.existsSync(reservation)) {
+      writeJsonAtomic(reservation, { owner: record.owner, runId: record.runId });
+    } else {
+      const current = readSimulationJson<{ owner: string; runId: string }>(reservation);
+      if (current.owner !== record.owner || current.runId !== record.runId) {
+        throw fail('traffic_workspace_busy', 'Another Run owns this workspace.');
+      }
     }
+    const root = this.artifact(session, 'runs', record.runId);
+    let verified: ReturnType<typeof verifySimulationResult>;
+    let resultSha256: string;
+    try {
+      this.assertStopped(root, record);
+      const scenario = this.scenario(session, record.scenarioId);
+      const jobFile = this.jobFile(session, record.runId), job = readSimulationJson<SimulationJob>(jobFile);
+      if (!record.jobSha256 || sha256File(jobFile) !== record.jobSha256 || job.runId !== record.runId || job.network.sha256 !== scenario.networkSha256) throw new Error('job_integrity');
+      resultSha256 = sha256File(containedFile(root, path.join(root, 'result.json')));
+      if (record.resultSha256 && record.resultSha256 !== resultSha256) throw new Error('committed_result_changed');
+      verified = verifySimulationResult(root, job, record.jobSha256);
+      if (sha256File(path.join(root, 'result.json')) !== resultSha256) throw new Error('result_changed_during_verification');
+    } catch (error) {
+      const reason = (error as NodeJS.ErrnoException).code;
+      const problem = reason === 'process_stop_unconfirmed'
+        ? { code: reason, message: 'Recorded Python or SUMO process exit is unconfirmed.' }
+        : reason === 'ENOENT'
+          ? { code: 'traffic_result_unpublished', message: 'Required run evidence has not been published.' }
+          : { code: 'traffic_result_invalid', message: 'Run evidence could not be verified.' };
+      if (record.state !== 'unknown' || record.error?.code !== problem.code) {
+        record.state = 'unknown';
+        record.error = problem;
+        delete record.termination;
+        delete record.metrics;
+        this.save(session, record);
+      }
+      return record;
+    }
+    const { result } = verified;
+    record.resultSha256 = resultSha256;
+    record.state = 'ended'; record.termination = 'completed'; record.metrics = result.metrics; record.latestComputedTime = result.finalTime; record.availableFrameTime = result.finalTime; delete record.error;
+    this.save(session, record);
+    this.release(record);
     return record;
   }
-  queryExecution(session: SimulationSession, reference: { runId?: unknown; lookupToolCallId?: unknown }) {
+  private executionRecord(session: SimulationSession, reference: { runId?: unknown; lookupToolCallId?: unknown }) {
     if (!!reference.runId === !!reference.lookupToolCallId) throw fail('traffic_reference_invalid', 'Supply one runId or lookupToolCallId.', 400);
     const runId = reference.runId || (typeof reference.lookupToolCallId === 'string' && reference.lookupToolCallId.length <= 200 ? readSimulationJson<{ runId: string }>(path.join(this.directory(session), `call_${simulationDigest(reference.lookupToolCallId)}.json`)).runId : '');
-    return this.summary(this.reconcile(session, this.load<RunRecord>(session, String(runId))));
+    return this.load<RunRecord>(session, String(runId));
+  }
+  queryExecution(session: SimulationSession, reference: { runId?: unknown; lookupToolCallId?: unknown }) {
+    return this.summary(this.executionRecord(session, reference));
+  }
+  recoverExecution(session: SimulationSession, reference: { runId?: unknown; lookupToolCallId?: unknown }) {
+    return this.summary(this.recover(session, this.executionRecord(session, reference)));
   }
   bindJob(session: SimulationSession, runId: string, jobId: string) {
     const record = this.load<RunRecord>(session, runId);
@@ -304,16 +317,20 @@ export class SimulationService {
     record.jobId = jobId; this.save(session, record);
   }
   cancel(session: SimulationSession, reference: { runId?: unknown; lookupToolCallId?: unknown }) {
-    const summary = this.queryExecution(session, reference), record = this.load<RunRecord>(session, summary.runId);
+    const record = this.recover(session, this.executionRecord(session, reference));
     if (record.state === 'prepared') { record.state = 'ended'; record.termination = 'cancelled'; this.save(session, record); this.release(record); }
     const controller = this.running.get(record.runId);
     if (controller) { record.cancellationRequested = true; this.save(session, record); controller.abort(); }
     else if (record.state === 'unknown') {
+      const alreadyRequested = record.cancellationRequested;
       record.cancellationRequested = true;
-      try { this.assertStopped(this.artifact(session, 'runs', record.runId), record); record.state = 'ended'; record.termination = 'cancelled'; }
-      catch { /* Existing workspace process recovery must confirm a still-live or unobserved process. */ }
-      this.save(session, record);
-      if (record.state === 'ended') this.release(record);
+      try { this.assertStopped(this.artifact(session, 'runs', record.runId), record); }
+      catch {
+        if (!alreadyRequested) this.save(session, record);
+        return this.summary(record);
+      }
+      record.state = 'ended'; record.termination = 'cancelled';
+      this.save(session, record); this.release(record);
     }
     return this.summary(record);
   }
@@ -378,10 +395,19 @@ export class SimulationService {
   list(session: SimulationSession) {
     this.plan(session);
     const directory = this.directory(session);
-    return fs.existsSync(directory) ? fs.readdirSync(directory).filter((name) => /^sim_[a-f0-9]{32}\.json$/.test(name)).map((name) => this.summary(this.reconcile(session, this.load<RunRecord>(session, name.slice(0, -5))))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
+    return fs.existsSync(directory) ? fs.readdirSync(directory).filter((name) => /^sim_[a-f0-9]{32}\.json$/.test(name)).map((name) => this.summary(this.load<RunRecord>(session, name.slice(0, -5)))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
   }
-  index(session: SimulationSession, runId: string) {
-    const record = this.load<RunRecord>(session, runId), scenario = this.scenario(session, record.scenarioId), root = this.artifact(session, 'runs', runId), index = readSimulationIndex(root, runId);
+  private readIndex(session: SimulationSession, runId: string, allowUnpublished: boolean) {
+    const record = this.load<RunRecord>(session, runId), scenario = this.scenario(session, record.scenarioId), root = this.artifact(session, 'runs', runId);
+    let index: ReturnType<typeof readSimulationIndex>;
+    try { index = readSimulationIndex(root, runId); }
+    catch (error) {
+      if (!record.resultSha256 && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+        if (allowUnpublished) return null;
+        throw fail('traffic_result_unpublished', 'The Run has no published frames yet.', 404);
+      }
+      throw fail('traffic_index_invalid', 'The published Run index could not be verified.');
+    }
     if (index.networkSha256 !== scenario.networkSha256) throw fail('traffic_index_changed', 'Index differs from the frozen network.');
     if (record.resultSha256) {
       if (sha256File(containedFile(root, path.join(root, 'result.json'))) !== record.resultSha256) throw fail('traffic_result_changed', 'Committed result manifest changed.');
@@ -390,11 +416,8 @@ export class SimulationService {
     }
     return index;
   }
-  availableIndex(session: SimulationSession, runId: string) {
-    this.load<RunRecord>(session, runId);
-    try { return this.index(session, runId); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-  }
+  index(session: SimulationSession, runId: string) { return this.readIndex(session, runId, false)!; }
+  availableIndex(session: SimulationSession, runId: string) { return this.readIndex(session, runId, true); }
   chunk(session: SimulationSession, runId: string, sequence: number) { return readSimulationChunk(this.artifact(session, 'runs', runId), this.index(session, runId), sequence); }
   geometry(session: SimulationSession, runId: string): SimulationNetworkView {
     const run = this.load<RunRecord>(session, runId), scenario = this.scenario(session, run.scenarioId);

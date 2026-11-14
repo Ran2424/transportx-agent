@@ -2,7 +2,9 @@ const { test } = require('node:test') as typeof import('node:test');
 
 test('Kernel delivery, attachments and reconnects reconcile authoritative session state', async () => {
   const assert = require('node:assert/strict');
-  const { createAgentCommands, createReportCommands, createSessionCommands, createPlatformCommands } = require('../../public/kernel/commands.js');
+  const { createAgentCommands, createReportCommands } = require('../../public/kernel/commands.js');
+  const { createSessionCommands } = require('../../public/kernel/session-commands.js');
+  const { createPlatformCommands } = require('../../public/kernel/platform-commands.js');
   const { createAppKernel } = require('../../public/kernel/app-kernel.js');
   const { ConversationStore } = require('../../public/kernel/stores/conversation-store.js');
   const { SessionStore } = require('../../public/kernel/stores/session-store.js');
@@ -89,6 +91,9 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     assert.equal(fixture.commands.length, 1);
     await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: 'unknown delivery' }));
     assert.equal(fixture.commands[0].clientCommandId, fixture.commands[1].clientCommandId);
+    fixture.value.liveSessionId = () => 'live-new-generation';
+    await assert.rejects(() => agent.sendPrompt({ sessionId: 'session-1', message: 'unknown delivery' }), (error: any) => error.code === 'delivery_unknown');
+    assert.equal(fixture.commands.length, 2, 'a retry must not send an uncertain prompt to a new runtime');
   }
 
   // failed queued prompts do not resend on unrelated actions

@@ -2,7 +2,7 @@ import { CitationDetailProvider } from '../platform/conversation/citation-detail
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { DeletionRequest } from '../../public/kernel/commands.js';
+import type { DeletionRequest } from '../../public/kernel/session-commands.js';
 import { conversationView, type WorkspaceView } from '../../public/app-types.js';
 import type { ConversationRecordV1 } from '../../contracts/workspace.js';
 import { MigrationDialog } from '../platform/sessions/MigrationDialog';
@@ -29,6 +29,7 @@ import { WorkspaceDock } from '../platform/workspace/WorkspaceDock';
 import { AgentCanvas } from '../platform/canvas/AgentCanvas';
 import { canvasContextStore } from '../platform/canvas/canvas-context-store';
 import { projectCanvas, syncCanvas, activateCanvas, closeCanvasTab, openCanvasDocument, openCanvasResource, withCanvasDocuments, EMPTY_CANVAS, type CanvasState } from '../platform/canvas/canvas-state';
+import { useSimulationCanvas } from '../platform/canvas/useSimulationCanvas';
 import { OpenDocumentContext } from '../platform/canvas/document-context';
 import { documentPath, resolveDocument, type DocumentRequest, type DocumentPosition } from '../platform/canvas/document-state';
 import { geoContextStore } from '../features/geo/geo-context-store';
@@ -117,11 +118,13 @@ export function App({ account }: { account?: ReactNode } = {}) {
   const activeStreaming = !!(activeSession && sessionState.streamingBySession[activeSession.id]);
   const activeCompacting = !!(activeSession && sessionState.compactingBySession[activeSession.id]);
   const canvas = activeSession ? canvases[activeSession.id] ?? EMPTY_CANVAS : EMPTY_CANVAS;
-  const canvasContent = useMemo(() => withCanvasDocuments(projectCanvas(
-    activeSession ? conversation?.snapshotEntries ?? [] : [],
+  const canvasEntries = activeSession ? conversation?.snapshotEntries : undefined;
+  const projectedCanvas = useMemo(() => projectCanvas(
+    canvasEntries ?? [],
     activeSession ? Object.values(tools ?? {}) : [],
     activeSession?.cwd ? { sessionId: activeSession.id, cwd: activeSession.cwd } : undefined,
-  ), canvas), [activeSession?.id, activeSession?.cwd, conversation, tools, canvas.documents, canvas.resources]);
+  ), [activeSession?.id, activeSession?.cwd, canvasEntries, tools]);
+  const canvasContent = useMemo(() => withCanvasDocuments(projectedCanvas, canvas), [projectedCanvas, canvas.documents, canvas.resources]);
   const canvasAvailable = canvasContent.views.length > 0;
   useEffect(() => { documentOpenSequence.current += 1; }, [activeSession?.id]);
   const updateCanvas = useCallback((update: (state: CanvasState) => CanvasState) => {
@@ -134,34 +137,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
     });
   }, [activeSession?.id]);
   useEffect(() => { updateCanvas((state) => syncCanvas(state, canvasContent)); }, [canvasContent, updateCanvas]);
-  const simulationSeen = useRef(new Set<string>());
-  useEffect(() => {
-    for (const [id, notice] of Object.entries(sessionState.simulationBySession || {})) {
-      const key = `${id}:${notice.canvas.viewId}`;
-      if (simulationSeen.current.has(key)) continue;
-      simulationSeen.current.add(key);
-      setCanvases((current) => ({ ...current, [id]: openCanvasResource(current[id] ?? EMPTY_CANVAS, notice.canvas) }));
-    }
-  }, [sessionState.simulationBySession]);
-  useEffect(() => {
-    if (!activeSession) return;
-    const id = activeSession.id, controller = new AbortController();
-    void kernel.commands.simulation.list(id, controller.signal).then(({ runs }) => {
-      if (controller.signal.aborted) return;
-      for (const { canvas: presentation } of runs) {
-        const key = `${id}:${presentation.viewId}`;
-        if (simulationSeen.current.has(key)) continue;
-        simulationSeen.current.add(key);
-        setCanvases((current) => {
-          const previous = current[id] ?? EMPTY_CANVAS;
-          const restored = openCanvasResource(previous, presentation);
-          const hasNavigation = previous.presentationKey !== null || previous.tabIds.length > 0 || (previous.resources?.length ?? 0) > 0;
-          return { ...current, [id]: hasNavigation ? { ...restored, tabIds: previous.tabIds, activeId: previous.activeId, open: previous.open } : restored };
-        });
-      }
-    }).catch(() => { /* Conversations without this selected module have no Simulation resources. */ });
-    return () => controller.abort();
-  }, [activeSession?.id]);
+  useSimulationCanvas(activeSession?.id, sessionState.simulationBySession, kernel.commands.simulation, setCanvases);
   useEffect(() => {
     const liveIds = new Set(sessionState.sessions.map((session) => session.id));
     for (const id of Object.keys(documentPositions.current)) if (!liveIds.has(id)) delete documentPositions.current[id];

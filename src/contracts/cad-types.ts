@@ -30,6 +30,15 @@ export type CadEntityType = typeof CAD_ENTITY_TYPES[number];
 export type CadUnits = 'm' | 'mm';
 export type CadPoint2 = [number, number];
 
+export type CadEntityGeometry =
+  | { kind: 'line'; start: CadPoint2; end: CadPoint2 }
+  | { kind: 'polyline'; points: CadPoint2[]; closed: boolean; bulges?: number[] }
+  | { kind: 'circle'; center: CadPoint2; radius: number }
+  | { kind: 'arc'; center: CadPoint2; radius: number; startAngle: number; endAngle: number }
+  | { kind: 'text'; position: CadPoint2; height: number; rotationDeg: number }
+  | { kind: 'point'; position: CadPoint2 }
+  | { kind: 'insert'; name: string; position: CadPoint2; rotationDeg: number; scale: [number, number, number] };
+
 export type CadTarget =
   | { kind: 'epsg'; code: string }
   | { kind: 'local'; origin: CadPoint2; rotationDeg: number; scale: number };
@@ -206,7 +215,7 @@ export type CadInspectResultV1 = {
     layer: string;
     bounds?: { min: CadPoint2; max: CadPoint2 };
     text?: string;
-    geometry?: import('./cad-geometry.ts').CadEntityGeometry;
+    geometry?: CadEntityGeometry;
     geometryTruncated?: boolean;
   }>;
   blocks?: Array<{ name: string; entityCount: number }>;

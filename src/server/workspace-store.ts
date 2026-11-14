@@ -167,35 +167,46 @@ export class WorkspaceStore {
       return catalog.entries.at(-1)!;
     });
   }
-  private entry(workspaceId: string, allowCreating = false): WorkspaceCatalogEntryV1 {
-    const entry = this.readCatalog().entries.find((item) => item.workspaceId === workspaceId);
+  private entry(workspaceId: string, allowCreating = false, catalog = this.readCatalog(), canonical?: Map<string, string>): WorkspaceCatalogEntryV1 {
+    const entry = catalog.entries.find((item) => item.workspaceId === workspaceId);
     if (!entry || entry.state === 'deleted' || entry.state === 'released') throw failure('workspace_missing', 'Workspace is not registered.', 404);
     if (entry.state !== 'ready' && !(allowCreating && entry.state === 'creating')) throw failure('workspace_migration_required', 'Workspace is not ready; open its migration report.');
     if (!fs.existsSync(entry.path)) throw failure('workspace_missing', 'Registered workspace directory is missing.', 404);
-    const real = fs.realpathSync(entry.path);
+    const real = this.canonicalDirectory(entry.path, canonical);
     if (path.relative(real, entry.path) !== '' || !fs.statSync(real).isDirectory()) throw failure('workspace_identity_conflict', 'Registered workspace path no longer identifies its canonical directory.');
-    for (const other of this.readCatalog().entries) {
+    for (const other of catalog.entries) {
       if (other.workspaceId === workspaceId || other.state === 'deleted' || other.state === 'released') continue;
-      const otherPath = fs.existsSync(other.path) ? fs.realpathSync(other.path) : path.resolve(other.path);
+      const otherPath = this.canonicalDirectory(other.path, canonical);
       if (isWithin(real, otherPath) || isWithin(otherPath, real)) throw failure('workspace_identity_conflict', 'Registered workspaces overlap or alias the same directory.');
     }
     return entry;
   }
+  private canonicalDirectory(directory: string, observed?: Map<string, string>) {
+    const previous = observed?.get(directory);
+    if (previous !== undefined) return previous;
+    const real = fs.existsSync(directory) ? fs.realpathSync(directory) : path.resolve(directory);
+    observed?.set(directory, real);
+    return real;
+  }
   readWorkspace(workspaceId: string) {
-    const entry = this.entry(workspaceId);
+    return this.readManifest(this.entry(workspaceId));
+  }
+  private readManifest(entry: WorkspaceCatalogEntryV1) {
     const file = workspaceMetadataPath(entry.path, '.tau/workspace.json');
     if (workspaceRegistrationMissing(entry.path)) throw failure('workspace_missing', 'Registered workspace metadata is missing.', 404);
     const manifest = validated(parseWorkspaceManifestStructured(readJsonObject(file)));
-    if (manifest.id !== workspaceId) throw failure('workspace_identity_conflict', 'Workspace manifest ID differs from its catalog entry.');
+    if (manifest.id !== entry.workspaceId) throw failure('workspace_identity_conflict', 'Workspace manifest ID differs from its catalog entry.');
     return { directory: entry.path, manifest };
   }
   findConversation(conversationId: string) {
     if (!CONVERSATION_ID.test(conversationId)) throw failure('conversation_missing', 'Conversation is not registered.', 404);
     const matches: Array<{ directory: string; manifest: WorkspaceManifestV1; conversation: ConversationRecordV1 }> = [];
-    for (const entry of this.readCatalog().entries) {
+    // A lookup uses one catalog and filesystem observation. Mutations validate again under their own locks.
+    const catalog = this.readCatalog(), canonical = new Map<string, string>();
+    for (const entry of catalog.entries) {
       if (entry.state !== 'ready') continue;
       let workspace: ReturnType<WorkspaceStore['readWorkspace']>;
-      try { workspace = this.readWorkspace(entry.workspaceId); } catch { continue; }
+      try { workspace = this.readManifest(this.entry(entry.workspaceId, false, catalog, canonical)); } catch { continue; }
       const conversation = workspace.manifest.conversations.find((record) => record.id === conversationId);
       if (conversation) matches.push({ ...workspace, conversation });
     }

@@ -80,6 +80,10 @@ test/baselines/screenshots/*.png
 !/docs/工作区与会话机制整改 PLAN.md
 !/docs/工作区与会话机制整改 P0 记录.md
 !/docs/工作台视觉优化 PLAN.md
+!/docs/架构审查与工程治理 PLAN.md
+!/docs/adr-0001-host-event-authorization.md
+!/docs/adr-0002-runtime-recovery-and-host-access.md
+!/docs/adr-0003-architecture-checks-and-runtime-bounds.md
 !/docs/guide/
 !/docs/images/
 /docs/images/*

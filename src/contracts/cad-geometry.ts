@@ -1,16 +1,7 @@
 import { asFiniteNumber, asRecord, asString } from './common.ts';
 import { diagnostic, type ContractDiagnostic } from './diagnostic.ts';
 import { parsePoint2, parsePointArray } from './cad-validation.ts';
-import type { CadPoint2 } from './cad-types.ts';
-
-export type CadEntityGeometry =
-  | { kind: 'line'; start: CadPoint2; end: CadPoint2 }
-  | { kind: 'polyline'; points: CadPoint2[]; closed: boolean; bulges?: number[] }
-  | { kind: 'circle'; center: CadPoint2; radius: number }
-  | { kind: 'arc'; center: CadPoint2; radius: number; startAngle: number; endAngle: number }
-  | { kind: 'text'; position: CadPoint2; height: number; rotationDeg: number }
-  | { kind: 'point'; position: CadPoint2 }
-  | { kind: 'insert'; name: string; position: CadPoint2; rotationDeg: number; scale: [number, number, number] };
+import type { CadEntityGeometry } from './cad-types.ts';
 
 export function parseCadGeometry(value: unknown, path: string, diagnostics: ContractDiagnostic[]): CadEntityGeometry | undefined {
   const record = asRecord(value);

@@ -128,7 +128,7 @@ test('Geo interaction validates resources, saves screenshots and resolves persis
     const entries = [{ message: { role: 'user', content: '相同文字', timestamp: 2 } }];
     assert.deepEqual(applyGeoMessageRefs(entries, [{ text: '相同文字', timestamp: 1, contextIds }]), entries);
     const { buildAttachmentContext } = await import('../../src/contracts/attachments.ts');
-    const { buildGeoContextPrompt } = await import('../../src/contracts/geo.ts');
+    const { buildGeoContextPrompt } = await import('../../src/contracts/geo-interaction.ts');
     const { buildCanvasContextPrompt } = require('../../bin/canvas-service.js');
     const mixed = '混合消息' + buildAttachmentContext([{ id: 'a', name: 'source.txt', relativePath: 'attachments/source.txt', mimeType: 'text/plain', size: 1, sha256: 'a'.repeat(64), kind: 'other', source: 'picker', status: 'ready' }]) + buildGeoContextPrompt(contextIds) + buildCanvasContextPrompt(['canvas_context_one']);
     const mixedEntries = [{ message: { role: 'user', content: [{ type: 'text', text: mixed }], timestamp: 3 } }];

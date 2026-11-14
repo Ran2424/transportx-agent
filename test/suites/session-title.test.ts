@@ -25,7 +25,8 @@ test('Titles are inferred and persisted once after Pi flushes its session header
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tau-pending-name-'));
     const filePath = path.join(directory, 'session.jsonl');
     try {
-      const { LiveSessionManager, PiRpcSession } = require('../../bin/sessions.js');
+      const { LiveSessionManager } = require('../../bin/live-session-manager.js');
+    const { PiRpcSession } = require('../../bin/sessions.js');
       const manager = new LiveSessionManager();
       const session = new PiRpcSession(manager, { conversationId: 'conv_00000000-0000-4000-8000-000000000001', cwd: directory, sessionName: '课程设计' });
       const writes: Array<{ command: any; resolve: (value: any) => void }> = [];

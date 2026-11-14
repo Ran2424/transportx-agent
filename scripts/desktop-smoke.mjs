@@ -202,7 +202,7 @@ try {
     console.log('[desktop-smoke] durable create/reload, explicit real Pi activation/close and new-endpoint trace passed');
     fs.writeFileSync(path.join(snapshot.runtime.cwd, 'canvas-smoke.pdf'), Buffer.from(inlinePdf));
     const dock = window.getByTestId('workspace-dock');
-    if (!await dock.isVisible()) await window.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
+    if (!(await dock.getAttribute('class')).includes('is-open')) await window.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
     await dock.getByRole('button', { name: '刷新文件', exact: true }).click();
     await dock.getByRole('button', { name: /canvas-smoke.pdf/ }).click();
     const pdfView = window.locator('.canvas-panel:not([hidden]) .document-pdf');

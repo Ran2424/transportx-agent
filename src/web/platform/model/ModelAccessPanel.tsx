@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CHATGPT_PLAN_PROVIDER } from '../../../contracts/chatgpt-plan.js';
 import type { ModelRecord } from '../../../public/app-types.js';
-import type { ModelProviderAccess } from '../../../public/kernel/commands.js';
+import type { ModelProviderAccess } from '../../../public/kernel/platform-commands.js';
 import { Button } from '../../components/ui/button';
 import { Icon } from '../../components/icons';
 import i18n from '../../i18n';

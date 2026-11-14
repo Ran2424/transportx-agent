@@ -1,4 +1,4 @@
-import type { GeoPointV1, GeoRectangleV1 } from '../../../contracts/geo.js';
+import type { GeoPointV1, GeoRectangleV1 } from '../../../contracts/geo-interaction.js';
 
 export function toggleFeatureIds(current: Array<string | number>, id: string | number, limit: number) {
   const ids = [...current];

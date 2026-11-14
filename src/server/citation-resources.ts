@@ -6,7 +6,7 @@ import { citationRelativePath, type CitationResourceErrorCode, type CitationSour
 import { resourceSecurityHeaders } from './resource-policy.js';
 import { CitationRegistryStore } from './citation-registry.js';
 import { isWithin } from './util/path.js';
-import { writeJson as json } from './http/response.js';
+import { streamResponse, writeJson as json } from './http/response.js';
 
 export type CitationResourceSession = { id: string; cwd: string; citationRegistryId?: string; resolvedSessionPlan?: { assets?: Array<{ id?: string; kind?: string; path?: string }> } | null };
 export function hashCitationFile(file: string) {
@@ -64,7 +64,7 @@ export function handleCitationResourceRoute(req: IncomingMessage, res: ServerRes
     const download = new URL(req.url || '/', 'http://localhost').searchParams.get('download') === '1';
     res.writeHead(200, { 'Content-Type': mimeType === 'text/html' ? 'text/plain; charset=utf-8' : mimeType, 'Content-Length': stat.size, 'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(resolved))}`, 'Cache-Control': 'private, no-cache', ETag: `"${source.content.sha256}"`, ...resourceSecurityHeaders(mimeType) });
     if (req.method === 'HEAD') res.end();
-    else { const stream = fs.createReadStream(resolved); stream.on('error', () => res.destroy()); stream.pipe(res); }
+    else streamResponse(fs.createReadStream(resolved), res);
   } catch (error) { citationResourceError(res, error); }
   return true;
 }

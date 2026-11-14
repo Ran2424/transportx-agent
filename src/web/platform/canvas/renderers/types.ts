@@ -1,5 +1,5 @@
 import type { ConversationView } from '../../../../public/app-types.js';
-import type { CanvasView } from '../canvas-state.ts';
+import type { CanvasView } from '../canvas-view.ts';
 import type { DocumentPosition, DocumentRequest } from '../document-state.ts';
 import type { AppKernel } from '../../../../public/kernel/app-kernel.js';
 

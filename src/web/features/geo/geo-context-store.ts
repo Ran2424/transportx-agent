@@ -1,4 +1,4 @@
-import { GEO_CONTEXTS_PER_MESSAGE, type GeoContextReferenceV1 } from '../../../contracts/geo.js';
+import { GEO_CONTEXTS_PER_MESSAGE, type GeoContextReferenceV1 } from '../../../contracts/geo-interaction.js';
 import { createStore } from '../../../public/kernel/store.js';
 
 type GeoContextState = Record<string, GeoContextReferenceV1[]>;

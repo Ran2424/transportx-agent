@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ConversationView } from '../../../public/app-types.js';
-import type { WorkspaceFile } from '../../../public/kernel/commands.js';
+import type { WorkspaceFile } from '../../../public/kernel/session-commands.js';
 import { appKernel } from '../../app/composition-root';
 import { useSessionState } from '../../app/store-hooks';
 import { Icon } from '../../components/icons';
@@ -34,40 +34,52 @@ function FileRow({ item, onOpen }: { item: WorkspaceFile; onOpen(item: Workspace
 
 /** The resource dock intentionally exposes only session files. */
 export function WorkspaceDock({ open, session, onClose }: { open: boolean; session: ConversationView | null; onClose(): void }) {
+  return <WorkspaceFiles key={session?.id ?? ''} open={open} session={session} onClose={onClose} />;
+}
+
+function WorkspaceFiles({ open, session, onClose }: { open: boolean; session: ConversationView | null; onClose(): void }) {
   const { t } = useTranslation();
   const kernel = appKernel;
   const openDocument = useOpenDocument();
   const sessions = useSessionState();
   const attachmentRevision = sessions.attachmentRevisionBySession[session?.id || ''] || 0;
-  const [path, setPath] = useState('');
-  const [items, setItems] = useState<WorkspaceFile[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const sessionId = session?.id;
+  const [directory, setDirectory] = useState<{ path?: string }>({});
+  const [result, setResult] = useState<{ directory: typeof directory; revision: number; path: string; items: WorkspaceFile[]; error?: string }>();
+  const [operationError, setOperationError] = useState('');
+  const active = useRef(false);
+  const request = useRef<AbortController | null>(null);
   const [copiedPath, setCopiedPath] = useState('');
   const [previewFiles, setPreviewFiles] = useState<WorkspaceFile[]>([]);
-  const load = useCallback(async (nextPath?: string) => {
-    if (!session) { setPath(''); setItems([]); return; }
-    setLoading(true); setError('');
-    try {
-      const response = await kernel.commands.session.listFiles(session.id, nextPath);
-      setPath(response.path); setItems(response.items);
-    } catch (cause) {
-      setError((cause as Error).message || t('workspace.loadFailed'));
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [kernel, session, t]);
-
-  useEffect(() => { if (open) void load(); }, [load, open]);
-  useEffect(() => { if (open && attachmentRevision) void load(path || undefined); }, [attachmentRevision, load, open]);
-  useEffect(() => { setPreviewFiles([]); }, [session?.id]);
+  const path = result?.directory === directory ? result.path : directory.path ?? '';
+  const items = result?.directory === directory ? result.items : [];
+  const error = result?.directory === directory ? result.error : undefined;
+  const loading = !!sessionId && open && (result?.directory !== directory || result.revision !== attachmentRevision);
+  const load = (path?: string) => {
+    request.current?.abort();
+    setOperationError('');
+    setDirectory({ path });
+  };
+  useEffect(() => { active.current = open; return () => { active.current = false; }; }, [open]);
+  useEffect(() => {
+    if (!open || !sessionId) return;
+    const controller = new AbortController();
+    request.current = controller;
+    void kernel.commands.session.listFiles(sessionId, directory.path, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setResult({ directory, revision: attachmentRevision, ...value });
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) setResult({ directory, revision: attachmentRevision, path: directory.path ?? '', items: [], error: (cause as Error).message || t('workspace.loadFailed') });
+    });
+    return () => controller.abort();
+  }, [open, sessionId, attachmentRevision, directory, kernel, t]);
 
   async function openFile(item: WorkspaceFile) {
-    if (item.isDirectory) { await load(item.path); return; }
+    if (item.isDirectory) { load(item.path); return; }
     if (session && (documentFormat(item.path) || /\.dxf$/i.test(item.path))) { openDocument({ sessionId: session.id, title: item.name, path: item.path }); return; }
     if (filePresentation(item).preview) { setPreviewFiles((current) => [...current.filter((file) => file.path !== item.path), item]); return; }
-    await navigator.clipboard?.writeText(item.path);
+    try { await navigator.clipboard?.writeText(item.path); }
+    catch (cause) { if (active.current) setOperationError((cause as Error).message || t('workspace.loadFailed')); return; }
+    if (!active.current) return;
     setCopiedPath(item.path);
     window.setTimeout(() => setCopiedPath((current) => current === item.path ? '' : current), 1_500);
   }
@@ -84,15 +96,16 @@ export function WorkspaceDock({ open, session, onClose }: { open: boolean; sessi
         type="button"
         title={t('workspace.openInSystem', { path })}
         disabled={!session || !path}
-        onClick={() => { if (session && path) void kernel.commands.session.openInSystem(session.id, path).catch((cause) => setError((cause as Error).message || t('workspace.loadFailed'))); }}
+        onClick={() => { if (session && path) void kernel.commands.session.openInSystem(session.id, path).catch((cause: unknown) => { if (active.current) setOperationError((cause as Error).message || t('workspace.loadFailed')); }); }}
       >
         <span>{session ? (path || basename(session.cwd || '')) : t('workspace.noTask')}</span>
         <Icon name="open" />
       </button>
       <button className="icon-button" type="button" aria-label={t('workspace.refresh')} disabled={!session || loading} onClick={() => void load(path || undefined)}><Icon name="refresh" /></button>
     </div>
-    <div className="workspace-file-list" role="tabpanel" aria-label={t('workspace.taskFiles')}>
-      {!session ? <WorkspaceEmpty title={t('workspace.noTask')} description={t('workspace.waitingDescription')} /> : loading ? <p className="workspace-file-status">{t('workspace.loading')}</p> : error ? <p className="workspace-file-status is-error">{error}</p> : !items.length ? <WorkspaceEmpty title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
+    <div className="workspace-file-list" role="region" aria-label={t('workspace.taskFiles')} aria-busy={loading}>
+      {operationError ? <p role="status" className="workspace-file-status is-error">{operationError}</p> : null}
+      {!session ? <WorkspaceEmpty title={t('workspace.noTask')} description={t('workspace.waitingDescription')} /> : loading ? <p role="status" className="workspace-file-status">{t('workspace.loading')}</p> : error ? <div><p role="status" className="workspace-file-status is-error">{error}</p><button type="button" className="secondary-button" onClick={() => load(directory.path)}>{t('common.retry')}</button></div> : !items.length ? <WorkspaceEmpty title={t('workspace.emptyDirectory')} description={t('workspace.emptyDirectoryDescription')} /> : <>{items.map((item) => <FileRow key={item.path} item={item} onOpen={(file) => void openFile(file)} />)}{copiedPath ? <p role="status" className="workspace-file-copied">{t('workspace.copiedPath', { name: basename(copiedPath) })}</p> : null}</>}
     </div>
     <footer className="workspace-dock-footer"><span>{t('workspace.sharedFiles')}</span><span>{session?.workspaceId?.slice(-8) || 'NO SESSION'}</span></footer>
     {session ? previewFiles.map((file, index) => <FilePreview key={file.path} item={file} sessionId={session.id} stackIndex={index} initialOffset={index} onActivate={() => setPreviewFiles((current) => [...current.filter((item) => item.path !== file.path), file])} onClose={() => setPreviewFiles((current) => current.filter((item) => item.path !== file.path))} />) : null}

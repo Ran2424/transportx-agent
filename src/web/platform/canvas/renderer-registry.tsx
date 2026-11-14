@@ -1,7 +1,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 import { CAD_CANVAS_ADAPTER_ID } from '../../../contracts/canvas-cad';
 import { DOCUMENT_CANVAS_ADAPTER_ID, GEO_CANVAS_ADAPTER_ID, VIDEO_CANVAS_ADAPTER_ID } from '../../../contracts/canvas-document';
-import type { CanvasView } from './canvas-state';
+import type { CanvasView } from './canvas-view';
 import { canvasAdapterForView } from './adapter-registry';
 import type { CanvasRendererProps } from './renderers/types';
 import { SIMULATION_CANVAS_ADAPTER_ID } from '../../../contracts/simulation';

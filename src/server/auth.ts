@@ -71,6 +71,6 @@ export { parseCookies } from './http/cookies.js';
 // No Max-Age/Expires on purpose: a browser-session cookie is dropped when the
 // browser session ends, so killing the browser re-prompts for Basic auth.
 export function buildSessionCookie(token: string, opts: { secure: boolean; clear?: boolean }): string {
-  if (opts.clear) return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  if (opts.clear) return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` + (opts.secure ? '; Secure' : '');
   return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax` + (opts.secure ? '; Secure' : '');
 }

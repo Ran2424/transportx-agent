@@ -1,7 +1,7 @@
 import { AcApDocManager, AcEdOpenMode, MTEXT_RENDERER_WORKER_FILE } from '@mlightcad/cad-simple-viewer';
 import { AcCmColor, AcDbSysVarManager } from '@mlightcad/data-model';
 import { CAD_CANVAS_MAX_HANDLES, CAD_CANVAS_MAX_LAYERS, parseCadCanvasPayload, parseCadCanvasTarget, type CadCanvasSelection, type CadCanvasTarget } from '../../../contracts/canvas-cad';
-import type { CanvasView } from '../../platform/canvas/canvas-state';
+import type { CanvasView } from '../../platform/canvas/canvas-view';
 import { sessionFileUrl } from '../../platform/workspace/file-urls';
 
 type CadView = Extract<CanvasView, { kind: 'cad' }>;

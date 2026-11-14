@@ -1,11 +1,15 @@
 export class RpcCommandLedger<T> {
-  private readonly entries = new Map<string, { settledAt: number; pending: boolean; unknown: boolean; fingerprint: string; promise: Promise<T> }>();
+  private readonly entries = new Map<string, { generation: string; settledAt: number; pending: boolean; unknown: boolean; fingerprint: string; promise: Promise<T> }>();
+  private readonly retired = new Map<string, number>();
 
   constructor(private readonly maxEntries = 200, private readonly ttlMs = 10 * 60_000, private readonly isUnknown: (value: T) => boolean = () => false) {}
 
-  run(key: string, execute: () => Promise<T>, fingerprint = ''): Promise<T> {
+  run(key: string, execute: () => Promise<T>, fingerprint = '', generation = ''): Promise<T> {
     this.prune();
     const existing = this.entries.get(key);
+    if (this.retired.has(key) || existing && existing.generation !== generation) {
+      return Promise.reject(Object.assign(new Error('Command belongs to a previous runtime. Inspect the conversation before resubmitting.'), { code: 'command_replay' }));
+    }
     if (existing) {
       if (existing.fingerprint !== fingerprint) return Promise.reject(Object.assign(new Error('Command ID payload conflict'), { code: 'command_conflict' }));
       return existing.promise;
@@ -18,7 +22,7 @@ export class RpcCommandLedger<T> {
     let resolve!: (value: T) => void;
     let reject!: (error: unknown) => void;
     const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
-    const entry = { settledAt: 0, pending: true, unknown: false, fingerprint, promise };
+    const entry = { generation, settledAt: 0, pending: true, unknown: false, fingerprint, promise };
     this.entries.set(key, entry); // Reserve identity before execute can re-enter.
     try {
       void execute().then((value) => {
@@ -33,16 +37,27 @@ export class RpcCommandLedger<T> {
     return promise;
   }
 
-  settle(key: string, value: T) {
+  settle(key: string, value: T, generation = '') {
     const entry = this.entries.get(key);
-    if (!entry || entry.pending) return;
+    if (!entry || entry.pending || entry.generation !== generation) return;
     entry.unknown = this.isUnknown(value);
     entry.settledAt = Date.now();
     entry.promise = Promise.resolve(value);
   }
 
+  retire(generation: string) {
+    this.prune();
+    for (const [key, entry] of this.entries) {
+      if (entry.generation !== generation) continue;
+      this.entries.delete(key);
+      this.retired.set(key, Date.now());
+    }
+    while (this.retired.size > this.maxEntries) this.retired.delete(this.retired.keys().next().value!);
+  }
+
   private prune() {
     const cutoff = Date.now() - this.ttlMs;
     for (const [key, entry] of this.entries) if (!entry.pending && !entry.unknown && entry.settledAt < cutoff) this.entries.delete(key);
+    for (const [key, retiredAt] of this.retired) if (retiredAt < cutoff) this.retired.delete(key);
   }
 }

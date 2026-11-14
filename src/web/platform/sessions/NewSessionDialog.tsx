@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ModelRecord, WorkspaceView } from '../../../public/app-types.js';
 import type { SessionProfileV1 } from '../../../contracts/session-profile.js';
-import type { SessionModuleOption } from '../../../public/kernel/commands.js';
+import type { SessionModuleOption } from '../../../public/kernel/platform-commands.js';
 import { appKernel } from '../../app/composition-root';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogClose } from '../../components/ui/dialog';
