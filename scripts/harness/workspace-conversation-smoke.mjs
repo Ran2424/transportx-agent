@@ -188,7 +188,7 @@ try {
     assert.equal((await req(`/api/conversations/${a}/files/content?path=shared.txt`)).status, 200);
     assert.equal((await req(`/api/conversations/${a}/files/content?path=.tau/workspace.json`)).status, 403);
     // A real Native history keeps its original bytes while proven old local file URLs use new addresses.
-    const legacyReport = path.join(ready.resumeCwd, 'historical-report.txt'), legacyImage = path.join(ready.resumeCwd, 'historical-image.svg');
+    const legacyReport = path.join(ready.resumeCwd, 'historical_report_with_markers.txt'), legacyImage = path.join(ready.resumeCwd, 'historical-image.svg');
     fs.writeFileSync(legacyReport, 'Historical source opened through the new file API.');
     fs.writeFileSync(legacyImage, '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="blue"/></svg>');
     const oldUrl = (file) => `http://127.0.0.1:3000/api/file/raw?${new URLSearchParams({ sessionId: 'untrusted-old-live', path: file, token: 'must-not-be-replayed' })}`;

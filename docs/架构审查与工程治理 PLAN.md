@@ -175,6 +175,7 @@ SUMO 运行时准备从探针目录移入桌面打包层，打包命令和独立
 ### 后续验收与回滚
 
 - **源码合并。** 从独立分支提交 PR。审阅以 PR diff 为准，核对现有数据格式、外部契约、ADR、锁文件、版本和测试是否随实现交付。合并前核对最终提交的 macOS、Windows、Linux 启动回归以及 Chromium 和依赖审计结果，并处理阻塞审阅项。本机验收记录描述执行环境与覆盖范围，GitHub Checks 记录候选提交状态。
+- **候选回归。** GitHub Chromium 验收发现，历史报告的 URL 路径含成对下划线时，Markdown 会在资源映射前误解析 URL。实现保留原 URL 用于映射和校验，仍可格式化链接标签。既有 Markdown 测试和浏览器历史场景覆盖该情况。 [候选 PR #113](https://github.com/Ran2424/transportx-agent/pull/113)
 - **Pi 供应链。** `undici`、`brace-expansion` 和 `zod` 暂缓处理。责任及复核条件见第一阶段和 [安全债务 #112](https://github.com/Ran2424/transportx-agent/issues/112)。
 - **发布验收。** Windows／Linux 目标机的安装、卸载和原生进程回收，正式签名安装包、生产更新源和生产反代属于发布前专项验收。相应平台或部署形态通过后方可对外发布。本地回环代理已测，项目认证撤销时效由适配器观察到的状态决定。 [认证与事件](adr-0001-host-event-authorization.md) · [Host 部署](adr-0002-runtime-recovery-and-host-access.md)
 - **外部契约与回滚。** HTTP／WebSocket／CLI 路径、工具协议版本及持久结构沿用现行定义，过期凭据、来源和原生操作权限按本轮规则判定。职责拆分可随源码和构建产物回滚，无需数据迁移。依赖回滚同步处理清单、锁文件与制品。Geo 1.9.1 遵守冻结会话的精确版本规则。 [架构门禁与运行上限](adr-0003-architecture-checks-and-runtime-bounds.md)

@@ -24,6 +24,12 @@ test('Markdown preserves content structure and localized accessible citations', 
     assert.match(projected, /href="http:\/\/localhost\/api\/conversations\/conv_verified\/files\/raw/);
     assert.match(projected, /<img src="http:\/\/localhost\/api\/conversations/);
     assert.doesNotMatch(projected, /old-secret|\/api\/file\/raw/);
+    const runnerFile = 'http://localhost:3000/api/file/raw?path=%2Ftmp%2Frunner_with_markers%2Freport.txt&token=old-secret';
+    const runnerTarget = 'http://localhost/api/conversations/conv_verified/files/raw?path=report.txt';
+    const runnerLink = renderMarkdown(`[**报告**](${runnerFile})`, {}, undefined, 'zh-CN', { [runnerFile]: runnerTarget });
+    assert.ok(runnerLink.includes(`href="${runnerTarget}"`));
+    assert.match(runnerLink, /<strong>报告<\/strong><\/a>/);
+    assert.doesNotMatch(runnerLink, /old-secret|\/api\/file\/raw/);
     const english = renderMarkdown('Known [[cite:known]] and missing [[cite:missing]].', { known: 1 }, undefined, 'en-US');
     const chinese = renderMarkdown('已有 [[cite:known]]，缺失 [[cite:missing]]。', { known: 1 }, undefined, 'zh-CN');
 
