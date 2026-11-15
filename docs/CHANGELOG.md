@@ -16,6 +16,8 @@
 
 ### Added
 
+- 记录 [TransportX 上下游互操作调研](acceptance/transportx-upstream-downstream-research.md)，包括数据批次、坐标单位、GTFS 校验及专业工具的接入边界。
+
 - Traffic Simulation 0.5.0 在同一 SUMO Run 中支持合成单列地铁、秒级班表变体和实际停站驱动的旅客接续。Simulation Canvas 显示实体列车、站台、计划与实际到发，并可把离站变更交给 Agent 冻结为新 Variant。
 
 - Simulation Canvas 的道路服务线路与站点双向联动，展示计划发车、关联车辆、换乘容量及当前帧概览。Host 同刻查询复用单次核验的时间块索引，历史 Run 的线路端点来自原冻结场景。
