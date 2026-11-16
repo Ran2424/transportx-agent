@@ -20,6 +20,8 @@
 
 - 记录 [TransportX 夜间互操作探索](acceptance/transportx-overnight-exploration.html)，涵盖本机数据接入、专业引擎调用、工作台、空间发布与工程复算的实测结果。
 
+- 记录 [TransportX 六小时集成迭代](acceptance/transportx-six-hour-iteration.html) 与 [集成设计](acceptance/transportx-iteration-architecture.md)，验证数据修订、方法升级、旧结果复算与已知下游使用的影响回查。
+
 - Traffic Simulation 0.5.0 在同一 SUMO Run 中支持合成单列地铁、秒级班表变体和实际停站驱动的旅客接续。Simulation Canvas 显示实体列车、站台、计划与实际到发，并可把离站变更交给 Agent 冻结为新 Variant。
 
 - Simulation Canvas 的道路服务线路与站点双向联动，展示计划发车、关联车辆、换乘容量及当前帧概览。Host 同刻查询复用单次核验的时间块索引，历史 Run 的线路端点来自原冻结场景。
