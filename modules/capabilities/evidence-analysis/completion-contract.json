@@ -3,27 +3,19 @@
   "moduleId": "com.transportx.evidence-analysis",
   "toolId": "analysis.complete",
   "piName": "complete_evidence_analysis",
-  "contractVersion": "1.0.0",
-  "semanticVersion": "complete-evidence-analysis-v1",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "complete-evidence-analysis-v2",
   "input": {
     "type": "object",
     "required": [
-      "status",
       "answer",
       "evidence"
     ],
     "properties": {
       "status": {
-        "anyOf": [
-          {
-            "type": "string",
-            "const": "answered"
-          },
-          {
-            "type": "string",
-            "const": "missing"
-          }
-        ]
+        "type": "string",
+        "maxLength": 32,
+        "description": "Omit for an answer. Use 'missing' to report a checked source gap."
       },
       "answer": {
         "type": "string",
@@ -39,6 +31,19 @@
         },
         "maxItems": 16,
         "uniqueItems": true
+      },
+      "experienceReleaseId": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "experienceDisposition": {
+        "type": "string",
+        "maxLength": 20,
+        "description": "Optional: 'used' or 'skipped' for a rule returned this turn."
+      },
+      "experienceReason": {
+        "type": "string",
+        "maxLength": 400
       }
     },
     "additionalProperties": false

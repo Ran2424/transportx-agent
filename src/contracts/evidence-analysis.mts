@@ -14,9 +14,8 @@ export const WorkspaceTableSchema = Type.Object(
   {
     file: Type.String({
       minLength: 1,
-      maxLength: 256,
-      description:
-        'Relative path to a UTF-8 CSV in the current task workspace.',
+      maxLength: 1024,
+      description: 'Relative path to a UTF-8 CSV in the current task workspace.',
     }),
     select: Type.Optional(Columns),
     filters: Type.Optional(
@@ -66,17 +65,29 @@ export const WorkspaceTableSchema = Type.Object(
 
 export const CompleteEvidenceAnalysisSchema = Type.Object(
   {
-    status: Type.Union([Type.Literal('answered'), Type.Literal('missing')]),
+    status: Type.Optional(
+      Type.String({
+        maxLength: 32,
+        description: "Omit for an answer. Use 'missing' to report a checked source gap.",
+      })
+    ),
     answer: Type.String({
       minLength: 1,
       maxLength: 12000,
-      description:
-        'Complete answer, or a concrete description of what evidence is missing.',
+      description: 'Complete answer, or a concrete description of what evidence is missing.',
     }),
     evidence: Type.Array(Type.String({ pattern: '^ev_[0-9a-f]{16}$' }), {
       maxItems: 16,
       uniqueItems: true,
     }),
+    experienceReleaseId: Type.Optional(Type.String({ maxLength: 120 })),
+    experienceDisposition: Type.Optional(
+      Type.String({
+        maxLength: 20,
+        description: "Optional: 'used' or 'skipped' for a rule returned this turn.",
+      })
+    ),
+    experienceReason: Type.Optional(Type.String({ maxLength: 400 })),
   },
   { additionalProperties: false }
 );

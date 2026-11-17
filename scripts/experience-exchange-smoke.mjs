@@ -9,6 +9,8 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import * as workspace from './harness/workspace-client.mjs';
 
 const { values: args } = parseArgs({ options: {
@@ -48,9 +50,25 @@ const dispatcher = http.createServer(async (req, res) => {
     const active = (body.tools ?? []).map(tool => tool.function.name);
     const last = body.messages.at(-1);
     const previous = body.messages.findLast(item => item.tool_calls)?.tool_calls[0]?.function.name;
-    const call = last.role === 'user' || (last.role === 'tool' && previous === 'manage_capabilities')
-      ? active.includes(requested.name) ? requested : { name: 'manage_capabilities', args: { action: 'enable', moduleId } }
-      : undefined;
+    let call;
+    if (requested.name === 'combined-analysis') {
+      if (last.role === 'user') {
+        assert.ok(active.includes('search_experience') && active.includes('analyze_workspace_table') && active.includes('complete_evidence_analysis'));
+        call = { name: 'search_experience', args: { query: requested.args.query } };
+      } else if (previous === 'search_experience') {
+        call = { name: 'analyze_workspace_table', args: { file: 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }] } };
+      } else if (previous === 'analyze_workspace_table') {
+        const result = JSON.parse(typeof last.content === 'string' ? last.content : last.content.find(block => block.type === 'text').text);
+        assert.equal(Number(result.rows[0][0]), 30);
+        call = { name: 'complete_evidence_analysis', args: {
+          answer: '当前两条工作区记录合计为 30。', evidence: [result.evidenceId],
+          experienceReleaseId: requested.args.release, experienceDisposition: 'used',
+          experienceReason: '先核实当前可复查样本。',
+        } };
+      }
+    } else if (last.role === 'user' || (last.role === 'tool' && previous === 'manage_capabilities')) {
+      call = active.includes(requested.name) ? requested : { name: 'manage_capabilities', args: { action: 'enable', moduleId } };
+    }
     toolRequests.push(call?.name ?? null);
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const send = (delta, finish_reason = null) => res.write('data: ' + JSON.stringify({
@@ -159,6 +177,21 @@ const exchange = '/experience-exchange/' + scope;
 const knowledge = '/knowledge-collections';
 const toolResults = snapshot => snapshot.entries.map(entry => entry.message).filter(item => item?.role === 'toolResult');
 
+async function exactRule(ref) {
+  const client = new Client({ name: 'experience-smoke-exact', version: '1.0.0' });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(trafficBase + '/mcp/experience'), {
+      requestInit: { headers: { Authorization: 'Bearer ' + mcpToken } },
+    }));
+    const response = await client.callTool({
+      name: 'search_experience',
+      arguments: { query: 'exact reference', reference: { release_id: ref.release_id, entry_id: ref.entry_id } },
+    });
+    assert.ok(!response.isError);
+    return response.structuredContent.experiences;
+  } finally { await client.close(); }
+}
+
 async function call(child, name, args, isError = false) {
   const before = toolResults(await workspace.nativeSnapshot(tx, runtime.conversationId)).length;
   const ack = await tx('/api/rpc', { type: 'prompt', sessionId: runtime.id, clientCommandId: randomUUID(),
@@ -257,7 +290,7 @@ try {
   const collection = await admin(knowledge, { body: { name: ruleTitle, description: 'Synthetic engineering smoke' } });
   const collectionId = collection.id;
   const v1 = await confirmRule(collectionId, '先记录变化幅度和原任务目标。');
-  const query = { query: ruleTitle, limit: 3 };
+  const query = { query: '这次的变化，需要判断会不会改变行动吗？' };
   const unpublished = await call(host, 'search_experience', query);
   assert.deepEqual(unpublished.experiences, [], 'Confirmed knowledge requires separate experience publication.');
   await admin(exchange + '/releases', { body: {
@@ -269,7 +302,10 @@ try {
   const oldRef = reference(found.experiences[0]);
   assert.equal(oldRef.revision, v1.revision);
   assert.equal(oldRef.digest, v1.digest);
-  assert.ok(toolRequests.includes('manage_capabilities'));
+  assert.ok(found.experiences[0].matched_terms.length >= 2);
+  assert.ok(!toolRequests.includes('manage_capabilities'), 'Search should be open from the first request');
+  assert.deepEqual((await exactRule(oldRef)).map(reference), [oldRef]);
+  assert.deepEqual((await call(host, 'search_experience', { query: '芦苇显微结构 orchid taxonomy' })).experiences, []);
   const active = await admin(exchange);
   await admin(exchange + '/releases', { expected: 409, body: {
     expected_revision: active.revision, binding: v1, entry_id: oldRef.entry_id,
@@ -281,6 +317,7 @@ try {
     correction: '先查清行动改变的条件', evidence_ref: ruleSource.reference,
     experience: oldRef, data_refs: ['dataset:offline-ridership@1'] };
   const received = await call(host, 'submit_experience_feedback', feedback);
+  assert.ok(toolRequests.includes('manage_capabilities'), 'Feedback still requires activation');
   const replay = await call(host, 'submit_experience_feedback', feedback);
   assert.equal(received.feedback_id, replay.feedback_id);
   await call(host, 'submit_experience_feedback', { ...feedback, correction: 'Conflicting retry body' }, true);
@@ -309,6 +346,27 @@ try {
   assert.notEqual(newRef.release_id, oldRef.release_id);
   report.checks.reviewedUpdate = newRef;
 
+  const evidenceModule = options.modules.find(item => item.id === 'com.transportx.evidence-analysis');
+  assert.ok(evidenceModule);
+  const combined = await workspace.createHostConversation(tx, { name: 'Experience and evidence smoke', model: 'probe/probe',
+    profile: { ...workspace.smokeProfile, modules: { selectionMode: 'explicit',
+      selected: [...selected, { id: evidenceModule.id, version: evidenceModule.version }] } } });
+  fs.mkdirSync(path.join(combined.cwd, 'evidence'), { recursive: true });
+  fs.writeFileSync(path.join(combined.cwd, 'evidence/counts.csv'), 'value\n10\n20\n');
+  const ack = await tx('/api/rpc', { type: 'prompt', sessionId: combined.id, clientCommandId: randomUUID(),
+    message: 'experience-smoke:' + JSON.stringify({ name: 'combined-analysis', args: { query: query.query, release: newRef.release_id } }) });
+  assert.equal(ack.success, true);
+  const combinedReceipt = await until('combined evidence and experience receipt', async () => {
+    const snapshot = await workspace.nativeSnapshot(tx, combined.conversationId);
+    return !snapshot.isStreaming && snapshot.entries.findLast(entry => entry.customType === 'transportx.evidence-analysis.v1')?.data;
+  }, host);
+  assert.equal(combinedReceipt.status, 'verified');
+  assert.equal(combinedReceipt.experience.selection.releaseId, newRef.release_id);
+  assert.equal(combinedReceipt.experience.selection.disposition, 'used');
+  assert.ok(combinedReceipt.evidence[0].tableRunId);
+  report.checks.combinedAnalysisReceipt = combinedReceipt;
+  await workspace.closeHostConversation(tx, combined.conversationId);
+
   for (const ref of [oldRef, newRef]) {
     const overview = await admin(exchange);
     await admin(exchange + '/releases/' + ref.release_id + '/withdraw', { body: {
@@ -316,9 +374,7 @@ try {
     } });
   }
   assert.deepEqual((await call(host, 'search_experience', query)).experiences, []);
-  assert.deepEqual((await call(host, 'search_experience', { query: ruleTitle, reference: {
-    release_id: newRef.release_id, entry_id: newRef.entry_id,
-  } })).experiences, []);
+  assert.deepEqual(await exactRule(newRef), []);
   const historical = await call(host, 'submit_experience_feedback', {
     ...feedback, submission_id: 'late-report', correction: 'A prior run referred to this withdrawn version.',
   });
@@ -343,6 +399,7 @@ try {
   report.checks.duplicatePublicationRejected = true;
   report.checks.staleReviewRejected = true;
   report.checks.historicalFeedback = true;
+  report.checks.searchReadyAndRanked = true;
   report.status = 'pass';
 } catch (error) {
   report.status = 'fail';

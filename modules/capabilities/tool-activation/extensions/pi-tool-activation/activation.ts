@@ -7,6 +7,7 @@ type ActivationRecord = AssemblyRecord | EnableRecord;
 
 const INITIAL_TOOLS: Readonly<Record<string, readonly string[]>> = {
   'com.transportx.evidence-analysis': ['analyze_workspace_table', 'complete_evidence_analysis'],
+  'com.transportx.experience-exchange': ['search_experience'],
 };
 
 export function activation(pi: ExtensionAPI, modules: SessionModule[]) {

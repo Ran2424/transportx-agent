@@ -52,7 +52,13 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'experience');
         if (!session) return;
-        const input = await validateToolRequest('com.transportx.experience-exchange', body, `experience.${kind}`);
+        const legacy = kind === 'search' && body.contractVersion === '1.0.0' &&
+          session.resolvedSessionPlan?.modules.some(module => module.id === 'com.transportx.experience-exchange' && module.version === '1.0.0');
+        const compatible = legacy ? {
+          contractVersion: '1.0.0', input: (await import('../contracts/experience-lookup.mjs')).LegacyExperienceSearchSchema,
+        } : undefined;
+        const input = await validateToolRequest('com.transportx.experience-exchange', body, `experience.${kind}`, compatible);
+        if (kind === 'search' && !legacy) input.limit = 3;
         const result = await runRequestJob(deps.sessions, req, res, session, (signal) => exchange(session, kind, input, signal));
         deps.json(res, 200, { ...result, toolCallId: body.toolCallId });
       } catch (error) {

@@ -290,6 +290,8 @@ export async function analyzeWorkspaceTable(
   const conditions = plan.filters.map((f) =>
     f.value === null ? `${column(f.column)} IS NULL` : `${column(f.column)} = ?`
   );
+  const filterValues = plan.filters.map(({ column, value }) => ({ index: indexes.get(column)!, value }));
+  const matchedRows = rows.filter(row => filterValues.every(({ index, value }) => (row[index] || null) === value)).length;
   const orderIndexes = plan.orderBy.map((o) => {
     const idx = output.indexOf(o.column);
     if (idx < 0) return fail(`Unknown output sort column: ${o.column}`);
@@ -359,6 +361,7 @@ export async function analyzeWorkspaceTable(
     return {
       columns: output,
       sourceColumns: header,
+      matchedRows,
       rows: limited,
       truncated: result.length > limited.length,
       provenance,
