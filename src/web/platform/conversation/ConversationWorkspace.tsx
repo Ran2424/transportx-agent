@@ -80,12 +80,20 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking,
   const unconfirmedRows = new Set<number>();
   let unconfirmedHost = false;
   entries.forEach((entry, index) => {
+    // Pi streams custom messages as message events, then stores them as
+    // custom_message entries. Only explicitly visible text belongs in the thread.
+    const customText = entry.type === 'custom_message' && entry.display === true && typeof entry.content === 'string' ? entry.content : null;
+    if (customText !== null) {
+      parts.push({ kind: 'message', entry: { ...entry, message: { role: 'custom', content: customText } }, index });
+      return;
+    }
     const message = entry.message;
     if (!message) return;
     if (message.role === 'user') unconfirmedHost = false;
     if (message.role === 'toolResult' && hostExecutionState({ details: message.details }) === 'unknown') unconfirmedHost = true;
     if (message.role === 'assistant' && unconfirmedHost) unconfirmedRows.add(index);
     if (message.role === 'user') parts.push({ kind: 'message', entry, index });
+    if (message.role === 'custom' && message.display === true && typeof message.content === 'string') parts.push({ kind: 'message', entry, index });
     if (message.role === 'assistant') {
       const thinking = messageThinking(message);
       const timing = Array.isArray(message.content) ? message.content.find((block) => block.type === 'thinking') : undefined;
@@ -114,7 +122,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking,
           const message = row.entry.message as AppMessage;
           const projection = row.entry === entries[row.index] ? citationProjection.byEntry.get(row.entry) : message.role === 'user' ? optimisticCitationProjection : undefined;
           if (message.role === 'user') return <UserMessage key={row.entry.id || `user-${row.index}`} message={message} sessionId={sessionId} attachments={attachments} projection={projection} resourceLinks={session?.resourceLinks} />;
-          return <AssistantMessage resourceLinks={session?.resourceLinks} key={row.streaming ? 'live-assistant' : row.entry.id || row.index} message={message} streaming={row.streaming} showThinking={false} expandThinking={expandThinking} projection={projection} sessionId={sessionId} unconfirmedTool={unconfirmedRows.has(row.index)} onRetry={!data?.live.active && !unconfirmedRows.has(row.index) ? () => { if (messageOutcome(message)?.reason === 'output_limit') { setRetryDraft({ message: t('conversation.continueDraft') }); return; } const previous = entries.slice(0, row.index).reverse().find((entry) => entry.message?.role === 'user')?.message; if (previous) setRetryDraft({ message: messageText(previous) }); } : undefined} />;
+          return <AssistantMessage resourceLinks={session?.resourceLinks} key={row.streaming ? 'live-assistant' : row.entry.id || row.index} message={message} streaming={row.streaming} showThinking={false} expandThinking={expandThinking} projection={projection} sessionId={sessionId} unconfirmedTool={unconfirmedRows.has(row.index)} onRetry={message.role === 'assistant' && !data?.live.active && !unconfirmedRows.has(row.index) ? () => { if (messageOutcome(message)?.reason === 'output_limit') { setRetryDraft({ message: t('conversation.continueDraft') }); return; } const previous = entries.slice(0, row.index).reverse().find((entry) => entry.message?.role === 'user')?.message; if (previous) setRetryDraft({ message: messageText(previous) }); } : undefined} />;
         })}
         {!entries.length && !rows.length ? <div className="conversation-empty"><BrandMark className="conversation-empty-mark" /><h1>{t('conversation.startTitle')}</h1><p>{t('conversation.startDescription')}</p></div> : null}
         {data?.live.retry ? <div className="compaction-status" role="status">{t('conversation.retrying', { attempt: data.live.retry.attempt, max: data.live.retry.maxAttempts, seconds: Math.ceil(data.live.retry.delayMs / 1000) })}</div> : data?.live.outcome ? <div className="compaction-status" role="status">{t(`conversation.${data.live.outcome.status}`)}</div> : showThinking && pending && waitingVisible && !showLiveAssistant && toolProjection.liveOnly.length === 0 ? <ExecutionGroup activities={[]} sessionId={sessionId} running pending startedAt={workingStartedAt ?? data.live.runStartedAt} showThinking={false} expandThinking={false} /> : null}

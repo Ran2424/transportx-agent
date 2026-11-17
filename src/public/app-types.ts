@@ -151,6 +151,7 @@ export type AppMessage = {
   errorMessage?: string;
   id?: string;
   role?: string;
+  display?: boolean;
   content?: string | MessageContentBlock[];
   usage?: UsageRecord;
   attachmentIds?: string[];

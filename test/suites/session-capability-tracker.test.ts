@@ -15,16 +15,18 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
     const packageRoot = path.resolve(__dirname, '../../dist/tool-modules', directory);
     const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, 'manifest.json'), 'utf8'));
     const registered: any[] = [];
+    const commands: string[] = [];
     const extension = await import(require('node:url').pathToFileURL(path.join(packageRoot, manifest.entrypoints.piExtensions[0])).href);
     const previousModules = process.env.TRANSPORTX_SESSION_MODULES_JSON;
     try {
       process.env.TRANSPORTX_SESSION_MODULES_JSON = '[]';
-      extension.default({ registerTool: (tool: any) => registered.push(tool), on: () => {} });
+      extension.default({ registerTool: (tool: any) => registered.push(tool), registerCommand: (name: string) => commands.push(name), on: () => {} });
     } finally {
       if (previousModules === undefined) delete process.env.TRANSPORTX_SESSION_MODULES_JSON;
       else process.env.TRANSPORTX_SESSION_MODULES_JSON = previousModules;
     }
     assert.equal(registered.length, bindings.length);
+    if (moduleId === 'com.transportx.service-resilience') assert.deepEqual(commands.sort(), ['resilience-demo', 'resilience-run']);
     for (const binding of bindings) {
       const contract = JSON.parse(fs.readFileSync(path.join(packageRoot, binding.file), 'utf8'));
       const tool = registered.find((tool: any) => tool.name === binding.piName);

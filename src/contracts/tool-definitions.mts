@@ -306,7 +306,42 @@ export const TrafficExperimentSchema = Type.Object({ action: Type.Union([Type.Li
 export const TrafficExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), runId: Type.Optional(Type.String({ pattern: '^sim_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
 export const TrafficQuerySchema = Type.Object({ runId: Type.String({ pattern: '^sim_[a-f0-9]{32}$' }), time: Type.Optional(Type.Number({ minimum: 0, maximum: 600 })), objectId: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })) }, { additionalProperties: false });
 
+const resiliencePath = Type.String({ minLength: 1, maxLength: 500, description: 'File path relative to this task working directory.' });
+const resilienceId = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$' });
+const resilienceColumn = Type.String({ minLength: 1, maxLength: 200 });
+export const ResilienceImportSchema = Type.Object({
+  kind: Type.Union([Type.Literal('osm-overpass'), Type.Literal('field-survey')]),
+  sourcePath: resiliencePath,
+  speedKph: Type.Optional(Type.Number({ minimum: 1, maximum: 120, description: 'Explicit assumed speed for an OSM exercise.' })),
+  mode: Type.Optional(Type.Literal('road')),
+  columns: Type.Optional(Type.Object({ observationId: resilienceColumn, objectId: resilienceColumn,
+    periodId: resilienceColumn, value: resilienceColumn, source: resilienceColumn }, { additionalProperties: false })),
+}, { additionalProperties: false });
+export const ResilienceAlignSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  observationPath: resiliencePath,
+}, { additionalProperties: false });
+export const ResiliencePressureSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  stateId: Type.Optional(resilienceId),
+  planId: Type.Optional(resilienceId),
+  periodId: Type.Optional(resilienceId),
+}, { additionalProperties: false });
+export const ResilienceInvestigateSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  sweep: Type.Optional(Type.Object({
+    stateId: resilienceId, periodId: resilienceId, objectId: resilienceId,
+    variable: Type.Union([Type.Literal('edge-minutes'), Type.Literal('service-capacity')]),
+    values: Type.Array(Type.Number({ minimum: 0, maximum: 1_000_000 }), { minItems: 2, maxItems: 12, uniqueItems: true }),
+  }, { additionalProperties: false, description: 'Optional single-variable scan. Specify explicit values in the case unit.' })),
+}, { additionalProperties: false });
+const resilienceOutput = { protocol: 'transportx-service-resilience', version: 1, detailsKind: 'service-resilience-result' };
+
 export const coreToolContracts = [
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.import', piName: 'resilience_import', contractVersion: '1.0.0', semanticVersion: 'resilience-import-v1', input: ResilienceImportSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.align', piName: 'resilience_align', contractVersion: '1.0.0', semanticVersion: 'resilience-align-v1', input: ResilienceAlignSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.pressure', piName: 'resilience_pressure_test', contractVersion: '1.0.0', semanticVersion: 'resilience-pressure-v1', input: ResiliencePressureSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.investigate', piName: 'resilience_investigate', contractVersion: '1.0.0', semanticVersion: 'resilience-investigate-v1', input: ResilienceInvestigateSchema, output: resilienceOutput },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.prepare', piName: 'traffic_prepare_scenario', contractVersion: '1.2.0', semanticVersion: 'traffic-prepare-v3', input: TrafficPrepareSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.run', piName: 'traffic_run', contractVersion: '1.1.0', semanticVersion: 'traffic-run-v2', input: TrafficRunSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.experiment', piName: 'traffic_experiment', contractVersion: '1.0.0', semanticVersion: 'traffic-experiment-v1', input: TrafficExperimentSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
