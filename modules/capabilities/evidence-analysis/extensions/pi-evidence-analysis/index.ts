@@ -7,7 +7,7 @@ import {
   EVIDENCE_ANALYSIS_ENTRY,
   WorkspaceTableSchema,
 } from '../../../../../src/contracts/evidence-analysis.mts';
-import { postHostOperation } from '../../../../shared/host-client.ts';
+import { HostCallError, postHostOperation } from '../../../../shared/host-client.ts';
 import {
   captureExperience,
   selectExperience,
@@ -297,11 +297,12 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
           details,
         };
       } catch (cause) {
-        if (run && run === active) {
-          if (file) {
-            run.eligibleFailure = true;
-            run.failedSources.add(file.readable);
-          }
+        if (
+          run && run === active && file &&
+          cause instanceof HostCallError && cause.code === 'workspace_table_source_missing'
+        ) {
+          run.eligibleFailure = true;
+          run.failedSources.add(file.readable);
         }
         failedTools.add(toolCallId);
         const error = cause instanceof Error ? cause.message : 'Workspace table read failed.';

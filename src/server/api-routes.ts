@@ -17,7 +17,7 @@ import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
 import { exchange } from './experience-exchange.js';
-import { analyzeWorkspaceTable, WorkspaceTableInputError } from './workspace-table.js';
+import { analyzeWorkspaceTable, WorkspaceTableInputError, WorkspaceTableSourceMissingError } from './workspace-table.js';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 
@@ -39,9 +39,12 @@ export function createApiRouter(services: ApiRouteServices) {
     } catch (error) {
       const validation = error instanceof WorkspaceTableInputError;
       const status = validation ? 400 : deps.errorStatus(error);
+      const code = error instanceof WorkspaceTableSourceMissingError
+        ? 'workspace_table_source_missing'
+        : validation ? 'workspace_table_invalid' : (error as { code?: string } | null)?.code || 'workspace_table_failed';
       deps.json(res, status, {
         error: status >= 500 ? 'Workspace table analysis failed.' : deps.errorMessage(error),
-        code: validation ? 'workspace_table_invalid' : (error as { code?: string } | null)?.code || 'workspace_table_failed',
+        code,
         phase: 'analysis', commit: 'not_started',
       });
     }

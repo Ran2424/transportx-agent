@@ -28,6 +28,7 @@ type Plan = {
   limit: number;
 };
 export class WorkspaceTableInputError extends Error {}
+export class WorkspaceTableSourceMissingError extends WorkspaceTableInputError {}
 const fail = (message: string): never => {
   throw new WorkspaceTableInputError(message);
 };
@@ -238,7 +239,7 @@ export async function analyzeWorkspaceTable(
   const source = await loadCsv(cwd, plan.file, signal).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT' || error.code === 'ENOTDIR')
-        return fail('The specified workspace CSV is missing.');
+        throw new WorkspaceTableSourceMissingError('The specified workspace CSV is missing.');
       throw error;
     }
   );

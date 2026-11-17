@@ -92,6 +92,16 @@ const dispatcher = http.createServer(async (req, res) => {
         };
       else if (index === 2) content = 'Completion.';
       else throw new Error('Unexpected missing-data request: ' + index);
+    } else if (active.name === 'invalid-is-not-missing') {
+      if (index === 0)
+        call = { name: 'analyze_workspace_table', args: { ...table, aggregates: [{ op: 'sum', as: 'total' }] } };
+      else if (index === 1)
+        call = {
+          name: 'complete_evidence_analysis',
+          args: { status: 'missing', answer: 'The file evidence/counts.csv is absent.', evidence: [] },
+        };
+      else if (index <= 3) content = 'I could not finish the analysis.';
+      else throw new Error('Unexpected invalid-query request: ' + index);
     } else if (active.name === 'stale') {
       if (index === 0)
         call = {
@@ -413,6 +423,13 @@ try {
       .includes('evidence/missing.csv is absent')
   );
   report.checks.missingSourceReportsGap = true;
+
+  const invalid = await exercise('invalid-is-not-missing');
+  assert.equal(invalid.receipt.status, 'incomplete');
+  assert.equal(invalid.receipt.evidence.length, 0);
+  assert.ok(invalid.messages.some((item) => item.role === 'toolResult' &&
+    item.toolName === 'complete_evidence_analysis' && item.isError && item.details?.accepted === false));
+  report.checks.invalidQueryDoesNotProveMissingSource = true;
 
   const stale = await exercise('stale');
   const rejected = stale.messages.find(
