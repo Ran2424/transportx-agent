@@ -1,0 +1,51 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.evidence-analysis",
+  "toolId": "analysis.complete",
+  "piName": "complete_evidence_analysis",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "complete-evidence-analysis-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "status",
+      "answer",
+      "evidence"
+    ],
+    "properties": {
+      "status": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "answered"
+          },
+          {
+            "type": "string",
+            "const": "missing"
+          }
+        ]
+      },
+      "answer": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 12000,
+        "description": "Complete answer, or a concrete description of what evidence is missing."
+      },
+      "evidence": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^ev_[0-9a-f]{16}$"
+        },
+        "maxItems": 16,
+        "uniqueItems": true
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-evidence-analysis",
+    "version": 1,
+    "detailsKind": "analysis-completion"
+  }
+}

@@ -36,6 +36,7 @@ files:
   - "!modules/official/module-authoring/extensions/pi-module-package/index.ts"
   - "!modules/capabilities/citation/extensions/pi-citation/index.ts"
   - "!modules/capabilities/experience-exchange/extensions/pi-experience-exchange/index.ts"
+  - "!modules/capabilities/evidence-analysis/extensions/pi-evidence-analysis/**"
   - "!modules/capabilities/spatial-analysis/extensions/pi-spatial-analysis/index.ts"
   - "!modules/capabilities/service-resilience/extensions/pi-service-resilience/index.ts"
   - "!modules/capabilities/service-resilience/extensions/pi-service-resilience/!(index).ts"

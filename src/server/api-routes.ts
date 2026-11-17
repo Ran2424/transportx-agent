@@ -17,6 +17,7 @@ import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
 import { exchange } from './experience-exchange.js';
+import { analyzeWorkspaceTable, WorkspaceTableInputError } from './workspace-table.js';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 
@@ -27,6 +28,24 @@ export function createApiRouter(services: ApiRouteServices) {
   registerWorkspaceApi(router);
   registerSimulationApi(router, services);
   registerReportApi(router);
+  router.post('/api/internal/analysis/table', async ({ req, res, deps }) => {
+    try {
+      const body = await deps.readBody(req);
+      const session = resolveServiceSession(res, body, deps, 'evidenceAnalysis');
+      if (!session) return;
+      const input = await validateToolRequest('com.transportx.evidence-analysis', body, 'analysis.table');
+      const result = await runRequestJob(deps.sessions, req, res, session, (signal) => analyzeWorkspaceTable(session.cwd, input, signal));
+      deps.json(res, 200, { result, toolCallId: body.toolCallId });
+    } catch (error) {
+      const validation = error instanceof WorkspaceTableInputError;
+      const status = validation ? 400 : deps.errorStatus(error);
+      deps.json(res, status, {
+        error: status >= 500 ? 'Workspace table analysis failed.' : deps.errorMessage(error),
+        code: validation ? 'workspace_table_invalid' : (error as { code?: string } | null)?.code || 'workspace_table_failed',
+        phase: 'analysis', commit: 'not_started',
+      });
+    }
+  });
   for (const kind of ['search', 'feedback'] as const) {
     router.post(`/api/internal/experience/${kind}`, async ({ req, res, deps }) => {
       try {

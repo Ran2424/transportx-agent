@@ -83,7 +83,7 @@ const liveManager = new LiveSessionManager({
     await ensureSessionModuleTrust(input.resolvedSessionPlan, BUILTIN_MODULE_MANIFESTS.map((source) => source.manifestPath), moduleTrust, BUILTIN_MODULE_ARCHIVE);
     return buildSessionPiLaunch(input);
   }, spawn,
-  endpoints: { experience: '', citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '', cad: '', traffic: '' },
+  endpoints: { evidenceAnalysis: '', experience: '', citation: '', spatial: '', video: '', geo: '', canvas: '', moduleAuthoring: '', cad: '', traffic: '' },
   runtimeClosed: (id) => rpcCommandLedger.retire(id),
 });
 
@@ -341,6 +341,7 @@ function computeUrls(port: number) {
   const endpoint = `http://${endpointHost.includes(':') ? `[${endpointHost}]` : endpointHost}:${port}`;
   lanUrl = loopback ? endpoint : `http://${localIp}:${port}`; tailscaleUrl = tailscaleIp ? `http://${tailscaleIp}:${port}` : '';
   liveManager.runtime.endpoints.experience = endpoint;
+  liveManager.runtime.endpoints.evidenceAnalysis = endpoint;
   liveManager.runtime.endpoints.citation = endpoint;
   liveManager.runtime.endpoints.spatial = endpoint;
   liveManager.runtime.endpoints.video = endpoint;

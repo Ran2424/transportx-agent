@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { CompleteEvidenceAnalysisSchema, WorkspaceTableSchema } from './evidence-analysis.mts';
 
 export const SpatialAnalyzeSchema = Type.Object({
   operation: Type.Union([Type.Literal('buffer'), Type.Literal('nearest'), Type.Literal('spatial_join')]),
@@ -408,6 +409,8 @@ export const coreToolContracts = [
   { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v3', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.execution', piName: 'cad_execution', contractVersion: '1.0.0', semanticVersion: 'cad-execution-v2', input: CadExecutionSchema, output: { protocol: 'transportx-cad-execution', version: 1, detailsKind: 'tau-cad-execution' } },
 
+  { moduleId: 'com.transportx.evidence-analysis', toolId: 'analysis.table', piName: 'analyze_workspace_table', contractVersion: '1.0.0', semanticVersion: 'workspace-table-v1', input: WorkspaceTableSchema, output: { protocol: 'transportx-evidence-analysis', version: 1, detailsKind: 'analysis-table' } },
+  { moduleId: 'com.transportx.evidence-analysis', toolId: 'analysis.complete', piName: 'complete_evidence_analysis', contractVersion: '1.0.0', semanticVersion: 'complete-evidence-analysis-v1', input: CompleteEvidenceAnalysisSchema, output: { protocol: 'transportx-evidence-analysis', version: 1, detailsKind: 'analysis-completion' } },
   { moduleId: 'com.transportx.experience-exchange', toolId: 'experience.search', piName: 'search_experience', contractVersion: '1.0.0', semanticVersion: 'experience-search-v1', input: ExperienceSearchSchema, output: { protocol: 'transportx-experience', version: 1, detailsKind: 'experience-search' } },
   { moduleId: 'com.transportx.experience-exchange', toolId: 'experience.feedback', piName: 'submit_experience_feedback', contractVersion: '1.0.0', semanticVersion: 'experience-feedback-v1', input: ExperienceFeedbackSchema, output: { protocol: 'transportx-experience', version: 1, detailsKind: 'experience-feedback' } },
   { moduleId: 'com.transportx.tool-activation', toolId: 'capabilities.manage', piName: 'manage_capabilities', contractVersion: '1.0.0', semanticVersion: 'module-activation-v1', input: ManageCapabilitiesSchema, output: { protocol: 'transportx-capability-management', version: 1, detailsKind: 'transportx-capability-management' } },

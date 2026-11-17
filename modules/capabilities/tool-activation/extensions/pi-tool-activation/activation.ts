@@ -5,6 +5,10 @@ type AssemblyRecord = { kind: 'assembly'; modules: Record<string, string[]> };
 type EnableRecord = { kind: 'enable'; moduleId: string; moduleVersion: string; tools: string[] };
 type ActivationRecord = AssemblyRecord | EnableRecord;
 
+const INITIAL_TOOLS: Readonly<Record<string, readonly string[]>> = {
+  'com.transportx.evidence-analysis': ['analyze_workspace_table', 'complete_evidence_analysis'],
+};
+
 export function activation(pi: ExtensionAPI, modules: SessionModule[]) {
   let frozen: Record<string, string[]> = {};
   let persistenceError: string | undefined;
@@ -30,6 +34,11 @@ export function activation(pi: ExtensionAPI, modules: SessionModule[]) {
     }
     const checked = rows();
     const names = baseTools(pi.getAllTools(), checked);
+    for (const row of checked) {
+      if (row.reasons.length || persistenceError) continue;
+      const initial = INITIAL_TOOLS[row.module.id];
+      if (initial) names.push(...members(row).filter(name => initial.includes(name)));
+    }
     for (const entry of entries) {
       if (entry.kind !== 'enable') continue;
       const row = checked.find((item) => item.module.id === entry.moduleId);

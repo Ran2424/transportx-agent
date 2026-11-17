@@ -1,0 +1,163 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.evidence-analysis",
+  "toolId": "analysis.table",
+  "piName": "analyze_workspace_table",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "workspace-table-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "file"
+    ],
+    "properties": {
+      "file": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "description": "Relative path to a UTF-8 CSV in the current task workspace."
+      },
+      "select": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "minItems": 1,
+        "maxItems": 24
+      },
+      "filters": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "column",
+            "value"
+          ],
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxItems": 16
+      },
+      "groupBy": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "minItems": 1,
+        "maxItems": 24
+      },
+      "aggregates": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "op",
+            "as"
+          ],
+          "properties": {
+            "op": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "count"
+                },
+                {
+                  "type": "string",
+                  "const": "sum"
+                },
+                {
+                  "type": "string",
+                  "const": "min"
+                },
+                {
+                  "type": "string",
+                  "const": "max"
+                }
+              ]
+            },
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "as": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "numeric": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxItems": 16
+      },
+      "orderBy": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "column"
+          ],
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "direction": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "asc"
+                },
+                {
+                  "type": "string",
+                  "const": "desc"
+                }
+              ]
+            },
+            "numeric": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxItems": 16
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-evidence-analysis",
+    "version": 1,
+    "detailsKind": "analysis-table"
+  }
+}
