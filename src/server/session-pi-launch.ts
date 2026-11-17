@@ -77,7 +77,7 @@ export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
       TAU_EVIDENCE_ANALYSIS_ENDPOINT: input.endpoints.evidenceAnalysis,
       TAU_EVIDENCE_ANALYSIS_SESSION_ID: input.sessionId,
       TAU_EVIDENCE_ANALYSIS_TOKEN: input.serviceTokens.evidenceAnalysis,
-      TAU_EVIDENCE_ANALYSIS_REQUIRED: plan.profile.task.kind === 'data-query' && plan.profile.task.expectedOutputs.includes('answer') ? '1' : '0',
+      TAU_EVIDENCE_ANALYSIS_REQUIRED: plan.profile?.task?.kind === 'data-query' && plan.profile.task.expectedOutputs?.includes('answer') ? '1' : '0',
       TAU_EXPERIENCE_ENDPOINT: input.endpoints.experience,
       TAU_EXPERIENCE_SESSION_ID: input.sessionId,
       TAU_EXPERIENCE_TOKEN: input.serviceTokens.experience,
