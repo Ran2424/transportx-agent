@@ -1,6 +1,7 @@
 import type { PressureTestResult } from './engine.ts';
 import type { InvestigationRanking, Regret } from './investigation.ts';
 import type { ResilienceCase } from './model.ts';
+import { networkSlice } from './network-slice.ts';
 
 export type ViewSelection = { stateId: string; planId: string; periodId: string };
 const label = (items: { id: string; label: string }[], id: string) => items.find(item => item.id === id)?.label ?? id;
@@ -68,22 +69,20 @@ export function pressureMap(model: ResilienceCase, pressure: PressureTestResult,
   const plan = model.plans.find(item => item.id === planId)!.periods[periodId];
   const period = pressure.scenarios.find(item => item.stateId === stateId && item.planId === planId)!.periods.find(item => item.periodId === periodId)!;
   const coords = new Map(model.nodes.map(item => [item.id, item.coordinates]));
-  const inactive = new Set([...(state?.unavailableResources || []), ...(plan?.unavailableResources || [])]);
-  const closed = new Set([...(state?.closedEdges || []), ...(plan?.closedEdges || [])]);
+  const network = networkSlice(model, state, plan);
+  const usableEdges = new Set(network.edges.map(edge => edge.id));
+  const availableServices = new Map(network.services.map(service => [service.id, service.capacity]));
   const props = (featureId: string, featureKind: string) => ({ feature_id: featureId, feature_kind: featureKind, state_id: stateId, plan_id: planId, period_id: periodId });
   return { type: 'FeatureCollection', features: [
     ...model.edges.map(edge => ({
       type: 'Feature', geometry: { type: 'LineString', coordinates: [coords.get(edge.from)!, coords.get(edge.to)!] },
-      properties: { ...props(edge.id, 'edge'), traffic_state: closed.has(edge.id) || edge.requires.some(id => inactive.has(id)) ? 'unavailable' : 'available' },
+      properties: { ...props(edge.id, 'edge'), traffic_state: usableEdges.has(edge.id) ? 'available' : 'unavailable' },
     })),
     ...model.services.map(service => {
-      const stateCap = state?.serviceCapacity?.[service.id];
-      const planCap = plan?.serviceCapacity?.[service.id];
-      const capacity = stateCap !== undefined && planCap !== undefined ? Math.min(stateCap, planCap) : stateCap ?? planCap ?? service.capacity;
       return {
         type: 'Feature', geometry: { type: 'Point', coordinates: coords.get(service.node)! },
         properties: { ...props(service.id, 'service'), service_kind: service.kind,
-          available_capacity: service.requires.some(id => inactive.has(id)) ? 0 : capacity },
+          available_capacity: availableServices.get(service.id) ?? 0, service_open: availableServices.has(service.id) },
       };
     }),
     ...period.cohorts.map(row => ({

@@ -308,6 +308,7 @@ export const TrafficQuerySchema = Type.Object({ runId: Type.String({ pattern: '^
 
 const resiliencePath = Type.String({ minLength: 1, maxLength: 500, description: 'File path relative to this task working directory.' });
 const resilienceId = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$' });
+const resilienceHash = Type.String({ pattern: '^[a-f0-9]{64}$' });
 const resilienceColumn = Type.String({ minLength: 1, maxLength: 200 });
 export const ResilienceImportSchema = Type.Object({
   kind: Type.Union([Type.Literal('osm-overpass'), Type.Literal('field-survey')]),
@@ -335,6 +336,52 @@ export const ResilienceInvestigateSchema = Type.Object({
     values: Type.Array(Type.Number({ minimum: 0, maximum: 1_000_000 }), { minItems: 2, maxItems: 12, uniqueItems: true }),
   }, { additionalProperties: false, description: 'Optional single-variable scan. Specify explicit values in the case unit.' })),
 }, { additionalProperties: false });
+export const ResilienceEventAlignmentSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  eventPath: resiliencePath,
+  calendarPath: resiliencePath,
+  toleranceMeters: Type.Optional(Type.Number({ minimum: 0, maximum: 10000 })),
+}, { additionalProperties: false });
+export const ResilienceAccessibilitySchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  caseSha256: Type.Optional(resilienceHash),
+  periodId: resilienceId,
+  stateId: Type.Optional(resilienceId),
+  planId: Type.Optional(resilienceId),
+  demandId: Type.Optional(resilienceId),
+}, { additionalProperties: false });
+export const ResilienceComparePlansSchema = Type.Object({
+  ...ResiliencePressureSchema.properties,
+  planPath: resiliencePath,
+  alignment: Type.Optional(Type.Object({
+    path: resiliencePath,
+    sha256: resilienceHash,
+    stateId: resilienceId,
+    eventIds: Type.Array(resilienceId, { minItems: 1, maxItems: 100, uniqueItems: true }),
+  }, { additionalProperties: false, description: 'Apply explicitly reviewed confirmed events to this one state; evidence is rechecked.' })),
+}, { additionalProperties: false });
+export const ResilienceJointSensitivitySchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  caseSha256: Type.Optional(resilienceHash),
+  stateId: resilienceId,
+  periodId: resilienceId,
+  axes: Type.Array(Type.Union([
+    Type.Object({
+      variable: Type.Union([Type.Literal('edge-minutes'), Type.Literal('service-capacity'), Type.Literal('demand-amount')]),
+      objectId: resilienceId,
+      values: Type.Array(Type.Number({ minimum: 0, maximum: 1_000_000 }), { minItems: 2, maxItems: 12, uniqueItems: true }),
+    }, { additionalProperties: false }),
+    Type.Object({
+      variable: Type.Union([Type.Literal('closed-edge'), Type.Literal('unavailable-resource')]),
+      objectId: resilienceId,
+      values: Type.Array(Type.Boolean(), { minItems: 2, maxItems: 2, uniqueItems: true }),
+    }, { additionalProperties: false }),
+  ]), { minItems: 1, maxItems: 3 }),
+  constraints: Type.Optional(Type.Object({
+    maxPriorityShortage: Type.Optional(Type.Integer({ minimum: 0 })),
+    maxTotalShortage: Type.Optional(Type.Integer({ minimum: 0 })),
+  }, { additionalProperties: false })),
+}, { additionalProperties: false });
 const resilienceOutput = { protocol: 'transportx-service-resilience', version: 1, detailsKind: 'service-resilience-result' };
 
 export const coreToolContracts = [
@@ -342,6 +389,10 @@ export const coreToolContracts = [
   { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.align', piName: 'resilience_align', contractVersion: '1.0.0', semanticVersion: 'resilience-align-v1', input: ResilienceAlignSchema, output: resilienceOutput },
   { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.pressure', piName: 'resilience_pressure_test', contractVersion: '1.0.0', semanticVersion: 'resilience-pressure-v1', input: ResiliencePressureSchema, output: resilienceOutput },
   { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.investigate', piName: 'resilience_investigate', contractVersion: '1.0.0', semanticVersion: 'resilience-investigate-v1', input: ResilienceInvestigateSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.align-events', piName: 'resilience_align_events', contractVersion: '1.0.0', semanticVersion: 'resilience-align-events-v1', input: ResilienceEventAlignmentSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.accessibility', piName: 'resilience_accessibility', contractVersion: '1.0.0', semanticVersion: 'resilience-accessibility-v1', input: ResilienceAccessibilitySchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.compare-plans', piName: 'resilience_compare_plans', contractVersion: '1.0.0', semanticVersion: 'resilience-compare-plans-v1', input: ResilienceComparePlansSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.sensitivity', piName: 'resilience_sensitivity', contractVersion: '1.0.0', semanticVersion: 'resilience-sensitivity-v1', input: ResilienceJointSensitivitySchema, output: resilienceOutput },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.prepare', piName: 'traffic_prepare_scenario', contractVersion: '1.2.0', semanticVersion: 'traffic-prepare-v3', input: TrafficPrepareSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.run', piName: 'traffic_run', contractVersion: '1.1.0', semanticVersion: 'traffic-run-v2', input: TrafficRunSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.experiment', piName: 'traffic_experiment', contractVersion: '1.0.0', semanticVersion: 'traffic-experiment-v1', input: TrafficExperimentSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },

@@ -1,0 +1,37 @@
+{
+  "title": "两个社区医疗服务点的恢复演练",
+  "provenance": {"kind":"exercise","note":"地点、容量、封停记录和资源依赖均为合成，用于展示证据如何改变方案。"},
+  "nodes": [
+    {"id":"community","coordinates":[121.414,31.171]},
+    {"id":"east-site","coordinates":[121.455,31.177]},
+    {"id":"west-site","coordinates":[121.408,31.179]}
+  ],
+  "edges": [
+    {"id":"east-route","from":"community","to":"east-site","minutes":6,"modes":["road"],"requires":[]},
+    {"id":"west-route","from":"community","to":"west-site","minutes":8,"modes":["road"],"requires":[]}
+  ],
+  "services": [
+    {"id":"east-care","node":"east-site","kind":"care","capacity":100,"requires":["east-power"]},
+    {"id":"west-care","node":"west-site","kind":"care","capacity":100,"requires":["west-power"]}
+  ],
+  "demands": [
+    {"id":"priority-care","node":"community","kind":"care","mode":"road","amount":80,"priority":true,"maxMinutes":10},
+    {"id":"urgent-care","node":"community","kind":"care","mode":"road","amount":10,"priority":true,"maxMinutes":7},
+    {"id":"ordinary-care","node":"community","kind":"care","mode":"road","amount":30,"priority":false,"maxMinutes":20}
+  ],
+  "periods": [{"id":"peak","label":"上午服务窗口（08:00–10:00）","weight":1}],
+  "states": [
+    {"id":"ready","label":"两处服务点可用","periods":{}},
+    {"id":"east-closed","label":"东侧服务点受影响","periods":{}},
+    {"id":"west-outage","label":"西侧供电中断","periods":{"peak":{"unavailableResources":["west-power"]}}}
+  ],
+  "plans": [
+    {"id":"boost-east","label":"优先增援东点","periods":{}},
+    {"id":"boost-west","label":"优先增援西点","periods":{}}
+  ],
+  "investigations": [
+    {"id":"confirm-both","question":"两处服务点在部署截止前的状态如何？","source":"两处服务点的运营与供电记录","effort":"分别核查两个现场","leadMinutes":12,
+      "outcomes":[{"label":"均可用","stateIds":["ready"]},{"label":"东点停用","stateIds":["east-closed"]},{"label":"西点停用","stateIds":["west-outage"]}]}
+  ],
+  "decisionWindowMinutes":30
+}

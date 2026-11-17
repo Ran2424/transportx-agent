@@ -1,12 +1,15 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import {
   ResilienceAlignSchema, ResilienceImportSchema, ResilienceInvestigateSchema, ResiliencePressureSchema,
+  ResilienceAccessibilitySchema, ResilienceComparePlansSchema, ResilienceEventAlignmentSchema, ResilienceJointSensitivitySchema,
 } from '../../../../../src/contracts/tool-definitions.mts';
 import { alignObservations, importOsmNetwork, importSurveyObservations } from './adapters.ts';
 import { parseNetwork, parseObservations } from './model.ts';
 import { digest, jsonBytes, publish, readInput } from './workspace-files.ts';
 import { loadCase, method, runWorkspaceCase } from './workspace-run.ts';
 import { scanSensitivity } from './sensitivity.ts';
+import { comparePlans, publishAccessibility, publishEventAlignment, publishJointSensitivity } from './decision-tools.ts';
+import { runDecisionWorkflow } from './decision-workflow.ts';
 
 const textResult = (content: string, details: Record<string, unknown>) => ({
   content: [{ type: 'text' as const, text: content }], details: { kind: 'service-resilience-result', ...details },
@@ -61,6 +64,45 @@ export default function register(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: 'resilience_align_events', label: '对齐事件、设施与生效时段',
+    description: 'Align local WGS84 GeoJSON events to case objects and a timezone-aware calendar. Return source coverage, ambiguous spatial candidates and exact confirmations. Review event IDs before using confirmations in a plan.',
+    parameters: ResilienceEventAlignmentSchema,
+    execute: async (_id, args, signal, _update, ctx) => {
+      signal?.throwIfAborted();
+      const result = publishEventAlignment(ctx.cwd, args);
+      return textResult(JSON.stringify(result), { operation: 'align-events', ...result });
+    },
+  });
+  pi.registerTool({
+    name: 'resilience_accessibility', label: '核算网络可达性与绕行',
+    description: 'For one time slice, compare baseline and selected directed routes by cohort travel mode, reachable options and time threshold; publish nearest route paths and GeoJSON. Run plan comparison to allocate shared capacity.',
+    parameters: ResilienceAccessibilitySchema,
+    execute: async (_id, args, signal, _update, ctx) => {
+      const result = publishAccessibility(ctx.cwd, args, signal);
+      return textResult(JSON.stringify(result), { operation: 'accessibility', ...result });
+    },
+  });
+  pi.registerTool({
+    name: 'resilience_compare_plans', label: '冻结并批量比较应对方案',
+    description: 'Freeze baseline and plan definitions from local JSON. Optionally bind explicitly reviewed event IDs to one state using a verified alignment artifact. Publish the replayable RFC 6902 edit and batch comparison report, table, and map.',
+    parameters: ResilienceComparePlansSchema,
+    execute: async (_id, args, signal, _update, ctx) => {
+      const { reportBody: _report, ...result } = comparePlans(ctx.cwd, args, signal);
+      return textResult(JSON.stringify(result), { operation: 'compare-plans', ...result });
+    },
+  });
+  pi.registerTool({
+    name: 'resilience_sensitivity', label: '多因素敏感性与方案筛选',
+    description: 'Scan one to three explicit axes in a chosen state and period, reporting plan changes, joint failures, feasible and Pareto plans and candidate investigation questions. Limits are weighted unmet service demand; grid is bounded.',
+    parameters: ResilienceJointSensitivitySchema,
+    execute: async (_id, args, signal, _update, ctx) => {
+      signal?.throwIfAborted();
+      const result = publishJointSensitivity(ctx.cwd, args);
+      return textResult(JSON.stringify(result), { operation: 'joint-sensitivity', ...result });
+    },
+  });
+
+  pi.registerTool({
     name: 'resilience_pressure_test', label: '运行城市服务中断压力测试',
     description: 'Compare all stated disruption and response combinations. Optional state, plan and period IDs choose the map slice. Returns verifiable report, CSV, GeoJSON and full results. Omit casePath for the synthetic exercise.',
     parameters: ResiliencePressureSchema,
@@ -104,6 +146,20 @@ export default function register(pi: ExtensionAPI) {
   pi.registerCommand('resilience-demo', {
     description: 'Run both analyses on the built-in synthetic exercise without a model call.',
     handler: async (_, ctx) => publishCommand(ctx.cwd),
+  });
+  pi.registerCommand('resilience-workflow', {
+    description: 'Run event alignment, reviewed plan comparison, network accessibility and joint sensitivity. Supply a local workflow JSON, or omit it for the exercise.',
+    handler: async (args, ctx) => {
+      try {
+        const { reportBody, ...details } = runDecisionWorkflow(ctx.cwd, args.trim() || undefined);
+        pi.sendMessage({ customType: 'service-resilience-result', display: true, details,
+          content: reportBody + '\n工作区文件 · `' + details.files.report.path + '` · `' + details.files.manifest.path + '`' },
+        { triggerTurn: false });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.split(/\r?\n/u)[0].slice(0, 500) : '计算失败';
+        pi.sendMessage({ customType: 'service-resilience-error', display: true, content: '城市服务韧性 · ' + message }, { triggerTurn: false });
+      }
+    },
   });
   pi.registerCommand('resilience-run', {
     description: 'Run both analyses on a JSON case from the current workspace.',

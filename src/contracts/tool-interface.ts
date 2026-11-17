@@ -21,6 +21,10 @@ export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
     { toolId: 'resilience.align', piName: 'resilience_align', file: 'align-contract.json', execution: 'pi-local' },
     { toolId: 'resilience.pressure', piName: 'resilience_pressure_test', file: 'pressure-contract.json', execution: 'pi-local' },
     { toolId: 'resilience.investigate', piName: 'resilience_investigate', file: 'investigate-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.align-events', piName: 'resilience_align_events', file: 'align-events-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.accessibility', piName: 'resilience_accessibility', file: 'accessibility-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.compare-plans', piName: 'resilience_compare_plans', file: 'compare-plans-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.sensitivity', piName: 'resilience_sensitivity', file: 'sensitivity-contract.json', execution: 'pi-local' },
   ],
   'com.transportx.traffic-simulation': [
     { toolId: 'traffic.prepare', piName: 'traffic_prepare_scenario', file: 'prepare-contract.json', execution: 'host' },

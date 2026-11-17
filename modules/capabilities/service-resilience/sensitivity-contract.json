@@ -1,0 +1,143 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.service-resilience",
+  "toolId": "resilience.sensitivity",
+  "piName": "resilience_sensitivity",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "resilience-sensitivity-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "stateId",
+      "periodId",
+      "axes"
+    ],
+    "properties": {
+      "casePath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "File path relative to this task working directory."
+      },
+      "caseSha256": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "stateId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      },
+      "periodId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      },
+      "axes": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "variable",
+                "objectId",
+                "values"
+              ],
+              "properties": {
+                "variable": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "edge-minutes"
+                    },
+                    {
+                      "type": "string",
+                      "const": "service-capacity"
+                    },
+                    {
+                      "type": "string",
+                      "const": "demand-amount"
+                    }
+                  ]
+                },
+                "objectId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "minItems": 2,
+                  "maxItems": 12,
+                  "uniqueItems": true
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "variable",
+                "objectId",
+                "values"
+              ],
+              "properties": {
+                "variable": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "closed-edge"
+                    },
+                    {
+                      "type": "string",
+                      "const": "unavailable-resource"
+                    }
+                  ]
+                },
+                "objectId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "boolean"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "uniqueItems": true
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "minItems": 1,
+        "maxItems": 3
+      },
+      "constraints": {
+        "type": "object",
+        "properties": {
+          "maxPriorityShortage": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxTotalShortage": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-service-resilience",
+    "version": 1,
+    "detailsKind": "service-resilience-result"
+  }
+}

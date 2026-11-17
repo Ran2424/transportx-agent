@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -49,7 +50,8 @@ try {
   const row = dialog.locator('.session-module-row').filter({ has: window.locator('[title="com.transportx.service-resilience"]') });
   await row.getByText('城市服务韧性', { exact: true }).waitFor({ timeout: 20_000 });
   await row.locator('input[type=checkbox]').check();
-  assert.equal(await row.locator('select').inputValue(), '0.1.0');
+  const moduleManifest = JSON.parse(fs.readFileSync('modules/capabilities/service-resilience/manifest.json', 'utf8'));
+  assert.equal(await row.locator('select').inputValue(), moduleManifest.version);
   await dialog.getByRole('button', { name: '进入工作区', exact: true }).click();
   const input = window.getByLabel('消息输入');
   await input.waitFor();
@@ -134,7 +136,93 @@ try {
   await window.waitForFunction(({ selector, previous }) => [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(node => node.textContent.trim() === selector).length > previous, { selector: '城市服务中断压力测试', previous: headingCount }, { timeout: 30_000 });
   assert.equal(await reportHeadings.count(), headingCount + 1, 'Valid case run did not produce exactly one new result');
   assert.deepEqual(modelRequests, [], 'Fixed case run unexpectedly called a model provider');
-  console.log(JSON.stringify({ conversationId, runtimeId: snapshot.runtime.id, outputs: outputs.map(file => path.join(evidence, path.basename(file))), screenshot: path.join(evidence, 'resilience-workbench.png'), pdf: path.join(evidence, pdf), modelRequests }, null, 2));
+  const beforeWorkflow = new Set(fs.readdirSync(snapshot.runtime.cwd));
+  await input.fill('/resilience-workflow');
+  await window.getByRole('button', { name: '发送消息', exact: true }).click();
+  const workflowHeading = window.getByRole('heading', { name: '城市服务韧性 · 证据到复核', exact: true });
+  await workflowHeading.first().waitFor({ timeout: 90_000 });
+  let workflowReport, workflowManifest;
+  const workflowDeadline = Date.now() + 30_000;
+  while (Date.now() < workflowDeadline) {
+    const newFiles = fs.readdirSync(snapshot.runtime.cwd).filter(name => !beforeWorkflow.has(name));
+    workflowReport = newFiles.find(name => /^resilience-.*-workflow-report\.md$/.test(name));
+    workflowManifest = newFiles.find(name => /^resilience-.*-workflow-manifest\.json$/.test(name));
+    if (workflowReport && workflowManifest) break;
+    await delay(250);
+  }
+  assert.ok(workflowReport && workflowManifest, 'Workflow did not produce a report and manifest');
+  await window.getByText(workflowReport, { exact: false }).first().waitFor({ timeout: 30_000 });
+  await window.getByText(workflowManifest, { exact: false }).first().waitFor({ timeout: 30_000 });
+  const manifestPath = path.join(snapshot.runtime.cwd, workflowManifest);
+  const manifestBytes = fs.readFileSync(manifestPath);
+  const manifest = JSON.parse(manifestBytes.toString('utf8'));
+  assert.ok(manifest.provenance && typeof manifest.provenance === 'object', 'Workflow must retain case provenance');
+  assert.ok(manifest.inputs && typeof manifest.inputs === 'object', 'Workflow must identify its input provenance');
+  const expectedView = { stateId: 'east-closed', planId: 'boost-west', periodId: 'peak' };
+  assert.deepEqual(manifest.inputs.view, expectedView);
+  for (const key of ['confirmedEvents', 'pendingRows', 'accessLostCohorts', 'sensitivityPoints', 'jointInteractions']) {
+    assert.ok(Number.isFinite(manifest.summary?.[key]) && manifest.summary[key] >= 0, `Invalid workflow summary ${key}`);
+  }
+  assert.ok(manifest.summary.confirmedEvents > 0 && manifest.summary.pendingRows > 0, 'Demo must demonstrate both confirmed and pending evidence');
+  const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+  const workflowFiles = ['alignment', 'definition', 'comparison', 'case', 'pressure', 'capacityReport', 'map', 'accessibility', 'routes', 'sensitivity', 'investigation', 'report'];
+  for (const key of workflowFiles) {
+    const artifact = manifest.files?.[key];
+    assert.ok(artifact && typeof artifact.path === 'string' && /^[a-f0-9]{64}$/.test(artifact.sha256), `Invalid ${key} manifest entry`);
+    assert.equal(path.basename(artifact.path), artifact.path, `Unexpected workspace artifact path: ${artifact.path}`);
+    const file = path.join(snapshot.runtime.cwd, artifact.path);
+    const bytes = fs.readFileSync(file);
+    assert.ok(bytes.length, `Empty workflow artifact: ${key}`);
+    assert.equal(sha256(bytes), artifact.sha256, `Incorrect ${key} digest`);
+    if (file.endsWith('.json') || file.endsWith('.geojson')) assert.doesNotThrow(() => JSON.parse(bytes.toString('utf8')), key);
+    fs.copyFileSync(file, path.join(evidence, path.basename(file)));
+  }
+  assert.equal(manifest.files.report.path, workflowReport);
+  const readWorkflowJson = key => JSON.parse(fs.readFileSync(path.join(snapshot.runtime.cwd, manifest.files[key].path), 'utf8'));
+  const definition = readWorkflowJson('definition');
+  const accessibility = readWorkflowJson('accessibility');
+  const map = readWorkflowJson('map');
+  assert.equal(definition.derived.sha256, manifest.files.case.sha256, 'Workflow did not select the compared case content');
+  assert.equal(accessibility.inputs[0].path, manifest.files.case.path, 'Accessibility did not use the compared case');
+  assert.deepEqual(accessibility.view, expectedView);
+  assert.ok(accessibility.rows.length > 0, 'Accessibility must include cohort results');
+  assert.ok(map.features.length > 0, 'Pressure map must include features');
+  for (const feature of map.features) assert.deepEqual(
+    [feature.properties.state_id, feature.properties.plan_id, feature.properties.period_id],
+    [expectedView.stateId, expectedView.planId, expectedView.periodId], 'Map feature has the wrong comparison view');
+  const workflowMarkdown = fs.readFileSync(path.join(snapshot.runtime.cwd, workflowReport), 'utf8');
+  assert.match(workflowMarkdown, /城市服务韧性\s*·\s*证据到复核/);
+  for (const section of ['事件与时段对齐', '方案比较与容量缺口', '网络可达性', '联合敏感性与调查线索']) {
+    assert.ok(workflowMarkdown.includes(section), `Missing workflow section: ${section}`);
+  }
+  fs.copyFileSync(manifestPath, path.join(evidence, workflowManifest));
+  assert.equal(await workflowHeading.count(), 1, 'Workflow output was duplicated');
+  await window.reload();
+  await workflowHeading.first().waitFor({ timeout: 30_000 });
+  assert.equal(await workflowHeading.count(), 1, 'Workflow result was duplicated after reload');
+  if (!(await dock.getAttribute('class')).includes('is-open')) await window.getByRole('button', { name: '打开或关闭文件栏', exact: true }).click();
+  await dock.getByRole('button', { name: '刷新文件', exact: true }).click();
+  await dock.getByRole('button', { name: workflowReport, exact: false }).click();
+  await panel.getByText('城市服务韧性 · 证据到复核', { exact: false }).first().waitFor({ timeout: 30_000 });
+  await window.screenshot({ path: path.join(evidence, 'resilience-workflow-workbench.png') });
+  const oldDownloads = new Set(fs.readdirSync(downloads));
+  await panel.getByRole('button', { name: '生成并下载 PDF', exact: true }).click();
+  let workflowPdf;
+  const workflowPdfDeadline = Date.now() + 45_000;
+  while (Date.now() < workflowPdfDeadline) {
+    workflowPdf = fs.readdirSync(downloads).find(name => !oldDownloads.has(name) && name.toLowerCase().endsWith('.pdf'));
+    if (workflowPdf && fs.readFileSync(path.join(downloads, workflowPdf)).subarray(0, 4).toString() === '%PDF') break;
+    await delay(250);
+  }
+  assert.ok(workflowPdf && fs.readFileSync(path.join(downloads, workflowPdf)).subarray(0, 4).toString() === '%PDF', 'Workflow PDF export did not complete');
+  fs.copyFileSync(path.join(downloads, workflowPdf), path.join(evidence, workflowPdf));
+  const priorWorkflowHeadings = await workflowHeading.count();
+  await input.fill('/resilience-workflow');
+  await window.getByRole('button', { name: '发送消息', exact: true }).click();
+  await window.waitForFunction(({ previous }) => [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(node => node.textContent.trim() === '城市服务韧性 · 证据到复核').length === previous + 1, { previous: priorWorkflowHeadings }, { timeout: 90_000 });
+  assert.equal(sha256(fs.readFileSync(manifestPath)), sha256(manifestBytes), 'Repeated workflow changed the manifest');
+  assert.deepEqual(modelRequests, [], 'Deterministic workflow unexpectedly called a model provider');
+  console.log(JSON.stringify({ conversationId, runtimeId: snapshot.runtime.id, outputs: outputs.map(file => path.join(evidence, path.basename(file))), screenshot: path.join(evidence, 'resilience-workbench.png'), pdf: path.join(evidence, pdf), workflowManifest: path.join(evidence, workflowManifest), workflowScreenshot: path.join(evidence, 'resilience-workflow-workbench.png'), workflowPdf: path.join(evidence, workflowPdf), modelRequests }, null, 2));
 } catch (error) {
   if (app) { try { const window = await app.firstWindow(); await window.screenshot({ path: path.join(evidence, 'failure.png') }); } catch {} }
   for (const name of ['desktop.log', 'agent-host.log']) { const file = path.join(profile, 'logs', name); if (fs.existsSync(file)) console.error(fs.readFileSync(file, 'utf8').slice(-5000)); }

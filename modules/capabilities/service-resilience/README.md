@@ -4,6 +4,21 @@
 
 创建工作区时，在高级设置的模块选项中勾选「城市服务韧性」。输入 `/resilience-demo` 运行内置演练，或输入 `/resilience-run <工作区相对案例路径>` 运行指定案例。工具调用省略 `casePath` 时使用[合成案例](examples/east-bridge.exercise.json)。对话中可用 `manage_capabilities` 启用模块工具。
 
+## 从事件到复核
+
+输入 `/resilience-workflow` 运行双服务点演练。也可传入 `/resilience-workflow <工作区相对配置路径>`。执行会保留对齐证据、方案定义、派生案例、可达性、组合扫描、调查排序及带哈希的交付清单。原始案例和观测保留在任务目录中。
+
+| 工具 | 输入与输出 |
+| --- | --- |
+| `resilience_align_events` | 读取 [WGS84 GeoJSON 事件](examples/decision-events.exercise.geojson) 及[带时区的时段表](examples/decision-calendar.exercise.json)。按稳定 ID 或点、线、面的空间关系给出候选，记录部分重叠、时段外事件及多候选。只有来源非空、显式确认、ID 精确、动作匹配且覆盖一个完整实际时段的关闭事件才能用于后续复核。 |
+| `resilience_compare_plans` | 读取[情景及方案定义](examples/decision-plans.exercise.json)并计算无扰动基线、中断无措施和所有选中状态×方案。可通过 `alignment:{path,sha256,stateId,eventIds}` 指定复核后的事件。工具会用原始文件重建对齐证据，验证哈希后才派生案例。方案产物含 RFC 6902 补丁及可复算的前后快照。 |
+| `resilience_accessibility` | 使用派生的 `files.case.path` 和 `.sha256` 分别作为 `casePath`、`caseSha256`，再指定状态、时段和方案，查看基线与指定情景下各需求组的最短路线、时限、可选服务点与时耗差异。通过本地有向网络计算，容量竞争由方案比较另行分配。 |
+| `resilience_sensitivity` | 使用同一派生案例，在选定状态和时段指定 1–3 个因素及试算值。支持道路耗时、服务容量、需求量、路段关闭及共享资源中断。总计最多 64 点，返回可行方案、两个缺口指标的 Pareto 集、相邻排序变化和联合影响证据。 |
+
+配置包含 `casePath`、`eventPath`、`calendarPath`、`planPath`、`view:{stateId,planId,periodId}` 和 `sensitivity:{stateId,periodId,axes,constraints?}`。可选 `review:{stateId,eventIds}` 指明已复核事件及适用状态。省略 `review` 时工作流仍保留事件对齐结果，方案比较使用原始案例中的状态定义。权重超过一的时段代表多次服务机会，单次现场记录不能代表所有机会。新的现场证据可随配置发起另一次计算，复核清单和报告分别保留每轮哈希。
+
+空间匹配复用 [Turf](https://github.com/Turfjs/turf)，本地路径搜索复用 [TinyQueue](https://github.com/mourner/tinyqueue)，方案差异导出复用 [JSON-Patch](https://github.com/Starcounter-Jack/JSON-Patch)。路段匹配使用案例节点间的直连形状，空间命中属于候选。路径使用案例中的方向、方式和耗时。可以在 [双服务点案例](examples/decision-case.exercise.json) 中查看完整输入。
+
 ## 数据与调用
 
 使用当前任务根目录下的可见相对路径。调用前核对来源、时间、空间范围、许可和字段映射。输入由操作员提供，观测经人工复核后才可作为案例条件。
@@ -27,7 +42,7 @@
 | `services` | 服务为 `{id,node,kind,capacity,requires}`，容量按单个时段填写，包含为零的候选设施。 |
 | `demands` | 需求组为 `{id,node,kind,mode,amount,priority,maxMinutes}`。同类服务才参与分配，`priority` 为布尔值。 |
 | `periods` | 每段为 `{id,label,weight}`。受影响的时段用明确 ID 标记，权重为正整数，表示重复的需求和服务机会。 |
-| `states`、`plans` | 各项为 `{id,label,periods}`。每个时段可覆盖 `closedEdges`、`unavailableResources`、`edgeMinutes` 和 `serviceCapacity`。未覆盖的时段使用基值。方案可另填准备时间 `setupMinutes`。 |
+| `states`、`plans` | 各项为 `{id,label,periods}`。每个时段可覆盖 `closedEdges`、`closedServices`、`unavailableResources`、`edgeMinutes` 和 `serviceCapacity`。未覆盖的时段使用基值。方案可另填准备时间 `setupMinutes`。 |
 | `investigations`、`decisionWindowMinutes` | 调查为 `{id,question,source,effort,leadMinutes,outcomes}`。每个结果为 `{label,stateIds}`，合起来覆盖所有候选状态，允许多个结果含同一状态。决定窗口用分钟。 |
 
 路段和设施用 `requires` 声明桥梁、电源或其他共享资源。把同一资源 ID 放进状态的 `unavailableResources`，可在同一时段关闭所有相关路段与服务点。使用有数据依据的容量和耗时，并在 `provenance.note` 标明尚待确认的假设。

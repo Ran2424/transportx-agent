@@ -9,6 +9,7 @@ const minutes = T.Number({ exclusiveMinimum: 0, maximum: 1440 });
 const capacity = T.Integer({ minimum: 0, maximum: 1_000_000 });
 const change = T.Object({
   closedEdges: T.Optional(ids(4000)),
+  closedServices: T.Optional(ids(100)),
   unavailableResources: T.Optional(ids(4000)),
   edgeMinutes: T.Optional(T.Record(id, minutes, { maxProperties: 4000 })),
   serviceCapacity: T.Optional(T.Record(id, capacity, { maxProperties: 100 })),
@@ -24,6 +25,11 @@ const CaseSchema = T.Object({
   ...NetworkSchema.properties,
   title: label,
   provenance: T.Object({ kind: T.Union([T.Literal('exercise'), T.Literal('observations')]), note: T.String({ minLength: 1, maxLength: 1800 }) }, fields),
+  networkEvidence: T.Optional(T.Object({
+    path: T.String({ minLength: 1, maxLength: 500 }),
+    sha256: T.String({ pattern: '^[a-f0-9]{64}$' }),
+    notes: T.Array(T.String({ maxLength: 500 }), { maxItems: 12 }),
+  }, fields)),
   services: T.Array(T.Object({ id, node: id, kind: id, capacity, requires: ids(12) }, fields), { minItems: 1, maxItems: 100 }),
   demands: T.Array(T.Object({ id, node: id, kind: id, mode: id, amount: T.Integer({ minimum: 1, maximum: 1_000_000 }),
     priority: T.Boolean(), maxMinutes: minutes }, fields), { minItems: 1, maxItems: 160 }),
@@ -96,6 +102,7 @@ export function parseCase(value: unknown): ResilienceCase {
     for (const change of Object.values(variant.periods)) {
       requireKnown([...(change.closedEdges || []), ...Object.keys(change.edgeMinutes || {})], edgeIds, 'edge');
       requireKnown(Object.keys(change.serviceCapacity || {}), serviceIds, 'service');
+      requireKnown(change.closedServices || [], serviceIds, 'service');
       requireKnown(change.unavailableResources || [], resources, 'shared resource');
     }
   }

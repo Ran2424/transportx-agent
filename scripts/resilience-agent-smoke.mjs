@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import jsonPatch from 'fast-json-patch';
 import * as helper from './harness/workspace-client.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -115,11 +116,83 @@ try {
   assert.equal(osmPressureData.scenarios.find(s=>s.stateId==='ready'&&s.planId==='none').periods[0].cohorts[0].reachable,10);
   assert.equal(osmPressureData.scenarios.find(s=>s.stateId==='outage'&&s.planId==='none').periods[0].cohorts[0].capacityUnmet,10);
   report.checks.osmPressure={edge,network:net.path,networkSha256:net.sha256,casePath:'osm-exercise.json',inputs:osmPressure.inputs,provenance:osmPressure.provenance,scenarioShortages:osmTotals,pressureSha256:osmPressure.files.pressure.sha256};
+  fs.writeFileSync(path.join(runtime.cwd,'osm-plans.json'),'{}');
+  const osmComparison=await call('resilience_compare_plans',{casePath:'osm-exercise.json',planPath:'osm-plans.json',stateId:'ready',planId:'none',periodId:'peak'});
+  const osmRoutes=await call('resilience_accessibility',{casePath:osmComparison.files.case.path,caseSha256:osmComparison.files.case.sha256,stateId:'ready',planId:'none',periodId:'peak'});
+  assert.match(artifact(osmComparison.files.report).toString('utf8'),/OpenStreetMap contributors/);
+  assert.ok(JSON.parse(artifact(osmRoutes.map)).notes.some(note=>note.includes('OpenStreetMap contributors')));
+  report.checks.osmPressure.derivedAttributionPreserved=true;
   const obs=await call('resilience_import',{kind:'field-survey',sourcePath:'survey.csv',columns:{observationId:'id',objectId:'object',periodId:'period',value:'value',source:'source'}}); assert.equal(obs.observations,2);artifact(obs);report.checks.survey=obs;
   const align=await call('resilience_align',{observationPath:obs.path}); assert.equal(align.coverage.matched,1);assert.equal(align.coverage.unknown,1);artifact(align);report.checks.alignment=align;
   const pressure=await call('resilience_pressure_test',{stateId:'bridge-and-power-ready',planId:'shuttle',periodId:'peak'}); assert.deepEqual(pressure.view,{stateId:'bridge-and-power-ready',planId:'shuttle',periodId:'peak'});for(const f of Object.values(pressure.files))artifact(f);report.checks.pressure=pressure;
   const inv=await call('resilience_investigate',{}); const invFull=read(path.join(runtime.cwd,inv.files.investigation.path)); assert.ok(invFull.beforeObservation.eligiblePlanIds.length); assert.ok(invFull.investigations.every(i=>typeof i.decision==='string')); report.checks.investigation={decision:inv.decision,investigations:inv.investigations,sha256:inv.files.investigation.sha256};
   const sweep=await call('resilience_investigate',{sweep:{stateId:'bridge-and-power-ready',periodId:'peak',objectId:'east-care',variable:'service-capacity',values:[0,30,60,90,120,140,180]}}); const scan=JSON.parse(artifact(sweep)); assert.equal(scan.points.length,7);assert.ok(scan.brackets.length>0,'Expected a best-plan change');report.checks.sensitivity={path:sweep.path,sha256:sweep.sha256,brackets:scan.brackets,points:scan.points};
+  // Separate synthetic fixture: a physical closure must defeat a plan's capacity override,
+  // and either service can independently cover demand before their joint outage.
+  const caseData={title:'Two service co-failure exercise',provenance:{kind:'exercise',note:'Synthetic network, service availability and event evidence.'},
+    nodes:[{id:'origin',coordinates:[121.41,31.17]},{id:'destination',coordinates:[121.42,31.17]}],
+    edges:[{id:'road',from:'origin',to:'destination',minutes:1,modes:['road'],requires:[]}],
+    services:[{id:'s1',node:'destination',kind:'care',capacity:10,requires:['r1']},{id:'s2',node:'destination',kind:'care',capacity:10,requires:['r2']}],
+    demands:[{id:'d',node:'origin',kind:'care',mode:'road',amount:10,priority:true,maxMinutes:5}],
+    periods:[{id:'p',label:'Peak',weight:1}],states:[{id:'ready',label:'Available',periods:{}},{id:'observed',label:'Confirmed closure',periods:{}}],
+    plans:[{id:'p1',label:'Increase first service',periods:{p:{serviceCapacity:{s1:20}}}},
+      {id:'p2',label:'Limit second service',periods:{p:{serviceCapacity:{s2:5}}}},
+      {id:'late',label:'Late option',setupMinutes:11,periods:{p:{serviceCapacity:{s2:20}}}}],
+    investigations:[{id:'condition',question:'Is the service closed?',source:'Site status',effort:'One check',leadMinutes:1,outcomes:[{label:'Available',stateIds:['ready']},{label:'Closed',stateIds:['observed']}]}],decisionWindowMinutes:10};
+  const plansData={plans:caseData.plans};
+  const calendarData={periods:[{id:'p',start:'2026-11-17T08:00:00+08:00',end:'2026-11-17T10:00:00+08:00'}]};
+  const event=(eventId,objectId,start,end,geometry)=>({type:'Feature',geometry,properties:{eventId,...(objectId?{objectId}:{}),start,end,source:'synthetic inspection',status:'confirmed',action:'close-service'}});
+  const eventsData={type:'FeatureCollection',features:[
+    event('full','s1','2026-11-17T08:00:00+08:00','2026-11-17T10:00:00+08:00',null),
+    event('partial','s2','2026-11-17T09:00:00+08:00','2026-11-17T10:00:00+08:00',null),
+    event('ambiguous',null,'2026-11-17T08:00:00+08:00','2026-11-17T10:00:00+08:00',{type:'Point',coordinates:[121.42,31.17]}),
+    event('conflict','s1','2026-11-17T08:00:00+08:00','2026-11-17T10:00:00+08:00',{type:'Point',coordinates:[0,0]})]};
+  for(const [file,value] of Object.entries({'joint-case.json':caseData,'joint-plans.json':plansData,'joint-calendar.json':calendarData,'joint-events.json':eventsData})) fs.writeFileSync(path.join(runtime.cwd,file),JSON.stringify(value,null,2));
+  const originalHashes=Object.fromEntries(['joint-case.json','joint-plans.json','joint-calendar.json','joint-events.json'].map(file=>[file,hash(fs.readFileSync(path.join(runtime.cwd,file)))]));
+  const eventAlignment=await call('resilience_align_events',{casePath:'joint-case.json',eventPath:'joint-events.json',calendarPath:'joint-calendar.json',toleranceMeters:0});
+  const eventEvidence=JSON.parse(artifact(eventAlignment));
+  assert.deepEqual(eventAlignment.confirmedChanges,[{eventId:'full',objectId:'s1',periodId:'p',action:'close-service'}]);
+  assert.equal(eventEvidence.rows.find(row=>row.eventId==='partial').status,'pending');
+  assert.equal(eventEvidence.rows.find(row=>row.eventId==='partial').timeStatus,'partial');
+  assert.equal(eventEvidence.rows.find(row=>row.eventId==='ambiguous').ambiguous,true);
+  assert.equal(eventEvidence.rows.find(row=>row.eventId==='ambiguous').status,'pending');
+  assert.equal(eventEvidence.rows.find(row=>row.eventId==='conflict').geometryConflict,true);
+  assert.equal(eventEvidence.rows.find(row=>row.eventId==='conflict').status,'pending');
+  const comparisonArgs={casePath:'joint-case.json',planPath:'joint-plans.json',alignment:{path:eventAlignment.path,sha256:eventAlignment.sha256,stateId:'observed',eventIds:['full']},stateId:'observed',planId:'p1',periodId:'p'};
+  await call('resilience_compare_plans',{...comparisonArgs,alignment:{...comparisonArgs.alignment,sha256:'0'.repeat(64)}},true);
+  for(const eventId of ['partial','ambiguous']) await call('resilience_compare_plans',{...comparisonArgs,alignment:{...comparisonArgs.alignment,eventIds:[eventId]}},true);
+  const comparison=await call('resilience_compare_plans',comparisonArgs);
+  const derived=JSON.parse(artifact(comparison.files.case));
+  assert.deepEqual(comparison.appliedEventIds,['full']);
+  const definition=JSON.parse(artifact(comparison.definition));
+  const patchBase=JSON.parse(artifact(definition.base)), patchDerived=JSON.parse(artifact(definition.derived));
+  const replayed=jsonPatch.applyPatch(structuredClone(patchBase),definition.patch,true).newDocument;
+  assert.deepEqual(replayed,patchDerived); assert.deepEqual(patchDerived,derived);
+  assert.deepEqual(derived.states.find(s=>s.id==='observed').periods.p.closedServices,['s1']);
+  assert.deepEqual(derived.states.find(s=>s.id==='ready').periods,{});
+  const totals=Object.fromEntries(comparison.scenarioTotals.map(s=>[s.stateId+'/'+s.planId,s.shortage]));
+  assert.equal(totals['ready/p2'],0); assert.equal(totals['observed/p2'],5);
+  const pressureDetail=JSON.parse(artifact(comparison.files.pressure));
+  assert.equal(pressureDetail.scenarios.find(s=>s.stateId==='observed'&&s.planId==='p1').periods[0].cohorts[0].reachableServiceIds.includes('s1'),false);
+  const repeat=await call('resilience_compare_plans',comparisonArgs);
+  assert.equal(repeat.files.case.sha256,comparison.files.case.sha256); assert.equal(repeat.files.pressure.sha256,comparison.files.pressure.sha256);assert.equal(repeat.definition.sha256,comparison.definition.sha256);
+  const accessArgs={casePath:comparison.files.case.path,caseSha256:comparison.files.case.sha256,periodId:'p',stateId:'observed',planId:'p1',demandId:'d'};
+  await call('resilience_accessibility',{...accessArgs,caseSha256:'f'.repeat(64)},true);
+  const accessibility=await call('resilience_accessibility',accessArgs);
+  const accessData=JSON.parse(artifact(accessibility)); const accessMap=JSON.parse(artifact(accessibility.map));
+  assert.equal(accessData.rows[0].baseline.nearest.serviceId,'s1');assert.equal(accessData.rows[0].selected.nearest.serviceId,'s2');
+  assert.equal(accessData.rows[0].selected.status,'within-threshold');assert.equal(accessMap.features[0].properties.service_id,'s2');
+  const joint=await call('resilience_sensitivity',{casePath:comparison.files.case.path,caseSha256:comparison.files.case.sha256,stateId:'ready',periodId:'p',axes:[{variable:'unavailable-resource',objectId:'r1',values:[false,true]},{variable:'unavailable-resource',objectId:'r2',values:[false,true]}],constraints:{maxTotalShortage:0}});
+  const jointData=JSON.parse(artifact(joint));
+  assert.equal(joint.pointCount,4);assert.ok(jointData.interactions.some(i=>i.jointBreach));
+  assert.ok(jointData.points.every(point=>point.plans.find(plan=>plan.planId==='late').feasible===false));
+  const limit=await call('resilience_sensitivity',{casePath:comparison.files.case.path,stateId:'observed',periodId:'p',axes:[{variable:'demand-amount',objectId:'d',values:[6,8]}],constraints:{maxTotalShortage:2}});
+  const limitData=JSON.parse(artifact(limit));
+  assert.deepEqual(limitData.points.map(point=>point.bestPlanIds),[['p1'],['p1']]);
+  assert.ok(limitData.transitions.some(t=>t.changedPlanLimits.some(p=>p.planId==='p2'&&p.from&&!p.to)));
+  const derivedInvestigation=await call('resilience_investigate',{casePath:comparison.files.case.path});artifact(derivedInvestigation.files.investigation);
+  for(const [file,sha256] of Object.entries(originalHashes)) assert.equal(hash(fs.readFileSync(path.join(runtime.cwd,file))),sha256,`${file} changed`);
+  report.checks.connectedWorkflow={alignment:{path:eventAlignment.path,sha256:eventAlignment.sha256,summary:eventAlignment.summary},comparison:{case:comparison.files.case,definition:comparison.definition,appliedEventIds:comparison.appliedEventIds,patchReplayed:true,scenarioShortages:totals},accessibility:{path:accessibility.path,sha256:accessibility.sha256,map:accessibility.map},joint:{path:joint.path,sha256:joint.sha256,pointCount:joint.pointCount,interactions:jointData.interactions},investigation:derivedInvestigation.files.investigation,inputHashes:originalHashes,hashMismatchRejected:true,repeatStable:true};
   const published=await call('publish_geodata',{path:pressure.files.map.path,title:'Service resilience pressure map'}); report.checks.published={mapSha256:pressure.files.map.sha256,result:published};
   const visualizationId='service_resilience_smoke', resourceId=published.resource.resourceId;
   const created=await call('present_visualization',{command:'create_map',visualizationId,title:'Service resilience pressure',resourceId,sourceId:'pressure',layerId:'roads',layerType:'line'});
@@ -127,6 +200,11 @@ try {
   const shown=await call('present_visualization',{command:'show_map',visualizationId});
   assert.equal(created.visualization.operation,'replace');assert.equal(added.visualization.scene.layers.length,2);assert.equal(shown.visualization.operation,'focus');assert.equal(shown.visualization.revision,added.visualization.revision);assert.ok(shown.canvas);
   report.checks.canvas={create:created.visualization,add:added.visualization,show:shown.visualization,canvas:shown.canvas};
+  const routePublished=await call('publish_geodata',{path:accessibility.map.path,title:'Derived service accessibility route'});
+  const routeCanvas=await call('present_visualization',{command:'create_map',visualizationId:'service_resilience_route_smoke',title:'Derived accessibility',resourceId:routePublished.resource.resourceId,sourceId:'route',layerId:'route',layerType:'line'});
+  const routeShown=await call('present_visualization',{command:'show_map',visualizationId:'service_resilience_route_smoke'});
+  assert.equal(routeCanvas.visualization.operation,'replace');assert.equal(routeShown.visualization.operation,'focus');assert.ok(routeShown.canvas);
+  report.checks.connectedWorkflow.routeCanvas={mapSha256:accessibility.map.sha256,published:routePublished,shown:routeShown.visualization};
   const before=fs.readdirSync(runtime.cwd).sort(); await call('resilience_import',{kind:'field-survey',sourcePath:'malformed.csv',columns:{observationId:'id',objectId:'object',periodId:'period',value:'value',source:'source'}},true);await call('resilience_import',{kind:'osm-overpass',sourcePath:'../escape.json',mode:'road',speedKph:30},true);assert.deepEqual(fs.readdirSync(runtime.cwd).sort(),before);report.checks.invalid={malformedRejected:true,pathEscapeRejected:true,workspaceUnchanged:true};
   await helper.closeHostConversation(json,runtime.conversationId); report.status='pass';
 } catch(error) { report.status='fail';report.error=String(error.stack||error);process.exitCode=1; }

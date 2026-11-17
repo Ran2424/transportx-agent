@@ -26,7 +26,7 @@ test('Bridge capabilities refuse regressed revisions and diagnose incompatible e
       else process.env.TRANSPORTX_SESSION_MODULES_JSON = previousModules;
     }
     assert.equal(registered.length, bindings.length);
-    if (moduleId === 'com.transportx.service-resilience') assert.deepEqual(commands.sort(), ['resilience-demo', 'resilience-run']);
+    if (moduleId === 'com.transportx.service-resilience') assert.deepEqual(commands.sort(), ['resilience-demo', 'resilience-run', 'resilience-workflow']);
     for (const binding of bindings) {
       const contract = JSON.parse(fs.readFileSync(path.join(packageRoot, binding.file), 'utf8'));
       const tool = registered.find((tool: any) => tool.name === binding.piName);

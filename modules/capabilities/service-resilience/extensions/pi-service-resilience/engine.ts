@@ -1,11 +1,11 @@
 import type { NetworkChange, ResilienceCase } from './model.ts';
+import { networkSlice, shortestPaths, sorted } from './network-slice.ts';
 
 export type CohortResult = { demandId: string; priority: boolean; kind: string; demand: number; reachable: number; unreachable: number; served: number; capacityUnmet: number; shortage: number; reachableServiceIds: string[] };
 export type PeriodResult = { periodId: string; weight: number; cohorts: CohortResult[]; demand: number; reachable: number; unreachable: number; served: number; capacityUnmet: number; shortage: number; priorityShortage: number; bottlenecks: { serviceId: string; capacity: number; used: number }[] };
 export type ScenarioResult = { stateId: string; planId: string; periods: PeriodResult[]; shortage: number; priorityShortage: number; restored: number; priorityRestored: number };
 export type PressureTestResult = { units: 'person-periods'; assumptions: string[]; baseline: PeriodResult[]; disrupted: { stateId: string; periods: PeriodResult[] }[]; scenarios: ScenarioResult[] };
 type Arc = { to: number; rev: number; cap: number; initial: number };
-const sorted = <T extends { id: string }>(items: T[]) => [...items].sort((a, b) => a.id.localeCompare(b.id, 'en'));
 const total = (periods: PeriodResult[], key: 'shortage' | 'priorityShortage') => periods.reduce((n, p) => n + p[key], 0);
 
 /** Edges are directed. A plan may change surviving links or capacity, but cannot reopen a
@@ -13,68 +13,11 @@ const total = (periods: PeriodResult[], key: 'shortage' | 'priorityShortage') =>
  * demand/capacity opportunities, not unique people. */
 function evaluate(model: ResilienceCase, periodId: string, state: NetworkChange = {}, plan: NetworkChange = {}): PeriodResult {
   const period = model.periods.find(p => p.id === periodId)!;
-  const closed = new Set([...(state.closedEdges ?? []), ...(plan.closedEdges ?? [])]);
-  const unavailable = new Set([...(state.unavailableResources ?? []), ...(plan.unavailableResources ?? [])]);
-  const usable = (requires: string[]) => requires.every(r => !unavailable.has(r));
-  const edges = sorted(model.edges).filter(e => !closed.has(e.id) && usable(e.requires));
-  const services = sorted(model.services).filter(s => usable(s.requires));
+  const network = networkSlice(model, state, plan);
+  const { services } = network;
   const demands = sorted(model.demands);
-  const capacities = services.map(s => {
-    const stateCap = state.serviceCapacity?.[s.id], planCap = plan.serviceCapacity?.[s.id];
-    return stateCap !== undefined && planCap !== undefined ? Math.min(stateCap, planCap) : planCap ?? stateCap ?? s.capacity;
-  });
-  const outgoing = new Map<string, typeof edges>();
-  for (const edge of edges) {
-    const list = outgoing.get(edge.from) ?? [];
-    list.push(edge);
-    outgoing.set(edge.from, list);
-  }
   const reachable: number[][] = demands.map(d => {
-    const distances = new Map<string, number>([[d.node, 0]]);
-    const heap: { node: string; distance: number }[] = [];
-    const less = (a: typeof heap[number], b: typeof heap[number]) => a.distance < b.distance || (a.distance === b.distance && a.node < b.node);
-    const push = (item: typeof heap[number]) => {
-      heap.push(item);
-      let index = heap.length - 1;
-      while (index > 0) {
-        const parent = Math.floor((index - 1) / 2);
-        if (!less(heap[index], heap[parent])) break;
-        [heap[index], heap[parent]] = [heap[parent], heap[index]];
-        index = parent;
-      }
-    };
-    const pop = () => {
-      const first = heap[0], last = heap.pop()!;
-      if (heap.length) {
-        heap[0] = last;
-        let index = 0;
-        while (true) {
-          let child = index * 2 + 1;
-          if (child >= heap.length) break;
-          if (child + 1 < heap.length && less(heap[child + 1], heap[child])) child++;
-          if (!less(heap[child], heap[index])) break;
-          [heap[index], heap[child]] = [heap[child], heap[index]];
-          index = child;
-        }
-      }
-      return first;
-    };
-    push({ node: d.node, distance: 0 });
-    while (heap.length) {
-      const { node, distance } = pop();
-      if (distance !== distances.get(node)) continue;
-      if (distance > d.maxMinutes) break;
-      for (const e of outgoing.get(node) ?? []) {
-        if (!e.modes.includes(d.mode)) continue;
-        const stateTime = state.edgeMinutes?.[e.id], planTime = plan.edgeMinutes?.[e.id];
-        const minutes = stateTime !== undefined && planTime !== undefined ? Math.max(stateTime, planTime) : planTime ?? stateTime ?? e.minutes;
-        const next = distance + minutes;
-        if (next < (distances.get(e.to) ?? Infinity)) {
-          distances.set(e.to, next);
-          push({ node: e.to, distance: next });
-        }
-      }
-    }
+    const { distances } = shortestPaths(network, d.node, d.mode, d.maxMinutes);
     return services.flatMap((s, i) => s.kind === d.kind && (distances.get(s.node) ?? Infinity) <= d.maxMinutes ? [i] : []);
   });
   // Residual arcs allow a flexible priority cohort to move when a constrained one
@@ -91,7 +34,7 @@ function evaluate(model: ResilienceCase, periodId: string, state: NetworkChange 
   };
   const sourceArcs = demands.map(() => null as Arc | null);
   demands.forEach((d, i) => reachable[i].forEach(j => add(demandOffset + i, serviceOffset + j, d.amount)));
-  const serviceArcs = services.map((_, j) => add(serviceOffset + j, sink, capacities[j]));
+  const serviceArcs = services.map((service, j) => add(serviceOffset + j, sink, service.capacity));
   const flow = () => {
     while (true) {
       const previous: ({ node: number; arc: number } | null)[] = Array(graph.length).fill(null);
@@ -143,7 +86,7 @@ function evaluate(model: ResilienceCase, periodId: string, state: NetworkChange 
   const bottlenecks = services.flatMap((service, index) => {
     const remaining = serviceArcs[index].cap;
     if (remaining > 1e-9 || !reachable.some(choices => choices.includes(index))) return [];
-    const capacity = capacities[index];
+    const capacity = service.capacity;
     return [{ serviceId: service.id, capacity: capacity * w, used: (capacity - remaining) * w }];
   });
   return {
