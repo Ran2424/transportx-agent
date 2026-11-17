@@ -57,6 +57,10 @@ The workbench includes Adobe Source Han Sans SC, Adobe Source Han Serif SC and J
 
 The count comparison uses `@duckdb/node-api` and `@duckdb/node-bindings` 1.5.6-r.2 with the corresponding platform-specific DuckDB native library (MIT). Their copyright and license notices are included in the installed npm packages. The bundled Seattle public-data provenance is in `data/count-comparison/README.md` and its capture receipts.
 
+## Experience Exchange
+
+The Traffic MCP client uses the [Model Context Protocol TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) (`@modelcontextprotocol/sdk` 1.32.2, MIT). Copyright (c) 2024 Anthropic, PBC. The original license text is included in the npm package.
+
 ## City Service Resilience
 
 The extension bundles these sources under the MIT terms reproduced above:

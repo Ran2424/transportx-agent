@@ -79,6 +79,7 @@ export const BUILTIN_MODULE_MANIFESTS = [
   'modules/capabilities/tool-activation/manifest.json',
   'modules/capabilities/interaction/manifest.json',
   'modules/capabilities/citation/manifest.json',
+  'modules/capabilities/experience-exchange/manifest.json',
   'modules/capabilities/canvas/manifest.json',
   'modules/capabilities/document/manifest.json',
   'modules/capabilities/geo/manifest.json',

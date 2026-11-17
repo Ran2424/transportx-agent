@@ -1,0 +1,103 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.experience-exchange",
+  "toolId": "experience.feedback",
+  "piName": "submit_experience_feedback",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "experience-feedback-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "submission_id",
+      "run_id",
+      "question",
+      "initial_interpretation",
+      "correction",
+      "evidence_ref"
+    ],
+    "properties": {
+      "submission_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "run_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "question": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "initial_interpretation": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "correction": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "evidence_ref": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "experience": {
+        "type": "object",
+        "required": [
+          "release_id",
+          "entry_id",
+          "collection_id",
+          "revision",
+          "digest"
+        ],
+        "properties": {
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "entry_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "collection_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "digest": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          }
+        },
+        "additionalProperties": false
+      },
+      "data_refs": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16000
+        },
+        "maxItems": 32
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-experience",
+    "version": 1,
+    "detailsKind": "experience-feedback"
+  }
+}

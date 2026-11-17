@@ -16,6 +16,10 @@ export type CoreToolBinding = { toolId: string; piName: string; file: string; ex
 
 // Platform-owned bindings; Pi remains the only tool registry and runtime.
 export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
+  'com.transportx.experience-exchange': [
+    { toolId: 'experience.search', piName: 'search_experience', file: 'search-contract.json', execution: 'host' },
+    { toolId: 'experience.feedback', piName: 'submit_experience_feedback', file: 'feedback-contract.json', execution: 'host' },
+  ],
   'com.transportx.service-resilience': [
     { toolId: 'resilience.import', piName: 'resilience_import', file: 'import-contract.json', execution: 'pi-local' },
     { toolId: 'resilience.align', piName: 'resilience_align', file: 'align-contract.json', execution: 'pi-local' },

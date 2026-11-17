@@ -40,6 +40,11 @@ export const CitationResolveSchema = Type.Object({ sources: Type.Optional(Type.A
 
 export const SpatialExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), operationId: Type.Optional(Type.String({ pattern: '^spatial_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
 
+const ExperienceText = Type.String({ minLength: 1, maxLength: 16000 });
+const ExperienceReference = Type.Object({ release_id: ExperienceText, entry_id: ExperienceText, collection_id: ExperienceText, revision: Type.Integer({ minimum: 0 }), digest: ExperienceText }, { additionalProperties: false });
+export const ExperienceSearchSchema = Type.Object({ query: ExperienceText, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })), reference: Type.Optional(Type.Object({ release_id: ExperienceText, entry_id: ExperienceText }, { additionalProperties: false })) }, { additionalProperties: false });
+export const ExperienceFeedbackSchema = Type.Object({ submission_id: ExperienceText, run_id: ExperienceText, question: ExperienceText, initial_interpretation: ExperienceText, correction: ExperienceText, evidence_ref: ExperienceText, experience: Type.Optional(ExperienceReference), data_refs: Type.Optional(Type.Array(ExperienceText, { maxItems: 32 })) }, { additionalProperties: false });
+
 export const ModulePackageSchema = Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('install')]), packagePath: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false });
 
 // Keep an object root for providers that require function parameters.type=object.
@@ -403,6 +408,8 @@ export const coreToolContracts = [
   { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v3', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.execution', piName: 'cad_execution', contractVersion: '1.0.0', semanticVersion: 'cad-execution-v2', input: CadExecutionSchema, output: { protocol: 'transportx-cad-execution', version: 1, detailsKind: 'tau-cad-execution' } },
 
+  { moduleId: 'com.transportx.experience-exchange', toolId: 'experience.search', piName: 'search_experience', contractVersion: '1.0.0', semanticVersion: 'experience-search-v1', input: ExperienceSearchSchema, output: { protocol: 'transportx-experience', version: 1, detailsKind: 'experience-search' } },
+  { moduleId: 'com.transportx.experience-exchange', toolId: 'experience.feedback', piName: 'submit_experience_feedback', contractVersion: '1.0.0', semanticVersion: 'experience-feedback-v1', input: ExperienceFeedbackSchema, output: { protocol: 'transportx-experience', version: 1, detailsKind: 'experience-feedback' } },
   { moduleId: 'com.transportx.tool-activation', toolId: 'capabilities.manage', piName: 'manage_capabilities', contractVersion: '1.0.0', semanticVersion: 'module-activation-v1', input: ManageCapabilitiesSchema, output: { protocol: 'transportx-capability-management', version: 1, detailsKind: 'transportx-capability-management' } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.present", piName: "canvas_present", contractVersion: "1.0.0", semanticVersion: "canvas.present-v1", input: CanvasPresentSchema, output: { protocol: "pi-canvas", version: "1.0", detailsKind: "tau-canvas" } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.inspect", piName: "canvas_inspect_context", contractVersion: "1.0.0", semanticVersion: "canvas.inspect-v1", input: CanvasInspectSchema, output: { protocol: "pi-canvas-context", version: "1.0", detailsKind: "tau-canvas-contexts" } },

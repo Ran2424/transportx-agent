@@ -1,0 +1,52 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.experience-exchange",
+  "toolId": "experience.search",
+  "piName": "search_experience",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "experience-search-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16000
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "reference": {
+        "type": "object",
+        "required": [
+          "release_id",
+          "entry_id"
+        ],
+        "properties": {
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "entry_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-experience",
+    "version": 1,
+    "detailsKind": "experience-search"
+  }
+}

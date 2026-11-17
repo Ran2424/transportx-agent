@@ -16,6 +16,7 @@ import { CadInvocations } from './cad-invocations.js';
 import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
+import { exchange } from './experience-exchange.js';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 
@@ -26,6 +27,21 @@ export function createApiRouter(services: ApiRouteServices) {
   registerWorkspaceApi(router);
   registerSimulationApi(router, services);
   registerReportApi(router);
+  for (const kind of ['search', 'feedback'] as const) {
+    router.post(`/api/internal/experience/${kind}`, async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'experience');
+        if (!session) return;
+        const input = await validateToolRequest('com.transportx.experience-exchange', body, `experience.${kind}`);
+        const result = await runRequestJob(deps.sessions, req, res, session, (signal) => exchange(session, kind, input, signal));
+        deps.json(res, 200, { ...result, toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { status?: number; code?: string; phase?: string; commit?: string };
+        deps.json(res, failure.status || 500, { error: failure.message, code: failure.code || 'experience_exchange_failed', phase: failure.phase || 'host', commit: failure.commit || 'not_started' });
+      }
+    });
+  }
   router
     .get('/api/count-comparison/batches', ({ res, deps }) => {
       try { deps.json(res, 200, { batches: listCountBatches() }); }

@@ -93,6 +93,7 @@
     "@mlightcad/mtext-parser": "1.5.5",
     "@mlightcad/mtext-renderer": "0.13.4",
     "@mlightcad/three-renderer": "1.7.6",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@radix-ui/react-dialog": "^1.1.20",
     "@silurus/ooxml": "0.87.0",
     "@turf/boolean-intersects": "7.3.4",
