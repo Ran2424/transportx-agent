@@ -1,0 +1,11 @@
+# Frozen source and method
+
+Open **Data comparison** in the workbench header, select two distinct batches and a range of local hours, and run the comparison. An end hour includes the bucket beginning at that hour. Download the CSV for the bucket-level readings, or the review manifest for the request, both source hashes, engine and method versions, and unrounded results.
+
+These three unchanged JSON responses were retrieved 2026-11-17 UTC from the City of Seattle Department of Transportation public dataset [Fremont Bridge Bicycle Counter](https://data.seattle.gov/Transportation/Fremont-Bridge-Bicycle-Counter/65db-xm6k). The publisher lists the dataset as Public Domain. Each adjacent `.capture.json` preserves the exact request, capture time, response headers, byte size, row count, and SHA-256. The three half-open local-date windows each contain 168 records; the Host pins both original response and receipt hashes before use. A checksum checks equality to the capture, not publisher authenticity.
+
+Values are the publisher's aggregate `fremont_bridge` sensor count for each floating local hour. A batch comparison groups published records by local hour; it divides the sum of valid nonnegative integer readings by the number of valid readings. Missing and invalid values are excluded from the average, while a measured zero is valid. `total` counts source records, and `valid` counts usable count readings; an empty valid set produces null sum and average. Dates and hours are publisher labels and are not assigned UTC instants. These are counts at source sensor scope, not unique people or inferred travel directions. Public holidays are not excluded.
+
+The Host uses DuckDB Node Neo 1.5.6-r.2 (MIT), with an in-memory database, external access disabled and extension installation/autoload disabled. It executes a single fixed parameterized aggregation over validated bundled records. No arbitrary SQL, input paths, or network source is exposed by the comparison API.
+
+After `npm run build`, run `node scripts/count-comparison-smoke.mjs <evidence-directory>` from the repository root. It opens the Electron workbench with a separate profile, compares real batches, checks the results against the original snapshots and saves the UI screenshots and both downloaded files.

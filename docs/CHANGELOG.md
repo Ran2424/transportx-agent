@@ -16,6 +16,8 @@
 
 ### Added
 
+- 工作台新增 DuckDB「数据对比」，可选两批 Fremont Bridge 实测数据和小时范围，查看对比曲线与有效样本数，并下载 CSV 和复核清单。
+
 - 记录 [TransportX 上下游互操作调研](acceptance/transportx-upstream-downstream-research.md)，包括数据批次、坐标单位、GTFS 校验及专业工具的接入边界。
 
 - 记录 [TransportX 夜间互操作探索](acceptance/transportx-overnight-exploration.html)，涵盖本机数据接入、专业引擎调用、工作台、空间发布与工程复算的实测结果。

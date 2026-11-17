@@ -1,3 +1,4 @@
+import { compareCounts, CountComparisonInputError, listCountBatches } from './count-comparison.js';
 import { citationResourceError } from './citation-resources.js';
 const fs = require('node:fs');
 
@@ -26,6 +27,20 @@ export function createApiRouter(services: ApiRouteServices) {
   registerSimulationApi(router, services);
   registerReportApi(router);
   router
+    .get('/api/count-comparison/batches', ({ res, deps }) => {
+      try { deps.json(res, 200, { batches: listCountBatches() }); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/count-comparison', async ({ req, res, deps }) => {
+      let body;
+      try { body = await deps.readBody(req); }
+      catch (error) { return deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+      try { deps.json(res, 200, await compareCounts(body)); }
+      catch (error) {
+        if (error instanceof CountComparisonInputError) return deps.json(res, 400, { error: error.message });
+        deps.json(res, 503, { error: 'Could not run the DuckDB comparison on this Host.', code: 'count_comparison_unavailable' });
+      }
+    })
     .get('/api/health', ({ req, res, deps }) => { res.setHeader('Cache-Control', 'no-store'); deps.json(res, 200, deps.health(req)); })
     .get(/^\/api\/conversations\/([^/]+)\/overview$/, ({ res, params, deps }) => { try { deps.json(res, 200, deps.conversationOverview(decodeURIComponent(params[0]))); } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); } })
     .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))

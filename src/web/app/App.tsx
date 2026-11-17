@@ -33,6 +33,7 @@ import { useSimulationCanvas } from '../platform/canvas/useSimulationCanvas';
 import { OpenDocumentContext } from '../platform/canvas/document-context';
 import { documentPath, resolveDocument, type DocumentRequest, type DocumentPosition } from '../platform/canvas/document-state';
 import { geoContextStore } from '../features/geo/geo-context-store';
+import { CountComparisonDialog } from '../features/count-comparison/CountComparisonDialog';
 
 const LEGACY_THEME_MIGRATION: Record<string, ThemeId> = {
   clean: 'light',
@@ -71,6 +72,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
   const [expandThinking, setExpandThinking] = useState(() => window.localStorage.getItem('tau-expand-thinking') === 'true');
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [countComparisonOpen, setCountComparisonOpen] = useState(false);
   useEffect(() => {
     const sessions = new Map<string, Set<string> | null>();
     for (const session of sessionState.sessions) {
@@ -412,6 +414,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
       try { await ensureConversationRuntime(activeSession.id); await kernel.commands.agent.compact(activeSession.id); setNotice(t('app.notice.compacted')); }
       catch (cause) { setNotice((cause as { message?: string })?.message || t('app.error.compact')); }
     } },
+    { id: 'count-comparison', label: t('counts.open'), description: t('counts.command'), action: () => setCountComparisonOpen(true) },
     { id: 'settings', label: t('app.command.settings.label'), description: t('app.command.settings.description'), shortcut: '⌘,', action: () => setSettingsOpen(true) },
   ], [activeCompacting, activeSession, activeStreaming, filesOpen, kernel, canvasAvailable, canvas.open, t, toggleFiles, toggleCanvas]);
 
@@ -437,7 +440,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
         setSettingsOpen(false);
         return;
       }
-      const hasOverlay = newSessionOpen || modelOpen || modelSetupOpen || commandsOpen || !!extensionUi.current;
+      const hasOverlay = newSessionOpen || modelOpen || modelSetupOpen || commandsOpen || countComparisonOpen || !!extensionUi.current;
       if (event.key === 'Escape' && !hasOverlay) {
         if (canvas.open) {
           closeCanvas();
@@ -453,7 +456,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [activeSession, canvas.open, closeCanvas, closeFiles, closeSidebar, commandsOpen, extensionUi.current, filesOpen, kernel, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t]);
+  }, [activeSession, canvas.open, closeCanvas, closeFiles, closeSidebar, commandsOpen, countComparisonOpen, extensionUi.current, filesOpen, kernel, modelOpen, modelSetupOpen, newSessionOpen, settingsOpen, sidebarOpen, t]);
 
   const pendingDialogSessions = useMemo(() => new Set(extensionUi.queue.flatMap((pending) => pending.sessionId ? [pending.sessionId] : [])), [extensionUi.queue]);
   const runtimeErrorMessage = !runtime.lastError?.sessionId || runtime.lastError.sessionId === activeSession?.id ? runtime.lastError?.message || '' : '';
@@ -461,7 +464,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
 
   return (
     <OpenDocumentContext.Provider value={openDocument}><CitationDetailProvider sessionId={activeSession?.id}><AppShell
-      header={<Header account={account} connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
+      header={<Header account={account} connection={runtime.connection} activeSession={activeSession} streaming={activeStreaming} sidebarOpen={sidebarOpen} fileOpen={filesOpen} canvasOpen={canvas.open} canvasAvailable={canvasAvailable} onToggleSidebar={toggleSidebar} onToggleFiles={toggleFiles} onToggleCanvas={toggleCanvas} onGoHome={goHome} onOpenModel={() => setModelOpen(true)} onOpenCommands={() => setCommandsOpen(true)} onOpenCountComparison={() => setCountComparisonOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />}
       sidebar={<SessionSidebar onManageModules={() => { setSettingsSection('modules'); setSettingsOpen(true); }} open={sidebarOpen} dataReady={runtime.health?.dataState === 'ready'} sessions={sessionState.sessions} workspaces={sessionState.workspaces} activeSessionId={sessionState.activeSessionId} historyRevision={sessionHistoryRevision} onClose={closeSidebar} onGoHome={goHome} onNewSession={(workspace) => openNewSession(workspace)} onSelect={(id) => void selectSession(id)} onDelete={requestDeletion} onDiagnostics={openDiagnostics} />}
       tabs={<LiveTabs sessions={sessionState.sessions} activeSessionId={sessionState.activeSessionId} streamingBySession={sessionState.streamingBySession} pendingDialogSessions={pendingDialogSessions} onSelect={(id) => void selectSession(id)} onClose={(id) => void closeSession(id)} />}
       conversation={<ConversationStage session={activeSession} loading={sessionLoading} onNewSession={() => openNewSession()} onActivate={ensureConversationRuntime} showThinking={showThinking} expandThinking={expandThinking} moduleFailure={moduleFailure && moduleFailure.id === activeSession?.id ? moduleFailure.message : undefined} onContinue={openContinuation} />}
@@ -477,6 +480,7 @@ export function App({ account }: { account?: ReactNode } = {}) {
         <ModelPickerDialog onEnsureRuntime={ensureConversationRuntime} open={modelOpen} onOpenChange={setModelOpen} session={activeSession} onAddModel={() => openModelSetup('picker')} />
         <ModelSetupDialog open={modelSetupOpen} onOpenChange={changeModelSetupOpen} onConfigured={(reference) => { setNotice(t('app.notice.modelAdded', { reference })); changeModelSetupOpen(false); }} />
         <CommandPalette open={commandsOpen} onOpenChange={setCommandsOpen} commands={commandItems} />
+        {countComparisonOpen ? <CountComparisonDialog commands={kernel.commands.countComparison} onClose={() => setCountComparisonOpen(false)} /> : null}
         <ExtensionDialogLayer pending={extensionUi.current} />
         <ConfirmationDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} title={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolated') : deleteTarget?.record ? t('workspaceFlow.deleteConversation') : t(workspaceRemoval ? 'workspaceFlow.removeWorkspace' : 'workspaceFlow.deleteWorkspace')} description={deleteTarget?.isolated ? t('workspaceFlow.deleteIsolatedCopy', { name: deleteTargetName }) : deleteTarget?.record ? t('workspaceFlow.deleteConversationCopy', { name: deleteTargetName }) : t(hideWorkspaceOnly ? 'workspaceFlow.removeWorkspaceCopy' : 'workspaceFlow.deleteWorkspaceCopy', { name: deleteTargetName })} confirmLabel={t(hideWorkspaceOnly ? 'workspaceFlow.removeFromSidebar' : 'workspaceFlow.confirmDelete')} destructive={!hideWorkspaceOnly} onConfirm={() => void confirmDeleteSession()}>
           <p className="confirmation-dialog-copy">{deleteTarget?.workspace.path}</p>

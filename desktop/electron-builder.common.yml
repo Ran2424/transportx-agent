@@ -8,6 +8,7 @@ productName: TransportX Agent
 asar: true
 asarUnpack:
   - modules/**
+  - node_modules/@duckdb/**
   - src/contracts/**
   # External Python needs real font files rather than paths inside app.asar.
   - dist/web/fonts/native/**
@@ -19,8 +20,10 @@ directories:
   buildResources: desktop/assets
 files:
   - package.json
+  - THIRD_PARTY_NOTICES.md
   - dist-desktop/**
   - bin/**
+  - data/count-comparison/**
   - dist/web/**
   - modules/**
   - "!modules/installable/**"

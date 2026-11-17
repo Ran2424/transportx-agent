@@ -52,3 +52,7 @@ PDF previews use Mozilla PDF.js (`pdfjs-dist`, Apache-2.0). Its license is inclu
 ## Bundled typefaces
 
 The workbench includes Adobe Source Han Sans SC, Adobe Source Han Serif SC and JetBrains Mono under the SIL Open Font License 1.1. Font binaries, original copyright/license texts and pinned upstream sources are distributed in `dist/web/fonts/`; see `src/web/public/fonts/README.md` in the source tree. These assets load locally without installing fonts or contacting a font service.
+
+## DuckDB count comparison
+
+The count comparison uses `@duckdb/node-api` and `@duckdb/node-bindings` 1.5.6-r.2 with the corresponding platform-specific DuckDB native library (MIT). Their copyright and license notices are included in the installed npm packages. The bundled Seattle public-data provenance is in `data/count-comparison/README.md` and its capture receipts.

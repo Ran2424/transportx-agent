@@ -25,6 +25,7 @@
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "bin",
+    "data/count-comparison",
     "public",
     "modules",
     "!modules/installable",
@@ -85,6 +86,7 @@
     "release:oss": "node desktop/scripts/publish-oss.mjs"
   },
   "dependencies": {
+    "@duckdb/node-api": "1.5.6-r.2",
     "@earendil-works/pi-coding-agent": "0.80.10",
     "@mlightcad/cad-simple-viewer": "1.7.6",
     "@mlightcad/data-model": "1.15.10",

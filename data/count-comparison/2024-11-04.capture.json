@@ -1,0 +1,18 @@
+{
+  "url": "https://data.seattle.gov/resource/65db-xm6k.json?%24where=date+%3E%3D+%272024-11-04T00%3A00%3A00%27+AND+date+%3C+%272024-11-11T00%3A00%3A00%27&%24order=date+ASC%2C%3Aid+ASC&%24select=%3Aid+as+source_row_id%2Cdate%2Cfremont_bridge%2Cfremont_bridge_nb%2Cfremont_bridge_sb&%24limit=200",
+  "publisher": "Seattle Department of Transportation",
+  "dataset": "65db-xm6k",
+  "license_as_listed_by_publisher": "Public Domain",
+  "captured_utc": "2026-11-17T02:50:50.304408+00:00",
+  "window_start_local": "2024-11-04",
+  "window_end_local_exclusive": "2024-11-11",
+  "row_count": 168,
+  "bytes": 24328,
+  "sha256": "1cb31177eeb4e3913bb66f6e5ed257eed77ee85be8651d0521d1b61271aafc1d",
+  "http": {
+    "Content-Type": "application/json;charset=utf-8",
+    "Last-Modified": "Wed, 14 Oct 2026 16:43:05 GMT",
+    "ETag": "W/\"Zm94dHJvdC43MDI3XzNfMTYxTWMwTjlRYm02TGpXS2lOcjlTOXVreXZrdm9V---gzipoq3Dht1_gXeC6Ep3gs4UMpgclDg--gzip--gzip\"",
+    "Date": "Tue, 17 Nov 2026 02:50:49 GMT"
+  }
+}
