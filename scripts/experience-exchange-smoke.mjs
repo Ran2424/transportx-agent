@@ -59,14 +59,15 @@ const dispatcher = http.createServer(async (req, res) => {
         call = { name: 'search_experience', args: { query: requested.args.query } };
       } else if (previous === 'search_experience') {
         assert.ok(active.includes('record_experience_use'));
-        call = { name: 'record_experience_use', args: { releaseId: requested.args.release, disposition: 'used', reason: '先核实当前可复查样本。' } };
+        call = { name: 'record_experience_use', args: { releaseId: requested.args.release, disposition: requested.args.disposition ?? 'used', reason: '先核实当前可复查样本。' } };
       } else if (previous === 'record_experience_use') {
         assert.equal(toolJson(last).accepted, true);
-        call = { name: 'analyze_workspace_table', args: { file: 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }], deliver: true } };
+        call = { name: 'analyze_workspace_table', args: { file: requested.args.path ?? 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }], deliver: true } };
       } else if (previous === 'analyze_workspace_table') {
         const result = toolJson(last);
         assert.equal(Number(result.rows[0][0]), 30);
         assert.equal(result.delivered, true);
+        if (requested.args.failSync) fs.writeFileSync(tokenFile, 'temporarily-invalid\n');
       }
     } else if (last.role === 'user' || (last.role === 'tool' && previous === 'manage_capabilities')) {
       call = active.includes(requested.name) ? requested : { name: 'manage_capabilities', args: { action: 'enable', moduleId } };
@@ -143,6 +144,8 @@ async function startTraffic() {
         DEEPSEEK_BASE_URL: 'http://127.0.0.1:1',
         TA_ADMIN_TOKEN: adminToken,
         TA_EXPERIENCE_MCP_ENABLED: '1',
+        TA_EXPERIENCE_MCP_DATA_SNAPSHOTS_ENABLED: '1',
+        TA_EXPERIENCE_MCP_SCENE: scope,
         TA_EXPERIENCE_MCP_SCOPE: scope,
         TA_EXPERIENCE_MCP_CALLER: 'transportx-smoke',
         TA_EXPERIENCE_MCP_TOKEN: mcpToken,
@@ -241,6 +244,17 @@ try {
     'import pathlib,sqlite3,sys; p=pathlib.Path(sys.argv[1]); sqlite3.connect(p / "ridership.sqlite").executescript((p / "data.sql").read_text(encoding="utf-8"))',
     scene], { windowsHide: true });
   const traffic = await startTraffic();
+  const form = new FormData();
+  form.set('target', 'replace'); form.set('scene_id', scope); form.set('keep_semantic', 'true');
+  form.set('files', new Blob(['value\n10\n20\n'], { type: 'text/csv' }), 'counts.csv');
+  const importedResponse = await fetch(trafficBase + '/api/admin/datasource/ingest/execute', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + adminToken }, body: form, signal: AbortSignal.timeout(30_000),
+  });
+  const imported = await importedResponse.json();
+  assert.equal(importedResponse.status, 200, JSON.stringify(imported));
+  assert.deepEqual(imported.snapshot_warnings, []);
+  assert.equal(imported.data_snapshots.length, 1);
+  const snapshotId = imported.data_snapshots[0].snapshot_id;
   for (const token of [undefined, adminToken]) {
     await request(trafficBase, '/mcp/experience', { method: 'POST', headers: {
       Accept: 'application/json, text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}),
@@ -356,10 +370,17 @@ try {
   const combined = await workspace.createHostConversation(tx, { name: 'Experience and evidence smoke', model: 'probe/probe',
     profile: { ...workspace.smokeProfile, modules: { selectionMode: 'explicit',
       selected: [...selected, { id: evidenceModule.id, version: evidenceModule.version }] } } });
-  fs.mkdirSync(path.join(combined.cwd, 'evidence'), { recursive: true });
-  fs.writeFileSync(path.join(combined.cwd, 'evidence/counts.csv'), 'value\n10\n20\n');
+  const snapshotList = await tx(`/api/conversations/${combined.conversationId}/traffic-snapshots`);
+  assert.ok(snapshotList.snapshots.some(item => item.snapshot_id === snapshotId));
+  const snapshot = await tx(`/api/conversations/${combined.conversationId}/traffic-snapshots`, { snapshotId });
+  const second = await tx(`/api/conversations/${combined.conversationId}/traffic-snapshots`, { snapshotId });
+  assert.notEqual(snapshot.path, second.path, 'A second selection must never overwrite the first');
+  assert.equal(snapshot.snapshot.snapshot_id, snapshotId);
+  fs.writeFileSync(path.join(combined.cwd, second.path), 'value\n999\n');
+  execFileSync(process.execPath, ['-e', `const a = require('./bin/workspace-table.js'); a.analyzeWorkspaceTable(process.argv[1], {file:process.argv[2]}).then(() => process.exit(2), e => {if (!/changed/.test(e.message)) { console.error(e); process.exit(3); }});`, combined.cwd, second.path], { cwd: repo, env: { ...process.env, PI_CODING_AGENT_DIR: profile }, timeout: 30_000 });
+  report.checks.snapshotTamperingRejected = true;
   const ack = await tx('/api/rpc', { type: 'prompt', sessionId: combined.id, clientCommandId: randomUUID(),
-    message: 'experience-smoke:' + JSON.stringify({ name: 'combined-analysis', args: { query: query.query, release: newRef.release_id } }) });
+    message: 'experience-smoke:' + JSON.stringify({ name: 'combined-analysis', args: { query: query.query, release: newRef.release_id, path: snapshot.path } }) });
   assert.equal(ack.success, true);
   const combinedSnapshot = await until('combined evidence and experience receipt', async () => {
     const snapshot = await workspace.nativeSnapshot(tx, combined.conversationId);
@@ -377,9 +398,37 @@ try {
   assert.equal(combinedReceipt.experience, undefined);
   assert.equal(combinedSnapshot.entries.findLast(entry => entry.message?.role === 'assistant')?.message?.delivery?.status, 'submitted');
   assert.ok(combinedReceipt.evidence[0].tableRunId);
+  assert.equal(combinedReceipt.evidence[0].sources[0].upstream.snapshot.snapshot_id, snapshotId);
+  assert.equal(combinedReceipt.evidence[0].sources[0].upstream.snapshot.definition_sha256, snapshot.snapshot.definition_sha256);
+  const runLedgerDirectory = path.join(profile, 'experience-run-receipts');
+  const runLedger = fs.readdirSync(runLedgerDirectory).flatMap(name => fs.readFileSync(path.join(runLedgerDirectory, name), 'utf8').split('\n').filter(Boolean).map(JSON.parse));
+  const pendingUse = runLedger.find(item => item.kind === 'pending' && item.payload.experience.release_id === newRef.release_id);
+  assert.deepEqual(pendingUse.payload.snapshot_ids, [snapshotId]);
+  assert.ok(runLedger.some(item => item.kind === 'synced' && item.submissionId === pendingUse.payload.submission_id));
+  const retry = await tx(`/api/conversations/${combined.conversationId}/traffic-use-receipts/retry`, {});
+  assert.deepEqual(retry, { synced: 0, pending: 0 });
+  report.checks.snapshotAndRemoteUseReceipt = true;
   report.checks.combinedAnalysisReceipt = combinedReceipt;
   report.checks.experienceUsageReceipt = usage;
   report.checks.priorTurnUsageRejected = true;
+  const previousReceipts = combinedSnapshot.entries.filter(entry => entry.customType === 'transportx.evidence-analysis.v1').length;
+  const offlineAck = await tx('/api/rpc', { type: 'prompt', sessionId: combined.id, clientCommandId: randomUUID(),
+    message: 'experience-smoke:' + JSON.stringify({ name: 'combined-analysis', args: { query: query.query, release: newRef.release_id, path: snapshot.path, disposition: 'skipped', failSync: true } }) });
+  assert.equal(offlineAck.success, true);
+  const offlineSnapshot = await until('unsynchronized receipt', async () => {
+    const state = await workspace.nativeSnapshot(tx, combined.conversationId);
+    return !state.isStreaming && state.entries.filter(entry => entry.customType === 'transportx.evidence-analysis.v1').length > previousReceipts && state;
+  }, host);
+  assert.equal(offlineSnapshot.entries.findLast(entry => entry.customType === 'transportx.evidence-analysis.v1').data.status, 'verified');
+  assert.equal(offlineSnapshot.entries.findLast(entry => entry.message?.role === 'assistant')?.message?.delivery?.status, 'submitted');
+  assert.ok(offlineSnapshot.entries.some(entry => entry.type === 'custom_message' && entry.customType === 'transportx.receipt-sync' && entry.display === true));
+  const pendingAfterFailure = fs.readdirSync(runLedgerDirectory).flatMap(name => fs.readFileSync(path.join(runLedgerDirectory, name), 'utf8').split('\n').filter(Boolean).map(JSON.parse)).find(item => item.kind === 'pending' && item.payload.disposition === 'skipped');
+  assert.deepEqual(pendingAfterFailure.payload.snapshot_ids, [snapshotId]);
+  fs.writeFileSync(tokenFile, mcpToken + '\n');
+  const retried = await tx(`/api/conversations/${combined.conversationId}/traffic-use-receipts/retry`, {});
+  assert.deepEqual(retried, { synced: 1, pending: 0 });
+  assert.deepEqual(await tx(`/api/conversations/${combined.conversationId}/traffic-use-receipts/retry`, {}), { synced: 0, pending: 0 });
+  report.checks.failedRemoteReceiptRetriedWithoutLosingAnswer = true;
   await workspace.closeHostConversation(tx, combined.conversationId);
 
   for (const ref of [oldRef, newRef]) {

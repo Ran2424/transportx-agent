@@ -13,3 +13,5 @@
 提交时可用 `relatedToolCallIds` 引用本轮其他工具实际签发的回执，例如经验采纳或跳过记录。来源证据仍由本模块核对。
 
 本机工程复现见 `node scripts/evidence-analysis-smoke.mjs --evidence <目录>`。
+
+任务的 `SessionProfile.task.answerRequirements` 可列出需要解释的内容，例如口径、时间或适用范围。非空时，聚合工具不能直接交付，须通过 `complete_evidence_analysis` 提交包括这些说明的完整答案；未设置时保留原直交行为。引用受控快照时，查询证据同时保存其上游快照和定义引用。

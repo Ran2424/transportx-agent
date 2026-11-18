@@ -1,4 +1,4 @@
-# Experience Exchange 2.1.0
+# Experience Exchange 2.2.0
 
 This optional built-in capability connects a task to a separately operated Traffic Experience MCP service. Start the Agent Host (or desktop application) with these trusted host environment variables:
 
@@ -13,3 +13,7 @@ Successful search results and feedback receipts are recorded in `<task workspace
 In a new task that opts into the module, `search_experience` is ready on the first turn. It accepts a single question or intent phrase and returns up to three scoped candidates. Feedback remains available through capability activation. Exact-version reference lookup is supported by the Traffic MCP service, and existing frozen version 1 tool requests remain accepted by the Host.
 
 Search attempts, including empty and unavailable searches, are recorded in the Pi session history separately from explicit use decisions. After enabling the module tools, call `record_experience_use` in the same turn with a release ID returned by a successful search, `used` or `skipped`, and a reason. A successful record returns a receipt ID that can be attached to a compatible evidence completion. Feedback remains available on demand.
+
+When Traffic enables scoped data snapshots, a conversation with this capability can list them at `GET /api/conversations/:id/traffic-snapshots` and explicitly select one with `POST` to the same URL and `{ "snapshotId": "..." }`. Selection returns a workspace-relative CSV path. Use that path in the current question. The Host checks the upstream identity and CSV and definition digests; later table analysis checks the CSV again and retains its upstream references. No snapshot is selected automatically.
+
+When a verified evidence delivery references a same-turn use or skip receipt, the Host records that exact release and the selected snapshot IDs with Traffic. It sends identifiers and a short evidence reference, not the conversation. Local receipts remain if synchronization fails. Retry pending receipts through `POST /api/conversations/:id/traffic-use-receipts/retry`; identical submissions use the same idempotency key.

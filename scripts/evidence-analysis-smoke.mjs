@@ -99,6 +99,16 @@ const dispatcher = http.createServer(async (req, res) => {
         content = 'The computed answer has already been submitted.';
         finish = 'length';
       } else throw new Error('Unexpected model request after direct delivery');
+    } else if (active.name === 'required-explanation') {
+      if (index === 0) call = { name: 'analyze_workspace_table', args: { ...table, deliver: true } };
+      else if (index === 1) {
+        const result = body.messages.findLast((item) => item.role === 'tool');
+        const json = JSON.parse(typeof result.content === 'string' ? result.content : result.content[0].text);
+        assert.equal(json.delivered, false);
+        assert.match(json.deliveryNote, /requires explanation/);
+        call = { name: 'complete_evidence_analysis', args: { answer: 'The total is 30. Scope: north, AM; the rows use the source count definition.', evidence: [json.evidenceId] } };
+      } else if (index === 2) content = 'Complete.';
+      else throw new Error('Unexpected request in required-explanation scenario');
     } else if (active.name === 'csv-read-is-not-a-calculation') {
       if (index === 0) call = { name: 'read', args: { path: table.file } };
       else if (index === 1) {
@@ -232,26 +242,17 @@ async function request(route, { body, expected = 200 } = {}) {
   return text ? JSON.parse(text) : null;
 }
 const tx = (route, body) => request(route, { body });
-function jsonlEntries(directory) {
-  if (!fs.existsSync(directory)) return [];
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((item) => {
-    const file = path.join(directory, item.name);
-    if (item.isDirectory()) return jsonlEntries(file);
-    if (!item.isFile() || !item.name.endsWith('.jsonl')) return [];
-    return fs
-      .readFileSync(file, 'utf8')
-      .split('\n')
-      .flatMap((line) => {
-        try {
-          return [JSON.parse(line)];
-        } catch {
-          return [];
-        }
-      });
+function conversationEntries(conversationId) {
+  const file = path.join(profile, 'sessions', 'transportx', `${conversationId}.jsonl`);
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, 'utf8').split('\n').flatMap((line) => {
+    try {
+      return [JSON.parse(line)];
+    } catch {
+      return [];
+    }
   });
 }
-const entries = () => jsonlEntries(profile);
-const receipts = () => entries().filter((item) => item.type === 'custom' && item.customType === entryType);
 const messages = (all) =>
   all
     .filter((item) => item.type === 'message')
@@ -262,8 +263,8 @@ const contentText = (message) =>
     ? message.content
     : (message.content ?? []).map((item) => item.text ?? '').join('\n');
 async function exercise(name) {
-  const before = receipts().length;
-  const messagesBefore = messages(entries()).length;
+  const conversationId = runtime.conversationId;
+  const before = conversationEntries(conversationId).length;
   active = { name, requests: 0 };
   const ack = await tx('/api/rpc', {
     type: 'prompt',
@@ -272,11 +273,14 @@ async function exercise(name) {
     message: `evidence smoke ${name}: calculate the north AM count from evidence/counts.csv.`,
   });
   assert.equal(ack.success, true);
-  const receipt = await until(name + ' receipt', () => receipts()[before]);
-  const newMessages = messages(entries()).slice(messagesBefore);
+  const settled = await until(name + ' receipt', () => {
+    const entries = conversationEntries(conversationId).slice(before);
+    const receipt = entries.find((item) => item.type === 'custom' && item.customType === entryType);
+    return receipt && { receipt, messages: messages(entries) };
+  });
   const turn = {
-    receipt: receipt.data,
-    messages: newMessages,
+    receipt: settled.receipt.data,
+    messages: settled.messages,
     requests: active.requests,
   };
   active = undefined;
@@ -532,6 +536,17 @@ try {
   assert.equal(unsafe.receipt.status, 'incomplete');
   assert.deepEqual(unsafe.receipt.evidence, []);
   report.checks.unsafePathsRejected = true;
+  await workspace.closeHostConversation(tx, runtime.conversationId);
+  runtime = await workspace.createHostConversation(tx, {
+    name: 'Required explanation smoke', model: 'probe/probe',
+    profile: { ...workspace.smokeProfile, task: { ...workspace.smokeProfile.task, answerRequirements: ['Explain scope and definition'] }, modules: { selectionMode: 'explicit', selected } },
+  });
+  fs.mkdirSync(path.join(runtime.cwd, 'evidence'), { recursive: true });
+  fs.writeFileSync(path.join(runtime.cwd, 'evidence', 'counts.csv'), csv);
+  const explanation = await exercise('required-explanation');
+  assert.equal(explanation.receipt.status, 'verified');
+  assert.match(contentText(explanation.messages.findLast(item => item.role === 'assistant')), /Scope: north, AM;.*source count definition/);
+  report.checks.requiredExplanationDisablesDirectDelivery = true;
   await workspace.closeHostConversation(tx, runtime.conversationId);
   report.status = 'pass';
 } catch (error) {

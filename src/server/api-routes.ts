@@ -18,6 +18,8 @@ import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
 import { exchange, validateExperienceRequest } from './experience-exchange.js';
 import { analyzeWorkspaceTable } from './workspace-table.js';
+import { listTrafficSnapshots, selectTrafficSnapshot } from './traffic-snapshots.js';
+import { recordSearch, recordTable, recordUse, finalizeUses, retryUses } from './experience-run-use.js';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 
@@ -35,6 +37,7 @@ export function createApiRouter(services: ApiRouteServices) {
       if (!session) return;
       const input = await validateToolRequest('com.transportx.evidence-analysis', body, 'analysis.table');
       const result = await runRequestJob(deps.sessions, req, res, session, (signal) => analyzeWorkspaceTable(session.cwd, input, signal));
+      if (session.resolvedSessionPlan?.modules.some(module => module.id === 'com.transportx.experience-exchange')) recordTable(session, body.toolCallId, result);
       deps.json(res, 200, { result, toolCallId: body.toolCallId });
     } catch (error) {
       const status = deps.errorStatus(error);
@@ -52,7 +55,8 @@ export function createApiRouter(services: ApiRouteServices) {
         const session = resolveServiceSession(res, body, deps, 'experience');
         if (!session) return;
         const input = await validateExperienceRequest(session, kind, body);
-        const result = await runRequestJob(deps.sessions, req, res, session, (signal) => exchange(session, kind, input, signal));
+        const result = await runRequestJob(deps.sessions, req, res, session, (signal) => exchange(session, kind, input, signal, typeof body.toolCallId === 'string' ? body.toolCallId : undefined));
+        if (kind === 'search') recordSearch(session, body.toolCallId, result);
         deps.json(res, 200, { ...result, toolCallId: body.toolCallId });
       } catch (error) {
         const failure = error as Error & { status?: number; code?: string; phase?: string; commit?: string };
@@ -60,6 +64,19 @@ export function createApiRouter(services: ApiRouteServices) {
       }
     });
   }
+  router.post('/api/internal/experience/use', async ({ req, res, deps }) => {
+    try {
+      const body = await deps.readBody(req), session = resolveServiceSession(res, body, deps, 'experience'); if (!session) return;
+      recordUse(session, body); deps.json(res, 200, { accepted: true, toolCallId: body.toolCallId });
+    } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
+  });
+  router.post('/api/internal/analysis/finalize', async ({ req, res, deps }) => {
+    try {
+      const body = await deps.readBody(req), session = resolveServiceSession(res, body, deps, 'evidenceAnalysis'); if (!session) return;
+      const result = await runRequestJob(deps.sessions, req, res, session, signal => finalizeUses(session, body, signal));
+      deps.json(res, 200, { ...result, toolCallId: body.toolCallId });
+    } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
+  });
   router
     .get('/api/count-comparison/batches', ({ res, deps }) => {
       try { deps.json(res, 200, { batches: listCountBatches() }); }
@@ -78,6 +95,26 @@ export function createApiRouter(services: ApiRouteServices) {
     .get('/api/health', ({ req, res, deps }) => { res.setHeader('Cache-Control', 'no-store'); deps.json(res, 200, deps.health(req)); })
     .get(/^\/api\/conversations\/([^/]+)\/overview$/, ({ res, params, deps }) => { try { deps.json(res, 200, deps.conversationOverview(decodeURIComponent(params[0]))); } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); } })
     .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))
+    .post(/^\/api\/conversations\/([^/]+)\/traffic-use-receipts\/retry$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps); if (!session) return;
+      try { deps.json(res, 200, await withRequestSignal(req, res, signal => retryUses(session, signal))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
+    })
+    .get(/^\/api\/conversations\/([^/]+)\/traffic-snapshots$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps); if (!session) return;
+      try { deps.json(res, 200, await withRequestSignal(req, res, signal => listTrafficSnapshots(session, signal))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code || 'traffic_snapshot_unavailable' }); }
+    })
+    .post(/^\/api\/conversations\/([^/]+)\/traffic-snapshots$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps); if (!session) return;
+      try {
+        const body = await deps.readBody(req);
+        if (Object.keys(body).some(key => key !== 'snapshotId')) throw Object.assign(new Error('Only snapshotId is accepted.'), { status: 400, code: 'traffic_snapshot_invalid' });
+        const result = await deps.workspaces.withRuntimeWrite(session, () => deps.workspaces.live(session.conversationId, false) === session, () => withRequestSignal(req, res, signal => selectTrafficSnapshot(session, body.snapshotId, signal)));
+        if (!result) throw Object.assign(new Error('Conversation runtime changed.'), { status: 409, code: 'conversation_not_active' });
+        deps.json(res, 200, result);
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code || 'traffic_snapshot_unavailable' }); }
+    })
     .get(/^\/api\/conversations\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
       const target = resolveConversationTargetParam(res, params[0], deps);
       if (target) deps.json(res, 200, { attachments: deps.listAttachments(target.directory) });

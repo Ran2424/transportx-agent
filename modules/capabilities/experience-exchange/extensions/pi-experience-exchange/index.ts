@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { TSchema } from 'typebox';
 import { readFileSync } from 'node:fs';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -134,7 +135,7 @@ export default function experienceExchange(pi: ExtensionAPI) {
     label: '记录交通经验取舍',
     description: 'Record whether a candidate returned by a successful search in this turn was used or skipped, and why. Returns a receipt ID.',
     parameters: useContract.input as unknown as TSchema,
-    async execute(toolCallId, input) {
+    async execute(toolCallId, input, signal) {
       const { Check } = await import('typebox/value');
       const value = input as Record<string, unknown>;
       const valid = Check(useContract.input as any, value) &&
@@ -151,10 +152,17 @@ export default function experienceExchange(pi: ExtensionAPI) {
         };
       }
       const details = {
-        kind: 'experience-use', accepted: true, receiptId: toolCallId,
+        kind: 'experience-use', accepted: true, receiptId: 'use_' + randomUUID(),
         ...release,
         disposition: value.disposition as 'used' | 'skipped', reason: (value.reason as string).trim(),
       };
+      try {
+        await postHostOperation({ endpoint: process.env.TAU_EXPERIENCE_ENDPOINT, sessionId: process.env.TAU_EXPERIENCE_SESSION_ID, token: process.env.TAU_EXPERIENCE_TOKEN },
+          '/api/internal/experience/use', details, { toolCallId, contractVersion: useContract.contractVersion, signal, timeoutMs: 20_000 });
+      } catch (error) {
+        errors.add(toolCallId);
+        return { content: [{ type: 'text' as const, text: 'Could not persist the use receipt. Continue the answer; retry this decision if appropriate.' }], details: { kind: 'experience-use', accepted: false } };
+      }
       pi.appendEntry('experience-exchange', { ...details, kind: 'disposition', toolCallId });
       return { content: [{ type: 'text' as const, text: JSON.stringify(details) }], details };
     },

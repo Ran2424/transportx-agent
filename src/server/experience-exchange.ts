@@ -49,7 +49,7 @@ const canonical = (value: unknown): unknown =>
 const equalRef = (a: unknown, b: unknown) =>
   JSON.stringify(reference(a)) === JSON.stringify(reference(b)) &&
   reference(a) !== null;
-function config() {
+export function experienceConfig() {
   const raw = process.env.TRANSPORTX_EXPERIENCE_MCP_URL || '';
   const tokenFile = process.env.TRANSPORTX_EXPERIENCE_TOKEN_FILE || '';
   const scope = process.env.TRANSPORTX_EXPERIENCE_SCOPE || '';
@@ -185,9 +185,10 @@ export async function exchange(
   session: PiRpcSession,
   kind: 'search' | 'feedback',
   input: RecordValue,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  toolCallId?: string
 ): Promise<RecordValue> {
-  const cfg = config();
+  const cfg = experienceConfig();
   const file = receiptFile(session);
   const prior = receipts(file);
   if (
@@ -264,42 +265,9 @@ export async function exchange(
         fingerprint,
       });
   }
-  const client = new Client({
-    name: 'transportx-experience-exchange',
-    version: '1.0.0',
-  });
-  const transport = new StreamableHTTPClientTransport(cfg.url, {
-    requestInit: {
-      headers: { Authorization: `Bearer ${cfg.token}` },
-      redirect: 'error',
-    },
-    fetch: (url, init) =>
-      fetch(url, {
-        ...init,
-        redirect: 'error',
-        signal: AbortSignal.any([
-          AbortSignal.timeout(30_000),
-          ...(signal ? [signal] : []),
-        ]),
-      }),
-  });
   let result: RecordValue;
   try {
-    await client.connect(transport);
-    const response = await client.callTool(
-      {
-        name:
-          kind === 'search'
-            ? 'search_experience'
-            : 'submit_experience_feedback',
-        arguments: input,
-      },
-      undefined,
-      { signal, timeout: 30_000 }
-    );
-    if (response.isError || !obj(response.structuredContent))
-      throw new Error('Invalid MCP result');
-    result = response.structuredContent;
+    result = await callExperienceMcp(kind === 'search' ? 'search_experience' : 'submit_experience_feedback', input, signal);
     if (result.scope !== cfg.scope) throw new Error('Scope mismatch');
     if (kind === 'search') {
       if (
@@ -343,13 +311,12 @@ export async function exchange(
         : 'Experience search failed or returned an invalid response.',
       kind === 'feedback' ? 'unknown' : 'not_started'
     );
-  } finally {
-    await client.close().catch(() => {});
   }
   try {
     append(file, {
       kind,
       scope: cfg.scope,
+      ...(toolCallId ? { toolCallId } : {}),
       ...(kind === 'feedback' ? { request: input } : {}),
       result,
     });
@@ -362,4 +329,20 @@ export async function exchange(
     );
   }
   return result;
+}
+
+/** The credential and scope stay in the Host; tools cannot supply them. */
+export async function callExperienceMcp(name: string, input: RecordValue, signal?: AbortSignal): Promise<RecordValue> {
+  const cfg = experienceConfig();
+  const client = new Client({ name: 'transportx-experience-exchange', version: '1.0.0' });
+  const transport = new StreamableHTTPClientTransport(cfg.url, {
+    requestInit: { headers: { Authorization: `Bearer ${cfg.token}` }, redirect: 'error' },
+    fetch: (url, init) => fetch(url, { ...init, redirect: 'error', signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]) }),
+  });
+  try {
+    await client.connect(transport);
+    const response = await client.callTool({ name, arguments: input }, undefined, { signal, timeout: 30_000 });
+    if (response.isError || !obj(response.structuredContent) || response.structuredContent.scope !== cfg.scope) throw new Error('Invalid or mismatched MCP result');
+    return response.structuredContent;
+  } finally { await client.close().catch(() => {}); }
 }

@@ -1,3 +1,4 @@
+import { trafficSnapshotProvenance } from './traffic-snapshots.js';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
@@ -370,6 +371,7 @@ export async function analyzeWorkspaceTable(
       'SELECT version() AS version'
     );
     const engineVersion = String(version.getRowObjects()[0].version);
+    const upstream = trafficSnapshotProvenance(cwd, source.file, hash(source.bytes));
     const provenance = {
       method: METHOD,
       engineVersion,
@@ -378,6 +380,7 @@ export async function analyzeWorkspaceTable(
           path: source.file,
           sha256: hash(source.bytes),
           bytes: source.bytes.length,
+          ...(upstream ? { upstream } : {}),
         },
       ],
       plan,

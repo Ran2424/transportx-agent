@@ -17,6 +17,7 @@ export type SessionProfileV1 = {
     timeRange?: { start: string; end: string; timezone: string };
     spatialScope?: { label: string };
     expectedOutputs: SessionOutputKind[];
+    answerRequirements?: string[];
   };
   modules: {
     selectionMode: 'explicit' | 'compat-default';
@@ -48,6 +49,8 @@ export function parseSessionProfileStructured(value: unknown): SessionProfilePar
     ? outputValues.filter((item): item is SessionOutputKind => typeof item === 'string' && (SESSION_OUTPUT_KINDS as readonly string[]).includes(item))
     : [];
   if (!Array.isArray(outputValues) || !expectedOutputs.length || expectedOutputs.length !== outputValues.length || new Set(expectedOutputs).size !== expectedOutputs.length) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'profile.task.expectedOutputs', message: 'expectedOutputs must contain unique supported outputs.' }));
+  const requirements = task?.answerRequirements;
+  if (requirements !== undefined && (!Array.isArray(requirements) || requirements.length > 16 || requirements.some(item => typeof item !== 'string' || !item.trim() || item.length > 500))) diagnostics.push(diagnostic({ code: 'invalid_type', path: 'profile.task.answerRequirements', message: 'answerRequirements must contain up to 16 nonempty descriptions.' }));
   const selectionMode = asString(modules?.selectionMode, 40);
   if (selectionMode !== 'explicit' && selectionMode !== 'compat-default') diagnostics.push(diagnostic({ code: 'unsupported_value', path: 'profile.modules.selectionMode', message: 'selectionMode must be explicit or compat-default.' }));
   const selected: Array<{ id: string; version: string }> = [];
@@ -82,6 +85,7 @@ export function parseSessionProfileStructured(value: unknown): SessionProfilePar
       ...(parsedTimeRange ? { timeRange: parsedTimeRange } : {}),
       ...(spatialLabel ? { spatialScope: { label: spatialLabel } } : {}),
       expectedOutputs,
+      ...(Array.isArray(requirements) && requirements.length ? { answerRequirements: requirements.map(item => item.trim()) } : {}),
     },
     modules: { selectionMode, selected },
   } };

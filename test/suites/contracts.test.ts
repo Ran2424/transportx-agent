@@ -161,6 +161,9 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     assert.equal(valid.ok, false, 'end time cannot precede start time');
     const accepted = parseSessionProfileStructured({ schemaVersion: 1, task: { kind: 'data-query', timeRange: { start: '2025-08-21T15:00:00+08:00', end: '2025-08-22T00:00:00+08:00', timezone: 'Asia/Shanghai' }, expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.shanghaidata', version: '2.0.1' }] } });
     assert.equal(accepted.ok, true);
+    const requirements = { schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'], answerRequirements: ['Explain scope and definition'] }, modules: { selectionMode: 'explicit', selected: [] } };
+    assert.deepEqual(parseSessionProfileStructured(requirements).value?.task.answerRequirements, ['Explain scope and definition']);
+    assert.equal(parseSessionProfileStructured({ ...requirements, task: { ...requirements.task, answerRequirements: [''] } }).ok, false);
     const duplicate = parseSessionProfileStructured({ schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected: [{ id: 'module', version: '1' }, { id: 'module', version: '2' }] } });
     assert.equal(duplicate.ok, false);
   }

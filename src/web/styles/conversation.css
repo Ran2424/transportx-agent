@@ -244,6 +244,15 @@
 .pi-message-queue li > span { flex: none; padding: 2px 5px; border-radius: var(--tx-radius-sm); color: var(--text-secondary); background: var(--surface-hover); font-size: var(--font-size-secondary); }
 .pi-message-queue p { min-width: 0; margin: 0; color: var(--text-primary); font-size: var(--font-size-secondary); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer-error { margin: 6px 3px 0; color: var(--status-danger); font-size: var(--font-size-secondary); }
+.traffic-snapshot-picker { margin-block: 4px 8px; font-size: var(--font-size-label); }
+.traffic-snapshot-picker summary { cursor: pointer; inline-size: fit-content; padding: 4px 0; }
+.traffic-snapshot-picker section { padding-block: 6px; }
+.traffic-snapshot-picker select { inline-size: 100%; padding: 6px; color: var(--text-primary); background: var(--surface-elevated); border: 1px solid var(--border-default); font: inherit; }
+.traffic-snapshot-picker button { align-self: start; padding: 5px 8px; color: var(--text-primary); background: var(--surface-elevated); border: 1px solid var(--border-default); border-radius: var(--tx-radius-sm); font: inherit; }
+.traffic-snapshot-picker button:focus-visible, .traffic-snapshot-picker select:focus-visible { outline: 2px solid var(--selection-border); outline-offset: 2px; }
+.traffic-snapshot-picker select:user-invalid { border-color: var(--status-danger); }
+.traffic-picker-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 6px; }
+.traffic-snapshot-picker [role="status"]:empty { margin: 0; }
 
 /* ============================================================
    Citation / Artifacts

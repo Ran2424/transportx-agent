@@ -20,7 +20,7 @@ const MAX_REPAIR_CALLS = 6;
 const MAX_REPAIR_MS = 180_000;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
-type Source = { path: string; sha256: string; bytes: number };
+type Source = { path: string; sha256: string; bytes: number; upstream?: { snapshot: Record<string, unknown>; definition: Record<string, unknown> } };
 type Cell = string | number | null;
 type UnmatchedFilter = { column: string; value: string | null; examples: string[] };
 type Calculation = {
@@ -238,6 +238,7 @@ function note(run: Run, terminal: 'missing' | 'incomplete' | 'checking') {
 export default function evidenceAnalysis(pi: ExtensionAPI) {
   const task = JSON.parse(process.env.TRANSPORTX_SESSION_TASK_JSON || 'null') as SessionProfileV1['task'] | null;
   const required = task?.kind === 'data-query' && task.expectedOutputs?.includes('answer');
+  const answerRequirements = task?.answerRequirements ?? [];
   let active: Run | undefined;
   const failedTools = new Set<string>();
   const clearTimer = (run?: Run) => {
@@ -248,7 +249,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     if (!required) return;
     clearTimer(active);
     active = begin(event.prompt);
-    return { systemPrompt: event.systemPrompt + '\n\n' + guide };
+    return { systemPrompt: event.systemPrompt + '\n\n' + guide + (answerRequirements.length ? '\nThe complete answer must address these requirements: ' + JSON.stringify(answerRequirements) + '. Direct aggregate delivery is disabled; submit the full answer with complete_evidence_analysis.' : '') };
   });
   pi.on('message_start', (event) => {
     if (!required || event.message.role !== 'user') return;
@@ -298,8 +299,8 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     if (failedTools.delete(event.toolCallId)) return { isError: true };
     const run = active;
     const details = asRecord(event.details);
-    if (run && !event.isError && details?.accepted === true && details.receiptId === event.toolCallId && run.relatedReceipts.size < 64) {
-      run.relatedReceipts.add(event.toolCallId);
+    if (run && !event.isError && details?.accepted === true && typeof details.receiptId === 'string' && details.receiptId.length > 0 && details.receiptId.length <= 200 && run.relatedReceipts.size < 64) {
+      run.relatedReceipts.add(details.receiptId as string);
     }
     if (!run || event.toolName !== 'read') return;
     const before = run.pendingReads.get(event.toolCallId);
@@ -362,7 +363,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
             ? record(run, toolCallId, result.provenance.files, result.runId,
               usableAggregate, calculation, unmatched)
             : undefined;
-        const delivered = !!(deliver && evidence && calculation && run);
+        const delivered = !!(deliver && !answerRequirements.length && evidence && calculation && run);
         if (delivered && run && evidence && calculation) {
           run.approval = {
             status: 'answered',
@@ -380,7 +381,9 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
             delivered,
             deliveryNote: delivered
               ? 'Computed result submitted. Finish the turn without more tool calls.'
-              : unmatched?.length
+              : answerRequirements.length
+                ? 'Direct delivery is disabled because this task requires explanation. Submit the complete answer with complete_evidence_analysis.'
+                : unmatched?.length
                 ? 'No source row contains one or more exact filter values. Verify the examples against the request and retry.'
                 : 'A direct delivery needs an active evidence task and a complete, bounded aggregate result.',
           } : {}),
@@ -521,11 +524,26 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       { deliverAs: 'followUp', triggerTurn: true }
     );
   });
-  pi.on('agent_settled', () => {
+  pi.on('agent_settled', async () => {
     const run = active;
     clearTimer(run);
     active = undefined;
     if (!run) return;
+    if (run.terminal === 'verified' && run.approval?.relatedToolCallIds.length) {
+      try {
+        const selectedTableToolCallIds = run.approval.evidence.flatMap(id => {
+          const proof = run.proofs.get(id); return proof?.tableRunId ? [proof.toolCallId] : [];
+        });
+        const result = await postHostOperation<{ synced: number; pending: number }>(
+          { endpoint: process.env.TAU_EVIDENCE_ANALYSIS_ENDPOINT, sessionId: process.env.TAU_EVIDENCE_ANALYSIS_SESSION_ID, token: process.env.TAU_EVIDENCE_ANALYSIS_TOKEN },
+          '/api/internal/analysis/finalize', { runId: run.id, relatedToolCallIds: run.approval.relatedToolCallIds, selectedTableToolCallIds },
+          { toolCallId: run.id, contractVersion: '1.0.0', timeoutMs: 45_000 }
+        );
+        if (result.pending) pi.sendMessage({ customType: 'transportx.receipt-sync', content: run.chinese ? '经验使用回执尚未同步，可稍后重试；本轮答案已保留。' : 'Experience use receipt is pending synchronization; the answer is retained.', display: true }, { triggerTurn: false });
+      } catch {
+        pi.sendMessage({ customType: 'transportx.receipt-sync', content: run.chinese ? '经验使用回执同步未确认；本轮答案已保留。' : 'Experience use receipt synchronization was not confirmed; the answer is retained.', display: true }, { triggerTurn: false });
+      }
+    }
     pi.appendEntry(EVIDENCE_ANALYSIS_ENTRY, {
       analysisId: run.id,
       status: run.terminal ?? 'unconfirmed',
