@@ -4,6 +4,7 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { isWithin, toPosixPath } from './util/path.js';
+import type { CheckedPlan } from '../contracts/workspace-handoff.js';
 
 const METHOD = 'workspace-table/2';
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -19,8 +20,10 @@ type Aggregate = {
   numeric?: true;
 };
 type Order = { column: string; direction: 'asc' | 'desc'; numeric?: true };
-type Plan = {
+export type WorkspaceTablePlan = {
   file: string;
+  intentId?: string;
+  queryRole?: 'primary' | 'support' | 'time';
   select: string[];
   redundantSelect?: string[];
   filters: Filter[];
@@ -62,7 +65,7 @@ const checkAbort = (signal?: AbortSignal) => {
   if (signal?.aborted) throw signal.reason ?? new Error('Operation aborted.');
 };
 
-function parsePlan(input: unknown): Plan {
+function parsePlan(input: unknown): WorkspaceTablePlan {
   const p = record(input);
   const file = string(p.file);
   if (
@@ -133,6 +136,8 @@ function parsePlan(input: unknown): Plan {
   }
   return {
     file,
+    ...(typeof p.intentId === 'string' ? { intentId: p.intentId } : {}),
+    ...(['primary','support','time'].includes(String(p.queryRole)) ? { queryRole: p.queryRole as WorkspaceTablePlan['queryRole'] } : {}),
     select: redundantSelect ? [] : select,
     ...(redundantSelect ? { redundantSelect } : {}),
     filters,
@@ -246,7 +251,8 @@ function parseCsv(text: string): string[][] {
 export async function analyzeWorkspaceTable(
   cwd: string,
   input: unknown,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  checkPlan?: (plan: WorkspaceTablePlan, upstream?: ReturnType<typeof trafficSnapshotProvenance>) => CheckedPlan | undefined,
 ) {
   const plan = parsePlan(input);
   const source = await loadCsv(cwd, plan.file, signal).catch(
@@ -256,6 +262,8 @@ export async function analyzeWorkspaceTable(
       throw error;
     }
   );
+  const upstream = trafficSnapshotProvenance(cwd, source.file, hash(source.bytes));
+  const handoff = checkPlan?.(plan, upstream);
   const [header, ...rows] = parseCsv(source.text);
   const indexes = new Map(header.map((name, i) => [name, i]));
   const column = (name: string) => {
@@ -305,7 +313,12 @@ export async function analyzeWorkspaceTable(
     f.value === null ? `${column(f.column)} IS NULL` : `${column(f.column)} = ?`
   );
   const filterValues = plan.filters.map(({ column, value }) => ({ index: indexes.get(column)!, value }));
-  const matchedRows = rows.filter(row => filterValues.every(({ index, value }) => (row[index] || null) === value)).length;
+  const matched = rows.filter(row => filterValues.every(({ index, value }) => (row[index] || null) === value));
+  const matchedRows = matched.length;
+  const metricIndex = handoff?.metric === undefined ? undefined : indexes.get(handoff.metric);
+  const nonEmptyMetric = metricIndex === undefined ? matchedRows : matched.filter(row => row[metricIndex] !== '').length;
+  if (handoff?.role === 'primary' && handoff.operation === 'avg' && handoff.sampleBasis === 'rows' && nonEmptyMetric !== matchedRows)
+    fail('The average would exclude missing measurements. Confirm the non-null denominator or supply complete data.');
   // Only diagnose values absent from their entire column; a valid combination
   // of individually present values can still legitimately match zero rows.
   const unmatchedFilters = rows.length && matchedRows === 0
@@ -371,7 +384,6 @@ export async function analyzeWorkspaceTable(
       'SELECT version() AS version'
     );
     const engineVersion = String(version.getRowObjects()[0].version);
-    const upstream = trafficSnapshotProvenance(cwd, source.file, hash(source.bytes));
     const provenance = {
       method: METHOD,
       engineVersion,
@@ -384,6 +396,7 @@ export async function analyzeWorkspaceTable(
         },
       ],
       plan,
+      ...(handoff ? { handoff } : upstream?.reviewed ? { previewOnly: true } : {}),
     };
     const limited: typeof result = [];
     let responseBytes = 0;
@@ -396,6 +409,7 @@ export async function analyzeWorkspaceTable(
       columns: output,
       sourceColumns: header,
       matchedRows,
+      ...(handoff?.role === 'primary' && handoff.sampleBasis === 'non_null' ? { sampleRows: nonEmptyMetric } : {}),
       ...(unmatchedFilters.length ? { unmatchedFilters } : {}),
       rows: limited,
       truncated: result.length > limited.length,

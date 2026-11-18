@@ -3,8 +3,8 @@
   "moduleId": "com.transportx.evidence-analysis",
   "toolId": "analysis.table",
   "piName": "analyze_workspace_table",
-  "contractVersion": "1.1.0",
-  "semanticVersion": "workspace-table-v2",
+  "contractVersion": "1.2.0",
+  "semanticVersion": "workspace-table-v3",
   "input": {
     "type": "object",
     "required": [
@@ -16,6 +16,28 @@
         "minLength": 1,
         "maxLength": 1024,
         "description": "Relative path to a UTF-8 CSV in the current task workspace."
+      },
+      "intentId": {
+        "type": "string",
+        "pattern": "^intent_[a-f0-9]{32}$",
+        "description": "Prepared handoff intent for a reviewed snapshot."
+      },
+      "queryRole": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "primary"
+          },
+          {
+            "type": "string",
+            "const": "support"
+          },
+          {
+            "type": "string",
+            "const": "time"
+          }
+        ],
+        "description": "Primary uses the exact comparison population and method. Support may narrow that population. Time groups by a requested time role."
       },
       "deliver": {
         "type": "boolean",

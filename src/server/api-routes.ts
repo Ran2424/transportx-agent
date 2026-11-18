@@ -22,6 +22,9 @@ import { listTrafficSnapshots, selectTrafficSnapshot } from './traffic-snapshots
 import { recordSearch, recordTable, recordUse, finalizeUses, retryUses } from './experience-run-use.js';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
+import { registerWorkspaceHandoff } from './workspace-handoff-api.js';
+import { checkHandoffPlan } from './workspace-handoff.js';
+import { recordHandoffExecution, recordHandoffRejection } from './workspace-handoff-review.js';
 
 export function createApiRouter(services: ApiRouteServices) {
   const cadInvocations = new CadInvocations(path.join(PI_AGENT_DIR, 'executions', 'cad'), SESSIONS_DIR, services.cad);
@@ -30,13 +33,25 @@ export function createApiRouter(services: ApiRouteServices) {
   registerWorkspaceApi(router);
   registerSimulationApi(router, services);
   registerReportApi(router);
+  registerWorkspaceHandoff(router);
   router.post('/api/internal/analysis/table', async ({ req, res, deps }) => {
     try {
       const body = await deps.readBody(req);
       const session = resolveServiceSession(res, body, deps, 'evidenceAnalysis');
       if (!session) return;
-      const input = await validateToolRequest('com.transportx.evidence-analysis', body, 'analysis.table');
-      const result = await runRequestJob(deps.sessions, req, res, session, (signal) => analyzeWorkspaceTable(session.cwd, input, signal));
+      const { handoffTurn, ...toolBody } = body;
+      const input = await validateToolRequest('com.transportx.evidence-analysis', toolBody, 'analysis.table');
+      const result = await runRequestJob(deps.sessions, req, res, session, async signal => {
+        try {
+          const value = await analyzeWorkspaceTable(session.cwd, input, signal,
+            (plan, upstream) => checkHandoffPlan(session, handoffTurn, plan, upstream));
+          recordHandoffExecution(session, value);
+          return value;
+        } catch (error) {
+          recordHandoffRejection(session, handoffTurn, input.intentId, error);
+          throw error;
+        }
+      });
       if (session.resolvedSessionPlan?.modules.some(module => module.id === 'com.transportx.experience-exchange')) recordTable(session, body.toolCallId, result);
       deps.json(res, 200, { result, toolCallId: body.toolCallId });
     } catch (error) {
@@ -109,8 +124,8 @@ export function createApiRouter(services: ApiRouteServices) {
       const session = resolveLiveSessionParam(res, params[0], deps); if (!session) return;
       try {
         const body = await deps.readBody(req);
-        if (Object.keys(body).some(key => key !== 'snapshotId')) throw Object.assign(new Error('Only snapshotId is accepted.'), { status: 400, code: 'traffic_snapshot_invalid' });
-        const result = await deps.workspaces.withRuntimeWrite(session, () => deps.workspaces.live(session.conversationId, false) === session, () => withRequestSignal(req, res, signal => selectTrafficSnapshot(session, body.snapshotId, signal)));
+        if (Object.keys(body).some(key => !['snapshotId','definitionRevision'].includes(key))) throw Object.assign(new Error('Only snapshotId and definitionRevision are accepted.'), { status: 400, code: 'traffic_snapshot_invalid' });
+        const result = await deps.workspaces.withRuntimeWrite(session, () => deps.workspaces.live(session.conversationId, false) === session, () => withRequestSignal(req, res, signal => selectTrafficSnapshot(session, body.snapshotId, signal, body.definitionRevision)));
         if (!result) throw Object.assign(new Error('Conversation runtime changed.'), { status: 409, code: 'conversation_not_active' });
         deps.json(res, 200, result);
       } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code || 'traffic_snapshot_unavailable' }); }

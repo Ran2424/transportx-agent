@@ -18,6 +18,7 @@ export type CoreToolBinding = { toolId: string; piName: string; file: string; ex
 export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
   'com.transportx.evidence-analysis': [
     { toolId: 'analysis.table', piName: 'analyze_workspace_table', file: 'table-contract.json', execution: 'host' },
+    { toolId: 'analysis.handoff', piName: 'workspace_data_handoff', file: 'handoff-contract.json', execution: 'host' },
     { toolId: 'analysis.complete', piName: 'complete_evidence_analysis', file: 'completion-contract.json', execution: 'pi-local' },
   ],
   'com.transportx.experience-exchange': [

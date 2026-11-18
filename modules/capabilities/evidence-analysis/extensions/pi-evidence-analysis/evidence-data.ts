@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { realpathSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { TableClaimInput } from '../../../../../src/contracts/evidence-analysis.mts';
+import type { CheckedPlan } from '../../../../../src/contracts/workspace-handoff.ts';
 import { isWithin, relativePosixPath } from '../../../../../src/server/util/path.ts';
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
@@ -24,6 +25,8 @@ type TablePlan = {
 export type TableObservation = Calculation & {
   plan: TablePlan;
   limited: boolean;
+  handoff?: CheckedPlan;
+  sampleRows?: number;
 };
 export type CheckedClaim = { label: string; evidenceId: string } & (
   | { kind: 'scope'; plan: TablePlan }
@@ -39,14 +42,16 @@ export type Proof = {
   aggregate?: true;
   calculation?: Calculation;
   observation?: TableObservation;
+  handoff?: CheckedPlan;
   unmatchedFilters?: UnmatchedFilter[];
 };
 export type TableResult = {
   runId: string;
-  provenance: { files: Source[]; plan: TablePlan };
+  provenance: { files: Source[]; plan: TablePlan; handoff?: CheckedPlan; previewOnly?: boolean };
   columns: string[];
   sourceColumns: string[];
   matchedRows: number;
+  sampleRows?: number;
   rows: unknown[];
   truncated: boolean;
   unmatchedFilters?: UnmatchedFilter[];
@@ -106,6 +111,7 @@ export function observeTable(result: TableResult): TableObservation | undefined 
   return {
     columns: result.columns, rows, matchedRows: result.matchedRows,
     filters: plan.filters, plan, limited: result.truncated || result.rows.length > bounded.length,
+    handoff: result.provenance.handoff, sampleRows: result.sampleRows,
   };
 }
 
@@ -129,7 +135,7 @@ export function checkClaims(proofs: ReadonlyMap<string, Proof>, claims: TableCla
         throw new Error('Scope and sample claims take no column or row.');
       return claim.kind === 'scope'
         ? { ...base, kind: 'scope', plan: fact.plan }
-        : { ...base, kind: 'sample', matchedRows: fact.matchedRows };
+        : { ...base, kind: 'sample', matchedRows: fact.sampleRows ?? fact.matchedRows };
     }
     const index = fact.columns.indexOf(claim.column ?? '');
     if (index < 0) throw new Error('Use an exact output column from the cited query.');
@@ -156,6 +162,25 @@ export function checkClaims(proofs: ReadonlyMap<string, Proof>, claims: TableCla
   if (!checked.some(claim => claim.kind === 'sample' && scopes.has(claim.evidenceId)))
     throw new Error('Include scope and sample claims that cite the exact same query.');
   return checked;
+}
+
+export function checkHandoffDelivery(proofs: ReadonlyMap<string, Proof>, ids: string[], claims: CheckedClaim[]) {
+  const selected = ids.flatMap(id => proofs.get(id) ?? []);
+  const governed = selected.filter(proof => proof.handoff);
+  if (!governed.length) return;
+  const primary = governed.find(proof => proof.handoff?.role === 'primary');
+  if (!primary?.handoff || governed.some(proof => proof.handoff?.intentId !== primary.handoff?.intentId))
+    throw new Error('Cite a checked main comparison and evidence from that same prepared intent.');
+  for (const kind of ['scope','sample','value'] as const) {
+    if (!claims.some(claim => claim.kind === kind && claim.evidenceId === primary.id &&
+        (claim.kind !== 'value' || claim.column === primary.handoff?.resultColumn)))
+      throw new Error('The checked main comparison needs a scope, sample, and result claim.');
+  }
+  for (const time of primary.handoff.requiredTimes) {
+    if (!claims.some(claim => claim.kind === 'time' && claim.column === time.column &&
+      proofs.get(claim.evidenceId)?.handoff?.timeRole === time.role))
+      throw new Error('Include checked time evidence for ' + time.role + ' before delivery.');
+  }
 }
 
 export function claimsText(claims: CheckedClaim[], chinese: boolean) {
@@ -216,4 +241,21 @@ export function calculationText(calculation: Calculation, chinese: boolean) {
     ...lines,
     [csv(calculation.columns), csv(calculation.columns.map(() => '---')), ...calculation.rows.map(csv)].join('\n'),
   ].join('\n\n');
+}
+
+export function note(run: { chinese: boolean; proofs: ReadonlyMap<string, Proof>; failedSources: ReadonlySet<string> }, terminal: 'missing' | 'incomplete' | 'checking') {
+  if (run.chinese) {
+    if (terminal === 'checking') return '正在补查本轮证据。';
+    if (terminal === 'missing') return '资料不足。';
+    if (run.proofs.size) return '已经取得部分工作区证据，本轮未提交可复核的最终答案。';
+    if (run.failedSources.size)
+      return '本轮未能核对这些来源：' + [...run.failedSources].slice(0, 3).join('、') + '。';
+    return '本轮未取得可核对的工作区证据，分析尚未完成。';
+  }
+  if (terminal === 'checking') return 'Checking task evidence.';
+  if (terminal === 'missing') return 'Evidence is incomplete.';
+  if (run.proofs.size) return 'Some evidence was retrieved, but a verifiable final answer was not submitted.';
+  if (run.failedSources.size)
+    return 'Could not verify these sources: ' + [...run.failedSources].slice(0, 3).join(', ') + '.';
+  return 'No workspace evidence was verified. The analysis is incomplete.';
 }

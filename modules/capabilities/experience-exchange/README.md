@@ -1,4 +1,4 @@
-# Experience Exchange 2.2.1
+# Experience Exchange 2.3.0
 
 This optional built-in capability connects a task to a separately operated Traffic Experience MCP service. Start the Agent Host (or desktop application) with these trusted host environment variables:
 
@@ -13,6 +13,8 @@ Successful search results and feedback receipts are recorded in `<task workspace
 In a new task that opts into the module, `search_experience` is ready on the first turn. The module asks the Agent to check published experience before deciding an unstated interpretation that could change the result. The tool accepts a single intent phrase and returns up to three scoped candidates. Feedback remains available through capability activation. Exact-version reference lookup is supported by the Traffic MCP service, and existing frozen version 1 tool requests remain accepted by the Host.
 
 Search attempts, including empty and unavailable searches, are recorded in the Pi session history separately from explicit use decisions. After enabling the module tools, call `record_experience_use` in the same turn with a release ID returned by a successful search, `used` or `skipped`, and a reason. Compatible evidence delivery can automatically attach this explicit decision even if the model omits the receipt ID from completion. Feedback remains available on demand.
+
+Structured rule releases carry allowed operations, exclusions, and required time roles. In a reviewed single-table task, prepare the selected release with `workspace_data_handoff` and use its `intentId` when recording the decision. The Host checks the applicable verdict and ties the decision to the delivered main comparison. Review requests for a rule can point to the exact release and will await the Graph Studio approval flow.
 
 When Traffic enables scoped data snapshots, a conversation with this capability can list them at `GET /api/conversations/:id/traffic-snapshots` and explicitly select one with `POST` to the same URL and `{ "snapshotId": "..." }`. Selection returns a workspace-relative CSV path. Use that path in the current question. The Host checks the upstream identity and CSV and definition digests; later table analysis checks the CSV again and retains its upstream references. No snapshot is selected automatically.
 

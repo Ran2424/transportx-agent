@@ -11,12 +11,14 @@ import {
 import { HostCallError, postHostOperation } from '../../../../shared/host-client.ts';
 import {
   checkedPath, readIdentity, calculatedResult, observeTable, checkClaims, claimsText, calculationText,
+  checkHandoffDelivery, note,
   type Source, type UnmatchedFilter, type Calculation, type TableObservation, type CheckedClaim, type Proof, type TableResult,
 } from './evidence-data.ts';
+import { HANDOFF, handoffGuide, registerHandoffTool } from './handoff-tool.ts';
 
 const TABLE = 'analyze_workspace_table';
 const COMPLETE = 'complete_evidence_analysis';
-const REPAIR_TOOLS = new Set(['read', 'find', 'ls', 'grep', 'tau_resolve_citation', TABLE, COMPLETE]);
+const REPAIR_TOOLS = new Set(['read', 'find', 'ls', 'grep', 'tau_resolve_citation', TABLE, HANDOFF, COMPLETE]);
 const MAX_REPAIR_CALLS = 6;
 const MAX_REPAIR_MS = 180_000;
 
@@ -38,6 +40,7 @@ type CompletionToolResult = {
 };
 type Run = {
   id: string;
+  question: string;
   chinese: boolean;
   userSeen: boolean;
   proofs: Map<string, Proof>;
@@ -67,6 +70,7 @@ const repairNotice =
 function begin(text: string, userSeen = false): Run {
   return {
     id: randomUUID(),
+    question: text,
     chinese: /\p{Script=Han}/u.test(text),
     userSeen,
     proofs: new Map(),
@@ -122,27 +126,11 @@ function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: st
     ...(aggregate ? { aggregate: true as const } : {}),
     ...(calculation ? { calculation } : {}),
     ...(observation ? { observation } : {}),
+    ...(observation?.handoff ? { handoff: observation.handoff } : {}),
     ...(unmatchedFilters?.length ? { unmatchedFilters } : {}),
   };
   run.proofs.set(id, proof);
   return proof;
-}
-
-function note(run: Run, terminal: 'missing' | 'incomplete' | 'checking') {
-  if (run.chinese) {
-    if (terminal === 'checking') return '正在补查本轮证据。';
-    if (terminal === 'missing') return '资料不足。';
-    if (run.proofs.size) return '已经取得部分工作区证据，本轮未提交可复核的最终答案。';
-    if (run.failedSources.size)
-      return '本轮未能核对这些来源：' + [...run.failedSources].slice(0, 3).join('、') + '。';
-    return '本轮未取得可核对的工作区证据，分析尚未完成。';
-  }
-  if (terminal === 'checking') return 'Checking task evidence.';
-  if (terminal === 'missing') return 'Evidence is incomplete.';
-  if (run.proofs.size) return 'Some evidence was retrieved, but a verifiable final answer was not submitted.';
-  if (run.failedSources.size)
-    return 'Could not verify these sources: ' + [...run.failedSources].slice(0, 3).join(', ') + '.';
-  return 'No workspace evidence was verified. The analysis is incomplete.';
 }
 
 export default function evidenceAnalysis(pi: ExtensionAPI) {
@@ -159,7 +147,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     if (!required) return;
     clearTimer(active);
     active = begin(event.prompt);
-    return { systemPrompt: event.systemPrompt + '\n\n' + guide + '\n' + claimGuide + (answerRequirements.length ? '\nThe complete answer must address these requirements: ' + JSON.stringify(answerRequirements) + '. Direct aggregate delivery is disabled; submit the full answer with complete_evidence_analysis.' : '') };
+    return { systemPrompt: event.systemPrompt + '\n\n' + handoffGuide + '\n' + guide + '\n' + claimGuide + (answerRequirements.length ? '\nThe complete answer must address these requirements: ' + JSON.stringify(answerRequirements) + '. Direct aggregate delivery is disabled; submit the full answer with complete_evidence_analysis.' : '') };
   });
   pi.on('message_start', (event) => {
     if (!required || event.message.role !== 'user') return;
@@ -193,7 +181,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
           reason: 'The evidence repair budget is exhausted.',
         };
       }
-      if (!REPAIR_TOOLS.has(event.toolName))
+      if (!REPAIR_TOOLS.has(event.toolName) || (event.toolName === HANDOFF && !['inspect','prepare'].includes(String(event.input.action))))
         return {
           block: true,
           reason: 'This repair pass only permits read-only workspace evidence operations and completion.',
@@ -240,6 +228,14 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     };
   });
 
+  registerHandoffTool(pi, () => active, id => failedTools.add(id), (review, turnId) => {
+    const run = active;
+    if (!run || run.id !== turnId) return;
+    const label = run.chinese ? (review.status === 'resolved' ? '复核已关闭' : '复核已登记') : (review.status === 'resolved' ? 'Review resolved' : 'Review recorded');
+    run.approval = { status: 'answered', evidence: [], relatedToolCallIds: [],
+      answer: label + ' · `' + review.id + '`' + (review.url ? '\n\n[' + (run.chinese ? '打开对应 Studio' : 'Open the linked Studio') + '](' + review.url + ')' : '') };
+  });
+
   pi.registerTool({
     name: TABLE,
     label: '只读分析工作区表格',
@@ -264,18 +260,18 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
             token: process.env.TAU_EVIDENCE_ANALYSIS_TOKEN,
           },
           '/api/internal/analysis/table',
-          { ...query, file: file.readable },
-          { toolCallId, contractVersion: '1.1.0', signal, timeoutMs: 20_000 }
+          { ...query, file: file.readable, ...(run ? { handoffTurn: run.id } : {}) },
+          { toolCallId, contractVersion: '1.2.0', signal, timeoutMs: 20_000 }
         );
         const unmatched = result.unmatchedFilters;
         const usableAggregate = isAggregate && !unmatched?.length && !result.truncated && result.rows.length > 0;
         const calculation = usableAggregate ? calculatedResult(result, query.filters ?? []) : undefined;
         const evidence =
-          run && run === active
+          run && run === active && !result.provenance.previewOnly
             ? record(run, toolCallId, result.provenance.files, result.runId,
               usableAggregate, calculation, unmatched, observeTable(result))
             : undefined;
-        const delivered = !!(deliver && !answerRequirements.length && evidence && calculation && run);
+        const delivered = !!(deliver && !result.provenance.handoff && !answerRequirements.length && evidence && calculation && run);
         if (delivered && run && evidence && calculation) {
           run.approval = {
             status: 'answered',
@@ -295,6 +291,8 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
               ? 'Computed result submitted. Finish the turn without more tool calls.'
               : answerRequirements.length
                 ? 'Direct delivery is disabled because this task requires explanation. Submit the complete answer with complete_evidence_analysis.'
+                : result.provenance.handoff
+                  ? 'A reviewed handoff requires structured evidence completion.'
                 : unmatched?.length
                 ? 'No source row contains one or more exact filter values. Verify the examples against the request and retry.'
                 : 'A direct delivery needs an active evidence task and a complete, bounded aggregate result.',
@@ -316,7 +314,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
         const error = cause instanceof Error ? cause.message : 'Workspace table read failed.';
         return {
           content: [{ type: 'text', text: error }],
-          details: { kind: 'analysis-table-error' },
+          details: { kind: 'analysis-table-error', ...(cause instanceof HostCallError ? { code: cause.code } : {}) },
         };
       }
     },
@@ -355,6 +353,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
               : '';
             answer = (run.chinese ? '**逐项核对的结果**' : '**Evidence-bound results**') + '\n\n' + claimsText(claims, run.chinese) + review;
           } else if (input.claims?.length) throw new Error('Table claims require evidence from a table query in this turn.');
+          if (status === 'answered') checkHandoffDelivery(run.proofs, ids, claims ?? []);
           rejection = completionError(run, status, answer, ids, related);
         } catch (error) {
           rejection = error instanceof Error ? error.message : 'The evidence claims could not be checked.';

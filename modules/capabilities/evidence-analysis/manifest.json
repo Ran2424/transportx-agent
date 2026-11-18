@@ -2,13 +2,14 @@
   "manifestVersion": 2,
   "id": "com.transportx.evidence-analysis",
   "name": "Evidence-backed Analysis",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "contributes": {
     "initialTools": [
       { "piName": "analyze_workspace_table", "contract": "table-contract.json" },
+      { "piName": "workspace_data_handoff", "contract": "handoff-contract.json" },
       { "piName": "complete_evidence_analysis", "contract": "completion-contract.json" }
     ]
   },

@@ -3,7 +3,7 @@ import type { TSchema } from 'typebox';
 import { readFileSync } from 'node:fs';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { parseToolInterfaceContract } from '../../../../../src/contracts/tool-interface.ts';
-import { postHostOperation } from '../../../../shared/host-client.ts';
+import { HostCallError, postHostOperation } from '../../../../shared/host-client.ts';
 
 const entries = [
   {
@@ -28,7 +28,7 @@ const methodPolicy = [
   'If a task leaves a consequential choice open about the population, definition, comparison, denominator, time basis, or method, call search_experience once before choosing that assumption or running the substantive calculation.',
   'A named data source or recognizable field names alone do not settle the intended scope or meaning. Reading the schema first is fine. For a lookup or calculation with the method and scope already specified, proceed directly.',
   'Use a short query in the user’s language about the actual intent. Compare candidate applicability and exclusions with that intent. For a plausible candidate you adopt or explicitly rule out, call record_experience_use with its exact releaseId, used or skipped, and why.',
-  'Use current evidence to establish facts. An empty search is not a failure or a disposition. When the result is submitted through a tool that accepts relatedToolCallIds, include the disposition receiptId.',
+  'For a structured applicability result, prepare the reviewed table intent with the candidate releaseId before making the decision. Supply intentId when recording that decision. Current evidence establishes facts. An empty search has no disposition.',
 ].join('\n');
 export default function experienceExchange(pi: ExtensionAPI) {
   const errors = new Set<string>();
@@ -161,6 +161,7 @@ export default function experienceExchange(pi: ExtensionAPI) {
       const details = {
         kind: 'experience-use', accepted: true, receiptId: 'use_' + randomUUID(),
         ...release,
+        ...(typeof value.intentId === 'string' ? { intentId: value.intentId } : {}),
         disposition: value.disposition as 'used' | 'skipped', reason: (value.reason as string).trim(),
       };
       try {
@@ -168,7 +169,8 @@ export default function experienceExchange(pi: ExtensionAPI) {
           '/api/internal/experience/use', details, { toolCallId, contractVersion: useContract.contractVersion, signal, timeoutMs: 20_000 });
       } catch (error) {
         errors.add(toolCallId);
-        return { content: [{ type: 'text' as const, text: 'Could not persist the use receipt. Continue the answer; retry this decision if appropriate.' }], details: { kind: 'experience-use', accepted: false } };
+        const text = error instanceof HostCallError ? error.message : 'Could not confirm the use receipt.';
+        return { content: [{ type: 'text' as const, text }], details: { kind: 'experience-use', accepted: false } };
       }
       pi.appendEntry('experience-exchange', { ...details, kind: 'disposition', toolCallId });
       return {

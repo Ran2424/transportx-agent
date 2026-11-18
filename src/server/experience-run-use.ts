@@ -5,6 +5,8 @@ import { PI_AGENT_DIR } from './config.js';
 import { workspaceMetadataPath } from './workspace-store.js';
 import { callExperienceMcp, experienceConfig } from './experience-exchange.js';
 import { trafficSnapshotProvenance } from './traffic-snapshots.js';
+import { getIntent, type Candidate } from './workspace-handoff.js';
+import type { CheckedPlan } from '../contracts/workspace-handoff.js';
 
 type Obj = Record<string, any>;
 type Context = { cwd: string; conversationId: string; resolvedSessionPlan: { modules: { id: string }[] } | null };
@@ -33,9 +35,23 @@ export function recordSearch(session: Context, toolCallId: unknown, result: Obj)
   if (!token(toolCallId)) throw fail('Search call identity is required.');
   append(session, { kind: 'search', toolCallId, scope: result.scope, experiences: result.experiences });
 }
+export function getHandoffCandidates(session: Context, releaseIds: string[]): Candidate[] {
+  if (!releaseIds.length) return [];
+  const scope = experienceConfig().scope;
+  const entries = read(session).reverse();
+  return releaseIds.map(releaseId => {
+    const found = entries.filter(entry => entry.kind === 'search' && entry.scope === scope)
+      .flatMap(entry => Array.isArray(entry.experiences) ? entry.experiences : [])
+      .find(item => item.release_id === releaseId);
+    if (!found) throw fail('Prepare with an exact release retrieved in this conversation.');
+    const { release_id, entry_id, collection_id, revision, digest, applicability, feedback_ids } = found;
+    return { release_id, entry_id, collection_id, revision, digest, applicability,
+      ...(Array.isArray(feedback_ids) && feedback_ids.every(item => typeof item === 'string') ? { feedback_ids } : {}) };
+  });
+}
 export function recordTable(session: Context, toolCallId: unknown, result: Obj) {
   if (!token(toolCallId)) throw fail('Table call identity is required.');
-  append(session, { kind: 'table', toolCallId, files: result.provenance.files });
+  append(session, { kind: 'table', toolCallId, files: result.provenance.files, handoff: result.provenance.handoff });
 }
 export function recordUse(session: Context, input: Obj) {
   const { receiptId, lookupToolCallId, releaseId, revision, digest, disposition, reason } = input;
@@ -43,8 +59,17 @@ export function recordUse(session: Context, input: Obj) {
   const scope = experienceConfig().scope, entries = read(session);
   const found = [...entries].reverse().find(entry => entry.kind === 'search' && entry.scope === scope && entry.toolCallId === lookupToolCallId)?.experiences?.find((item: Obj) => item.release_id === releaseId && item.revision === revision && item.digest === digest);
   if (!found) throw fail('Use must match an exact search result in this conversation.');
+  if (found.applicability && input.intentId === undefined && disposition === 'used')
+    throw fail('An applicable prepared intent is required before using a structured release.');
+  if (input.intentId !== undefined) {
+    const intent = getIntent(session, input.intentId);
+    const decision = intent.decisions.find(item => item.candidate.release_id === releaseId);
+    if (!decision || (found.applicability && disposition === 'used' && decision.state !== 'applicable'))
+      throw fail('The release does not apply to this prepared intent.');
+  }
   const experience = { release_id: found.release_id, entry_id: found.entry_id, collection_id: found.collection_id, revision: found.revision, digest: found.digest };
-  const record = { kind: 'use', receiptId, lookupToolCallId, disposition, reason: reason.trim(), experience, scope };
+  const record = { kind: 'use', receiptId, lookupToolCallId, disposition, reason: reason.trim(), experience, scope,
+    ...(input.intentId ? { intentId: input.intentId } : {}) };
   const previous = entries.find(entry => entry.kind === 'use' && entry.receiptId === receiptId);
   if (previous && JSON.stringify(previous) !== JSON.stringify(record)) throw fail('Receipt identity was already used.');
   if (!previous) append(session, record);
@@ -79,6 +104,13 @@ export async function finalizeUses(session: Context, input: Obj, signal?: AbortS
   const entries = read(session), snapshotIds = validSnapshotIds(session, entries, input.selectedTableToolCallIds);
   const related = new Set<string>(input.relatedToolCallIds);
   const uses = [...related].flatMap(id => entries.filter(entry => entry.kind === 'use' && entry.receiptId === id));
+  const selectedIntents = new Set(entries.flatMap(entry => {
+    const handoff = entry.handoff as CheckedPlan | undefined;
+    return entry.kind === 'table' && input.selectedTableToolCallIds.includes(entry.toolCallId) && handoff?.role === 'primary'
+      ? [handoff.intentId] : [];
+  }));
+  if (uses.some(use => use.intentId && !selectedIntents.has(use.intentId)))
+    throw fail('An experience decision belongs to a different prepared intent than the delivered comparison.');
   const toSend: Obj[] = [];
   let synced = 0, pendingCount = 0;
   // Persist all work before the first network call, so interruption cannot lose later receipts.

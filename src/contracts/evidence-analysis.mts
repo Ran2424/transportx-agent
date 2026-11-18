@@ -14,6 +14,10 @@ export const WorkspaceTableSchema = Type.Object(
       maxLength: 1024,
       description: 'Relative path to a UTF-8 CSV in the current task workspace.',
     }),
+    intentId: Type.Optional(Type.String({ pattern: '^intent_[a-f0-9]{32}$', description: 'Prepared handoff intent for a reviewed snapshot.' })),
+    queryRole: Type.Optional(Type.Union([Type.Literal('primary'), Type.Literal('support'), Type.Literal('time')], {
+      description: 'Primary uses the exact comparison population and method. Support may narrow that population. Time groups by a requested time role.',
+    })),
     deliver: Type.Optional(Type.Boolean({ description: 'Set true to submit this successful exact aggregate as the final answer in the same call; omit or false to continue analysis.' })),
     select: Type.Optional(Type.Array(Column, { minItems: 1, maxItems: 24, description: 'Read mode: columns to return; omit to read all columns. In aggregate mode omit select and use groupBy for dimensions.' })),
     filters: Type.Optional(Type.Array(ExactFilter, { maxItems: 16 })),

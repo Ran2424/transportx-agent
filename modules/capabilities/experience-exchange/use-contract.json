@@ -3,8 +3,8 @@
   "moduleId": "com.transportx.experience-exchange",
   "toolId": "experience.use",
   "piName": "record_experience_use",
-  "contractVersion": "1.0.0",
-  "semanticVersion": "experience-use-v1",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "experience-use-v2",
   "input": {
     "type": "object",
     "required": [
@@ -17,6 +17,11 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 120
+      },
+      "intentId": {
+        "type": "string",
+        "pattern": "^intent_[a-f0-9]{32}$",
+        "description": "Prepared intent for a release with structured applicability."
       },
       "disposition": {
         "anyOf": [
