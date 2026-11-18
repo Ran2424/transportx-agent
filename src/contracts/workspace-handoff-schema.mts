@@ -13,7 +13,8 @@ const filter = Type.Object({
 export const WorkspaceHandoffSchema = Type.Object({
   action: Type.Union([
     Type.Literal('inspect'), Type.Literal('prepare'), Type.Literal('review'), Type.Literal('resolve'),
-  ], { description: 'Inspect a selected table definition, prepare a query intent, route a review, or close a review with an executed replacement.' }),
+    Type.Literal('retry_resolution'), Type.Literal('inspect_review'),
+  ], { description: 'Inspect or prepare a reviewed snapshot, route or resolve a review, retry a verified Data Studio closure, or look up review state.' }),
   file: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })),
   operation: Type.Optional(operation),
   metric: Type.Optional(name),

@@ -7,12 +7,23 @@ export const handoffGuide = 'For a selected reviewed snapshot use workspace_data
 
 export type HandoffReviewResult = { id: string; target: string; status: string; evidenceRef: string; url?: string };
 
+export function handoffReviewText(review: HandoffReviewResult, chinese: boolean) {
+  const labels = chinese
+    ? { pending: '复核提交尚未确认', routed: '复核已登记', resolution_pending: '重跑证据已保存，等待 Data Studio 确认关闭', resolved: '复核已关闭' }
+    : { pending: 'Review submission unconfirmed', routed: 'Review recorded', resolution_pending: 'Rerun verified, waiting for Data Studio to confirm closure', resolved: 'Review resolved' };
+  const label = labels[review.status as keyof typeof labels] ?? review.status;
+  const retry = review.status === 'resolution_pending'
+    ? (chinese ? '\n\n可用同一复核 ID 重试同步。' : '\n\nRetry synchronization with the same review ID.') : '';
+  return label + ' · `' + review.id + '`' + retry +
+    (review.url ? '\n\n[' + (chinese ? '打开对应 Studio' : 'Open the linked Studio') + '](' + review.url + ')' : '');
+}
+
 export function registerHandoffTool(pi: ExtensionAPI, current: () => { id: string; question: string } | undefined,
   markError: (toolCallId: string) => void, reviewReady: (review: HandoffReviewResult, turnId: string) => void) {
   pi.registerTool({
     name: HANDOFF,
     label: '核对数据口径与复核流转',
-    description: 'Inspect the approved definition of a selected snapshot; prepare intent before executing a substantive comparison; route an observed failure for review; close a review after an approved and executed rerun. Updating a review requires the user’s direction.',
+    description: 'Inspect or prepare a selected snapshot; route an observed failure; request closure after an approved and executed rerun; inspect_review shows the state; retry_resolution resends a verified closure using the same reviewId. Updating a review requires the user’s direction.',
     parameters: WorkspaceHandoffSchema,
     async execute(toolCallId, input, signal) {
       const run = current();
@@ -26,7 +37,7 @@ export function registerHandoffTool(pi: ExtensionAPI, current: () => { id: strin
           },
           '/api/internal/analysis/handoff',
           { ...input, handoffTurn: run.id, handoffQuestion: run.question },
-          { toolCallId, contractVersion: '1.0.0', signal, timeoutMs: 30_000 }
+          { toolCallId, contractVersion: '1.1.0', signal, timeoutMs: 30_000 }
         );
         if (result.review) reviewReady(result.review, run.id);
         const details = { kind: 'data-handoff', accepted: true, ...result };

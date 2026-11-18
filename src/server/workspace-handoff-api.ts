@@ -4,7 +4,7 @@ import type { ApiRouteServices } from './api-services.js';
 import { resolveServiceSession, runRequestJob } from './api-context.js';
 import { getHandoffCandidates } from './experience-run-use.js';
 import { handoffError, prepareIntent, readHandoffSource } from './workspace-handoff.js';
-import { closeHandoffReview, routeHandoffReview } from './workspace-handoff-review.js';
+import { closeHandoffReview, inspectHandoffReview, retryHandoffResolution, routeHandoffReview } from './workspace-handoff-review.js';
 import { validateToolRequest } from './tool-request.js';
 
 export function registerWorkspaceHandoff(router: ServerRouter<ApiRouteServices>) {
@@ -30,7 +30,11 @@ export function registerWorkspaceHandoff(router: ServerRouter<ApiRouteServices>)
           case 'review':
             return { review: await routeHandoffReview(session, input, signal) };
           case 'resolve':
-            return { review: closeHandoffReview(session, input) };
+            return { review: await closeHandoffReview(session, input, signal) };
+          case 'retry_resolution':
+            return { review: await retryHandoffResolution(session, input.reviewId, signal) };
+          case 'inspect_review':
+            return { review: inspectHandoffReview(session, input.reviewId).review };
         }
       });
       deps.json(res, 200, { result, toolCallId: body.toolCallId });

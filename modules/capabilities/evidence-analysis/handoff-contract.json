@@ -3,8 +3,8 @@
   "moduleId": "com.transportx.evidence-analysis",
   "toolId": "analysis.handoff",
   "piName": "workspace_data_handoff",
-  "contractVersion": "1.0.0",
-  "semanticVersion": "workspace-data-handoff-v1",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "workspace-data-handoff-v2",
   "input": {
     "type": "object",
     "required": [
@@ -28,9 +28,17 @@
           {
             "type": "string",
             "const": "resolve"
+          },
+          {
+            "type": "string",
+            "const": "retry_resolution"
+          },
+          {
+            "type": "string",
+            "const": "inspect_review"
           }
         ],
-        "description": "Inspect a selected table definition, prepare a query intent, route a review, or close a review with an executed replacement."
+        "description": "Inspect or prepare a reviewed snapshot, route or resolve a review, retry a verified Data Studio closure, or look up review state."
       },
       "file": {
         "type": "string",

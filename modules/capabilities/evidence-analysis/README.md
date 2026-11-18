@@ -8,6 +8,8 @@
 
 用户确认要回流问题后，用 `review` 登记被拦截或已执行的意图与发现，目标为 `data`、`knowledge` 或 `agent`。确定性的查询计划错误默认回到 Agent。数据和知识复核使用授权服务，Agent 复核保存在原会话。权威工作台完成审核修订后，用新意图重跑。数据修订可重新选择同一快照的更新定义。用 `resolve` 引用执行过的更正意图，并保留算法、时间证据和原数据范围。
 
+数据复核用同一个 ID 在 Data Studio 和 TransportX 追溯。确认较新定义后，用原业务范围重跑；允许新版定义修正同一个别名对应的实际值。提交关闭时先保存重跑证据，Data Studio 确认后才显示已关闭。确认未返回时为 `resolution_pending`；用 `retry_resolution` 和同一 `reviewId` 重发既有证据，`inspect_review` 可读取状态。重试无需再执行查询。
+
 为数据问答任务选择「取证分析」模块。会话启动时开放 `analyze_workspace_table` 和 `complete_evidence_analysis`。每次任务会记录本轮读取或查询过的工作区来源。
 
 - 对工作区内 UTF-8 CSV 可以选列、按精确文本等值过滤、分组、计数、求和或求平均。空字段按 NULL 处理。数值排序和数值最小/最大值使用 `numeric: true`。求和与数值边界使用精确十进制，结果附筛选后的记录数。

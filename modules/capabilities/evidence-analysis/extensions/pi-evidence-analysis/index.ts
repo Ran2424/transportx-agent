@@ -14,7 +14,7 @@ import {
   checkHandoffDelivery, note,
   type Source, type UnmatchedFilter, type Calculation, type TableObservation, type CheckedClaim, type Proof, type TableResult,
 } from './evidence-data.ts';
-import { HANDOFF, handoffGuide, registerHandoffTool } from './handoff-tool.ts';
+import { HANDOFF, handoffGuide, handoffReviewText, registerHandoffTool } from './handoff-tool.ts';
 
 const TABLE = 'analyze_workspace_table';
 const COMPLETE = 'complete_evidence_analysis';
@@ -181,7 +181,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
           reason: 'The evidence repair budget is exhausted.',
         };
       }
-      if (!REPAIR_TOOLS.has(event.toolName) || (event.toolName === HANDOFF && !['inspect','prepare'].includes(String(event.input.action))))
+      if (!REPAIR_TOOLS.has(event.toolName) || (event.toolName === HANDOFF && !['inspect','prepare','inspect_review'].includes(String(event.input.action))))
         return {
           block: true,
           reason: 'This repair pass only permits read-only workspace evidence operations and completion.',
@@ -231,9 +231,8 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
   registerHandoffTool(pi, () => active, id => failedTools.add(id), (review, turnId) => {
     const run = active;
     if (!run || run.id !== turnId) return;
-    const label = run.chinese ? (review.status === 'resolved' ? '复核已关闭' : '复核已登记') : (review.status === 'resolved' ? 'Review resolved' : 'Review recorded');
     run.approval = { status: 'answered', evidence: [], relatedToolCallIds: [],
-      answer: label + ' · `' + review.id + '`' + (review.url ? '\n\n[' + (run.chinese ? '打开对应 Studio' : 'Open the linked Studio') + '](' + review.url + ')' : '') };
+      answer: handoffReviewText(review, run.chinese) };
   });
 
   pi.registerTool({
