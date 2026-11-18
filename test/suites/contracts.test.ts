@@ -47,6 +47,29 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
       fs.writeFileSync(path.join(cwd, 'empty.csv'), 'value\n\n');
       const empty = await analyzeWorkspaceTable(cwd, { file: 'empty.csv', aggregates: [{ op: 'avg', column: 'value', as: 'mean' }, { op: 'count', column: 'value', as: 'n' }] });
       assert.deepEqual(empty.rows, [[null, 0]]);
+      fs.writeFileSync(path.join(cwd, 'filters.csv'), `day,category\n2026/01/01,A\n2026/01/01,B\n${'x'.repeat(129)},B\n2026/01/02,B\n2026/01/03,B\n2026/01/04,B\n`);
+      const filterPlan = { file: 'filters.csv', filters: [{ column: 'day', value: '2026-01-01' }], aggregates: [{ op: 'count', as: 'n' }] };
+      const missing = await analyzeWorkspaceTable(cwd, filterPlan);
+      assert.equal(missing.matchedRows, 0);
+      assert.deepEqual(missing.rows, [[0]]);
+      assert.deepEqual(missing.unmatchedFilters, [{ column: 'day', value: '2026-01-01', examples: ['2026/01/01', '2026/01/02', '2026/01/03'] }]);
+      assert.equal((await analyzeWorkspaceTable(cwd, filterPlan)).runId, missing.runId);
+      const combination = await analyzeWorkspaceTable(cwd, { ...filterPlan, filters: [{ column: 'day', value: '2026/01/02' }, { column: 'category', value: 'A' }] });
+      assert.equal(combination.matchedRows, 0);
+      assert.equal(combination.unmatchedFilters, undefined);
+      const nullMissing = await analyzeWorkspaceTable(cwd, { ...filterPlan, filters: [{ column: 'day', value: null }] });
+      assert.equal(nullMissing.unmatchedFilters?.[0].value, null);
+      const multiple = await analyzeWorkspaceTable(cwd, { ...filterPlan, filters: [{ column: 'day', value: null }, { column: 'category', value: 'C' }] });
+      assert.deepEqual(multiple.unmatchedFilters, [
+        { column: 'day', value: null, examples: ['2026/01/01', '2026/01/02', '2026/01/03'] },
+        { column: 'category', value: 'C', examples: ['A', 'B'] },
+      ]);
+      const nullPresent = await analyzeWorkspaceTable(cwd, { file: 'data.csv', filters: [{ column: 'value', value: null }], select: ['group'] });
+      assert.equal(nullPresent.matchedRows, 1);
+      assert.equal(nullPresent.unmatchedFilters, undefined);
+      fs.writeFileSync(path.join(cwd, 'no-rows.csv'), 'day\n');
+      const noRows = await analyzeWorkspaceTable(cwd, { ...filterPlan, file: 'no-rows.csv' });
+      assert.equal(noRows.unmatchedFilters, undefined);
     } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
   }
 

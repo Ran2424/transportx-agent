@@ -22,6 +22,7 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 type Source = { path: string; sha256: string; bytes: number };
 type Cell = string | number | null;
+type UnmatchedFilter = { column: string; value: string | null; examples: string[] };
 type Calculation = {
   columns: string[];
   rows: Cell[][];
@@ -35,6 +36,7 @@ type Proof = {
   tableRunId?: string;
   aggregate?: true;
   calculation?: Calculation;
+  unmatchedFilters?: UnmatchedFilter[];
 };
 type TableResult = {
   runId: string;
@@ -44,6 +46,7 @@ type TableResult = {
   matchedRows: number;
   rows: unknown[];
   truncated: boolean;
+  unmatchedFilters?: UnmatchedFilter[];
 };
 type Approval = {
   status: 'answered' | 'missing';
@@ -81,9 +84,9 @@ type Run = {
 };
 
 const guide =
-  'For a calculation from a known CSV, call analyze_workspace_table directly with filters and aggregates. Omit select when aggregating. Use avg for a mean and numeric:true for numeric min/max. Use descriptive as labels, including units when known. If the aggregate answers the whole request, set deliver:true so the workbench submits the computed values and evidence together. For a broader answer, call complete_evidence_analysis with the answer and current evidence IDs. If needed inspect headers with the table tool or read the source. Use status missing only for a checked source gap.';
+  'For a calculation from a known CSV, call analyze_workspace_table with filters and aggregates. Filter values are exact source text. If unmatchedFilters is returned, verify the source values and retry without dropping requested conditions. Omit select when aggregating. Use avg for a mean and numeric:true for numeric min/max. Use descriptive as labels, including units when known. If the aggregate answers the whole request, set deliver:true so the workbench submits the computed values and evidence together. For a broader answer, call complete_evidence_analysis with the answer and current evidence IDs. Use status missing only for a checked source gap.';
 const repairNotice =
-  'One read-only repair pass. For a CSV calculation, call analyze_workspace_table with filters and aggregates, without select. Set deliver:true when it answers the request. Otherwise use complete_evidence_analysis with the answer and its evidence IDs. Report a source gap only after checking it.';
+  'One read-only repair pass. Use the source text for every required CSV filter. If a query returned unmatchedFilters, check the examples or inspect that column and retry with the verified value. Use aggregates without select. Set deliver:true when the calculation answers the request. Otherwise use complete_evidence_analysis with current evidence IDs. Report a source gap only after checking it.';
 
 function begin(text: string, userSeen = false): Run {
   return {
@@ -116,7 +119,9 @@ function completionError(run: Run, status: Approval['status'] | undefined, answe
   if (related.some((id) => !run.relatedReceipts.has(id))) return 'Use only related receipt IDs issued by successful tools in this task.';
   if (status === 'answered' && !ids.length) return 'Read the actual evidence before submitting an answer.';
   if (status === 'answered') {
-    const selected = ids.flatMap((id) => run.proofs.get(id) ?? []);
+    const selected = ids.flatMap((id) => run.proofs.get(id) ?? []).filter((proof) => !proof.unmatchedFilters?.length);
+    if (!selected.length)
+      return 'Check the unmatched filters against their source values and retry before answering.';
     if (run.aggregateAttempted && !selected.some((proof) => proof.aggregate))
       return 'The table calculation has no completed evidence in this answer. Correct the aggregate request and submit its evidence ID.';
     if (selected.every((proof) => !proof.tableRunId && proof.sources.every((file) => /\.csv$/i.test(file.path))))
@@ -161,7 +166,8 @@ function readIdentity(file: { absolute: string; readable: string }): Source | un
   }
 }
 
-function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: string, aggregate = false, calculation?: Calculation) {
+function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: string, aggregate = false,
+  calculation?: Calculation, unmatchedFilters?: UnmatchedFilter[]) {
   const id = 'ev_' + createHash('sha256').update(run.id).update(toolCallId).digest('hex').slice(0, 16);
   const proof = {
     id,
@@ -170,6 +176,7 @@ function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: st
     ...(tableRunId ? { tableRunId } : {}),
     ...(aggregate ? { aggregate: true as const } : {}),
     ...(calculation ? { calculation } : {}),
+    ...(unmatchedFilters?.length ? { unmatchedFilters } : {}),
   };
   run.proofs.set(id, proof);
   return proof;
@@ -324,7 +331,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     name: TABLE,
     label: '只读分析工作区表格',
     description:
-      'Query a workspace CSV. For calculations use filters and aggregates (count, sum, avg, min, max) and omit select. Count rows by omitting column. Set numeric:true for numeric min/max. Set deliver:true when the calculation answers the whole task. For inspection omit aggregates and use select or limit.',
+      'Query a workspace CSV with exact source text filters. Verify and retry any unmatchedFilters. For calculations use aggregates (count, sum, avg, min, max) and omit select. Count rows by omitting column. Set numeric:true for numeric min/max. Set deliver:true when the calculation answers the whole task. For inspection omit aggregates and use select or limit.',
     parameters: WorkspaceTableSchema,
     async execute(toolCallId, input, signal, _update, ctx) {
       const run = active;
@@ -347,11 +354,13 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
           { ...query, file: file.readable },
           { toolCallId, contractVersion: '1.1.0', signal, timeoutMs: 20_000 }
         );
-        const calculation = isAggregate ? calculatedResult(result, query.filters ?? []) : undefined;
+        const unmatched = result.unmatchedFilters;
+        const usableAggregate = isAggregate && !unmatched?.length && !result.truncated && result.rows.length > 0;
+        const calculation = usableAggregate ? calculatedResult(result, query.filters ?? []) : undefined;
         const evidence =
           run && run === active
             ? record(run, toolCallId, result.provenance.files, result.runId,
-              isAggregate && !result.truncated && result.rows.length > 0, calculation)
+              usableAggregate, calculation, unmatched)
             : undefined;
         const delivered = !!(deliver && evidence && calculation && run);
         if (delivered && run && evidence && calculation) {
@@ -371,7 +380,9 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
             delivered,
             deliveryNote: delivered
               ? 'Computed result submitted. Finish the turn without more tool calls.'
-              : 'A direct delivery needs an active evidence task and a complete, bounded aggregate result.',
+              : unmatched?.length
+                ? 'No source row contains one or more exact filter values. Verify the examples against the request and retry.'
+                : 'A direct delivery needs an active evidence task and a complete, bounded aggregate result.',
           } : {}),
         };
         return {

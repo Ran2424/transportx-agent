@@ -75,11 +75,24 @@ const dispatcher = http.createServer(async (req, res) => {
       } else if (index === 3) content = 'Model completion text should be replaced by the verified answer.';
       else throw new Error('Unexpected request in verified scenario: ' + index);
     } else if (active.name === 'direct-delivery') {
+      const average = [{ op: 'avg', column: 'count', as: 'mean' }];
       if (index === 0) call = {
         name: 'analyze_workspace_table',
-        args: { ...table, aggregates: [{ op: 'avg', column: 'count', as: 'mean' }], deliver: true },
+        args: { ...table, filters: [{ column: 'period', value: 'am' }], aggregates: average, deliver: true },
       };
       else if (index === 1) {
+        const result = body.messages.findLast((item) => item.role === 'tool');
+        const json = JSON.parse(typeof result.content === 'string' ? result.content : result.content[0].text);
+        assert.equal(json.delivered, false);
+        assert.deepEqual(json.unmatchedFilters, [{ column: 'period', value: 'am', examples: ['AM', 'PM'] }]);
+        call = { name: 'complete_evidence_analysis',
+          args: { answer: 'The average is 99.', evidence: [json.evidenceId] } };
+      } else if (index === 2) {
+        const result = body.messages.findLast((item) => item.role === 'tool');
+        assert.match(JSON.stringify(result.content), /unmatched filters/);
+        call = { name: 'analyze_workspace_table',
+          args: { ...table, aggregates: average, deliver: true } };
+      } else if (index === 3) {
         const result = body.messages.findLast((item) => item.role === 'tool');
         const json = JSON.parse(typeof result.content === 'string' ? result.content : result.content[0].text);
         assert.equal(json.delivered, true);
@@ -424,15 +437,19 @@ try {
   };
 
   const direct = await exercise('direct-delivery');
-  assert.equal(direct.requests, 2);
+  assert.equal(direct.requests, 4);
   assert.equal(direct.receipt.status, 'verified');
   assert.equal(direct.receipt.repair, false);
   assert.equal(direct.receipt.providerStopAfterApproval, 'length');
   const directDelivery = direct.messages.findLast((item) => item.role === 'assistant');
   assert.equal(directDelivery?.delivery?.status, 'submitted');
   assert.match(contentText(directDelivery), /mean: 15/);
-  assert.equal(direct.receipt.evidence[0].calculation.matchedRows, 2);
-  assert.deepEqual(direct.receipt.selected, [direct.receipt.evidence[0].id]);
+  assert.equal(direct.receipt.evidence[0].calculation, undefined);
+  assert.equal(direct.receipt.evidence[0].unmatchedFilters[0].value, 'am');
+  assert.ok(direct.messages.some(item => item.toolName === 'complete_evidence_analysis' && item.isError));
+  assert.equal(direct.receipt.evidence[1].calculation.matchedRows, 2);
+  assert.deepEqual(direct.receipt.selected, [direct.receipt.evidence[1].id]);
+  report.checks.unmatchedFilterBlocksSubmissionUntilRechecked = true;
   report.checks.directAggregateSurvivesMissingNarration = true;
 
   const readOnly = await exercise('csv-read-is-not-a-calculation');

@@ -305,6 +305,24 @@ export async function analyzeWorkspaceTable(
   );
   const filterValues = plan.filters.map(({ column, value }) => ({ index: indexes.get(column)!, value }));
   const matchedRows = rows.filter(row => filterValues.every(({ index, value }) => (row[index] || null) === value)).length;
+  // Only diagnose values absent from their entire column; a valid combination
+  // of individually present values can still legitimately match zero rows.
+  const unmatchedFilters = rows.length && matchedRows === 0
+    ? plan.filters.flatMap(({ column, value }, filterIndex) => {
+        const index = filterValues[filterIndex].index;
+        if (rows.some((row) => (row[index] || null) === value)) return [];
+        const examples: string[] = [];
+        const seen = new Set<string>();
+        for (const row of rows) {
+          const example = row[index];
+          if (!example || Buffer.byteLength(example, 'utf8') > 128 || seen.has(example)) continue;
+          seen.add(example);
+          examples.push(example);
+          if (examples.length === 3) break;
+        }
+        return [{ column, value, examples }];
+      })
+    : [];
   const orderIndexes = plan.orderBy.map((o) => {
     const idx = output.indexOf(o.column);
     if (idx < 0) return fail(`Unknown output sort column ${JSON.stringify(o.column)}. Use a selected, groupBy or aggregate output name.`);
@@ -375,6 +393,7 @@ export async function analyzeWorkspaceTable(
       columns: output,
       sourceColumns: header,
       matchedRows,
+      ...(unmatchedFilters.length ? { unmatchedFilters } : {}),
       rows: limited,
       truncated: result.length > limited.length,
       provenance,
