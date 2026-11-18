@@ -1,6 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { realpathSync, statSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { asRecord } from '../../../../../src/contracts/common.ts';
 import type { SessionProfileV1 } from '../../../../../src/contracts/session-profile.ts';
@@ -11,48 +9,23 @@ import {
   WorkspaceTableSchema,
 } from '../../../../../src/contracts/evidence-analysis.mts';
 import { HostCallError, postHostOperation } from '../../../../shared/host-client.ts';
-import { isWithin, relativePosixPath } from '../../../../../src/server/util/path.ts';
+import {
+  checkedPath, readIdentity, calculatedResult, observeTable, checkClaims, claimsText, calculationText,
+  type Source, type UnmatchedFilter, type Calculation, type TableObservation, type CheckedClaim, type Proof, type TableResult,
+} from './evidence-data.ts';
 
 const TABLE = 'analyze_workspace_table';
 const COMPLETE = 'complete_evidence_analysis';
 const REPAIR_TOOLS = new Set(['read', 'find', 'ls', 'grep', 'tau_resolve_citation', TABLE, COMPLETE]);
 const MAX_REPAIR_CALLS = 6;
 const MAX_REPAIR_MS = 180_000;
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
-type Source = { path: string; sha256: string; bytes: number; upstream?: { snapshot: Record<string, unknown>; definition: Record<string, unknown> } };
-type Cell = string | number | null;
-type UnmatchedFilter = { column: string; value: string | null; examples: string[] };
-type Calculation = {
-  columns: string[];
-  rows: Cell[][];
-  matchedRows: number;
-  filters: { column: string; value: string | null }[];
-};
-type Proof = {
-  id: string;
-  toolCallId: string;
-  sources: Source[];
-  tableRunId?: string;
-  aggregate?: true;
-  calculation?: Calculation;
-  unmatchedFilters?: UnmatchedFilter[];
-};
-type TableResult = {
-  runId: string;
-  provenance: { files: Source[] };
-  columns: string[];
-  sourceColumns: string[];
-  matchedRows: number;
-  rows: unknown[];
-  truncated: boolean;
-  unmatchedFilters?: UnmatchedFilter[];
-};
 type Approval = {
   status: 'answered' | 'missing';
   answer: string;
   evidence: string[];
   relatedToolCallIds: string[];
+  claims?: CheckedClaim[];
 };
 type CompletionToolResult = {
   content: { type: 'text'; text: string }[];
@@ -70,6 +43,7 @@ type Run = {
   proofs: Map<string, Proof>;
   pendingReads: Map<string, Source>;
   relatedReceipts: Set<string>;
+  deliveryReceipts: Map<string, string>;
   attempts: number;
   eligibleFailure: boolean;
   failedSources: Set<string>;
@@ -84,9 +58,11 @@ type Run = {
 };
 
 const guide =
-  'For a calculation from a known CSV, call analyze_workspace_table with filters and aggregates. Filter values are exact source text. If unmatchedFilters is returned, verify the source values and retry without dropping requested conditions. Omit select when aggregating. Use avg for a mean and numeric:true for numeric min/max. Use descriptive as labels, including units when known. If the aggregate answers the whole request, set deliver:true so the workbench submits the computed values and evidence together. For a broader answer, call complete_evidence_analysis with the answer and current evidence IDs. Use status missing only for a checked source gap.';
+  'Establish the requested scope, population, measure and time basis before querying. A supplied CSV identifies the source, not the intended method. Map each explicitly named entity or category to the source column and exact value. Apply all of them together to the main comparison or aggregate. Grouping by an entity or seeing only that entity in the highest-ranked row does not restrict the population. Recheck unmatchedFilters without broadening scope. For numeric min/max use numeric:true. A single exact aggregate may use deliver:true when it answers the whole request. Otherwise submit table claims with complete_evidence_analysis. Use status missing only for a checked source gap.';
+const claimGuide =
+  'Table claims: give scope.expectedFilters from the requested entity and category, using exact source keys. Cite the same main evidenceId with scope and sample (matchedRows is the comparison population, even with limit:1). Re-query if the executed filters are missing any intended condition. If the question asks what supports a result for one item, separately count that subgroup and cite its count. Use value with column and optional zero-based row for measured values or names. If asked about time or freshness, add a time claim for each relevant time field using groupBy:[field], one COUNT(*) aggregate and the relevant filters. Use raw reported times. Put facts only in claims, with short labels and brief qualitative limitations.';
 const repairNotice =
-  'One read-only repair pass. Use the source text for every required CSV filter. If a query returned unmatchedFilters, check the examples or inspect that column and retry with the verified value. Use aggregates without select. Set deliver:true when the calculation answers the request. Otherwise use complete_evidence_analysis with current evidence IDs. Report a source gap only after checking it.';
+  'One read-only repair pass. Keep the requested scope. Check exact source filters and repair invalid evidence before submitting. ' + claimGuide;
 
 function begin(text: string, userSeen = false): Run {
   return {
@@ -96,6 +72,7 @@ function begin(text: string, userSeen = false): Run {
     proofs: new Map(),
     pendingReads: new Map(),
     relatedReceipts: new Set(),
+    deliveryReceipts: new Map(),
     attempts: 0,
     eligibleFailure: false,
     failedSources: new Set(),
@@ -134,40 +111,8 @@ function completionError(run: Run, status: Approval['status'] | undefined, answe
   return '';
 }
 
-function checkedPath(cwd: string, candidate: unknown) {
-  if (typeof candidate !== 'string' || !candidate || candidate.includes('\0')) return;
-  try {
-    const root = realpathSync(cwd);
-    const absolute = path.resolve(root, candidate);
-    if (!isWithin(root, absolute)) return;
-    const readable = relativePosixPath(root, absolute);
-    if (!readable) return;
-    if (readable.split('/').some((part) => part.startsWith('.') || part.includes(':'))) return;
-    return { absolute, readable };
-  } catch {
-    return undefined;
-  }
-}
-
-function readIdentity(file: { absolute: string; readable: string }): Source | undefined {
-  try {
-    if (path.relative(file.absolute, realpathSync(file.absolute)) !== '') return;
-    const stat = statSync(file.absolute);
-    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_FILE_BYTES) return;
-    const bytes = readFileSync(file.absolute);
-    if (bytes.length !== stat.size) return;
-    return {
-      path: file.readable,
-      bytes: bytes.length,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
 function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: string, aggregate = false,
-  calculation?: Calculation, unmatchedFilters?: UnmatchedFilter[]) {
+  calculation?: Calculation, unmatchedFilters?: UnmatchedFilter[], observation?: TableObservation) {
   const id = 'ev_' + createHash('sha256').update(run.id).update(toolCallId).digest('hex').slice(0, 16);
   const proof = {
     id,
@@ -176,46 +121,11 @@ function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: st
     ...(tableRunId ? { tableRunId } : {}),
     ...(aggregate ? { aggregate: true as const } : {}),
     ...(calculation ? { calculation } : {}),
+    ...(observation ? { observation } : {}),
     ...(unmatchedFilters?.length ? { unmatchedFilters } : {}),
   };
   run.proofs.set(id, proof);
   return proof;
-}
-
-function isCell(value: unknown): value is Cell {
-  return value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
-}
-
-function calculatedResult(result: TableResult, filters: Calculation['filters']): Calculation | undefined {
-  if (result.truncated || result.rows.length < 1 || result.rows.length > 20) return;
-  const rows = result.rows.filter((row): row is Cell[] =>
-    Array.isArray(row) && row.length === result.columns.length && row.every(isCell));
-  if (rows.length !== result.rows.length) return;
-  return { columns: result.columns, rows, matchedRows: result.matchedRows, filters };
-}
-
-function calculationText(calculation: Calculation, chinese: boolean) {
-  const text = (value: Cell) => {
-    if (value === null) return chinese ? '无值' : 'No value';
-    return String(value).replace(/[\r\n]+/g, ' ').replace(/\|/g, '｜').replace(/`/g, 'ˋ').slice(0, 160);
-  };
-  const lines = [
-    chinese ? `筛选后记录数：${calculation.matchedRows} 条。` : `Matched records: ${calculation.matchedRows}.`,
-  ];
-  if (calculation.filters.length) {
-    const conditions = calculation.filters.map(({ column, value }) => `${text(column)} = ${text(value)}`).join(' · ');
-    lines.push(chinese ? `筛选条件：${conditions}` : `Filters: ${conditions}`);
-  }
-  if (calculation.rows.length === 1) {
-    lines.unshift(calculation.columns.map((column, index) =>
-      `${text(column)}${chinese ? '：' : ': '}${text(calculation.rows[0]![index] ?? null)}`).join(' · '));
-    return lines.join('\n\n');
-  }
-  const csv = (row: Cell[]) => '| ' + row.map(text).join(' | ') + ' |';
-  return [
-    ...lines,
-    [csv(calculation.columns), csv(calculation.columns.map(() => '---')), ...calculation.rows.map(csv)].join('\n'),
-  ].join('\n\n');
 }
 
 function note(run: Run, terminal: 'missing' | 'incomplete' | 'checking') {
@@ -249,7 +159,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     if (!required) return;
     clearTimer(active);
     active = begin(event.prompt);
-    return { systemPrompt: event.systemPrompt + '\n\n' + guide + (answerRequirements.length ? '\nThe complete answer must address these requirements: ' + JSON.stringify(answerRequirements) + '. Direct aggregate delivery is disabled; submit the full answer with complete_evidence_analysis.' : '') };
+    return { systemPrompt: event.systemPrompt + '\n\n' + guide + '\n' + claimGuide + (answerRequirements.length ? '\nThe complete answer must address these requirements: ' + JSON.stringify(answerRequirements) + '. Direct aggregate delivery is disabled; submit the full answer with complete_evidence_analysis.' : '') };
   });
   pi.on('message_start', (event) => {
     if (!required || event.message.role !== 'user') return;
@@ -301,6 +211,8 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     const details = asRecord(event.details);
     if (run && !event.isError && details?.accepted === true && typeof details.receiptId === 'string' && details.receiptId.length > 0 && details.receiptId.length <= 200 && run.relatedReceipts.size < 64) {
       run.relatedReceipts.add(details.receiptId as string);
+      if (typeof details.deliveryReference === 'string' && details.deliveryReference.length > 0 && details.deliveryReference.length <= 200)
+        run.deliveryReceipts.set(details.deliveryReference, details.receiptId);
     }
     if (!run || event.toolName !== 'read') return;
     const before = run.pendingReads.get(event.toolCallId);
@@ -361,7 +273,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
         const evidence =
           run && run === active
             ? record(run, toolCallId, result.provenance.files, result.runId,
-              usableAggregate, calculation, unmatched)
+              usableAggregate, calculation, unmatched, observeTable(result))
             : undefined;
         const delivered = !!(deliver && !answerRequirements.length && evidence && calculation && run);
         if (delivered && run && evidence && calculation) {
@@ -413,16 +325,41 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     name: COMPLETE,
     label: '提交核实后的分析结果',
     description:
-      'Submit the actual final answer, not a plan. For answered, include evidence IDs returned by successful reads or table queries in the current task. For missing, state the concrete evidence gap after inspecting or trying the relevant source.',
+      'Submit the final result. For a table answer use claims tied to actual query outputs; include scope and sample on the same evidence ID, measured values by column, and grouped time evidence when relevant. Otherwise provide the answer and evidence, or a checked missing-source gap.',
     parameters: CompleteEvidenceAnalysisSchema,
     async execute(toolCallId, input): Promise<CompletionToolResult> {
       const run = active;
       if (run) run.approval = undefined;
       const status = completionStatus(input.status);
-      const related = input.relatedToolCallIds ?? [];
-      const rejection = run
-        ? completionError(run, status, input.answer, input.evidence, related)
-        : 'No active evidence-backed task.';
+      const explicit = input.relatedToolCallIds ?? [];
+      const automatic = run ? [...run.deliveryReceipts.values()].reverse().filter(id => !explicit.includes(id)) : [];
+      const related = [...explicit, ...automatic.slice(0, Math.max(0, 8 - explicit.length))];
+      const ids = [...new Set([...(input.evidence ?? []), ...(input.claims ?? []).map(claim => claim.evidenceId)])];
+      let answer = input.answer?.trim() ?? '';
+      let claims: CheckedClaim[] | undefined;
+      let rejection = 'No active evidence-backed task.';
+      if (run) {
+        try {
+          if (ids.length > 16) throw new Error('Use at most 16 distinct evidence IDs.');
+          if (status !== 'answered' && input.claims?.length)
+            throw new Error('Submit table claims only with an answered result.');
+          if (status === 'answered' && ids.some(id => run.proofs.has(id) && !!run.proofs.get(id)?.tableRunId)) {
+            if (!input.claims?.length) {
+              // Report the source error first, so a retry can obtain valid rows.
+              const sourceError = completionError(run, status, answer || 'Table answer', ids, related);
+              throw new Error(sourceError || 'A table answer requires structured claims. Cite the same query for scope and sample.');
+            }
+            claims = checkClaims(run.proofs, input.claims);
+            const review = answer
+              ? '\n\n' + (run.chinese ? '**分析说明，待人工复核**' : '**Interpretation for review**') + '\n\n' + answer
+              : '';
+            answer = (run.chinese ? '**逐项核对的结果**' : '**Evidence-bound results**') + '\n\n' + claimsText(claims, run.chinese) + review;
+          } else if (input.claims?.length) throw new Error('Table claims require evidence from a table query in this turn.');
+          rejection = completionError(run, status, answer, ids, related);
+        } catch (error) {
+          rejection = error instanceof Error ? error.message : 'The evidence claims could not be checked.';
+        }
+      }
       if (!run || !status || rejection) {
         failedTools.add(toolCallId);
         return {
@@ -432,9 +369,10 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       }
       run.approval = {
         status,
-        answer: input.answer.trim(),
-        evidence: [...input.evidence],
+        answer,
+        evidence: ids,
         relatedToolCallIds: [...related],
+        claims,
       };
       clearTimer(run);
       return {
@@ -443,7 +381,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
           kind: 'analysis-completion',
           accepted: true,
           status,
-          evidence: input.evidence,
+          evidence: ids,
         },
       };
     },
@@ -549,8 +487,9 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       status: run.terminal ?? 'unconfirmed',
       attempts: run.attempts,
       repair: run.repair !== 'unused',
-      evidence: [...run.proofs.values()],
+      evidence: [...run.proofs.values()].map(({ observation: _observation, ...proof }) => proof),
       selected: run.terminal ? (run.approval?.evidence ?? []) : [],
+      ...(run.terminal === 'verified' && run.approval?.claims ? { claims: run.approval.claims } : {}),
       ...(run.terminal && run.approval?.relatedToolCallIds.length
         ? { relatedToolCallIds: run.approval.relatedToolCallIds }
         : {}),

@@ -3,14 +3,10 @@
   "moduleId": "com.transportx.evidence-analysis",
   "toolId": "analysis.complete",
   "piName": "complete_evidence_analysis",
-  "contractVersion": "2.0.0",
-  "semanticVersion": "complete-evidence-analysis-v3",
+  "contractVersion": "3.0.0",
+  "semanticVersion": "complete-evidence-analysis-v4",
   "input": {
     "type": "object",
-    "required": [
-      "answer",
-      "evidence"
-    ],
     "properties": {
       "status": {
         "type": "string",
@@ -21,7 +17,7 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 12000,
-        "description": "Complete answer, or a concrete description of what evidence is missing."
+        "description": "For table claims, optional qualitative interpretation for review; leave factual values to claims. Otherwise the answer or checked source gap."
       },
       "evidence": {
         "type": "array",
@@ -30,7 +26,98 @@
           "pattern": "^ev_[0-9a-f]{16}$"
         },
         "maxItems": 16,
-        "uniqueItems": true
+        "uniqueItems": true,
+        "description": "Supporting evidence IDs. IDs cited by claims are included automatically."
+      },
+      "claims": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "kind",
+            "label",
+            "evidenceId"
+          ],
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "scope"
+                },
+                {
+                  "type": "string",
+                  "const": "sample"
+                },
+                {
+                  "type": "string",
+                  "const": "time"
+                },
+                {
+                  "type": "string",
+                  "const": "value"
+                }
+              ]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "description": "Short name of the fact, without its value."
+            },
+            "evidenceId": {
+              "type": "string",
+              "pattern": "^ev_[0-9a-f]{16}$"
+            },
+            "expectedFilters": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "column",
+                  "value"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 4096
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 16,
+              "description": "Scope only, required: express every condition intended by the user in actual source column names and values. Verify that the cited query implemented them. Use [] only when you intend the whole table."
+            },
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "description": "For value or time only: the exact output column."
+            },
+            "row": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 19,
+              "description": "For value only: zero-based output row (default 0)."
+            }
+          },
+          "additionalProperties": false
+        },
+        "minItems": 1,
+        "maxItems": 16,
+        "description": "Required for a table answer. Bind scope and sample to the same query. Bind values to result cells and time to a complete single-column grouping with COUNT(*) per observed time. The workbench renders actual values; the model never supplies them."
       },
       "relatedToolCallIds": {
         "type": "array",

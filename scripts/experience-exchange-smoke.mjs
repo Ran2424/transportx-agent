@@ -62,12 +62,21 @@ const dispatcher = http.createServer(async (req, res) => {
         call = { name: 'record_experience_use', args: { releaseId: requested.args.release, disposition: requested.args.disposition ?? 'used', reason: '先核实当前可复查样本。' } };
       } else if (previous === 'record_experience_use') {
         assert.equal(toolJson(last).accepted, true);
-        call = { name: 'analyze_workspace_table', args: { file: requested.args.path ?? 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }], deliver: true } };
+        call = { name: 'analyze_workspace_table', args: { file: requested.args.path ?? 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }], deliver: !requested.args.structured } };
       } else if (previous === 'analyze_workspace_table') {
         const result = toolJson(last);
         assert.equal(Number(result.rows[0][0]), 30);
-        assert.equal(result.delivered, true);
-        if (requested.args.failSync) fs.writeFileSync(tokenFile, 'temporarily-invalid\n');
+        if (requested.args.structured) {
+          const evidenceId = result.evidenceId;
+          call = { name: 'complete_evidence_analysis', args: { claims: [
+            { kind: 'scope', label: 'Scope', evidenceId, expectedFilters: [] },
+            { kind: 'sample', label: 'Samples', evidenceId },
+            { kind: 'value', label: 'Total', column: 'total', evidenceId },
+          ] } };
+        } else {
+          assert.equal(result.delivered, true);
+          if (requested.args.failSync) fs.writeFileSync(tokenFile, 'temporarily-invalid\n');
+        }
       }
     } else if (last.role === 'user' || (last.role === 'tool' && previous === 'manage_capabilities')) {
       call = active.includes(requested.name) ? requested : { name: 'manage_capabilities', args: { action: 'enable', moduleId } };
@@ -380,7 +389,7 @@ try {
   execFileSync(process.execPath, ['-e', `const a = require('./bin/workspace-table.js'); a.analyzeWorkspaceTable(process.argv[1], {file:process.argv[2]}).then(() => process.exit(2), e => {if (!/changed/.test(e.message)) { console.error(e); process.exit(3); }});`, combined.cwd, second.path], { cwd: repo, env: { ...process.env, PI_CODING_AGENT_DIR: profile }, timeout: 30_000 });
   report.checks.snapshotTamperingRejected = true;
   const ack = await tx('/api/rpc', { type: 'prompt', sessionId: combined.id, clientCommandId: randomUUID(),
-    message: 'experience-smoke:' + JSON.stringify({ name: 'combined-analysis', args: { query: query.query, release: newRef.release_id, path: snapshot.path } }) });
+    message: 'experience-smoke:' + JSON.stringify({ name: 'combined-analysis', args: { query: query.query, release: newRef.release_id, path: snapshot.path, structured: true } }) });
   assert.equal(ack.success, true);
   const combinedSnapshot = await until('combined evidence and experience receipt', async () => {
     const snapshot = await workspace.nativeSnapshot(tx, combined.conversationId);
@@ -395,6 +404,7 @@ try {
   assert.equal(usage.disposition, 'used');
   assert.ok(experience.some(entry => entry.kind === 'search' && entry.toolCallId === usage.lookupToolCallId));
   assert.deepEqual(combinedReceipt.relatedToolCallIds, [usage.receiptId]);
+  assert.equal(combinedReceipt.claims.find(claim => claim.kind === 'sample').matchedRows, 2);
   assert.equal(combinedReceipt.experience, undefined);
   assert.equal(combinedSnapshot.entries.findLast(entry => entry.message?.role === 'assistant')?.message?.delivery?.status, 'submitted');
   assert.ok(combinedReceipt.evidence[0].tableRunId);

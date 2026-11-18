@@ -12,7 +12,7 @@ const entries = [
     file: 'search-contract.json',
     route: 'search',
     description:
-      'Look up potentially relevant published traffic experience using one short question or intent phrase. The results are candidate methods and checks. Verify applicability and then inspect current data.',
+      'Use before deciding an unstated scope, measurement, time basis, or method that could change the result. Search published experience with one short intent in the user’s language. Treat results as candidates and check applicability.',
   },
   {
     name: 'submit_experience_feedback',
@@ -23,6 +23,13 @@ const entries = [
       'Submit an evidence-backed correction for review. Supply the exact experience reference only if actually used. Keep submission_id and payload unchanged when retrying an uncertain result.',
   },
 ] as const;
+const methodPolicy = [
+  'Experience decision before method selection',
+  'If a task leaves a consequential choice open about the population, definition, comparison, denominator, time basis, or method, call search_experience once before choosing that assumption or running the substantive calculation.',
+  'A named data source or recognizable field names alone do not settle the intended scope or meaning. Reading the schema first is fine. For a lookup or calculation with the method and scope already specified, proceed directly.',
+  'Use a short query in the user’s language about the actual intent. Compare candidate applicability and exclusions with that intent. For a plausible candidate you adopt or explicitly rule out, call record_experience_use with its exact releaseId, used or skipped, and why.',
+  'Use current evidence to establish facts. An empty search is not a failure or a disposition. When the result is submitted through a tool that accepts relatedToolCallIds, include the disposition receiptId.',
+].join('\n');
 export default function experienceExchange(pi: ExtensionAPI) {
   const errors = new Set<string>();
   type Release = { releaseId: string; revision: number; digest: string; lookupToolCallId: string };
@@ -32,7 +39,7 @@ export default function experienceExchange(pi: ExtensionAPI) {
   pi.on('before_agent_start', (event) => {
     turn = startTurn();
     return {
-      systemPrompt: event.systemPrompt + '\n\nFor transport definitions, analysis methods or decisions, use search_experience before choosing a method. Send only query, a short description of the intent. For a returned rule, check its applicability and exclusions, then call record_experience_use with its exact releaseId, a used or skipped disposition, and the reason. Compute the result from current evidence. Continue the task if no applicable rule is found.',
+      systemPrompt: methodPolicy + '\n\n' + event.systemPrompt,
     };
   });
   pi.on('message_start', ({ message }) => {
@@ -164,7 +171,10 @@ export default function experienceExchange(pi: ExtensionAPI) {
         return { content: [{ type: 'text' as const, text: 'Could not persist the use receipt. Continue the answer; retry this decision if appropriate.' }], details: { kind: 'experience-use', accepted: false } };
       }
       pi.appendEntry('experience-exchange', { ...details, kind: 'disposition', toolCallId });
-      return { content: [{ type: 'text' as const, text: JSON.stringify(details) }], details };
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(details) }],
+        details: { ...details, deliveryReference: 'experience:' + release.releaseId },
+      };
     },
   });
 }
