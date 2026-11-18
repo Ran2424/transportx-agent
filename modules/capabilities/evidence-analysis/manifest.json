@@ -2,10 +2,16 @@
   "manifestVersion": 2,
   "id": "com.transportx.evidence-analysis",
   "name": "Evidence-backed Analysis",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
+  "contributes": {
+    "initialTools": [
+      { "piName": "analyze_workspace_table", "contract": "table-contract.json" },
+      { "piName": "complete_evidence_analysis", "contract": "completion-contract.json" }
+    ]
+  },
   "entrypoints": {
     "piExtensions": [
       "extensions/pi-evidence-analysis/index.ts"

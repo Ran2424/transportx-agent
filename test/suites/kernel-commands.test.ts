@@ -455,6 +455,13 @@ test('Kernel delivery, attachments and reconnects reconcile authoritative sessio
     event('a', { type: 'agent_settled' });
     assert.deepEqual(kernel.stores.conversation.get().bySession.a.live.outcome, { status: 'failed', reason: 'rate_limit' });
     const { messageOutcome } = require('../../bin/contracts/run-feedback.js');
+    const { messageDelivery } = require('../../bin/contracts/task-delivery.js');
+    const review = { role: 'assistant', stopReason: 'stop', delivery: { status: 'needs_review' } };
+    assert.equal(messageDelivery(review), 'needs_review');
+    assert.equal(messageOutcome(review), null, 'delivery review does not fail the model run');
+    assert.equal(messageDelivery({ role: 'assistant', evidenceCompletion: 'incomplete' }), 'incomplete');
+    assert.equal(messageDelivery({ role: 'assistant', delivery: { status: 'other' } }), null);
+    assert.equal(messageDelivery({ ...review, role: 'toolResult' }), null);
     const truncated = { role: 'assistant', content: [{ type: 'thinking', thinking: 'reasoning only' }], stopReason: 'length', usage: { output: 16384, reasoning: 16384 } };
     assert.deepEqual(messageOutcome(truncated), { status: 'failed', reason: 'output_limit' });
     event('a', { type: 'auto_retry_end', success: false, finalError: 'Output token limit' });

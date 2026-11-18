@@ -3,8 +3,8 @@
   "moduleId": "com.transportx.evidence-analysis",
   "toolId": "analysis.complete",
   "piName": "complete_evidence_analysis",
-  "contractVersion": "1.1.0",
-  "semanticVersion": "complete-evidence-analysis-v2",
+  "contractVersion": "2.0.0",
+  "semanticVersion": "complete-evidence-analysis-v3",
   "input": {
     "type": "object",
     "required": [
@@ -32,18 +32,16 @@
         "maxItems": 16,
         "uniqueItems": true
       },
-      "experienceReleaseId": {
-        "type": "string",
-        "maxLength": 120
-      },
-      "experienceDisposition": {
-        "type": "string",
-        "maxLength": 20,
-        "description": "Optional: 'used' or 'skipped' for a rule returned this turn."
-      },
-      "experienceReason": {
-        "type": "string",
-        "maxLength": 400
+      "relatedToolCallIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "maxItems": 8,
+        "uniqueItems": true,
+        "description": "Optional receipt IDs issued by other successful tools in this turn. They are references and do not count as source evidence."
       }
     },
     "additionalProperties": false

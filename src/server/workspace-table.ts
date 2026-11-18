@@ -27,8 +27,13 @@ type Plan = {
   orderBy: Order[];
   limit: number;
 };
-export class WorkspaceTableInputError extends Error {}
-export class WorkspaceTableSourceMissingError extends WorkspaceTableInputError {}
+export class WorkspaceTableInputError extends Error {
+  readonly status = 400;
+  readonly code: string = 'workspace_table_invalid';
+}
+export class WorkspaceTableSourceMissingError extends WorkspaceTableInputError {
+  override readonly code = 'workspace_table_source_missing';
+}
 const fail = (message: string): never => {
   throw new WorkspaceTableInputError(message);
 };

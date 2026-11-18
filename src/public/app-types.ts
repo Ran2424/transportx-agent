@@ -146,6 +146,8 @@ export type MessageContentBlock = {
 };
 
 export type AppMessage = {
+  delivery?: unknown;
+  evidenceCompletion?: unknown;
   workingDurationMs?: number;
   stopReason?: string;
   errorMessage?: string;

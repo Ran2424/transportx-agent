@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { isWithin } from './util/path.js';
 import type { PiRpcSession } from './sessions.js';
+import { validateToolRequest } from './tool-request.js';
 
 type RecordValue = Record<string, unknown>;
 const fail = (
@@ -163,6 +164,22 @@ function append(file: string, value: RecordValue) {
   } finally {
     fs.closeSync(fd);
   }
+}
+/** Validate against the approved contract, retaining the frozen v1 search interface. */
+export async function validateExperienceRequest(
+  session: PiRpcSession,
+  kind: 'search' | 'feedback',
+  body: RecordValue
+): Promise<RecordValue> {
+  const legacy = kind === 'search' && body.contractVersion === '1.0.0' &&
+    session.resolvedSessionPlan?.modules.some(module => module.id === 'com.transportx.experience-exchange' && module.version === '1.0.0');
+  const compatible = legacy ? {
+    contractVersion: '1.0.0',
+    input: (await import('../contracts/experience-lookup.mjs')).LegacyExperienceSearchSchema,
+  } : undefined;
+  const input = await validateToolRequest('com.transportx.experience-exchange', body, `experience.${kind}`, compatible);
+  if (kind === 'search' && !legacy) input.limit = 3;
+  return input;
 }
 export async function exchange(
   session: PiRpcSession,

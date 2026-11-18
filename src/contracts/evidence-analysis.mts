@@ -80,14 +80,11 @@ export const CompleteEvidenceAnalysisSchema = Type.Object(
       maxItems: 16,
       uniqueItems: true,
     }),
-    experienceReleaseId: Type.Optional(Type.String({ maxLength: 120 })),
-    experienceDisposition: Type.Optional(
-      Type.String({
-        maxLength: 20,
-        description: "Optional: 'used' or 'skipped' for a rule returned this turn.",
-      })
-    ),
-    experienceReason: Type.Optional(Type.String({ maxLength: 400 })),
+    relatedToolCallIds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+      maxItems: 8,
+      uniqueItems: true,
+      description: 'Optional receipt IDs issued by other successful tools in this turn. They are references and do not count as source evidence.',
+    })),
   },
   { additionalProperties: false }
 );

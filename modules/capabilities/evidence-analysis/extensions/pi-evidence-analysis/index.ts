@@ -2,18 +2,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { realpathSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { asRecord } from '../../../../../src/contracts/common.ts';
+import type { SessionProfileV1 } from '../../../../../src/contracts/session-profile.ts';
+import type { DeliveryStatus } from '../../../../../src/contracts/task-delivery.ts';
 import {
   CompleteEvidenceAnalysisSchema,
   EVIDENCE_ANALYSIS_ENTRY,
   WorkspaceTableSchema,
 } from '../../../../../src/contracts/evidence-analysis.mts';
 import { HostCallError, postHostOperation } from '../../../../shared/host-client.ts';
-import {
-  captureExperience,
-  selectExperience,
-  type ExperienceLookup,
-  type ExperienceSelection,
-} from './experience.ts';
+import { isWithin, relativePosixPath } from '../../../../../src/server/util/path.ts';
 
 const TABLE = 'analyze_workspace_table';
 const COMPLETE = 'complete_evidence_analysis';
@@ -42,7 +40,7 @@ type Approval = {
   status: 'answered' | 'missing';
   answer: string;
   evidence: string[];
-  experience?: ExperienceSelection;
+  relatedToolCallIds: string[];
 };
 type CompletionToolResult = {
   content: { type: 'text'; text: string }[];
@@ -59,7 +57,7 @@ type Run = {
   userSeen: boolean;
   proofs: Map<string, Proof>;
   pendingReads: Map<string, Source>;
-  experienceLookups: ExperienceLookup[];
+  relatedReceipts: Set<string>;
   attempts: number;
   eligibleFailure: boolean;
   failedSources: Set<string>;
@@ -72,7 +70,7 @@ type Run = {
 };
 
 const guide =
-  'Finish the original data task now. Use read on the specific workspace source or analyze_workspace_table for CSV calculations. Report the observed coverage, such as the number and range of matched hours. Unrecorded time is not zero. Successful reads and queries return evidence IDs. Call complete_evidence_analysis with the actual answer and its IDs; omit status for a normal answer. If evidence is missing, try the relevant source first, then submit status missing and name the gap. A search hit or plan is not current evidence. If experience does not apply, continue the original task. Keep the answer concise.';
+  'Finish the original data task now. Use read on the specific workspace source or analyze_workspace_table for CSV calculations. Report the observed coverage, such as the number and range of matched hours. Unrecorded time is not zero. Successful source reads and queries return evidence IDs. Call complete_evidence_analysis with the actual answer and its IDs; omit status for a normal answer. If evidence is missing, try the relevant source first, then submit status missing and name the gap. You may link a receipt issued by another tool this turn via relatedToolCallIds. Keep the answer concise.';
 const repairNotice =
   'One read-only repair pass. Complete the last user request, with no plan-only reply. Immediately inspect the relevant workspace file using read or analyze_workspace_table, then call complete_evidence_analysis with the exact answer and returned IDs. If the records are unavailable, say which specific source or field is missing.';
 
@@ -83,7 +81,7 @@ function begin(text: string, userSeen = false): Run {
     userSeen,
     proofs: new Map(),
     pendingReads: new Map(),
-    experienceLookups: [],
+    relatedReceipts: new Set(),
     attempts: 0,
     eligibleFailure: false,
     failedSources: new Set(),
@@ -99,10 +97,11 @@ function completionStatus(value?: string): Approval['status'] | undefined {
   if (['missing', 'insufficient', 'insufficient_evidence'].includes(status)) return 'missing';
 }
 
-function completionError(run: Run, status: Approval['status'] | undefined, answer: string, ids: string[]) {
+function completionError(run: Run, status: Approval['status'] | undefined, answer: string, ids: string[], related: string[]) {
   if (!status) return "Omit status for a normal answer, or send 'missing' for a checked source gap.";
   if (!answer.trim()) return 'Provide the actual answer or specific missing evidence.';
   if (ids.some((id) => !run.proofs.has(id))) return 'Use only evidence IDs returned in this task.';
+  if (related.some((id) => !run.relatedReceipts.has(id))) return 'Use only related receipt IDs issued by successful tools in this task.';
   if (status === 'answered' && !ids.length) return 'Read the actual evidence before submitting an answer.';
   if (status === 'missing' && !run.proofs.size && !run.eligibleFailure)
     return 'Try reading the relevant source before declaring it missing.';
@@ -116,10 +115,9 @@ function checkedPath(cwd: string, candidate: unknown) {
   try {
     const root = realpathSync(cwd);
     const absolute = path.resolve(root, candidate);
-    const relative = path.relative(root, absolute);
-    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative))
-      return;
-    const readable = relative.split(path.sep).join('/');
+    if (!isWithin(root, absolute)) return;
+    const readable = relativePosixPath(root, absolute);
+    if (!readable) return;
     if (readable.split('/').some((part) => part.startsWith('.') || part.includes(':'))) return;
     return { absolute, readable };
   } catch {
@@ -174,7 +172,8 @@ function note(run: Run, terminal: 'missing' | 'incomplete' | 'checking') {
 }
 
 export default function evidenceAnalysis(pi: ExtensionAPI) {
-  const required = process.env.TAU_EVIDENCE_ANALYSIS_REQUIRED === '1';
+  const task = JSON.parse(process.env.TRANSPORTX_SESSION_TASK_JSON || 'null') as SessionProfileV1['task'] | null;
+  const required = task?.kind === 'data-query' && task.expectedOutputs?.includes('answer');
   let active: Run | undefined;
   const failedTools = new Set<string>();
   const clearTimer = (run?: Run) => {
@@ -234,8 +233,9 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
   pi.on('tool_result', (event, ctx) => {
     if (failedTools.delete(event.toolCallId)) return { isError: true };
     const run = active;
-    if (run && event.toolName === 'search_experience' && run.experienceLookups.length < 8) {
-      run.experienceLookups.push(captureExperience(event.toolCallId, event.details, event.isError));
+    const details = asRecord(event.details);
+    if (run && !event.isError && details?.accepted === true && details.receiptId === event.toolCallId && run.relatedReceipts.size < 64) {
+      run.relatedReceipts.add(event.toolCallId);
     }
     if (!run || event.toolName !== 'read') return;
     const before = run.pendingReads.get(event.toolCallId);
@@ -323,8 +323,9 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       const run = active;
       if (run) run.approval = undefined;
       const status = completionStatus(input.status);
+      const related = input.relatedToolCallIds ?? [];
       const rejection = run
-        ? completionError(run, status, input.answer, input.evidence)
+        ? completionError(run, status, input.answer, input.evidence, related)
         : 'No active evidence-backed task.';
       if (!run || !status || rejection) {
         failedTools.add(toolCallId);
@@ -337,7 +338,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
         status,
         answer: input.answer.trim(),
         evidence: [...input.evidence],
-        experience: selectExperience(run.experienceLookups, input),
+        relatedToolCallIds: [...related],
       };
       return {
         content: [{ type: 'text', text: 'Completion recorded. Finish this turn.' }],
@@ -369,6 +370,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
           checked.map((file) => `\`${file.replaceAll('\`', '')}\``).join(', ')
         : '';
       const prefix = run.terminal === 'missing' ? note(run, 'missing') + '\n\n' : '';
+      const delivery: DeliveryStatus = run.terminal === 'verified' ? 'submitted' : 'needs_review';
       const result = {
         ...message,
         content: [
@@ -377,7 +379,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
             text: prefix + approval.answer + sourceLine,
           },
         ],
-        evidenceCompletion: run.terminal,
+        delivery: { status: delivery },
       };
       return { message: result };
     }
@@ -394,7 +396,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     const result = {
       ...message,
       content: [{ type: 'text' as const, text: note(run, 'incomplete') }],
-      evidenceCompletion: 'incomplete' as const,
+      delivery: { status: 'incomplete' as const },
     };
     return { message: result };
   });
@@ -431,13 +433,8 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       repair: run.repair !== 'unused',
       evidence: [...run.proofs.values()],
       selected: run.terminal ? (run.approval?.evidence ?? []) : [],
-      ...(run.experienceLookups.length
-        ? {
-            experience: {
-              lookups: run.experienceLookups,
-              selection: run.terminal ? (run.approval?.experience ?? null) : null,
-            },
-          }
+      ...(run.terminal && run.approval?.relatedToolCallIds.length
+        ? { relatedToolCallIds: run.approval.relatedToolCallIds }
         : {}),
     });
   });

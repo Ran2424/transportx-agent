@@ -16,8 +16,8 @@ import { CadInvocations } from './cad-invocations.js';
 import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
-import { exchange } from './experience-exchange.js';
-import { analyzeWorkspaceTable, WorkspaceTableInputError, WorkspaceTableSourceMissingError } from './workspace-table.js';
+import { exchange, validateExperienceRequest } from './experience-exchange.js';
+import { analyzeWorkspaceTable } from './workspace-table.js';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
 
@@ -37,14 +37,10 @@ export function createApiRouter(services: ApiRouteServices) {
       const result = await runRequestJob(deps.sessions, req, res, session, (signal) => analyzeWorkspaceTable(session.cwd, input, signal));
       deps.json(res, 200, { result, toolCallId: body.toolCallId });
     } catch (error) {
-      const validation = error instanceof WorkspaceTableInputError;
-      const status = validation ? 400 : deps.errorStatus(error);
-      const code = error instanceof WorkspaceTableSourceMissingError
-        ? 'workspace_table_source_missing'
-        : validation ? 'workspace_table_invalid' : (error as { code?: string } | null)?.code || 'workspace_table_failed';
+      const status = deps.errorStatus(error);
       deps.json(res, status, {
         error: status >= 500 ? 'Workspace table analysis failed.' : deps.errorMessage(error),
-        code,
+        code: (error as { code?: string } | null)?.code || 'workspace_table_failed',
         phase: 'analysis', commit: 'not_started',
       });
     }
@@ -55,13 +51,7 @@ export function createApiRouter(services: ApiRouteServices) {
         const body = await deps.readBody(req);
         const session = resolveServiceSession(res, body, deps, 'experience');
         if (!session) return;
-        const legacy = kind === 'search' && body.contractVersion === '1.0.0' &&
-          session.resolvedSessionPlan?.modules.some(module => module.id === 'com.transportx.experience-exchange' && module.version === '1.0.0');
-        const compatible = legacy ? {
-          contractVersion: '1.0.0', input: (await import('../contracts/experience-lookup.mjs')).LegacyExperienceSearchSchema,
-        } : undefined;
-        const input = await validateToolRequest('com.transportx.experience-exchange', body, `experience.${kind}`, compatible);
-        if (kind === 'search' && !legacy) input.limit = 3;
+        const input = await validateExperienceRequest(session, kind, body);
         const result = await runRequestJob(deps.sessions, req, res, session, (signal) => exchange(session, kind, input, signal));
         deps.json(res, 200, { ...result, toolCallId: body.toolCallId });
       } catch (error) {

@@ -37,6 +37,7 @@ const report = { mode: 'isolated engineering smoke with a scripted tool dispatch
 const children = [];
 const toolRequests = [];
 let runtime, txBase, trafficBase;
+const toolJson = message => JSON.parse(typeof message.content === 'string' ? message.content : message.content.find(block => block.type === 'text').text);
 
 const dispatcher = http.createServer(async (req, res) => {
   try {
@@ -54,16 +55,22 @@ const dispatcher = http.createServer(async (req, res) => {
     if (requested.name === 'combined-analysis') {
       if (last.role === 'user') {
         assert.ok(active.includes('search_experience') && active.includes('analyze_workspace_table') && active.includes('complete_evidence_analysis'));
+        assert.ok(!active.includes('record_experience_use') && !active.includes('submit_experience_feedback'));
         call = { name: 'search_experience', args: { query: requested.args.query } };
       } else if (previous === 'search_experience') {
+        call = { name: 'manage_capabilities', args: { action: 'enable', moduleId } };
+      } else if (previous === 'manage_capabilities') {
+        assert.ok(active.includes('record_experience_use'));
+        call = { name: 'record_experience_use', args: { releaseId: requested.args.release, disposition: 'used', reason: '先核实当前可复查样本。' } };
+      } else if (previous === 'record_experience_use') {
+        assert.equal(toolJson(last).accepted, true);
         call = { name: 'analyze_workspace_table', args: { file: 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }] } };
       } else if (previous === 'analyze_workspace_table') {
-        const result = JSON.parse(typeof last.content === 'string' ? last.content : last.content.find(block => block.type === 'text').text);
+        const result = toolJson(last);
+        const record = body.messages.flatMap(item => item.tool_calls || []).findLast(item => item.function.name === 'record_experience_use');
         assert.equal(Number(result.rows[0][0]), 30);
         call = { name: 'complete_evidence_analysis', args: {
-          answer: '当前两条工作区记录合计为 30。', evidence: [result.evidenceId],
-          experienceReleaseId: requested.args.release, experienceDisposition: 'used',
-          experienceReason: '先核实当前可复查样本。',
+          answer: '当前两条工作区记录合计为 30。', evidence: [result.evidenceId], relatedToolCallIds: [record.id],
         } };
       }
     } else if (last.role === 'user' || (last.role === 'tool' && previous === 'manage_capabilities')) {
@@ -344,6 +351,8 @@ try {
   assert.equal(newRef.revision, v2.revision);
   assert.equal(newRef.digest, v2.digest);
   assert.notEqual(newRef.release_id, oldRef.release_id);
+  const staleUsage = await call(host, 'record_experience_use', { releaseId: newRef.release_id, disposition: 'used', reason: 'The search ran in a previous turn.' }, true);
+  assert.equal(staleUsage.accepted, false);
   report.checks.reviewedUpdate = newRef;
 
   const evidenceModule = options.modules.find(item => item.id === 'com.transportx.evidence-analysis');
@@ -356,15 +365,25 @@ try {
   const ack = await tx('/api/rpc', { type: 'prompt', sessionId: combined.id, clientCommandId: randomUUID(),
     message: 'experience-smoke:' + JSON.stringify({ name: 'combined-analysis', args: { query: query.query, release: newRef.release_id } }) });
   assert.equal(ack.success, true);
-  const combinedReceipt = await until('combined evidence and experience receipt', async () => {
+  const combinedSnapshot = await until('combined evidence and experience receipt', async () => {
     const snapshot = await workspace.nativeSnapshot(tx, combined.conversationId);
-    return !snapshot.isStreaming && snapshot.entries.findLast(entry => entry.customType === 'transportx.evidence-analysis.v1')?.data;
+    return !snapshot.isStreaming && snapshot.entries.some(entry => entry.customType === 'transportx.evidence-analysis.v1') && snapshot;
   }, host);
+  const combinedReceipt = combinedSnapshot.entries.findLast(entry => entry.customType === 'transportx.evidence-analysis.v1').data;
+  const experience = combinedSnapshot.entries.filter(entry => entry.customType === 'experience-exchange').map(entry => entry.data);
+  const usage = experience.find(entry => entry.kind === 'disposition');
   assert.equal(combinedReceipt.status, 'verified');
-  assert.equal(combinedReceipt.experience.selection.releaseId, newRef.release_id);
-  assert.equal(combinedReceipt.experience.selection.disposition, 'used');
+  assert.equal(usage.releaseId, newRef.release_id);
+  assert.equal(usage.digest, newRef.digest);
+  assert.equal(usage.disposition, 'used');
+  assert.ok(experience.some(entry => entry.kind === 'search' && entry.toolCallId === usage.lookupToolCallId));
+  assert.deepEqual(combinedReceipt.relatedToolCallIds, [usage.receiptId]);
+  assert.equal(combinedReceipt.experience, undefined);
+  assert.equal(combinedSnapshot.entries.findLast(entry => entry.message?.role === 'assistant')?.message?.delivery?.status, 'submitted');
   assert.ok(combinedReceipt.evidence[0].tableRunId);
   report.checks.combinedAnalysisReceipt = combinedReceipt;
+  report.checks.experienceUsageReceipt = usage;
+  report.checks.priorTurnUsageRejected = true;
   await workspace.closeHostConversation(tx, combined.conversationId);
 
   for (const ref of [oldRef, newRef]) {

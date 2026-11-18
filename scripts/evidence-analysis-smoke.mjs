@@ -102,6 +102,14 @@ const dispatcher = http.createServer(async (req, res) => {
         };
       else if (index <= 3) content = 'I could not finish the analysis.';
       else throw new Error('Unexpected invalid-query request: ' + index);
+    } else if (active.name === 'forged-related') {
+      if (index === 0) call = { name: 'analyze_workspace_table', args: table };
+      else if (index === 1) {
+        const response = body.messages.findLast((item) => item.role === 'tool');
+        const result = JSON.parse(typeof response.content === 'string' ? response.content : response.content.find(block => block.type === 'text').text);
+        call = { name: 'complete_evidence_analysis', args: { answer, evidence: [result.evidenceId], relatedToolCallIds: ['call_forged_receipt'] } };
+      } else if (index <= 3) content = 'I could not finish the analysis.';
+      else throw new Error('Unexpected related-receipt request: ' + index);
     } else if (active.name === 'stale') {
       if (index === 0)
         call = {
@@ -358,6 +366,7 @@ try {
     'One initial response, one repair request and two tool continuations expected'
   );
   assert.equal(verified.receipt.status, 'verified');
+  assert.equal(verified.messages.findLast(item => item.role === 'assistant')?.delivery?.status, 'submitted');
   assert.equal(verified.receipt.repair, true);
   assert.deepEqual(verified.receipt.selected, [capturedId]);
   const proof = verified.receipt.evidence.find((item) => item.id === capturedId);
@@ -395,6 +404,8 @@ try {
   const plans = await exercise('plans');
   assert.equal(plans.requests, 2);
   assert.equal(plans.receipt.status, 'incomplete');
+  assert.equal(plans.messages.findLast(item => item.role === 'assistant')?.delivery?.status, 'incomplete');
+  assert.equal((await workspace.nativeSnapshot(tx, runtime.conversationId)).outcome, null);
   assert.equal(plans.receipt.repair, true);
   assert.ok(
     !plans.messages
@@ -415,6 +426,7 @@ try {
 
   const missing = await exercise('missing');
   assert.equal(missing.receipt.status, 'missing');
+  assert.equal(missing.messages.findLast(item => item.role === 'assistant')?.delivery?.status, 'needs_review');
   assert.ok(
     missing.messages
       .filter((item) => item.role === 'assistant')
@@ -430,6 +442,13 @@ try {
   assert.ok(invalid.messages.some((item) => item.role === 'toolResult' &&
     item.toolName === 'complete_evidence_analysis' && item.isError && item.details?.accepted === false));
   report.checks.invalidQueryDoesNotProveMissingSource = true;
+
+  const forged = await exercise('forged-related');
+  assert.equal(forged.receipt.status, 'incomplete');
+  assert.ok(forged.receipt.evidence.length > 0);
+  assert.equal(forged.receipt.relatedToolCallIds, undefined);
+  assert.ok(forged.messages.some(item => item.toolName === 'complete_evidence_analysis' && item.isError));
+  report.checks.forgedRelatedReceiptRejected = true;
 
   const stale = await exercise('stale');
   const rejected = stale.messages.find(

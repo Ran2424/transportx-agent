@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppMessage, SessionAttachment } from '../../../public/app-types.js';
 import { messageOutcome } from '../../../contracts/run-feedback.ts';
+import { messageDelivery } from '../../../contracts/task-delivery.ts';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import { useCitationDetail } from './citation-detail';
 import { Icon } from '../../components/icons';
@@ -51,10 +52,29 @@ export const AssistantMessage = memo(function AssistantMessage({ message, stream
   const text = messageText(message);
   const displayText = text;
   const outcome = messageOutcome(message);
+  const delivery = streaming ? null : messageDelivery(message);
   const thinking = messageThinking(message);
   const [copied, setCopied] = useState(false);
   const messageCopyText = citationCopyText(text, projection);
   const markup = useMemo(() => renderConversationMarkdown(displayText, projection?.numbers, resourceLinks), [displayText, JSON.stringify(projection?.numbers), resourceLinks, i18n.language]);
   const resolvedThinkingDuration = thinkingDurationMs ?? messageThinkingDurationMs(message);
-  return <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={(event) => focusCitationCard(event, projection, sessionId, openDetail)}><div className="message-content"><Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />{text ? <div className="assistant-prose" dangerouslySetInnerHTML={markup} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}{streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}{outcome ? <div className="model-feedback" role={outcome.status === 'failed' ? 'alert' : 'status'}><strong>{t(`conversation.${outcome.status}`)}</strong>{outcome.reason ? <p>{t(`conversation.failure.${outcome.reason}`)}</p> : null}{outcome.status === "failed" && unconfirmedTool ? <p>{t("conversation.tool.retryUnconfirmed")}</p> : null}<small>{t('conversation.diagnostic', { id: `${sessionId.slice(-8)}:${message.timestamp ?? 'history'}` })}</small>{outcome.status === 'failed' && onRetry ? <button type="button" onClick={onRetry}>{t(outcome.reason === 'output_limit' ? 'conversation.prepareContinue' : 'conversation.prepareRetry')}</button> : null}</div> : null}<CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} /></div>{!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copyText(messageCopyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}</article>;
+  return (
+    <article className={`conversation-message assistant-message${streaming ? ' is-streaming' : ''}`} onClick={(event) => focusCitationCard(event, projection, sessionId, openDetail)}>
+      <div className="message-content">
+        <Thinking text={thinking} visible={showThinking} active={!!streaming && !text} startedAt={thinkingStartedAt} durationMs={resolvedThinkingDuration} defaultExpanded={expandThinking} />
+        {text ? <div className="assistant-prose" dangerouslySetInnerHTML={markup} /> : streaming ? <span className="streaming-cursor" aria-label={t('conversation.generating')} /> : null}
+        {streaming ? null : <MessageArtifacts projection={projection} sessionId={sessionId} />}
+        {delivery ? <div role="status" className="model-feedback"><p>{t(`conversation.delivery.${delivery}`)}</p></div> : null}
+        {outcome ? <div className="model-feedback" role={outcome.status === 'failed' ? 'alert' : 'status'}>
+          <strong>{t(`conversation.${outcome.status}`)}</strong>
+          {outcome.reason ? <p>{t(`conversation.failure.${outcome.reason}`)}</p> : null}
+          {outcome.status === 'failed' && unconfirmedTool ? <p>{t('conversation.tool.retryUnconfirmed')}</p> : null}
+          <small>{t('conversation.diagnostic', { id: `${sessionId.slice(-8)}:${message.timestamp ?? 'history'}` })}</small>
+          {outcome.status === 'failed' && onRetry ? <button type="button" onClick={onRetry}>{t(outcome.reason === 'output_limit' ? 'conversation.prepareContinue' : 'conversation.prepareRetry')}</button> : null}
+        </div> : null}
+        <CitationFooter projection={streaming ? undefined : projection} sessionId={sessionId} />
+      </div>
+      {!streaming && text ? <button className="message-copy" type="button" aria-label={t('conversation.copyMessage')} onClick={() => void copyText(messageCopyText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })}>{copied ? t('common.copied') : t('common.copy')}</button> : null}
+    </article>
+  );
 });

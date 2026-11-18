@@ -23,6 +23,7 @@ export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
   'com.transportx.experience-exchange': [
     { toolId: 'experience.search', piName: 'search_experience', file: 'search-contract.json', execution: 'host' },
     { toolId: 'experience.feedback', piName: 'submit_experience_feedback', file: 'feedback-contract.json', execution: 'host' },
+    { toolId: 'experience.use', piName: 'record_experience_use', file: 'use-contract.json', execution: 'pi-local' },
   ],
   'com.transportx.service-resilience': [
     { toolId: 'resilience.import', piName: 'resilience_import', file: 'import-contract.json', execution: 'pi-local' },

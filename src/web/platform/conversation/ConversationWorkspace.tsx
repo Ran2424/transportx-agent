@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppMessage, MessageContentBlock } from '../../../public/app-types.js';
 import { messageOutcome } from '../../../contracts/run-feedback.ts';
+import { messageDelivery } from '../../../contracts/task-delivery.ts';
 import { messageText, messageThinking, messageThinkingDurationMs } from '../../../public/kernel/stores/conversation-store.js';
 import type { CitationEnvelope } from '../../../contracts/citation.ts';
 import { appKernel } from '../../app/composition-root';
@@ -99,7 +100,7 @@ export function ConversationWorkspace({ sessionId, showThinking, expandThinking,
       const timing = Array.isArray(message.content) ? message.content.find((block) => block.type === 'thinking') : undefined;
       if (thinking) parts.push({ kind: 'activity', activity: { id: `thinking-${entry.id || index}`, thinking: { text: thinking, active: false, startedAt: timing?.startedAt ?? null, durationMs: messageThinkingDurationMs(message) } } });
       const projection = citationProjection.byEntry.get(entry);
-      if (messageOutcome(message) || messageText(message) || projection?.artifacts.length || projection?.citations.length) parts.push({ kind: 'message', entry, index });
+      if (messageOutcome(message) || messageDelivery(message) || messageText(message) || projection?.artifacts.length || projection?.citations.length) parts.push({ kind: 'message', entry, index });
     }
     for (const tool of toolProjection.byEntry.get(entry) || []) parts.push({ kind: 'activity', activity: { id: `tool-${tool.id}`, tool } });
   });

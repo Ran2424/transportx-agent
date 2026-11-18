@@ -20,7 +20,7 @@ import type { AssetResolver, ResolvedAsset } from './asset-resolver.js';
 import { verifyChecksumFile, sha256File } from './asset-integrity.js';
 import { isWithin } from './util/path.js';
 import { readModuleToolContracts } from './tool-contracts.js';
-import { canonicalToolSchema } from '../contracts/tool-interface.js';
+import { canonicalToolSchema, parseToolInterfaceContract } from '../contracts/tool-interface.js';
 import { SIMULATION_MODULE_ID } from '../contracts/simulation.js';
 
 export type ResolvedSessionPlan = ResolvedSessionPlanV3;
@@ -120,6 +120,15 @@ function frozenModuleManifest(module: Pick<ResolvedPlanModule, 'id' | 'version' 
   return manifest.value;
 }
 
+function verifyInitialToolContract(module: Pick<ResolvedPlanModule, 'id' | 'packageRoot'>, tool: { piName: string; contract: string; sha256?: string }) {
+  const file = resolvePackagePath(module.packageRoot, tool.contract, 'Initial tool contract');
+  if (!isWithin(fs.realpathSync(module.packageRoot), fs.realpathSync(file))) throw new Error(`Initial tool contract escapes Module: ${tool.contract}`);
+  const digest = sha256File(file);
+  const contract = parseToolInterfaceContract(JSON.parse(fs.readFileSync(file, 'utf8')));
+  if (!contract || contract.moduleId !== module.id || contract.piName !== tool.piName || (tool.sha256 && tool.sha256 !== digest)) throw new Error(`Invalid initial tool contract: ${module.id}/${tool.piName}`);
+  return { piName: tool.piName, contract: tool.contract, sha256: digest };
+}
+
 function resolvedPlanModule(module: RegisteredModule, domainId: string): ResolvedPlanModule {
   frozenModuleManifest({ id: module.manifest.id, version: module.manifest.version, packageRoot: module.packageRoot });
   readModuleToolContracts(module.packageRoot, module.manifest.id);
@@ -132,6 +141,7 @@ function resolvedPlanModule(module: RegisteredModule, domainId: string): Resolve
     entrypoints: resolvedEntrypoints(module, domainId),
     nativeRuntimes: resolvedNativeRuntimes(module),
     canvasViews: module.manifest.contributes?.canvasViews || [],
+    initialTools: (module.manifest.contributes?.initialTools || []).map((tool) => verifyInitialToolContract({ id: module.manifest.id, packageRoot: module.packageRoot }, tool)),
   };
 }
 
@@ -269,6 +279,13 @@ export class SessionAssembler {
       if (module.origin === 'builtin' && this.builtinArchive?.contains(module.packageRoot)) {
         try { this.builtinArchive.verify(module); }
         catch { throw new SessionPlanError('module_content_mismatch', `Cannot verify archived Module: ${module.id}@${module.version}`, [{ moduleId: module.id, path: module.packageRoot }]); }
+      }
+      if (module.initialTools !== undefined || manifest.contributes?.initialTools !== undefined) {
+        try {
+          const declared = (manifest.contributes?.initialTools || []).map((tool) => verifyInitialToolContract(module, tool));
+          if (canonicalToolSchema(module.initialTools) !== canonicalToolSchema(declared)) throw new Error('Initial tools differ from the frozen manifest');
+        }
+        catch { throw new SessionPlanError('module_content_mismatch', `Initial tool contract changed: ${module.id}@${module.version}`, [{ moduleId: module.id }]); }
       }
       if (!modulePlatformCompatible(manifest.platformVersion, this.platformVersion)) throw new SessionPlanError('module_incompatible', `Module ${module.id}@${module.version} is incompatible with platform ${this.platformVersion}.`);
       for (const entry of module.entrypoints) {

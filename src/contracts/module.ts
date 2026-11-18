@@ -52,6 +52,8 @@ export type ModuleCanvasView = {
   protocolVersion: string;
 };
 
+export type ModuleInitialTool = { piName: string; contract: string };
+
 export type ModuleManifest = {
   manifestVersion: 2;
   id: string;
@@ -67,6 +69,7 @@ export type ModuleManifest = {
     prompts?: string[];
   };
   contributes?: {
+    initialTools?: ModuleInitialTool[];
     artifactTypes?: string[];
     assets?: ModuleAsset[];
     nativeRuntimes?: ModuleNativeRuntime[];
@@ -184,6 +187,18 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
   const artifactTypes = contributesRecord ? stringList(contributesRecord.artifactTypes, '$.contributes.artifactTypes', diagnostics) : undefined;
   const requiredNativeRuntimes = contributesRecord ? stringList(contributesRecord.requiredNativeRuntimes, '$.contributes.requiredNativeRuntimes', diagnostics) : undefined;
 
+  const initialTools: ModuleInitialTool[] = [];
+  if (contributesRecord?.initialTools !== undefined) {
+    if (!Array.isArray(contributesRecord.initialTools)) diagnostics.push(diagnostic({ code: 'invalid_type', path: '$.contributes.initialTools', message: 'initialTools must be an array.' }));
+    else contributesRecord.initialTools.forEach((candidate, index) => {
+      const item = asRecord(candidate), piName = asString(item?.piName, 200), contract = asString(item?.contract, 500);
+      if (!item || !piName || !/^[A-Za-z][A-Za-z0-9_]*$/.test(piName) || !contract || !/^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/.test(contract) || Object.keys(item).some((key) => !['piName', 'contract'].includes(key)) || initialTools.some((tool) => tool.piName === piName || tool.contract === contract)) {
+        diagnostics.push(diagnostic({ code: 'invalid_type', path: `$.contributes.initialTools[${index}]`, message: 'Initial tool requires a unique Pi name and package-relative JSON contract.' }));
+      } else initialTools.push({ piName, contract });
+    });
+    if (initialTools.length && !piExtensions?.length) diagnostics.push(diagnostic({ code: 'missing_required_field', path: '$.entrypoints.piExtensions', message: 'Initial tools require a Pi extension.' }));
+  }
+
   const canvasViews: ModuleCanvasView[] = [];
   if (contributesRecord?.canvasViews !== undefined) {
     if (!Array.isArray(contributesRecord.canvasViews)) diagnostics.push(diagnostic({ code: 'invalid_type', path: '$.contributes.canvasViews', message: 'canvasViews must be an array.' }));
@@ -280,6 +295,7 @@ export function parseModuleManifestStructured(input: unknown): ModuleManifestPar
         ...(prompts ? { prompts } : {}),
       } } : {}),
       ...(contributesRecord ? { contributes: {
+        ...(contributesRecord.initialTools !== undefined ? { initialTools } : {}),
         ...(artifactTypes ? { artifactTypes } : {}),
         ...(assets.length ? { assets } : {}),
         ...(nativeRuntimes.length ? { nativeRuntimes } : {}),

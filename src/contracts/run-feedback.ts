@@ -1,5 +1,5 @@
 /** Only classified feedback reaches the UI; provider payloads stay private. */
-export type FailureReason = 'authentication' | 'rate_limit' | 'context_limit' | 'output_limit' | 'invalid_request' | 'network' | 'provider' | 'evidence_incomplete';
+export type FailureReason = 'authentication' | 'rate_limit' | 'context_limit' | 'output_limit' | 'invalid_request' | 'network' | 'provider';
 export type RetryState = { attempt: number; maxAttempts: number; delayMs: number; reason: FailureReason };
 export type RunOutcome = { status: 'failed' | 'cancelled'; reason?: FailureReason };
 
@@ -13,9 +13,8 @@ export function classifyFailure(value: unknown): FailureReason {
   return 'provider';
 }
 
-export function messageOutcome(message: { role?: unknown; stopReason?: unknown; errorMessage?: unknown; evidenceCompletion?: unknown } | undefined): RunOutcome | null {
+export function messageOutcome(message: { role?: unknown; stopReason?: unknown; errorMessage?: unknown } | undefined): RunOutcome | null {
   if (message?.role !== 'assistant') return null;
-  if (message.evidenceCompletion === 'incomplete') return { status: 'failed', reason: 'evidence_incomplete' };
   if (message.stopReason === 'length') return { status: 'failed', reason: 'output_limit' };
   if (message.stopReason === 'aborted') return { status: 'cancelled' };
   if (message.stopReason === 'error' || message.errorMessage) return { status: 'failed', reason: classifyFailure(message.errorMessage) };
