@@ -55,23 +55,18 @@ const dispatcher = http.createServer(async (req, res) => {
     if (requested.name === 'combined-analysis') {
       if (last.role === 'user') {
         assert.ok(active.includes('search_experience') && active.includes('analyze_workspace_table') && active.includes('complete_evidence_analysis'));
-        assert.ok(!active.includes('record_experience_use') && !active.includes('submit_experience_feedback'));
+        assert.ok(active.includes('record_experience_use') && !active.includes('submit_experience_feedback'));
         call = { name: 'search_experience', args: { query: requested.args.query } };
       } else if (previous === 'search_experience') {
-        call = { name: 'manage_capabilities', args: { action: 'enable', moduleId } };
-      } else if (previous === 'manage_capabilities') {
         assert.ok(active.includes('record_experience_use'));
         call = { name: 'record_experience_use', args: { releaseId: requested.args.release, disposition: 'used', reason: '先核实当前可复查样本。' } };
       } else if (previous === 'record_experience_use') {
         assert.equal(toolJson(last).accepted, true);
-        call = { name: 'analyze_workspace_table', args: { file: 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }] } };
+        call = { name: 'analyze_workspace_table', args: { file: 'evidence/counts.csv', aggregates: [{ op: 'sum', column: 'value', as: 'total' }], deliver: true } };
       } else if (previous === 'analyze_workspace_table') {
         const result = toolJson(last);
-        const record = body.messages.flatMap(item => item.tool_calls || []).findLast(item => item.function.name === 'record_experience_use');
         assert.equal(Number(result.rows[0][0]), 30);
-        call = { name: 'complete_evidence_analysis', args: {
-          answer: '当前两条工作区记录合计为 30。', evidence: [result.evidenceId], relatedToolCallIds: [record.id],
-        } };
+        assert.equal(result.delivered, true);
       }
     } else if (last.role === 'user' || (last.role === 'tool' && previous === 'manage_capabilities')) {
       call = active.includes(requested.name) ? requested : { name: 'manage_capabilities', args: { action: 'enable', moduleId } };
@@ -267,6 +262,7 @@ try {
       cwd: repo, stdio: ['ignore', 'pipe', hostLog, 'ipc'],
       env: {
         ...safeEnv(), PI_OFFLINE: '1', PYTHONUTF8: '1', TAU_USER_DATA_DIR: profile, PI_CODING_AGENT_DIR: profile,
+        TAU_RUNTIME_COORDINATION_DIR: path.join(profile, 'runtime-guards'),
         TAU_PROJECTS_DIR: path.join(profile, 'projects'), PI_CODING_AGENT_SESSION_DIR: path.join(profile, 'sessions'),
         TAU_PYTHON_COMMAND: process.env.TAU_PYTHON_COMMAND ?? 'python3',
         TAU_PI_ENTRYPOINT: path.join(repo, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'cli.js'),

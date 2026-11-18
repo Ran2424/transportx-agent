@@ -2,13 +2,14 @@
   "manifestVersion": 2,
   "id": "com.transportx.experience-exchange",
   "name": "Experience Exchange",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "type": "capability",
   "platformVersion": ">=3.0.0 <4.0.0",
   "dependencies": [],
   "contributes": {
     "initialTools": [
-      { "piName": "search_experience", "contract": "search-contract.json" }
+      { "piName": "search_experience", "contract": "search-contract.json" },
+      { "piName": "record_experience_use", "contract": "use-contract.json" }
     ]
   },
   "entrypoints": {

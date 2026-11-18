@@ -4,7 +4,7 @@ import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { isWithin, toPosixPath } from './util/path.js';
 
-const METHOD = 'workspace-table/1';
+const METHOD = 'workspace-table/2';
 const MAX_BYTES = 4 * 1024 * 1024;
 const MAX_ROWS = 50_000;
 const MAX_COLUMNS = 100;
@@ -12,7 +12,7 @@ const MAX_LIMIT = 200;
 
 type Filter = { column: string; value: string | null };
 type Aggregate = {
-  op: 'count' | 'sum' | 'min' | 'max';
+  op: 'count' | 'sum' | 'avg' | 'min' | 'max';
   column?: string;
   as: string;
   numeric?: true;
@@ -21,6 +21,7 @@ type Order = { column: string; direction: 'asc' | 'desc'; numeric?: true };
 type Plan = {
   file: string;
   select: string[];
+  redundantSelect?: string[];
   filters: Filter[];
   groupBy: string[];
   aggregates: Aggregate[];
@@ -84,10 +85,11 @@ function parsePlan(input: unknown): Plan {
   const groupBy = list(p.groupBy).map(string);
   const aggregates = list(p.aggregates).map((item) => {
     const a = record(item);
-    if (a.op !== 'count' && a.op !== 'sum' && a.op !== 'min' && a.op !== 'max')
+    if (a.op !== 'count' && a.op !== 'sum' && a.op !== 'avg' && a.op !== 'min' && a.op !== 'max')
       return fail('Unsupported aggregate.');
-    const column = a.column === undefined ? undefined : string(a.column);
-    if (a.op !== 'count' && !column) fail('Aggregate requires a column.');
+    if (a.column === null && a.op !== 'count') fail('Only count accepts an omitted or null column. Other aggregates require an exact CSV column name.');
+    const column = a.column === undefined || a.column === null ? undefined : string(a.column);
+    if (a.op !== 'count' && !column) fail('sum, avg, min and max require a CSV column name; only count can omit column.');
     if (a.numeric !== undefined && typeof a.numeric !== 'boolean')
       fail('numeric must be a boolean.');
     return {
@@ -120,13 +122,18 @@ function parsePlan(input: unknown): Plan {
     (limit as number) > MAX_LIMIT
   )
     fail(`Limit must be between 1 and ${MAX_LIMIT}.`);
-  if (select.length && (groupBy.length || aggregates.length))
-    fail('Selection cannot be combined with grouping or aggregation.');
   if (groupBy.length && !aggregates.length)
     fail('Grouping requires an aggregate.');
+  const redundantSelect = aggregates.length && select.length ? select : undefined;
+  if (redundantSelect) {
+    const referenced = new Set([...groupBy, ...aggregates.flatMap(({ column }) => column ? [column] : [])]);
+    if (redundantSelect.some((column) => !referenced.has(column)))
+      fail('Use select for reading rows, or omit select and use groupBy with aggregates for summaries.');
+  }
   return {
     file,
-    select,
+    select: redundantSelect ? [] : select,
+    ...(redundantSelect ? { redundantSelect } : {}),
     filters,
     groupBy,
     aggregates,
@@ -234,7 +241,7 @@ function parseCsv(text: string): string[][] {
 }
 
 /** Read and analyze one bounded workspace CSV. Values use CSV text;
- * sum uses DECIMAL(38,9) and is returned as decimal text. Empty cells are null. */
+ * sum and numeric min/max use DECIMAL(38,9); avg returns floating-point text. Empty cells are null. */
 export async function analyzeWorkspaceTable(
   cwd: string,
   input: unknown,
@@ -252,7 +259,7 @@ export async function analyzeWorkspaceTable(
   const indexes = new Map(header.map((name, i) => [name, i]));
   const column = (name: string) => {
     const i = indexes.get(name);
-    if (i === undefined) return fail(`Unknown column: ${name}`);
+    if (i === undefined) return fail(`Unknown CSV column ${JSON.stringify(name)}. Use an exact name from sourceColumns returned by a read call.`);
     return `NULLIF(json_extract_string(value, '$[${i}]'), '')`;
   };
   const unique = (names: string[]) => {
@@ -270,7 +277,7 @@ export async function analyzeWorkspaceTable(
   const expressions = selected.map(column);
   const validateNumeric = (name: string) => {
     const idx = indexes.get(name);
-    if (idx === undefined) return fail(`Unknown column: ${name}`);
+    if (idx === undefined) return fail(`Unknown CSV column ${JSON.stringify(name)}. Use an exact name from sourceColumns returned by a read call.`);
     if (
       rows.some(
         (row) =>
@@ -278,7 +285,7 @@ export async function analyzeWorkspaceTable(
       )
     ) {
       fail(
-        `Numeric column contains a non-decimal or out-of-range value: ${name}`
+        `Numeric column ${JSON.stringify(name)} contains a non-decimal or out-of-range value. Use decimal values with at most 28 integer and 9 fractional digits, or empty cells.`
       );
     }
   };
@@ -286,7 +293,7 @@ export async function analyzeWorkspaceTable(
     const expr = aggregate.column ? column(aggregate.column) : '*';
     if (aggregate.op === 'count')
       expressions.push(`CAST(COUNT(${expr}) AS INTEGER)`);
-    else if (aggregate.op === 'sum' || aggregate.numeric) {
+    else if (aggregate.op === 'sum' || aggregate.op === 'avg' || aggregate.numeric) {
       validateNumeric(aggregate.column!);
       expressions.push(
         `CAST(${aggregate.op.toUpperCase()}(CAST(${expr} AS DECIMAL(38,9))) AS VARCHAR)`
@@ -300,7 +307,7 @@ export async function analyzeWorkspaceTable(
   const matchedRows = rows.filter(row => filterValues.every(({ index, value }) => (row[index] || null) === value)).length;
   const orderIndexes = plan.orderBy.map((o) => {
     const idx = output.indexOf(o.column);
-    if (idx < 0) return fail(`Unknown output sort column: ${o.column}`);
+    if (idx < 0) return fail(`Unknown output sort column ${JSON.stringify(o.column)}. Use a selected, groupBy or aggregate output name.`);
     return idx;
   });
   const sorting = plan.orderBy.map((o, i) => {

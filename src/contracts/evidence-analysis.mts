@@ -1,14 +1,7 @@
 import { Type } from 'typebox';
 
 const Column = Type.String({ minLength: 1, maxLength: 160 });
-const Columns = Type.Array(Column, { minItems: 1, maxItems: 24 });
 const Direction = Type.Union([Type.Literal('asc'), Type.Literal('desc')]);
-const Operation = Type.Union([
-  Type.Literal('count'),
-  Type.Literal('sum'),
-  Type.Literal('min'),
-  Type.Literal('max'),
-]);
 
 export const WorkspaceTableSchema = Type.Object(
   {
@@ -17,7 +10,8 @@ export const WorkspaceTableSchema = Type.Object(
       maxLength: 1024,
       description: 'Relative path to a UTF-8 CSV in the current task workspace.',
     }),
-    select: Type.Optional(Columns),
+    deliver: Type.Optional(Type.Boolean({ description: 'Set true to submit this successful exact aggregate as the final answer in the same call; omit or false to continue analysis.' })),
+    select: Type.Optional(Type.Array(Column, { minItems: 1, maxItems: 24, description: 'Read mode: columns to return; omit to read all columns. In aggregate mode omit select and use groupBy for dimensions.' })),
     filters: Type.Optional(
       Type.Array(
         Type.Object(
@@ -30,19 +24,19 @@ export const WorkspaceTableSchema = Type.Object(
         { maxItems: 16 }
       )
     ),
-    groupBy: Type.Optional(Columns),
+    groupBy: Type.Optional(Type.Array(Column, { minItems: 1, maxItems: 24, description: 'Aggregate mode: grouping columns. Requires aggregates; omit select.' })),
     aggregates: Type.Optional(
       Type.Array(
         Type.Object(
           {
-            op: Operation,
-            column: Type.Optional(Column),
-            as: Column,
-            numeric: Type.Optional(Type.Boolean()),
+            op: Type.Union([Type.Literal('count'), Type.Literal('sum'), Type.Literal('avg'), Type.Literal('min'), Type.Literal('max')], { description: 'count counts rows when column is omitted, otherwise non-empty cells. sum and avg are numeric; avg returns floating-point text. min/max compare text unless numeric is true. Numeric columns must contain decimal values or empty cells throughout the CSV.' }),
+            column: Type.Optional(Type.Union([Column, Type.Null()], { description: 'Exact CSV column name. Only count permits omission or JSON null, meaning count all rows.' })),
+            as: Type.String({ minLength: 1, maxLength: 160, description: 'Unique output column name.' }),
+            numeric: Type.Optional(Type.Boolean({ description: 'For min/max, true compares decimal numbers; omitted or false compares text.' })),
           },
           { additionalProperties: false }
         ),
-        { maxItems: 16 }
+        { maxItems: 16, description: 'Aggregate mode: omit select. Example: [{\"op\":\"avg\",\"column\":\"value\",\"as\":\"mean\"}]. Empty CSV cells are null and excluded from numeric aggregates.' }
       )
     ),
     orderBy: Type.Optional(
@@ -60,7 +54,7 @@ export const WorkspaceTableSchema = Type.Object(
     ),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
   },
-  { additionalProperties: false }
+  { additionalProperties: false, description: 'Read example: {\"file\":\"data.csv\",\"select\":[\"name\",\"value\"]}. Aggregate example: {\"file\":\"data.csv\",\"groupBy\":[\"name\"],\"aggregates\":[{\"op\":\"sum\",\"column\":\"value\",\"as\":\"total\"}]}. CSV empty cells are null; the text \"null\" is an ordinary value or column name.' }
 );
 
 export const CompleteEvidenceAnalysisSchema = Type.Object(

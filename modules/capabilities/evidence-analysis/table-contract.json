@@ -3,8 +3,8 @@
   "moduleId": "com.transportx.evidence-analysis",
   "toolId": "analysis.table",
   "piName": "analyze_workspace_table",
-  "contractVersion": "1.0.0",
-  "semanticVersion": "workspace-table-v1",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "workspace-table-v2",
   "input": {
     "type": "object",
     "required": [
@@ -17,6 +17,10 @@
         "maxLength": 1024,
         "description": "Relative path to a UTF-8 CSV in the current task workspace."
       },
+      "deliver": {
+        "type": "boolean",
+        "description": "Set true to submit this successful exact aggregate as the final answer in the same call; omit or false to continue analysis."
+      },
       "select": {
         "type": "array",
         "items": {
@@ -25,7 +29,8 @@
           "maxLength": 160
         },
         "minItems": 1,
-        "maxItems": 24
+        "maxItems": 24,
+        "description": "Read mode: columns to return; omit to read all columns. In aggregate mode omit select and use groupBy for dimensions."
       },
       "filters": {
         "type": "array",
@@ -65,7 +70,8 @@
           "maxLength": 160
         },
         "minItems": 1,
-        "maxItems": 24
+        "maxItems": 24,
+        "description": "Aggregate mode: grouping columns. Requires aggregates; omit select."
       },
       "aggregates": {
         "type": "array",
@@ -88,31 +94,47 @@
                 },
                 {
                   "type": "string",
+                  "const": "avg"
+                },
+                {
+                  "type": "string",
                   "const": "min"
                 },
                 {
                   "type": "string",
                   "const": "max"
                 }
-              ]
+              ],
+              "description": "count counts rows when column is omitted, otherwise non-empty cells. sum and avg are numeric; avg returns floating-point text. min/max compare text unless numeric is true. Numeric columns must contain decimal values or empty cells throughout the CSV."
             },
             "column": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 160
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact CSV column name. Only count permits omission or JSON null, meaning count all rows."
             },
             "as": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 160
+              "maxLength": 160,
+              "description": "Unique output column name."
             },
             "numeric": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "For min/max, true compares decimal numbers; omitted or false compares text."
             }
           },
           "additionalProperties": false
         },
-        "maxItems": 16
+        "maxItems": 16,
+        "description": "Aggregate mode: omit select. Example: [{\"op\":\"avg\",\"column\":\"value\",\"as\":\"mean\"}]. Empty CSV cells are null and excluded from numeric aggregates."
       },
       "orderBy": {
         "type": "array",
@@ -153,7 +175,8 @@
         "maximum": 200
       }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "description": "Read example: {\"file\":\"data.csv\",\"select\":[\"name\",\"value\"]}. Aggregate example: {\"file\":\"data.csv\",\"groupBy\":[\"name\"],\"aggregates\":[{\"op\":\"sum\",\"column\":\"value\",\"as\":\"total\"}]}. CSV empty cells are null; the text \"null\" is an ordinary value or column name."
   },
   "output": {
     "protocol": "transportx-evidence-analysis",

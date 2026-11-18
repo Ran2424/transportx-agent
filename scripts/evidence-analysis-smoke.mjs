@@ -54,7 +54,7 @@ const dispatcher = http.createServer(async (req, res) => {
         'Completion tool must be available in the first request'
       );
     }
-    let call, content;
+    let call, content, finish = 'stop';
     if (active.name === 'verified') {
       if (index === 0) content = 'PLAN_ONLY_SENTINEL: I will inspect the data.';
       else if (index === 1)
@@ -74,6 +74,27 @@ const dispatcher = http.createServer(async (req, res) => {
         };
       } else if (index === 3) content = 'Model completion text should be replaced by the verified answer.';
       else throw new Error('Unexpected request in verified scenario: ' + index);
+    } else if (active.name === 'direct-delivery') {
+      if (index === 0) call = {
+        name: 'analyze_workspace_table',
+        args: { ...table, aggregates: [{ op: 'avg', column: 'count', as: 'mean' }], deliver: true },
+      };
+      else if (index === 1) {
+        const result = body.messages.findLast((item) => item.role === 'tool');
+        const json = JSON.parse(typeof result.content === 'string' ? result.content : result.content[0].text);
+        assert.equal(json.delivered, true);
+        content = 'The computed answer has already been submitted.';
+        finish = 'length';
+      } else throw new Error('Unexpected model request after direct delivery');
+    } else if (active.name === 'csv-read-is-not-a-calculation') {
+      if (index === 0) call = { name: 'read', args: { path: table.file } };
+      else if (index === 1) {
+        const result = body.messages.findLast((item) => item.role === 'tool');
+        const id = JSON.stringify(result.content).match(/ev_[0-9a-f]{16}/)?.[0];
+        assert.ok(id);
+        call = { name: 'complete_evidence_analysis', args: { answer: 'The total is 99.', evidence: [id] } };
+      } else if (index <= 3) content = 'I could not finish the analysis.';
+      else throw new Error('Unexpected request in CSV read scenario');
     } else if (active.name === 'plans') {
       assert.ok(index < 2, 'Only one repair follow-up is permitted');
       content = 'PLAN_TWICE_SENTINEL: I will investigate later.';
@@ -162,7 +183,7 @@ const dispatcher = http.createServer(async (req, res) => {
         ],
       });
     else send({ role: 'assistant', content });
-    send({}, call ? 'tool_calls' : 'stop');
+    send({}, call ? 'tool_calls' : finish);
     res.end('data: [DONE]\n\n');
   } catch (error) {
     dispatcherError = error;
@@ -291,6 +312,7 @@ try {
         PI_OFFLINE: '1',
         PYTHONUTF8: '1',
         TAU_USER_DATA_DIR: profile,
+        TAU_RUNTIME_COORDINATION_DIR: path.join(profile, 'runtime-guards'),
         PI_CODING_AGENT_DIR: profile,
         TAU_PROJECTS_DIR: path.join(profile, 'projects'),
         PI_CODING_AGENT_SESSION_DIR: path.join(profile, 'sessions'),
@@ -400,6 +422,23 @@ try {
     tableRunId: proof.tableRunId,
     evidenceId: capturedId,
   };
+
+  const direct = await exercise('direct-delivery');
+  assert.equal(direct.requests, 2);
+  assert.equal(direct.receipt.status, 'verified');
+  assert.equal(direct.receipt.repair, false);
+  assert.equal(direct.receipt.providerStopAfterApproval, 'length');
+  const directDelivery = direct.messages.findLast((item) => item.role === 'assistant');
+  assert.equal(directDelivery?.delivery?.status, 'submitted');
+  assert.match(contentText(directDelivery), /mean: 15/);
+  assert.equal(direct.receipt.evidence[0].calculation.matchedRows, 2);
+  assert.deepEqual(direct.receipt.selected, [direct.receipt.evidence[0].id]);
+  report.checks.directAggregateSurvivesMissingNarration = true;
+
+  const readOnly = await exercise('csv-read-is-not-a-calculation');
+  assert.equal(readOnly.receipt.status, 'incomplete');
+  assert.ok(readOnly.messages.some((item) => item.toolName === 'complete_evidence_analysis' && item.isError));
+  report.checks.csvReadDoesNotSubmitAnUncalculatedValue = true;
 
   const plans = await exercise('plans');
   assert.equal(plans.requests, 2);

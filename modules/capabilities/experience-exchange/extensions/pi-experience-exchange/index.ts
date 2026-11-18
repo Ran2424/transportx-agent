@@ -31,7 +31,7 @@ export default function experienceExchange(pi: ExtensionAPI) {
   pi.on('before_agent_start', (event) => {
     turn = startTurn();
     return {
-      systemPrompt: event.systemPrompt + '\n\nFor a transport question involving a business definition, analysis method or decision, call search_experience once early with your question or a short intent phrase. Check the scope and exclusions of each returned rule. Use applicable rules to decide which current evidence to examine. If you use or deliberately skip a returned experience, enable the module tools and call record_experience_use with its release ID, disposition and reason. Search alone does not mean use. If the search is empty, fails or a rule is out of scope, continue the original task with the available evidence. Complete the task in this turn rather than listing future steps.',
+      systemPrompt: event.systemPrompt + '\n\nFor transport definitions, analysis methods or decisions, use search_experience before choosing a method. Send only query, a short description of the intent. For a returned rule, check its applicability and exclusions, then call record_experience_use with its exact releaseId, a used or skipped disposition, and the reason. Compute the result from current evidence. Continue the task if no applicable rule is found.',
     };
   });
   pi.on('message_start', ({ message }) => {

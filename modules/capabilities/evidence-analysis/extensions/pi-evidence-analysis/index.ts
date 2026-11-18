@@ -21,11 +21,20 @@ const MAX_REPAIR_MS = 180_000;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 type Source = { path: string; sha256: string; bytes: number };
+type Cell = string | number | null;
+type Calculation = {
+  columns: string[];
+  rows: Cell[][];
+  matchedRows: number;
+  filters: { column: string; value: string | null }[];
+};
 type Proof = {
   id: string;
   toolCallId: string;
   sources: Source[];
   tableRunId?: string;
+  aggregate?: true;
+  calculation?: Calculation;
 };
 type TableResult = {
   runId: string;
@@ -61,18 +70,20 @@ type Run = {
   attempts: number;
   eligibleFailure: boolean;
   failedSources: Set<string>;
+  aggregateAttempted: boolean;
   approval?: Approval;
   repair: 'unused' | 'queued' | 'running';
   repairCalls: number;
   timer?: ReturnType<typeof setTimeout>;
   timedOut?: boolean;
   terminal?: 'verified' | 'missing' | 'incomplete';
+  providerStopAfterApproval?: 'error' | 'length';
 };
 
 const guide =
-  'Finish the original data task now. Use read on the specific workspace source or analyze_workspace_table for CSV calculations. Report the observed coverage, such as the number and range of matched hours. Unrecorded time is not zero. Successful source reads and queries return evidence IDs. Call complete_evidence_analysis with the actual answer and its IDs; omit status for a normal answer. If evidence is missing, try the relevant source first, then submit status missing and name the gap. You may link a receipt issued by another tool this turn via relatedToolCallIds. Keep the answer concise.';
+  'For a calculation from a known CSV, call analyze_workspace_table directly with filters and aggregates. Omit select when aggregating. Use avg for a mean and numeric:true for numeric min/max. Use descriptive as labels, including units when known. If the aggregate answers the whole request, set deliver:true so the workbench submits the computed values and evidence together. For a broader answer, call complete_evidence_analysis with the answer and current evidence IDs. If needed inspect headers with the table tool or read the source. Use status missing only for a checked source gap.';
 const repairNotice =
-  'One read-only repair pass. Complete the last user request, with no plan-only reply. Immediately inspect the relevant workspace file using read or analyze_workspace_table, then call complete_evidence_analysis with the exact answer and returned IDs. If the records are unavailable, say which specific source or field is missing.';
+  'One read-only repair pass. For a CSV calculation, call analyze_workspace_table with filters and aggregates, without select. Set deliver:true when it answers the request. Otherwise use complete_evidence_analysis with the answer and its evidence IDs. Report a source gap only after checking it.';
 
 function begin(text: string, userSeen = false): Run {
   return {
@@ -85,6 +96,7 @@ function begin(text: string, userSeen = false): Run {
     attempts: 0,
     eligibleFailure: false,
     failedSources: new Set(),
+    aggregateAttempted: false,
     repair: 'unused',
     repairCalls: 0,
   };
@@ -103,6 +115,13 @@ function completionError(run: Run, status: Approval['status'] | undefined, answe
   if (ids.some((id) => !run.proofs.has(id))) return 'Use only evidence IDs returned in this task.';
   if (related.some((id) => !run.relatedReceipts.has(id))) return 'Use only related receipt IDs issued by successful tools in this task.';
   if (status === 'answered' && !ids.length) return 'Read the actual evidence before submitting an answer.';
+  if (status === 'answered') {
+    const selected = ids.flatMap((id) => run.proofs.get(id) ?? []);
+    if (run.aggregateAttempted && !selected.some((proof) => proof.aggregate))
+      return 'The table calculation has no completed evidence in this answer. Correct the aggregate request and submit its evidence ID.';
+    if (selected.every((proof) => !proof.tableRunId && proof.sources.every((file) => /\.csv$/i.test(file.path))))
+      return 'Query the CSV with analyze_workspace_table and cite its returned evidence ID. The file read only identifies the source.';
+  }
   if (status === 'missing' && !run.proofs.size && !run.eligibleFailure)
     return 'Try reading the relevant source before declaring it missing.';
   if (status === 'missing' && run.proofs.size && !ids.length)
@@ -142,16 +161,54 @@ function readIdentity(file: { absolute: string; readable: string }): Source | un
   }
 }
 
-function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: string) {
+function record(run: Run, toolCallId: string, sources: Source[], tableRunId?: string, aggregate = false, calculation?: Calculation) {
   const id = 'ev_' + createHash('sha256').update(run.id).update(toolCallId).digest('hex').slice(0, 16);
   const proof = {
     id,
     toolCallId,
     sources,
     ...(tableRunId ? { tableRunId } : {}),
+    ...(aggregate ? { aggregate: true as const } : {}),
+    ...(calculation ? { calculation } : {}),
   };
   run.proofs.set(id, proof);
   return proof;
+}
+
+function isCell(value: unknown): value is Cell {
+  return value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function calculatedResult(result: TableResult, filters: Calculation['filters']): Calculation | undefined {
+  if (result.truncated || result.rows.length < 1 || result.rows.length > 20) return;
+  const rows = result.rows.filter((row): row is Cell[] =>
+    Array.isArray(row) && row.length === result.columns.length && row.every(isCell));
+  if (rows.length !== result.rows.length) return;
+  return { columns: result.columns, rows, matchedRows: result.matchedRows, filters };
+}
+
+function calculationText(calculation: Calculation, chinese: boolean) {
+  const text = (value: Cell) => {
+    if (value === null) return chinese ? '无值' : 'No value';
+    return String(value).replace(/[\r\n]+/g, ' ').replace(/\|/g, '｜').replace(/`/g, 'ˋ').slice(0, 160);
+  };
+  const lines = [
+    chinese ? `筛选后记录数：${calculation.matchedRows} 条。` : `Matched records: ${calculation.matchedRows}.`,
+  ];
+  if (calculation.filters.length) {
+    const conditions = calculation.filters.map(({ column, value }) => `${text(column)} = ${text(value)}`).join(' · ');
+    lines.push(chinese ? `筛选条件：${conditions}` : `Filters: ${conditions}`);
+  }
+  if (calculation.rows.length === 1) {
+    lines.unshift(calculation.columns.map((column, index) =>
+      `${text(column)}${chinese ? '：' : ': '}${text(calculation.rows[0]![index] ?? null)}`).join(' · '));
+    return lines.join('\n\n');
+  }
+  const csv = (row: Cell[]) => '| ' + row.map(text).join(' | ') + ' |';
+  return [
+    ...lines,
+    [csv(calculation.columns), csv(calculation.columns.map(() => '---')), ...calculation.rows.map(csv)].join('\n'),
+  ].join('\n\n');
 }
 
 function note(run: Run, terminal: 'missing' | 'incomplete' | 'checking') {
@@ -267,12 +324,17 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
     name: TABLE,
     label: '只读分析工作区表格',
     description:
-      'Read a workspace UTF-8 CSV. Filter exact text values, select columns, group and compute exact sums/counts. URLs, paths outside the workspace and arbitrary SQL are not inputs. Use known CSV headers. Count without a column counts rows. Set numeric: true on min/max or orderBy for a numeric column such as hour or total. Returns an evidence ID.',
+      'Query a workspace CSV. For calculations use filters and aggregates (count, sum, avg, min, max) and omit select. Count rows by omitting column. Set numeric:true for numeric min/max. Set deliver:true when the calculation answers the whole task. For inspection omit aggregates and use select or limit.',
     parameters: WorkspaceTableSchema,
     async execute(toolCallId, input, signal, _update, ctx) {
       const run = active;
       const file = checkedPath(ctx.cwd, input.file);
-      if (run) run.attempts += 1;
+      const { deliver, ...query } = input;
+      const isAggregate = !!query.aggregates?.length;
+      if (run) {
+        run.attempts += 1;
+        run.aggregateAttempted ||= isAggregate || deliver === true;
+      }
       try {
         if (!file) throw new Error('Use a CSV path within the current workspace.');
         const { result } = await postHostOperation<{ result: TableResult }>(
@@ -282,15 +344,35 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
             token: process.env.TAU_EVIDENCE_ANALYSIS_TOKEN,
           },
           '/api/internal/analysis/table',
-          { ...input, file: file.readable },
-          { toolCallId, contractVersion: '1.0.0', signal, timeoutMs: 20_000 }
+          { ...query, file: file.readable },
+          { toolCallId, contractVersion: '1.1.0', signal, timeoutMs: 20_000 }
         );
+        const calculation = isAggregate ? calculatedResult(result, query.filters ?? []) : undefined;
         const evidence =
-          run && run === active ? record(run, toolCallId, result.provenance.files, result.runId) : undefined;
+          run && run === active
+            ? record(run, toolCallId, result.provenance.files, result.runId,
+              isAggregate && !result.truncated && result.rows.length > 0, calculation)
+            : undefined;
+        const delivered = !!(deliver && evidence && calculation && run);
+        if (delivered && run && evidence && calculation) {
+          run.approval = {
+            status: 'answered',
+            answer: calculationText(calculation, run.chinese),
+            evidence: [evidence.id],
+            relatedToolCallIds: [...run.relatedReceipts].slice(-8),
+          };
+          clearTimer(run);
+        }
         const details = {
           kind: 'analysis-table',
           ...result,
           evidenceId: evidence?.id,
+          ...(deliver ? {
+            delivered,
+            deliveryNote: delivered
+              ? 'Computed result submitted. Finish the turn without more tool calls.'
+              : 'A direct delivery needs an active evidence task and a complete, bounded aggregate result.',
+          } : {}),
         };
         return {
           content: [{ type: 'text', text: JSON.stringify(details) }],
@@ -340,6 +422,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
         evidence: [...input.evidence],
         relatedToolCallIds: [...related],
       };
+      clearTimer(run);
       return {
         content: [{ type: 'text', text: 'Completion recorded. Finish this turn.' }],
         details: {
@@ -355,9 +438,12 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
   pi.on('message_end', (event, ctx) => {
     const run = active;
     const message = event.message;
-    if (!run || message.role !== 'assistant' || (message.stopReason !== 'stop' && !run.timedOut)) return;
+    if (!run || message.role !== 'assistant') return;
     const approval = run.approval;
-    if (approval && !run.timedOut) {
+    const stopReason = message.stopReason;
+    const providerStopped = stopReason === 'error' || stopReason === 'length';
+    if (approval && !run.timedOut && (stopReason === 'stop' || providerStopped)) {
+      if (providerStopped) run.providerStopAfterApproval = stopReason;
       run.terminal = approval.status === 'answered' ? 'verified' : 'missing';
       const checked = [
         ...new Set(
@@ -373,6 +459,8 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       const delivery: DeliveryStatus = run.terminal === 'verified' ? 'submitted' : 'needs_review';
       const result = {
         ...message,
+        stopReason: 'stop' as const,
+        errorMessage: undefined,
         content: [
           {
             type: 'text' as const,
@@ -383,6 +471,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       };
       return { message: result };
     }
+    if (message.stopReason !== 'stop' && !run.timedOut) return;
     if (run.repair === 'unused' && !ctx.hasPendingMessages()) {
       run.repair = 'queued';
       return {
@@ -436,6 +525,7 @@ export default function evidenceAnalysis(pi: ExtensionAPI) {
       ...(run.terminal && run.approval?.relatedToolCallIds.length
         ? { relatedToolCallIds: run.approval.relatedToolCallIds }
         : {}),
+      ...(run.providerStopAfterApproval ? { providerStopAfterApproval: run.providerStopAfterApproval } : {}),
     });
   });
 }

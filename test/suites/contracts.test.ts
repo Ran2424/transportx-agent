@@ -13,6 +13,43 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     return result.diagnostics?.map((item) => item.code) || [];
   }
 
+  // Workspace table contracts distinguish reading, aggregation and nullable cells.
+  {
+    const os = require('node:os');
+    const { analyzeWorkspaceTable } = require('../../bin/workspace-table.js');
+    const { WorkspaceTableSchema } = await import('../../src/contracts/evidence-analysis.mts');
+    const { Check } = await import('typebox/value');
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-table-'));
+    try {
+      fs.writeFileSync(path.join(cwd, 'data.csv'), 'group,value,null\nA,2,x\nA,10,\nA,,null\n');
+      const plan = { file: 'data.csv', groupBy: ['group'], aggregates: [
+        { op: 'count', as: 'rows' }, { op: 'count', column: 'value', as: 'present' },
+        { op: 'avg', column: 'value', as: 'mean' }, { op: 'max', column: 'value', as: 'textMax' },
+        { op: 'max', column: 'value', numeric: true, as: 'numberMax' },
+        { op: 'count', column: 'null', as: 'namedNull' },
+      ] };
+      assert.equal(Check(WorkspaceTableSchema, { ...plan, deliver: true }), true);
+      const result = await analyzeWorkspaceTable(cwd, plan);
+      assert.deepEqual(result.columns, ['group', 'rows', 'present', 'mean', 'textMax', 'numberMax', 'namedNull']);
+      assert.deepEqual(result.rows.map((row: any[]) => [row[0], row[1], row[2], Number(row[3]), row[4], Number(row[5]), row[6]]), [['A', 3, 2, 6, '2', 10, 2]]);
+      const read = await analyzeWorkspaceTable(cwd, { file: 'data.csv', select: ['null'] });
+      assert.deepEqual(read.rows, [['null'], ['x'], [null]]);
+      const redundant = await analyzeWorkspaceTable(cwd, { ...plan, select: ['value'] });
+      assert.deepEqual(redundant.rows, result.rows);
+      assert.deepEqual(redundant.provenance.plan.redundantSelect, ['value']);
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'data.csv', select: ['group'], aggregates: [{ op: 'avg', column: 'value', as: 'mean' }] }), /omit select/);
+      const count = await analyzeWorkspaceTable(cwd, { file: 'data.csv', aggregates: [{ op: 'count', column: null, as: 'n' }] });
+      assert.deepEqual(count.rows, [[3]]);
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'data.csv', aggregates: [{ op: 'avg', column: null, as: 'mean' }] }), /Only count/);
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'data.csv', aggregates: [{ op: 'avg', as: 'mean' }] }), /require a CSV column/);
+      fs.writeFileSync(path.join(cwd, 'bad.csv'), 'value\ninvalid\n');
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'bad.csv', aggregates: [{ op: 'avg', column: 'value', as: 'mean' }] }), /non-decimal/);
+      fs.writeFileSync(path.join(cwd, 'empty.csv'), 'value\n\n');
+      const empty = await analyzeWorkspaceTable(cwd, { file: 'empty.csv', aggregates: [{ op: 'avg', column: 'value', as: 'mean' }, { op: 'count', column: 'value', as: 'n' }] });
+      assert.deepEqual(empty.rows, [[null, 0]]);
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  }
+
   // Persistent identity is independent from live metadata and never accepts a client history path.
   {
     const workspace = await import('../../src/contracts/workspace.ts');
