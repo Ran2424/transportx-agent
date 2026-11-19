@@ -1,0 +1,46 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.service-resilience",
+  "toolId": "resilience.align-events",
+  "piName": "resilience_align_events",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "resilience-align-events-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "eventPath",
+      "calendarPath"
+    ],
+    "properties": {
+      "casePath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "File path relative to this task working directory."
+      },
+      "eventPath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "File path relative to this task working directory."
+      },
+      "calendarPath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "File path relative to this task working directory."
+      },
+      "toleranceMeters": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 10000
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-service-resilience",
+    "version": 1,
+    "detailsKind": "service-resilience-result"
+  }
+}

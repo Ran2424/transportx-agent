@@ -11,6 +11,7 @@ import { composerDraftStore } from './composer-draft-store';
 import { SessionAttachmentLibrary } from './session-attachment-library';
 import { ComposerContextUsage } from './composer-context-usage';
 import { ComposerCitationPicker, useComposerCitationPicker } from './composer-citation-picker';
+import { TrafficSnapshotPicker } from './TrafficSnapshotPicker';
 import { geoContextStore } from '../../features/geo/geo-context-store';
 import { canvasContextStore } from '../canvas/canvas-context-store';
 
@@ -60,6 +61,15 @@ export function ConversationComposer({ onActivate, retryDraft, sessionId, sessio
     </section> : null}
     <div className="queued-prompts">{queued.map((item, index) => <div key={`${item.message}-${index}`}><span>{t('conversation.queued')}</span><p>{item.message}</p><AttachmentCards sessionId={sessionId} attachmentIds={item.attachmentIds} attachments={attachments} compact /><button type="button" aria-label={t('conversation.cancelQueued')} onClick={() => kernel.dispatch({ type: 'conversation/queueItemRemoved', sessionId, index })}>×</button></div>)}</div>
     <SessionAttachmentLibrary sessionId={sessionId} attachments={attachments} selectedIds={pending.flatMap((item) => item.attachment ? [item.attachment.id] : [])} error={attachmentError} onReload={onReloadAttachments} onReuse={reuseAttachment} />
+    {session?.resolvedSessionPlan?.modules.some(module => module.id === 'com.transportx.experience-exchange') && !streaming && <TrafficSnapshotPicker
+      key={sessionId}
+      sessionId={sessionId}
+      onAttach={path => {
+        const reference = t('conversation.trafficSnapshotReference', { path });
+        setValue(current => current.includes(reference) ? current : [current.trimEnd(), reference].filter(Boolean).join('\n\n'));
+        inputRef.current?.focus();
+      }}
+    />}
     <div className="composer-row">
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         {pending.length || geoContexts.length || canvasContexts.length ? <section className="composer-selection" aria-label={t('conversation.selectedContent')}>

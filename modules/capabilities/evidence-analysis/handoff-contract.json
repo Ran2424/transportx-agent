@@ -1,0 +1,207 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.evidence-analysis",
+  "toolId": "analysis.handoff",
+  "piName": "workspace_data_handoff",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "workspace-data-handoff-v2",
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "inspect"
+          },
+          {
+            "type": "string",
+            "const": "prepare"
+          },
+          {
+            "type": "string",
+            "const": "review"
+          },
+          {
+            "type": "string",
+            "const": "resolve"
+          },
+          {
+            "type": "string",
+            "const": "retry_resolution"
+          },
+          {
+            "type": "string",
+            "const": "inspect_review"
+          }
+        ],
+        "description": "Inspect or prepare a reviewed snapshot, route or resolve a review, retry a verified Data Studio closure, or look up review state."
+      },
+      "file": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      },
+      "operation": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "count"
+          },
+          {
+            "type": "string",
+            "const": "sum"
+          },
+          {
+            "type": "string",
+            "const": "avg"
+          },
+          {
+            "type": "string",
+            "const": "min"
+          },
+          {
+            "type": "string",
+            "const": "max"
+          }
+        ]
+      },
+      "metric": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "sampleBasis": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "rows"
+          },
+          {
+            "type": "string",
+            "const": "non_null"
+          }
+        ],
+        "description": "The requested denominator. non_null uses the metric column. COUNT(*) counts rows."
+      },
+      "filters": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "column",
+            "value"
+          ],
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxItems": 16,
+        "description": "Exact filters for resolved user choices. Confirmed aliases appearing in the original request are independently added."
+      },
+      "groupBy": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "maxItems": 12,
+        "uniqueItems": true
+      },
+      "timeRoles": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "event_time"
+            },
+            {
+              "type": "string",
+              "const": "snapshot_time"
+            },
+            {
+              "type": "string",
+              "const": "source_updated_at"
+            }
+          ]
+        },
+        "maxItems": 3,
+        "uniqueItems": true
+      },
+      "candidateReleaseIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "maxItems": 3,
+        "uniqueItems": true
+      },
+      "target": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "data"
+          },
+          {
+            "type": "string",
+            "const": "knowledge"
+          },
+          {
+            "type": "string",
+            "const": "agent"
+          }
+        ],
+        "description": "The Studio identified by the reviewer. If omitted for a rejected plan, use Agent Studio."
+      },
+      "intentId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "reviewId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "releaseId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1500
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-evidence-analysis",
+    "version": 1,
+    "detailsKind": "data-handoff"
+  }
+}

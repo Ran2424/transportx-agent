@@ -1,3 +1,4 @@
+import { compareCounts, CountComparisonInputError, listCountBatches } from './count-comparison.js';
 import { citationResourceError } from './citation-resources.js';
 const fs = require('node:fs');
 
@@ -15,8 +16,15 @@ import { CadInvocations } from './cad-invocations.js';
 import { SpatialInvocations } from './spatial-invocations.js';
 import { PI_AGENT_DIR, SESSIONS_DIR } from './config.js';
 import path from 'node:path';
+import { exchange, validateExperienceRequest } from './experience-exchange.js';
+import { analyzeWorkspaceTable } from './workspace-table.js';
+import { listTrafficSnapshots, selectTrafficSnapshot } from './traffic-snapshots.js';
+import { recordSearch, recordTable, recordUse, finalizeUses, retryUses } from './experience-run-use.js';
 import { inspectTaskModule } from './module-authoring.js';
 import { resolveSessionAttachments, attachmentFilePath } from './session-attachments.js';
+import { registerWorkspaceHandoff } from './workspace-handoff-api.js';
+import { checkHandoffPlan } from './workspace-handoff.js';
+import { recordHandoffExecution, recordHandoffRejection } from './workspace-handoff-review.js';
 
 export function createApiRouter(services: ApiRouteServices) {
   const cadInvocations = new CadInvocations(path.join(PI_AGENT_DIR, 'executions', 'cad'), SESSIONS_DIR, services.cad);
@@ -25,10 +33,103 @@ export function createApiRouter(services: ApiRouteServices) {
   registerWorkspaceApi(router);
   registerSimulationApi(router, services);
   registerReportApi(router);
+  registerWorkspaceHandoff(router);
+  router.post('/api/internal/analysis/table', async ({ req, res, deps }) => {
+    try {
+      const body = await deps.readBody(req);
+      const session = resolveServiceSession(res, body, deps, 'evidenceAnalysis');
+      if (!session) return;
+      const { handoffTurn, ...toolBody } = body;
+      const input = await validateToolRequest('com.transportx.evidence-analysis', toolBody, 'analysis.table');
+      const result = await runRequestJob(deps.sessions, req, res, session, async signal => {
+        try {
+          const value = await analyzeWorkspaceTable(session.cwd, input, signal,
+            (plan, upstream) => checkHandoffPlan(session, handoffTurn, plan, upstream));
+          recordHandoffExecution(session, value);
+          return value;
+        } catch (error) {
+          recordHandoffRejection(session, handoffTurn, input.intentId, error);
+          throw error;
+        }
+      });
+      if (session.resolvedSessionPlan?.modules.some(module => module.id === 'com.transportx.experience-exchange')) recordTable(session, body.toolCallId, result);
+      deps.json(res, 200, { result, toolCallId: body.toolCallId });
+    } catch (error) {
+      const status = deps.errorStatus(error);
+      deps.json(res, status, {
+        error: status >= 500 ? 'Workspace table analysis failed.' : deps.errorMessage(error),
+        code: (error as { code?: string } | null)?.code || 'workspace_table_failed',
+        phase: 'analysis', commit: 'not_started',
+      });
+    }
+  });
+  for (const kind of ['search', 'feedback'] as const) {
+    router.post(`/api/internal/experience/${kind}`, async ({ req, res, deps }) => {
+      try {
+        const body = await deps.readBody(req);
+        const session = resolveServiceSession(res, body, deps, 'experience');
+        if (!session) return;
+        const input = await validateExperienceRequest(session, kind, body);
+        const result = await runRequestJob(deps.sessions, req, res, session, (signal) => exchange(session, kind, input, signal, typeof body.toolCallId === 'string' ? body.toolCallId : undefined));
+        if (kind === 'search') recordSearch(session, body.toolCallId, result);
+        deps.json(res, 200, { ...result, toolCallId: body.toolCallId });
+      } catch (error) {
+        const failure = error as Error & { status?: number; code?: string; phase?: string; commit?: string };
+        deps.json(res, failure.status || 500, { error: failure.message, code: failure.code || 'experience_exchange_failed', phase: failure.phase || 'host', commit: failure.commit || 'not_started' });
+      }
+    });
+  }
+  router.post('/api/internal/experience/use', async ({ req, res, deps }) => {
+    try {
+      const body = await deps.readBody(req), session = resolveServiceSession(res, body, deps, 'experience'); if (!session) return;
+      recordUse(session, body); deps.json(res, 200, { accepted: true, toolCallId: body.toolCallId });
+    } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
+  });
+  router.post('/api/internal/analysis/finalize', async ({ req, res, deps }) => {
+    try {
+      const body = await deps.readBody(req), session = resolveServiceSession(res, body, deps, 'evidenceAnalysis'); if (!session) return;
+      const result = await runRequestJob(deps.sessions, req, res, session, signal => finalizeUses(session, body, signal));
+      deps.json(res, 200, { ...result, toolCallId: body.toolCallId });
+    } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
+  });
   router
+    .get('/api/count-comparison/batches', ({ res, deps }) => {
+      try { deps.json(res, 200, { batches: listCountBatches() }); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+    })
+    .post('/api/count-comparison', async ({ req, res, deps }) => {
+      let body;
+      try { body = await deps.readBody(req); }
+      catch (error) { return deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error) }); }
+      try { deps.json(res, 200, await compareCounts(body)); }
+      catch (error) {
+        if (error instanceof CountComparisonInputError) return deps.json(res, 400, { error: error.message });
+        deps.json(res, 503, { error: 'Could not run the DuckDB comparison on this Host.', code: 'count_comparison_unavailable' });
+      }
+    })
     .get('/api/health', ({ req, res, deps }) => { res.setHeader('Cache-Control', 'no-store'); deps.json(res, 200, deps.health(req)); })
     .get(/^\/api\/conversations\/([^/]+)\/overview$/, ({ res, params, deps }) => { try { deps.json(res, 200, deps.conversationOverview(decodeURIComponent(params[0]))); } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); } })
     .get('/api/platform/session-options', ({ res, deps }) => deps.json(res, 200, deps.sessionOptions()))
+    .post(/^\/api\/conversations\/([^/]+)\/traffic-use-receipts\/retry$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps); if (!session) return;
+      try { deps.json(res, 200, await withRequestSignal(req, res, signal => retryUses(session, signal))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code }); }
+    })
+    .get(/^\/api\/conversations\/([^/]+)\/traffic-snapshots$/, async ({ req, res, params, deps }) => {
+      const session = resolveResourceContextParam(res, params[0], deps); if (!session) return;
+      try { deps.json(res, 200, await withRequestSignal(req, res, signal => listTrafficSnapshots(session, signal))); }
+      catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code || 'traffic_snapshot_unavailable' }); }
+    })
+    .post(/^\/api\/conversations\/([^/]+)\/traffic-snapshots$/, async ({ req, res, params, deps }) => {
+      const session = resolveLiveSessionParam(res, params[0], deps); if (!session) return;
+      try {
+        const body = await deps.readBody(req);
+        if (Object.keys(body).some(key => !['snapshotId','definitionRevision'].includes(key))) throw Object.assign(new Error('Only snapshotId and definitionRevision are accepted.'), { status: 400, code: 'traffic_snapshot_invalid' });
+        const result = await deps.workspaces.withRuntimeWrite(session, () => deps.workspaces.live(session.conversationId, false) === session, () => withRequestSignal(req, res, signal => selectTrafficSnapshot(session, body.snapshotId, signal, body.definitionRevision)));
+        if (!result) throw Object.assign(new Error('Conversation runtime changed.'), { status: 409, code: 'conversation_not_active' });
+        deps.json(res, 200, result);
+      } catch (error) { deps.json(res, deps.errorStatus(error), { error: deps.errorMessage(error), code: (error as { code?: string }).code || 'traffic_snapshot_unavailable' }); }
+    })
     .get(/^\/api\/conversations\/([^/]+)\/attachments$/, ({ res, params, deps }) => {
       const target = resolveConversationTargetParam(res, params[0], deps);
       if (target) deps.json(res, 200, { attachments: deps.listAttachments(target.directory) });

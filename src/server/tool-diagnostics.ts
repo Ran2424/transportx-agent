@@ -38,6 +38,12 @@ export function diagnoseTool(contract: ToolInterfaceContract, selected: Resolved
     if (details.kind !== contract.output.detailsKind) return false;
     const value = asRecord(details.result);
     switch (contract.toolId) {
+      case 'analysis.table': return typeof details.runId === 'string' && Array.isArray(details.rows) && !!asRecord(details.provenance);
+      case 'analysis.handoff': return details.accepted === true;
+      case 'analysis.complete': return details.accepted === true && Array.isArray(details.evidence);
+      case 'experience.search': return typeof details.scope === 'string' && Array.isArray(details.experiences);
+      case 'experience.feedback': return typeof details.feedback_id === 'string' && typeof details.status === 'string';
+      case 'experience.use': return details.accepted === true && details.receiptId === message.toolCallId;
       case 'capabilities.manage': return ['discover', 'inspect', 'enable', 'status'].includes(String(details.action));
       case 'citation.resolve': return !!parseCitationEnvelope(details.citations);
       case 'cad.draw': return parseCadDrawResultStructured(details.result).ok;

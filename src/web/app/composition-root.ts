@@ -4,25 +4,25 @@ import { WebSocketClient } from '../../public/websocket-client.js';
 import { AGENT_HOST_PROTOCOL_VERSION, HOST_PROTOCOL_HEADER, compatibleHostHealth } from '../../contracts/host-protocol.js';
 import { appError, toAppError } from '../../contracts/errors.js';
 import { projectUi } from './project-ui';
+import type { HttpClient } from '../../public/kernel/command-transport.js';
 
 const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 const transport = new WebSocketClient(wsUrl);
 
-export const appKernel = createAppKernel({
-  transport,
-  http: async (path, init) => {
-    const health = await refreshHostHealth();
-    const body = init?.body as { type?: unknown } | undefined;
-    const diagnostic = /^\/api\/(?:migration(?:\/|$)|workspaces\/[^/]+\/(?:migration|runtime-diagnostics|runtime-recovery))/.test(path) || path === '/api/rpc' && init?.method === 'POST' && ['get_auth', 'set_auth', 'open_logs_directory'].includes(String(body?.type));
-    if (!diagnostic && health.dataState !== 'ready') throw appError({ code: 'host_data_not_ready', category: 'runtime', message: health.dataState === 'blocked' ? i18n.t('workspaceFlow.indexRepairNotice') : i18n.t('workspaceFlow.indexWaitHelp'), retryable: true });
-    return fetch(path, {
+export const requestHost: HttpClient = async (path, init) => {
+  const health = await refreshHostHealth();
+  const body = init?.body as { type?: unknown } | undefined;
+  const diagnostic = /^\/api\/(?:migration(?:\/|$)|workspaces\/[^/]+\/(?:migration|runtime-diagnostics|runtime-recovery))/.test(path) || path === '/api/rpc' && init?.method === 'POST' && ['get_auth', 'set_auth', 'open_logs_directory'].includes(String(body?.type));
+  if (!diagnostic && health.dataState !== 'ready') throw appError({ code: 'host_data_not_ready', category: 'runtime', message: health.dataState === 'blocked' ? i18n.t('workspaceFlow.indexRepairNotice') : i18n.t('workspaceFlow.indexWaitHelp'), retryable: true });
+  return fetch(path, {
     method: init?.method,
     signal: init?.signal,
     headers: { ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), [HOST_PROTOCOL_HEADER]: String(AGENT_HOST_PROTOCOL_VERSION), ...(init?.headers || {}) },
     body: init?.body === undefined ? undefined : init.body instanceof FormData ? init.body : JSON.stringify(init.body),
   }).then(response => { if (response.status === 401) projectUi.onUnauthorized?.(); return response; });
-  },
-});
+};
+
+export const appKernel = createAppKernel({ transport, http: requestHost });
 
 export async function refreshHostHealth() {
   const response = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });

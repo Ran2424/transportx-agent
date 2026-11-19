@@ -16,6 +16,26 @@ export type CoreToolBinding = { toolId: string; piName: string; file: string; ex
 
 // Platform-owned bindings; Pi remains the only tool registry and runtime.
 export const CORE_TOOL_BINDINGS: Record<string, CoreToolBinding[]> = {
+  'com.transportx.evidence-analysis': [
+    { toolId: 'analysis.table', piName: 'analyze_workspace_table', file: 'table-contract.json', execution: 'host' },
+    { toolId: 'analysis.handoff', piName: 'workspace_data_handoff', file: 'handoff-contract.json', execution: 'host' },
+    { toolId: 'analysis.complete', piName: 'complete_evidence_analysis', file: 'completion-contract.json', execution: 'pi-local' },
+  ],
+  'com.transportx.experience-exchange': [
+    { toolId: 'experience.search', piName: 'search_experience', file: 'search-contract.json', execution: 'host' },
+    { toolId: 'experience.feedback', piName: 'submit_experience_feedback', file: 'feedback-contract.json', execution: 'host' },
+    { toolId: 'experience.use', piName: 'record_experience_use', file: 'use-contract.json', execution: 'pi-local' },
+  ],
+  'com.transportx.service-resilience': [
+    { toolId: 'resilience.import', piName: 'resilience_import', file: 'import-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.align', piName: 'resilience_align', file: 'align-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.pressure', piName: 'resilience_pressure_test', file: 'pressure-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.investigate', piName: 'resilience_investigate', file: 'investigate-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.align-events', piName: 'resilience_align_events', file: 'align-events-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.accessibility', piName: 'resilience_accessibility', file: 'accessibility-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.compare-plans', piName: 'resilience_compare_plans', file: 'compare-plans-contract.json', execution: 'pi-local' },
+    { toolId: 'resilience.sensitivity', piName: 'resilience_sensitivity', file: 'sensitivity-contract.json', execution: 'pi-local' },
+  ],
   'com.transportx.traffic-simulation': [
     { toolId: 'traffic.prepare', piName: 'traffic_prepare_scenario', file: 'prepare-contract.json', execution: 'host' },
     { toolId: 'traffic.run', piName: 'traffic_run', file: 'run-contract.json', execution: 'host' },

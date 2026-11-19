@@ -5,6 +5,7 @@
 @import "./styles/conversation.css";
 @import "./styles/canvas-and-previews.css";
 @import "./styles/responsive-and-extensions.css";
+@import "./styles/count-comparison.css";
 
 @theme {
   --font-sans: var(--tx-font-ui);

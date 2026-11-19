@@ -71,6 +71,19 @@ async function assertConversationLifecycle(t: TestContext) {
         return { args: [path.resolve('node_modules/@earendil-works/pi-coding-agent/dist/cli.js'), '--mode', 'rpc', '--offline', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--session', value.sessionFile], env: { ...process.env, PI_CODING_AGENT_DIR: path.join(root, 'isolated-pi') } };
       },
     });
+    let observeHandshake: (() => void) | undefined;
+    const startInstance = manager.startInstance.bind(manager);
+    manager.startInstance = (session: any) => {
+      if (launchMode === 'no-handshake') {
+        const send = session.send.bind(session);
+        session.send = (command: { type: string }, options: unknown) => {
+          const response = send(command, options);
+          if (command.type === 'get_state' && session.transport.pendingCount) observeHandshake?.();
+          return response;
+        };
+      }
+      return startInstance(session);
+    };
     const gate = new WorkspaceRuntimeGate(process.env.TAU_PYTHON_COMMAND || 'python3', path.join(root, 'logs'), path.join(root, 'coordination'));
     const lifecycle = new ConversationRuntime({ store, sessions: manager, gate, assertReady: () => {}, verifyPlan: async (plan: any) => {
       if (rejectPlan) throw Object.assign(new Error('Frozen module version unavailable.'), { code: 'module_version_missing' });
@@ -128,9 +141,15 @@ async function assertConversationLifecycle(t: TestContext) {
       releaseLaunch!(); await new Promise((resolve) => setImmediate(resolve));
       assert.equal(launches, 2, 'a late trust decision after close cannot launch Pi');
       launchMode = 'no-handshake';
-      const handshake = lifecycle.activate(third.conversation.id), cancelledHandshake = assert.rejects(handshake, { code: 'activation_cancelled' });
-      const handshakeDeadline = Date.now() + 3000;
-      while (![...manager.sessions.values()].some((session: any) => session.conversationId === third.conversation.id && session.transport.pendingCount)) { assert.ok(Date.now() < handshakeDeadline, 'runtime reaches the pending RPC handshake'); await new Promise((resolve) => setTimeout(resolve, 10)); }
+      // A native process probe runs before Pi sends its handshake. Observe the
+      // actual pending request so cancellation tests the handshake itself.
+      const handshakeStarted = Date.now();
+      const waitingForHandshake = new Promise<void>((resolve) => { observeHandshake = resolve; });
+      const handshake = lifecycle.activate(third.conversation.id);
+      await Promise.race([waitingForHandshake, handshake.then(() => assert.fail('Pi accepted an unanswered handshake'))]);
+      t.diagnostic(`Pending RPC handshake observed after ${Date.now() - handshakeStarted} ms`);
+      observeHandshake = undefined;
+      const cancelledHandshake = assert.rejects(handshake, { code: 'activation_cancelled' });
       await lifecycle.close(third.conversation.id, true); await cancelledHandshake;
       assert.equal(gate.diagnostics(first.directory).phase, 'stopped');
       launchMode = 'exits-during-handshake';

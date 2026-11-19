@@ -1,4 +1,7 @@
 import { Type } from "typebox";
+import { CompleteEvidenceAnalysisSchema, WorkspaceTableSchema } from './evidence-analysis.mts';
+import { ExperienceSearchSchema } from './experience-lookup.mts';
+import { WorkspaceHandoffSchema } from './workspace-handoff-schema.mts';
 
 export const SpatialAnalyzeSchema = Type.Object({
   operation: Type.Union([Type.Literal('buffer'), Type.Literal('nearest'), Type.Literal('spatial_join')]),
@@ -39,6 +42,16 @@ const Source = Type.Object({
 export const CitationResolveSchema = Type.Object({ sources: Type.Optional(Type.Array(Source, { minItems: 1, maxItems: 20, description: 'Local files only. Omit webUrls when supplying sources.' })), webUrls: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }), { minItems: 1, maxItems: 10, description: 'Public HTTPS page URLs. Omit sources when supplying webUrls.' })) }, { additionalProperties: false });
 
 export const SpatialExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), operationId: Type.Optional(Type.String({ pattern: '^spatial_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
+
+const ExperienceText = Type.String({ minLength: 1, maxLength: 16000 });
+const ExperienceReference = Type.Object({ release_id: ExperienceText, entry_id: ExperienceText, collection_id: ExperienceText, revision: Type.Integer({ minimum: 0 }), digest: ExperienceText }, { additionalProperties: false });
+export const ExperienceFeedbackSchema = Type.Object({ submission_id: ExperienceText, run_id: ExperienceText, question: ExperienceText, initial_interpretation: ExperienceText, correction: ExperienceText, evidence_ref: ExperienceText, experience: Type.Optional(ExperienceReference), data_refs: Type.Optional(Type.Array(ExperienceText, { maxItems: 32 })) }, { additionalProperties: false });
+const ExperienceUseSchema = Type.Object({
+  releaseId: Type.String({ minLength: 1, maxLength: 120 }),
+  intentId: Type.Optional(Type.String({ pattern: '^intent_[a-f0-9]{32}$', description: 'Prepared intent for a release with structured applicability.' })),
+  disposition: Type.Union([Type.Literal('used'), Type.Literal('skipped')]),
+  reason: Type.String({ minLength: 1, maxLength: 400 }),
+}, { additionalProperties: false });
 
 export const ModulePackageSchema = Type.Object({ action: Type.Union([Type.Literal('inspect'), Type.Literal('install')]), packagePath: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false });
 
@@ -306,7 +319,93 @@ export const TrafficExperimentSchema = Type.Object({ action: Type.Union([Type.Li
 export const TrafficExecutionSchema = Type.Object({ action: Type.Union([Type.Literal('query'), Type.Literal('cancel')]), runId: Type.Optional(Type.String({ pattern: '^sim_[a-f0-9]{32}$' })), lookupToolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })) }, { additionalProperties: false });
 export const TrafficQuerySchema = Type.Object({ runId: Type.String({ pattern: '^sim_[a-f0-9]{32}$' }), time: Type.Optional(Type.Number({ minimum: 0, maximum: 600 })), objectId: Type.Optional(Type.String({ minLength: 1, maxLength: 160 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })) }, { additionalProperties: false });
 
+const resiliencePath = Type.String({ minLength: 1, maxLength: 500, description: 'File path relative to this task working directory.' });
+const resilienceId = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$' });
+const resilienceHash = Type.String({ pattern: '^[a-f0-9]{64}$' });
+const resilienceColumn = Type.String({ minLength: 1, maxLength: 200 });
+export const ResilienceImportSchema = Type.Object({
+  kind: Type.Union([Type.Literal('osm-overpass'), Type.Literal('field-survey')]),
+  sourcePath: resiliencePath,
+  speedKph: Type.Optional(Type.Number({ minimum: 1, maximum: 120, description: 'Explicit assumed speed for an OSM exercise.' })),
+  mode: Type.Optional(Type.Literal('road')),
+  columns: Type.Optional(Type.Object({ observationId: resilienceColumn, objectId: resilienceColumn,
+    periodId: resilienceColumn, value: resilienceColumn, source: resilienceColumn }, { additionalProperties: false })),
+}, { additionalProperties: false });
+export const ResilienceAlignSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  observationPath: resiliencePath,
+}, { additionalProperties: false });
+export const ResiliencePressureSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  stateId: Type.Optional(resilienceId),
+  planId: Type.Optional(resilienceId),
+  periodId: Type.Optional(resilienceId),
+}, { additionalProperties: false });
+export const ResilienceInvestigateSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  sweep: Type.Optional(Type.Object({
+    stateId: resilienceId, periodId: resilienceId, objectId: resilienceId,
+    variable: Type.Union([Type.Literal('edge-minutes'), Type.Literal('service-capacity')]),
+    values: Type.Array(Type.Number({ minimum: 0, maximum: 1_000_000 }), { minItems: 2, maxItems: 12, uniqueItems: true }),
+  }, { additionalProperties: false, description: 'Optional single-variable scan. Specify explicit values in the case unit.' })),
+}, { additionalProperties: false });
+export const ResilienceEventAlignmentSchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  eventPath: resiliencePath,
+  calendarPath: resiliencePath,
+  toleranceMeters: Type.Optional(Type.Number({ minimum: 0, maximum: 10000 })),
+}, { additionalProperties: false });
+export const ResilienceAccessibilitySchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  caseSha256: Type.Optional(resilienceHash),
+  periodId: resilienceId,
+  stateId: Type.Optional(resilienceId),
+  planId: Type.Optional(resilienceId),
+  demandId: Type.Optional(resilienceId),
+}, { additionalProperties: false });
+export const ResilienceComparePlansSchema = Type.Object({
+  ...ResiliencePressureSchema.properties,
+  planPath: resiliencePath,
+  alignment: Type.Optional(Type.Object({
+    path: resiliencePath,
+    sha256: resilienceHash,
+    stateId: resilienceId,
+    eventIds: Type.Array(resilienceId, { minItems: 1, maxItems: 100, uniqueItems: true }),
+  }, { additionalProperties: false, description: 'Apply explicitly reviewed confirmed events to this one state; evidence is rechecked.' })),
+}, { additionalProperties: false });
+export const ResilienceJointSensitivitySchema = Type.Object({
+  casePath: Type.Optional(resiliencePath),
+  caseSha256: Type.Optional(resilienceHash),
+  stateId: resilienceId,
+  periodId: resilienceId,
+  axes: Type.Array(Type.Union([
+    Type.Object({
+      variable: Type.Union([Type.Literal('edge-minutes'), Type.Literal('service-capacity'), Type.Literal('demand-amount')]),
+      objectId: resilienceId,
+      values: Type.Array(Type.Number({ minimum: 0, maximum: 1_000_000 }), { minItems: 2, maxItems: 12, uniqueItems: true }),
+    }, { additionalProperties: false }),
+    Type.Object({
+      variable: Type.Union([Type.Literal('closed-edge'), Type.Literal('unavailable-resource')]),
+      objectId: resilienceId,
+      values: Type.Array(Type.Boolean(), { minItems: 2, maxItems: 2, uniqueItems: true }),
+    }, { additionalProperties: false }),
+  ]), { minItems: 1, maxItems: 3 }),
+  constraints: Type.Optional(Type.Object({
+    maxPriorityShortage: Type.Optional(Type.Integer({ minimum: 0 })),
+    maxTotalShortage: Type.Optional(Type.Integer({ minimum: 0 })),
+  }, { additionalProperties: false })),
+}, { additionalProperties: false });
+const resilienceOutput = { protocol: 'transportx-service-resilience', version: 1, detailsKind: 'service-resilience-result' };
+
 export const coreToolContracts = [
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.import', piName: 'resilience_import', contractVersion: '1.0.0', semanticVersion: 'resilience-import-v1', input: ResilienceImportSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.align', piName: 'resilience_align', contractVersion: '1.0.0', semanticVersion: 'resilience-align-v1', input: ResilienceAlignSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.pressure', piName: 'resilience_pressure_test', contractVersion: '1.0.0', semanticVersion: 'resilience-pressure-v1', input: ResiliencePressureSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.investigate', piName: 'resilience_investigate', contractVersion: '1.0.0', semanticVersion: 'resilience-investigate-v1', input: ResilienceInvestigateSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.align-events', piName: 'resilience_align_events', contractVersion: '1.0.0', semanticVersion: 'resilience-align-events-v1', input: ResilienceEventAlignmentSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.accessibility', piName: 'resilience_accessibility', contractVersion: '1.0.0', semanticVersion: 'resilience-accessibility-v1', input: ResilienceAccessibilitySchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.compare-plans', piName: 'resilience_compare_plans', contractVersion: '1.0.0', semanticVersion: 'resilience-compare-plans-v1', input: ResilienceComparePlansSchema, output: resilienceOutput },
+  { moduleId: 'com.transportx.service-resilience', toolId: 'resilience.sensitivity', piName: 'resilience_sensitivity', contractVersion: '1.0.0', semanticVersion: 'resilience-sensitivity-v1', input: ResilienceJointSensitivitySchema, output: resilienceOutput },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.prepare', piName: 'traffic_prepare_scenario', contractVersion: '1.2.0', semanticVersion: 'traffic-prepare-v3', input: TrafficPrepareSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.run', piName: 'traffic_run', contractVersion: '1.1.0', semanticVersion: 'traffic-run-v2', input: TrafficRunSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
   { moduleId: 'com.transportx.traffic-simulation', toolId: 'traffic.experiment', piName: 'traffic_experiment', contractVersion: '1.0.0', semanticVersion: 'traffic-experiment-v1', input: TrafficExperimentSchema, output: { protocol: 'transportx-traffic', version: 1, detailsKind: 'traffic-result' } },
@@ -317,6 +416,12 @@ export const coreToolContracts = [
   { moduleId: 'com.transportx.cad', toolId: 'cad.verify', piName: 'cad_verify', contractVersion: '1.0.0', semanticVersion: 'cad-verify-v3', input: CadVerifySchema, output: { protocol: 'tau-cad', version: '1.0', detailsKind: 'tau-cad-verify' } },
   { moduleId: 'com.transportx.cad', toolId: 'cad.execution', piName: 'cad_execution', contractVersion: '1.0.0', semanticVersion: 'cad-execution-v2', input: CadExecutionSchema, output: { protocol: 'transportx-cad-execution', version: 1, detailsKind: 'tau-cad-execution' } },
 
+  { moduleId: 'com.transportx.evidence-analysis', toolId: 'analysis.table', piName: 'analyze_workspace_table', contractVersion: '1.2.0', semanticVersion: 'workspace-table-v3', input: WorkspaceTableSchema, output: { protocol: 'transportx-evidence-analysis', version: 1, detailsKind: 'analysis-table' } },
+  { moduleId: 'com.transportx.evidence-analysis', toolId: 'analysis.handoff', piName: 'workspace_data_handoff', contractVersion: '1.1.0', semanticVersion: 'workspace-data-handoff-v2', input: WorkspaceHandoffSchema, output: { protocol: 'transportx-evidence-analysis', version: 1, detailsKind: 'data-handoff' } },
+  { moduleId: 'com.transportx.evidence-analysis', toolId: 'analysis.complete', piName: 'complete_evidence_analysis', contractVersion: '3.0.0', semanticVersion: 'complete-evidence-analysis-v4', input: CompleteEvidenceAnalysisSchema, output: { protocol: 'transportx-evidence-analysis', version: 1, detailsKind: 'analysis-completion' } },
+  { moduleId: 'com.transportx.experience-exchange', toolId: 'experience.search', piName: 'search_experience', contractVersion: '2.0.0', semanticVersion: 'experience-search-v2', input: ExperienceSearchSchema, output: { protocol: 'transportx-experience', version: 1, detailsKind: 'experience-search' } },
+  { moduleId: 'com.transportx.experience-exchange', toolId: 'experience.feedback', piName: 'submit_experience_feedback', contractVersion: '1.0.0', semanticVersion: 'experience-feedback-v1', input: ExperienceFeedbackSchema, output: { protocol: 'transportx-experience', version: 1, detailsKind: 'experience-feedback' } },
+  { moduleId: 'com.transportx.experience-exchange', toolId: 'experience.use', piName: 'record_experience_use', contractVersion: '1.1.0', semanticVersion: 'experience-use-v2', input: ExperienceUseSchema, output: { protocol: 'transportx-experience', version: 1, detailsKind: 'experience-use' } },
   { moduleId: 'com.transportx.tool-activation', toolId: 'capabilities.manage', piName: 'manage_capabilities', contractVersion: '1.0.0', semanticVersion: 'module-activation-v1', input: ManageCapabilitiesSchema, output: { protocol: 'transportx-capability-management', version: 1, detailsKind: 'transportx-capability-management' } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.present", piName: "canvas_present", contractVersion: "1.0.0", semanticVersion: "canvas.present-v1", input: CanvasPresentSchema, output: { protocol: "pi-canvas", version: "1.0", detailsKind: "tau-canvas" } },
   { moduleId: "com.transportx.canvas", toolId: "canvas.inspect", piName: "canvas_inspect_context", contractVersion: "1.0.0", semanticVersion: "canvas.inspect-v1", input: CanvasInspectSchema, output: { protocol: "pi-canvas-context", version: "1.0", detailsKind: "tau-canvas-contexts" } },

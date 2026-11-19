@@ -20,12 +20,13 @@ export function currentPlatformOverview(session: PiRpcSession | null | undefined
     const identities = CORE_TOOL_BINDINGS[module.id];
     if (!identities) return module;
     const selected = selectedPlan?.modules.find((item) => item.id === module.id);
-    const toolDiagnostics = identities.map(({ toolId, piName }) => {
+    const toolDiagnostics = identities.map(({ toolId, piName, execution }) => {
       const base = { moduleId: module.id, toolId, piName, contractVersion: 'unknown', ...(session?.id ? { sessionId: session.id } : {}) };
       try {
         const contract = readToolContract(selected?.packageRoot || MODULE_REGISTRY.get(module.id)!.packageRoot, module.id, toolId);
         if (!contract) return { ...base, state: 'unverified' as const, reason: 'missing_contract' };
-        return diagnoseTool(contract, selected, session && !session.terminating && session.child ? session.capabilityTracker.observation() : undefined, session?.entries || [], session?.id, approvedHostToolContract(module.id, toolId));
+        const approved = execution === 'host' ? approvedHostToolContract(module.id, toolId) : contract;
+        return diagnoseTool(contract, selected, session && !session.terminating && session.child ? session.capabilityTracker.observation() : undefined, session?.entries || [], session?.id, approved);
       } catch {
         return { ...base, state: 'unavailable' as const, reason: 'invalid_contract' };
       }

@@ -19,8 +19,9 @@ function compareVersion(left: PiVersion, right: PiVersion) {
 }
 
 export function piProcessEnv(extra: NodeJS.ProcessEnv = {}) {
+  const { TRANSPORTX_EXPERIENCE_MCP_URL: _url, TRANSPORTX_EXPERIENCE_TOKEN_FILE: _tokenFile, TRANSPORTX_EXPERIENCE_SCOPE: _scope, ...safeEnv } = process.env;
   return {
-    ...process.env,
+    ...safeEnv,
     ...(process.env.TAU_DESKTOP === '1' ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
     ...extra,
   };

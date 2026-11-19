@@ -52,3 +52,38 @@ PDF previews use Mozilla PDF.js (`pdfjs-dist`, Apache-2.0). Its license is inclu
 ## Bundled typefaces
 
 The workbench includes Adobe Source Han Sans SC, Adobe Source Han Serif SC and JetBrains Mono under the SIL Open Font License 1.1. Font binaries, original copyright/license texts and pinned upstream sources are distributed in `dist/web/fonts/`; see `src/web/public/fonts/README.md` in the source tree. These assets load locally without installing fonts or contacting a font service.
+
+## DuckDB count comparison
+
+The count comparison uses `@duckdb/node-api` and `@duckdb/node-bindings` 1.5.6-r.2 with the corresponding platform-specific DuckDB native library (MIT). Their copyright and license notices are included in the installed npm packages. The bundled Seattle public-data provenance is in `data/count-comparison/README.md` and its capture receipts.
+
+## Experience Exchange
+
+The Traffic MCP client uses the [Model Context Protocol TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) (`@modelcontextprotocol/sdk` 1.32.2, MIT). Copyright (c) 2024 Anthropic, PBC. The original license text is included in the npm package.
+
+## City Service Resilience
+
+The extension bundles these sources under the MIT terms reproduced above:
+
+- [Turf](https://github.com/Turfjs/turf) 7.3.4 modules for spatial intersection and point-to-line distance. Copyright (c) 2017 TurfJS.
+- `point-in-polygon-hao` 1.2.4. Copyright (c) 2021 Rowan Winsemius.
+- `sweepline-intersections` 1.5.0. Copyright (c) 2019 Rowan Winsemius.
+- [fast-json-patch](https://github.com/Starcounter-Jack/JSON-Patch) 3.1.1. Copyright (c) 2013, 2014, 2020 Joachim Wester.
+
+Turf also uses `robust-predicates`, released into the public domain under [the Unlicense](https://unlicense.org/).
+
+[TinyQueue](https://github.com/mourner/tinyqueue) 3.0.0, and 2.0.3 via `sweepline-intersections`, use the ISC License:
+
+Copyright (c) 2017, Vladimir Agafonkin
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.

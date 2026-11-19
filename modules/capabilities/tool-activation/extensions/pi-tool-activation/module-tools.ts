@@ -8,6 +8,7 @@ export type SessionModule = {
   id: string; version: string; name: string; description: string;
   searchText: string; extensions: string[]; skills: string[];
   contracts: ToolInterfaceContract[];
+  initialTools?: Array<{ piName: string; contract: string; sha256: string }>;
 };
 export type Tool = ReturnType<ExtensionAPI['getAllTools']>[number];
 export type ModuleTools = { module: SessionModule; tools: Tool[]; reasons: string[] };
@@ -46,6 +47,9 @@ export function moduleTools(modules: SessionModule[], all: Tool[]): ModuleTools[
       const source = tool.sourceInfo?.path && real(tool.sourceInfo.path);
       return source && owners.get(source)?.length === 1 && owners.get(source)?.[0] === module.id;
     });
+    for (const initial of module.initialTools || []) {
+      if (!module.contracts.some((contract) => contract.piName === initial.piName && contract.moduleId === module.id)) reasons.push(`missing_initial_contract:${initial.piName}`);
+    }
     for (const contract of module.contracts) {
       const tool = tools.find((item) => item.name === contract.piName);
       if (!tool) reasons.push(all.some((item) => item.name === contract.piName) ? `name_conflict:${contract.piName}` : `missing_tool:${contract.piName}`);

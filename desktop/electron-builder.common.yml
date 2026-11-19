@@ -8,6 +8,7 @@ productName: TransportX Agent
 asar: true
 asarUnpack:
   - modules/**
+  - node_modules/@duckdb/**
   - src/contracts/**
   # External Python needs real font files rather than paths inside app.asar.
   - dist/web/fonts/native/**
@@ -19,8 +20,10 @@ directories:
   buildResources: desktop/assets
 files:
   - package.json
+  - THIRD_PARTY_NOTICES.md
   - dist-desktop/**
   - bin/**
+  - data/count-comparison/**
   - dist/web/**
   - modules/**
   - "!modules/installable/**"
@@ -32,7 +35,11 @@ files:
   - "!modules/capabilities/cad/extensions/pi-cad/index.ts"
   - "!modules/official/module-authoring/extensions/pi-module-package/index.ts"
   - "!modules/capabilities/citation/extensions/pi-citation/index.ts"
+  - "!modules/capabilities/experience-exchange/extensions/pi-experience-exchange/index.ts"
+  - "!modules/capabilities/evidence-analysis/extensions/pi-evidence-analysis/index.ts"
   - "!modules/capabilities/spatial-analysis/extensions/pi-spatial-analysis/index.ts"
+  - "!modules/capabilities/service-resilience/extensions/pi-service-resilience/index.ts"
+  - "!modules/capabilities/service-resilience/extensions/pi-service-resilience/!(index).ts"
   - "!modules/capabilities/canvas/extensions/pi-canvas/index.ts"
   - "!modules/capabilities/geo/extensions/pi-geo-visualization/index.ts"
   - "!modules/capabilities/interaction/extensions/pi-user-interaction/index.ts"

@@ -1,0 +1,37 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.service-resilience",
+  "toolId": "resilience.pressure",
+  "piName": "resilience_pressure_test",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "resilience-pressure-v1",
+  "input": {
+    "type": "object",
+    "properties": {
+      "casePath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "File path relative to this task working directory."
+      },
+      "stateId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      },
+      "planId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      },
+      "periodId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-service-resilience",
+    "version": 1,
+    "detailsKind": "service-resilience-result"
+  }
+}

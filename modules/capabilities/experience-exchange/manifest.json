@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.experience-exchange",
+  "name": "Experience Exchange",
+  "version": "2.3.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "contributes": {
+    "initialTools": [
+      { "piName": "search_experience", "contract": "search-contract.json" },
+      { "piName": "record_experience_use", "contract": "use-contract.json" }
+    ]
+  },
+  "entrypoints": {
+    "skills": [
+      "skills/SKILL.md"
+    ],
+    "piExtensions": [
+      "extensions/pi-experience-exchange/index.ts"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "交通经验交换",
+        "description": "检索经发布的交通经验，并提交有依据的纠正反馈。",
+        "features": [
+          "查询指定范围内已发布经验",
+          "记录使用的版本与来源",
+          "提交待审核纠正反馈"
+        ]
+      },
+      "en-US": {
+        "name": "Experience Exchange",
+        "description": "Search published transport experience and submit evidence-based corrections.",
+        "features": [
+          "Search published experience",
+          "Record exact releases and sources",
+          "Submit feedback for review"
+        ]
+      }
+    }
+  }
+}

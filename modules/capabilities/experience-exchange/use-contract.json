@@ -1,0 +1,51 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.experience-exchange",
+  "toolId": "experience.use",
+  "piName": "record_experience_use",
+  "contractVersion": "1.1.0",
+  "semanticVersion": "experience-use-v2",
+  "input": {
+    "type": "object",
+    "required": [
+      "releaseId",
+      "disposition",
+      "reason"
+    ],
+    "properties": {
+      "releaseId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "intentId": {
+        "type": "string",
+        "pattern": "^intent_[a-f0-9]{32}$",
+        "description": "Prepared intent for a release with structured applicability."
+      },
+      "disposition": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "used"
+          },
+          {
+            "type": "string",
+            "const": "skipped"
+          }
+        ]
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 400
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-experience",
+    "version": 1,
+    "detailsKind": "experience-use"
+  }
+}

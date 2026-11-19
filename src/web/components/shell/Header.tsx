@@ -22,6 +22,7 @@ type HeaderProps = {
   onGoHome(): void;
   onOpenModel(): void;
   onOpenCommands(): void;
+  onOpenCountComparison(): void;
   onOpenSettings(): void;
 };
 
@@ -40,6 +41,7 @@ export function Header({
   onGoHome,
   onOpenModel,
   onOpenCommands,
+  onOpenCountComparison,
   onOpenSettings,
 }: HeaderProps) {
   const { t } = useTranslation();
@@ -90,6 +92,9 @@ export function Header({
         </div>
         <button className="icon-button header-command" type="button" aria-label={t('header.openCommands')} onClick={onOpenCommands}>
           <Icon name="command" /><kbd>⌘K</kbd>
+        </button>
+        <button className="icon-button header-count-comparison" type="button" aria-label={t('counts.open')} title={t('counts.command')} onClick={onOpenCountComparison}>
+          <Icon name="table" /><span>{t('counts.open')}</span>
         </button>
         <button className="icon-button" type="button" aria-label={t('header.toggleFiles')} aria-pressed={fileOpen} onClick={onToggleFiles}>
           <Icon name="workspace" />

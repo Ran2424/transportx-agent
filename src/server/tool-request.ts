@@ -17,8 +17,9 @@ export function approvedHostToolContract(moduleId: string, toolId?: string) {
   return contract;
 }
 
-export async function validateToolRequest(moduleId: string, body: Record<string, unknown>, toolId?: string) {
-  const contract = approvedHostToolContract(moduleId, toolId);
+export async function validateToolRequest(moduleId: string, body: Record<string, unknown>, toolId?: string, compatible?: { contractVersion: string; input: object }) {
+  const current = approvedHostToolContract(moduleId, toolId);
+  const contract = compatible ? { ...current, ...compatible } : current;
   const { sessionId: _sessionId, token: _token, toolCallId, contractVersion, operationId, ...input } = body;
   if ((toolId === 'spatial.execution' || toolId === 'cad.execution') && operationId !== undefined) input.operationId = operationId;
   const fail = (message: string, code = 'tool_input_invalid', status = 400) => Object.assign(new Error(message), { code, status, phase: 'validation', commit: 'not_started' });

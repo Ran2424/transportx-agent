@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { ACTIVATION_ENTRY, ACTIVATION_EVENT, baseTools, identity, members, moduleTools, sameMembers, type ModuleTools, type SessionModule } from './module-tools.ts';
 
-type AssemblyRecord = { kind: 'assembly'; modules: Record<string, string[]> };
+type AssemblyRecord = { kind: 'assembly'; modules: Record<string, string[]>; initialTools?: Record<string, string[]> };
 type EnableRecord = { kind: 'enable'; moduleId: string; moduleVersion: string; tools: string[] };
 type ActivationRecord = AssemblyRecord | EnableRecord;
 
@@ -22,14 +22,20 @@ export function activation(pi: ExtensionAPI, modules: SessionModule[]) {
     const current = moduleTools(modules, pi.getAllTools());
     const saved = entries.find((entry) => entry.kind === 'assembly');
     frozen = saved?.kind === 'assembly' ? saved.modules : Object.fromEntries(current.map((row) => [identity(row), members(row)]));
+    const initialTools = saved?.kind === 'assembly' ? (saved.initialTools || {}) : Object.fromEntries(current.map((row) => [identity(row), (row.module.initialTools || []).map((tool) => tool.piName)]));
     // One native branch log is the only persistence mechanism, including the
     // initialization membership needed to reject changes across reload/resume.
     if (!saved) {
-      try { pi.appendEntry(ACTIVATION_ENTRY, { kind: 'assembly', modules: frozen } satisfies AssemblyRecord); }
+      try { pi.appendEntry(ACTIVATION_ENTRY, { kind: 'assembly', modules: frozen, initialTools } satisfies AssemblyRecord); }
       catch { persistenceError = 'assembly_record_failed'; }
     }
     const checked = rows();
     const names = baseTools(pi.getAllTools(), checked);
+    for (const row of checked) {
+      if (row.reasons.length || persistenceError) continue;
+      const initial = initialTools[identity(row)];
+      if (initial) names.push(...members(row).filter(name => initial.includes(name)));
+    }
     for (const entry of entries) {
       if (entry.kind !== 'enable') continue;
       const row = checked.find((item) => item.module.id === entry.moduleId);

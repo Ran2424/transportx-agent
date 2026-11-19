@@ -1,0 +1,67 @@
+{
+  "title": "暴雨后东西片区服务恢复演练",
+  "provenance": {
+    "kind": "exercise",
+    "note": "坐标和地点用于示意。桥况、服务量、恢复时间和调查耗时均为演练设定。"
+  },
+  "nodes": [
+    {"id":"west","coordinates":[121.414,31.171]},
+    {"id":"east","coordinates":[121.455,31.177]},
+    {"id":"hill","coordinates":[121.433,31.191]},
+    {"id":"west-depot","coordinates":[121.408,31.179]}
+  ],
+  "edges": [
+    {"id":"bridge-east","from":"west","to":"east","minutes":12,"modes":["road"],"requires":["east-bridge"]},
+    {"id":"bridge-west","from":"east","to":"west","minutes":12,"modes":["road"],"requires":["east-bridge"]},
+    {"id":"west-hill","from":"west","to":"hill","minutes":28,"modes":["road"],"requires":[]},
+    {"id":"hill-east","from":"hill","to":"east","minutes":10,"modes":["road"],"requires":[]},
+    {"id":"west-site","from":"west","to":"west-depot","minutes":8,"modes":["road"],"requires":[]}
+  ],
+  "services": [
+    {"id":"east-care","node":"east","kind":"medical","capacity":140,"requires":["east-power"]},
+    {"id":"west-temporary-care","node":"west-depot","kind":"medical","capacity":0,"requires":[]},
+    {"id":"hill-shelter","node":"hill","kind":"shelter","capacity":80,"requires":[]}
+  ],
+  "demands": [
+    {"id":"west-priority-care","node":"west","kind":"medical","mode":"road","amount":80,"priority":true,"maxMinutes":10},
+    {"id":"west-general-care","node":"west","kind":"medical","mode":"road","amount":60,"priority":false,"maxMinutes":20},
+    {"id":"west-shelter","node":"west","kind":"shelter","mode":"road","amount":60,"priority":false,"maxMinutes":35}
+  ],
+  "periods": [
+    {"id":"peak","label":"首个高峰（08:00–10:00）","weight":1},
+    {"id":"after","label":"高峰后（10:00–12:00）","weight":1}
+  ],
+  "states": [
+    {"id":"bridge-and-power-ready","label":"桥与东侧供电按时可用","periods":{}},
+    {"id":"bridge-delayed","label":"桥在首个高峰不可用","periods":{"peak":{"unavailableResources":["east-bridge"]}}},
+    {"id":"east-power-delayed","label":"桥可用，东侧供电延误","periods":{"peak":{"unavailableResources":["east-power"]}}}
+  ],
+  "plans": [
+    {"id":"shuttle","label":"A · 在桥上开优先接驳","setupMinutes":6,"periods":{
+      "peak":{"edgeMinutes":{"bridge-east":6}},
+      "after":{"edgeMinutes":{"bridge-east":6}}
+    }},
+    {"id":"temporary-care","label":"B · 启用西侧临时服务点","setupMinutes":8,"periods":{
+      "peak":{"serviceCapacity":{"west-temporary-care":70}},
+      "after":{"serviceCapacity":{"west-temporary-care":70}}
+    }}
+  ],
+  "investigations": [
+    {"id":"bridge-and-site","question":"东桥能否按时通行，东侧服务点是否可投入运行？","source":"向桥梁运营方和服务点负责人分别核查","effort":"两次状态核查","leadMinutes":20,
+      "outcomes":[
+        {"label":"两项均可用","stateIds":["bridge-and-power-ready"]},
+        {"label":"至少一项延误","stateIds":["bridge-delayed","east-power-delayed"]}
+      ]},
+    {"id":"bridge-only","question":"东桥在高峰前是否可以通行？","source":"桥梁运营方状态记录","effort":"一次状态核查","leadMinutes":10,
+      "outcomes":[
+        {"label":"桥可用，服务点状态未知","stateIds":["bridge-and-power-ready","east-power-delayed"]},
+        {"label":"桥不可用","stateIds":["bridge-delayed"]}
+      ]},
+    {"id":"late-inspection","question":"高峰后完成现场复核能否确认桥与供电状态？","source":"高峰后巡查记录","effort":"一次现场巡查","leadMinutes":90,
+      "outcomes":[
+        {"label":"两项均可用","stateIds":["bridge-and-power-ready"]},
+        {"label":"至少一项延误","stateIds":["bridge-delayed","east-power-delayed"]}
+      ]}
+  ],
+  "decisionWindowMinutes":30
+}

@@ -51,9 +51,11 @@ pi-tau-traffic/
 
 图左侧的 Extension、Skill、Knowledge、Data 是 Module 可组合的贡献类型，不是四种互斥的安装包。Pi 默认启用 `read`、`write`、`edit`、`bash` 四个基础工具；Extension 可注册额外工具，Skill 提供工作方法，Knowledge 和 Data 作为会话资产供工具与脚本使用。Pi 维护活动工具集合并发起调用：基础工具和部分 Extension 在 Pi 侧执行，另一些 Extension 调用 Host 领域服务。Host 负责会话装配、资源校验与领域服务，并非所有工具的统一执行器。Python 仅由 `bash` 或 Host 受控作业按需调用。
 
-Workbench 采用 Eager Registration + Lazy Activation：计划内 Extension 初始化时完整注册，新的受管会话首请求只开放上述四工具与 `manage_capabilities`。管理工具以 discover/inspect/status 只读查询，以 enable(moduleId) 开放该模块全部来源和契约核对合格的工具；Module 依赖只影响装配，不传播 active。归属通过 Host 已核验 Plan 的精确入口与 Pi sourceInfo 的 realpath 相等派生，独立包不需进入核心工具表。Pi 仍是唯一 Registry 与 Agent Runtime，enable 不安装模块、不启动业务、不授予执行权限。
+Workbench 在初始化时完整注册计划内的 Extension，首请求开放四个基础工具、`manage_capabilities` 及已选模块通过 `contributes.initialTools` 声明的工具。每项声明包含 Pi 工具名和模块内的 Tool Contract 相对路径，Session Plan 冻结声明及契约 SHA-256。Pi 按 Extension 真实路径核对工具归属和注册参数。其余工具可通过 discover/inspect/status 查询，并通过 enable(moduleId) 开放。工具可见性和 Host 执行鉴权各自独立。
 
-`transportx-tool-activation/v1` custom entry 是唯一开放状态恢复记录：assembly 保存初始化成员，enable 保存本分支成功意图；启动、reload、恢复与分支导航从有效分支重建，压缩不依赖模型记忆，不重放业务。成员漂移拒绝启用，需新会话装配；运行中晚注册不支持，已有核对点诊断不兼容，不增加监听器。新安装/更新不改变已有计划；冻结旧计划没有该模块时不注入额外 Extension。Bridge 在开放事件重新采样，inactive 且来源/Schema 合格为待启用，执行和授权仍由原工具/Host 判断。历史实测数据见 [验收数据](acceptance/module-tool-activation.json)。
+`transportx-tool-activation/v1` custom entry 是工具开放状态的恢复记录。assembly 保存初始化成员与首轮开放集合，enable 保存本分支成功意图。启动、reload、恢复与分支导航从有效分支重建。成员漂移需要重新装配，旧会话按冻结版本继续运行。Bridge 在开放事件重新采样，inactive 且来源和 Schema 合格的工具显示为待启用。历史实测数据见 [验收数据](acceptance/module-tool-activation.json)。
+
+Host 向 Pi 提供冻结的任务配置，由模块判断采用哪种交付规则。模块可通过助手消息的 `delivery.status` 报告已提交、待核对或尚未完成，工作台从当前消息与历史恢复该状态。模型错误和取消继续由运行事件报告。
 
 ### 2.2 技术栈分工
 

@@ -11,6 +11,7 @@ import { parseCitationEnvelope, parseCitationDetail, type CitationDetail, type C
 import type { GeoClientContextV1, GeoContextReferenceV1, GeoInteractionResponseV1 } from '../../contracts/geo-interaction.ts';
 import type { CanvasContextV1, CanvasPresentationV1 } from '../../contracts/canvas.ts';
 import type { SimulationRunSummary, SimulationIndex, SimulationBlock, SimulationEvent, SimulationNetworkView, SimulationQuery, SimulationExperiment } from '../../contracts/simulation.ts';
+import type { CountBatch, CountComparisonRequest, CountComparisonResult } from '../../contracts/count-comparison.ts';
 import { httpJson, httpText, rpcCommand, type CommandDeps } from './command-transport.js';
 import { createPlatformCommands, type PlatformCommands } from './platform-commands.js';
 import { createSessionCommands, type SessionCommands, type WorkspaceFileContent } from './session-commands.js';
@@ -96,6 +97,11 @@ export function createSimulationCommands(deps: CommandDeps): SimulationCommands 
 export type ReportCommands = {
   loadSource(sessionId: string, url: string): Promise<WorkspaceFileContent>;
   exportPdf(title: string, html: string): Promise<{ url: string }>;
+};
+
+export type CountComparisonCommands = {
+  list(signal?: AbortSignal): Promise<{ batches: CountBatch[] }>;
+  compare(input: CountComparisonRequest, signal?: AbortSignal): Promise<CountComparisonResult>;
 };
 
 function clientCommandId() {
@@ -276,6 +282,7 @@ export type KernelCommands = {
   geo: GeoCommands;
   canvas: CanvasCommands;
   simulation: SimulationCommands;
+  countComparison: CountComparisonCommands;
   report: ReportCommands;
   platform: PlatformCommands;
   extensionUi: ExtensionUiCommands;
@@ -290,6 +297,10 @@ export function createCommands(deps: CommandDeps): KernelCommands {
     geo: createGeoCommands(deps),
     canvas: createCanvasCommands(deps),
     simulation: createSimulationCommands(deps),
+    countComparison: {
+      list: (signal) => httpJson(deps.http, '/api/count-comparison/batches', { signal }, { category: 'resource' }) as Promise<{ batches: CountBatch[] }>,
+      compare: (input, signal) => httpJson(deps.http, '/api/count-comparison', { method: 'POST', body: input, signal }, { category: 'resource' }) as Promise<CountComparisonResult>,
+    },
     report: createReportCommands(deps),
     platform: createPlatformCommands(deps),
     extensionUi: createExtensionUiCommands(deps),

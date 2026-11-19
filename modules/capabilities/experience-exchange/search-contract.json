@@ -1,0 +1,28 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.experience-exchange",
+  "toolId": "experience.search",
+  "piName": "search_experience",
+  "contractVersion": "2.0.0",
+  "semanticVersion": "experience-search-v2",
+  "input": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "A short business question or intent phrase."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-experience",
+    "version": 1,
+    "detailsKind": "experience-search"
+  }
+}

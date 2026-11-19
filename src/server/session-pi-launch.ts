@@ -9,6 +9,7 @@ import type { SessionService } from './session-service.js';
 import { projectAdapter } from './project-adapter.js';
 import { readModuleToolContracts } from './tool-contracts.js';
 import { CORE_TOOL_BINDINGS } from '../contracts/tool-interface.js';
+import { legacyEvidenceAnalysisEnvironment } from './evidence-analysis-compat.js';
 
 function sessionModules(plan: ResolvedSessionPlan) {
   return plan.modules.map((module) => {
@@ -21,7 +22,11 @@ function sessionModules(plan: ResolvedSessionPlan) {
         return text.startsWith('---') ? text.slice(0, text.indexOf('\n---', 3) + 4).slice(0, 16000) : '';
       })].join(' '),
       extensions: module.entrypoints.filter((entry) => entry.kind === 'extension').map((entry) => entry.path), skills,
-      contractFiles: (CORE_TOOL_BINDINGS[module.id] || []).filter((binding) => fs.existsSync(path.join(module.packageRoot, binding.file))).map((binding) => path.join(module.packageRoot, binding.file)),
+      initialTools: module.initialTools,
+      contractFiles: [...new Set([
+        ...(CORE_TOOL_BINDINGS[module.id] || []).map((binding) => binding.file),
+        ...(module.initialTools || []).map((tool) => tool.contract),
+      ])].map((file) => path.join(module.packageRoot, file)).filter((file) => fs.existsSync(file)),
     };
   });
 }
@@ -74,6 +79,14 @@ export function buildSessionPiLaunch(input: SessionPiLaunchInput) {
       TAU_PYTHON_COMMAND: PYTHON_COMMAND,
       TRANSPORTX_FONT_DIR: preferUnpackedPath(path.join(REACT_STATIC_DIR, 'fonts', 'native')),
       TRANSPORTX_SESSION_MODULES_JSON: JSON.stringify(sessionModules(plan)),
+      TRANSPORTX_SESSION_TASK_JSON: JSON.stringify(plan.profile?.task ?? null),
+      TAU_EVIDENCE_ANALYSIS_ENDPOINT: input.endpoints.evidenceAnalysis,
+      TAU_EVIDENCE_ANALYSIS_SESSION_ID: input.sessionId,
+      TAU_EVIDENCE_ANALYSIS_TOKEN: input.serviceTokens.evidenceAnalysis,
+      ...legacyEvidenceAnalysisEnvironment(plan),
+      TAU_EXPERIENCE_ENDPOINT: input.endpoints.experience,
+      TAU_EXPERIENCE_SESSION_ID: input.sessionId,
+      TAU_EXPERIENCE_TOKEN: input.serviceTokens.experience,
       TAU_MODULE_ENDPOINT: input.endpoints.moduleAuthoring,
       TAU_MODULE_SESSION_ID: input.sessionId,
       TAU_MODULE_TOKEN: input.serviceTokens.moduleAuthoring,

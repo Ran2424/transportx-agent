@@ -33,6 +33,7 @@ export type ResolvedPlanModule = {
   entrypoints: ResolvedPlanEntrypoint[];
   nativeRuntimes: ResolvedPlanNativeRuntime[];
   canvasViews: ModuleCanvasView[];
+  initialTools?: Array<{ piName: string; contract: string; sha256: string }>;
 };
 
 export function mapNativeRuntimePaths(runtime: ResolvedPlanNativeRuntime, convert: (path: string) => string): ResolvedPlanNativeRuntime {
@@ -125,8 +126,14 @@ export function parseResolvedSessionPlanStructured(value: unknown): ResolvedSess
       const adapterId = asString(view?.adapterId, 200); const kind = asString(view?.kind, 80); const protocolVersion = asString(view?.protocolVersion, 40);
       if (adapterId && kind && protocolVersion && !canvasViews.some((candidate) => candidate.adapterId === adapterId)) canvasViews.push({ adapterId, kind, protocolVersion });
     });
-    if (!id || !version || !packageRoot || moduleIds.has(id) || !['module', 'capability', 'domain'].includes(String(type)) || !['builtin', 'installed', 'external'].includes(String(origin)) || !Array.isArray(item?.entrypoints) || entrypoints.length !== item.entrypoints.length || !Array.isArray(rawRuntimes) || nativeRuntimes.length !== rawRuntimes.length || !Array.isArray(rawCanvasViews) || canvasViews.length !== rawCanvasViews.length) diagnostics.push(diagnostic({ code: 'invalid_type', path: `plan.modules[${index}]`, message: 'Invalid or duplicate resolved Module.' }));
-    else { moduleIds.add(id); modules.push({ id, version, packageRoot, type: type as ResolvedPlanModule['type'], origin: origin as ResolvedPlanModule['origin'], entrypoints, nativeRuntimes, canvasViews }); }
+    const initialTools: NonNullable<ResolvedPlanModule['initialTools']> = [];
+    const rawInitialTools = item?.initialTools;
+    if (Array.isArray(rawInitialTools)) rawInitialTools.forEach((candidateTool) => {
+      const tool = asRecord(candidateTool), piName = asString(tool?.piName, 200), contract = asString(tool?.contract, 500), sha256 = asString(tool?.sha256, 64);
+      if (piName && /^[A-Za-z][A-Za-z0-9_]*$/.test(piName) && contract && /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]+\.json$/.test(contract) && sha256 && SHA256_RE.test(sha256) && !initialTools.some((entry) => entry.piName === piName || entry.contract === contract) && Object.keys(tool!).every((key) => ['piName', 'contract', 'sha256'].includes(key))) initialTools.push({ piName, contract, sha256 });
+    });
+    if (!id || !version || !packageRoot || moduleIds.has(id) || !['module', 'capability', 'domain'].includes(String(type)) || !['builtin', 'installed', 'external'].includes(String(origin)) || !Array.isArray(item?.entrypoints) || entrypoints.length !== item.entrypoints.length || !Array.isArray(rawRuntimes) || nativeRuntimes.length !== rawRuntimes.length || !Array.isArray(rawCanvasViews) || canvasViews.length !== rawCanvasViews.length || (rawInitialTools !== undefined && (!Array.isArray(rawInitialTools) || initialTools.length !== rawInitialTools.length))) diagnostics.push(diagnostic({ code: 'invalid_type', path: `plan.modules[${index}]`, message: 'Invalid or duplicate resolved Module.' }));
+    else { moduleIds.add(id); modules.push({ id, version, packageRoot, type: type as ResolvedPlanModule['type'], origin: origin as ResolvedPlanModule['origin'], entrypoints, nativeRuntimes, canvasViews, ...(rawInitialTools !== undefined ? { initialTools } : {}) }); }
   });
   const assets: ResolvedPlanAsset[] = [];
   const assetIds = new Set<string>();

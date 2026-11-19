@@ -1,0 +1,3 @@
+# Keep the captured and pinned bytes on every checkout.
+*.json -text
+*.capture.json whitespace=cr-at-eol

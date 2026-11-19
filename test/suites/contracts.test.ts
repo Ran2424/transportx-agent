@@ -13,6 +13,66 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     return result.diagnostics?.map((item) => item.code) || [];
   }
 
+  // Workspace table contracts distinguish reading, aggregation and nullable cells.
+  {
+    const os = require('node:os');
+    const { analyzeWorkspaceTable } = require('../../bin/workspace-table.js');
+    const { WorkspaceTableSchema } = await import('../../src/contracts/evidence-analysis.mts');
+    const { Check } = await import('typebox/value');
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'transportx-table-'));
+    try {
+      fs.writeFileSync(path.join(cwd, 'data.csv'), 'group,value,null\nA,2,x\nA,10,\nA,,null\n');
+      const plan = { file: 'data.csv', groupBy: ['group'], aggregates: [
+        { op: 'count', as: 'rows' }, { op: 'count', column: 'value', as: 'present' },
+        { op: 'avg', column: 'value', as: 'mean' }, { op: 'max', column: 'value', as: 'textMax' },
+        { op: 'max', column: 'value', numeric: true, as: 'numberMax' },
+        { op: 'count', column: 'null', as: 'namedNull' },
+      ] };
+      assert.equal(Check(WorkspaceTableSchema, { ...plan, deliver: true }), true);
+      const result = await analyzeWorkspaceTable(cwd, plan);
+      assert.deepEqual(result.columns, ['group', 'rows', 'present', 'mean', 'textMax', 'numberMax', 'namedNull']);
+      assert.deepEqual(result.rows.map((row: any[]) => [row[0], row[1], row[2], Number(row[3]), row[4], Number(row[5]), row[6]]), [['A', 3, 2, 6, '2', 10, 2]]);
+      const read = await analyzeWorkspaceTable(cwd, { file: 'data.csv', select: ['null'] });
+      assert.deepEqual(read.rows, [['null'], ['x'], [null]]);
+      const redundant = await analyzeWorkspaceTable(cwd, { ...plan, select: ['value'] });
+      assert.deepEqual(redundant.rows, result.rows);
+      assert.deepEqual(redundant.provenance.plan.redundantSelect, ['value']);
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'data.csv', select: ['group'], aggregates: [{ op: 'avg', column: 'value', as: 'mean' }] }), /omit select/);
+      const count = await analyzeWorkspaceTable(cwd, { file: 'data.csv', aggregates: [{ op: 'count', column: null, as: 'n' }] });
+      assert.deepEqual(count.rows, [[3]]);
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'data.csv', aggregates: [{ op: 'avg', column: null, as: 'mean' }] }), /Only count/);
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'data.csv', aggregates: [{ op: 'avg', as: 'mean' }] }), /require a CSV column/);
+      fs.writeFileSync(path.join(cwd, 'bad.csv'), 'value\ninvalid\n');
+      await assert.rejects(analyzeWorkspaceTable(cwd, { file: 'bad.csv', aggregates: [{ op: 'avg', column: 'value', as: 'mean' }] }), /non-decimal/);
+      fs.writeFileSync(path.join(cwd, 'empty.csv'), 'value\n\n');
+      const empty = await analyzeWorkspaceTable(cwd, { file: 'empty.csv', aggregates: [{ op: 'avg', column: 'value', as: 'mean' }, { op: 'count', column: 'value', as: 'n' }] });
+      assert.deepEqual(empty.rows, [[null, 0]]);
+      fs.writeFileSync(path.join(cwd, 'filters.csv'), `day,category\n2026/01/01,A\n2026/01/01,B\n${'x'.repeat(129)},B\n2026/01/02,B\n2026/01/03,B\n2026/01/04,B\n`);
+      const filterPlan = { file: 'filters.csv', filters: [{ column: 'day', value: '2026-01-01' }], aggregates: [{ op: 'count', as: 'n' }] };
+      const missing = await analyzeWorkspaceTable(cwd, filterPlan);
+      assert.equal(missing.matchedRows, 0);
+      assert.deepEqual(missing.rows, [[0]]);
+      assert.deepEqual(missing.unmatchedFilters, [{ column: 'day', value: '2026-01-01', examples: ['2026/01/01', '2026/01/02', '2026/01/03'] }]);
+      assert.equal((await analyzeWorkspaceTable(cwd, filterPlan)).runId, missing.runId);
+      const combination = await analyzeWorkspaceTable(cwd, { ...filterPlan, filters: [{ column: 'day', value: '2026/01/02' }, { column: 'category', value: 'A' }] });
+      assert.equal(combination.matchedRows, 0);
+      assert.equal(combination.unmatchedFilters, undefined);
+      const nullMissing = await analyzeWorkspaceTable(cwd, { ...filterPlan, filters: [{ column: 'day', value: null }] });
+      assert.equal(nullMissing.unmatchedFilters?.[0].value, null);
+      const multiple = await analyzeWorkspaceTable(cwd, { ...filterPlan, filters: [{ column: 'day', value: null }, { column: 'category', value: 'C' }] });
+      assert.deepEqual(multiple.unmatchedFilters, [
+        { column: 'day', value: null, examples: ['2026/01/01', '2026/01/02', '2026/01/03'] },
+        { column: 'category', value: 'C', examples: ['A', 'B'] },
+      ]);
+      const nullPresent = await analyzeWorkspaceTable(cwd, { file: 'data.csv', filters: [{ column: 'value', value: null }], select: ['group'] });
+      assert.equal(nullPresent.matchedRows, 1);
+      assert.equal(nullPresent.unmatchedFilters, undefined);
+      fs.writeFileSync(path.join(cwd, 'no-rows.csv'), 'day\n');
+      const noRows = await analyzeWorkspaceTable(cwd, { ...filterPlan, file: 'no-rows.csv' });
+      assert.equal(noRows.unmatchedFilters, undefined);
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  }
+
   // Persistent identity is independent from live metadata and never accepts a client history path.
   {
     const workspace = await import('../../src/contracts/workspace.ts');
@@ -101,6 +161,9 @@ test('Session, Geo, Citation, Bridge and CAD contracts validate versions and pre
     assert.equal(valid.ok, false, 'end time cannot precede start time');
     const accepted = parseSessionProfileStructured({ schemaVersion: 1, task: { kind: 'data-query', timeRange: { start: '2025-08-21T15:00:00+08:00', end: '2025-08-22T00:00:00+08:00', timezone: 'Asia/Shanghai' }, expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected: [{ id: 'com.transportx.shanghaidata', version: '2.0.1' }] } });
     assert.equal(accepted.ok, true);
+    const requirements = { schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'], answerRequirements: ['Explain scope and definition'] }, modules: { selectionMode: 'explicit', selected: [] } };
+    assert.deepEqual(parseSessionProfileStructured(requirements).value?.task.answerRequirements, ['Explain scope and definition']);
+    assert.equal(parseSessionProfileStructured({ ...requirements, task: { ...requirements.task, answerRequirements: [''] } }).ok, false);
     const duplicate = parseSessionProfileStructured({ schemaVersion: 1, task: { kind: 'data-query', expectedOutputs: ['answer'] }, modules: { selectionMode: 'explicit', selected: [{ id: 'module', version: '1' }, { id: 'module', version: '2' }] } });
     assert.equal(duplicate.ok, false);
   }

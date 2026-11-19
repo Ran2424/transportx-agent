@@ -1,0 +1,38 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.service-resilience",
+  "name": "City Service Resilience",
+  "version": "0.2.0",
+  "type": "capability",
+  "platformVersion": ">=3.24.2 <4.0.0",
+  "dependencies": [
+    "com.transportx.geo",
+    "com.transportx.canvas",
+    "com.transportx.document",
+    "com.transportx.citation",
+    "com.transportx.interaction",
+    "com.transportx.tool-activation"
+  ],
+  "entrypoints": {
+    "piExtensions": ["extensions/pi-service-resilience/index.ts"],
+    "skills": ["skills/service-stress-test/SKILL.md", "skills/decision-investigation/SKILL.md"]
+  },
+  "contributes": {
+    "artifactTypes": ["resilience.pressure-test", "resilience.investigation", "resilience.observation-alignment", "resilience.event-alignment", "resilience.accessibility", "resilience.plan-definition", "resilience.joint-sensitivity"]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "城市服务韧性",
+        "description": "检验道路与设施中断下的服务缺口，比较应对方案，并找出可能改变选择的调查。",
+        "features": ["对齐中断事件与有效时段", "计算最短通路及容量缺口", "比较可重放的恢复方案", "筛查联合失效与调查线索"]
+      },
+      "en-US": {
+        "name": "City Service Resilience",
+        "description": "Compare service shortfalls under disruptions and identify investigations that could inform a choice.",
+        "features": ["Align disruption events and effective periods", "Calculate shortest paths and capacity shortfalls", "Compare replayable recovery plans", "Detect joint effects and candidate investigations"]
+      }
+    }
+  }
+}

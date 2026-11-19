@@ -1,0 +1,44 @@
+{
+  "manifestVersion": 2,
+  "id": "com.transportx.evidence-analysis",
+  "name": "Evidence-backed Analysis",
+  "version": "1.7.0",
+  "type": "capability",
+  "platformVersion": ">=3.0.0 <4.0.0",
+  "dependencies": [],
+  "contributes": {
+    "initialTools": [
+      { "piName": "analyze_workspace_table", "contract": "table-contract.json" },
+      { "piName": "workspace_data_handoff", "contract": "handoff-contract.json" },
+      { "piName": "complete_evidence_analysis", "contract": "completion-contract.json" }
+    ]
+  },
+  "entrypoints": {
+    "piExtensions": [
+      "extensions/pi-evidence-analysis/index.ts"
+    ]
+  },
+  "presentation": {
+    "defaultLocale": "zh-CN",
+    "locales": {
+      "zh-CN": {
+        "name": "取证分析",
+        "description": "核对任务中的数据证据，完成后交付可复核的答案。",
+        "features": [
+          "读取本轮证据和记录来源",
+          "以只读表格工具筛选、统计并复核",
+          "只给计划时尝试一次只读补查"
+        ]
+      },
+      "en-US": {
+        "name": "Evidence-backed analysis",
+        "description": "Verify task evidence and deliver an auditable answer.",
+        "features": [
+          "Track sources inspected in this run",
+          "Filter and aggregate workspace CSVs",
+          "Recover once when the answer stops at a plan"
+        ]
+      }
+    }
+  }
+}

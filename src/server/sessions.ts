@@ -131,7 +131,7 @@ export class PiRpcSession {
     this.pendingMessages = [];
     this.activeGeoContextIds = [];
     this.activeCanvasContextIds = [];
-    this.serviceTokens = { citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID(), canvas: crypto.randomUUID(), moduleAuthoring: crypto.randomUUID(), cad: crypto.randomUUID(), traffic: crypto.randomUUID() };
+    this.serviceTokens = { evidenceAnalysis: crypto.randomUUID(), experience: crypto.randomUUID(), citation: crypto.randomUUID(), spatial: crypto.randomUUID(), video: crypto.randomUUID(), geo: crypto.randomUUID(), canvas: crypto.randomUUID(), moduleAuthoring: crypto.randomUUID(), cad: crypto.randomUUID(), traffic: crypto.randomUUID() };
     this.citationRegistryId = opts.citationRegistryId || this.workspaceId || this.id;
     this.pendingExtensionUiRequests = new Map();
     this.eventTiming = new SessionEventTiming(this.timingMetrics);

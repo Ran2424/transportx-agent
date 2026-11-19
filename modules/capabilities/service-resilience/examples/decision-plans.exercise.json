@@ -1,0 +1,7 @@
+{
+  "stateIds": ["ready","east-closed","west-outage"],
+  "plans": [
+    {"id":"boost-east","label":"优先增援东点","setupMinutes":8,"periods":{"peak":{"serviceCapacity":{"east-care":120}}}},
+    {"id":"boost-west","label":"优先增援西点","setupMinutes":10,"periods":{"peak":{"serviceCapacity":{"west-care":120}}}}
+  ]
+}

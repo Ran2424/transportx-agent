@@ -45,6 +45,7 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
   const [spatialScope, setSpatialScope] = useState('');
   const [timeStart, setTimeStart] = useState('');
   const [timeEnd, setTimeEnd] = useState('');
+  const [answerRequirements, setAnswerRequirements] = useState('');
   const [loadingModels, setLoadingModels] = useState(true);
   const [advanced, setAdvanced] = useState(mode !== 'create' || expandAdvanced);
   const [submitting, setSubmitting] = useState(false);
@@ -79,6 +80,7 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
           const task = useWorkspaceDefaults ? workspace?.defaults?.profile?.task : undefined;
           const defaultsProfile = useWorkspaceDefaults ? workspace?.defaults?.profile : null;
           setCity(task?.city || ''); setProject(task?.project || ''); setSpatialScope(task?.spatialScope?.label || ''); setTimeStart(task?.timeRange?.start || ''); setTimeEnd(task?.timeRange?.end || '');
+          setAnswerRequirements(task?.answerRequirements?.join('\n') || '');
           setSelectedModules(defaultsProfile ? Object.fromEntries(defaultsProfile.modules.selected.map((item) => [item.id, item.version])) : Object.fromEntries(options.modules.filter((item) => item.selectedByDefault).map((item) => [item.id, item.version])));
           configurationOwner.current = owner;
         }
@@ -119,6 +121,10 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
         return;
       }
       const selected = Object.entries(selectedModules).map(([id, version]) => ({ id, version }));
+      const requirements = answerRequirements.split('\n').map(item => item.trim()).filter(Boolean);
+      if (requirements.length > 16 || requirements.some(item => item.length > 500)) {
+        throw new Error(t('workspaceFlow.answerRequirementsLimit'));
+      }
       const baseTask: SessionProfileV1['task'] = mode === 'confirmation' && workspace?.defaults?.profile?.task
         ? workspace.defaults.profile.task
         : { kind: 'data-query', expectedOutputs: ['answer'] };
@@ -127,6 +133,7 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
         task: {
           kind: baseTask.kind,
           expectedOutputs: baseTask.expectedOutputs,
+          ...(requirements.length ? { answerRequirements: requirements } : {}),
           ...(city.trim() ? { city: city.trim() } : {}),
           ...(project.trim() ? { project: project.trim() } : {}),
           ...(spatialScope.trim() ? { spatialScope: { label: spatialScope.trim() } } : {}),
@@ -178,6 +185,15 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
   }));
 
   const unavailableModules = Object.entries(selectedModules).filter(([id, version]) => !moduleOptions.some(item => item.id === id && item.version === version && item.enabledForNewSessions));
+  function enabledVersion(id: string) {
+    const versions = moduleGroups.find(([moduleId]) => moduleId === id)?.[1] || [];
+    return versions.find(item => item.enabledForNewSessions && item.selectedByDefault) ||
+      versions.filter(item => item.enabledForNewSessions).at(-1);
+  }
+  const trafficModules = ['com.transportx.evidence-analysis', 'com.transportx.experience-exchange'].flatMap(id => {
+    const option = enabledVersion(id);
+    return option ? [option] : [];
+  });
   const modelUnavailable = !!model && !modelOptions.some(item => item.value === model);
   const blocked = moduleBlockers.length > 0 || unavailableModules.length > 0 || modelUnavailable;
   const taskTimezone = mode === 'confirmation' ? workspace?.defaults?.profile?.task.timeRange?.timezone || 'Asia/Shanghai' : 'Asia/Shanghai';
@@ -233,7 +249,20 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
         {!restoring && <><div className="workspace-model-row"><MenuSelect compact portal label={t('sessions.model')} value={model} options={modelOptions} placeholder={loadingModels ? t('sessions.loadingModels') : t('sessions.noModels')} disabled={loadingModels || submitting} onChange={value => value === '__add_model__' ? onAddModel() : setModel(value)} /><small>{t('workspaceFlow.sessionModel')}</small></div>
         {!loadingModels && modelUnavailable && <div className="inline-error" role="alert">{t('workspaceFlow.modelUnavailable')}</div>}
         {moduleBlockers.length ? <div className="inline-error" role="alert">{moduleBlockers.join('；')}</div> : null}
-        {unavailableModules.length ? <div className="inline-error" role="alert">{t('workspaceFlow.unavailableModules', { modules: unavailableModules.map(([id, version]) => `${id}@${version}`).join(', ') })}{unavailableModules.map(([id]) => <Button type="button" variant="quiet" key={id} onClick={() => setSelectedModules(current => { const next = { ...current }; delete next[id]; return next; })}>{t('workspaceFlow.removeSelection', { name: id })}</Button>)}</div> : null}
+        {unavailableModules.length ? <div className="inline-error" role="alert">
+          {t('workspaceFlow.unavailableModules', { modules: unavailableModules.map(([id, version]) => `${id}@${version}`).join(', ') })}
+          {unavailableModules.map(([id]) => {
+            const version = enabledVersion(id);
+            return <div key={id}>
+              {version && <Button type="button" variant="quiet" onClick={() => setSelectedModules(current => ({ ...current, [id]: version.version }))}>{t('workspaceFlow.selectAvailableModuleVersion', { name: modulePresentation(version, language).name, version: version.version })}</Button>}
+              <Button type="button" variant="quiet" onClick={() => setSelectedModules(current => { const next = { ...current }; delete next[id]; return next; })}>{t('workspaceFlow.removeSelection', { name: id })}</Button>
+            </div>;
+          })}
+        </div> : null}
+        {trafficModules.length === 2 && !trafficModules.every(item => item.id in selectedModules) && <Button type="button" variant="outline" onClick={() => {
+          setSelectedModules(current => ({ ...current, ...Object.fromEntries(trafficModules.map(item => [item.id, item.version])) }));
+          setAdvanced(true);
+        }}>{t('workspaceFlow.selectTrafficCapabilities')}</Button>}
         <details className="workspace-advanced" open={advanced} onToggle={event => setAdvanced(event.currentTarget.open)}>
           <summary><span>{t('workspaceFlow.advanced')}</span><small>{t('workspaceFlow.configurationSummary', { count: Object.keys(selectedModules).length })}{city || spatialScope || timeStart ? ` · ${t('sessions.taskContext')}` : ''}</small></summary>
           <div className="workspace-advanced-body">
@@ -247,6 +276,11 @@ export function NewSessionDialog({ open, workspace, workspaces, mode, confirmati
               <label className="field-label"><span>{t('sessions.project')}</span><input value={project} onChange={(event) => setProject(event.target.value)} /></label>
             </div>
             <label className="field-label"><span>{t('sessions.spatialScope')}</span><input value={spatialScope} onChange={(event) => setSpatialScope(event.target.value)} /></label>
+            <label className="field-label">
+              <span>{t('workspaceFlow.answerRequirements')}</span>
+              <textarea name="answerRequirements" rows={2} value={answerRequirements} onChange={event => setAnswerRequirements(event.currentTarget.value)} aria-describedby="answer-requirements-help" />
+              <small id="answer-requirements-help">{t('workspaceFlow.answerRequirementsHelp')}</small>
+            </label>
             <div className="form-grid-two">
               <label className="field-label"><span>{t('workspaceFlow.timeStart', { timezone: taskTimezone })}</span><input type="datetime-local" value={timeStart} onChange={(event) => setTimeStart(event.target.value)} /></label>
               <label className="field-label"><span>{t('workspaceFlow.timeEnd', { timezone: taskTimezone })}</span><input type="datetime-local" min={timeStart} value={timeEnd} onChange={(event) => setTimeEnd(event.target.value)} /></label>

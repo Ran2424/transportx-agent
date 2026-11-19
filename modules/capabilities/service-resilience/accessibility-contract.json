@@ -1,0 +1,48 @@
+{
+  "$comment": "Generated from src/contracts/tool-definitions.mts; do not edit.",
+  "moduleId": "com.transportx.service-resilience",
+  "toolId": "resilience.accessibility",
+  "piName": "resilience_accessibility",
+  "contractVersion": "1.0.0",
+  "semanticVersion": "resilience-accessibility-v1",
+  "input": {
+    "type": "object",
+    "required": [
+      "periodId"
+    ],
+    "properties": {
+      "casePath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "File path relative to this task working directory."
+      },
+      "caseSha256": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "periodId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      },
+      "stateId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      },
+      "planId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      },
+      "demandId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "protocol": "transportx-service-resilience",
+    "version": 1,
+    "detailsKind": "service-resilience-result"
+  }
+}
